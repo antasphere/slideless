@@ -27,6 +27,12 @@ import {
 } from '../schemas/invitations.js';
 import { auditListSchema } from '../schemas/audit.js';
 import {
+  cliAuthCompletedSchema,
+  cliAuthCompleteSchema,
+  cliAuthRequestedSchema,
+  cliAuthRequestSchema
+} from '../schemas/cli-auth.js';
+import {
   breakGlassClaimOwnershipRequestSchema,
   breakGlassClaimOwnershipSchema,
   breakGlassResetTwoFactorRequestSchema,
@@ -334,6 +340,46 @@ export const invitationAcceptRoute = createRoute({
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Account exists — sign in to accept'),
     410: errorResponses[410]
+  }
+});
+
+// ── CLI auth (browserless email-OTP → API key) ──────────────────────────────
+// PUBLIC pre-auth endpoints like /setup: listed in PUBLIC_API_PATHS
+// (middleware/auth-context.ts) and deliberately UNLISTED in the machine
+// scope allowlist — a key/token presented here is pointless anyway (the flow
+// EXISTS to obtain a key) and 403s fail-closed. Sign-up stays closed: the
+// flow rides the emailOTP plugin's disableSignUp, so codes only sign in
+// EXISTING accounts. Both endpoints are rate-limited (request: the OTP wall
+// per IP + email; complete: the login wall per IP + email) and OTP
+// verification is better-auth's atomic, attempt-limited (3) check.
+
+export const cliAuthRequestRoute = createRoute({
+  method: 'post',
+  path: '/cli/auth/request',
+  tags: ['cli-auth'],
+  summary: 'Send a sign-in code to an email (public; generic success — no account enumeration)',
+  request: { body: jsonBody(cliAuthRequestSchema, 'The account email') },
+  responses: {
+    200: jsonBody(cliAuthRequestedSchema, 'Code sent if the account exists'),
+    400: jsonBody(apiErrorSchema, 'Validation error, or no email driver (otp_unavailable)'),
+    429: errorResponses[429],
+    500: errorResponses[500]
+  }
+});
+
+export const cliAuthCompleteRoute = createRoute({
+  method: 'post',
+  path: '/cli/auth/complete',
+  tags: ['cli-auth'],
+  summary: 'Verify a sign-in code and mint an API key (shown once, presentations:read+write)',
+  request: { body: jsonBody(cliAuthCompleteSchema, 'Email + code (+ optional key name/TTL)') },
+  responses: {
+    201: jsonBody(cliAuthCompletedSchema, 'Key minted; the full key appears only here'),
+    400: jsonBody(apiErrorSchema, 'Validation error, or no email driver (otp_unavailable)'),
+    401: jsonBody(apiErrorSchema, 'invalid_otp: wrong/expired code or no such account'),
+    403: jsonBody(apiErrorSchema, 'two_factor_required or no active workspace membership'),
+    429: jsonBody(apiErrorSchema, 'Too many attempts'),
+    500: errorResponses[500]
   }
 });
 

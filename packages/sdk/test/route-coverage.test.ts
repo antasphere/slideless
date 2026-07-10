@@ -34,6 +34,8 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
       owner: { email: 'a@b.co', name: 'A', password: 'x'.repeat(12) }
     }),
   'GET /me': (c) => c.me(),
+  'POST /cli/auth/request': (c) => c.cliAuthRequest({ email: 'a@b.co' }),
+  'POST /cli/auth/complete': (c) => c.cliAuthComplete({ email: 'a@b.co', otp: '123456' }),
   'GET /members': (c) => c.members(),
   'PATCH /members/{id}': (c) => c.updateMember(SAMPLE_ID, { role: 'admin' }),
   'DELETE /members/{id}': (c) => c.deleteMember(SAMPLE_ID),

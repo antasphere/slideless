@@ -25,6 +25,7 @@ import {
 } from '../middleware/rate-limit.js';
 import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
+import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerMemberRoutes } from './members.js';
 import { registerApiKeyRoutes } from './apikeys.js';
 import { registerInvitationRoutes } from './invitations.js';
@@ -173,6 +174,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // Break-glass: a rare superadmin recovery action — a tight per-IP wall
   // bounds allowlist probing before the handlers' own session checks run.
   api.use('/admin/break-glass/*', rateLimit(limiters.breakGlass, clientIp));
+  // CLI email-OTP sign-in (api/cli-auth.ts): request = an OTP send (the OTP
+  // wall, per IP + email); complete = a credential guess (the login wall,
+  // per IP + email) on top of better-auth's own 3-attempts-per-code limit.
+  api.use('/cli/auth/request', rateLimit(limiters.otp, clientIp, emailKeyOf));
+  api.use('/cli/auth/complete', rateLimit(limiters.login, clientIp, emailKeyOf));
 
   // Better Auth owns /api/v1/auth/* (mounted before the credential middleware
   // — it IS the credential machinery).
@@ -355,6 +361,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     logger,
     superadminEmails: env.SUPERADMIN_EMAILS
   });
+  // CLI email-OTP → API-key mint: PUBLIC pre-auth routes (listed in
+  // PUBLIC_API_PATHS) riding the emailOTP plugin; rate-limited above.
+  registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger });
   registerMemberRoutes(api, {
     db,
     auth,

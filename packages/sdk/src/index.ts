@@ -13,6 +13,10 @@ import type {
   BreakGlassClaimOwnershipRequest,
   BreakGlassResetTwoFactor,
   BreakGlassResetTwoFactorRequest,
+  CliAuthComplete,
+  CliAuthCompleted,
+  CliAuthRequest,
+  CliAuthRequested,
   Collaborator,
   CollaboratorClaim,
   CollaboratorClaimed,
@@ -205,6 +209,21 @@ export class PlatformClient {
 
   signOut(): Promise<void> {
     return this.request('POST', '/auth/sign-out', {});
+  }
+
+  // ── CLI auth (browserless email-OTP → API key) ────────────────────────────
+
+  /** Public: email a sign-in code. Generic success — silent about account existence. */
+  cliAuthRequest(req: CliAuthRequest): Promise<CliAuthRequested> {
+    return this.request('POST', '/cli/auth/request', req);
+  }
+
+  /**
+   * Public: verify the code and mint an `slk_` API key (presentations:read +
+   * presentations:write). The returned `key` appears only here.
+   */
+  cliAuthComplete(req: CliAuthComplete): Promise<CliAuthCompleted> {
+    return this.request('POST', '/cli/auth/complete', req);
   }
 
   // ── Members ───────────────────────────────────────────────────────────────

@@ -18,7 +18,15 @@ declare module 'hono' {
 }
 
 /** Paths under /api/v1 that are reachable without any credential. */
-const PUBLIC_API_PATHS = new Set(['/api/v1/instance', '/api/v1/setup', '/api/v1/openapi.json']);
+const PUBLIC_API_PATHS = new Set([
+  '/api/v1/instance',
+  '/api/v1/setup',
+  '/api/v1/openapi.json',
+  // CLI email-OTP sign-in (api/cli-auth.ts): pre-auth by definition — the
+  // flow exists to OBTAIN a credential. Both are rate-limited in api/index.ts.
+  '/api/v1/cli/auth/request',
+  '/api/v1/cli/auth/complete'
+]);
 
 export function isPublicApiPath(path: string): boolean {
   return PUBLIC_API_PATHS.has(path) || path.startsWith('/api/v1/auth/');
