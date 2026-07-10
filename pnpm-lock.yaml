@@ -54,10 +54,10 @@ importers:
 
   apps/dashboard:
     dependencies:
-      '@platform/contract':
+      '@slideless/contract':
         specifier: workspace:*
         version: link:../../packages/contract
-      '@platform/sdk':
+      '@slideless/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       better-auth:
@@ -163,10 +163,10 @@ importers:
       '@opentelemetry/sdk-trace-node':
         specifier: ^2.9.0
         version: 2.9.0(@opentelemetry/api@1.9.1)
-      '@platform/contract':
+      '@slideless/contract':
         specifier: workspace:*
         version: link:../../packages/contract
-      '@platform/db':
+      '@slideless/db':
         specifier: workspace:*
         version: link:../../packages/db
       better-auth:
@@ -218,7 +218,7 @@ importers:
       '@better-auth/cli':
         specifier: 1.4.21
         version: 1.4.21(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.4.3))(drizzle-kit@0.31.10)(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
-      '@platform/cli':
+      '@slideless/cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@testcontainers/postgresql':
@@ -260,7 +260,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@platform/sdk':
+      '@slideless/sdk':
         specifier: workspace:*
         version: link:../sdk
       commander:
@@ -311,7 +311,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@platform/contract':
+      '@slideless/contract':
         specifier: workspace:*
         version: link:../contract
     devDependencies:
