@@ -17,9 +17,10 @@ import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, 
  * drizzle with their constraints live, and (2) the fail-closed scope
  * allowlist consciously opened the /presentations tree to machine principals
  * (reachable — never 403) with reads and writes split across the two scopes.
- * Phase 3 made upload/versioning/pull LIVE (200/201 below); Phases 4–5
- * (sharing, collaboration) still answer their contract-declared 501s. The
- * upload pipeline itself is covered in presentations-upload.test.ts.
+ * Phase 3 made upload/versioning/pull LIVE; Phase 4 (sharing) and Phase 5
+ * (collaborators/annotations) completed the surface. The upload pipeline is
+ * covered in presentations-upload.test.ts, sharing in
+ * sharing-viewer.test.ts, Phase 5 in collaborators/annotations.test.ts.
  */
 
 const OWNER = { email: 'owner@decks.test', name: 'Deck Owner', password: 'deck-owner-password-1' };
@@ -223,12 +224,12 @@ describe('contract surface + fail-closed scope allowlist', () => {
       headers: { authorization: `Bearer ${readOnlyKey}` }
     });
     expect(live.status).toBe(200);
-    // Annotations arrive in Phase 5 — reachable, answering the contract 501.
-    const stub = await app.app.request('/api/v1/annotations', {
+    // The workspace annotation inbox (live since Phase 5) is read-listed.
+    const inbox = await app.app.request('/api/v1/annotations', {
       headers: { authorization: `Bearer ${readOnlyKey}` }
     });
-    expect(stub.status).toBe(501);
-    expect((await readJson(stub)).error.code).toBe('not_implemented');
+    expect(inbox.status).toBe(200);
+    expect(Array.isArray((await readJson(inbox)).annotations)).toBe(true);
   });
 
   it('mutations need presentations:write (read-only key 403s, write key reaches the handler)', async () => {
