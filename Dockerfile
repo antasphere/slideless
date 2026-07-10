@@ -1,5 +1,5 @@
 # ---- build ----------------------------------------------------------------
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 RUN corepack enable
 WORKDIR /repo
 
@@ -47,7 +47,7 @@ COPY scripts/prune-runtime-deps.mjs scripts/prune-runtime-deps.mjs
 RUN node scripts/prune-runtime-deps.mjs /out
 
 # ---- runtime ---------------------------------------------------------------
-FROM node:22-alpine
+FROM node:26-alpine
 # The runtime runs `node dist/index.js` and never invokes npm — remove the
 # npm that ships bundled in the base image (its vendored deps carry CVEs and
 # add weight). tini + wget are the only OS additions we keep.
