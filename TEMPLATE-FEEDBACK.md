@@ -53,3 +53,27 @@ actionable; link the template file/line it concerns.
   defaulted to `oss`; the verify-grep catches most misses. The scope rename
   (`data:read`→`presentations:read` etc.) via plain string replace worked
   across contract/middleware/tests with zero manual fixes.
+- **The API-key-prefix rename is NOT "a one-line change".** Four test sites
+  hardcode `key_`: the mint-format regex and the tampered-key builder in
+  `apps/server/test/integration/platform-core.test.ts` (2 integration
+  failures + cascading audit assertions, 7 red tests total on first run),
+  the secret slicer in `apikey-pepper-rotation.test.ts` (passes only while
+  the new prefix has the same length as `key`), and the e2e regex in
+  `apps/dashboard/e2e/smoke.spec.ts`. Either derive them from
+  `API_KEY_PREFIX` or list them in the checklist.
+- **The pre-setup default instance name and email branding are hardcoded
+  `'Platform'`.** `boot.ts` (`cachedName` fallback), `api/index.ts` (the
+  `/instance` discovery fallback), and `email/templates.ts`
+  (`PRODUCT_NAME`, user-visible in every delivered email). None are in the
+  checklist; the branding section's "instance name needs no code change"
+  claim is only true post-wizard.
+- **`setup.sh` cannot boot a fresh instantiation.** It runs
+  `docker compose up -d --pull always`, which tries to pull
+  `ghcr.io/<owner>/<repo>:latest` — an image that does not exist until the
+  product's first release. First boot needs a local `docker build` + an
+  `APP_IMAGE` override in `.env` (what we did). setup.sh could fall back to
+  `--build` when the pull fails, or the checklist could call this out.
+- **Compose `APP_PORT` knob worked exactly as documented** when host port
+  3000 was occupied (by the template's own dev stack, amusingly): setting
+  `APP_PORT` + `PUBLIC_BASE_URL` in `.env` was sufficient, in-container port
+  untouched. Good design; keep it.
