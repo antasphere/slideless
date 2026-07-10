@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
+import type { Context as HonoContext } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { ulid } from 'ulid';
 import {
@@ -33,11 +34,15 @@ import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { PlatformRegistry } from '../platform/registry.js';
+import type { EmailDriver } from '../email/driver.js';
+import { buildShareEmail } from '../email/templates.js';
 import type { FileService } from '../files/service.js';
 import { FileTooLargeError } from '../files/service.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
 import { canWriteDeck, type PresentationService } from '../presentations/service.js';
+import { buildViewerUrl, shareTokenToWire, type ShareTokenService } from '../sharing/service.js';
+import { hashViewerPassword } from '../sharing/password.js';
 import { requireAuth } from '../middleware/auth-context.js';
 
 /**
@@ -84,16 +89,18 @@ const sessionToWire = (s: UploadSessionRow) => ({
 
 export interface PresentationRouteDeps {
   service: PresentationService;
+  sharing: ShareTokenService;
   fileService: FileService;
   storage: StorageDriver;
   registry: PlatformRegistry;
-  env: Pick<Env, 'MAX_FILE_SIZE_MB' | 'EDITION' | 'APP_VERSION'>;
+  env: Pick<Env, 'MAX_FILE_SIZE_MB' | 'EDITION' | 'APP_VERSION' | 'PUBLIC_BASE_URL' | 'VIEWER_BASE_URL'>;
+  email: EmailDriver;
   logger: Logger;
   instanceId: () => Promise<string>;
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
-  const { service, fileService, storage, registry, env, logger } = deps;
+  const { service, sharing, fileService, storage, registry, env, email, logger } = deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   api.use('/presentations', requireAuth());
@@ -410,13 +417,219 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     });
   });
 
-  // ── Phase 4/5 stubs (contract-frozen 501s) ─────────────────────────────────
+  // ── Sharing (Phase 4) ──────────────────────────────────────────────────────
+  // Managing a deck's share tokens is the deck OWNER's surface (or a
+  // workspace admin — decks are workspace data, ADR 006), READS INCLUDED:
+  // listings expose recipient labels and access stats, so plain members do
+  // not see them. Dev collaborators join `canWriteDeck` in Phase 5 — that
+  // helper is the authorization seam. Machine access rides the existing
+  // /presentations scope mapping (reads → presentations:read, mutations →
+  // presentations:write; middleware/scopes.ts).
 
-  api.openapi(shareTokensListRoute, (c) => c.json(notImplemented('Phase 4 (sharing)'), 501));
-  api.openapi(shareTokenCreateRoute, (c) => c.json(notImplemented('Phase 4 (sharing)'), 501));
-  api.openapi(shareTokenUpdateRoute, (c) => c.json(notImplemented('Phase 4 (sharing)'), 501));
-  api.openapi(shareTokenRevokeRoute, (c) => c.json(notImplemented('Phase 4 (sharing)'), 501));
-  api.openapi(shareTokenSendRoute, (c) => c.json(notImplemented('Phase 4 (sharing)'), 501));
+  /** Deck + sharing-surface authorization, or the error response to return. */
+  const deckForSharing = async (
+    c: HonoContext,
+    id: string
+  ): Promise<{ deck: PresentationRow } | { status: 403 | 404; body: ReturnType<typeof err> }> => {
+    const principal = c.get('principal')!;
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck) return { status: 404, body: err('not_found', 'Presentation not found') };
+    if (!canWriteDeck(principal, deck)) {
+      return {
+        status: 403,
+        body: err('forbidden', 'Only the deck owner or a workspace admin can manage its share tokens')
+      };
+    }
+    return { deck };
+  };
+
+  api.openapi(shareTokensListRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const { cursor, limit } = c.req.valid('query');
+    const loaded = await deckForSharing(c, id);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+    const { tokens, nextCursor } = await sharing.list(principal.workspaceId, id, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit
+    });
+    // shareTokenToWire never exposes the secret or any hash — hasPassword only.
+    return c.json({ shareTokens: tokens.map(shareTokenToWire), nextCursor }, 200);
+  });
+
+  api.openapi(shareTokenCreateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const loaded = await deckForSharing(c, id);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+
+    let pinnedVersion: number | null = null;
+    if (body.versionMode === 'pinned') {
+      // The contract refine guarantees pinnedVersion is present here.
+      const v = body.pinnedVersion!;
+      const versionRow = await service.getVersion(principal.workspaceId, id, v);
+      if (!versionRow) {
+        return c.json(err('invalid_version', `Version ${v} does not exist on this presentation`), 400);
+      }
+      pinnedVersion = v;
+    }
+
+    const { row, secret } = await sharing.create({
+      workspaceId: principal.workspaceId,
+      presentationId: id,
+      createdBy: principal.userId,
+      name: body.name,
+      pinnedVersion,
+      canAnnotate: body.canAnnotate,
+      expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
+      passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
+    });
+
+    c.set('audit', {
+      action: 'presentation.share_token_create',
+      resourceType: 'share_token',
+      resourceId: row.id,
+      metadata: {
+        presentationId: id,
+        name: row.name,
+        versionMode: row.pinnedVersion === null ? 'latest' : 'pinned',
+        pinnedVersion: row.pinnedVersion,
+        canAnnotate: row.canAnnotate,
+        hasPassword: row.passwordHash !== null,
+        expiresAt: row.expiresAt?.toISOString() ?? null
+      }
+    });
+    // The secret + URL appear ONLY in this response (hash-only storage).
+    return c.json(
+      { shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) },
+      201
+    );
+  });
+
+  api.openapi(shareTokenUpdateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, tokenId } = c.req.valid('param');
+    const patch = c.req.valid('json');
+    const loaded = await deckForSharing(c, id);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+    const token = await sharing.get(principal.workspaceId, id, tokenId);
+    if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+
+    const set: Partial<typeof token> = {};
+    // A bare pinnedVersion implies 'pinned' (least surprise); 'latest' clears.
+    const mode = patch.versionMode ?? (patch.pinnedVersion !== undefined ? 'pinned' : undefined);
+    if (mode === 'latest') {
+      set.pinnedVersion = null;
+    } else if (mode === 'pinned') {
+      const v = patch.pinnedVersion;
+      if (v === undefined) {
+        return c.json(err('validation_error', 'pinnedVersion is required when versionMode is "pinned"'), 400);
+      }
+      const versionRow = await service.getVersion(principal.workspaceId, id, v);
+      if (!versionRow) {
+        return c.json(err('invalid_version', `Version ${v} does not exist on this presentation`), 400);
+      }
+      set.pinnedVersion = v;
+    }
+    if (patch.name !== undefined) set.name = patch.name;
+    if (patch.canAnnotate !== undefined) set.canAnnotate = patch.canAnnotate;
+    if (patch.expiresAt !== undefined) {
+      set.expiresAt = patch.expiresAt === null ? null : new Date(patch.expiresAt);
+    }
+    if (patch.password !== undefined) {
+      // Setting a new password also invalidates outstanding unlock cookies
+      // (their MAC covers a fingerprint of the current hash).
+      set.passwordHash = patch.password === null ? null : await hashViewerPassword(patch.password);
+    }
+
+    const updated = Object.keys(set).length > 0 ? await sharing.update(token.id, set) : token;
+    if (!updated) return c.json(err('not_found', 'Share token not found'), 404);
+
+    c.set('audit', {
+      action: 'presentation.share_token_update',
+      resourceType: 'share_token',
+      resourceId: token.id,
+      metadata: {
+        presentationId: id,
+        changed: Object.keys(set),
+        versionMode: updated.pinnedVersion === null ? 'latest' : 'pinned',
+        pinnedVersion: updated.pinnedVersion
+      }
+    });
+    return c.json(shareTokenToWire(updated), 200);
+  });
+
+  api.openapi(shareTokenRevokeRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, tokenId } = c.req.valid('param');
+    const loaded = await deckForSharing(c, id);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+    const token = await sharing.get(principal.workspaceId, id, tokenId);
+    if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+    const revoked = (await sharing.revoke(token.id)) ?? token;
+    c.set('audit', {
+      action: 'presentation.share_token_revoke',
+      resourceType: 'share_token',
+      resourceId: token.id,
+      metadata: { presentationId: id, name: token.name }
+    });
+    return c.json(shareTokenToWire(revoked), 200);
+  });
+
+  api.openapi(shareTokenSendRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, tokenId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const loaded = await deckForSharing(c, id);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+    const token = await sharing.get(principal.workspaceId, id, tokenId);
+    if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+    if (token.revokedAt) {
+      return c.json(err('token_revoked', 'This share token is revoked — create a new one'), 400);
+    }
+    if (token.expiresAt && token.expiresAt.getTime() <= Date.now()) {
+      return c.json(err('token_expired', 'This share token has expired — extend it or create a new one'), 400);
+    }
+
+    // No delivering driver: nothing sent, nothing rotated — the create-time
+    // copyable URL stays the recipient's link (the invitation convention).
+    if (!email.delivers) {
+      return c.json({ shareToken: shareTokenToWire(token), emailSent: false }, 200);
+    }
+
+    // Hash-only storage: the original secret is unrecoverable, so a send
+    // ROTATES the token onto a fresh secret and mails that (contract-
+    // documented). Mint → mail → persist, in that order: a failed delivery
+    // leaves the stored hash (and the old link) untouched.
+    const minted = sharing.mintSecret();
+    const viewerUrl = buildViewerUrl(env, minted.secret);
+    const msg = buildShareEmail({
+      senderName: principal.name,
+      presentationTitle: loaded.deck.title,
+      viewerUrl,
+      message: body.message,
+      expiresAt: token.expiresAt ?? undefined,
+      hasPassword: token.passwordHash !== null
+    });
+    try {
+      await email.send({ to: body.email, ...msg });
+    } catch (e) {
+      logger.error({ err: e }, 'share email failed (token unchanged, old link still valid)');
+      return c.json({ shareToken: shareTokenToWire(token), emailSent: false }, 200);
+    }
+    const updated = (await sharing.update(token.id, { tokenHash: minted.tokenHash })) ?? token;
+
+    c.set('audit', {
+      action: 'presentation.share_token_send',
+      resourceType: 'share_token',
+      resourceId: token.id,
+      metadata: { presentationId: id, recipient: body.email, rotated: true }
+    });
+    return c.json({ shareToken: shareTokenToWire(updated), emailSent: true }, 200);
+  });
+
+  // ── Phase 5 stubs (contract-frozen 501s) ───────────────────────────────────
 
   api.openapi(collaboratorsListRoute, (c) => c.json(notImplemented('Phase 5 (collaborators)'), 501));
   api.openapi(collaboratorInviteRoute, (c) => c.json(notImplemented('Phase 5 (collaborators)'), 501));

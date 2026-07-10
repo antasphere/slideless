@@ -21,6 +21,14 @@ export interface AppDeps {
   mcp?: Hono;
   /** Root-level OAuth discovery documents (/.well-known/*, M6). */
   wellKnown?: Hono;
+  /**
+   * The public share-link viewer (/v/{secret}, Phase 4 / ADR 012). Mounted
+   * in the public-route slot: OUTSIDE /api/v1, outside the auth/scope
+   * middleware — token recipients are anonymous, the path secret is the
+   * whole credential, and every user-content response it emits is locked
+   * under `CSP: sandbox` (see viewer/routes.ts).
+   */
+  viewer?: Hono;
   /** Observability middlewares + the /metrics route (M5). */
   metricsMiddleware?: MiddlewareHandler;
   metricsRoutes?: Hono;
@@ -40,6 +48,7 @@ export async function createApp({
   api,
   mcp,
   wellKnown,
+  viewer,
   metricsMiddleware,
   metricsRoutes,
   otelMiddleware
@@ -73,6 +82,10 @@ export async function createApp({
   app.route('/api/v1', api);
   if (mcp) app.route('/mcp', mcp);
   if (wellKnown) app.route('/', wellKnown);
+
+  // The public-route slot: the share-link viewer lives here — before the
+  // static assets and the SPA fallback, after every credentialed surface.
+  if (viewer) app.route('/', viewer);
 
   app.use('*', serveStatic({ root: publicDir }));
 

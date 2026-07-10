@@ -13,6 +13,21 @@ export interface ServeBlobOptions {
   contentType: string;
   filename: string;
   headOnly: boolean;
+  /**
+   * Full Content-Disposition override. Default (unset) = the safe-serving
+   * policy (`contentDispositionFor`: active types attachment). ONLY the
+   * public viewer (ADR 012) passes `inline; …` — legitimate solely because
+   * every viewer response is locked under `CSP: sandbox` (opaque origin);
+   * never override this on an app-origin surface without that regime.
+   */
+  contentDisposition?: string;
+  /**
+   * Headers merged over the defaults (viewer: the ADR 012 sandbox CSP,
+   * `Referrer-Policy: no-referrer`, and a revalidating Cache-Control — the
+   * viewer URL is not content-addressed, so `immutable` would be wrong
+   * there). Applied to every status this helper emits, 304 included.
+   */
+  extraHeaders?: Record<string, string>;
 }
 
 /**
@@ -28,10 +43,12 @@ export async function serveBlob(c: Context, opts: ServeBlobOptions): Promise<Res
   const baseHeaders: Record<string, string> = {
     'content-type': opts.contentType,
     'x-content-type-options': 'nosniff',
-    'content-disposition': contentDispositionFor(opts.contentType, opts.filename),
+    'content-disposition':
+      opts.contentDisposition ?? contentDispositionFor(opts.contentType, opts.filename),
     'accept-ranges': 'bytes',
     etag,
-    'cache-control': 'private, max-age=31536000, immutable'
+    'cache-control': 'private, max-age=31536000, immutable',
+    ...(opts.extraHeaders ?? {})
   };
 
   if (c.req.header('if-none-match') === etag) {

@@ -34,6 +34,17 @@ export const envSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   /** Public origin of this instance (scheme matters: https => Secure cookies). */
   PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
+  /**
+   * Base URL share links point at (the `/v/{secret}` viewer). Unset (default)
+   * = same origin as PUBLIC_BASE_URL — the ADR 012 proven-safe MVP: user HTML
+   * only ever renders under `Content-Security-Policy: sandbox` (opaque
+   * origin, never `allow-same-origin`). Setting this to a dedicated
+   * user-content origin (a domain that carries no app cookies and no API,
+   * fronting the same instance) is the ADR 012 hardening path: share URLs are
+   * then built on that origin, and a header regression can no longer expose
+   * the dashboard session across a real origin boundary.
+   */
+  VIEWER_BASE_URL: z.preprocess(blankToUndefined, z.url().optional()),
   /** Writable data directory (auto-generated secret, local file storage). */
   DATA_DIR: z.string().default('/data'),
   /** Apply pending migrations at boot. When false the app only checks and refuses readiness while behind. */

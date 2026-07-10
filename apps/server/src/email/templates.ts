@@ -146,6 +146,56 @@ export function buildVerifyEmailEmail(p: VerifyEmailEmailParams): {
   return { subject, html, text };
 }
 
+export interface ShareEmailParams {
+  /** Display name of the sharer (the deck owner/admin who hit send). */
+  senderName: string;
+  /** Deck title — escaped before it reaches the HTML. */
+  presentationTitle: string;
+  /** The per-recipient viewer URL (carries the token secret). */
+  viewerUrl: string;
+  /** Optional personal note from the sender. */
+  message?: string | undefined;
+  /** Link expiry, when the token has one. */
+  expiresAt?: Date | undefined;
+  /** Tell the recipient a password is required (sent out of band). */
+  hasPassword: boolean;
+}
+
+/**
+ * Share-a-presentation email (Phase 4). English only for now — template
+ * i18n is a noted follow-up (the platform's email builders are all
+ * single-language today; localize them together).
+ */
+export function buildShareEmail(p: ShareEmailParams): { subject: string; html: string; text: string } {
+  const subject = `${p.senderName} shared "${p.presentationTitle}" with you`;
+  const note = p.message
+    ? `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6;border-left:3px solid #e4e4e7;padding-left:12px">${esc(p.message)}</p>`
+    : '';
+  const passwordNote = p.hasPassword
+    ? `<p style="margin:0 0 16px;color:#3f3f46;font-size:13px">This link is password protected — ${esc(p.senderName)} will give you the password separately.</p>`
+    : '';
+  const expiryNote = p.expiresAt ? ` This link expires on ${p.expiresAt.toUTCString()}.` : '';
+  const html = shell(
+    `${esc(p.senderName)} shared a presentation`,
+    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
+       ${esc(p.senderName)} shared <strong>${esc(p.presentationTitle)}</strong> with you on ${PRODUCT_NAME}.</p>
+     ${note}${passwordNote}
+     <p style="margin:0 0 24px">
+       <a href="${p.viewerUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
+          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
+         Open presentation</a></p>
+     <p style="margin:0;color:#a1a1aa;font-size:12px">
+       This link is personal to you.${expiryNote} If the button does not work, open:<br>
+       <span style="word-break:break-all">${p.viewerUrl}</span></p>`
+  );
+  const text =
+    `${p.senderName} shared "${p.presentationTitle}" with you on ${PRODUCT_NAME}.\n\n` +
+    (p.message ? `${p.message}\n\n` : '') +
+    (p.hasPassword ? `This link is password protected — the sender will give you the password separately.\n\n` : '') +
+    `Open it: ${p.viewerUrl}\n\nThis link is personal to you.${expiryNote}`;
+  return { subject, html, text };
+}
+
 export interface OtpEmailParams {
   otp: string;
   type: string;

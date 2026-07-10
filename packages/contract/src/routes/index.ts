@@ -480,18 +480,20 @@ export const fileDeleteRoute = createRoute({
 
 // ═══ Presentation domain (ADR 011) ═══════════════════════════════════════════
 //
-// The contract below is FROZEN shape-first: Phase 3 (upload/versioning — LIVE),
-// Phase 4 (sharing/viewer) and Phase 5 (collaborators/annotations) implement
-// the handlers. Until then the registered stubs answer the 501 declared on
-// each route — implementers delete that entry as they land the handler.
+// The contract below is FROZEN shape-first: Phase 3 (upload/versioning) and
+// Phase 4 (sharing + the public viewer) are LIVE; Phase 5
+// (collaborators/annotations) still answers the 501 declared on each of its
+// routes — implementers delete that entry as they land the handler.
 //
-// PUBLIC VIEWER (Phase 4) — path shape reserved, deliberately NOT part of
-// /api/v1 (token recipients are not principals):
+// PUBLIC VIEWER (Phase 4 — LIVE, apps/server/src/viewer/routes.ts),
+// deliberately NOT part of /api/v1 (token recipients are not principals):
 //   GET  /v/{secret}            → viewer entry (path-carried secret; no ?token= legacy)
 //   GET  /v/{secret}/{path...}  → deck asset relative to the version manifest
-//   POST /api/v1/viewer/*       → token-session surface (annotation create/list),
-//                                 authenticated by the share-token secret, never
-//                                 by this file's principal machinery.
+//   POST /v/{secret}            → password-gate unlock (browser form)
+//   POST /api/v1/viewer/*       → reserved for Phase 5: token-session surface
+//                                 (annotation create/list), authenticated by the
+//                                 share-token secret, never by this file's
+//                                 principal machinery.
 
 const notImplemented = jsonBody(apiErrorSchema, 'Not implemented yet — arrives in a later build phase');
 
@@ -685,8 +687,8 @@ export const shareTokensListRoute = createRoute({
   responses: {
     200: jsonBody(shareTokensListSchema, 'Share tokens, newest first'),
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    403: errorResponses[403],
+    404: errorResponses[404]
   }
 });
 
@@ -706,8 +708,7 @@ export const shareTokenCreateRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
-    501: notImplemented
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict')
   }
 });
 
@@ -725,8 +726,7 @@ export const shareTokenUpdateRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -740,8 +740,7 @@ export const shareTokenRevokeRoute = createRoute({
     200: jsonBody(shareTokenSchema, 'Revoked share token'),
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -749,7 +748,8 @@ export const shareTokenSendRoute = createRoute({
   method: 'post',
   path: '/presentations/{id}/tokens/{tokenId}/send',
   tags: ['sharing'],
-  summary: 'Email the viewer link to a recipient (best-effort on top of the copyable URL)',
+  summary:
+    'Email the viewer link to a recipient. Hash-only storage means the server cannot recover the original secret, so each successful send ROTATES the token onto a fresh secret and mails that — earlier links for THIS token stop resolving (per-recipient tokens make that the natural resend semantics). No delivering email driver = nothing sent, nothing rotated (emailSent false).',
   request: {
     params: tokenParams,
     body: jsonBody(shareTokenSendSchema, 'Recipient email + optional note')
@@ -759,8 +759,7 @@ export const shareTokenSendRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 

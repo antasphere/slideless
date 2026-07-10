@@ -53,9 +53,15 @@ const TARGET_PATHS = new Set([
   '/api/v1/presentations/uploads'
 ]);
 const RESET_LINK_RE = /^\/api\/v1\/members\/[^/]+\/reset-link$/;
+// Share-token creation returns a one-shot secret — exactly what replay
+// protection exists for (a retried create must not mint a second link).
+const SHARE_TOKEN_CREATE_RE = /^\/api\/v1\/presentations\/[^/]+\/tokens$/;
 
 function isTarget(method: string, path: string): boolean {
-  return method === 'POST' && (TARGET_PATHS.has(path) || RESET_LINK_RE.test(path));
+  return (
+    method === 'POST' &&
+    (TARGET_PATHS.has(path) || RESET_LINK_RE.test(path) || SHARE_TOKEN_CREATE_RE.test(path))
+  );
 }
 
 /** AES-256-GCM key derived from the server auth secret (domain-separated). */

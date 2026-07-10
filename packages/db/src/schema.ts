@@ -290,6 +290,11 @@ export const presentations = pgTable(
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
+    // Viewer analytics (Phase 4): bumped atomically when a share token serves
+    // the ENTRY HTML (never per asset). Deliberately not on the wire schema
+    // yet — the P8 dashboard decides how to surface them.
+    totalViews: integer('total_views').notNull().default(0),
+    lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()

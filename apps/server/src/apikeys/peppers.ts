@@ -35,6 +35,13 @@ export interface PepperRegistry {
   readonly v1Pinned: boolean;
   /** The pepper for a stored version, or undefined — the caller MUST fail closed. */
   get(version: number): string | undefined;
+  /**
+   * Every registered version, ascending. For credentials that carry no
+   * version indicator (share-token secrets, whose sha256 IS the DB lookup
+   * key), resolution computes the candidate hash under EACH version — the
+   * registry has one entry per rotation, so this stays O(rotations).
+   */
+  readonly versions: readonly number[];
 }
 
 /**
@@ -105,6 +112,7 @@ export function buildPepperRegistry(authSecret: string, apiKeyPeppers?: string):
   return {
     current,
     v1Pinned,
-    get: (version) => peppers.get(version)
+    get: (version) => peppers.get(version),
+    versions: [...peppers.keys()].sort((a, b) => a - b)
   };
 }

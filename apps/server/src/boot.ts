@@ -39,6 +39,9 @@ import { LocalIdentityProvider } from './platform/local-identity.js';
 import { createRegistry, type PlatformRegistry } from './platform/registry.js';
 import { NoopUsageSink } from './platform/usage.js';
 import { resolveAuthSecret } from './secret.js';
+import { ShareTokenService } from './sharing/service.js';
+import { PresentationService } from './presentations/service.js';
+import { viewerRoutes } from './viewer/routes.js';
 import { createRuntimeState, type RuntimeState } from './state.js';
 import type { UsageSink } from '@slideless/contract';
 
@@ -275,6 +278,9 @@ export async function boot(
     );
   }
   const apiKeys = new ApiKeyService(db.db, pepperRegistry);
+  // Share-token secrets ride the SAME versioned pepper registry as API keys
+  // (ADR 008): sha256(secret + pepper), fail-closed across rotations.
+  const sharing = new ShareTokenService(db.db, pepperRegistry);
   const limiters = await createRateLimiters(env, logger);
 
   // Storage: probed at boot — /readyz stays red on an unwritable volume.
@@ -302,7 +308,22 @@ export async function boot(
     fileService,
     oauthJwt,
     authSecret,
-    accountDeletion
+    accountDeletion,
+    sharing
+  });
+
+  // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in
+  // app.ts's public-route slot, serves user HTML ONLY under CSP: sandbox.
+  const viewer = viewerRoutes({
+    sharing,
+    presentations: new PresentationService(db.db),
+    fileService,
+    storage,
+    logger,
+    authSecret,
+    passwordLimiter: limiters.viewerPassword,
+    clientIp: makeClientIp(env.TRUST_PROXY),
+    secureCookies: env.PUBLIC_BASE_URL.startsWith('https://')
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.
@@ -342,6 +363,7 @@ export async function boot(
     api,
     mcp,
     wellKnown: wellKnownRoutes({ auth, publicBaseUrl: env.PUBLIC_BASE_URL }),
+    viewer,
     metricsMiddleware: metrics.middleware,
     metricsRoutes: metrics.routes(env.METRICS_TOKEN),
     otelMiddleware: otel.middleware

@@ -35,6 +35,12 @@ export interface RateLimiters {
   /** Break-glass superadmin recovery — a rare operator action, tight per IP. */
   breakGlass: RateLimiterAbstract;
   /**
+   * Viewer password attempts (Phase 4) — share-link passwords are
+   * low-entropy human secrets, so failed guesses burn from a tight bucket
+   * keyed per IP AND per token. Successful unlocks never consume.
+   */
+  viewerPassword: RateLimiterAbstract;
+  /**
    * Shared factory riding the same backend (Redis when REDIS_URL is set,
    * memory otherwise) for buckets sized at runtime — the per-principal
    * request quota creates one limiter per distinct quota tier through this.
@@ -76,6 +82,7 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     passwordReset: make('pw-reset', 5, 10 * 60),
     workspaceExport: make('ws-export', 5, 600),
     breakGlass: make('break-glass', 10, 60 * 60),
+    viewerPassword: make('viewer-pw', 10, 15 * 60),
     make
   };
 }

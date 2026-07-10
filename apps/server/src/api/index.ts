@@ -33,6 +33,7 @@ import { registerFileRoutes } from './files.js';
 import { registerExportRoutes } from './export.js';
 import { registerPresentationRoutes } from './presentations.js';
 import { PresentationService } from '../presentations/service.js';
+import type { ShareTokenService } from '../sharing/service.js';
 import type { AccountDeletionService } from '../accounts/deletion.js';
 import type { FileService } from '../files/service.js';
 import type { StorageDriver } from '../storage/driver.js';
@@ -56,6 +57,8 @@ export interface ApiDeps {
   /** Server auth secret — also derives the idempotency replay-cache cipher key. */
   authSecret: string;
   accountDeletion: AccountDeletionService;
+  /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
+  sharing: ShareTokenService;
 }
 
 /** Control-flow marker: the singleton claim lost (instance already set up). */
@@ -381,10 +384,12 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   });
   registerPresentationRoutes(api, {
     service: presentationService,
+    sharing: deps.sharing,
     fileService: deps.fileService,
     storage: deps.storage,
     registry,
     env,
+    email,
     logger,
     instanceId
   });

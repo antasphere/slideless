@@ -61,6 +61,15 @@ const INLINE_SAFE = new Set([
 export function contentDispositionFor(contentType: string, filename: string): string {
   const base = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
   const mode = INLINE_SAFE.has(base) ? 'inline' : 'attachment';
+  return encodeContentDisposition(mode, filename);
+}
+
+/**
+ * Encode a Content-Disposition with an explicit mode. `inline` for an ACTIVE
+ * type is legitimate ONLY on the sandboxed viewer surface (ADR 012) — the
+ * app-origin routes must keep deriving the mode via `contentDispositionFor`.
+ */
+export function encodeContentDisposition(mode: 'inline' | 'attachment', filename: string): string {
   // RFC 5987 encoding for non-ASCII names; strip quotes/control chars.
   const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   const encoded = encodeURIComponent(filename);

@@ -12,6 +12,9 @@ services:
     environment:
       - DATABASE_URL=postgres://slideless:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/slideless
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:3000}
+      # Optional dedicated user-content origin for share links (ADR 012).
+      # Empty = same origin (the viewer stays under CSP: sandbox either way).
+      - VIEWER_BASE_URL=${VIEWER_BASE_URL:-}
       - AUTH_SECRET=${AUTH_SECRET:-}
       # Versioned API-key peppers for secret rotation (docs/security.md).
       - API_KEY_PEPPERS=${API_KEY_PEPPERS:-}
