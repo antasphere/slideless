@@ -534,3 +534,25 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   like the public viewer; the constants live in `packages/cli/src/devserver.ts`
   and `apps/server/src/viewer/routes.ts` — keep them in lockstep when the
   sandbox policy ever changes.
+
+## Phase 7 (MCP tool set, 2026-07-10)
+
+- **In-process multipart works: `app.request('/api/v1/presentations/assets',
+  { body: FormData })` round-trips through Hono's parseBody** (File/FormData
+  are Node ≥20 globals), so MCP upload tools reuse the exact API route the
+  CLI hits — same hashing, same entitlement gate, same audit rows. The
+  in-process Request carries no content-length, so the route's DECLARED-size
+  entitlement precheck sees 0; the true-size check after parse still binds.
+- **Tool-level size caps must undercut the transport cap to be reachable.**
+  The /mcp bodyLimit (1 MiB) rejects oversized envelopes with a plain 413
+  before any tool runs; a tool-side "too big" check equal to that cap is dead
+  code. Inline uploads cap at 768 KiB decoded — the base64-inflation bound of
+  a 1 MiB envelope — so the friendly use-the-CLI error is what models see.
+- **The viewer's dead-token statuses differ by cause**: revoked → 403,
+  expired → 410, unknown secret / deleted deck → 404 (viewer/routes.ts).
+  Tests (and tools' descriptions) must not blanket-assume 404.
+- **Raw JSON-RPC POSTs against the stateless /mcp are a valid test harness**:
+  every request builds a fresh McpServer, nothing enforces an initialize
+  handshake, and `enableJsonResponse` returns plain JSON — so tools can be
+  integration-tested via `app.request` without a listening server (the
+  oauth-mcp suite still proves the real SDK-client + listener path).

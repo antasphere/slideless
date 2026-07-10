@@ -340,3 +340,33 @@ template-level robustness gaps, not silent fixes:
   (per-account brute-force budget), but tests that drive both surfaces for
   one account must budget the shared points — worth one line in the
   rate-limit module docs.
+
+## Phase 7 (MCP tool set, 2026-07-10)
+
+- **The chassis' tool helpers are module-private — extract them into a
+  tool-kit module.** `checkScope` and `callApi` live unexported inside
+  `mcp/server.ts`, so the first product that grows a second tool file has to
+  refactor before writing a tool. Slideless moved them to `mcp/tool-kit.ts`
+  (context type + checkScope + callApi + a raw-Response variant + pageQuery);
+  the template should ship that split from the start, with server.ts keeping
+  only the example tools.
+- **`callApi` force-parses JSON — binary surfaces need a raw variant.** Asset
+  downloads and multipart uploads can't ride a JSON-only helper. Slideless
+  added `fetchApiRaw` (auth header attached, non-2xx parsed into ApiToolError,
+  Response returned). Worth upstreaming next to callApi.
+- **The /mcp bodyLimit answers plain HTTP 413, not a JSON-RPC error.** Fine
+  in practice (SDK clients surface it as a transport failure), but it means a
+  tool-level size cap must sit BELOW the transport cap to ever produce a
+  model-readable error. Slideless caps inline upload content at 768 KiB
+  decoded (base64 inflation ⇒ nothing bigger fits a 1 MiB envelope anyway)
+  and the tool error names the CLI. Document the relationship in the chassis.
+- **Stateless /mcp accepts tools/call without initialize** — each request
+  builds a fresh McpServer that never saw the handshake and the SDK does not
+  enforce it, so raw JSON-RPC POSTs (e.g. via app.request in tests) are a
+  legitimate, fast way to integration-test tools without a listening server.
+  Worth a note in the chassis docs next to the SDK-client dance test.
+- **OAuth portability confirmed fixed at the root.** Nothing under apps/ or
+  packages/ hardcodes an external origin: the 401 challenge, RFC 9728
+  document, issuer and `/mcp` audience all derive from PUBLIC_BASE_URL
+  (verified against :3100 and in tests against an ephemeral origin). The
+  legacy MCP's app.slideless.ai bug has no structural equivalent here.
