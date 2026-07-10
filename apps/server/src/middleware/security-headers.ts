@@ -48,11 +48,17 @@ export function securityHeaders({ csp, state }: SecurityHeaderOptions): Middlewa
   return async (c, next) => {
     await next();
     c.header('x-content-type-options', 'nosniff');
-    c.header('referrer-policy', 'strict-origin-when-cross-origin');
+    // Baseline referrer/CSP defaults, but never CLOBBER a value a route set for
+    // itself: a viewer route serving isolated user content needs its own
+    // `Referrer-Policy: no-referrer` and `Content-Security-Policy: sandbox …`.
+    // (SPIKE guard — see spike/viewer-origin; upstream this to the real viewer.)
+    if (!c.res.headers.has('referrer-policy')) {
+      c.header('referrer-policy', 'strict-origin-when-cross-origin');
+    }
     // Draining: ask keep-alive clients to reconnect elsewhere (rolling deploy).
     if (state.draining) c.header('connection', 'close');
     const contentType = c.res.headers.get('content-type') ?? '';
-    if (contentType.includes('text/html')) {
+    if (contentType.includes('text/html') && !c.res.headers.has('content-security-policy')) {
       c.header('content-security-policy', csp);
     }
   };

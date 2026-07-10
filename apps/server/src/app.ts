@@ -9,6 +9,7 @@ import type { RuntimeState } from './state.js';
 import { requestId } from './middleware/request-id.js';
 import { buildCsp, inlineScriptHashes, securityHeaders } from './middleware/security-headers.js';
 import { healthRoutes } from './routes/health.js';
+import { viewerSpikeApp } from './spike/viewer.js'; // SPIKE: viewer-origin probe (throwaway)
 
 export interface AppDeps {
   logger: Logger;
@@ -73,6 +74,11 @@ export async function createApp({
   app.route('/api/v1', api);
   if (mcp) app.route('/mcp', mcp);
   if (wellKnown) app.route('/', wellKnown);
+
+  // SPIKE (throwaway, branch spike/viewer-origin): the deliberate public-route
+  // slot, used here to probe serving hostile user HTML on the app origin under
+  // a sandboxing CSP. Delete with the branch.
+  app.route('/', viewerSpikeApp());
 
   app.use('*', serveStatic({ root: publicDir }));
 
