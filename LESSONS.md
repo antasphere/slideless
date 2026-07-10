@@ -504,3 +504,33 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   answers. The integration test hits this interleaving deterministically
   for the same timing reason. `api/invitations.ts` accept has the identical
   window (recorded in TEMPLATE-FEEDBACK.md, not fixed here).
+
+## Phase 6 (CLI + CLI auth, 2026-07-10)
+
+- **`emailOTP` with `disableSignUp` is exactly the browserless-login
+  primitive** (verified against 1.6.15 routes.mjs): send-verification-otp
+  for an unknown email deletes the pending code and answers a generic
+  success (no mail, no enumeration, no user); sign-in-email-otp verifies
+  atomically with a 3-attempt limit and maps unknown-account to the same
+  INVALID_OTP as a wrong code. The CLI auth endpoints are thin wrappers over
+  these two calls — never reimplement OTP storage/verification.
+- **Server-side `auth.api.signInEmailOTP` runs the config hooks too**: the
+  2FA after-hook intercepts an enrolled user's OTP sign-in exactly as over
+  HTTP and returns `{ twoFactorRedirect: true }` with no session — so the
+  CLI-auth complete endpoint refuses 2FA users (403 two_factor_required)
+  without any extra check beyond "no token in the response". Never "fix"
+  that into a bypass.
+- **`/setup`'s `signUpEmail` auto-creates an owner session** (better-auth
+  autoSignIn default) that nothing ever holds. Tests asserting session
+  cleanup must diff against a baseline instead of expecting zero rows.
+- **The CLI resolves its target as flag → env → profile → ERROR, no default
+  URL.** With a config file in play, a hard-coded localhost default silently
+  points real commands at the wrong instance; failing loudly is the feature.
+  The push link file (`.slideless.json`) records `baseUrl` for the same
+  reason — a folder linked to instance A errors on a push to instance B
+  instead of targeting a foreign deck id.
+- **`slideless dev` must mirror the ADR 012 header set** (CSP `sandbox …`,
+  nosniff, no-referrer, no-store) so local previews behave byte-for-byte
+  like the public viewer; the constants live in `packages/cli/src/devserver.ts`
+  and `apps/server/src/viewer/routes.ts` — keep them in lockstep when the
+  sandbox policy ever changes.

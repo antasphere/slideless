@@ -307,3 +307,36 @@ template-level robustness gaps, not silent fixes:
   clean 409; `api/invitations.ts` accept (and any future public
   account-minting endpoint) has the identical uncaught-500 window and should
   get the same mapping upstream.
+
+## Phase 6 (SDK completion + slideless CLI, 2026-07-10)
+
+- **The template should ship a browserless "OTP → API key" flow.** The
+  template only mints keys from a dashboard session, so every CLI/agent
+  bootstrap needs a browser round-trip. Slideless added
+  `POST /cli/auth/{request,complete}` (public pre-auth routes riding the
+  emailOTP plugin's `disableSignUp`, minting a scoped key from the verified
+  sign-in and deleting the throwaway session). The pattern is fully generic —
+  worth upstreaming as an optional template surface next to /setup.
+- **`auth.api.signUpEmail` auto-creates a session (autoSignIn default) —
+  /setup leaves a dangling owner session row nobody holds.** Harmless
+  (expiry bounds it, token never handed out), but it surprises any test
+  asserting "no sessions for this user" and is invisible until you look.
+  Either pass the option to skip auto sign-in at setup or document it.
+- **The config-level 2FA hook (identity/better-auth.ts hooks.after on
+  /sign-in/email-otp) also fires for server-side `auth.api.signInEmailOTP`
+  calls** — verified live in the CLI-auth flow (an enrolled user's
+  server-side OTP sign-in returns `{ twoFactorRedirect: true }` with no
+  session). Good news for safety; worth a note on the hook so nobody
+  assumes it is HTTP-only.
+- **The template CLI's URL default (`http://localhost:3000`) is a footgun
+  for multi-instance products.** Slideless dropped it: no flag/env/profile →
+  explicit error. Suggest the template do the same once it grows a config
+  file; a silent localhost default sends real commands to the wrong place
+  the moment a laptop runs a local stack.
+- **rate-limiter buckets are shared across surfaces keyed by the same
+  string.** `limiters.login` keyed by `email:<addr>` is one bucket for
+  password sign-in AND any new surface that reuses the limiter with
+  emailKeyOf (the CLI complete endpoint). That is the right posture
+  (per-account brute-force budget), but tests that drive both surfaces for
+  one account must budget the shared points — worth one line in the
+  rate-limit module docs.
