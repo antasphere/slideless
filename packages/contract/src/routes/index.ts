@@ -33,6 +33,43 @@ import {
   breakGlassResetTwoFactorSchema
 } from '../schemas/break-glass.js';
 import { fileSchema, filesListSchema, fileUploadedSchema, fileUploadQuerySchema } from '../schemas/files.js';
+import {
+  assetPrecheckRequestSchema,
+  assetPrecheckResponseSchema,
+  assetUploadFormSchema,
+  assetUploadedSchema,
+  presentationSchema,
+  presentationsListSchema,
+  presentationVersionDetailSchema,
+  presentationVersionsListSchema,
+  sha256Schema,
+  uploadSessionCommitSchema,
+  uploadSessionCreatedSchema,
+  versionCommitSchema,
+  versionCommittedSchema
+} from '../schemas/presentations.js';
+import {
+  shareTokenCreatedSchema,
+  shareTokenCreateSchema,
+  shareTokenSchema,
+  shareTokenSendSchema,
+  shareTokenSentSchema,
+  shareTokensListSchema,
+  shareTokenUpdateSchema
+} from '../schemas/share-tokens.js';
+import {
+  collaboratorInvitedSchema,
+  collaboratorInviteSchema,
+  collaboratorSchema,
+  collaboratorsListSchema
+} from '../schemas/collaborators.js';
+import {
+  annotationCreateSchema,
+  annotationSchema,
+  annotationsListQuerySchema,
+  annotationsListSchema,
+  annotationUpdateSchema
+} from '../schemas/annotations.js';
 
 /**
  * Server-only entry: route contracts for @hono/zod-openapi. Importing this
@@ -435,5 +472,435 @@ export const fileDeleteRoute = createRoute({
     200: jsonBody(fileSchema, 'Deleted file'),
     401: errorResponses[401],
     404: errorResponses[404]
+  }
+});
+
+// ═══ Presentation domain (ADR 011) ═══════════════════════════════════════════
+//
+// The contract below is FROZEN shape-first: Phase 3 (upload/versioning),
+// Phase 4 (sharing/viewer) and Phase 5 (collaborators/annotations) implement
+// the handlers. Until then the registered stubs answer the 501 declared on
+// each route — implementers delete that entry as they land the handler.
+//
+// PUBLIC VIEWER (Phase 4) — path shape reserved, deliberately NOT part of
+// /api/v1 (token recipients are not principals):
+//   GET  /v/{secret}            → viewer entry (path-carried secret; no ?token= legacy)
+//   GET  /v/{secret}/{path...}  → deck asset relative to the version manifest
+//   POST /api/v1/viewer/*       → token-session surface (annotation create/list),
+//                                 authenticated by the share-token secret, never
+//                                 by this file's principal machinery.
+
+const notImplemented = jsonBody(apiErrorSchema, 'Not implemented yet — arrives in a later build phase');
+
+/** Two-level params: `{id}` is always the presentation. */
+const tokenParams = z.object({ id: z.uuid(), tokenId: z.uuid() });
+const collaboratorParams = z.object({ id: z.uuid(), collaboratorId: z.uuid() });
+const annotationParams = z.object({ id: z.uuid(), annotationId: z.uuid() });
+const versionParams = z.object({ id: z.uuid(), version: z.coerce.number().int().min(1) });
+const assetParams = z.object({ id: z.uuid(), sha256: sha256Schema });
+
+// ── Presentations ────────────────────────────────────────────────────────────
+
+export const presentationsListRoute = createRoute({
+  method: 'get',
+  path: '/presentations',
+  tags: ['presentations'],
+  summary: 'List presentations in the workspace (cursor-paginated, newest first)',
+  request: { query: cursorPageQuerySchema },
+  responses: {
+    200: jsonBody(presentationsListSchema, 'Presentations, newest first'),
+    401: errorResponses[401],
+    501: notImplemented
+  }
+});
+
+export const presentationGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}',
+  tags: ['presentations'],
+  summary: 'Presentation metadata',
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(presentationSchema, 'Presentation'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const presentationDeleteRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}',
+  tags: ['presentations'],
+  summary: 'Delete a presentation (soft delete; versions and tokens stop resolving)',
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(presentationSchema, 'Deleted presentation (final snapshot)'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+// ── Upload (push) ────────────────────────────────────────────────────────────
+
+export const uploadSessionCreateRoute = createRoute({
+  method: 'post',
+  path: '/presentations/uploads',
+  tags: ['upload'],
+  summary: 'Reserve a new-deck upload session (~1 h): mints the future presentation id',
+  request: { headers: idempotencyHeaders },
+  responses: {
+    201: jsonBody(uploadSessionCreatedSchema, 'Upload session reserved'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    501: notImplemented
+  }
+});
+
+export const assetPrecheckRoute = createRoute({
+  method: 'post',
+  path: '/presentations/precheck',
+  tags: ['upload'],
+  summary: 'Which blobs are missing from the workspace (content-addressed dedupe)',
+  request: { body: jsonBody(assetPrecheckRequestSchema, 'Candidate sha256 list') },
+  responses: {
+    200: jsonBody(assetPrecheckResponseSchema, 'Hashes to upload'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    501: notImplemented
+  }
+});
+
+export const assetUploadRoute = createRoute({
+  method: 'post',
+  path: '/presentations/assets',
+  tags: ['upload'],
+  summary: 'Upload one deck asset (multipart; server re-hashes and rejects a sha256 mismatch)',
+  request: {
+    body: {
+      content: { 'multipart/form-data': { schema: assetUploadFormSchema } },
+      description: 'Fields: `sha256` (claimed content address) + `file` (the bytes)'
+    }
+  },
+  responses: {
+    201: jsonBody(assetUploadedSchema, 'Stored (content-addressed, idempotent per workspace)'),
+    400: jsonBody(apiErrorSchema, 'Hash mismatch or malformed form'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    413: jsonBody(apiErrorSchema, 'Payload exceeds the instance size cap'),
+    501: notImplemented
+  }
+});
+
+export const uploadSessionCommitRoute = createRoute({
+  method: 'post',
+  path: '/presentations/uploads/{id}/commit',
+  tags: ['upload'],
+  summary: 'Commit an upload session: creates the deck and its version 1 (one-shot)',
+  request: {
+    params: uuidParams,
+    body: jsonBody(uploadSessionCommitSchema, 'Deck metadata + version-1 manifest')
+  },
+  responses: {
+    201: jsonBody(versionCommittedSchema, 'Deck created at version 1'),
+    400: jsonBody(apiErrorSchema, 'Validation error or manifest references missing blobs'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Session already consumed'),
+    410: jsonBody(apiErrorSchema, 'Session expired'),
+    501: notImplemented
+  }
+});
+
+export const versionCommitRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/versions',
+  tags: ['upload'],
+  summary: 'Commit a new immutable version (optimistic concurrency via expectedBaseVersion)',
+  request: {
+    params: uuidParams,
+    body: jsonBody(versionCommitSchema, 'Manifest + expectedBaseVersion')
+  },
+  responses: {
+    201: jsonBody(versionCommittedSchema, 'Version committed; currentVersion advanced'),
+    400: jsonBody(apiErrorSchema, 'Validation error or manifest references missing blobs'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'version_conflict: expectedBaseVersion is stale — pull and retry'),
+    501: notImplemented
+  }
+});
+
+// ── Pull ─────────────────────────────────────────────────────────────────────
+
+export const versionsListRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/versions',
+  tags: ['presentations'],
+  summary: 'List versions of a presentation (cursor-paginated, newest first; no manifests)',
+  request: { params: uuidParams, query: cursorPageQuerySchema },
+  responses: {
+    200: jsonBody(presentationVersionsListSchema, 'Versions, newest first'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const versionGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/versions/{version}',
+  tags: ['presentations'],
+  summary: 'One version including its full manifest (path → sha256)',
+  request: { params: versionParams },
+  responses: {
+    200: jsonBody(presentationVersionDetailSchema, 'Version + manifest'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const assetDownloadRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/assets/{sha256}',
+  tags: ['presentations'],
+  summary: 'Download one deck blob by content address (attachment + nosniff)',
+  request: { params: assetParams },
+  responses: {
+    // Deliberately NO `content` key on the 200 (workspace-export precedent):
+    // the handler returns a plain streamed Response.
+    200: { description: 'Asset bytes (streamed)' },
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+// ── Sharing ──────────────────────────────────────────────────────────────────
+
+export const shareTokensListRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/tokens',
+  tags: ['sharing'],
+  summary: 'List share tokens of a presentation (cursor-paginated)',
+  request: { params: uuidParams, query: cursorPageQuerySchema },
+  responses: {
+    200: jsonBody(shareTokensListSchema, 'Share tokens, newest first'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const shareTokenCreateRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/tokens',
+  tags: ['sharing'],
+  summary: 'Create a per-recipient share token (the secret + viewer URL appear only here)',
+  request: {
+    params: uuidParams,
+    body: jsonBody(shareTokenCreateSchema, 'Recipient label + access options'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    201: jsonBody(shareTokenCreatedSchema, 'Created; secret shown once, never retrievable'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    501: notImplemented
+  }
+});
+
+export const shareTokenUpdateRoute = createRoute({
+  method: 'patch',
+  path: '/presentations/{id}/tokens/{tokenId}',
+  tags: ['sharing'],
+  summary: 'Update a share token: pin/unpin version, rename, annotate flag, expiry, password',
+  request: {
+    params: tokenParams,
+    body: jsonBody(shareTokenUpdateSchema, 'Fields to change (null clears expiry/password)')
+  },
+  responses: {
+    200: jsonBody(shareTokenSchema, 'Updated share token'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const shareTokenRevokeRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}/tokens/{tokenId}',
+  tags: ['sharing'],
+  summary: 'Revoke a share token (soft — access stats survive)',
+  request: { params: tokenParams },
+  responses: {
+    200: jsonBody(shareTokenSchema, 'Revoked share token'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const shareTokenSendRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/tokens/{tokenId}/send',
+  tags: ['sharing'],
+  summary: 'Email the viewer link to a recipient (best-effort on top of the copyable URL)',
+  request: {
+    params: tokenParams,
+    body: jsonBody(shareTokenSendSchema, 'Recipient email + optional note')
+  },
+  responses: {
+    200: jsonBody(shareTokenSentSchema, 'Delivery attempted; emailSent says whether mail went out'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+// ── Collaborators ────────────────────────────────────────────────────────────
+
+export const collaboratorsListRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/collaborators',
+  tags: ['collaborators'],
+  summary: 'List collaborators of a presentation (cursor-paginated)',
+  request: { params: uuidParams, query: cursorPageQuerySchema },
+  responses: {
+    200: jsonBody(collaboratorsListSchema, 'Collaborators, newest first'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const collaboratorInviteRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/collaborators',
+  tags: ['collaborators'],
+  summary: 'Invite a dev collaborator by email (always returns a copyable claim link)',
+  request: {
+    params: uuidParams,
+    body: jsonBody(collaboratorInviteSchema, 'Invitee email'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    201: jsonBody(collaboratorInvitedSchema, 'Grant created + claim link'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Already a collaborator, or idempotency conflict'),
+    501: notImplemented
+  }
+});
+
+export const collaboratorRemoveRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}/collaborators/{collaboratorId}',
+  tags: ['collaborators'],
+  summary: 'Revoke a collaborator grant (pending or active)',
+  request: { params: collaboratorParams },
+  responses: {
+    200: jsonBody(collaboratorSchema, 'Revoked grant'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+// ── Annotations (owner surface; the token-session surface ships with Phase 4) ─
+
+export const annotationsListRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/annotations',
+  tags: ['annotations'],
+  summary: 'List annotations of a presentation (filter by version/status; cursor-paginated)',
+  request: { params: uuidParams, query: annotationsListQuerySchema },
+  responses: {
+    200: jsonBody(annotationsListSchema, 'Annotations, newest first'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const annotationCreateRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/annotations',
+  tags: ['annotations'],
+  summary: 'Create an annotation as a signed-in principal (owner/dev note on a version)',
+  request: {
+    params: uuidParams,
+    body: jsonBody(annotationCreateSchema, 'Version + anchor + note')
+  },
+  responses: {
+    201: jsonBody(annotationSchema, 'Created annotation'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const annotationUpdateRoute = createRoute({
+  method: 'patch',
+  path: '/presentations/{id}/annotations/{annotationId}',
+  tags: ['annotations'],
+  summary: 'Update an annotation (edit body, resolve/reopen)',
+  request: {
+    params: annotationParams,
+    body: jsonBody(annotationUpdateSchema, 'Fields to change')
+  },
+  responses: {
+    200: jsonBody(annotationSchema, 'Updated annotation'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const annotationDeleteRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}/annotations/{annotationId}',
+  tags: ['annotations'],
+  summary: 'Delete an annotation',
+  request: { params: annotationParams },
+  responses: {
+    200: jsonBody(annotationSchema, 'Deleted annotation (final snapshot)'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    501: notImplemented
+  }
+});
+
+export const annotationsInboxRoute = createRoute({
+  method: 'get',
+  path: '/annotations',
+  tags: ['annotations'],
+  summary: 'Workspace-wide annotation inbox (all decks; filter by status; cursor-paginated)',
+  request: { query: annotationsListQuerySchema },
+  responses: {
+    200: jsonBody(annotationsListSchema, 'Annotations across the workspace, newest first'),
+    401: errorResponses[401],
+    501: notImplemented
   }
 });

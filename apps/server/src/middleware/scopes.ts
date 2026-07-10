@@ -33,8 +33,15 @@ export function requiredScopeFor(path: string, method: string): Scope | null {
   // superadmin recovery is a human session act — a key or token whose owner
   // is on SUPERADMIN_EMAILS still 403s here, fail-closed. Never list it.)
   if (path === '/api/v1/workspace/export' && isRead) return 'data:export';
-  // Products: open your domain endpoints here — reads → presentations:read,
-  // mutations → presentations:write. Example:
-  //   if (path.startsWith('/api/v1/items')) return isRead ? 'presentations:read' : 'presentations:write';
+  // Presentation domain (ADR 011): the primary agent surface. Covers the
+  // whole /presentations tree — listings, upload sessions, precheck, asset
+  // push/pull, version commits, share tokens, collaborators, per-deck
+  // annotations. Reads → presentations:read, mutations → presentations:write.
+  if (path === '/api/v1/presentations' || path.startsWith('/api/v1/presentations/')) {
+    return isRead ? 'presentations:read' : 'presentations:write';
+  }
+  // Workspace-wide annotation inbox: read-only today — list ONLY the read so
+  // any future mutation on this path stays fail-closed until opened here.
+  if (path === '/api/v1/annotations' && isRead) return 'presentations:read';
   return null;
 }

@@ -10,4 +10,8 @@ export * from './schemas/invitations.js';
 export * from './schemas/audit.js';
 export * from './schemas/break-glass.js';
 export * from './schemas/files.js';
+export * from './schemas/presentations.js';
+export * from './schemas/share-tokens.js';
+export * from './schemas/collaborators.js';
+export * from './schemas/annotations.js';
 export * from './seams.js';

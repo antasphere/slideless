@@ -31,6 +31,7 @@ import { registerInvitationRoutes } from './invitations.js';
 import { registerAuditRoutes } from './audit.js';
 import { registerFileRoutes } from './files.js';
 import { registerExportRoutes } from './export.js';
+import { registerPresentationRoutes } from './presentations.js';
 import type { AccountDeletionService } from '../accounts/deletion.js';
 import type { FileService } from '../files/service.js';
 import type { StorageDriver } from '../storage/driver.js';
@@ -350,6 +351,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     logger,
     instanceId
   });
+  // Presentation domain (ADR 011): contract-frozen 501 stubs until their
+  // build phases land handlers (3 upload, 4 sharing, 5 collaboration).
+  registerPresentationRoutes(api);
 
   api.doc('/openapi.json', {
     openapi: '3.1.0',
