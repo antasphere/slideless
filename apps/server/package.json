@@ -22,7 +22,7 @@
     "@aws-sdk/lib-storage": "^3.1079.0",
     "@better-auth/oauth-provider": "1.6.15",
     "@hono/mcp": "0.3.0",
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^2.0.8",
     "@hono/zod-openapi": "^1.4.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@opentelemetry/api": "^1.9.1",
