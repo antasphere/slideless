@@ -119,27 +119,41 @@ export class PresentationService {
    * loser sees the winner's state (missing_blobs 400 here, file_in_use 409
    * there) — never a manifest referencing a deleted blob.
    */
-  private async lockAndFindMissing(
+  private async lockAndResolveBlobs(
     tx: DbConn,
     workspaceId: string,
     manifest: ManifestEntry[]
-  ): Promise<string[]> {
+  ): Promise<{ missing: string[]; sizeBySha: Map<string, number> }> {
     const unique = [...new Set(manifest.map((e) => e.sha256))];
     const present = await tx
-      .select({ sha256: files.sha256 })
+      .select({ sha256: files.sha256, sizeBytes: files.sizeBytes })
       .from(files)
       .where(
         and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt))
       )
       .for('share');
-    const found = new Set(present.map((r) => r.sha256));
-    return unique.filter((sha) => !found.has(sha));
+    const sizeBySha = new Map(present.map((r) => [r.sha256, r.sizeBytes]));
+    return { missing: unique.filter((sha) => !sizeBySha.has(sha)), sizeBySha };
   }
 
-  private manifestTotals(manifest: ManifestEntry[]): { sizeBytes: number; fileCount: number } {
+  /**
+   * Stamp each manifest entry with the AUTHORITATIVE blob size from the locked
+   * `files` rows — the client's declared `sizeBytes` is never trusted, since size
+   * is a pure function of the content-addressed bytes. `contentType` stays the
+   * author's per-deck declaration (safe-serving neutralizes it at the viewer).
+   * Totals derive from the real sizes; duplicate paths sharing one blob each count
+   * (the total is what pulling the whole folder yields). Every sha is guaranteed
+   * present — missing blobs are rejected before this runs.
+   */
+  private stampManifest(
+    manifest: ManifestEntry[],
+    sizeBySha: Map<string, number>
+  ): { manifest: ManifestEntry[]; sizeBytes: number; fileCount: number } {
+    const stamped = manifest.map((e) => ({ ...e, sizeBytes: sizeBySha.get(e.sha256)! }));
     return {
-      sizeBytes: manifest.reduce((sum, e) => sum + e.sizeBytes, 0),
-      fileCount: manifest.length
+      manifest: stamped,
+      sizeBytes: stamped.reduce((sum, e) => sum + e.sizeBytes, 0),
+      fileCount: stamped.length
     };
   }
 
@@ -181,8 +195,9 @@ export class PresentationService {
         return { ok: false, failure: { code: 'session_expired' } };
       }
 
-      const missing = await this.lockAndFindMissing(tx, opts.workspaceId, opts.manifest);
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(tx, opts.workspaceId, opts.manifest);
       if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
+      const stamped = this.stampManifest(opts.manifest, sizeBySha);
 
       const [presentation] = await tx
         .insert(presentations)
@@ -204,8 +219,9 @@ export class PresentationService {
           presentationId: presentation!.id,
           version: 1,
           entryPath: opts.entryPath,
-          manifest: opts.manifest,
-          ...this.manifestTotals(opts.manifest),
+          manifest: stamped.manifest,
+          sizeBytes: stamped.sizeBytes,
+          fileCount: stamped.fileCount,
           createdBy: opts.principal.userId,
           createdByRole: 'owner'
         })
@@ -258,8 +274,9 @@ export class PresentationService {
         return { ok: false, failure: { code: 'version_conflict', currentVersion: deck.currentVersion } };
       }
 
-      const missing = await this.lockAndFindMissing(tx, opts.workspaceId, opts.manifest);
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(tx, opts.workspaceId, opts.manifest);
       if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
+      const stamped = this.stampManifest(opts.manifest, sizeBySha);
 
       const newVersion = deck.currentVersion + 1;
       const [version] = await tx
@@ -269,8 +286,9 @@ export class PresentationService {
           presentationId: deck.id,
           version: newVersion,
           entryPath: opts.entryPath,
-          manifest: opts.manifest,
-          ...this.manifestTotals(opts.manifest),
+          manifest: stamped.manifest,
+          sizeBytes: stamped.sizeBytes,
+          fileCount: stamped.fileCount,
           createdBy: opts.principal.userId,
           // Dev collaborators arrive in Phase 5; every commit today is by the
           // deck owner or a workspace admin acting as one.

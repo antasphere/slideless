@@ -299,6 +299,37 @@ describe('commit validation', () => {
     expect(await precheck([shaOf(bytes)])).toEqual([shaOf(bytes)]); // nothing minted
   });
 
+  it('stamps the authoritative blob size onto the version + manifest, ignoring a lied sizeBytes', async () => {
+    const bytes = Buffer.from('hello'); // real size 5, not the 999_999 the client will claim
+    const sha = shaOf(bytes);
+    const session = await reserve();
+    expect((await uploadAsset(bytes, sha, 'text/html', 'index.html')).status).toBe(201);
+
+    const commit = await app.app.request(
+      `/api/v1/presentations/uploads/${session.id}/commit`,
+      json(
+        {
+          title: 'Size Lie',
+          entryPath: 'index.html',
+          manifest: [{ path: 'index.html', sha256: sha, sizeBytes: 999_999, contentType: 'text/html' }]
+        },
+        { cookie }
+      )
+    );
+    expect(commit.status).toBe(201);
+    expect((await readJson(commit)).version.sizeBytes).toBe(bytes.length);
+
+    // Persisted totals AND the per-entry manifest size are the real blob size,
+    // never the client's claim (size is a pure function of the addressed bytes).
+    const detail = await readJson(
+      await app.app.request(`/api/v1/presentations/${session.presentationId}/versions/1`, {
+        headers: { cookie }
+      })
+    );
+    expect(detail.sizeBytes).toBe(bytes.length);
+    expect(detail.manifest[0].sizeBytes).toBe(bytes.length);
+  });
+
   it('rejects an entryPath outside the manifest and duplicate manifest paths', async () => {
     const session = await reserve();
     const badEntry = await app.app.request(
