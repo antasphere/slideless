@@ -1,0 +1,1 @@
+ALTER TABLE "api_keys" ADD COLUMN "pepper_version" smallint DEFAULT 1 NOT NULL;

@@ -1,0 +1,32 @@
+{
+  "name": "@platform/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "platform": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@platform/sdk": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "vitest": "^3.2.0"
+  }
+}

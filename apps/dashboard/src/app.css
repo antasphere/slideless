@@ -1,0 +1,381 @@
+@import './lib/styles/terra-colors.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Custom Brand Colors */
+    --custom-orange: 35 85% 60%; /* #F3AE3F */
+    --custom-blue: 224 80% 61%; /* #4E81EE */
+    --custom-red: 10 61% 51%; /* #D05032 */
+    --custom-green: 130 21% 44%; /* #558A60 */
+    --custom-blue-light: 200 71% 77%; /* #ACDAFC */
+    --custom-pink: 332 54% 87%; /* #F6C6DE */
+    --custom-green-light: 73 78% 77%; /* #E6F799 */
+
+    /* Custom Orange Shades */
+    --custom-orange-50: 35 85% 97%;
+    --custom-orange-100: 35 85% 94%;
+    --custom-orange-200: 35 85% 85%;
+    --custom-orange-300: 35 85% 75%;
+    --custom-orange-400: 35 85% 65%;
+    --custom-orange-500: 35 85% 60%;
+    --custom-orange-600: 35 70% 50%;
+    --custom-orange-700: 35 70% 40%;
+    --custom-orange-800: 35 70% 30%;
+    --custom-orange-900: 35 70% 20%;
+    --custom-orange-950: 35 70% 10%;
+
+    /* Custom Blue Shades */
+    --custom-blue-50: 224 80% 97%;
+    --custom-blue-100: 224 80% 94%;
+    --custom-blue-200: 224 80% 85%;
+    --custom-blue-300: 224 80% 75%;
+    --custom-blue-400: 224 80% 65%;
+    --custom-blue-500: 224 80% 61%;
+    --custom-blue-600: 224 70% 50%;
+    --custom-blue-700: 224 70% 40%;
+    --custom-blue-800: 224 70% 30%;
+    --custom-blue-900: 224 70% 20%;
+    --custom-blue-950: 224 70% 10%;
+
+    /* Custom Red Shades */
+    --custom-red-50: 10 61% 97%;
+    --custom-red-100: 10 61% 94%;
+    --custom-red-200: 10 61% 85%;
+    --custom-red-300: 10 61% 75%;
+    --custom-red-400: 10 61% 65%;
+    --custom-red-500: 10 61% 51%;
+    --custom-red-600: 10 55% 45%;
+    --custom-red-700: 10 55% 35%;
+    --custom-red-800: 10 55% 25%;
+    --custom-red-900: 10 55% 15%;
+    --custom-red-950: 10 55% 8%;
+
+    /* Custom Green Shades */
+    --custom-green-50: 130 21% 97%;
+    --custom-green-100: 130 21% 94%;
+    --custom-green-200: 130 21% 85%;
+    --custom-green-300: 130 21% 70%;
+    --custom-green-400: 130 21% 55%;
+    --custom-green-500: 130 21% 44%;
+    --custom-green-600: 130 25% 35%;
+    --custom-green-700: 130 25% 28%;
+    --custom-green-800: 130 25% 20%;
+    --custom-green-900: 130 25% 12%;
+    --custom-green-950: 130 25% 6%;
+
+    /* Base Color System */
+    --border-primary: 35 25% 80%; /* #d9d1ca */
+    --border-secondary: 35 22% 88%; /* #ebe6e1 */
+    --border-tertiary: 35 20% 92%; /* #f3efeb */
+
+    /* Surface Colors */
+    --white: 0 0% 100%;
+    --surface-primary: 44 33% 99%; /* #fffefd */
+    --surface-secondary: 30 33.3% 98.8%; /* #fdfcfb */
+    --surface-tertiary: 30 30.8% 95.7%; /* #f0f3f5 */
+    --surface-quaternary: 31 27% 81%;
+    --surface-quinary: 210 26% 87%;
+    --surface-primary-solid: 225 9% 9%;
+    --surface-secondary-solid: 225 9% 18%;
+    --surface-brand-primary: 195 100% 98%;
+    --surface-brand-secondary: 195 100% 95%;
+    --surface-brand-tertiary: 195 100% 91%;
+    --surface-brand-solid: 195 100% 64%; /* #47cbff */
+    --surface-brand-solid-hover: 195 76% 58%;
+
+    /* Theme Colors */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --muted: var(--surface-tertiary);
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --popover: var(--surface-secondary);
+    --popover-foreground: var(--sidebar-foreground);
+    --card: 0 10% 99.7%;
+    --card-foreground: 222.2 84% 4.9%;
+    --border: var(--border-tertiary);
+    --input: var(--border-primary);
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: var(--border-secondary);
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --accent: var(--surface-tertiary);
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Button specific colors */
+    --button-hover: var(--surface-tertiary);
+    --button-hover-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+    --sidebar-background: var(--surface-secondary);
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: var(--surface-tertiary);
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: var(--border-primary);
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Base Color System - Dark Mode */
+    --border-primary: 225 9% 25%;
+    --border-secondary: 225 9% 20%;
+    --border-tertiary: 225 9% 15%;
+
+    /* Surface Colors - Dark Mode */
+    --white: 0 0% 0%;
+    --surface-primary: 225 9% 7%;
+    --surface-secondary: 225 9% 9%;
+    --surface-tertiary: 225 9% 12%;
+    --surface-quaternary: 225 9% 18%;
+    --surface-quinary: 225 9% 22%;
+    --surface-primary-solid: 225 9% 85%;
+    --surface-secondary-solid: 225 9% 90%;
+    --surface-brand-primary: 195 100% 8%;
+    --surface-brand-secondary: 195 100% 12%;
+    --surface-brand-tertiary: 195 100% 18%;
+    --surface-brand-solid: 195 100% 55%;
+    --surface-brand-solid-hover: 195 76% 50%;
+
+    /* Theme Colors - Dark */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --card: 225 9% 7%;
+    --card-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    /* Button specific colors - Dark Mode */
+    --button-hover: 225 9% 18%;
+    --button-hover-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  @font-face {
+    font-family: 'geist-sans';
+    src: url('/fonts/Geist/geist.woff2') format('woff2');
+    font-display: swap;
+  }
+
+  /* Satoshi Font Family for Titles */
+  @font-face {
+    font-family: 'satoshi';
+    src: url('/fonts/Satoshi/Satoshi-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'satoshi';
+    src: url('/fonts/Satoshi/Satoshi-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'satoshi';
+    src: url('/fonts/Satoshi/Satoshi-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'satoshi';
+    src: url('/fonts/Satoshi/Satoshi-Black.woff2') format('woff2');
+    font-weight: 900;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    height: 100%;
+    height: 100dvh;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'geist-sans', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /* Apply Satoshi font to all heading elements */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'satoshi', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+  }
+}
+
+/* Lighter text-sm for cleaner UI */
+@layer utilities {
+  .text-sm {
+    @apply font-light;
+  }
+}
+
+/* Popover styling to match sidebar */
+@layer components {
+  [data-bits-dropdown-menu-content] {
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+    border: 1px solid hsl(var(--sidebar-border)) !important;
+  }
+
+  [data-bits-dropdown-menu-item]:hover,
+  [data-bits-dropdown-menu-item][data-highlighted] {
+    background-color: hsl(var(--surface-tertiary)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+}
+
+@layer base {
+  /* Force light mode scrollbars globally */
+  * {
+    color-scheme: light;
+  }
+
+  /* Sidebar specific scrollbar styling */
+  [data-sidebar='content'] {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  }
+
+  [data-sidebar='content']:not([data-mobile='true']) {
+    padding-right: 2px;
+  }
+
+  [data-sidebar='content']:not([data-mobile='true'])::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  [data-sidebar='content']:not([data-mobile='true'])::-webkit-scrollbar-track {
+    background: transparent;
+    margin-right: -2px;
+  }
+
+  [data-sidebar='content']:not([data-mobile='true'])::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    margin-right: -2px;
+  }
+
+  [data-sidebar='content']:not([data-mobile='true'])::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  /* Mobile sidebar scrollbar */
+  [data-sidebar='content'][data-mobile='true'] {
+    padding-right: 6px;
+  }
+
+  [data-sidebar='content'][data-mobile='true']::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  [data-sidebar='content'][data-mobile='true']::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  [data-sidebar='content'][data-mobile='true']::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+  }
+
+  [data-sidebar='content'][data-mobile='true']::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  [data-sidebar='content']::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Default scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: calc(var(--radius) * 0.5);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox default scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  }
+
+  /* Sidebar faded border effect */
+  .sidebar-with-faded-border {
+    position: relative;
+  }
+
+  .sidebar-with-faded-border::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(
+      to bottom,
+      transparent 0px,
+      hsl(var(--border)) var(--sidebar-fade-size, 20px),
+      hsl(var(--border)) calc(100% - var(--sidebar-fade-size, 20px)),
+      transparent 100%
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+}

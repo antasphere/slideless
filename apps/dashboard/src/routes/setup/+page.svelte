@@ -1,0 +1,130 @@
+<script lang="ts">
+  import { goto } from '$app/navigation';
+  import * as Card from '$lib/components/ui/card/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Label } from '$lib/components/ui/label/index.js';
+  import { Separator } from '$lib/components/ui/separator/index.js';
+  import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
+  import { api, PlatformApiError } from '$lib/api';
+  import { authClient } from '$lib/auth-client';
+  import { refreshSession } from '$lib/session';
+  import { t } from '$lib/i18n';
+
+  let instanceName = $state('');
+  let ownerName = $state('');
+  let ownerEmail = $state('');
+  let ownerPassword = $state('');
+  let setupToken = $state('');
+  // The token field appears only after the API proves it wants one (403).
+  let tokenRequired = $state(false);
+  let loading = $state(false);
+  let error = $state<string | null>(null);
+
+  async function submit() {
+    error = null;
+    if (ownerPassword.length < 12) {
+      error = t('common.errorPasswordLength');
+      return;
+    }
+    loading = true;
+    try {
+      await api.setup({
+        instanceName,
+        owner: { name: ownerName, email: ownerEmail, password: ownerPassword },
+        ...(setupToken ? { setupToken } : {})
+      });
+
+      const { error: signInErr } = await authClient.signIn.email({
+        email: ownerEmail,
+        password: ownerPassword
+      });
+      await refreshSession();
+      if (signInErr) {
+        // Setup succeeded but auto sign-in failed — land on login, not limbo.
+        await goto('/login');
+        return;
+      }
+      await goto('/');
+    } catch (e) {
+      if (e instanceof PlatformApiError && e.code === 'invalid_setup_token') {
+        tokenRequired = true;
+        error = setupToken ? t('setup.errorTokenInvalid') : t('setup.errorTokenRequired');
+      } else if (e instanceof PlatformApiError && e.status === 410) {
+        error = t('setup.errorAlreadySetUp');
+        await refreshSession();
+        await goto('/login');
+      } else if (e instanceof PlatformApiError && e.code === 'validation_error') {
+        error = t('setup.errorValidation');
+      } else if (e instanceof PlatformApiError) {
+        error = e.message;
+      } else {
+        error = t('setup.errorUnreachable');
+      }
+    } finally {
+      loading = false;
+    }
+  }
+</script>
+
+<LanguageSwitcher class="fixed right-4 top-4" />
+
+<div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
+  <Card.Root class="w-full max-w-md">
+    <Card.Header>
+      <Card.Title class="text-xl">{t('setup.title')}</Card.Title>
+      <Card.Description>{t('setup.description')}</Card.Description>
+    </Card.Header>
+    <Card.Content>
+      <form
+        class="space-y-4"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <div class="space-y-2">
+          <Label for="instance-name">{t('setup.instanceName')}</Label>
+          <Input id="instance-name" bind:value={instanceName} placeholder="Acme Platform" required />
+        </div>
+
+        <Separator />
+
+        <div class="space-y-2">
+          <Label for="owner-name">{t('setup.yourName')}</Label>
+          <Input id="owner-name" autocomplete="name" bind:value={ownerName} required />
+        </div>
+        <div class="space-y-2">
+          <Label for="owner-email">{t('setup.email')}</Label>
+          <Input id="owner-email" type="email" autocomplete="email" bind:value={ownerEmail} required />
+        </div>
+        <div class="space-y-2">
+          <Label for="owner-password">{t('setup.password')}</Label>
+          <Input
+            id="owner-password"
+            type="password"
+            autocomplete="new-password"
+            bind:value={ownerPassword}
+            required
+          />
+          <p class="text-xs text-muted-foreground">{t('common.passwordMinHint')}</p>
+        </div>
+
+        {#if tokenRequired}
+          <div class="space-y-2">
+            <Label for="setup-token">{t('setup.setupToken')}</Label>
+            <Input id="setup-token" bind:value={setupToken} required />
+          </div>
+        {/if}
+
+        {#if error}
+          <p class="text-sm text-destructive">{error}</p>
+        {/if}
+
+        <Button type="submit" class="w-full" disabled={loading}>
+          {loading ? t('setup.creating') : t('setup.submit')}
+        </Button>
+      </form>
+    </Card.Content>
+  </Card.Root>
+</div>

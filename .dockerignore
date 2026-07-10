@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/build
+**/.svelte-kit
+**/.turbo
+.git
+.github
+.env
+.env.*
+data
+docs
+*.md
+apps/server/public/*

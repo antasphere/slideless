@@ -1,0 +1,411 @@
+# Lessons
+
+Corrections and confirmed approaches, with why they mattered. Update in place;
+delete entries that later prove wrong.
+
+## Confirmed approaches
+
+- **Session-scoped `pg_advisory_lock` on a dedicated `pg.Client` around
+  `migrate()`** survives a two-replica race (verified: exactly one applies,
+  both healthy). A transaction-scoped lock would release at drizzle's first
+  internal commit.
+- **`ctx.request` distinguishes HTTP from server-side Better Auth calls.**
+  The before-hook that closes public sign-up checks `ctx.path.startsWith('/sign-up') && ctx.request`;
+  server-side `auth.api.signUpEmail` (setup, invitation accept) carries no
+  request and passes.
+- **Better Auth CLI generate output is snake_case columns / camelCase
+  properties / singular tables / TEXT ids** on the 1.6.x line — friendlier
+  than older reports suggested. FKs from domain tables to `user.id` must be
+  `text`.
+- **`pnpm deploy` + a `"files": ["dist", "public"]` allowlist** produces the
+  runtime layout; never bundle pino/pg/pg-boss (dynamic requires + transport
+  workers break).
+- **The oauth-provider consent dance is signed-query round-tripping** (1.6.15):
+  `GET /oauth2/authorize` with a session but no stored consent answers a
+  redirect to `consentPage?<signed query>` (all original authorize params +
+  `exp` + issued-at + `sig`, HMAC'd with the auth secret). The consent page
+  posts that query string back VERBATIM as `oauth_query` to
+  `POST /oauth2/consent` `{ accept, oauth_query, scope? }` (session cookie
+  required); the plugin verifies `sig` server-side, records the consent, and
+  returns the client redirect (with the authorization code). No custom
+  validation endpoint needed — the signature IS the API-side validation.
+- **`customAccessTokenClaims` gates JWT issuance on BOTH grants**
+  (authorization_code and refresh_token) — throwing `APIError('FORBIDDEN')`
+  there when the live `workspace_members` row is missing/inactive aborts JWT
+  minting. It is NOT the revocation mechanism, though: a refresh without the
+  RFC 8707 `resource` param still mints an OPAQUE token that never passes
+  through the claims callback (verified live, M9). The real enforcement is
+  resource-side — the live membership re-check on every request, plus the
+  bearer gate's `looksLikeJwt` rejecting opaque tokens outright.
+- **Stateless `@hono/mcp`: one McpServer + `StreamableHTTPTransport({
+enableJsonResponse: true })` per request** — no session ids, POST responses
+  are complete JSON, GET is 405, and the official SDK client is happy. Omit
+  `sessionIdGenerator` entirely; passing an explicit `undefined` trips
+  `exactOptionalPropertyTypes`.
+- **The MCP SDK Client needs a real listening server** — it dials a URL, so
+  the dance test serves the booted Hono app on an ephemeral port with
+  `@hono/node-server` (pick a free port first: PUBLIC_BASE_URL must equal the
+  real origin because it is issuer, discovery root, and `/mcp` aud at once).
+  `app.request()` stays fine for everything that isn't the SDK client.
+- **The drift guard absorbed the plugin tables cleanly**: adding jwt +
+  oauthProvider to `scripts/auth-schema-config.ts` makes the pinned CLI emit
+  `jwks` + 4 `oauth_*` tables (snake_case tables, camelCase index names);
+  regenerate snapshot + `packages/db/src/auth-schema.ts` together and let
+  drizzle-kit produce the additive migration. Same shape for `twoFactor`
+  (I5): one `two_factor` table + `user.two_factor_enabled`, migration 0011,
+  zero drift surprises.
+
+## Corrections
+
+- **Setup must claim + create workspace + membership in ONE transaction.**
+  The first implementation could persist the singleton claim and then fail,
+  leaving `setupRequired=false` with no owner — a bricked instance (proven by
+  the M1 verifier). The Better Auth user is created outside the transaction
+  (it cannot join); a losing racer leaves an orphaned user who can sign in
+  but gets 401 everywhere. Setup retries reuse an existing owner account only
+  after the presented credentials sign in successfully.
+- **`VAR=` (empty string) in compose must mean "unset"** for optional env
+  vars; zod `.optional()` alone rejects it. Every optional var goes through
+  the empty-string preprocessor — which must **trim**: `VAR=' '` (whitespace)
+  is `Number(' ') === 0`, so an untrimmed blank silently flips a `min(0)`
+  numeric knob (e.g. the API rate limit) to its 0/disabled meaning instead of
+  the default. `blankToUndefined` in `env.ts` trims; enum vars fail loudly on
+  whitespace anyway, only meaningful-zero numerics were silently affected.
+- **The Better Auth CLI silently writes nothing when the output file already
+  exists** — hand it a fresh path in a temp dir, never a `mktemp`-created file.
+- **The standalone `@better-auth/cli` version line (1.4.x) differs from
+  better-auth (1.6.x)**, its bin is `better-auth`, and it vendors its own
+  better-auth — so pnpm overrides for `@better-auth/core` must be scoped to
+  the 1.6.15 parents or they poison the CLI's tree.
+- **Drift-diff normalization needs the repo prettier config passed
+  explicitly** — a temp file outside the repo gets prettier defaults and the
+  diff false-positives.
+- **`api.use('/thing/:id', gate)` also gates `/thing/lookup` and
+  `/thing/accept`** — sibling literal segments under a param pattern need an
+  explicit skip in the middleware, and the skip must be METHOD-exact or a
+  DELETE /thing/lookup walks past the gate into a null-principal 500.
+- **Never trust x-forwarded-for by default.** Rate-limit buckets and audit
+  IPs derive from the socket address unless TRUST_PROXY opts into XFF
+  (behind Caddy). Trusting XFF unconditionally let anyone rotate buckets
+  (nullifying every per-IP limit) or fill a victim's bucket; the constant
+  fallback also collapsed all direct clients into one shared bucket.
+- **"Sign-up closed" needs three switches, not one**: the /sign-up hook,
+  `disableSignUp` on the emailOTP plugin (OTP to an unknown email otherwise
+  MINTS a user), and `disableSignUp` on each social provider (the OAuth
+  callback otherwise creates users).
+- **Machine-principal READS must be audited** — API keys mostly read, so
+  auditing only mutations made "the key's identity lands in the audit log"
+  (exit criterion 4) unsatisfiable.
+- **Better Auth 1.6.15 wire quirks the clients must tolerate**: dynamic client
+  registration answers **200**, not RFC 7591's 201; and `authorize`/`consent`
+  return `{ redirect: true, url }` as JSON (HTTP 200) whenever
+  `sec-fetch-mode: cors` is on the request (Node fetch sends it too) or
+  `accept: application/json` — a 302 Location only for real browser
+  navigations. The SPA consent page and any scripted client must handle the
+  JSON shape.
+- **Tokens minted without the RFC 8707 `resource` param are opaque, not
+  JWTs** — they fail `looksLikeJwt` and die at the bearer gate. Correct MCP
+  clients always send `resource`; the failure mode is a clean 401, not a
+  confusing verification error.
+
+## M8 (security review + final sweep)
+
+- **The base image's bundled npm was the only vuln source.** After pruning
+  esbuild/drizzle-kit, the last two HIGH CVEs (picomatch, sigstore) were in
+  `/usr/local/lib/node_modules/npm` — npm's own vendored deps, not ours. The
+  runtime runs `node dist/index.js` and never invokes npm, so
+  `rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm*` in the runtime
+  stage clears them AND trims the image. Trivy's Node scanner reads nested
+  bundled package.json manifests, so a clean `/app/node_modules` isn't enough.
+- **`pnpm deploy --prod --legacy` re-resolves independently of the frozen
+  lockfile** and drags better-auth's peer-resolved `drizzle-kit` (→ esbuild
+  Go binaries, the bulk of the CVEs) into the prod tree. Prune it in the
+  Dockerfile — but NOT `kysely`, which better-auth statically imports at
+  module load (`db/get-migration.mjs`); removing it dangles a symlink Node
+  DOES follow → boot crash. "Verify each prune target isn't in a static
+  import graph" is now enforced mechanically at build time by
+  `scripts/prune-runtime-deps.mjs` (see the I1 entry below).
+- **Never split a base64url credential on `_`.** Two flaky tests derived a
+  key's secret/keyId via `key.split('_')[n]`, but base64url contains `_`, so
+  the fragments were wrong ~1/7 of the time (a short fragment collided with a
+  UUID; a truncated keyId failed the format check and skipped the rate-limit
+  wall). Capture `keyId` from the mint response; assert the full key never
+  reappears.
+- **Open-redirect: a single leading slash is not enough.** `//evil.com` and
+  `/\evil.com` are browser-resolved to external origins. `safeNext()` rejects
+  those and requires exactly one leading slash.
+- **Image size is 440MB vs the ~300MB soft target** — the batteries-included
+  single image ships the aws-sdk v3 s3 driver (~100MB), OpenTelemetry, the
+  MCP SDK, and the OAuth server. Trimming would mean a lazy/optional s3
+  driver or two image variants; deferred as not worth the complexity for a
+  template. Recorded as a known deviation.
+
+## Post-M8 (account recovery + hardening pass, 2026-07-04)
+
+- **Better Auth 1.6.15's core `hooks.before` is the only seam to scheme-check
+  DCR client metadata.** The oauth-provider plugin validates only
+  `redirect_uris`; `client_uri`/`logo_uri` accept any string, so a stored
+  `javascript:` URI could reach a render site. The hook must cover
+  `/oauth2/register` AND `/oauth2/create-client` AND `/oauth2/update-client`,
+  and update-client nests the fields under `update`.
+- **The admin reset link mints into Better Auth's own `verification` table**:
+  `auth.$context.internalAdapter.createVerificationValue({ identifier:
+'reset-password:<token>', value: userId })` is the exact shape
+  `POST /reset-password` consumes. No schema change, no drift.
+- **Better Auth-native routes bypass the /api/v1 audit middleware.** A
+  `hooks.after` matching `/change-password` reads
+  `ctx.context.session.user.id` (populated because the route is
+  session-gated), and `emailAndPassword.onPasswordReset` covers reset; both
+  fire an injected `onAccountEvent`.
+- **The 3-segment `/members/:id/reset-link` is NOT covered by the 2-segment
+  `api.use('/members/:id', requireRole('admin'))` gate.** Every extra path
+  segment needs its own explicit gate.
+- **Caddy ≥2.5 discards client-supplied `X-Forwarded-*` by default.** The app
+  reads the RIGHTMOST hop, which is correct under both overwrite and append
+  proxies; the leftmost hop is client-claimed whenever a proxy appends.
+- **The nightly audit purge must delete in bounded batches.** One unbatched
+  DELETE seq-scans and blows the pool's `statement_timeout` on a large table,
+  so retention silently never runs; the `created_at` index (migration 0004)
+  keeps each batch fast.
+- **A Node consumer of the SDK (the CLI) typechecks without a DOM lib only
+  because the browser-only `cache` and body fields are cast to
+  `RequestInit`.** Keep those casts when touching the SDK's fetch calls.
+
+## M6 (email change, 2026-07-06)
+
+- **The admin change-email link couples to `createEmailVerificationToken`
+  from `'better-auth/api'`** (1.6.15: `(secret, email, updateTo?, expiresIn
+= 3600, extraPayload?)`). It signs the exact HS256 JWT `GET /verify-email`
+  consumes — payload `{email, updateTo, requestType}`, signed with the auth
+  secret, requestType `'change-email-verification'` for the direct-change
+  branch. Never hand-roll the jose call; re-verify the payload shape and the
+  export on ANY Better Auth bump.
+- **Change-email tokens are STATELESS JWTs — never stored in the
+  `verification` table** (unlike reset-password tokens, which tests fish out
+  of the DB). The only observation seam is the outbound mail, hence
+  `RecordingEmailDriver` behind the `BootOverrides.email` seam. They also
+  cannot be revoked; the 1 h expiry is the whole mitigation.
+- **Template users are `emailVerified = false`, so the SINGLE-LEG flow is the
+  common case**: `POST /change-email` mails exactly one verification link to
+  the NEW address via top-level `emailVerification.sendVerificationEmail`
+  (mandatory wiring — without it the endpoint 400s before any email lookup).
+  The confirmation-to-the-OLD-address leg
+  (`changeEmail.sendChangeEmailConfirmation`) only runs for verified users.
+- **Consuming a change-email JWT while logged out CREATES a session for the
+  target user** — the link is sign-in-equivalent. A different signed-in user
+  is rejected (INVALID_USER), but logged-out consumption signs the target in
+  and sets the cookie. The admin copy-link dialog must say "hand this to the
+  member only", and the mint route stays session-only (deliberately unlisted
+  in the machine scope allowlist).
+
+## M9 (adversarial-campaign fixes, 2026-07-07)
+
+- **The stateless MCP transport does NOT 405 a non-POST on its own.** A GET
+  reaching `StreamableHTTPTransport.handleRequest` opens a long-lived
+  server-initiated SSE stream and DELETE answers a session teardown, even
+  with no `sessionIdGenerator` — the "GET is 405 by design" claim was
+  aspirational. Reject non-POST explicitly in `src/mcp/http.ts` (405 +
+  `Allow: POST`, JSON-RPC envelope) BEFORE invoking the transport, and
+  convert the transport's thrown `HTTPException` (malformed / non-JSON-RPC
+  POST body) into its own JSON-RPC 400 response so it never surfaces as a
+  generic 500.
+- **Every `{id}` path param needs `z.uuid()` (or an in-handler `isUuid`
+  check for the plain-Hono routes).** A bare `z.string()` param lets a
+  non-UUID id reach Postgres' uuid cast → `invalid input syntax for type
+uuid` → sanitized 500. Validate at the contract (`uuidParams` in
+  `routes/index.ts`) so it is a clean 400 validation_error. This generalizes
+  the literal-segment trap: `DELETE /invitations/lookup` now fails the uuid
+  param check (400) rather than walking into a 500.
+- **A JSON 404 terminator (`api.all('*', …)`) must be mounted LAST on the
+  `/api/v1` sub-app**, or unmatched API paths fall through to the SPA
+  catch-all and a browser session gets the dashboard HTML at 200. Machine
+  principals never reach it — the fail-closed scope gate 403s first.
+- **Audit cursors need `Number.isSafeInteger`, not just `Number.isFinite`.**
+  `Number('99999999999999999999')` is finite but past bigint precision;
+  feeding it to `lt(id, …)` overflows Postgres → 500. Treat out-of-range
+  like NaN (ignore, serve page 1).
+- **The sdk/contract/cli `exports` must point at built `dist` JS, not
+  `./src/index.ts`.** The CLI ships as built JS; when `@platform/sdk` (and
+  `@platform/contract`) resolved to raw TS, `node dist/bin.js` loaded
+  TypeScript with parameter-property constructors and threw
+  `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. Any package a built binary loads at
+  runtime needs a `dist`-pointing `exports` (+ a real build step) so it runs
+  without tsx.
+- **Last-owner delete is race-free via a DB trigger + app-level advisory
+  lock** — see ADR 006. The trigger takes a per-workspace
+  `pg_advisory_xact_lock` before its survivor check (READ COMMITTED alone
+  lets two concurrent deletes each see the other's row); the app surfaces
+  hold a per-workspace SESSION advisory lock on a dedicated client (the
+  migration-lock pattern) across their guard + cascade so the race loser
+  gets 400, not the trigger's 500. Session lock namespace (7432003) is
+  distinct from the migration lock (7432001) and the trigger's xact lock
+  (7432002): the session lock wraps the cascade while the trigger lock is
+  taken inside it, so a shared key would self-deadlock.
+
+## I1 (Docker prune hardening, 2026-07-07)
+
+- **A blind `rm -rf` on `.pnpm` store dirs is a time bomb, not a prune.** It
+  leaves dangling symlinks that only "work" because nothing follows them at
+  runtime; a pnpm layout change or a dependency bump that makes a pruned
+  package statically reachable (the kysely class of trap, M8) would pass
+  every local gate and crash at container boot. The fix keeps the explicit
+  deny-list (drizzle-kit / esbuild / @esbuild/\* / @esbuild-kit/\* /
+  typescript) but moves prune AND proof into ONE build-stage script,
+  `scripts/prune-runtime-deps.mjs`, so removal and verification share the
+  list and cannot drift. It fails the image build on: a dangling symlink not
+  attributable to the deny-list, a deny-listed package surviving anywhere
+  (store rename, vendored nested copy), a declared server dependency that no
+  longer resolves (covers the four lazily imported drivers a graph load
+  never touches: ioredis, nodemailer, resend, the OTLP exporter), and
+  `node dist/index.js --boot-check` failing.
+- **`--boot-check` is a 3-line early exit in `src/index.ts`, and it is a
+  full-graph proof for free**: `dist/index.js` is one tsup bundle whose bare
+  imports stay external, and `import { boot }` is static — so by the time
+  the flag check runs, Node has already resolved and initialized the entire
+  static runtime graph (better-auth → kysely, pg, pino, pg-boss, drizzle-orm,
+  aws-sdk, MCP SDK, …) with no env, DB, or listener needed. Pruning anything
+  statically reachable = ERR_MODULE_NOT_FOUND = the docker build fails
+  (validated: adding kysely to the deny-list kills the build at this step,
+  and it is the ONLY step that catches it — kysely is transitive, so the
+  declared-deps check alone would miss it). release.yml builds the image on
+  every push, so this guard is a CI gate, not a local ritual.
+
+- **`@types/yazl` types `zip.outputStream` as the legacy
+  `NodeJS.ReadableStream`** — but at runtime it is a real `Readable` (a
+  PassThrough). `destroy()` and `Readable.toWeb()` need the concrete type, so
+  cast once at the top (`zip.outputStream as Readable`) and thread that; don't
+  scatter the cast (`api/export.ts`).
+- **A zod-openapi `responses` entry with NO `content` key is what lets an
+  `api.openapi` handler return a plain streamed `Response`.** The 200 for
+  `GET /workspace/export` is `{ description: '...' }` only; add a `content`
+  schema and @hono/zod-openapi's conditional types then demand a matching
+  validated body and `c.body(stream)` stops typechecking.
+- **yazl sequential-blob discipline is two separate facts.** (1) `await
+finished(sourceStream)` after each `addReadStream` gives natural
+  one-at-a-time backpressure, so descriptors / S3 sockets never pile up on a
+  multi-blob export. (2) yazl's `errored` latch only trips on errors emitted
+  by the ZipFile itself — destroying `outputStream` does NOT stop the pump, so
+  entries queued after an abort are still opened and fully drained. A long
+  pump needs an explicit `signal.aborted` check inside the loop or a cancelled
+  multi-GB export keeps consuming bandwidth (`api/export.ts` blob loop).
+- **Better Auth `/delete-user`'s `beforeDelete` / `afterDelete` are ROUTE-level
+  hooks** — they fire only for the self-service HTTP endpoint. The admin
+  surface deletes via `internalAdapter.deleteUser` (the same path, adapter
+  hooks kept, cascade + SET NULL applied) which fires NEITHER, so
+  `DELETE /members/{id}` must write its own `member.delete` audit row; the
+  self-service path gets its `user.account_delete` system-actor row from
+  `afterDelete`.
+- **Re-verify FK on-delete semantics from `schema.ts`, never from a planning
+  doc.** The GDPR plan claimed `invitations.invited_by` was `set null`; the
+  schema has it `notNull()` + `onDelete: 'cascade'` (so a deleted user's
+  invitations vanish with them, tokens stop resolving). The set-null
+  anonymization applies to `audit_log.actor_user_id`,
+  `workspace_members.invited_by`, and `files.created_by`; `api_keys.created_by`
+  cascades. Grep every `created_by`/`invited_by` reader before assuming.
+- **The dashboard vitest run needs SvelteKit's path aliases declared by hand.**
+  Plain vitest doesn't know `$lib`; `apps/dashboard/vitest.config.ts` adds
+  `resolve.alias.$lib` (alongside the svelte plugin + `browser` condition that
+  compile the `.svelte.ts` runes modules) or the i18n catalog tests fail to
+  resolve their imports.
+
+## I5 (2FA + invite verification, 2026-07-07)
+
+- **Better Auth 1.6.15's twoFactor sign-in hook covers ONLY
+  `/sign-in/email|username|phone-number` — `/sign-in/email-otp` walks
+  straight past the second factor.** An enrolled user could be signed in by
+  anyone controlling the mailbox. The closure lives in the config-level
+  `hooks.after` (`identity/better-auth.ts`): user hooks run BEFORE plugin
+  hooks in `api/dispatch.mjs`, and a returned `ctx.json(...)` replaces the
+  response (`context.context.returned`), so mirroring the plugin's dance
+  (delete the minted session via `internalAdapter`, `deleteSessionCookie`,
+  `setNewSession(null)`, park a `2fa-<rand>` verification value behind the
+  signed `two_factor` cookie) hands the email-OTP path the exact same
+  `{ twoFactorRedirect: true }` step that `/two-factor/verify-totp`
+  completes. `deleteSessionCookie` imports from 'better-auth/cookies',
+  `generateRandomString` from 'better-auth/crypto'. Re-verify the mirror
+  against the plugin's index.mjs on ANY Better Auth bump. Google social
+  sign-in has no equivalent seam (redirect flow) — documented as IdP-trust
+  in ADR 009, not silently ignored.
+- **Invite-token possession never proves the invitee's email** — the create
+  response always returns the copyable `acceptUrl`, so even an "emailed"
+  invitation's token is admin-visible. Making acceptance set `emailVerified`
+  honestly required a SECOND token that only the email carries
+  (`invitations.email_token_hash`, migration 0012); which hash matched tells
+  the accept route whether mailbox control was demonstrated.
+- **2FA verify/activate rotates the session** — after `/two-factor/verify-totp`
+  (activation) and `/two-factor/disable`, the old cookie's session row is
+  deleted; tests and UI must adopt the fresh set-cookie or every subsequent
+  session call 401s.
+- **The 2FA enable/disable password gate holds ONLY because `allowPasswordless`
+  is unset.** Better Auth's `shouldRequirePassword` short-circuits to `true`
+  when `allowPasswordless` is falsy — that is the entire reason a hijacked
+  session can't toggle 2FA without re-auth. A product that sets
+  `twoFactor({ allowPasswordless: true })` silently drops the re-auth
+  requirement for any user without a credential account. Do NOT set it without
+  re-auditing the disable gate.
+
+## I2 (multi-replica scale drill, 2026-07-07)
+
+- **pg-boss serializes its schema install internally but NOT `createQueue`
+  — wrap the whole install section in the app's own advisory lock.**
+  (Verified in pg-boss 10.4.2 source: the `locked()` xact-advisory wrapper
+  covers only migrations; `createQueue` executes `pgboss.create_queue(text,
+json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
+  Concurrent fresh-DB boots of 2+ all|worker replicas reliably deadlocked
+  there (Postgres `DeadLockReport`) and crash-looped until a docker restart
+  found the rows in place (`ON CONFLICT DO NOTHING`). Fix (`jobs/pgboss.ts`):
+  `start()` + `createQueue` + nightly schedules run under a session-scoped
+  `pg_advisory_lock` on a dedicated client (the migrate.ts pattern), key
+  **7432004** (distinct from 7432001 migration / 7432002 trigger xact /
+  7432003 last-owner session). Boot-setup only: `work()` registration and
+  steady-state `send()` stay outside the lock, and `SERVICE_ROLE=api`
+  (migrate:false, no queue creation, no DDL rights) never acquires it — its
+  documented fresh-DB crash-loop on 'pg-boss is not installed' is unchanged.
+  The drill now hard-fails any restart during the 3-replica fresh boot and
+  greps the Postgres log for `deadlock detected` (must be 0).
+- **A cross-replica read of a local-storage blob died mid-stream after a
+  200, not with a 404** — the replica trusted the shared metadata row, sent
+  full headers, then the body stream hit the missing file (curl exit 18,
+  truncated transfer): silent corruption, not an error. Two-layer fix: the
+  content route checks `storage.exists(key)` before committing any status
+  line (GET, HEAD, and Range all 404 `not_found` when the row exists but the
+  bytes are unreachable on this replica), and `LocalStorageDriver.getStream`
+  opens eagerly (`fsPromises.open` + `handle.createReadStream`) so a missing
+  blob rejects at the await — matching the s3 driver's eager GetObject —
+  instead of erroring after headers. The 404 is a safety net: Profile B
+  requires `STORAGE_DRIVER=s3`; local storage is single-replica only.
+- **A compose `tmpfs` mount is root-owned; the image runs as `node`.** Mount
+  `/data` as an anonymous volume instead (ownership copied from the image
+  dir, removed by `down -v`) — tmpfs at `/data` makes every replica crash
+  with `EACCES: mkdir /data/storage` under `read_only: true`.
+- **`pgboss.version.cron_on` is a clean scheduler observable.** Any instance
+  running the timekeeper (`schedule: true`) bumps it every ≤30 s
+  (cronMonitorIntervalSeconds); with only `SERVICE_ROLE=api` replicas alive
+  it freezes — the drill's proof that the api role runs no scheduler without
+  waiting for a 03:00 cron.
+
+## I6 (break-glass + orphan GC, 2026-07-07)
+
+- **A membershipless account in `SUPERADMIN_EMAILS` is itself an orphan-GC
+  candidate.** Break-glass recovery deliberately works from a `principal:null`
+  (no-membership) session so it can rescue a workspace that lost its owners —
+  but the orphaned-user purge deletes exactly those no-membership users past
+  `ORPHAN_USER_RETENTION_HOURS` (72h). So the two features interact: arm the
+  allowlist and run `claim-ownership` promptly; once the operator account has a
+  membership it is out of GC scope. Documented in the security.md runbook.
+- **Break-glass endpoints skip `requireAuth`/`requireRole` but must still
+  validate a real session.** They resolve the caller via `auth.api.getSession`
+  (validates the cookie against the session store) and RE-READ email +
+  `emailVerified` from the DB by user id — never from a claim/header/body — so
+  a membershipless session can reach them while a forged/absent session and any
+  machine principal cannot. The routes stay UNLISTED in `scopes.ts`, so the
+  fail-closed scope gate 403s every API key / OAuth token (even one minted by
+  the superadmin) before the handler runs. All rejection reasons return one
+  uniform 403 so the endpoint is not an allowlist oracle.
+- **Orphan-GC safety is layered, not a single query.** `NOT EXISTS` on ANY
+  `workspace_members` row (no `is_active` filter, so a deactivated member is
+  never an orphan) + a grace window + a live-pending-invitation exclusion (the
+  invite row exists before its accept URL, closing the scan-then-accept race) +
+  a per-row membership re-check immediately before each delete + the 0009
+  trigger backstopping the sole-owner cascade. Bounded batches with a
+  no-progress break; `0` disables it.

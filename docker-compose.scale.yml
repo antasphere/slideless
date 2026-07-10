@@ -1,0 +1,128 @@
+# Scale-drill stack (the Profile B rehearsal) — see docs/scaling.md.
+#
+# This is NOT the operator stack; docker-compose.yml stays the documented
+# install. scripts/scale-drill.sh drives this file under the isolated
+# `scale-drill` compose project with generated throwaway secrets, asserts the
+# horizontal-scaling claims against it, and tears everything down (`down -v`).
+# Do not `docker compose up` it by hand: the required variables are
+# intentionally unset outside the drill (the `:?` guards below).
+#
+# Topologies (compose profiles):
+#   flat  — app1..app3, SERVICE_ROLE=all: migration-lock concurrency,
+#           cross-replica sessions/API keys, shared-vs-per-replica rate limits.
+#   split — api1/api2 (SERVICE_ROLE=api) + worker (SERVICE_ROLE=worker):
+#           the api/worker role split.
+
+name: scale-drill
+
+x-app: &app
+  image: ${DRILL_IMAGE:?set by scripts/scale-drill.sh}
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  # /data is an ANONYMOUS volume (per container, node:node ownership copied
+  # from the image, removed by `down -v`): each replica has PRIVATE local
+  # storage, exactly the situation Profile B's STORAGE_DRIVER=s3 requirement
+  # is about. The drill proves metadata crosses replicas (shared Postgres)
+  # while local blob content does not. (A tmpfs here would be root-owned and
+  # break the non-root runtime user.)
+  volumes:
+    - /data
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://platform:${DRILL_PG_PASSWORD:?set by scripts/scale-drill.sh}@db:5432/platform
+  # Profile B invariant under test: every replica shares one explicit secret.
+  AUTH_SECRET: ${DRILL_AUTH_SECRET:?set by scripts/scale-drill.sh}
+  # redis://redis:6379 for the shared-bucket stacks, empty for the
+  # per-replica-memory contrast stack. The drill switches env files.
+  REDIS_URL: ${DRILL_REDIS_URL:-}
+  PUBLIC_BASE_URL: ${DRILL_PUBLIC_BASE_URL:?set by scripts/scale-drill.sh}
+  AUTO_MIGRATE: 'true'
+  # debug: the worker's "usage events flushed" line is the job-execution proof.
+  LOG_LEVEL: debug
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    # log_statement=ddl: the Postgres log records every DDL statement, so the
+    # drill can prove exactly ONE session applied the schema migrations.
+    command: ['postgres', '-c', 'log_statement=ddl']
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${DRILL_PG_PASSWORD:?set by scripts/scale-drill.sh}
+      POSTGRES_DB: platform
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U platform -d platform']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── flat topology: three identical SERVICE_ROLE=all replicas ─────────────
+  app1:
+    <<: *app
+    profiles: [flat]
+    environment:
+      <<: *app-env
+      SERVICE_ROLE: all
+    ports:
+      - '127.0.0.1:3801:3000'
+
+  app2:
+    <<: *app
+    profiles: [flat]
+    environment:
+      <<: *app-env
+      SERVICE_ROLE: all
+    ports:
+      - '127.0.0.1:3802:3000'
+
+  app3:
+    <<: *app
+    profiles: [flat]
+    environment:
+      <<: *app-env
+      SERVICE_ROLE: all
+    ports:
+      - '127.0.0.1:3803:3000'
+
+  # ── split topology: api pool + dedicated worker ───────────────────────────
+  api1:
+    <<: *app
+    profiles: [split]
+    environment:
+      <<: *app-env
+      SERVICE_ROLE: api
+    ports:
+      - '127.0.0.1:3811:3000'
+
+  api2:
+    <<: *app
+    profiles: [split]
+    environment:
+      <<: *app-env
+      SERVICE_ROLE: api
+    ports:
+      - '127.0.0.1:3812:3000'
+
+  worker:
+    <<: *app
+    profiles: [split]
+    environment:
+      <<: *app-env
+      SERVICE_ROLE: worker
+    ports:
+      - '127.0.0.1:3813:3000'

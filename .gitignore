@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+.turbo/
+*.log
+.env
+.env.*
+!.env.example
+apps/server/public/*
+!apps/server/public/.gitkeep
+coverage/
+playwright-report/
+test-results/
+.tmp/
+data/
+apps/server/var/

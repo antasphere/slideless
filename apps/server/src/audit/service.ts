@@ -1,0 +1,114 @@
+import { auditLog, type Db } from '@platform/db';
+import type { Principal } from '@platform/contract';
+import type { Context, MiddlewareHandler } from 'hono';
+import type { Logger } from '../logger.js';
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    /** Set by domain handlers to give the audit entry real semantics. */
+    audit?: {
+      action: string;
+      resourceType: string;
+      resourceId?: string;
+      metadata?: Record<string, unknown>;
+    };
+  }
+}
+
+export interface AuditWrite {
+  workspaceId: string;
+  principal: Principal | null;
+  action: string;
+  resourceType: string;
+  resourceId?: string | undefined;
+  requestId?: string | undefined;
+  ip?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}
+
+export class AuditService {
+  constructor(
+    private readonly db: Db,
+    private readonly logger: Logger
+  ) {}
+
+  /**
+   * Awaited on privileged mutations — durability over latency when healthy.
+   * Best-effort by contract: the handler's mutation has already committed by
+   * the time this runs, so a failed insert must never turn into a 500 (a
+   * retried non-idempotent POST would double-create). Failure = logged loss.
+   */
+  async write(entry: AuditWrite): Promise<void> {
+    try {
+      await this.db.insert(auditLog).values({
+        workspaceId: entry.workspaceId,
+        actorUserId: entry.principal?.userId ?? null,
+        actorVia: entry.principal?.via ?? 'system',
+        apiKeyId: entry.principal?.apiKeyId ?? null,
+        action: entry.action,
+        resourceType: entry.resourceType,
+        resourceId: entry.resourceId ?? null,
+        requestId: entry.requestId ?? null,
+        ip: entry.ip ?? null,
+        metadata: entry.metadata ?? null
+      });
+    } catch (err) {
+      this.logger.error(
+        { err, action: entry.action, requestId: entry.requestId },
+        'audit write failed — the audited mutation was NOT rolled back'
+      );
+    }
+  }
+}
+
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** Paths whose mutations are not audited here (they audit themselves or are credential machinery). */
+function isAuditExempt(path: string): boolean {
+  return (
+    path.startsWith('/api/v1/auth/') ||
+    path === '/api/v1/setup' ||
+    path === '/api/v1/invitations/accept' ||
+    // Break-glass self-audits with before/after detail — and its callers may
+    // hold a session WITHOUT a membership (principal null), which this
+    // middleware could not attribute anyway.
+    path.startsWith('/api/v1/admin/break-glass/')
+  );
+}
+
+/**
+ * One write point for the audit trail, after the handler:
+ *  - every authenticated MUTATION lands one row (awaited — durability is
+ *    part of the mutation);
+ *  - every MACHINE-principal request lands one row, reads included
+ *    (exit criterion 4: a curl with an API key must appear in the log with
+ *    the key's identity — keys mostly read, so read auditing is what makes
+ *    that true). Session reads stay unaudited (noise).
+ * Handlers add semantics via c.set('audit', ...); without it the row records
+ * method + path.
+ */
+export function auditMiddleware(audit: AuditService, clientIp: (c: Context) => string): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    if (isAuditExempt(c.req.path)) return;
+    const principal = c.get('principal');
+    if (!principal) return;
+    if (c.res.status >= 400) return;
+
+    const isMutation = MUTATING.has(c.req.method);
+    const isMachine = principal.via !== 'session';
+    if (!isMutation && !isMachine) return;
+
+    const info = c.get('audit');
+    await audit.write({
+      workspaceId: principal.workspaceId,
+      principal,
+      action: info?.action ?? `${c.req.method.toLowerCase()} ${c.req.path}`,
+      resourceType: info?.resourceType ?? 'http',
+      resourceId: info?.resourceId,
+      requestId: c.get('requestId'),
+      ip: clientIp(c),
+      metadata: info?.metadata
+    });
+  };
+}

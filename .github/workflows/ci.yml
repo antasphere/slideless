@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo lint typecheck test build
+      - run: pnpm format:check
+      - run: pnpm --filter @platform/server drift:check
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@platform/db --filter=@platform/server --filter=@platform/cli
+      - run: pnpm turbo test:integration
+
+  # The Profile B rehearsal: a real multi-replica stack (advisory-lock
+  # migration race, cross-replica sessions/API keys, Redis-shared rate
+  # limits + the in-memory contrast, the api/worker SERVICE_ROLE split).
+  # Same script as the local drill — docs/scaling.md.
+  scale-drill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the drill image once (all replicas share it)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: codika-platform-template:scale
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run the multi-replica scale drill
+        run: DRILL_SKIP_BUILD=1 ./scripts/scale-drill.sh
