@@ -16,11 +16,7 @@ import type { PlatformRegistry } from '../platform/registry.js';
 import type { AuditService } from '../audit/service.js';
 import { buildCollaboratorInviteEmail } from '../email/templates.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
-import {
-  CollaboratorError,
-  collaboratorToWire,
-  type CollaboratorService
-} from '../collaborators/service.js';
+import { CollaboratorError, collaboratorToWire, type CollaboratorService } from '../collaborators/service.js';
 
 /**
  * Per-deck collaborators (Phase 5): the deck-scoped management routes
@@ -111,7 +107,10 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     const deck = await presentations.get(principal.workspaceId, id);
     if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
     if (!canAdministerDeck(principal, deck)) {
-      return c.json(err('forbidden', 'Only the deck owner or a workspace admin can invite collaborators'), 403);
+      return c.json(
+        err('forbidden', 'Only the deck owner or a workspace admin can invite collaborators'),
+        403
+      );
     }
 
     const invitee = body.email.toLowerCase().trim();
@@ -165,7 +164,11 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
       metadata: { presentationId: id, email: created.grant.email }
     });
     return c.json(
-      { collaborator: collaboratorToWire(created.grant), claimUrl: claimUrlOf(created.claimToken), emailSent },
+      {
+        collaborator: collaboratorToWire(created.grant),
+        claimUrl: claimUrlOf(created.claimToken),
+        emailSent
+      },
       201
     );
   });
@@ -176,7 +179,10 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     const deck = await presentations.get(principal.workspaceId, id);
     if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
     if (!canAdministerDeck(principal, deck)) {
-      return c.json(err('forbidden', 'Only the deck owner or a workspace admin can revoke collaborators'), 403);
+      return c.json(
+        err('forbidden', 'Only the deck owner or a workspace admin can revoke collaborators'),
+        403
+      );
     }
     const grant = await collaborators.get(principal.workspaceId, id, collaboratorId);
     if (!grant) return c.json(err('not_found', 'Collaborator not found'), 404);
@@ -322,9 +328,6 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
       metadata: { presentationId: grant.presentationId, email: grant.email, userId, viaEmailToken }
     });
 
-    return c.json(
-      { collaborator: collaboratorToWire(claimed), workspaceId: grant.workspaceId, userId },
-      200
-    );
+    return c.json({ collaborator: collaboratorToWire(claimed), workspaceId: grant.workspaceId, userId }, 200);
   });
 }

@@ -39,8 +39,7 @@ export function loadConfig(env: CliEnv): CliConfig {
   if (!path || !existsSync(path)) return { ...EMPTY, profiles: {} };
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<CliConfig>;
-    const profiles =
-      parsed.profiles && typeof parsed.profiles === 'object' ? parsed.profiles : {};
+    const profiles = parsed.profiles && typeof parsed.profiles === 'object' ? parsed.profiles : {};
     return {
       ...(typeof parsed.activeProfile === 'string' ? { activeProfile: parsed.activeProfile } : {}),
       profiles

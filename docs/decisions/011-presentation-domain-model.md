@@ -51,7 +51,7 @@ manifest references content the generic `DELETE /files/{id}` can remove
 (soft-deletes the row AND deletes the blob). Phase 3 must protect deck
 assets — either check manifest references before blob deletion, or keep
 deck-asset file rows out of the user-facing files surface.
-*Status update (Phase 3, 2026-07-10): closed.* `DELETE /files/{id}` now runs
+_Status update (Phase 3, 2026-07-10): closed._ `DELETE /files/{id}` now runs
 a manifest-containment check (any live deck's version, GIN-indexed —
 migration 0014) inside the delete transaction with the files row locked FOR
 UPDATE, answering **409 file_in_use**; commits lock referenced rows FOR
@@ -62,7 +62,7 @@ reclaims properly).
 Other shapes fixed here:
 
 - **Versions are append-only and immutable** — `UNIQUE (presentation_id,
-  version)`, never UPDATE. `presentations.current_version` (0 = no versions
+version)`, never UPDATE. `presentations.current_version` (0 = no versions
   yet) only advances via commit with `expectedBaseVersion` (409 on
   mismatch).
 - **Share tokens are per-recipient**: 48-byte secret, sha256 stored, unique
@@ -73,7 +73,7 @@ Other shapes fixed here:
 - **Collaborators are per-deck email grants** claimed at sign-in/sign-up via
   a hashed claim token (the invitations pattern); `user_id` set-nulls if the
   claimed account dies, reverting the grant to unclaimed.
-  *Status update (Phase 5, 2026-07-10): shipped.* The claim token became the
+  _Status update (Phase 5, 2026-07-10): shipped._ The claim token became the
   full two-token invitation pattern (ADR 009): `claim_email_token_hash`
   (migration 0016, additive) carries a second token that exists only in the
   invite email, so claiming with it may honestly set `emailVerified`.
@@ -93,8 +93,8 @@ Other shapes fixed here:
 - **Deck ownership follows ADR 006**: decks are workspace data;
   `owner_user_id` (and version/token `created_by`) anonymize to NULL on
   account deletion rather than cascading content away.
-  *Status update (Phase 5 security review, 2026-07-10): the READ posture of
-  this bullet is superseded by ADR 013.* Deletion/anonymization semantics
+  _Status update (Phase 5 security review, 2026-07-10): the READ posture of
+  this bullet is superseded by ADR 013._ Deletion/anonymization semantics
   stand, but deck reads are no longer workspace-wide — they require the deck
   owner, a workspace admin/owner, or an active collaborator grant
   (`canReadDeck`), because collaborator onboarding makes external parties

@@ -15,8 +15,7 @@ import { contentTypeFor } from './manifest.js';
  * (VIEWER_CONTENT_HEADERS) — keep them in lockstep.
  */
 
-export const DEV_SANDBOX_CSP =
-  'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+export const DEV_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads';
 
 const CONTENT_HEADERS: Record<string, string> = {
   'content-security-policy': DEV_SANDBOX_CSP,
@@ -102,9 +101,7 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
       const contentType = contentTypeFor(target);
       if (contentType === 'text/html') {
         const html = injectReload(await readFile(target, 'utf8'));
-        res
-          .writeHead(200, { ...CONTENT_HEADERS, 'content-type': 'text/html; charset=utf-8' })
-          .end(html);
+        res.writeHead(200, { ...CONTENT_HEADERS, 'content-type': 'text/html; charset=utf-8' }).end(html);
         return;
       }
       const bytes = await readFile(target);

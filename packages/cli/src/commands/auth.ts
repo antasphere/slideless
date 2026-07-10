@@ -1,21 +1,7 @@
 import type { Command } from 'commander';
 import { PlatformClient } from '@slideless/sdk';
-import {
-  clearConfig,
-  configPath,
-  loadConfig,
-  redactKey,
-  saveConfig,
-  type CliConfig
-} from '../config.js';
-import {
-  CliUsageError,
-  printJson,
-  requireApiKey,
-  resolveContext,
-  table,
-  type CliIo
-} from '../context.js';
+import { clearConfig, configPath, loadConfig, redactKey, saveConfig, type CliConfig } from '../config.js';
+import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
 
 /**
  * Identity + profile commands: the OTP sign-in pair (login-request /
@@ -40,9 +26,7 @@ function resolveAuthUrl(cmd: Command, io: CliIo): string {
   const profile = profileName ? config.profiles[profileName] : undefined;
   const raw = opts.apiUrl ?? opts.url ?? io.env.SLIDELESS_URL ?? profile?.baseUrl;
   if (!raw) {
-    throw new CliUsageError(
-      'No instance to talk to — pass --api-url <url> (or set SLIDELESS_URL).'
-    );
+    throw new CliUsageError('No instance to talk to — pass --api-url <url> (or set SLIDELESS_URL).');
   }
   return raw.replace(/\/+$/, '');
 }
@@ -141,9 +125,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
         key = await readLineFromStdin();
       }
       if (!key || !key.startsWith('slk_')) {
-        throw new CliUsageError(
-          'No API key provided — pass --api-key slk_… or pipe the key on stdin.'
-        );
+        throw new CliUsageError('No API key provided — pass --api-key slk_… or pipe the key on stdin.');
       }
       const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
       const client = new PlatformClient({ baseUrl, apiKey: key, fetch: fetchImpl });
@@ -173,7 +155,9 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       if (!profile.baseUrl) delete config.profiles[profileName];
       saveConfig(io.env, config);
       if (globals.json) return printJson(io, { loggedOut: profileName });
-      io.out.write(`Logged out of profile "${profileName}" (key forgotten; revoke it in the dashboard to kill it server-side).\n`);
+      io.out.write(
+        `Logged out of profile "${profileName}" (key forgotten; revoke it in the dashboard to kill it server-side).\n`
+      );
     });
 
   program
@@ -233,16 +217,15 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
           profiles: Object.fromEntries(
             names.map((n) => {
               const p = config.profiles[n]!;
-              return [
-                n,
-                { baseUrl: p.baseUrl ?? null, apiKey: p.apiKey ? redactKey(p.apiKey) : null }
-              ];
+              return [n, { baseUrl: p.baseUrl ?? null, apiKey: p.apiKey ? redactKey(p.apiKey) : null }];
             })
           )
         });
       }
       if (names.length === 0) {
-        io.out.write('No profiles. Sign in with `slideless auth login-request --api-url <url> --email <you>`.\n');
+        io.out.write(
+          'No profiles. Sign in with `slideless auth login-request --api-url <url> --email <you>`.\n'
+        );
         return;
       }
       io.out.write(

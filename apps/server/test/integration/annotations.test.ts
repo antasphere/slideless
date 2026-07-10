@@ -124,7 +124,10 @@ beforeAll(async () => {
   deckId = reserve.uploadSession.presentationId;
   const commit = await app.app.request(
     `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
-    json({ title: 'Annot Deck', entryPath: 'index.html', manifest: [entryOf('index.html', HTML_V1)] }, { cookie })
+    json(
+      { title: 'Annot Deck', entryPath: 'index.html', manifest: [entryOf('index.html', HTML_V1)] },
+      { cookie }
+    )
   );
   expect(commit.status).toBe(201);
 }, 120_000);
@@ -261,14 +264,11 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
       canAnnotate: true,
       expiresAt: new Date(Date.now() + 60_000).toISOString()
     });
-    await app.app.request(
-      `/api/v1/presentations/${deckId}/tokens/${expiring.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', cookie },
-        body: JSON.stringify({ expiresAt: new Date(Date.now() - 1000).toISOString() })
-      }
-    );
+    await app.app.request(`/api/v1/presentations/${deckId}/tokens/${expiring.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ expiresAt: new Date(Date.now() - 1000).toISOString() })
+    });
     const gone = await overlayPost(expiring.secret, { body: 'nope', selection: {} });
     expect(gone.status).toBe(410);
 
@@ -308,7 +308,12 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
     );
     expect(push.status).toBe(201);
 
-    const pinned = await createToken({ name: 'Pinned', canAnnotate: true, versionMode: 'pinned', pinnedVersion: 1 });
+    const pinned = await createToken({
+      name: 'Pinned',
+      canAnnotate: true,
+      versionMode: 'pinned',
+      pinnedVersion: 1
+    });
     const ok = await overlayPost(pinned.secret, { body: 'anchored to v1', selection: {} });
     expect(ok.status).toBe(201);
     expect((await readJson(ok)).version).toBe(1);
@@ -354,15 +359,27 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
     const unlock = /"unlock":"([^"]+)"/.exec(html)?.[1];
     expect(unlock).toBeDefined();
 
-    const viaMac = await overlayPost(pw.secret, { body: 'proof via MAC', selection: {} }, { 'x-slideless-unlock': unlock! });
+    const viaMac = await overlayPost(
+      pw.secret,
+      { body: 'proof via MAC', selection: {} },
+      { 'x-slideless-unlock': unlock! }
+    );
     expect(viaMac.status).toBe(201);
     const listed = await overlayList(pw.secret, { 'x-slideless-unlock': unlock! });
     expect(listed.status).toBe(200);
 
-    const viaPassword = await overlayPost(pw.secret, { body: 'proof via password', selection: {} }, { 'x-viewer-password': 'reviewer-pass-9' });
+    const viaPassword = await overlayPost(
+      pw.secret,
+      { body: 'proof via password', selection: {} },
+      { 'x-viewer-password': 'reviewer-pass-9' }
+    );
     expect(viaPassword.status).toBe(201);
 
-    const wrong = await overlayPost(pw.secret, { body: 'x', selection: {} }, { 'x-viewer-password': 'wrong-pass' });
+    const wrong = await overlayPost(
+      pw.secret,
+      { body: 'x', selection: {} },
+      { 'x-viewer-password': 'wrong-pass' }
+    );
     expect(wrong.status).toBe(401);
     expect((await readJson(wrong)).error.code).toBe('password_invalid');
   });
@@ -478,7 +495,9 @@ describe('owner/dev annotation management', () => {
     });
     expect(res.status).toBe(404);
     // And the member's inbox shows nothing of this deck.
-    const inbox = await readJson(await app.app.request('/api/v1/annotations', { headers: { cookie: memberCookie } }));
+    const inbox = await readJson(
+      await app.app.request('/api/v1/annotations', { headers: { cookie: memberCookie } })
+    );
     expect(inbox.annotations).toHaveLength(0);
   });
 

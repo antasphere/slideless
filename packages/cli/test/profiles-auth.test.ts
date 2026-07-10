@@ -211,7 +211,10 @@ describe('auth login flow', () => {
         {
           method: 'GET',
           path: /\/api\/v1\/me$/,
-          reply: () => ({ status: 401, body: { error: { code: 'invalid_api_key', message: 'API key not recognized' } } })
+          reply: () => ({
+            status: 401,
+            body: { error: { code: 'invalid_api_key', message: 'API key not recognized' } }
+          })
         }
       ],
       env
@@ -267,16 +270,17 @@ describe('deck + sharing commands (request shapes)', () => {
           expect(body).toMatchObject({ versionMode: 'pinned', pinnedVersion: 2 });
           return {
             status: 201,
-            body: { shareToken: { ...TOKEN, versionMode: 'pinned', pinnedVersion: 2 }, secret: 's', url: 'http://x/v/s' }
+            body: {
+              shareToken: { ...TOKEN, versionMode: 'pinned', pinnedVersion: 2 },
+              secret: 's',
+              url: 'http://x/v/s'
+            }
           };
         }
       }
     ]);
     expect(
-      await run(
-        ['share', DECK.id, '--to-version', '2', '--url', 'http://x', '--api-key', 'slk_k_s'],
-        h.io
-      )
+      await run(['share', DECK.id, '--to-version', '2', '--url', 'http://x', '--api-key', 'slk_k_s'], h.io)
     ).toBe(0);
 
     const h2 = routedHarness([
@@ -328,7 +332,14 @@ describe('deck + sharing commands (request shapes)', () => {
             ? { body: { shareTokens: [{ ...TOKEN, id: OTHER }], nextCursor: null } }
             : {
                 body: {
-                  shareTokens: [TOKEN, { ...TOKEN, id: '77777777-7777-7777-7777-777777777777', revokedAt: '2026-07-01T00:00:00.000Z' }],
+                  shareTokens: [
+                    TOKEN,
+                    {
+                      ...TOKEN,
+                      id: '77777777-7777-7777-7777-777777777777',
+                      revokedAt: '2026-07-01T00:00:00.000Z'
+                    }
+                  ],
                   nextCursor: 'next'
                 }
               }

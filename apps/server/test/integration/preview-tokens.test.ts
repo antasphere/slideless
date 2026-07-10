@@ -78,7 +78,10 @@ beforeAll(async () => {
   app = await createTestApp(await createDatabase(container, 'preview_tokens'), {}, { email: mail });
   await app.app.request('/api/v1/setup', json({ instanceName: 'Preview', owner: OWNER }));
   ownerCookie = extractCookie(
-    await app.app.request('/api/v1/auth/sign-in/email', json({ email: OWNER.email, password: OWNER.password }))
+    await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    )
   );
 
   // Author a one-version deck.
@@ -92,7 +95,10 @@ beforeAll(async () => {
   });
   expect(upload.status).toBe(201);
   const reserve = await readJson(
-    await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: { cookie: ownerCookie } })
+    await app.app.request('/api/v1/presentations/uploads', {
+      method: 'POST',
+      headers: { cookie: ownerCookie }
+    })
   );
   deckId = reserve.uploadSession.presentationId;
   const commit = await app.app.request(
@@ -101,7 +107,9 @@ beforeAll(async () => {
       {
         title: 'Preview Deck',
         entryPath: 'index.html',
-        manifest: [{ path: 'index.html', sha256: shaOf(HTML_V1), sizeBytes: HTML_V1.length, contentType: 'text/html' }]
+        manifest: [
+          { path: 'index.html', sha256: shaOf(HTML_V1), sizeBytes: HTML_V1.length, contentType: 'text/html' }
+        ]
       },
       { cookie: ownerCookie }
     )
@@ -138,7 +146,10 @@ beforeAll(async () => {
   );
   expect(accept.status).toBe(200);
   memberCookie = extractCookie(
-    await app.app.request('/api/v1/auth/sign-in/email', json({ email: MEMBER.email, password: MEMBER.password }))
+    await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: MEMBER.email, password: MEMBER.password })
+    )
   );
 }, 120_000);
 
@@ -171,9 +182,7 @@ describe('the covert channel is closed', () => {
     expect((await app.app.request(`/v/${created.secret}`)).status).toBe(200);
     expect(await totalViewsOf(deckId)).toBe(before + 1);
     const after = await ownerTokenList();
-    expect(
-      after.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id).accessCount
-    ).toBe(1);
+    expect(after.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id).accessCount).toBe(1);
   });
 
   it('a dev collaborator CANNOT mint a preview-marked token (403, nothing persisted)', async () => {
@@ -183,10 +192,7 @@ describe('the covert channel is closed', () => {
     );
     expect(res.status).toBe(403);
     expect((await readJson(res)).error.code).toBe('forbidden');
-    const previews = await app.db.db
-      .select()
-      .from(shareTokens)
-      .where(eq(shareTokens.purpose, 'preview'));
+    const previews = await app.db.db.select().from(shareTokens).where(eq(shareTokens.purpose, 'preview'));
     expect(previews).toHaveLength(0);
   });
 
@@ -259,7 +265,10 @@ describe('the owner preview path still works', () => {
 
   it('preview tokens are IMMUTABLE: no patch, no send; revoke is owner/admin only', async () => {
     const created = await readJson(
-      await app.app.request(`/api/v1/presentations/${deckId}/preview-token`, json({}, { cookie: ownerCookie }))
+      await app.app.request(
+        `/api/v1/presentations/${deckId}/preview-token`,
+        json({}, { cookie: ownerCookie })
+      )
     );
     const tokenPath = `/api/v1/presentations/${deckId}/tokens/${created.shareToken.id}`;
 

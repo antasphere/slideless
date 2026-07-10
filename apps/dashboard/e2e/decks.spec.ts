@@ -65,18 +65,15 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     const { uploadSession } = await reserve.json();
 
     await uploadAsset(page, HTML_V1);
-    const commit = await page.request.post(
-      `/api/v1/presentations/uploads/${uploadSession.id}/commit`,
-      {
-        data: {
-          title: DECK_TITLE,
-          kind: 'presentation',
-          interactive: false,
-          entryPath: 'index.html',
-          manifest: [entryOf('index.html', HTML_V1)]
-        }
+    const commit = await page.request.post(`/api/v1/presentations/uploads/${uploadSession.id}/commit`, {
+      data: {
+        title: DECK_TITLE,
+        kind: 'presentation',
+        interactive: false,
+        entryPath: 'index.html',
+        manifest: [entryOf('index.html', HTML_V1)]
       }
-    );
+    });
     expect(commit.status()).toBe(201);
     deckId = (await commit.json()).presentation.id;
 

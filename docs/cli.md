@@ -34,10 +34,10 @@ Config lives at `$XDG_CONFIG_HOME/slideless/config.json` (default
 Every command accepts `--api-url` (alias `--url`), `--api-key`, `--profile`,
 and `--json`. Resolution order:
 
-| Setting  | 1st            | 2nd                 | 3rd               | Otherwise |
-| -------- | -------------- | ------------------- | ----------------- | --------- |
-| Base URL | `--api-url`    | `SLIDELESS_URL`     | profile `baseUrl` | **error** |
-| API key  | `--api-key`    | `SLIDELESS_API_KEY` | profile `apiKey`  | (public commands work; the rest error) |
+| Setting  | 1st         | 2nd                 | 3rd               | Otherwise                              |
+| -------- | ----------- | ------------------- | ----------------- | -------------------------------------- |
+| Base URL | `--api-url` | `SLIDELESS_URL`     | profile `baseUrl` | **error**                              |
+| API key  | `--api-key` | `SLIDELESS_API_KEY` | profile `apiKey`  | (public commands work; the rest error) |
 
 There is deliberately **no default URL**: a self-hosted CLI must name its
 instance explicitly (flag, env, or saved profile) rather than silently talking
@@ -97,7 +97,7 @@ re-uploaded.
   commit a new version of that deck with optimistic concurrency
   (`expectedBaseVersion`; a concurrent push answers a clean retry error).
   `--id <deckId>` targets a deck explicitly; `--new` forces a fresh deck. A
-  link pointing at a *different* instance errors loudly instead of silently
+  link pointing at a _different_ instance errors loudly instead of silently
   targeting a foreign id.
 - **Ignores**: `.git`, `node_modules`, `.DS_Store`, `.slideless.json`, and
   `.slidelessignore` are always skipped. A `.slidelessignore` in the deck root

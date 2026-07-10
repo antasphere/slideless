@@ -82,7 +82,10 @@ export default tseslint.config(
         {
           patterns: [
             { group: ['@slideless/server', '@slideless/server/*'], message: 'Nothing imports the server.' },
-            { group: ['@slideless/db', '@slideless/db/*'], message: 'Clients never touch the database layer.' },
+            {
+              group: ['@slideless/db', '@slideless/db/*'],
+              message: 'Clients never touch the database layer.'
+            },
             {
               group: ['@slideless/contract/routes', '@slideless/contract/routes/*'],
               message: 'The routes entry pulls Hono — clients import the contract root only.'

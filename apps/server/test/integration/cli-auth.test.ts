@@ -160,9 +160,7 @@ describe('CLI auth: OTP request → key mint', () => {
 
     // The throwaway sign-in session was deleted (no NET new session dangles).
     const sessionsAfter = await app.db.db.select({ id: sessionTable.id }).from(sessionTable);
-    expect(sessionsAfter.map((s) => s.id).sort()).toEqual(
-      sessionsBefore.map((s) => s.id).sort()
-    );
+    expect(sessionsAfter.map((s) => s.id).sort()).toEqual(sessionsBefore.map((s) => s.id).sort());
 
     // The mint landed in the audit log with the CLI marker.
     const audits = await app.db.db
@@ -295,10 +293,7 @@ describe('CLI auth without an email driver', () => {
   });
 
   it('answers 400 otp_unavailable on both endpoints', async () => {
-    const request = await bare.app.request(
-      '/api/v1/cli/auth/request',
-      json({ email: 'a@b.test' })
-    );
+    const request = await bare.app.request('/api/v1/cli/auth/request', json({ email: 'a@b.test' }));
     expect(request.status).toBe(400);
     expect((await readJson(request)).error.code).toBe('otp_unavailable');
 

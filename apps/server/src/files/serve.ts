@@ -43,8 +43,7 @@ export async function serveBlob(c: Context, opts: ServeBlobOptions): Promise<Res
   const baseHeaders: Record<string, string> = {
     'content-type': opts.contentType,
     'x-content-type-options': 'nosniff',
-    'content-disposition':
-      opts.contentDisposition ?? contentDispositionFor(opts.contentType, opts.filename),
+    'content-disposition': opts.contentDisposition ?? contentDispositionFor(opts.contentType, opts.filename),
     'accept-ranges': 'bytes',
     etag,
     'cache-control': 'private, max-age=31536000, immutable',

@@ -4,7 +4,14 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, sql } from 'drizzle-orm';
 import { files, uploadSessions } from '@slideless/db';
 import { purgeExpiredUploadSessions } from '../../src/jobs/pgboss.js';
-import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import {
+  createDatabase,
+  createTestApp,
+  extractCookie,
+  readJson,
+  startPostgres,
+  type TestApp
+} from './helpers.js';
 
 /**
  * Phase 3 — the upload + versioning pipeline end-to-end (ADR 011):
@@ -106,9 +113,7 @@ describe('push protocol (reserve → precheck → upload → commit)', () => {
     deckAId = session.presentationId;
 
     // Everything missing on a fresh workspace.
-    expect(await precheck([SHA_HTML_A, SHA_PNG])).toEqual(
-      expect.arrayContaining([SHA_HTML_A, SHA_PNG])
-    );
+    expect(await precheck([SHA_HTML_A, SHA_PNG])).toEqual(expect.arrayContaining([SHA_HTML_A, SHA_PNG]));
 
     const pngRes = await uploadAsset(PNG_BYTES, SHA_PNG, 'image/png', 'logo.png');
     expect(pngRes.status).toBe(201);
@@ -129,7 +134,10 @@ describe('push protocol (reserve → precheck → upload → commit)', () => {
           kind: 'presentation',
           interactive: false,
           entryPath: 'index.html',
-          manifest: [entry('index.html', HTML_A, 'text/html'), entry('assets/logo.png', PNG_BYTES, 'image/png')]
+          manifest: [
+            entry('index.html', HTML_A, 'text/html'),
+            entry('assets/logo.png', PNG_BYTES, 'image/png')
+          ]
         },
         { cookie }
       )
@@ -188,9 +196,7 @@ describe('push protocol (reserve → precheck → upload → commit)', () => {
     );
     expect(detail.manifest).toHaveLength(2);
     expect(detail.manifest).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: 'assets/logo.png', sha256: SHA_PNG })
-      ])
+      expect.arrayContaining([expect.objectContaining({ path: 'assets/logo.png', sha256: SHA_PNG })])
     );
   });
 
@@ -293,7 +299,12 @@ describe('commit validation', () => {
 
   it('rejects a hash mismatch without storing anything', async () => {
     const bytes = Buffer.from('not the bytes the sha claims');
-    const res = await uploadAsset(bytes, SHA_PNG.replace(/^./, SHA_PNG.startsWith('0') ? '1' : '0'), 'text/plain', 'x.txt');
+    const res = await uploadAsset(
+      bytes,
+      SHA_PNG.replace(/^./, SHA_PNG.startsWith('0') ? '1' : '0'),
+      'text/plain',
+      'x.txt'
+    );
     expect(res.status).toBe(400);
     expect((await readJson(res)).error.code).toBe('sha256_mismatch');
     expect(await precheck([shaOf(bytes)])).toEqual([shaOf(bytes)]); // nothing minted
@@ -369,14 +380,20 @@ describe('commit validation', () => {
       .where(eq(uploadSessions.id, session.id));
     const expired = await app.app.request(
       `/api/v1/presentations/uploads/${session.id}/commit`,
-      json({ title: 'X', entryPath: 'index.html', manifest: [entry('index.html', HTML_A, 'text/html')] }, { cookie })
+      json(
+        { title: 'X', entryPath: 'index.html', manifest: [entry('index.html', HTML_A, 'text/html')] },
+        { cookie }
+      )
     );
     expect(expired.status).toBe(410);
     expect((await readJson(expired)).error.code).toBe('session_expired');
 
     const unknown = await app.app.request(
       `/api/v1/presentations/uploads/${crypto.randomUUID()}/commit`,
-      json({ title: 'X', entryPath: 'index.html', manifest: [entry('index.html', HTML_A, 'text/html')] }, { cookie })
+      json(
+        { title: 'X', entryPath: 'index.html', manifest: [entry('index.html', HTML_A, 'text/html')] },
+        { cookie }
+      )
     );
     expect(unknown.status).toBe(404);
   });
@@ -429,7 +446,11 @@ describe('versioning (optimistic concurrency + immutability)', () => {
     const res = await app.app.request(
       `/api/v1/presentations/${deckId}/versions`,
       json(
-        { expectedBaseVersion: 1, entryPath: 'index.html', manifest: [entry('index.html', HTML_A, 'text/html')] },
+        {
+          expectedBaseVersion: 1,
+          entryPath: 'index.html',
+          manifest: [entry('index.html', HTML_A, 'text/html')]
+        },
         { cookie }
       )
     );
@@ -456,7 +477,11 @@ describe('versioning (optimistic concurrency + immutability)', () => {
     const res = await app.app.request(
       `/api/v1/presentations/${crypto.randomUUID()}/versions`,
       json(
-        { expectedBaseVersion: 0, entryPath: 'index.html', manifest: [entry('index.html', HTML_A, 'text/html')] },
+        {
+          expectedBaseVersion: 0,
+          entryPath: 'index.html',
+          manifest: [entry('index.html', HTML_A, 'text/html')]
+        },
         { cookie }
       )
     );

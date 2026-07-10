@@ -384,7 +384,9 @@ export class PlatformClient {
 
   // ── Presentations ─────────────────────────────────────────────────────────
 
-  presentations(params: ListParams = {}): Promise<{ presentations: Presentation[]; nextCursor: string | null }> {
+  presentations(
+    params: ListParams = {}
+  ): Promise<{ presentations: Presentation[]; nextCursor: string | null }> {
     return this.request('GET', this.pathWithQuery('/presentations', params));
   }
 

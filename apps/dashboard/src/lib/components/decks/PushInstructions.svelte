@@ -21,7 +21,9 @@
   <div class="space-y-2">
     <p class="text-sm">{t('decks.pushConnect')}</p>
     <div class="flex items-center gap-2">
-      <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2 font-mono text-xs">
+      <code
+        class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2 font-mono text-xs"
+      >
         {loginCommand}
       </code>
       <Button
@@ -38,7 +40,9 @@
   <div class="space-y-2">
     <p class="text-sm">{t('decks.pushPush')}</p>
     <div class="flex items-center gap-2">
-      <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2 font-mono text-xs">
+      <code
+        class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2 font-mono text-xs"
+      >
         {pushCommand}
       </code>
       <Button

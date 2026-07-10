@@ -35,8 +35,12 @@ const COLLAB = { email: 'reviewer@privacy.test', name: 'External Reviewer', pass
 const MEMBER = { email: 'member@privacy.test', name: 'Plain Member', password: 'plain-member-pass-1' };
 const ADMIN = { email: 'admin@privacy.test', name: 'Workspace Admin', password: 'ws-admin-pass-12345' };
 
-const HTML_A = Buffer.from('<!doctype html><html><body><h1>deck A — shared with the reviewer</h1></body></html>');
-const HTML_B = Buffer.from('<!doctype html><html><body><h1>deck B — the owner’s PRIVATE deck</h1></body></html>');
+const HTML_A = Buffer.from(
+  '<!doctype html><html><body><h1>deck A — shared with the reviewer</h1></body></html>'
+);
+const HTML_B = Buffer.from(
+  '<!doctype html><html><body><h1>deck B — the owner’s PRIVATE deck</h1></body></html>'
+);
 const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const entryOf = (path: string, bytes: Buffer) => ({
   path,
@@ -83,7 +87,10 @@ async function uploadAsset(bytes: Buffer, cookie: string): Promise<void> {
 
 async function createDeck(title: string, bytes: Buffer): Promise<string> {
   const reserve = await readJson(
-    await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: { cookie: ownerCookie } })
+    await app.app.request('/api/v1/presentations/uploads', {
+      method: 'POST',
+      headers: { cookie: ownerCookie }
+    })
   );
   const commit = await app.app.request(
     `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
@@ -128,7 +135,12 @@ async function readStatuses(
     app.app.request(`/api/v1/presentations/${deck}/versions/1`, { headers }),
     app.app.request(`/api/v1/presentations/${deck}/assets/${sha}`, { headers })
   ]);
-  return { get: get.status, versions: versions.status, versionDetail: versionDetail.status, asset: asset.status };
+  return {
+    get: get.status,
+    versions: versions.status,
+    versionDetail: versionDetail.status,
+    asset: asset.status
+  };
 }
 
 const listIds = async (headers: Record<string, string>): Promise<string[]> => {
@@ -151,7 +163,10 @@ beforeAll(async () => {
 
   // Invite + claim the external reviewer on deck A ONLY.
   const invited = await readJson(
-    await app.app.request(`/api/v1/presentations/${deckA}/collaborators`, json({ email: COLLAB.email }, { cookie: ownerCookie }))
+    await app.app.request(
+      `/api/v1/presentations/${deckA}/collaborators`,
+      json({ email: COLLAB.email }, { cookie: ownerCookie })
+    )
   );
   collaboratorId = invited.collaborator.id;
   const claim = await app.app.request(
@@ -164,7 +179,10 @@ beforeAll(async () => {
     await readJson(
       await app.app.request(
         '/api/v1/api-keys',
-        json({ name: 'reviewer-key', scopes: ['presentations:read', 'presentations:write'] }, { cookie: collabCookie })
+        json(
+          { name: 'reviewer-key', scopes: ['presentations:read', 'presentations:write'] },
+          { cookie: collabCookie }
+        )
       )
     )
   ).key as string;
@@ -182,13 +200,17 @@ describe('deck read privacy (ADR 013) — the original exploit is closed', () =>
   it('a deck-A collaborator 404s on EVERY deck-B read — session and their own API key', async () => {
     const denied = { get: 404, versions: 404, versionDetail: 404, asset: 404 };
     expect(await readStatuses(deckB, { cookie: collabCookie }, shaOf(HTML_B))).toEqual(denied);
-    expect(await readStatuses(deckB, { authorization: `Bearer ${collabKey}` }, shaOf(HTML_B))).toEqual(denied);
+    expect(await readStatuses(deckB, { authorization: `Bearer ${collabKey}` }, shaOf(HTML_B))).toEqual(
+      denied
+    );
   });
 
   it('the collaborator still reads deck A in full (grant honored)', async () => {
     const allowed = { get: 200, versions: 200, versionDetail: 200, asset: 200 };
     expect(await readStatuses(deckA, { cookie: collabCookie }, shaOf(HTML_A))).toEqual(allowed);
-    expect(await readStatuses(deckA, { authorization: `Bearer ${collabKey}` }, shaOf(HTML_A))).toEqual(allowed);
+    expect(await readStatuses(deckA, { authorization: `Bearer ${collabKey}` }, shaOf(HTML_A))).toEqual(
+      allowed
+    );
     // The bytes really flow — and they are deck A's, not deck B's.
     const body = await (
       await app.app.request(`/api/v1/presentations/${deckA}/assets/${shaOf(HTML_A)}`, {
@@ -243,7 +265,9 @@ describe('deck read privacy (ADR 013) — the original exploit is closed', () =>
 
     const denied = { get: 404, versions: 404, versionDetail: 404, asset: 404 };
     expect(await readStatuses(deckA, { cookie: collabCookie }, shaOf(HTML_A))).toEqual(denied);
-    expect(await readStatuses(deckA, { authorization: `Bearer ${collabKey}` }, shaOf(HTML_A))).toEqual(denied);
+    expect(await readStatuses(deckA, { authorization: `Bearer ${collabKey}` }, shaOf(HTML_A))).toEqual(
+      denied
+    );
     expect(await listIds({ cookie: collabCookie })).toHaveLength(0);
   });
 });

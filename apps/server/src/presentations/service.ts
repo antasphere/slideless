@@ -26,14 +26,10 @@ export const UPLOAD_SESSION_TTL_MS = 60 * 60 * 1000;
  * against exactly the statuses its route declares.
  */
 export type ManifestFailure =
-  | { code: 'invalid_manifest'; message: string }
-  | { code: 'missing_blobs'; missing: string[] };
+  { code: 'invalid_manifest'; message: string } | { code: 'missing_blobs'; missing: string[] };
 
 export type SessionCommitFailure =
-  | ManifestFailure
-  | { code: 'not_found' }
-  | { code: 'session_consumed' }
-  | { code: 'session_expired' };
+  ManifestFailure | { code: 'not_found' } | { code: 'session_consumed' } | { code: 'session_expired' };
 
 export type VersionCommitFailure =
   | ManifestFailure
@@ -86,9 +82,7 @@ export class PresentationService {
     const present = await this.db
       .select({ sha256: files.sha256 })
       .from(files)
-      .where(
-        and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt))
-      );
+      .where(and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt)));
     const found = new Set(present.map((r) => r.sha256));
     return unique.filter((sha) => !found.has(sha));
   }
@@ -130,9 +124,7 @@ export class PresentationService {
     const present = await tx
       .select({ sha256: files.sha256, sizeBytes: files.sizeBytes })
       .from(files)
-      .where(
-        and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt))
-      )
+      .where(and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt)))
       .for('share');
     const sizeBySha = new Map(present.map((r) => [r.sha256, r.sizeBytes]));
     return { missing: unique.filter((sha) => !sizeBySha.has(sha)), sizeBySha };

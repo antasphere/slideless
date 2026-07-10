@@ -28,7 +28,9 @@ export function checkScope(
   if (principal.scopes && !principal.scopes.has(scope)) {
     return deny(
       `Missing scope "${scope}": this connection was not granted ` +
-        (scope === 'presentations:write' ? 'permission to create or edit data.' : 'permission to read data.') +
+        (scope === 'presentations:write'
+          ? 'permission to create or edit data.'
+          : 'permission to read data.') +
         ' Reconnect the MCP server and approve the permission on the consent screen.'
     );
   }
@@ -82,7 +84,10 @@ export async function callApi(ctx: McpToolContext, path: string, init: RequestIn
 }
 
 /** Append cursor/limit list params to a path. */
-export function pageQuery(base: string, params: { cursor?: string | undefined; limit?: number | undefined }): string {
+export function pageQuery(
+  base: string,
+  params: { cursor?: string | undefined; limit?: number | undefined }
+): string {
   const query = new URLSearchParams();
   if (params.cursor) query.set('cursor', params.cursor);
   if (params.limit !== undefined) query.set('limit', String(params.limit));

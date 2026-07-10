@@ -14,9 +14,7 @@ export const versionAuthorRoleSchema = z.enum(['owner', 'dev']);
 export type VersionAuthorRole = z.infer<typeof versionAuthorRoleSchema>;
 
 /** Lowercase hex sha256 — the content address of a blob. */
-export const sha256Schema = z
-  .string()
-  .regex(/^[a-f0-9]{64}$/, 'lowercase hex sha256 required');
+export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/, 'lowercase hex sha256 required');
 
 /**
  * A relative asset path inside a deck: no leading slash, no backslashes, no

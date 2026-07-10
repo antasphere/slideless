@@ -28,7 +28,8 @@ const DOMAIN_HINTS: Record<string, string> = {
     'The manifest references content not uploaded to this workspace. Retry the upload tool; if it ' +
     'persists, push with the slideless CLI.',
   invalid_manifest: 'Fix the manifest entries (paths must be relative, no ".." segments) and retry.',
-  invalid_version: 'That version number does not exist on this deck — list them with slideless_list_versions.',
+  invalid_version:
+    'That version number does not exist on this deck — list them with slideless_list_versions.',
   session_expired: 'The upload session expired — call the upload tool again (it reserves a fresh one).',
   session_consumed: 'This upload session was already committed — start a new upload.',
   token_revoked: 'This share token was revoked — mint a new one with slideless_add_share_token.',

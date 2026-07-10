@@ -137,7 +137,10 @@ function wantsHtmlShell(c: Context): boolean {
 }
 
 /** Error responses: the JSON wire shape for agents, a readable page for browsers. */
-function viewerError(c: Context, failure: { status: 403 | 404 | 410 | 401 | 429; code: string; message: string }): Response {
+function viewerError(
+  c: Context,
+  failure: { status: 403 | 404 | 410 | 401 | 429; code: string; message: string }
+): Response {
   if (wantsHtmlShell(c)) {
     return c.body(
       shellHtml('Slideless', `<h1>Nothing to see here</h1><p>${esc(failure.message)}</p>`),
@@ -145,11 +148,10 @@ function viewerError(c: Context, failure: { status: 403 | 404 | 410 | 401 | 429;
       shellHeaders()
     );
   }
-  return c.json(
-    { error: { code: failure.code, message: failure.message } },
-    failure.status,
-    { 'cache-control': 'no-store', vary: 'accept, user-agent' }
-  );
+  return c.json({ error: { code: failure.code, message: failure.message } }, failure.status, {
+    'cache-control': 'no-store',
+    vary: 'accept, user-agent'
+  });
 }
 
 export function viewerRoutes(deps: ViewerDeps): Hono {
@@ -161,7 +163,9 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
    * unknown/gone → 404, revoked → 403, expired → 410. Password is judged
    * separately (401 challenge) — it gates BYTES, not existence.
    */
-  async function resolve(c: Context): Promise<{ ok: true; view: ResolvedView } | { ok: false; failure: ResolveFailure }> {
+  async function resolve(
+    c: Context
+  ): Promise<{ ok: true; view: ResolvedView } | { ok: false; failure: ResolveFailure }> {
     const notFound: ResolveFailure = {
       status: 404,
       code: 'not_found',
@@ -225,9 +229,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   }
 
   /** True when the request already proves knowledge of the token password. */
-  async function passwordSatisfied(c: Context, token: ShareTokenRow): Promise<
-    { ok: true } | { ok: false; response: Response }
-  > {
+  async function passwordSatisfied(
+    c: Context,
+    token: ShareTokenRow
+  ): Promise<{ ok: true } | { ok: false; response: Response }> {
     if (!token.passwordHash) return { ok: true };
 
     const cookieValue = getCookie(c, unlockCookieName(token.id));
@@ -373,7 +378,11 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     if (transform) {
       const key = blobKey(token.workspaceId, entry.sha256);
       if (!(await storage.exists(key))) {
-        return viewerError(c, { status: 404, code: 'not_found', message: 'This deck is no longer available.' });
+        return viewerError(c, {
+          status: 404,
+          code: 'not_found',
+          message: 'This deck is no longer available.'
+        });
       }
       const chunks: Buffer[] = [];
       for await (const chunk of await storage.getStream(key)) {

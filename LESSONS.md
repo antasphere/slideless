@@ -419,7 +419,7 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   sets CSP/Referrer-Policy only when the route did not (set-if-absent), and
   `test/integration/sharing-viewer.test.ts` asserts the exact sandbox set —
   `sandbox allow-scripts allow-forms allow-popups allow-modals
-  allow-downloads`, never `allow-same-origin` — on every viewer response
+allow-downloads`, never `allow-same-origin` — on every viewer response
   shape (entry, HTML sub-page, asset, 206, pinned/latest, password-unlocked).
   Treat any diff touching those headers as security-critical.
 - **A pure secret-as-lookup-key credential cannot store a pepper version.**
@@ -538,7 +538,7 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
 ## Phase 7 (MCP tool set, 2026-07-10)
 
 - **In-process multipart works: `app.request('/api/v1/presentations/assets',
-  { body: FormData })` round-trips through Hono's parseBody** (File/FormData
+{ body: FormData })` round-trips through Hono's parseBody** (File/FormData
   are Node ≥20 globals), so MCP upload tools reuse the exact API route the
   CLI hits — same hashing, same entitlement gate, same audit rows. The
   in-process Request carries no content-length, so the route's DECLARED-size

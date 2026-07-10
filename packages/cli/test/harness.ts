@@ -18,7 +18,11 @@ export interface RecordedCall {
 export interface Route {
   method: string;
   path: RegExp;
-  reply: (call: { path: string; body?: unknown; form?: FormData }) => { status?: number; body?: unknown; raw?: Response };
+  reply: (call: { path: string; body?: unknown; form?: FormData }) => {
+    status?: number;
+    body?: unknown;
+    raw?: Response;
+  };
 }
 
 export function routedHarness(routes: Route[], env: Record<string, string | undefined> = {}) {
@@ -44,10 +48,13 @@ export function routedHarness(routes: Route[], env: Record<string, string | unde
     calls.push({ method, path, ...(body !== undefined ? { body } : {}) });
     const route = routes.find((r) => r.method === method && r.path.test(url.pathname));
     if (!route) {
-      return new Response(JSON.stringify({ error: { code: 'not_found', message: `no fake route ${method} ${path}` } }), {
-        status: 404,
-        headers: { 'content-type': 'application/json' }
-      });
+      return new Response(
+        JSON.stringify({ error: { code: 'not_found', message: `no fake route ${method} ${path}` } }),
+        {
+          status: 404,
+          headers: { 'content-type': 'application/json' }
+        }
+      );
     }
     const result = route.reply({ path, body, ...(form ? { form } : {}) });
     if (result.raw) return result.raw;

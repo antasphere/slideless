@@ -13,8 +13,8 @@ Slideless exists to render arbitrary **user-authored HTML** — single files or
 folders of HTML/JS/CSS/images/video/3D/shaders — to anonymous viewers behind
 secret share-token URLs. The dashboard, versioned API, Better Auth session, and
 the OAuth 2.1 server all live on **one origin**. The chassis carries a hard
-invariant (CLAUDE.md, docs/security.md, `files/http.ts`): *never render user
-content on the app origin* — active types are served `attachment` + `nosniff`.
+invariant (CLAUDE.md, docs/security.md, `files/http.ts`): _never render user
+content on the app origin_ — active types are served `attachment` + `nosniff`.
 Slideless must break that surface open safely. The load-bearing question:
 
 > Can we serve user HTML on the **same origin** under
@@ -36,31 +36,31 @@ owner principal — the theft target.
 
 **Surface A — `control`: user HTML on the app origin, NO sandbox (the danger baseline).**
 
-| Probe | Chromium | WebKit | Firefox |
-|---|---|---|---|
-| `document.cookie` read | `""` (session is HttpOnly) | `""` | `""` |
-| `localStorage` / `sessionStorage` | works | works | works |
-| `navigator.serviceWorker.register` | **REGISTERED** (scope `/spike/viewer/`) | REGISTERED | REGISTERED |
-| `fetch('/api/v1/me',{credentials:'include'})` | **200 — owner principal read** | 200 — leaked | 200 — leaked |
-| session cookie sent on that fetch | yes | yes | yes |
-| **Verdict** | **FULL SESSION THEFT** | FULL | FULL |
+| Probe                                         | Chromium                                | WebKit       | Firefox      |
+| --------------------------------------------- | --------------------------------------- | ------------ | ------------ |
+| `document.cookie` read                        | `""` (session is HttpOnly)              | `""`         | `""`         |
+| `localStorage` / `sessionStorage`             | works                                   | works        | works        |
+| `navigator.serviceWorker.register`            | **REGISTERED** (scope `/spike/viewer/`) | REGISTERED   | REGISTERED   |
+| `fetch('/api/v1/me',{credentials:'include'})` | **200 — owner principal read**          | 200 — leaked | 200 — leaked |
+| session cookie sent on that fetch             | yes                                     | yes          | yes          |
+| **Verdict**                                   | **FULL SESSION THEFT**                  | FULL         | FULL         |
 
 HttpOnly hides the cookie from `document.cookie`, but the **credentialed fetch
 vector steals the whole session anyway** — HttpOnly alone is not a defense.
 
 **Surface B — `sandbox`: `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups` (the candidate).**
 
-| Probe | Chromium | WebKit | Firefox |
-|---|---|---|---|
-| `document.cookie` read/write | **SecurityError** | SecurityError | SecurityError |
-| `localStorage` / `sessionStorage` | **SecurityError** | SecurityError | SecurityError |
-| `navigator.serviceWorker.register` | **SecurityError** | SecurityError | SecurityError |
+| Probe                                         | Chromium                   | WebKit                  | Firefox                  |
+| --------------------------------------------- | -------------------------- | ----------------------- | ------------------------ |
+| `document.cookie` read/write                  | **SecurityError**          | SecurityError           | SecurityError            |
+| `localStorage` / `sessionStorage`             | **SecurityError**          | SecurityError           | SecurityError            |
+| `navigator.serviceWorker.register`            | **SecurityError**          | SecurityError           | SecurityError            |
 | `fetch('/api/v1/me',{credentials:'include'})` | **TypeError** (unreadable) | TypeError (Load failed) | TypeError (NetworkError) |
-| session cookie sent on that fetch | no | no | **yes**¹ |
-| server answer to that fetch | (blocked) | (blocked) | 401 |
-| **Verdict** | **SESSION SAFE** | SESSION SAFE | SESSION SAFE |
+| session cookie sent on that fetch             | no                         | no                      | **yes**¹                 |
+| server answer to that fetch                   | (blocked)                  | (blocked)               | 401                      |
+| **Verdict**                                   | **SESSION SAFE**           | SESSION SAFE            | SESSION SAFE             |
 
-¹ Firefox still *transmits* the `SameSite=Lax` cookie on the opaque-origin
+¹ Firefox still _transmits_ the `SameSite=Lax` cookie on the opaque-origin
 credentialed request (Chromium/WebKit suppress it); the server answered **401**
 and, decisively, the CORS/opaque-origin wall made the response **unreadable to
 the deck on every engine**. No owner data reached the deck anywhere. The Firefox
@@ -101,7 +101,7 @@ additionally blocks top-navigation and parent access.
   `app`-kind decks (see tradeoff) and it is **fail-dangerous** (below).
 
 Why not "same origin is fine, ship it": the spike proves same-origin
-`CSP: sandbox` defeats session theft, so it is a *valid* narrow answer. We still
+`CSP: sandbox` defeats session theft, so it is a _valid_ narrow answer. We still
 choose the separate origin because two structural facts outweigh the
 convenience: (1) it is **fail-safe** — a dropped/again-clobbered header cannot
 leak the dashboard session across a real origin boundary (we already found the
@@ -152,7 +152,7 @@ all engines). Consequences:
   (Surface C). **Therefore `app`-kind decks are the decisive reason for the
   separate origin:** on a per-token subdomain a deck gets its own real, isolated
   origin with full storage/service-worker support, leaking nothing to the
-  dashboard or to sibling decks. There, storage-needing decks run *without* the
+  dashboard or to sibling decks. There, storage-needing decks run _without_ the
   sandbox directive (origin isolation is the boundary); the sandbox layer stays
   for the read-only present mode.
 

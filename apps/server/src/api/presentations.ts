@@ -461,7 +461,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (!(await service.canWrite(principal, deck))) {
       return {
         status: 403,
-        body: err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can manage its share tokens')
+        body: err(
+          'forbidden',
+          'Only the deck owner, a workspace admin, or an active collaborator can manage its share tokens'
+        )
       };
     }
     return { deck };
@@ -532,10 +535,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       }
     });
     // The secret + URL appear ONLY in this response (hash-only storage).
-    return c.json(
-      { shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) },
-      201
-    );
+    return c.json({ shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) }, 201);
   });
 
   // The dashboard's own transient preview token (ADR 012 Surface D). The
@@ -563,7 +563,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (body.version !== undefined) {
       const versionRow = await service.getVersion(principal.workspaceId, id, body.version);
       if (!versionRow) {
-        return c.json(err('invalid_version', `Version ${body.version} does not exist on this presentation`), 400);
+        return c.json(
+          err('invalid_version', `Version ${body.version} does not exist on this presentation`),
+          400
+        );
       }
       pinnedVersion = body.version;
     }
@@ -590,10 +593,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         expiresAt: row.expiresAt?.toISOString() ?? null
       }
     });
-    return c.json(
-      { shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) },
-      201
-    );
+    return c.json({ shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) }, 201);
   });
 
   api.openapi(shareTokenUpdateRoute, async (c) => {
@@ -704,7 +704,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       return c.json(err('token_revoked', 'This share token is revoked — create a new one'), 400);
     }
     if (token.expiresAt && token.expiresAt.getTime() <= Date.now()) {
-      return c.json(err('token_expired', 'This share token has expired — extend it or create a new one'), 400);
+      return c.json(
+        err('token_expired', 'This share token has expired — extend it or create a new one'),
+        400
+      );
     }
 
     // No delivering driver: nothing sent, nothing rotated — the create-time
@@ -778,7 +781,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       return c.json(err('not_found', 'Presentation not found'), 404);
     }
     if (body.version > deck.currentVersion) {
-      return c.json(err('invalid_version', `Version ${body.version} does not exist on this presentation`), 400);
+      return c.json(
+        err('invalid_version', `Version ${body.version} does not exist on this presentation`),
+        400
+      );
     }
     const row = await annotations.create({
       workspaceId: principal.workspaceId,
@@ -806,7 +812,13 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const deck = await service.get(principal.workspaceId, id);
     if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
     if (!(await service.canWrite(principal, deck))) {
-      return c.json(err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'), 403);
+      return c.json(
+        err(
+          'forbidden',
+          'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'
+        ),
+        403
+      );
     }
     const existing = await annotations.get(principal.workspaceId, id, annotationId);
     if (!existing) return c.json(err('not_found', 'Annotation not found'), 404);
@@ -826,7 +838,13 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const deck = await service.get(principal.workspaceId, id);
     if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
     if (!(await service.canWrite(principal, deck))) {
-      return c.json(err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'), 403);
+      return c.json(
+        err(
+          'forbidden',
+          'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'
+        ),
+        403
+      );
     }
     const existing = await annotations.get(principal.workspaceId, id, annotationId);
     if (!existing) return c.json(err('not_found', 'Annotation not found'), 404);

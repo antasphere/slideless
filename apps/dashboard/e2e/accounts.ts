@@ -5,4 +5,8 @@
  */
 export const INSTANCE_NAME = 'Smoke Test Instance';
 export const OWNER = { name: 'Owner One', email: 'owner@example.com', password: 'owner-password-123' };
-export const INVITEE = { name: 'Invited Member', email: 'invitee@example.com', password: 'invitee-password-123' };
+export const INVITEE = {
+  name: 'Invited Member',
+  email: 'invitee@example.com',
+  password: 'invitee-password-123'
+};

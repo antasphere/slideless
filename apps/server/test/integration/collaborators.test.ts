@@ -79,7 +79,10 @@ async function uploadAsset(bytes: Buffer, cookie: string): Promise<void> {
 
 async function createDeck(title: string): Promise<string> {
   const reserve = await readJson(
-    await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: { cookie: ownerCookie } })
+    await app.app.request('/api/v1/presentations/uploads', {
+      method: 'POST',
+      headers: { cookie: ownerCookie }
+    })
   );
   const commit = await app.app.request(
     `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
@@ -128,7 +131,12 @@ describe('invite', () => {
     const res = await invite(deckId, DEV.email);
     expect(res.status).toBe(201);
     const body = await readJson(res);
-    expect(body.collaborator).toMatchObject({ email: DEV.email, role: 'dev', status: 'pending', userId: null });
+    expect(body.collaborator).toMatchObject({
+      email: DEV.email,
+      role: 'dev',
+      status: 'pending',
+      userId: null
+    });
     expect(body.claimUrl).toMatch(/\/collab\/[A-Za-z0-9_-]+$/);
     expect(body.emailSent).toBe(true);
 
@@ -138,7 +146,9 @@ describe('invite', () => {
 
     // Listing shows the grant and never leaks tokens or hashes.
     const listed = await readJson(
-      await app.app.request(`/api/v1/presentations/${deckId}/collaborators`, { headers: { cookie: ownerCookie } })
+      await app.app.request(`/api/v1/presentations/${deckId}/collaborators`, {
+        headers: { cookie: ownerCookie }
+      })
     );
     const raw = JSON.stringify(listed);
     expect(listed.collaborators).toHaveLength(1);
@@ -257,7 +267,10 @@ describe('claim-at-signup → active dev', () => {
     const minted = await readJson(
       await app.app.request(
         '/api/v1/api-keys',
-        json({ name: 'dev-key', scopes: ['presentations:read', 'presentations:write'] }, { cookie: devCookie })
+        json(
+          { name: 'dev-key', scopes: ['presentations:read', 'presentations:write'] },
+          { cookie: devCookie }
+        )
       )
     );
     devKey = minted.key;
@@ -342,7 +355,11 @@ describe('claim-at-signup → active dev', () => {
     );
     await app.app.request(
       '/api/v1/invitations/accept',
-      json({ token: invited.acceptUrl.split('/invite/')[1], name: 'Bystander', password: 'bystander-pass-123' })
+      json({
+        token: invited.acceptUrl.split('/invite/')[1],
+        name: 'Bystander',
+        password: 'bystander-pass-123'
+      })
     );
     const memberCookie = extractCookie(
       await app.app.request(
@@ -395,7 +412,11 @@ describe('claim-at-signup via a WORKSPACE invitation (the user.created hook)', (
     );
     const accept = await app.app.request(
       '/api/v1/invitations/accept',
-      json({ token: invited.acceptUrl.split('/invite/')[1], name: 'Late Joiner', password: 'late-joiner-pass-1' })
+      json({
+        token: invited.acceptUrl.split('/invite/')[1],
+        name: 'Late Joiner',
+        password: 'late-joiner-pass-1'
+      })
     );
     expect(accept.status).toBe(200);
 

@@ -30,9 +30,7 @@ describe('deck scanning', () => {
     expect(scan.files.map((f) => f.path)).toEqual(['assets/logo.png', 'assets/style.css', 'index.html']);
     const entry = scan.files.find((f) => f.path === 'index.html')!;
     expect(entry.contentType).toBe('text/html');
-    expect(entry.sha256).toBe(
-      createHash('sha256').update('<html><body>hi</body></html>').digest('hex')
-    );
+    expect(entry.sha256).toBe(createHash('sha256').update('<html><body>hi</body></html>').digest('hex'));
     expect(scan.files.find((f) => f.path === 'assets/logo.png')!.contentType).toBe('image/png');
   });
 

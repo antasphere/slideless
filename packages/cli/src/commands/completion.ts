@@ -25,10 +25,7 @@ function bashScript(tree: CmdInfo[]): string {
   const top = tree.map((c) => c.name).join(' ');
   const cases = tree
     .filter((c) => c.subs.length > 0)
-    .map(
-      (c) =>
-        `    ${c.name}) COMPREPLY=( $(compgen -W "${c.subs.join(' ')}" -- "$cur") ); return ;;`
-    )
+    .map((c) => `    ${c.name}) COMPREPLY=( $(compgen -W "${c.subs.join(' ')}" -- "$cur") ); return ;;`)
     .join('\n');
   return `# bash completion for slideless — eval "$(slideless completion bash)"
 _slideless_completions() {

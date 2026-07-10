@@ -200,8 +200,15 @@ interface PushOptions {
   presentationId?: string | undefined;
 }
 
-async function pushInlineDeck(ctx: McpToolContext, files: DecodedFile[], opts: PushOptions): Promise<ToolTextResult> {
-  const entryPath = detectEntry(files.map((f) => f.path), opts.entryPath);
+async function pushInlineDeck(
+  ctx: McpToolContext,
+  files: DecodedFile[],
+  opts: PushOptions
+): Promise<ToolTextResult> {
+  const entryPath = detectEntry(
+    files.map((f) => f.path),
+    opts.entryPath
+  );
   const manifest = files.map((f) => ({
     path: f.path,
     sha256: f.sha256,
@@ -218,13 +225,17 @@ async function pushInlineDeck(ctx: McpToolContext, files: DecodedFile[], opts: P
 
   // Step 2 — upload exactly the missing blobs (one representative per hash).
   const missingSet = new Set(missing);
-  const queue = [...new Map(files.filter((f) => missingSet.has(f.sha256)).map((f) => [f.sha256, f])).values()];
+  const queue = [
+    ...new Map(files.filter((f) => missingSet.has(f.sha256)).map((f) => [f.sha256, f])).values()
+  ];
   for (const file of queue) {
     const form = new FormData();
     form.set('sha256', file.sha256);
     form.set(
       'file',
-      new File([new Uint8Array(file.bytes)], file.path.split('/').pop() ?? file.path, { type: file.contentType })
+      new File([new Uint8Array(file.bytes)], file.path.split('/').pop() ?? file.path, {
+        type: file.contentType
+      })
     );
     await fetchApiRaw(ctx, '/api/v1/presentations/assets', { method: 'POST', body: form });
   }
@@ -250,7 +261,9 @@ async function pushInlineDeck(ctx: McpToolContext, files: DecodedFile[], opts: P
     const entryFile = files.find((f) => f.path === entryPath);
     const title =
       opts.title ??
-      (entryFile && isTextual(entryFile.contentType) ? titleFromHtml(entryFile.bytes.toString('utf8')) : null) ??
+      (entryFile && isTextual(entryFile.contentType)
+        ? titleFromHtml(entryFile.bytes.toString('utf8'))
+        : null) ??
       'Untitled presentation';
     const { uploadSession } = (await callApi(ctx, '/api/v1/presentations/uploads', { method: 'POST' })) as {
       uploadSession: { id: string };
@@ -303,7 +316,13 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
 
   const deckIdInput = z.uuid().describe('Presentation (deck) id.');
   const cursorInput = z.string().optional().describe('nextCursor from a previous page.');
-  const limitInput = z.number().int().min(1).max(100).optional().describe('Page size (server max 100). Default 50.');
+  const limitInput = z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Page size (server max 100). Default 50.');
 
   // ── Identity ───────────────────────────────────────────────────────────────
 
@@ -347,7 +366,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       annotations: { readOnlyHint: true }
     },
     async ({ presentationId }) =>
-      read(async () => jsonText(await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`)))
+      read(async () =>
+        jsonText(await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`))
+      )
   );
 
   server.registerTool(
@@ -364,7 +385,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         jsonText(
           await callApi(
             ctx,
-            pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/versions`, { cursor, limit })
+            pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/versions`, {
+              cursor,
+              limit
+            })
           )
         )
       )
@@ -395,7 +419,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     'slideless_download_version',
     {
       description:
-        "Download a deck version: the manifest plus the CONTENT of its text files inlined (up to " +
+        'Download a deck version: the manifest plus the CONTENT of its text files inlined (up to ' +
         `${Math.floor(INLINE_DOWNLOAD_FILE_MAX / 1024)} KiB per file / 1 MiB total). Binary or oversized files ` +
         'come back as metadata with a note — pull those with the CLI (`slideless pull <deckId>`). ' +
         'Omit version for the latest.',
@@ -476,7 +500,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     },
     async ({ html, title, kind, interactive }) =>
       write(async () => {
-        const files = decodeInlineFiles([{ path: 'index.html', contentText: html, contentType: 'text/html' }]);
+        const files = decodeInlineFiles([
+          { path: 'index.html', contentText: html, contentType: 'text/html' }
+        ]);
         return pushInlineDeck(ctx, files, { title, kind, interactive });
       })
   );
@@ -552,7 +578,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     async ({ presentationId }) =>
       write(async () =>
         jsonText(
-          await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`, { method: 'DELETE' })
+          await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`, {
+            method: 'DELETE'
+          })
         )
       )
   );
@@ -635,7 +663,12 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         presentationId: deckIdInput,
         tokenId: z.uuid().describe('Share token id (from creation or slideless_list_share_tokens).'),
         mode: z.enum(['latest', 'pinned']).describe("'latest' follows the deck; 'pinned' freezes a version."),
-        pinnedVersion: z.number().int().min(1).optional().describe("The version to pin (required for 'pinned').")
+        pinnedVersion: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("The version to pin (required for 'pinned').")
       }
     },
     async ({ presentationId, tokenId, mode, pinnedVersion }) =>
@@ -685,7 +718,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         const revoked: Array<{ id: string; name: string }> = [];
         let cursor: string | undefined;
         do {
-          const page = (await callApi(ctx, pageQuery(`/api/v1/presentations/${id}/tokens`, { cursor, limit: 100 }))) as {
+          const page = (await callApi(
+            ctx,
+            pageQuery(`/api/v1/presentations/${id}/tokens`, { cursor, limit: 100 })
+          )) as {
             shareTokens: ShareTokenWire[];
             nextCursor: string | null;
           };
@@ -750,7 +786,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         jsonText(
           await callApi(
             ctx,
-            pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/collaborators`, { cursor, limit })
+            pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/collaborators`, {
+              cursor,
+              limit
+            })
           )
         )
       )
@@ -812,7 +851,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     'slideless_list_annotations',
     {
       description:
-        'Reviewer annotations: with presentationId, one deck\'s notes; without it, the ' +
+        "Reviewer annotations: with presentationId, one deck's notes; without it, the " +
         'workspace-wide inbox of every deck this credential can read. Filter by version and/or ' +
         "status ('open' | 'resolved'). Returns { annotations: [...], nextCursor }.",
       inputSchema: {
@@ -842,7 +881,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
 
 /** currentVersion of a deck (for the "omitted = latest" version params). */
 async function currentVersionOf(ctx: McpToolContext, presentationId: string): Promise<number> {
-  const deck = (await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`)) as PresentationWire;
+  const deck = (await callApi(
+    ctx,
+    `/api/v1/presentations/${encodeURIComponent(presentationId)}`
+  )) as PresentationWire;
   if (deck.currentVersion < 1) {
     throw new ApiToolError(400, 'invalid_version', 'This deck has no committed versions yet');
   }

@@ -1,11 +1,5 @@
 import { and, asc, desc, eq, exists, isNull, or, sql } from 'drizzle-orm';
-import {
-  annotations,
-  collaborators,
-  presentations,
-  type AnnotationRow,
-  type Db
-} from '@slideless/db';
+import { annotations, collaborators, presentations, type AnnotationRow, type Db } from '@slideless/db';
 import type { Principal } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 
@@ -136,10 +130,7 @@ export class AnnotationService {
     opts: AnnotationFilters & { cursor?: string | undefined; limit: number }
   ): Promise<{ annotations: AnnotationRow[]; nextCursor: string | null }> {
     const cursorId = cursorRowId(opts.cursor);
-    const liveDeck = and(
-      eq(presentations.id, annotations.presentationId),
-      isNull(presentations.deletedAt)
-    );
+    const liveDeck = and(eq(presentations.id, annotations.presentationId), isNull(presentations.deletedAt));
     const adminSees = principal.role === 'owner' || principal.role === 'admin';
     const visibility = adminSees
       ? liveDeck

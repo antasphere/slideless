@@ -134,12 +134,13 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
     const { id } = c.req.valid('param');
     const file = await service.get(principal.workspaceId, id);
     if (!file) return c.json(err('not_found', 'File not found'), 404);
-    const outcome = await service.delete(file, (tx, row) =>
-      deps.blobInUse(tx, row.workspaceId, row.sha256)
-    );
+    const outcome = await service.delete(file, (tx, row) => deps.blobInUse(tx, row.workspaceId, row.sha256));
     if (outcome === 'in_use') {
       return c.json(
-        err('file_in_use', 'This file is referenced by a presentation version — delete the presentation first'),
+        err(
+          'file_in_use',
+          'This file is referenced by a presentation version — delete the presentation first'
+        ),
         409
       );
     }

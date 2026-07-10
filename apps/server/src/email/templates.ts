@@ -191,7 +191,9 @@ export function buildShareEmail(p: ShareEmailParams): { subject: string; html: s
   const text =
     `${p.senderName} shared "${p.presentationTitle}" with you on ${PRODUCT_NAME}.\n\n` +
     (p.message ? `${p.message}\n\n` : '') +
-    (p.hasPassword ? `This link is password protected — the sender will give you the password separately.\n\n` : '') +
+    (p.hasPassword
+      ? `This link is password protected — the sender will give you the password separately.\n\n`
+      : '') +
     `Open it: ${p.viewerUrl}\n\nThis link is personal to you.${expiryNote}`;
   return { subject, html, text };
 }

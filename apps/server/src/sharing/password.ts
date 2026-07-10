@@ -20,13 +20,7 @@ const SCRYPT_P = 1;
 const KEY_LENGTH = 32;
 const SALT_BYTES = 16;
 
-function deriveKey(
-  password: string,
-  salt: Buffer,
-  N: number,
-  r: number,
-  p: number
-): Promise<Buffer> {
+function deriveKey(password: string, salt: Buffer, N: number, r: number, p: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     // maxmem must cover 128*N*r bytes (16 MiB at the defaults) plus headroom.
     scrypt(password, salt, KEY_LENGTH, { N, r, p, maxmem: 256 * N * r }, (err, key) =>

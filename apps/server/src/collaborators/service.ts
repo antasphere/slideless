@@ -79,9 +79,7 @@ export class CollaboratorService {
       const [existing] = await tx
         .select()
         .from(collaborators)
-        .where(
-          and(eq(collaborators.presentationId, opts.presentationId), eq(collaborators.email, email))
-        )
+        .where(and(eq(collaborators.presentationId, opts.presentationId), eq(collaborators.email, email)))
         .for('update')
         .limit(1);
 

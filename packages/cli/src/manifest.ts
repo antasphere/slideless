@@ -157,7 +157,10 @@ async function walk(
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     const absPath = join(dir, entry.name);
-    const relPath = absPath.slice(rootDir.length + 1).split(sep).join('/');
+    const relPath = absPath
+      .slice(rootDir.length + 1)
+      .split(sep)
+      .join('/');
     if (entry.isSymbolicLink()) continue; // never follow links out of the deck
     if (entry.isDirectory()) {
       if (isIgnored(relPath, true, rules)) continue;
@@ -250,8 +253,7 @@ export interface DeckLink {
 
 export async function readLink(rootDir: string): Promise<DeckLink | null> {
   try {
-    const parsed = JSON.parse(await readFile(join(rootDir, LINK_FILENAME), 'utf8')) as
-      Partial<DeckLink>;
+    const parsed = JSON.parse(await readFile(join(rootDir, LINK_FILENAME), 'utf8')) as Partial<DeckLink>;
     if (typeof parsed.presentationId === 'string' && typeof parsed.baseUrl === 'string') {
       return { presentationId: parsed.presentationId, baseUrl: parsed.baseUrl };
     }

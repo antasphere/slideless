@@ -470,7 +470,8 @@ export const en = {
   'tokens.actionRevoke': 'Revoke',
   'tokens.actionChangeVersion': 'Change version…',
   'tokens.createTitle': 'Create a share link',
-  'tokens.createDescription': 'The viewer URL appears once, right after creation — copy it for the recipient.',
+  'tokens.createDescription':
+    'The viewer URL appears once, right after creation — copy it for the recipient.',
   'tokens.nameLabel': 'Recipient',
   'tokens.namePlaceholder': 'alice@client.com, "Review round 2", …',
   'tokens.versionLabel': 'Version',

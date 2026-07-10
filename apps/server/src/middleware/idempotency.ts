@@ -47,11 +47,7 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 
 const KEY_MAX_LENGTH = 200;
 
-const TARGET_PATHS = new Set([
-  '/api/v1/api-keys',
-  '/api/v1/invitations',
-  '/api/v1/presentations/uploads'
-]);
+const TARGET_PATHS = new Set(['/api/v1/api-keys', '/api/v1/invitations', '/api/v1/presentations/uploads']);
 const RESET_LINK_RE = /^\/api\/v1\/members\/[^/]+\/reset-link$/;
 // Share-token creation returns a one-shot secret — exactly what replay
 // protection exists for (a retried create must not mint a second link).

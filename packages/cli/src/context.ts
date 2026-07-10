@@ -39,9 +39,7 @@ export function resolveProfile(
   if (requested) {
     const profile = config.profiles[requested];
     if (!profile) {
-      throw new CliUsageError(
-        `Unknown profile "${requested}" — run \`slideless profiles\` to list them.`
-      );
+      throw new CliUsageError(`Unknown profile "${requested}" — run \`slideless profiles\` to list them.`);
     }
     return { name: requested, profile };
   }

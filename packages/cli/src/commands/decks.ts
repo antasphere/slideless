@@ -33,9 +33,7 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
         io.out.write('No presentations.\n');
         return;
       }
-      io.out.write(
-        table(rows.map((p) => [p.id, `v${p.currentVersion}`, p.kind, p.title]))
-      );
+      io.out.write(table(rows.map((p) => [p.id, `v${p.currentVersion}`, p.kind, p.title])));
       if (nextCursor) {
         io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
       }

@@ -69,8 +69,7 @@ interface EmailOtpApi {
   signInEmailOTP?: (input: {
     body: { email: string; otp: string };
   }) => Promise<
-    | { token: string; user: { id: string; email: string; name: string } }
-    | { twoFactorRedirect: true }
+    { token: string; user: { id: string; email: string; name: string } } | { twoFactorRedirect: true }
   >;
 }
 
@@ -174,9 +173,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
     }
 
     const name = body.keyName ?? `CLI login ${new Date().toISOString().slice(0, 10)}`;
-    const expiresAt = body.expiresInDays
-      ? new Date(Date.now() + body.expiresInDays * 86_400_000)
-      : null;
+    const expiresAt = body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86_400_000) : null;
     const minted = await apiKeys.mint({
       workspaceId: membership.workspaceId,
       createdBy: user.id,
@@ -208,7 +205,12 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
       resourceType: 'api_key',
       resourceId: minted.id,
       requestId: c.get('requestId'),
-      metadata: { name, scopes: [...CLI_KEY_SCOPES], via: 'cli_otp', expiresAt: expiresAt?.toISOString() ?? null }
+      metadata: {
+        name,
+        scopes: [...CLI_KEY_SCOPES],
+        via: 'cli_otp',
+        expiresAt: expiresAt?.toISOString() ?? null
+      }
     });
 
     return c.json(

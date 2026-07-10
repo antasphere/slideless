@@ -37,7 +37,8 @@
     },
     {
       accessorKey: 'sizeBytes',
-      header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('versions.colSize') }),
+      header: ({ column }) =>
+        renderComponent(DataTableColumnHeader, { column, title: t('versions.colSize') }),
       cell: ({ row }) => formatBytes(row.original.sizeBytes),
       meta: { title: t('versions.colSize'), width: '100px' }
     },
@@ -107,7 +108,12 @@
       <DataTable data={list.items} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
       {#if list.nextCursor}
         <div class="flex justify-center py-2">
-          <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => void list.loadMore()}
+            disabled={list.loadingMore}
+          >
             {list.loadingMore ? t('common.loading') : t('common.loadMore')}
           </Button>
         </div>

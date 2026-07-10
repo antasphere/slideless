@@ -126,8 +126,7 @@
       cell: ({ row }) =>
         renderComponent(Badge, {
           variant: (row.original.status === 'revoked' ? 'destructive' : 'outline') as
-            | 'destructive'
-            | 'outline',
+            'destructive' | 'outline',
           // Static i18n text only — never user data inside createRawSnippet.
           children: createRawSnippet(() => ({
             render: () => `<span>${t(statusKey[row.original.status])}</span>`
@@ -193,7 +192,12 @@
       <DataTable data={list.items} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
       {#if list.nextCursor}
         <div class="flex justify-center py-2">
-          <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => void list.loadMore()}
+            disabled={list.loadingMore}
+          >
             {list.loadingMore ? t('common.loading') : t('common.loadMore')}
           </Button>
         </div>

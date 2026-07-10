@@ -140,7 +140,10 @@ beforeAll(async () => {
 
   // A plain member joins through an ordinary invitation and mints their own key.
   const invited = await readJson(
-    await app.app.request('/api/v1/invitations', json({ email: MEMBER.email, role: 'member' }, { cookie: ownerCookie }))
+    await app.app.request(
+      '/api/v1/invitations',
+      json({ email: MEMBER.email, role: 'member' }, { cookie: ownerCookie })
+    )
   );
   const accept = await app.app.request(
     '/api/v1/invitations/accept',
@@ -345,7 +348,9 @@ describe('inline upload → commit → download round-trip (the legacy-broken su
       presentationId: filesDeckId,
       version: 1
     });
-    expect(v1.data.files.find((f: { path: string }) => f.path === 'index.html').content).toContain(`v1 ${MARKER}`);
+    expect(v1.data.files.find((f: { path: string }) => f.path === 'index.html').content).toContain(
+      `v1 ${MARKER}`
+    );
   });
 
   it('rejects duplicate paths, double content, and a missing HTML entry with clean errors', async () => {
@@ -540,7 +545,9 @@ describe('sharing, collaborators, annotations, delete', () => {
     expect(res.status).toBe(403);
 
     const after = await callTool(ownerKey, 'slideless_list_share_tokens', { presentationId: deckId });
-    expect(after.data.shareTokens.every((t: { revokedAt: string | null }) => t.revokedAt !== null)).toBe(true);
+    expect(after.data.shareTokens.every((t: { revokedAt: string | null }) => t.revokedAt !== null)).toBe(
+      true
+    );
   });
 
   it('collaborator invite → list → uninvite', async () => {

@@ -13,14 +13,7 @@ import {
   type CliContext,
   type CliIo
 } from '../context.js';
-import {
-  detectEntry,
-  readLink,
-  scanDeck,
-  writeLink,
-  LINK_FILENAME,
-  type DeckScan
-} from '../manifest.js';
+import { detectEntry, readLink, scanDeck, writeLink, LINK_FILENAME, type DeckScan } from '../manifest.js';
 import { startDevServer } from '../devserver.js';
 
 /**
@@ -51,9 +44,9 @@ async function uploadMissing(ctx: CliContext, scan: DeckScan): Promise<number> {
   const { missing } = await ctx.client.precheckAssets(shas);
   const missingSet = new Set(missing);
   // One representative file per missing hash (dedupe by content).
-  const queue = [...new Map(
-    scan.files.filter((f) => missingSet.has(f.sha256)).map((f) => [f.sha256, f])
-  ).values()];
+  const queue = [
+    ...new Map(scan.files.filter((f) => missingSet.has(f.sha256)).map((f) => [f.sha256, f])).values()
+  ];
   let index = 0;
   const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, async () => {
     while (index < queue.length) {
@@ -158,8 +151,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         if (!['presentation', 'app', 'plan'].includes(kind)) {
           throw new CliUsageError('--kind must be presentation, app, or plan');
         }
-        const title =
-          opts.title ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
+        const title = opts.title ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
         const { uploadSession } = await ctx.client.createUploadSession();
         const uploaded = await uploadMissing(ctx, scan);
         const committed = await ctx.client.commitUploadSession(uploadSession.id, {
@@ -188,64 +180,53 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .description(
       `Download a deck version to a folder (id defaults to the ${LINK_FILENAME} link in the target)`
     )
-    .option('--at <version>', 'pull this version instead of the latest', (v: string) =>
-      parseInt(v, 10)
-    )
-    .action(
-      async (
-        id: string | undefined,
-        path: string | undefined,
-        opts: { at?: number },
-        cmd: Command
-      ) => {
-        const ctx = resolveContext(cmd, io);
-        requireApiKey(ctx);
+    .option('--at <version>', 'pull this version instead of the latest', (v: string) => parseInt(v, 10))
+    .action(async (id: string | undefined, path: string | undefined, opts: { at?: number }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      requireApiKey(ctx);
 
-        let deckId = id ?? null;
-        let dest = path ?? null;
-        if (!deckId) {
-          const link = await readLink(resolve(dest ?? '.'));
-          if (!link) {
-            throw new CliUsageError(
-              `No deck id given and no ${LINK_FILENAME} found — run \`slideless pull <id> [path]\`.`
-            );
-          }
-          deckId = link.presentationId;
-          dest = dest ?? '.';
+      let deckId = id ?? null;
+      let dest = path ?? null;
+      if (!deckId) {
+        const link = await readLink(resolve(dest ?? '.'));
+        if (!link) {
+          throw new CliUsageError(
+            `No deck id given and no ${LINK_FILENAME} found — run \`slideless pull <id> [path]\`.`
+          );
         }
-        dest = dest ?? deckId;
-
-        const deck = await ctx.client.presentation(deckId);
-        const version = opts.at ?? deck.currentVersion;
-        if (version < 1) throw new CliUsageError('This deck has no committed versions yet.');
-        const detail = await ctx.client.presentationVersion(deckId, version);
-
-        const destRoot = resolve(dest);
-        await mkdir(destRoot, { recursive: true });
-        for (const entry of detail.manifest) {
-          if (!safeRelPath(entry.path)) {
-            throw new Error(`Refusing to write unsafe manifest path: ${entry.path}`);
-          }
-          const res = await ctx.client.downloadPresentationAsset(deckId, entry.sha256);
-          const bytes = Buffer.from(await res.arrayBuffer());
-          const target = join(destRoot, entry.path);
-          await mkdir(dirname(target), { recursive: true });
-          await writeFile(target, bytes);
-        }
-        await writeLink(destRoot, { presentationId: deckId, baseUrl: ctx.baseUrl });
-        if (ctx.json) {
-          return printJson(io, {
-            presentation: deck,
-            version: detail,
-            path: destRoot,
-            files: detail.manifest.length
-          });
-        }
-        io.out.write(
-          `Pulled "${deck.title}" v${version} → ${destRoot} (${detail.manifest.length} files)\n`
-        );
+        deckId = link.presentationId;
+        dest = dest ?? '.';
       }
-    );
+      dest = dest ?? deckId;
+
+      const deck = await ctx.client.presentation(deckId);
+      const version = opts.at ?? deck.currentVersion;
+      if (version < 1) throw new CliUsageError('This deck has no committed versions yet.');
+      const detail = await ctx.client.presentationVersion(deckId, version);
+
+      const destRoot = resolve(dest);
+      await mkdir(destRoot, { recursive: true });
+      for (const entry of detail.manifest) {
+        if (!safeRelPath(entry.path)) {
+          throw new Error(`Refusing to write unsafe manifest path: ${entry.path}`);
+        }
+        const res = await ctx.client.downloadPresentationAsset(deckId, entry.sha256);
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const target = join(destRoot, entry.path);
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, bytes);
+      }
+      await writeLink(destRoot, { presentationId: deckId, baseUrl: ctx.baseUrl });
+      if (ctx.json) {
+        return printJson(io, {
+          presentation: deck,
+          version: detail,
+          path: destRoot,
+          files: detail.manifest.length
+        });
+      }
+      io.out.write(`Pulled "${deck.title}" v${version} → ${destRoot} (${detail.manifest.length} files)\n`);
+    });
 
   program
     .command('pull-annotations [id]')
@@ -265,9 +246,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         if (!deckId) {
           const link = await readLink(resolve('.'));
           if (!link) {
-            throw new CliUsageError(
-              `No deck id given and no ${LINK_FILENAME} in the current folder.`
-            );
+            throw new CliUsageError(`No deck id given and no ${LINK_FILENAME} in the current folder.`);
           }
           deckId = link.presentationId;
         }

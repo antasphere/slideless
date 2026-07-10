@@ -9,7 +9,14 @@ import {
   shareTokens,
   uploadSessions
 } from '@slideless/db';
-import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import {
+  createDatabase,
+  createTestApp,
+  extractCookie,
+  readJson,
+  startPostgres,
+  type TestApp
+} from './helpers.js';
 
 /**
  * Presentation domain, Phase 2 (ADR 011): the SCHEMA and the CONTRACT
@@ -67,10 +74,7 @@ describe('schema round-trip (migration 0013)', () => {
       .returning();
     presentationId = deck!.id;
 
-    const [read] = await app.db.db
-      .select()
-      .from(presentations)
-      .where(eq(presentations.id, presentationId));
+    const [read] = await app.db.db.select().from(presentations).where(eq(presentations.id, presentationId));
     expect(read).toMatchObject({
       title: 'Q3 Board Deck',
       kind: 'presentation',
@@ -200,14 +204,8 @@ describe('contract surface + fail-closed scope allowlist', () => {
 
   beforeAll(async () => {
     const mint = async (name: string, scopes: string[]) =>
-      (
-        await readJson(
-          await app.app.request(
-            '/api/v1/api-keys',
-            json({ name, scopes }, { cookie })
-          )
-        )
-      ).key as string;
+      (await readJson(await app.app.request('/api/v1/api-keys', json({ name, scopes }, { cookie }))))
+        .key as string;
     readWriteKey = await mint('rw', ['presentations:read', 'presentations:write']);
     readOnlyKey = await mint('ro', ['presentations:read']);
   });

@@ -121,13 +121,18 @@ export function registerViewerAnnotationRoutes(api: OpenAPIHono, deps: ViewerAnn
    * error response. Mirrors the viewer's status mapping (404/403/410) plus
    * the annotator requirement and the password proof.
    */
-  async function resolveAnnotator(c: Context): Promise<{ ok: true; view: Resolved } | { ok: false; res: Response }> {
+  async function resolveAnnotator(
+    c: Context
+  ): Promise<{ ok: true; view: Resolved } | { ok: false; res: Response }> {
     const secret = c.req.param('secret') ?? '';
     const token = await sharing.resolveBySecret(secret);
     if (!token) {
       // Unknown secrets burn a per-IP point: no cheaper an oracle than /v.
       await deps.annotateLimiter.consume(`${clientIp(c)}:invalid`).catch(() => {});
-      return { ok: false, res: c.json(err('not_found', 'This share link does not exist or is no longer available.'), 404) };
+      return {
+        ok: false,
+        res: c.json(err('not_found', 'This share link does not exist or is no longer available.'), 404)
+      };
     }
     if (token.revokedAt) {
       return { ok: false, res: c.json(err('revoked', 'This share link has been revoked.'), 403) };
@@ -136,33 +141,55 @@ export function registerViewerAnnotationRoutes(api: OpenAPIHono, deps: ViewerAnn
       return { ok: false, res: c.json(err('expired', 'This share link has expired.'), 410) };
     }
     if (!token.canAnnotate) {
-      return { ok: false, res: c.json(err('not_annotator', 'This share link does not allow annotations.'), 403) };
+      return {
+        ok: false,
+        res: c.json(err('not_annotator', 'This share link does not allow annotations.'), 403)
+      };
     }
 
     // Password proof: the injected unlock MAC, or the raw password header.
     if (token.passwordHash) {
       const unlock = c.req.header('x-slideless-unlock');
-      const unlocked = unlock !== undefined && verifyUnlockValue(authSecret, token.id, token.passwordHash, unlock);
+      const unlocked =
+        unlock !== undefined && verifyUnlockValue(authSecret, token.id, token.passwordHash, unlock);
       if (!unlocked) {
         const password = c.req.header('x-viewer-password');
         if (password === undefined) {
-          return { ok: false, res: c.json(err('password_required', 'This share link is password protected — present x-slideless-unlock or x-viewer-password.'), 401) };
+          return {
+            ok: false,
+            res: c.json(
+              err(
+                'password_required',
+                'This share link is password protected — present x-slideless-unlock or x-viewer-password.'
+              ),
+              401
+            )
+          };
         }
         const bucket = `${clientIp(c)}:${token.id}`;
         const state = await deps.passwordLimiter.get(bucket).catch(() => null);
         if (state !== null && state.remainingPoints <= 0) {
-          return { ok: false, res: c.json(err('rate_limited', 'Too many password attempts — try again later.'), 429) };
+          return {
+            ok: false,
+            res: c.json(err('rate_limited', 'Too many password attempts — try again later.'), 429)
+          };
         }
         if (!(await verifyViewerPassword(password, token.passwordHash))) {
           await deps.passwordLimiter.consume(bucket).catch(() => {});
-          return { ok: false, res: c.json(err('password_invalid', 'The x-viewer-password value is not correct.'), 401) };
+          return {
+            ok: false,
+            res: c.json(err('password_invalid', 'The x-viewer-password value is not correct.'), 401)
+          };
         }
       }
     }
 
     const deck = await presentations.get(token.workspaceId, token.presentationId);
     if (!deck) {
-      return { ok: false, res: c.json(err('not_found', 'This share link does not exist or is no longer available.'), 404) };
+      return {
+        ok: false,
+        res: c.json(err('not_found', 'This share link does not exist or is no longer available.'), 404)
+      };
     }
     const version = token.pinnedVersion ?? deck.currentVersion;
     if (version < 1) {
@@ -202,13 +229,22 @@ export function registerViewerAnnotationRoutes(api: OpenAPIHono, deps: ViewerAnn
     const parsed = annotationCreateBody.safeParse(raw);
     if (!parsed.success) {
       return c.json(
-        { error: { code: 'validation_error', message: 'Request validation failed', details: parsed.error.issues } },
+        {
+          error: {
+            code: 'validation_error',
+            message: 'Request validation failed',
+            details: parsed.error.issues
+          }
+        },
         400
       );
     }
     const body = parsed.data;
     if (JSON.stringify(body.selection).length > MAX_SELECTION_JSON_BYTES) {
-      return c.json(err('selection_too_large', `selection must serialize under ${MAX_SELECTION_JSON_BYTES} bytes`), 400);
+      return c.json(
+        err('selection_too_large', `selection must serialize under ${MAX_SELECTION_JSON_BYTES} bytes`),
+        400
+      );
     }
     // The note anchors to the version the reviewer SAW. A pinned token can
     // only ever mean its pin; a latest-mode token may claim the version its

@@ -83,7 +83,9 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
     async ({ limit, cursor }) => {
       const denied = checkScope(ctx.principal, 'presentations:read');
       if (denied) return denied;
-      return wrapToolErrors(async () => jsonText(await callApi(ctx, pageQuery('/api/v1/files', { cursor, limit }))));
+      return wrapToolErrors(async () =>
+        jsonText(await callApi(ctx, pageQuery('/api/v1/files', { cursor, limit })))
+      );
     }
   );
 

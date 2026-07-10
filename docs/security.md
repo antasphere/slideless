@@ -264,7 +264,7 @@ and Firefox:
 
 - Every user-content response carries
   `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups
-  allow-modals allow-downloads` (an **opaque origin**: no cookies, no
+allow-modals allow-downloads` (an **opaque origin**: no cookies, no
   storage, no service workers, no credentialed same-origin API),
   `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
   **Never `allow-same-origin`, never `allow-top-navigation*`** — either one

@@ -1,13 +1,6 @@
 import type { Command } from 'commander';
 import type { ShareTokenCreate } from '@slideless/contract';
-import {
-  CliUsageError,
-  printJson,
-  requireApiKey,
-  resolveContext,
-  table,
-  type CliIo
-} from '../context.js';
+import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
 
 /**
  * Sharing (per-recipient tokens) + per-deck dev collaborators.
@@ -124,10 +117,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         requireApiKey(ctx);
         const results: Array<{ email: string; tokenId: string; emailSent: boolean }> = [];
         for (const email of opts.to) {
-          const created = await ctx.client.createShareToken(
-            id,
-            shareOptionsOf({ ...opts, name: email })
-          );
+          const created = await ctx.client.createShareToken(id, shareOptionsOf({ ...opts, name: email }));
           const sent = await ctx.client.sendShareToken(id, created.shareToken.id, {
             email,
             ...(opts.message ? { message: opts.message } : {})
@@ -136,9 +126,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         }
         if (ctx.json) return printJson(io, { sent: results });
         io.out.write(
-          table(
-            results.map((r) => [r.email, r.tokenId, r.emailSent ? 'sent' : 'NOT SENT (no email driver)'])
-          )
+          table(results.map((r) => [r.email, r.tokenId, r.emailSent ? 'sent' : 'NOT SENT (no email driver)']))
         );
       }
     );

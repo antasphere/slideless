@@ -35,7 +35,10 @@ function pushRoutes(opts: { missing: string[]; existingDeck?: boolean }): Route[
       path: /\/api\/v1\/presentations\/assets$/,
       reply: ({ body }) => {
         uploaded.push((body as { sha256: string }).sha256);
-        return { status: 201, body: { sha256: (body as { sha256: string }).sha256, sizeBytes: 1, deduplicated: false } };
+        return {
+          status: 201,
+          body: { sha256: (body as { sha256: string }).sha256, sizeBytes: 1, deduplicated: false }
+        };
       }
     },
     {
@@ -158,10 +161,7 @@ describe('push', () => {
       })
     });
     const h = routedHarness(routes);
-    const code = await run(
-      ['push', dir, '--id', DECK.id, '--url', 'http://x', '--api-key', 'slk_k_s'],
-      h.io
-    );
+    const code = await run(['push', dir, '--id', DECK.id, '--url', 'http://x', '--api-key', 'slk_k_s'], h.io);
     expect(code).toBe(1);
     expect(h.err()).toContain('rerun');
   });

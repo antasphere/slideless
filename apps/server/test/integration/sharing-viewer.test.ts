@@ -82,7 +82,10 @@ async function uploadAsset(bytes: Buffer, contentType: string, name: string): Pr
 }
 
 async function createToken(body: Record<string, unknown>, headers: Record<string, string> = {}) {
-  const res = await app.app.request(`/api/v1/presentations/${deckId}/tokens`, json(body, { cookie, ...headers }));
+  const res = await app.app.request(
+    `/api/v1/presentations/${deckId}/tokens`,
+    json(body, { cookie, ...headers })
+  );
   expect(res.status).toBe(201);
   return readJson(res);
 }
@@ -332,10 +335,7 @@ describe('public viewer (ADR 012)', () => {
     // DEDICATED endpoint for its sandboxed iframe (ADR 012 Surface D) —
     // those opens must not inflate the deck's view stats. The exclusion
     // keys on the server-set purpose column (the name is cosmetic).
-    const res = await app.app.request(
-      `/api/v1/presentations/${deckId}/preview-token`,
-      json({}, { cookie })
-    );
+    const res = await app.app.request(`/api/v1/presentations/${deckId}/preview-token`, json({}, { cookie }));
     expect(res.status).toBe(201);
     const preview = await readJson(res);
     expect(preview.shareToken.purpose).toBe('preview');
@@ -351,9 +351,7 @@ describe('public viewer (ADR 012)', () => {
     expect(row.accessCount).toBe(0);
 
     // The deck wire shape carries the counter (list + get agree).
-    const listRes = await readJson(
-      await app.app.request('/api/v1/presentations', { headers: { cookie } })
-    );
+    const listRes = await readJson(await app.app.request('/api/v1/presentations', { headers: { cookie } }));
     const deckRow = listRes.presentations.find((p: { id: string }) => p.id === deckId);
     expect(deckRow.totalViews).toBe(before.totalViews);
     const getRes = await readJson(
@@ -443,18 +441,18 @@ describe('public viewer (ADR 012)', () => {
     expectViewerContentHeaders(latestRes);
 
     // PATCH re-pins live: pin the latest token to v1, then back to latest.
-    const pin = await app.app.request(
-      `/api/v1/presentations/${deckId}/tokens/${latest.shareToken.id}`,
-      { ...json({ versionMode: 'pinned', pinnedVersion: 1 }, { cookie }), method: 'PATCH' }
-    );
+    const pin = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${latest.shareToken.id}`, {
+      ...json({ versionMode: 'pinned', pinnedVersion: 1 }, { cookie }),
+      method: 'PATCH'
+    });
     expect(pin.status).toBe(200);
     expect((await readJson(pin)).versionMode).toBe('pinned');
     expect(await (await app.app.request(`/v/${latest.secret}`)).text()).toContain('Deck v1 marker');
 
-    const unpin = await app.app.request(
-      `/api/v1/presentations/${deckId}/tokens/${latest.shareToken.id}`,
-      { ...json({ versionMode: 'latest' }, { cookie }), method: 'PATCH' }
-    );
+    const unpin = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${latest.shareToken.id}`, {
+      ...json({ versionMode: 'latest' }, { cookie }),
+      method: 'PATCH'
+    });
     expect(unpin.status).toBe(200);
     expect(await (await app.app.request(`/v/${latest.secret}`)).text()).toContain('Deck v2 marker');
   });
@@ -472,7 +470,10 @@ describe('public viewer (ADR 012)', () => {
       )
     );
     const doomedId = reserve.uploadSession.presentationId as string;
-    const res = await app.app.request(`/api/v1/presentations/${doomedId}/tokens`, json({ name: 'D' }, { cookie }));
+    const res = await app.app.request(
+      `/api/v1/presentations/${doomedId}/tokens`,
+      json({ name: 'D' }, { cookie })
+    );
     const { secret } = await readJson(res);
     expect((await app.app.request(`/v/${secret}`)).status).toBe(200);
     await app.app.request(`/api/v1/presentations/${doomedId}`, { method: 'DELETE', headers: { cookie } });
@@ -574,10 +575,10 @@ describe('password gate', () => {
     expect(await bad.text()).toContain('not correct');
 
     // Changing the password kills outstanding unlock cookies.
-    const patch = await app.app.request(
-      `/api/v1/presentations/${deckId}/tokens/${created.shareToken.id}`,
-      { ...json({ password: 'a-new-password-1' }, { cookie }), method: 'PATCH' }
-    );
+    const patch = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${created.shareToken.id}`, {
+      ...json({ password: 'a-new-password-1' }, { cookie }),
+      method: 'PATCH'
+    });
     expect(patch.status).toBe(200);
     const stale = await app.app.request(`/v/${created.secret}`, { headers: { cookie: unlockCookie } });
     expect(stale.status).toBe(401);

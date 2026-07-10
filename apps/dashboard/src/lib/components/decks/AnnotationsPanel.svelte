@@ -242,7 +242,12 @@
       </ul>
       {#if list.nextCursor}
         <div class="flex justify-center py-2">
-          <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => void list.loadMore()}
+            disabled={list.loadingMore}
+          >
             {list.loadingMore ? t('common.loading') : t('common.loadMore')}
           </Button>
         </div>

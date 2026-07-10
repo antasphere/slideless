@@ -441,7 +441,8 @@ export const fr: Record<MessageKey, string> = {
   'decks.pushTitle': 'Pousser un deck',
   'decks.pushDescription':
     'Connectez la CLI à cette instance une fois, puis poussez n’importe quel dossier contenant un index.html.',
-  'decks.pushConnect': '1. Connectez la CLI (créez une clé sur la page Clés API, ou connectez-vous par e-mail) :',
+  'decks.pushConnect':
+    '1. Connectez la CLI (créez une clé sur la page Clés API, ou connectez-vous par e-mail) :',
   'decks.pushPush': '2. Poussez le dossier de votre deck :',
   'decks.pushDocs': 'Le guide complet se trouve dans docs/cli.md du dépôt Slideless.',
   'decks.copyCommandAria': 'Copier la commande',
@@ -581,7 +582,8 @@ export const fr: Record<MessageKey, string> = {
 
   // ── Version history ──────────────────────────────────────────────────
   'versions.title': 'Historique des versions',
-  'versions.description': 'Versions immuables, de la plus récente à la plus ancienne — sélectionnez-en une pour la prévisualiser.',
+  'versions.description':
+    'Versions immuables, de la plus récente à la plus ancienne — sélectionnez-en une pour la prévisualiser.',
   'versions.colVersion': 'Version',
   'versions.colSize': 'Taille',
   'versions.colFiles': 'Fichiers',
@@ -597,7 +599,8 @@ export const fr: Record<MessageKey, string> = {
 
   // ── Collaborator claim page (/collab/{token}) ────────────────────────
   'collab.deadTitle': 'Invitation non disponible',
-  'collab.deadDescription': 'Cette invitation de collaborateur est invalide, expirée, révoquée ou déjà utilisée.',
+  'collab.deadDescription':
+    'Cette invitation de collaborateur est invalide, expirée, révoquée ou déjà utilisée.',
   'collab.deadUsed': 'Cette invitation a déjà été utilisée.',
   'collab.deadGone': 'Cette invitation n’est plus valide.',
   'collab.errorTitle': 'Une erreur est survenue',

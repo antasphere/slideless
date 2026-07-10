@@ -15,12 +15,7 @@
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type {
-    MeResponse,
-    Presentation,
-    PresentationVersion,
-    ShareToken
-  } from '@slideless/contract';
+  import type { MeResponse, Presentation, PresentationVersion, ShareToken } from '@slideless/contract';
 
   /** Mounted under {#key deckId} — a deck switch remounts this component. */
   interface Props {
@@ -93,9 +88,7 @@
   let previewKey = $state(0);
   let previewTokenId: string | null = null;
 
-  const canPreview = $derived(
-    me.role === 'owner' || me.role === 'admin' || deck?.ownerUserId === me.user.id
-  );
+  const canPreview = $derived(me.role === 'owner' || me.role === 'admin' || deck?.ownerUserId === me.user.id);
 
   async function mintPreview(version?: number) {
     // Each mint produces its own short-lived token (secrets are
@@ -103,10 +96,7 @@
     // sessions' live previews are never revoked from here; the 1 h expiry
     // is the cleanup. Preview tokens are hidden from the panel and
     // excluded from view stats (purpose column, server-set).
-    const created = await api.createPreviewToken(
-      deckId,
-      version !== undefined ? { version } : {}
-    );
+    const created = await api.createPreviewToken(deckId, version !== undefined ? { version } : {});
     const staleId = previewTokenId;
     previewTokenId = created.shareToken.id;
     previewUrl = created.url;

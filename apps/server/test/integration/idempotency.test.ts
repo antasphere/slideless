@@ -114,10 +114,18 @@ describe('api-key create replay', () => {
   });
 
   it('writes no second audit row on replay', async () => {
-    const create = await post('/api/v1/api-keys', { name: 'idem-audit', scopes: ['presentations:read'] }, 'K-audit');
+    const create = await post(
+      '/api/v1/api-keys',
+      { name: 'idem-audit', scopes: ['presentations:read'] },
+      'K-audit'
+    );
     expect(create.status).toBe(201);
     const before = await countRows(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'apikey.create'`);
-    const replay = await post('/api/v1/api-keys', { name: 'idem-audit', scopes: ['presentations:read'] }, 'K-audit');
+    const replay = await post(
+      '/api/v1/api-keys',
+      { name: 'idem-audit', scopes: ['presentations:read'] },
+      'K-audit'
+    );
     expect(replay.status).toBe(201);
     expect(replay.headers.get('idempotency-replayed')).toBe('true');
     const after = await countRows(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'apikey.create'`);
