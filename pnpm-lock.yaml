@@ -260,6 +260,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@slideless/contract':
+        specifier: workspace:*
+        version: link:../contract
       '@slideless/sdk':
         specifier: workspace:*
         version: link:../sdk

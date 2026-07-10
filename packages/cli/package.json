@@ -1,6 +1,6 @@
 {
   "name": "@slideless/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -22,6 +22,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
     "commander": "^12.1.0"
   },
