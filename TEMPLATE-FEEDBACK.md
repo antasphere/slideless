@@ -1,437 +1,386 @@
-# Template feedback
+# Template feedback — the consolidated backlog
 
 Discoveries, friction, and improvement ideas that concern the upstream
-**codika-platform-template**, found while building Slideless on top of it.
-We do NOT change the template from here — this file is the backlog for future
-template improvements. Every work session on this repo appends its findings.
+**codika-platform-template**, found while building Slideless on top of it
+(template @ `b0dcd13`). We do NOT change the template from here — this file
+is the backlog for future template improvements.
 
-Format: dated entries, newest section last. Keep each entry short and
-actionable; link the template file/line it concerns.
+Consolidated 2026-07-10 from the dated append-log of all nine build phases,
+the adversarial reviews, and the release-gate campaign. Every distinct
+discovery is preserved; duplicates are merged (each entry names the phase(s)
+that hit it). Format per item: **problem — where it bit us — suggested
+upstream fix.** New findings: append to the matching theme.
 
-## 2026-07-10 — Phase 0 instantiation (template @ b0dcd13)
+Two sections at the end are deliberately separate: [confirmed-good template
+properties](#confirmed-good-template-properties-keep-these) (do not
+"improve" these away) and [open policy decisions for the product
+owner](#open-policy-decisions-for-the-product-owner) (Romain's calls, not
+template bugs).
 
-- **The instantiation checklist misses several product-name strings.** After
-  following `docs/instantiation.md` top to bottom, a case-insensitive sweep
-  still found `platform` as: the commander program name and description
-  (`packages/cli/src/index.ts` `.name('platform')` — this is what `--help`
-  prints, arguably as user-visible as the bin key), the MCP server identity
-  (`apps/server/src/mcp/server.ts` `{ name: 'platform' }` — shows up in MCP
-  client handshakes), the OTel `service.name` + tracer name
-  (`apps/server/src/observability/otel.ts`), the API fallback page
-  (`apps/server/src/app.ts` `<h1>Platform API is running</h1>`), the installer
-  default dir `/opt/platform` + docs mentions (`install.sh`,
-  `docs/install.md`, `docs/backup-restore.md`, `scripts/backup.sh` cron
-  example), the backup/restore/scale scripts' hardcoded `psql -U platform -d
-  platform` (NOT covered by the "compose + README + drizzle.config" list in
-  the Postgres-rename section), and cosmetic test labels. Suggest: extend the
-  checklist, or better, hoist a single `PRODUCT_NAME`/identity module the
-  whole codebase reads.
-- **The checklist doesn't say what to do with `docs/instantiation.md` itself.**
-  Its verify step greps for `@platform\|<template-name>` and expects zero
-  hits, but the checklist file itself contains both. We deleted it from the
-  product repo (and dropped its row from `docs/README.md`, its mention in
-  `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`). The checklist should state
-  that.
-- **`.changeset/config.json` pins `baseBranch: "main"`.** Instantiated
-  products use `prod` as default per the workspace rule; the checklist's
-  repo-setup section should mention it.
-- **Class names stay template-branded.** `PlatformClient`, `PlatformApiError`,
-  `PlatformRegistry`, the `src/platform/` module dir, and the i18n
-  `nav.platform` label survive instantiation. Deliberate (internal API), but
-  the checklist could say so explicitly so instantiators don't chase them.
-- **No dev mail-catcher out of the box.** `EMAIL_DRIVER=none` is a sane prod
-  default, but every product will want the real SMTP path exercised in
-  dev/E2E. We added a `docker-compose.dev.yml` Mailpit overlay +
-  `docs/dev-mailpit.md`; consider upstreaming it to the template.
-- **`docs/env-reference.md` is generated but the checklist has you sed it.**
-  The EMAIL_FROM example lives in a zod doc-comment in
-  `apps/server/src/env.ts` AND in the generated `docs/env-reference.md`;
-  cleaner instruction: edit `env.ts`, then regenerate via
-  `pnpm --filter @slideless/server docs:env`.
-- **Checklist positives worth keeping:** the file-by-file lists for the scope
-  strings and image refs were accurate and complete; `EDITION` already
-  defaulted to `oss`; the verify-grep catches most misses. The scope rename
-  (`data:read`→`presentations:read` etc.) via plain string replace worked
-  across contract/middleware/tests with zero manual fixes.
-- **The API-key-prefix rename is NOT "a one-line change".** Four test sites
-  hardcode `key_`: the mint-format regex and the tampered-key builder in
-  `apps/server/test/integration/platform-core.test.ts` (2 integration
-  failures + cascading audit assertions, 7 red tests total on first run),
-  the secret slicer in `apikey-pepper-rotation.test.ts` (passes only while
-  the new prefix has the same length as `key`), and the e2e regex in
-  `apps/dashboard/e2e/smoke.spec.ts`. Either derive them from
-  `API_KEY_PREFIX` or list them in the checklist.
-- **The pre-setup default instance name and email branding are hardcoded
-  `'Platform'`.** `boot.ts` (`cachedName` fallback), `api/index.ts` (the
-  `/instance` discovery fallback), and `email/templates.ts`
-  (`PRODUCT_NAME`, user-visible in every delivered email). None are in the
-  checklist; the branding section's "instance name needs no code change"
-  claim is only true post-wizard.
-- **`setup.sh` cannot boot a fresh instantiation.** It runs
-  `docker compose up -d --pull always`, which tries to pull
-  `ghcr.io/<owner>/<repo>:latest` — an image that does not exist until the
-  product's first release. First boot needs a local `docker build` + an
-  `APP_IMAGE` override in `.env` (what we did). setup.sh could fall back to
-  `--build` when the pull fails, or the checklist could call this out.
-- **Compose `APP_PORT` knob worked exactly as documented** when host port
-  3000 was occupied (by the template's own dev stack, amusingly): setting
-  `APP_PORT` + `PUBLIC_BASE_URL` in `.env` was sufficient, in-container port
-  untouched. Good design; keep it.
+---
 
-## 2026-07-10 — Phase 2 (presentation domain model + contracts)
+## 1. Instantiation & identity
 
-- **The SDK route-coverage test hardcodes `{id}` substitution.** Its
-  `expectedPath` helper only replaces `{id}`, so the first product route with
-  a second path param (`{tokenId}`, `{version}`, `{sha256}`) forces editing
-  the test. Suggest the template ship a param-name → sample-value map (or
-  substitute any `{param}` with a type-appropriate sample) so products only
-  add INVOKERS entries.
-- **No recipe for contract-first phased builds.** We froze 24 routes ahead of
-  their handlers by declaring a `501` response on each contract route and
-  registering stubs that answer it (implementers delete the 501 entry with
-  the handler). Worked cleanly with @hono/zod-openapi's typed handlers —
-  worth documenting as the blessed pattern, since `errorResponses` ships no
-  501 and an undeclared status fails typecheck.
-- **No multipart example in the contract layer.** Modeling
-  `multipart/form-data` (file + field) via `content: { 'multipart/form-data':
-  { schema: z.object({ sha256, file: z.any() }) } }` renders valid OpenAPI
-  3.1; a template example would have saved the trial run.
-- **Drizzle wraps pg errors: constraint assertions must inspect `.cause`.**
-  `expect(...).rejects.toThrow(/constraint_name/)` never matches because
-  DrizzleQueryError's message is `Failed query: <sql>`; the pg error (with
-  `.code === '23505'` and `.constraint`) hangs off `error.cause`. Worth a
-  line in the template's testing docs.
-- **Positives:** `drizzle-kit generate --name <slug>` slotted a cleanly named
-  0013 into the journal; the scopes.ts "Products: open your domain endpoints
-  here" comment made the fail-closed extension obvious; reusing the
+1. **The instantiation checklist misses several product-name strings.** A
+   post-checklist sweep still found `platform` as: the commander program
+   name/description (`packages/cli/src/index.ts` — what `--help` prints),
+   the MCP server identity (`apps/server/src/mcp/server.ts`, shows up in MCP
+   handshakes), the OTel `service.name` + tracer name
+   (`observability/otel.ts`), the API fallback page (`app.ts`), the
+   installer default dir `/opt/platform` (+ docs mentions), the
+   backup/restore/scale scripts' hardcoded `psql -U platform -d platform`,
+   and cosmetic test labels. (Phase 0.) Fix: extend the checklist, or better
+   hoist a single `PRODUCT_NAME` identity module the whole codebase reads.
+2. **Pre-setup branding is hardcoded `'Platform'`** in `boot.ts`
+   (`cachedName` fallback), `api/index.ts` (`/instance` discovery fallback),
+   and `email/templates.ts` (`PRODUCT_NAME`, user-visible in every delivered
+   email); none are in the checklist and the "instance name needs no code
+   change" claim is only true post-wizard. (Phase 0.) Fix: fold into the
+   identity module above.
+3. **The API-key-prefix rename is NOT a one-line change.** Four test sites
+   hardcode `key_`: the mint-format regex + tampered-key builder in
+   `platform-core.test.ts` (7 red tests on first run), the secret slicer in
+   `apikey-pepper-rotation.test.ts` (passes only while prefix length
+   matches), and the e2e regex in `dashboard/e2e/smoke.spec.ts`. (Phase 0.)
+   Fix: derive them from `API_KEY_PREFIX`, or list all four in the checklist.
+4. **The checklist doesn't say what to do with `docs/instantiation.md`
+   itself** — its verify-grep expects zero `@platform` hits but the
+   checklist file contains them. We deleted it (and its index/README
+   mentions). (Phase 0.) Fix: the checklist should state that step.
+5. **`.changeset/config.json` pins `baseBranch: "main"`** while instantiated
+   products default to `prod`. (Phase 0.) Fix: mention in the repo-setup
+   section.
+6. **Template-branded class names survive instantiation by design**
+   (`PlatformClient`, `PlatformApiError`, `PlatformRegistry`,
+   `src/platform/`, `nav.platform`) but nothing says so — instantiators
+   chase them. (Phase 0.) Fix: one checklist line declaring them internal
+   API, deliberately kept.
+7. **`docs/env-reference.md` is generated, but the checklist has you sed
+   it.** The EMAIL_FROM example lives in a zod doc-comment in `env.ts` AND
+   in the generated doc. (Phase 0.) Fix: instruct "edit `env.ts`, then
+   `pnpm --filter <server> docs:env`".
+8. **`setup.sh` cannot boot a fresh instantiation**: `docker compose up -d
+--pull always` tries to pull an image that does not exist until the first
+   release; first boot needs a local build + `APP_IMAGE` override. (Phase 0.)
+   Fix: fall back to `--build` when the pull fails, or call it out in the
+   checklist.
+9. **No dev mail-catcher out of the box.** `EMAIL_DRIVER=none` is the right
+   prod default, but every product wants the real SMTP path in dev/E2E.
+   Slideless added a `docker-compose.dev.yml` Mailpit overlay +
+   `docs/dev-mailpit.md`. (Phase 0.) Fix: upstream the overlay.
+
+## 2. Auth chassis: OTP, key minting, account entrances
+
+10. **The template has no browserless "OTP → API key" flow** — keys only
+    mint from a dashboard session, so every CLI/agent bootstrap needs a
+    browser. Slideless added `POST /cli/auth/{request,complete}` (public
+    pre-auth routes riding the emailOTP plugin's `disableSignUp`, minting a
+    scoped key from the verified sign-in, deleting the throwaway session).
+    (Phase 6.) Fix: upstream as an optional surface next to `/setup` — the
+    pattern is fully generic.
+11. **Duplicate-email `signUpEmail` races are a template-wide pattern.**
+    Every public account-minting endpoint needs the loser's unique-violation
+    mapped to a clean `409 account_exists` (password hashing is tens of ms,
+    the lookup ~1 ms, so the window is real); Slideless fixed its
+    collaborator claim, but the template's `api/invitations.ts` accept has
+    the identical uncaught-500 window. (Phase 5 review.) Fix: catch+map in
+    the invitation accept, and note the pattern wherever `signUpEmail` is
+    called pre-auth.
+12. **Orphan account on revoke-during-claim.** Claim/accept endpoints create
+    the account via `auth.api.signUpEmail` BEFORE the guarded token redeem;
+    a revoke landing in between leaves a real account + membership with no
+    active grant (claim answers 410, account stays) — same shape as setup's
+    documented orphaned-user trade-off. The template's invitation-accept
+    shares the window. (Phase 5 review, finding 6.) Fix: needs an
+    account-creation/claim transaction seam the identity layer does not
+    expose today; at minimum document the window.
+13. **`/setup`'s `signUpEmail` auto-creates an owner session (autoSignIn
+    default) that nothing ever holds.** Harmless but invisible — it
+    surprises any test asserting "no sessions for this user". (Phase 6.)
+    Fix: pass the option to skip auto sign-in at setup, or document it.
+14. **`user.created` is emitted from exactly one call site** (invitation
+    accept), so products subscribing for claim-at-signup semantics must know
+    setup and other entrances do NOT fire it — Slideless's claim endpoint
+    emits manually. (Phase 5.) Fix: emit from a single identity-layer hook
+    (Better Auth `databaseHooks.user.create.after`) so the event is
+    trustworthy by construction.
+15. **The config-level 2FA after-hook also fires for server-side
+    `auth.api.signInEmailOTP` calls** — verified live (an enrolled user's
+    server-side OTP sign-in returns `{ twoFactorRedirect: true }` with no
+    session). Good for safety; nobody should assume it is HTTP-only.
+    (Phase 6.) Fix: a note on the hook.
+16. **"Public API path" means two different things and only one is written
+    down.** `isPublicApiPath` skips credential resolution entirely; the
+    OTHER tier — routes outside `requireAuth` that still resolve an optional
+    session and rely on the fail-closed scope gate (invitation accept,
+    collaborator lookup/claim) — exists only as an unwritten convention.
+    (Phase 5.) Fix: a doc block over `isPublicApiPath` naming both tiers and
+    blessing "not requireAuth + unlisted in scopes.ts" for human
+    token-redemption endpoints.
+
+## 3. MCP chassis
+
+17. **The chassis' tool helpers are module-private.** `checkScope` and
+    `callApi` live unexported inside `mcp/server.ts`, so the first product
+    with a second tool file must refactor before writing a tool. Slideless
+    moved them to `mcp/tool-kit.ts` (context type + checkScope + callApi +
+    raw-Response variant + pageQuery). (Phase 7.) Fix: ship that split;
+    `server.ts` keeps only the example tools.
+18. **`callApi` force-parses JSON — binary surfaces need a raw variant.**
+    Asset downloads and multipart uploads can't ride a JSON-only helper;
+    Slideless added `fetchApiRaw` (auth header attached, non-2xx →
+    ApiToolError, Response returned). (Phase 7.) Fix: upstream next to
+    callApi.
+19. **The `/mcp` bodyLimit answers plain HTTP 413, not a JSON-RPC error**, so
+    a tool-level size cap must sit BELOW the transport cap to ever produce a
+    model-readable error (Slideless caps inline uploads at 768 KiB decoded —
+    the base64-inflation bound of a 1 MiB envelope — and the error names the
+    CLI). (Phase 7.) Fix: document the relationship in the chassis.
+20. **Stateless `/mcp` accepts `tools/call` without `initialize`** — each
+    request builds a fresh McpServer and the SDK doesn't enforce the
+    handshake, so raw JSON-RPC POSTs via `app.request` are a legitimate,
+    fast integration-test harness (no listening server needed). (Phase 7.)
+    Fix: a note in the chassis docs next to the SDK-client dance test.
+
+## 4. Security headers, CSP & serving user content
+
+21. **The global `securityHeaders` middleware CLOBBERED per-route CSP and
+    `Referrer-Policy`** — it ran after `next()` and unconditionally
+    overwrote both on every `text/html` response, silently replacing a
+    viewer route's `CSP: sandbox` with the dashboard CSP. The exact
+    fail-dangerous class ADR 012 warns about, and nothing fails loudly when
+    it bites. (Found by the viewer spike; fixed in Phase 4 with
+    `!c.res.headers.has(...)` set-if-absent guards.) Fix: ship the guarded
+    form — a baseline header middleware must be a DEFAULT, never an
+    override.
+22. **`files/http.ts`'s attachment-by-default needs a first-class,
+    documented escape hatch** for products that must render user content
+    inline. Slideless had to bypass `contentDispositionFor` and hand-roll
+    the ADR 012 header set. (Spike + Phase 4.) Fix: a blessed "isolated
+    inline" serving helper — inline + `nosniff` + `no-referrer` + a REQUIRED
+    `CSP: sandbox …` that refuses to emit without the sandbox directive and
+    hard-bans `allow-same-origin` — so the one dangerous exception is
+    centralized and test-guarded.
+23. **`serveBlob` hardcodes disposition and an `immutable` Cache-Control** —
+    both correct for the app-origin files surface, both wrong for a
+    sandboxed viewer whose URLs are not content-addressed. Two optional
+    fields (`contentDisposition`, `extraHeaders`) made it reusable.
+    (Phase 4.) Fix: upstream that shape, documented as "only under an
+    isolation regime".
+24. **Design rule: never key server behavior on a client-controlled NAME.**
+    Slideless' dashboard preview minted share tokens under a reserved name
+    and keyed concealment + stat-exclusion on it — any deck writer could
+    mint a concealed, stat-silent link (covert access channel; fixed with a
+    server-set `purpose` column + a dedicated owner-gated mint endpoint,
+    migration 0017). (Release gate.) Fix: if the template ever grows
+    "system-minted rows sharing a user table", ship the discriminator as a
+    server-set column from day one.
+
+## 5. Contract & API chassis (zod-openapi)
+
+25. **CHASSIS BUG — malformed/empty JSON bodies 500 on every zod-openapi
+    body route.** Hono's json validator throws `HTTPException(400)` BEFORE
+    zod runs; the chassis `defaultHook` only handles
+    `result.success === false`, so the exception falls to `app.onError` →
+    500 `internal` + an error-level log — pre-auth reachable (`/setup`,
+    `/cli/auth/request`, `/invitations/accept`), a log-noise amplifier any
+    anonymous client can drive. (Release gate; fixed here.) Fix — port
+    Slideless' exact shape upstream: (1) handle
+    `HTTPException && status === 400` FIRST in the top-level `app.onError`
+    (`invalid_json` for JSON parse, `invalid_body` for malformed multipart,
+    NO error log) — the only workable seam: Hono routes the throw straight
+    to the app errorHandler, a try/catch middleware never observes it, and a
+    sub-app `onError` is ignored under `app.route()`; (2) mark every
+    contract request body `required: true` (a `jsonRequestBody` helper) —
+    without it zod-openapi SKIPS body validation when the content-type is
+    missing/non-JSON and hands the handler `{}` cast as the body type — a
+    guaranteed TypeError → 500. Regression suite:
+    `apps/server/test/integration/body-validation.test.ts`.
+26. **The SDK route-coverage test hardcodes `{id}` substitution** — the
+    first product route with a second path param (`{tokenId}`, `{version}`,
+    `{sha256}`) forces editing the test. (Phase 2.) Fix: ship a param-name →
+    sample-value map (or substitute any `{param}` with a type-appropriate
+    sample) so products only add INVOKERS entries.
+27. **No recipe for contract-first phased builds.** Slideless froze 24
+    routes ahead of their handlers by declaring a `501` response on each
+    contract route and registering stubs that answer it (implementers delete
+    the 501 entry with the handler); worked cleanly with typed handlers.
+    (Phase 2.) Fix: document as the blessed pattern (`errorResponses` ships
+    no 501 and an undeclared status fails typecheck).
+28. **No multipart example in the contract layer.** Modeling
+    `multipart/form-data` via `content: { 'multipart/form-data': { schema:
+z.object({ sha256, file: z.any() }) } }` renders valid OpenAPI 3.1 but
+    took a trial run. (Phase 2.) Fix: one template example.
+29. **The global 1 MiB JSON `bodyLimit` needs per-surface routing** as soon
+    as a product has legitimately-large JSON (contract-valid 5000-entry
+    commit manifests exceed it); Slideless routes limits by path (1 MiB
+    default / 16 MiB manifests / MAX_FILE_SIZE_MB+1 multipart). (Phase 3.)
+    Fix: a `bodyLimitByPrefix([...])` helper so it is a declaration, not an
+    if-chain every product re-grows.
+30. **Contract routes that declare no 403 force forbidden-as-404.** The
+    frozen annotation entries declared only 401/404, so
+    authorized-but-wrong-role had to answer 404. (Phase 5.) Fix: authoring
+    guidance — "every authed resource route declares 401 AND 403 AND 404
+    unless hiding existence is deliberate".
+
+## 6. Storage & files
+
+31. **Hono/zod-openapi multipart validation buffers whole parts in RAM**
+    (`zValidator('form')` rides `parseBody()`), then Slideless buffers again
+    to hash-verify the declared sha256. Fine at slide-asset sizes under a
+    bodyLimit; strictly worse than the template's streamed `POST /files`
+    pipeline for large payloads. (Phase 3.) Fix: if the template grows a
+    multipart helper, make it a streaming parser (busboy-style) that can
+    hash-and-spool per part — hash-verified multipart for free.
+32. **`FileService.delete` needed a transactional in-use seam.** A product
+    that builds references onto `files` (the whole point of reusing the
+    table) must run its reference check INSIDE the delete transaction with
+    the row locked FOR UPDATE (commits lock FOR SHARE) — the template's
+    delete was fire-and-forget. Slideless added an optional `inUse(tx, row)`
+    callback. (Phase 3.) Fix: upstream the seam.
+
+## 7. Tokens, invitations & rate limiting
+
+33. **The two-token invitation pattern is not extractable.**
+    `invitations/service.ts` (mint pair → sha256 both →
+    find-live-and-report-which → guarded one-shot redeem) had to be
+    re-implemented verbatim for per-deck collaborator grants because the
+    service is welded to its tables. (Phase 5.) Fix: a tiny helper —
+    `mintClaimTokenPair()` + `matchClaimToken(hashA, hashB, presented)` — so
+    every token-redemption surface reuses the crypto + the ADR 009
+    which-token-proves-mailbox semantics.
+34. **`PepperRegistry` only exposed `get(version)` + `current` — resolution
+    for versionless credentials was impossible.** A share-token secret IS
+    the lookup key, so resolving across rotations needs the registered
+    version list to compute candidate hashes; Slideless added
+    `versions: readonly number[]`. (Phase 4.) Fix: ship it from the start —
+    any token whose hash is the index key needs it.
+35. **Hash-only token storage forces a design choice on "email this link
+    later"**: the server cannot re-derive the URL. Slideless made send
+    ROTATE the token onto a fresh secret (mint → mail → persist, so a failed
+    delivery never bricks the old link). (Phase 4.) Fix: a template-level
+    note on one-shot secrets vs later-delivery flows saves every product the
+    same detour.
+36. **Lock-free cap COUNT races.** `assertUnderCap` COUNTs live rows inside
+    the invite transaction, but two concurrent invites for DIFFERENT emails
+    take no common lock, so both pass at cap-1 and land cap+1. Low stakes,
+    but the template's invitations service has the same pattern. (Phase 5
+    review, finding 7.) Fix: per-scope advisory lock or recheck-after-insert.
+37. **Rate-limiter buckets are shared across surfaces keyed by the same
+    string** — `limiters.login` keyed `email:<addr>` is one bucket for
+    password sign-in AND any new surface reusing it (the CLI complete
+    endpoint). Right posture (per-account brute-force budget), but tests
+    driving both surfaces must budget shared points. (Phase 6.) Fix: one
+    line in the rate-limit module docs.
+
+## 8. SDK, CLI & pagination
+
+38. **The template CLI's default URL (`http://localhost:3000`) is a footgun
+    for multi-instance products** — with a config file in play it silently
+    points real commands at whatever occupies :3000. Slideless dropped it:
+    no flag/env/profile → explicit error. (Phase 6.) Fix: same, once the
+    template CLI grows a config file.
+39. **`keysetBefore`'s `workspaceId` parameter is really a scope column.**
+    Phases 4 and 5 both scoped it by parent id (deck) and each call site
+    demands the same explanatory comment. Fix: rename the field to
+    `scopeColumn`/`scope`.
+
+## 9. Dashboard chassis
+
+40. **The api-keys page's `createRawSnippet` badge pattern is an XSS
+    invitation when copied.** Fine for the server-generated keyId it
+    interpolates today; the first product page that copies it for a
+    USER-supplied field ships stored XSS on the app origin. Slideless kept
+    it strictly for static i18n strings, rendered every user field through
+    FlexRender's escaped path, with SECURITY comments at each site — and the
+    annotation wire shapes carry a prominent "no server-side sanitization;
+    every rendering surface MUST escape body/authorName/selection" warning
+    (escaping shipped in the Phase 8 dashboard). (Phases 5+8.) Fix: ship a
+    tiny props-based auto-escaped `TextBadge` cell component + a warning
+    comment on createRawSnippet usage.
+41. **The dashboard vite dev proxy hardcodes `http://localhost:3000`** —
+    with several template-derived stacks on one laptop, `pnpm dev` silently
+    proxies /api to a DIFFERENT product's container. (Phase 8.) Fix:
+    `DEV_API_ORIGIN ?? 'http://localhost:3000'`.
+42. **`createPagedList` swallows the HTTP status** — panels that must fall
+    back gracefully on 403 (role-gated sub-resources) can't distinguish
+    "forbidden" from "network down"; the store only keeps `e.message`.
+    (Phase 8.) Fix: keep the PlatformApiError (or at least `status`) on the
+    store's error state.
+43. **The French catalog's NBSP typography is easy to break mechanically** —
+    a blanket "space before :/?/!" fixup also rewrites comments, which
+    `no-irregular-whitespace` rejects. (Phase 8.) Fix: a tiny catalog lint
+    (NBSP before double punctuation inside fr string VALUES only).
+
+## 10. Testing & CI shapes
+
+44. **Drizzle wraps pg errors: constraint assertions must inspect
+    `.cause`.** `rejects.toThrow(/constraint_name/)` never matches —
+    DrizzleQueryError's message is `Failed query: <sql>`; the pg error
+    (`.code === '23505'`, `.constraint`) hangs off `error.cause`. (Phase 2.)
+    Fix: a line in the template's testing docs.
+45. **One flat Playwright project made suite ordering an accident of file
+    names.** The smoke spec assumes a virgin database, so any second spec
+    sorting before it breaks the run; Slideless moved to `projects` with
+    `dependencies: ['smoke']`. (Phase 8.) Fix: ship that shape from the
+    start.
+
+## Confirmed-good template properties (keep these)
+
+- **The instantiation checklist's file-by-file lists for scope strings and
+  image refs were accurate and complete**; the verify-grep catches most
+  misses; `EDITION` already defaulted to `oss`; the scope rename via plain
+  string replace worked across contract/middleware/tests with zero manual
+  fixes. (Phase 0.)
+- **The compose `APP_PORT` knob worked exactly as documented** when host
+  port 3000 was occupied — `.env` only, in-container port untouched.
+  (Phase 0.)
+- **`drizzle-kit generate --name <slug>` slots cleanly named migrations into
+  the journal; the scopes.ts "Products: open your domain endpoints here"
+  comment made the fail-closed extension obvious; reusing the
   content-addressed `files` machinery for a product blob store required zero
-  template changes (ADR 011).
+  template changes** (ADR 011). (Phase 2.)
+- **The route-precedence "open slot" in `app.ts` works as intended** — a
+  public product sub-app mounted in the documented slot takes requests ahead
+  of `serveStatic`/the SPA fallback with no surprises. (Spike.)
+- **`pageOf`/`keysetBefore` generalized cleanly to child collections** by
+  passing the parent-id column as the scope column. (Phase 3.)
+- **The explicit idempotency target list is the right shape** — one Set
+  entry + a doc line per new POST. (Phase 3.)
+- **The auth-surface rate-limiter registry-of-named-buckets extends cleanly
+  to product surfaces** — one `viewerPassword` entry for the password gate's
+  per-IP+token wall. (Phase 4.)
+- **OAuth portability is fixed at the root**: nothing under apps/ or
+  packages/ hardcodes an external origin — the 401 challenge, RFC 9728
+  document, issuer, and `/mcp` audience all derive from `PUBLIC_BASE_URL`
+  (verified against :3100 and an ephemeral test origin). (Phase 7.)
 
-## 2026-07-10 — Viewer-origin security spike (ADR 012)
+## Open policy decisions for the product owner
 
-- **The global `securityHeaders` middleware CLOBBERS per-route CSP and
-  `Referrer-Policy`.** `middleware/security-headers.ts` runs after `next()` and
-  unconditionally calls `c.header('referrer-policy', …)` and, on any `text/html`
-  response, `c.header('content-security-policy', <dashboard csp>)`. Both are
-  hard overwrites, so a route cannot serve its own policy: a viewer route
-  setting `Content-Security-Policy: sandbox …` and `Referrer-Policy: no-referrer`
-  gets silently reverted to the dashboard CSP + `strict-origin-when-cross-origin`
-  at the wire. Any product that must serve a second HTML policy on the app origin
-  (a sandboxed content viewer, an embeddable widget, a differently-CSP'd public
-  page) hits this. Fix is a one-line guard — only set the default when the route
-  has not already set one: `if (!c.res.headers.has('content-security-policy'))`
-  and likewise for `referrer-policy`. Consider making the template's middleware
-  respect a route-set value by default. (Guard demonstrated on branch
-  `spike/viewer-origin`.)
-- **The route-precedence "open slot" in `app.ts` works as intended.** Mounting a
-  public product sub-app with `app.route('/', …)` in the documented slot before
-  `serveStatic`/the SPA fallback took the request cleanly, ahead of the catch-all
-  — no precedence surprises. Keep the slot and its comment.
-- **`files/http.ts`'s attachment-by-default is the right default, but a product
-  that renders user content needs a documented, first-class escape hatch.**
-  Slideless must serve user HTML **inline** under a sandboxing CSP (ADR 012).
-  Today that means bypassing `contentDispositionFor` entirely and hand-rolling
-  the headers. The template could offer a blessed "isolated inline" serving
-  helper (inline + `nosniff` + `Referrer-Policy: no-referrer` + a required
-  `Content-Security-Policy: sandbox …` that refuses to emit without the sandbox
-  directive and hard-bans `allow-same-origin`), so the one dangerous exception to
-  the "never render user content on the app origin" rule is centralized and
-  test-guarded rather than re-derived per product.
-- **`/api/v1` cross-site credentialed hardening would help isolated viewers.**
-  security.md already flags that the custom `/api/v1` routes rely on
-  `SameSite=Lax` alone (no per-request Origin/Sec-Fetch-Site symmetry check). The
-  spike showed Firefox will still transmit the session cookie on an
-  opaque-origin credentialed fetch to `/api/v1/me` (the response was CORS-blocked
-  so nothing leaked, and the server answered 401). Adding the noted
-  Origin/`Sec-Fetch-Site: cross-site` rejection to the `/api/v1` surface would
-  refuse the request outright — a template-level defense-in-depth that every
-  content-rendering product inherits.
+Surfaced by the adversarial reviews and RECORDED ON PURPOSE — product policy
+calls for Romain, not template bugs. Nothing here is silently fixed.
 
-## 2026-07-10 — Phase 3 (upload + versioning pipeline)
-
-- **Hono/zod-openapi multipart validation buffers whole parts in memory.** The
-  contract fixed `multipart/form-data` for the asset upload, and
-  `zValidator('form')` rides `c.req.parseBody()`, which materializes every part
-  as a `File` in RAM; we then buffer once more (`file.arrayBuffer()`) to
-  hash-verify the declared sha256 BEFORE any row/blob exists. Fine at
-  slide-asset sizes (and a `bodyLimit` bounds the parse), but the template's
-  streamed-with-mid-stream-cap upload pattern (`POST /files`, spool + hash in
-  one pipeline) is strictly better for large payloads. If a future template
-  revision grows a multipart helper, make it a streaming multipart parser
-  (busboy-style) that can hash-and-spool per part — products then get
-  hash-verified multipart for free instead of choosing between "multipart" and
-  "streaming".
-- **The global 1 MiB JSON `bodyLimit` needs per-surface routing as soon as a
-  product has legitimately-large JSON.** Contract-valid commit manifests (5000
-  entries × 1 KiB paths) exceed 1 MiB, so `api/index.ts` now routes body
-  limits by path (1 MiB default / 16 MiB manifests / MAX_FILE_SIZE_MB+1 MiB
-  multipart). A template-level `bodyLimitByPrefix([...])` helper would make
-  this a declaration instead of an if-chain every product re-grows.
-- **`FileService.delete` needed a transactional in-use seam.** ADR 011's
-  blob-guard (a deck manifest must pin its blobs against the generic
-  `DELETE /files/{id}`) only closes race-free if the reference check runs
-  inside the delete transaction with the files row locked FOR UPDATE, while
-  commits lock referenced rows FOR SHARE. The template's delete was
-  fire-and-forget (soft-delete then blob removal). The optional
-  `inUse(tx, row)` callback added here is a clean general seam — consider
-  upstreaming it: any product that builds references onto `files` (the whole
-  point of reusing the table) needs exactly this hook.
-- **`pageOf`/`keysetBefore` generalized cleanly to a child collection** by
-  passing the parent-id column as the "workspace" scope column (version
-  listings scope the cursor subquery to the deck, not the workspace) — nice
-  property of the helper's shape; worth a doc line in pagination.ts.
-- **The explicit idempotency target list is the right shape** — adding
-  `POST /presentations/uploads` was one Set entry + a doc line. No friction,
-  recording the confirmation.
-
-## 2026-07-10 — Phase 4 (sharing + the public viewer)
-
-- **The global `securityHeaders` middleware unconditionally clobbered
-  per-route CSP and Referrer-Policy** — the exact fail-dangerous class ADR
-  012 warns about: a route that sets `Content-Security-Policy: sandbox …`
-  for user content had it silently replaced by the dashboard CSP on every
-  `text/html` response. Fixed here with `!c.res.headers.has(...)` guards
-  (set-if-absent). The template should ship the guarded form: a baseline
-  header middleware must be a DEFAULT, never an override — any product that
-  adds a public content route hits this, and nothing fails loudly when it
-  bites.
-- **`serveBlob` needed disposition/header override seams for a sandboxed
-  inline surface.** The safe-serving helper hardcodes
-  `contentDispositionFor` (attachment for active types) and an `immutable`
-  Cache-Control — both correct for the app-origin files surface, both wrong
-  for a sandboxed viewer whose URLs are not content-addressed. Two optional
-  fields (`contentDisposition`, `extraHeaders`) made it reusable; consider
-  upstreaming that shape (documented as "only under an isolation regime").
-- **`PepperRegistry` only exposed `get(version)` + `current` — resolution
-  for versionless credentials was impossible.** API keys carry their pepper
-  version in the row (keyId lookup first); a share-token secret IS the
-  lookup key, so resolving across rotations needs the registered version
-  list to compute candidate hashes. Added `versions: readonly number[]` to
-  the registry. Any product token whose hash is the index key (share links,
-  claim tokens...) needs this — worth having in the template from the start.
-- **Hash-only token storage forces a choice on "email this link later":
-  the server cannot re-derive the URL.** We made send ROTATE the token onto
-  a fresh secret (mint → mail → persist, so a failed delivery never bricks
-  the old link) and documented it in the route contract. A template-level
-  note on this pattern (one-shot secrets vs. later-delivery flows) would
-  save every product the same design detour.
-- **The auth-surface rate-limiter registry extended cleanly** — one
-  `viewerPassword: make('viewer-pw', 10, 15*60)` entry for the password
-  gate's per-IP+token failure wall. Confirming the registry-of-named-buckets
-  shape scales to product surfaces.
-
-## 2026-07-10 — Phase 5 (collaborators + annotations)
-
-- **The two-token invitation pattern is not extractable.**
-  `invitations/service.ts` (mint pair → sha256 both → find-live-and-report-
-  which → guarded one-shot redeem) had to be re-implemented verbatim for the
-  per-deck collaborator grants (`collaborators/service.ts`) because the
-  service is welded to the `invitations`/`workspace_members` tables. A tiny
-  template helper — `mintClaimTokenPair()` + `matchClaimToken(hashA, hashB,
-  presented)` — would let every product token-redemption surface (deck
-  grants here; any future resource-scoped invite) reuse the crypto + the
-  ADR 009 which-token-proves-mailbox semantics instead of copying them.
-- **"Public API path" means two different things and only one is written
-  down.** `isPublicApiPath` (auth-context.ts) skips credential resolution
-  entirely; the OTHER public tier — routes like `/invitations/accept` that
-  stay outside `requireAuth` but still resolve an optional session and rely
-  on the fail-closed scope gate to keep machines out — exists only as an
-  unwritten convention. Phase 5 added two more of the second kind
-  (`/collaborators/lookup|claim`) plus a genuinely anonymous surface
-  (`/api/v1/viewer/*`). A short doc block over `isPublicApiPath` naming the
-  two tiers (and that "not requireAuth + unlisted in scopes.ts" is the
-  sanctioned pattern for human token-redemption endpoints) would prevent a
-  future implementer from "fixing" one into the other.
-- **`user.created` is emitted from exactly one call site (invitation
-  accept), not from a central identity seam.** Products subscribing to it
-  for claim-at-signup semantics (collaborator grants here) must know that
-  setup's owner creation and any future account entrance do NOT fire it —
-  Phase 5's claim endpoint has to emit it manually. Emitting from a single
-  identity-layer hook (Better Auth databaseHooks user.create.after) would
-  make the event trustworthy by construction.
-- **`keysetBefore`'s `workspaceId` parameter is really a scope column.**
-  Phase 4 already scoped it by `presentationId` for tokens/versions; Phase 5
-  repeated that for collaborators and annotations. The name keeps demanding
-  a comment at every call site — renaming the field to `scopeColumn` /
-  `scope` in the template would erase four copies of the same explanation.
-- **Contract routes that declare no 403 force forbidden-as-404.** The frozen
-  annotation list/create entries declare only 401/404, so the handlers must
-  answer 404 for an authorized-user-but-wrong-role (they do, documented).
-  Template guidance for contract authors — "every authed resource route
-  declares 401 AND 403 AND 404 unless hiding existence is deliberate" —
-  would make that a choice instead of an accident.
-
-## 2026-07-10 — Phase 5 adversarial review: open items deliberately NOT fixed
-
-Fixed in this pass: workspace-wide deck reads (ADR 013, `canReadDeck` +
-scoped list) and the concurrent-claim 500 (duplicate-account error now maps
-to 409 `account_exists`). The following were surfaced by the same review and
-are RECORDED HERE ON PURPOSE — policy calls for the product owner or
-template-level robustness gaps, not silent fixes:
-
-- **`/members` roster visibility to collaborators (policy decision, template
-  route).** A claimed collaborator is a workspace member and can GET
-  `/members` — the full name/email roster, including other external
-  collaborators. Under the ADR 013 "external parties" model that may be more
-  than a one-deck reviewer should see. Needs an owner decision: hide the
-  roster from plain members, or accept it as the price of the
-  membership-based auth layer.
-- **Members can create decks and every deck owner can invite collaborators
-  (the account-minting policy).** Any claimed collaborator can create their
-  own deck, become its owner, and invite further emails — each claim mints a
-  real account on the instance. Transitively, one invited reviewer can
-  populate the instance with accounts. If that is not intended, deck
-  creation and/or invite rights need a role gate; owner decision pending.
-- **Annotation bodies are stored and served RAW (P8 escaping directive).**
-  `annotationToWire` / `annotationToReviewerWire` now carry a prominent
-  warning: no server-side sanitization; every rendering surface (dashboard
-  first) MUST HTML-escape `body`, `authorName`, and `selection` or
-  annotations become stored XSS against deck owners. The P8 dashboard pass
-  must ship that escaping.
-- **Finding 6 — orphan account on revoke-during-claim window.** The claim
-  endpoint creates the account via `auth.api.signUpEmail` BEFORE the guarded
-  grant claim; a revoke landing in between leaves a real account +
-  membership with no active grant (the claim answers 410, the account
-  stays). Same shape as setup's documented "orphaned user" trade-off; a fix
-  needs an account-creation/claim transaction seam the identity layer does
-  not expose today. The template's invitation-accept path shares the window.
-- **Finding 7 — lock-free collaborator-cap COUNT race.** `assertUnderCap`
-  COUNTs live grants inside the invite transaction, but two concurrent
-  invites for DIFFERENT emails on one deck take no common lock (the
-  FOR UPDATE is per (deck, email) row), so both can pass at cap-1 and land
-  cap+1. Low stakes (cap 10 is a soft product bound); a per-deck advisory
-  lock or a recheck-after-insert would close it. The template's invitations
-  service has the same pattern.
-- **Duplicate-email signUpEmail races are a template-wide pattern.** The
-  collaborator claim handler now maps the loser's unique-violation to a
-  clean 409; `api/invitations.ts` accept (and any future public
-  account-minting endpoint) has the identical uncaught-500 window and should
-  get the same mapping upstream.
-
-## Phase 6 (SDK completion + slideless CLI, 2026-07-10)
-
-- **The template should ship a browserless "OTP → API key" flow.** The
-  template only mints keys from a dashboard session, so every CLI/agent
-  bootstrap needs a browser round-trip. Slideless added
-  `POST /cli/auth/{request,complete}` (public pre-auth routes riding the
-  emailOTP plugin's `disableSignUp`, minting a scoped key from the verified
-  sign-in and deleting the throwaway session). The pattern is fully generic —
-  worth upstreaming as an optional template surface next to /setup.
-- **`auth.api.signUpEmail` auto-creates a session (autoSignIn default) —
-  /setup leaves a dangling owner session row nobody holds.** Harmless
-  (expiry bounds it, token never handed out), but it surprises any test
-  asserting "no sessions for this user" and is invisible until you look.
-  Either pass the option to skip auto sign-in at setup or document it.
-- **The config-level 2FA hook (identity/better-auth.ts hooks.after on
-  /sign-in/email-otp) also fires for server-side `auth.api.signInEmailOTP`
-  calls** — verified live in the CLI-auth flow (an enrolled user's
-  server-side OTP sign-in returns `{ twoFactorRedirect: true }` with no
-  session). Good news for safety; worth a note on the hook so nobody
-  assumes it is HTTP-only.
-- **The template CLI's URL default (`http://localhost:3000`) is a footgun
-  for multi-instance products.** Slideless dropped it: no flag/env/profile →
-  explicit error. Suggest the template do the same once it grows a config
-  file; a silent localhost default sends real commands to the wrong place
-  the moment a laptop runs a local stack.
-- **rate-limiter buckets are shared across surfaces keyed by the same
-  string.** `limiters.login` keyed by `email:<addr>` is one bucket for
-  password sign-in AND any new surface that reuses the limiter with
-  emailKeyOf (the CLI complete endpoint). That is the right posture
-  (per-account brute-force budget), but tests that drive both surfaces for
-  one account must budget the shared points — worth one line in the
-  rate-limit module docs.
-
-## Phase 7 (MCP tool set, 2026-07-10)
-
-- **The chassis' tool helpers are module-private — extract them into a
-  tool-kit module.** `checkScope` and `callApi` live unexported inside
-  `mcp/server.ts`, so the first product that grows a second tool file has to
-  refactor before writing a tool. Slideless moved them to `mcp/tool-kit.ts`
-  (context type + checkScope + callApi + a raw-Response variant + pageQuery);
-  the template should ship that split from the start, with server.ts keeping
-  only the example tools.
-- **`callApi` force-parses JSON — binary surfaces need a raw variant.** Asset
-  downloads and multipart uploads can't ride a JSON-only helper. Slideless
-  added `fetchApiRaw` (auth header attached, non-2xx parsed into ApiToolError,
-  Response returned). Worth upstreaming next to callApi.
-- **The /mcp bodyLimit answers plain HTTP 413, not a JSON-RPC error.** Fine
-  in practice (SDK clients surface it as a transport failure), but it means a
-  tool-level size cap must sit BELOW the transport cap to ever produce a
-  model-readable error. Slideless caps inline upload content at 768 KiB
-  decoded (base64 inflation ⇒ nothing bigger fits a 1 MiB envelope anyway)
-  and the tool error names the CLI. Document the relationship in the chassis.
-- **Stateless /mcp accepts tools/call without initialize** — each request
-  builds a fresh McpServer that never saw the handshake and the SDK does not
-  enforce it, so raw JSON-RPC POSTs (e.g. via app.request in tests) are a
-  legitimate, fast way to integration-test tools without a listening server.
-  Worth a note in the chassis docs next to the SDK-client dance test.
-- **OAuth portability confirmed fixed at the root.** Nothing under apps/ or
-  packages/ hardcodes an external origin: the 401 challenge, RFC 9728
-  document, issuer and `/mcp` audience all derive from PUBLIC_BASE_URL
-  (verified against :3100 and in tests against an ephemeral origin). The
-  legacy MCP's app.slideless.ai bug has no structural equivalent here.
-
-## Phase 8 (dashboard product UI, 2026-07-10)
-
-- **The api-keys page's `createRawSnippet` badge pattern is an XSS invitation
-  when copied.** The template renders table badges via
-  `createRawSnippet(() => ({ render: () => `<span>${value}</span>` }))` —
-  fine for the server-generated keyId it interpolates today, but the first
-  product page that copies the pattern for a USER-supplied field ships
-  stored XSS on the app origin. Slideless kept the pattern strictly for
-  static i18n strings and rendered every user field through FlexRender's
-  escaped string path, with SECURITY comments at each site. The template
-  should ship a tiny `TextBadge` cell component (props-based, auto-escaped)
-  and a warning comment on createRawSnippet usage.
-- **The dashboard vite dev proxy hardcodes `http://localhost:3000`.** With
-  several template-derived stacks on one laptop, `pnpm dev` silently proxies
-  /api to whatever occupies :3000 — in this workspace that was a DIFFERENT
-  product's container. Make the target an env override
-  (e.g. `DEV_API_ORIGIN ?? 'http://localhost:3000'`).
-- **`createPagedList` swallows the HTTP status.** Panels that must fall back
-  gracefully on 403 (role-gated sub-resources on a page others can read)
-  can't distinguish "forbidden" from "network down" — the store only keeps
-  `e.message`. Worth keeping the PlatformApiError (or at least its status)
-  on the store's error state.
-- **Playwright: one flat project made suite ordering an accident of file
-  names.** The smoke spec assumes a virgin database (first-boot wizard), so
-  any second spec file sorting before it breaks the run. Slideless moved to
-  `projects` with `dependencies: ['smoke']`; the template should ship that
-  shape from the start.
-- **The French catalog's NBSP typography is easy to break mechanically.**
-  A blanket "space before :/?/!" fixup also rewrites comments, which
-  `no-irregular-whitespace` then rejects (strings are exempted, comments are
-  not). A tiny catalog lint (NBSP required before double punctuation inside
-  fr string VALUES only) would make the convention self-enforcing.
-
-## Release-gate security campaign (2026-07-10)
-
-- **CHASSIS BUG — malformed/empty JSON bodies 500 on every zod-openapi body
-  route.** Hono's json validator throws `HTTPException(400, "Malformed JSON
-  in request body")` BEFORE zod runs; the chassis `defaultHook` in
-  api/index.ts only handles `result.success === false`, so the exception
-  falls through to `app.onError` → 500 `{"error":{"code":"internal"}}` plus
-  an error-level log. Pre-auth reachable (/setup, /cli/auth/request,
-  /invitations/accept) → a log-noise amplifier any anonymous client can
-  drive. Slideless' fix (port it upstream): (1) handle
-  `HTTPException && status === 400` FIRST inside the top-level `app.onError`
-  in app.ts, answering the wire shape — code `invalid_json` for the JSON
-  parse case, `invalid_body` for malformed multipart, and NO error log.
-  That is the only workable seam: Hono catches a thrown error at the
-  throwing handler's own dispatch frame and routes it straight to the app
-  errorHandler, so a try/catch middleware around `next()` never observes
-  it, and a sub-app `onError` is ignored when mounted via `app.route()`.
-  (2) Mark every contract REQUEST body `required: true` (a
-  `jsonRequestBody` helper next to `jsonBody`) — without it, zod-openapi
-  SKIPS body validation entirely when the content-type is missing/non-JSON
-  and hands the handler `{}` cast as the body type, which is a guaranteed
-  TypeError → 500 on `/setup` et al.
-  Regression suite: apps/server/test/integration/body-validation.test.ts.
-- **Design lesson for product templates: never key server behavior on a
-  client-controlled NAME.** Slideless' dashboard preview minted share tokens
-  under a reserved name ("Dashboard preview") and keyed panel-hiding and
-  view-stat exclusion on that name — any deck writer could mint a concealed,
-  stat-silent share link (covert access channel; fixed with a server-set
-  `purpose` column + a dedicated owner-gated mint endpoint, migration 0017).
-  If the template ever grows "system-minted rows sharing a user table",
-  ship the discriminator as a server-set column from day one.
+1. **`/members` roster visibility to collaborators.** A claimed collaborator
+   is a workspace member and can GET `/members` — the full name/email
+   roster, including other external collaborators. Under the ADR 013
+   "external parties" model that may be more than a one-deck reviewer should
+   see. Decide: hide the roster from plain members, or accept it as the
+   price of the membership-based auth layer.
+2. **The member account-minting policy.** Any claimed collaborator can
+   create their own deck, become its owner, and invite further emails — each
+   claim mints a real account, so one invited reviewer can transitively
+   populate the instance with accounts. If not intended, deck creation
+   and/or invite rights need a role gate.
+3. **Cross-site Origin-symmetry defense-in-depth on `/api/v1`.** The custom
+   routes rely on SameSite=Lax alone; the ADR 012 spike showed Firefox still
+   transmits the session cookie on an opaque-origin credentialed fetch (the
+   response stayed unreadable and the server answered 401 — no break).
+   Adding an Origin/`Sec-Fetch-Site: cross-site` rejection would refuse such
+   requests outright — belt-and-suspenders every content-rendering product
+   would inherit if upstreamed. Decide whether to ship it product-side now
+   or wait for the template.
+4. **The dead-token existence oracle in the viewer.** `/v/{secret}` statuses
+   deliberately differ by cause: revoked → 403, expired → 410, unknown → 404. Friendlier for legitimate recipients, but it lets anyone probing a
+   secret distinguish "this link once existed" from "never existed". Decide:
+   keep the differentiated UX or collapse dead tokens to a uniform 404
+   (live-link secrecy is unaffected either way — 384-bit secrets).
