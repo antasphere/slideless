@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  collaborators,
   files,
   presentations,
   presentationVersions,
@@ -9,7 +10,8 @@ import {
   type DbConn,
   type PresentationRow,
   type PresentationVersionRow,
-  type UploadSessionRow
+  type UploadSessionRow,
+  type VersionAuthorRole
 } from '@slideless/db';
 import type { ManifestEntry, Principal } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
@@ -269,7 +271,18 @@ export class PresentationService {
         .for('update')
         .limit(1);
       if (!deck) return { ok: false, failure: { code: 'not_found' } };
-      if (!canWriteDeck(opts.principal, deck)) return { ok: false, failure: { code: 'forbidden' } };
+      // Who may commit, and as which role (Phase 5): the deck owner and
+      // workspace admins/owners commit as 'owner'; an ACTIVE per-deck dev
+      // collaborator commits as 'dev' (checked inside the transaction so a
+      // concurrent revoke serializes against the commit). Anyone else: 403.
+      let authorRole: VersionAuthorRole;
+      if (canAdministerDeck(opts.principal, deck)) {
+        authorRole = 'owner';
+      } else if (await isActiveDevCollaborator(tx, deck.id, opts.principal.userId)) {
+        authorRole = 'dev';
+      } else {
+        return { ok: false, failure: { code: 'forbidden' } };
+      }
       if (deck.currentVersion !== opts.expectedBaseVersion) {
         return { ok: false, failure: { code: 'version_conflict', currentVersion: deck.currentVersion } };
       }
@@ -290,9 +303,9 @@ export class PresentationService {
           sizeBytes: stamped.sizeBytes,
           fileCount: stamped.fileCount,
           createdBy: opts.principal.userId,
-          // Dev collaborators arrive in Phase 5; every commit today is by the
-          // deck owner or a workspace admin acting as one.
-          createdByRole: 'owner'
+          // 'owner' for the deck owner / workspace admins, 'dev' for an
+          // active per-deck collaborator (resolved above, in-transaction).
+          createdByRole: authorRole
         })
         .returning();
       const [updated] = await tx
@@ -357,6 +370,11 @@ export class PresentationService {
       )
       .limit(1);
     return row ?? null;
+  }
+
+  /** Handler-facing wrapper over the module-level canWriteDeck (needs a conn). */
+  canWrite(principal: Principal, deck: PresentationRow): Promise<boolean> {
+    return canWriteDeck(this.db, principal, deck);
   }
 
   /**
@@ -494,12 +512,50 @@ export class PresentationService {
 }
 
 /**
- * Write access to a deck: its owner, or a workspace admin/owner (decks are
- * WORKSPACE data — ADR 006 — and an orphaned deck, owner_user_id NULL after
- * account deletion, must stay manageable). Plain members cannot touch decks
- * they do not own. Dev collaborators join this check in Phase 5.
+ * OWNER-LEVEL control of a deck: its owner, or a workspace admin/owner
+ * (decks are WORKSPACE data — ADR 006 — and an orphaned deck, owner_user_id
+ * NULL after account deletion, must stay manageable). This is the gate for
+ * the owner-only acts: deleting the deck and inviting/revoking its
+ * collaborators. Dev collaborators deliberately do NOT pass this.
  */
-export function canWriteDeck(principal: Principal, deck: PresentationRow): boolean {
+export function canAdministerDeck(principal: Principal, deck: PresentationRow): boolean {
   if (deck.ownerUserId === principal.userId) return true;
   return principal.role === 'owner' || principal.role === 'admin';
+}
+
+/** True when the user holds an ACTIVE per-deck dev grant (Phase 5). */
+export async function isActiveDevCollaborator(
+  conn: DbConn,
+  presentationId: string,
+  userId: string
+): Promise<boolean> {
+  const [row] = await conn
+    .select({ id: collaborators.id })
+    .from(collaborators)
+    .where(
+      and(
+        eq(collaborators.presentationId, presentationId),
+        eq(collaborators.userId, userId),
+        eq(collaborators.status, 'active')
+      )
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * WRITE access to a deck (Phase 5 shape): owner-level control OR an active
+ * dev collaborator. Devs can push versions (createdByRole 'dev'), pull, and
+ * manage the deck's share tokens and annotations — but never delete the deck
+ * or touch its collaborator list (canAdministerDeck above). Works for
+ * machine principals too: an API key acts as its owning user, so a dev's key
+ * writes exactly what the dev's session could.
+ */
+export async function canWriteDeck(
+  conn: DbConn,
+  principal: Principal,
+  deck: PresentationRow
+): Promise<boolean> {
+  if (canAdministerDeck(principal, deck)) return true;
+  return isActiveDevCollaborator(conn, deck.id, principal.userId);
 }

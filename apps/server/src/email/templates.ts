@@ -196,6 +196,43 @@ export function buildShareEmail(p: ShareEmailParams): { subject: string; html: s
   return { subject, html, text };
 }
 
+export interface CollaboratorInviteEmailParams {
+  inviteeEmail: string;
+  inviterName: string;
+  presentationTitle: string;
+  claimUrl: string;
+  expiresAt: Date;
+}
+
+/**
+ * Per-deck collaborator invite (Phase 5). The claim URL in this mail carries
+ * the EMAIL-ONLY token (the inviter never sees it — ADR 009 honesty), so a
+ * claim through it proves mailbox control.
+ */
+export function buildCollaboratorInviteEmail(p: CollaboratorInviteEmailParams): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const subject = `${p.inviterName} invited you to collaborate on "${p.presentationTitle}"`;
+  const html = shell(
+    `Collaborate on ${esc(p.presentationTitle)}`,
+    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
+       ${esc(p.inviterName)} invited you (${esc(p.inviteeEmail)}) to collaborate on
+       <strong>${esc(p.presentationTitle)}</strong> on ${PRODUCT_NAME} — you will be able to
+       push new versions and manage its share links.</p>
+     <p style="margin:0 0 24px">
+       <a href="${p.claimUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
+          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
+         Accept and start collaborating</a></p>
+     <p style="margin:0;color:#a1a1aa;font-size:12px">
+       This invite expires on ${p.expiresAt.toUTCString()}. If the button does not work, open:<br>
+       <span style="word-break:break-all">${p.claimUrl}</span></p>`
+  );
+  const text = `${p.inviterName} invited you to collaborate on "${p.presentationTitle}" on ${PRODUCT_NAME}.\n\nAccept: ${p.claimUrl}\n\nExpires ${p.expiresAt.toUTCString()}.`;
+  return { subject, html, text };
+}
+
 export interface OtpEmailParams {
   otp: string;
   type: string;

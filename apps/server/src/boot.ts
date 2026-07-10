@@ -41,6 +41,7 @@ import { NoopUsageSink } from './platform/usage.js';
 import { resolveAuthSecret } from './secret.js';
 import { ShareTokenService } from './sharing/service.js';
 import { PresentationService } from './presentations/service.js';
+import { CollaboratorService } from './collaborators/service.js';
 import { viewerRoutes } from './viewer/routes.js';
 import { createRuntimeState, type RuntimeState } from './state.js';
 import type { UsageSink } from '@slideless/contract';
@@ -283,6 +284,19 @@ export async function boot(
   const sharing = new ShareTokenService(db.db, pepperRegistry);
   const limiters = await createRateLimiters(env, logger);
 
+  // Per-deck collaborators (Phase 5). Claim-at-signup: user creation is the
+  // moment the template redeems invitations, so a fresh account (created via
+  // a workspace invitation or the collaborator claim endpoint) sweeps every
+  // live pending grant addressed to its email. The event bus isolates
+  // failures; the sweep is idempotent against the claim endpoint's own.
+  const collaboratorService = new CollaboratorService(db.db);
+  events.on('user.created', async ({ userId, email: userEmail }) => {
+    const claimed = await collaboratorService.claimAllPendingForEmail(userEmail, userId);
+    if (claimed > 0) {
+      logger.info({ userId, claimed }, 'claimed pending collaborator grants at account creation');
+    }
+  });
+
   // Storage: probed at boot — /readyz stays red on an unwritable volume.
   state.reason = 'probing storage';
   const storage = createStorageDriver(env);
@@ -309,7 +323,8 @@ export async function boot(
     oauthJwt,
     authSecret,
     accountDeletion,
-    sharing
+    sharing,
+    collaborators: collaboratorService
   });
 
   // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in

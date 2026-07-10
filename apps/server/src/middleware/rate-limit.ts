@@ -41,6 +41,12 @@ export interface RateLimiters {
    */
   viewerPassword: RateLimiterAbstract;
   /**
+   * Public token-authed annotation creates (Phase 5) — keyed per IP AND per
+   * token (invalid secrets burn a per-IP point) so a leaked annotator link
+   * can spam one deck only as fast as this bucket refills.
+   */
+  viewerAnnotate: RateLimiterAbstract;
+  /**
    * Shared factory riding the same backend (Redis when REDIS_URL is set,
    * memory otherwise) for buckets sized at runtime — the per-principal
    * request quota creates one limiter per distinct quota tier through this.
@@ -83,6 +89,7 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     workspaceExport: make('ws-export', 5, 600),
     breakGlass: make('break-glass', 10, 60 * 60),
     viewerPassword: make('viewer-pw', 10, 15 * 60),
+    viewerAnnotate: make('viewer-annot', 60, 10 * 60),
     make
   };
 }

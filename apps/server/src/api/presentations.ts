@@ -12,9 +12,6 @@ import {
   assetDownloadRoute,
   assetPrecheckRoute,
   assetUploadRoute,
-  collaboratorInviteRoute,
-  collaboratorRemoveRoute,
-  collaboratorsListRoute,
   presentationDeleteRoute,
   presentationGetRoute,
   presentationsListRoute,
@@ -40,18 +37,19 @@ import type { FileService } from '../files/service.js';
 import { FileTooLargeError } from '../files/service.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
-import { canWriteDeck, type PresentationService } from '../presentations/service.js';
+import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import { buildViewerUrl, shareTokenToWire, type ShareTokenService } from '../sharing/service.js';
 import { hashViewerPassword } from '../sharing/password.js';
+import { annotationToWire, type AnnotationService } from '../annotations/service.js';
 import { requireAuth } from '../middleware/auth-context.js';
 
 /**
- * Presentation domain routes (ADR 011). Phase 3 implemented the upload +
- * versioning pipeline (push protocol, pull, delete); Phase 4 (sharing + the
- * public viewer, whose token-session routes live OUTSIDE this
- * principal-gated surface) and Phase 5 (collaborators/annotations) still
- * answer the 501 declared on their contract entries — implementers replace a
- * stub AND delete the 501 entry from the route contract in the same change.
+ * Presentation domain routes (ADR 011). Phase 3: the upload + versioning
+ * pipeline (push protocol, pull, delete). Phase 4: sharing (the public
+ * viewer's token-session routes live OUTSIDE this principal-gated surface —
+ * viewer/routes.ts + viewer/annotations-api.ts). Phase 5: the owner/dev
+ * annotation management surface below; the per-deck collaborator routes
+ * live in api/collaborators.ts.
  */
 
 const err = (code: string, message: string) => ({ error: { code, message } });
@@ -90,6 +88,7 @@ const sessionToWire = (s: UploadSessionRow) => ({
 export interface PresentationRouteDeps {
   service: PresentationService;
   sharing: ShareTokenService;
+  annotations: AnnotationService;
   fileService: FileService;
   storage: StorageDriver;
   registry: PlatformRegistry;
@@ -100,15 +99,12 @@ export interface PresentationRouteDeps {
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
-  const { service, sharing, fileService, storage, registry, env, email, logger } = deps;
+  const { service, sharing, annotations, fileService, storage, registry, env, email, logger } = deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   api.use('/presentations', requireAuth());
   api.use('/presentations/*', requireAuth());
   api.use('/annotations', requireAuth());
-
-  const notImplemented = (phase: string) =>
-    err('not_implemented', `Not implemented yet — this endpoint arrives with ${phase}`);
 
   // ── Upload (push protocol) ─────────────────────────────────────────────────
   // Literal-segment siblings of /presentations/{id} first (see LESSONS.md on
@@ -283,7 +279,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         case 'not_found':
           return c.json(err('not_found', 'Presentation not found'), 404);
         case 'forbidden':
-          return c.json(err('forbidden', 'Only the deck owner or a workspace admin can commit'), 403);
+          return c.json(
+            err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can commit'),
+            403
+          );
         case 'invalid_manifest':
           return c.json(err('invalid_manifest', f.message), 400);
         case 'missing_blobs':
@@ -353,7 +352,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
     if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
-    if (!canWriteDeck(principal, deck)) {
+    // Owner-level only — a dev collaborator can push to a deck but never
+    // destroy it (canAdministerDeck, not the collaborator-aware canWrite).
+    if (!canAdministerDeck(principal, deck)) {
       return c.json(err('forbidden', 'Only the deck owner or a workspace admin can delete it'), 403);
     }
     const deleted = await service.softDelete(deck);
@@ -418,15 +419,14 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   });
 
   // ── Sharing (Phase 4) ──────────────────────────────────────────────────────
-  // Managing a deck's share tokens is the deck OWNER's surface (or a
-  // workspace admin — decks are workspace data, ADR 006), READS INCLUDED:
-  // listings expose recipient labels and access stats, so plain members do
-  // not see them. Dev collaborators join `canWriteDeck` in Phase 5 — that
-  // helper is the authorization seam. Machine access rides the existing
-  // /presentations scope mapping (reads → presentations:read, mutations →
-  // presentations:write; middleware/scopes.ts).
+  // Managing a deck's share tokens is the deck writers' surface — the owner,
+  // a workspace admin (decks are workspace data, ADR 006), or since Phase 5
+  // an ACTIVE dev collaborator — READS INCLUDED: listings expose recipient
+  // labels and access stats, so plain members do not see them. Machine
+  // access rides the existing /presentations scope mapping (reads →
+  // presentations:read, mutations → presentations:write; middleware/scopes.ts).
 
-  /** Deck + sharing-surface authorization, or the error response to return. */
+  /** Deck + write-surface authorization, or the error response to return. */
   const deckForSharing = async (
     c: HonoContext,
     id: string
@@ -434,10 +434,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const deck = await service.get(principal.workspaceId, id);
     if (!deck) return { status: 404, body: err('not_found', 'Presentation not found') };
-    if (!canWriteDeck(principal, deck)) {
+    if (!(await service.canWrite(principal, deck))) {
       return {
         status: 403,
-        body: err('forbidden', 'Only the deck owner or a workspace admin can manage its share tokens')
+        body: err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can manage its share tokens')
       };
     }
     return { deck };
@@ -629,15 +629,113 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     return c.json({ shareToken: shareTokenToWire(updated), emailSent: true }, 200);
   });
 
-  // ── Phase 5 stubs (contract-frozen 501s) ───────────────────────────────────
+  // ── Annotations (Phase 5, owner/dev management surface) ───────────────────
+  // Reading a deck's annotation stream is gated like share tokens: the deck
+  // owner, a workspace admin, or an active dev collaborator (reviewer notes
+  // are feedback addressed to the deck's writers, not workspace-public).
+  // The list/create contracts declare no 403, so an ordinary member gets the
+  // same 404 an outsider would — the stream's existence is not advertised.
+  // The anonymous reviewer surface lives in viewer/annotations-api.ts.
 
-  api.openapi(collaboratorsListRoute, (c) => c.json(notImplemented('Phase 5 (collaborators)'), 501));
-  api.openapi(collaboratorInviteRoute, (c) => c.json(notImplemented('Phase 5 (collaborators)'), 501));
-  api.openapi(collaboratorRemoveRoute, (c) => c.json(notImplemented('Phase 5 (collaborators)'), 501));
+  api.openapi(annotationsListRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const { cursor, limit, version, status } = c.req.valid('query');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const { annotations: rows, nextCursor } = await annotations.list(principal.workspaceId, id, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit,
+      version,
+      status
+    });
+    return c.json({ annotations: rows.map(annotationToWire), nextCursor }, 200);
+  });
 
-  api.openapi(annotationsListRoute, (c) => c.json(notImplemented('Phase 5 (annotations)'), 501));
-  api.openapi(annotationCreateRoute, (c) => c.json(notImplemented('Phase 5 (annotations)'), 501));
-  api.openapi(annotationUpdateRoute, (c) => c.json(notImplemented('Phase 5 (annotations)'), 501));
-  api.openapi(annotationDeleteRoute, (c) => c.json(notImplemented('Phase 5 (annotations)'), 501));
-  api.openapi(annotationsInboxRoute, (c) => c.json(notImplemented('Phase 5 (annotations)'), 501));
+  api.openapi(annotationCreateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    if (body.version > deck.currentVersion) {
+      return c.json(err('invalid_version', `Version ${body.version} does not exist on this presentation`), 400);
+    }
+    const row = await annotations.create({
+      workspaceId: principal.workspaceId,
+      presentationId: id,
+      version: body.version,
+      shareTokenId: null,
+      authorUserId: principal.userId,
+      authorName: principal.name,
+      selection: body.selection,
+      body: body.body
+    });
+    c.set('audit', {
+      action: 'presentation.annotation_create',
+      resourceType: 'annotation',
+      resourceId: row.id,
+      metadata: { presentationId: id, version: row.version }
+    });
+    return c.json(annotationToWire(row), 201);
+  });
+
+  api.openapi(annotationUpdateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, annotationId } = c.req.valid('param');
+    const patch = c.req.valid('json');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!(await service.canWrite(principal, deck))) {
+      return c.json(err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'), 403);
+    }
+    const existing = await annotations.get(principal.workspaceId, id, annotationId);
+    if (!existing) return c.json(err('not_found', 'Annotation not found'), 404);
+    const updated = (await annotations.update(existing.id, patch)) ?? existing;
+    c.set('audit', {
+      action: 'presentation.annotation_update',
+      resourceType: 'annotation',
+      resourceId: existing.id,
+      metadata: { presentationId: id, changed: Object.keys(patch) }
+    });
+    return c.json(annotationToWire(updated), 200);
+  });
+
+  api.openapi(annotationDeleteRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, annotationId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!(await service.canWrite(principal, deck))) {
+      return c.json(err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'), 403);
+    }
+    const existing = await annotations.get(principal.workspaceId, id, annotationId);
+    if (!existing) return c.json(err('not_found', 'Annotation not found'), 404);
+    const deleted = (await annotations.delete(existing.id)) ?? existing;
+    c.set('audit', {
+      action: 'presentation.annotation_delete',
+      resourceType: 'annotation',
+      resourceId: existing.id,
+      metadata: { presentationId: id, version: existing.version }
+    });
+    return c.json(annotationToWire(deleted), 200);
+  });
+
+  // Workspace-wide inbox: admins/owners see every live deck's annotations;
+  // members see the decks they own plus their active collaborations.
+  api.openapi(annotationsInboxRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { cursor, limit, version, status } = c.req.valid('query');
+    const { annotations: rows, nextCursor } = await annotations.inbox(principal, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit,
+      version,
+      status
+    });
+    return c.json({ annotations: rows.map(annotationToWire), nextCursor }, 200);
+  });
 }

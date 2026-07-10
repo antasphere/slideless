@@ -351,7 +351,19 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     };
 
     // The annotation-injection seam (Phase 5). null = stream untouched.
-    const transform = entryTransformFor({ token, rawRequested: rawRequested(c) });
+    // `browserEntry` keeps the overlay away from agents: it requires an HTML
+    // Accept AND no agent-style password unlock (x-viewer-password header) —
+    // raw/agent pulls always get the exact authored bytes.
+    const transform = entryTransformFor({
+      token,
+      rawRequested: rawRequested(c),
+      browserEntry:
+        (c.req.header('accept') ?? '').includes('text/html') &&
+        c.req.header('x-viewer-password') === undefined,
+      version: version.version,
+      mintUnlockProof: () =>
+        token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
+    });
     if (transform) {
       const key = blobKey(token.workspaceId, entry.sha256);
       if (!(await storage.exists(key))) {
@@ -362,6 +374,9 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
         chunks.push(chunk as Buffer);
       }
       const html = transform(Buffer.concat(chunks).toString('utf8'));
+      // Injected responses re-assert the exact ADR 012 header set and carry
+      // deliberately NO ETag: serveBlob's content-sha ETag would lie about
+      // the mutated bytes (the entry is no-store anyway, so nothing is lost).
       const transformedHeaders = {
         ...entryHeaders,
         'content-type': 'text/html; charset=utf-8',

@@ -90,6 +90,8 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'POST /presentations/{id}/collaborators': (c) => c.inviteCollaborator(SAMPLE_ID, { email: 'a@b.co' }),
   'DELETE /presentations/{id}/collaborators/{collaboratorId}': (c) =>
     c.removeCollaborator(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'GET /collaborators/lookup': (c) => c.lookupCollaboratorInvite(SAMPLE_TOKEN),
+  'POST /collaborators/claim': (c) => c.claimCollaboratorInvite({ token: SAMPLE_TOKEN }),
   'GET /presentations/{id}/annotations': (c) => c.annotations(SAMPLE_ID),
   'POST /presentations/{id}/annotations': (c) =>
     c.createAnnotation(SAMPLE_ID, { version: 1, selection: { slide: 1 }, body: 'n' }),

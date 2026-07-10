@@ -37,11 +37,22 @@ export function requiredScopeFor(path: string, method: string): Scope | null {
   // whole /presentations tree — listings, upload sessions, precheck, asset
   // push/pull, version commits, share tokens, collaborators, per-deck
   // annotations. Reads → presentations:read, mutations → presentations:write.
+  // (Per-route authorization still applies on top: e.g. a dev collaborator's
+  // write key can commit versions but its deck-delete / collaborator-invite
+  // calls 403 at the handler — the scope opens the door, the deck ACL rules.)
   if (path === '/api/v1/presentations' || path.startsWith('/api/v1/presentations/')) {
     return isRead ? 'presentations:read' : 'presentations:write';
   }
   // Workspace-wide annotation inbox: read-only today — list ONLY the read so
   // any future mutation on this path stays fail-closed until opened here.
   if (path === '/api/v1/annotations' && isRead) return 'presentations:read';
+  // Deliberately UNLISTED (fail-closed 403 for keys/tokens), like break-glass:
+  //  - /collaborators/lookup + /collaborators/claim — public token-redemption
+  //    endpoints for HUMANS (they mint accounts/memberships); a machine
+  //    credential has no business redeeming a claim link. Anonymous callers
+  //    never reach this gate — it judges resolved machine principals only.
+  //  - /viewer/* — the public share-token annotation surface (Phase 5): the
+  //    share-token secret is the credential there, never a principal; agents
+  //    manage annotations through /presentations/{id}/annotations instead.
   return null;
 }

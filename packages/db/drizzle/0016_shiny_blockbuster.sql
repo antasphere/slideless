@@ -1,0 +1,2 @@
+ALTER TABLE "collaborators" ADD COLUMN "claim_email_token_hash" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "collaborators_claim_email_token_hash_uniq" ON "collaborators" USING btree ("claim_email_token_hash");

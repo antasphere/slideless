@@ -32,7 +32,11 @@ import { registerAuditRoutes } from './audit.js';
 import { registerFileRoutes } from './files.js';
 import { registerExportRoutes } from './export.js';
 import { registerPresentationRoutes } from './presentations.js';
+import { registerCollaboratorRoutes } from './collaborators.js';
 import { PresentationService } from '../presentations/service.js';
+import { AnnotationService } from '../annotations/service.js';
+import type { CollaboratorService } from '../collaborators/service.js';
+import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import type { AccountDeletionService } from '../accounts/deletion.js';
 import type { FileService } from '../files/service.js';
@@ -59,6 +63,8 @@ export interface ApiDeps {
   accountDeletion: AccountDeletionService;
   /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
   sharing: ShareTokenService;
+  /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
+  collaborators: CollaboratorService;
 }
 
 /** Control-flow marker: the singleton claim lost (instance already set up). */
@@ -93,6 +99,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // ── Public OAuth endpoints first: wildcard CORS + OPTIONS 204 + no-store
   // on token responses. Before the rate limits so preflights cost nothing.
   api.use('/auth/*', oauthPublicEndpoints());
+  // The public viewer-token annotation surface (Phase 5): same posture — the
+  // overlay calls cross-origin from the sandboxed opaque origin (Origin:
+  // null), token-authed, never cookie-authed, so wildcard CORS is safe.
+  api.use('/viewer/*', viewerApiCors());
 
   // ── Body size caps, path-routed. 1 MiB is generous for every JSON/auth
   // body. Exceptions:
@@ -156,6 +166,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   api.use('/setup', rateLimit(limiters.setup, clientIp));
   api.use('/invitations/accept', rateLimit(limiters.invitationAccept, clientIp));
   api.use('/invitations/lookup', rateLimit(limiters.invitationAccept, clientIp));
+  // Collaborator claims are invitation acceptances in per-deck clothing —
+  // the same public token-redemption surface, the same wall.
+  api.use('/collaborators/claim', rateLimit(limiters.invitationAccept, clientIp));
+  api.use('/collaborators/lookup', rateLimit(limiters.invitationAccept, clientIp));
   // Break-glass: a rare superadmin recovery action — a tight per-IP wall
   // bounds allowlist probing before the handlers' own session checks run.
   api.use('/admin/break-glass/*', rateLimit(limiters.breakGlass, clientIp));
@@ -368,9 +382,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     cachedInstanceId = row?.id ?? 'unsetup';
     return cachedInstanceId;
   };
-  // Presentation domain (ADR 011): Phase 3 (upload/versioning/pull) is live;
-  // Phases 4 (sharing) and 5 (collaboration) still answer contract 501s.
+  // Presentation domain (ADR 011): Phases 3 (upload/versioning/pull),
+  // 4 (sharing + viewer), and 5 (collaborators/annotations) are all live.
   const presentationService = new PresentationService(db);
+  const annotationService = new AnnotationService(db);
   registerFileRoutes(api, {
     service: deps.fileService,
     storage: deps.storage,
@@ -385,6 +400,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   registerPresentationRoutes(api, {
     service: presentationService,
     sharing: deps.sharing,
+    annotations: annotationService,
     fileService: deps.fileService,
     storage: deps.storage,
     registry,
@@ -392,6 +408,32 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     email,
     logger,
     instanceId
+  });
+  // Collaborator routes AFTER registerPresentationRoutes: the /presentations
+  // requireAuth gates registered there must precede these handlers.
+  registerCollaboratorRoutes(api, {
+    db,
+    env,
+    auth,
+    email,
+    audit,
+    registry,
+    logger,
+    presentations: presentationService,
+    collaborators: deps.collaborators
+  });
+  // The PUBLIC viewer-token annotation surface (Phase 5): token-authed,
+  // deliberately outside requireAuth and the scope allowlist — see the
+  // module's containment story. Registered before the 404 terminator.
+  registerViewerAnnotationRoutes(api, {
+    sharing: deps.sharing,
+    presentations: presentationService,
+    annotations: annotationService,
+    logger,
+    authSecret: deps.authSecret,
+    annotateLimiter: limiters.viewerAnnotate,
+    passwordLimiter: limiters.viewerPassword,
+    clientIp
   });
 
   api.doc('/openapi.json', {

@@ -45,3 +45,29 @@ export const collaboratorInvitedSchema = z.object({
   emailSent: z.boolean()
 });
 export type CollaboratorInvited = z.infer<typeof collaboratorInvitedSchema>;
+
+/** Public claim-token resolution (drives the claim page — the invitations pattern). */
+export const collaboratorLookupSchema = z.object({
+  email: z.string(),
+  presentationTitle: z.string(),
+  role: collaboratorRoleSchema,
+  expiresAt: z.string(),
+  /** True when an account with the invited email already exists (sign in to claim). */
+  accountExists: z.boolean()
+});
+export type CollaboratorLookup = z.infer<typeof collaboratorLookupSchema>;
+
+export const collaboratorClaimSchema = z.object({
+  token: z.string().min(16),
+  /** Required when the invited email has no account yet. */
+  name: z.string().min(1).max(120).optional(),
+  password: z.string().min(12).max(256).optional()
+});
+export type CollaboratorClaim = z.infer<typeof collaboratorClaimSchema>;
+
+export const collaboratorClaimedSchema = z.object({
+  collaborator: collaboratorSchema,
+  workspaceId: z.string(),
+  userId: z.string()
+});
+export type CollaboratorClaimed = z.infer<typeof collaboratorClaimedSchema>;

@@ -399,6 +399,12 @@ export type CollaboratorStatus = (typeof collaboratorStatuses)[number];
  * sha256 stored, never the token). Deleting the claimed account reverts the
  * grant to unclaimed (set null) rather than silently keeping a dangling
  * identity.
+ *
+ * Two claim tokens per grant, one row (the invitations pattern, ADR 009):
+ * `claim_token_hash` is the admin-visible copyable link (always returned by
+ * the invite response), `claim_email_token_hash` is a SECOND token that
+ * appears ONLY in the invite email — claiming with it proves control of the
+ * invited mailbox, so that claim path may honestly set `emailVerified`.
  */
 export const collaborators = pgTable(
   'collaborators',
@@ -416,6 +422,7 @@ export const collaborators = pgTable(
     status: text('status', { enum: collaboratorStatuses }).notNull().default('pending'),
     invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
     claimTokenHash: text('claim_token_hash'),
+    claimEmailTokenHash: text('claim_email_token_hash'),
     claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -424,6 +431,7 @@ export const collaborators = pgTable(
   (t) => [
     uniqueIndex('collaborators_presentation_email_uniq').on(t.presentationId, t.email),
     uniqueIndex('collaborators_claim_token_hash_uniq').on(t.claimTokenHash),
+    uniqueIndex('collaborators_claim_email_token_hash_uniq').on(t.claimEmailTokenHash),
     // Serves "decks shared with me" for a signed-in collaborator.
     index('collaborators_user_idx').on(t.userId),
     // Serves the API's keyset pagination (created_at DESC, id DESC per deck).

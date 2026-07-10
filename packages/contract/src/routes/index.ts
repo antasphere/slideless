@@ -58,8 +58,11 @@ import {
   shareTokenUpdateSchema
 } from '../schemas/share-tokens.js';
 import {
+  collaboratorClaimedSchema,
+  collaboratorClaimSchema,
   collaboratorInvitedSchema,
   collaboratorInviteSchema,
+  collaboratorLookupSchema,
   collaboratorSchema,
   collaboratorsListSchema
 } from '../schemas/collaborators.js';
@@ -480,22 +483,24 @@ export const fileDeleteRoute = createRoute({
 
 // ═══ Presentation domain (ADR 011) ═══════════════════════════════════════════
 //
-// The contract below is FROZEN shape-first: Phase 3 (upload/versioning) and
-// Phase 4 (sharing + the public viewer) are LIVE; Phase 5
-// (collaborators/annotations) still answers the 501 declared on each of its
-// routes — implementers delete that entry as they land the handler.
+// The contract below is FROZEN shape-first and fully LIVE: Phase 3
+// (upload/versioning), Phase 4 (sharing + the public viewer), and Phase 5
+// (collaborators/annotations) are all implemented.
 //
 // PUBLIC VIEWER (Phase 4 — LIVE, apps/server/src/viewer/routes.ts),
 // deliberately NOT part of /api/v1 (token recipients are not principals):
 //   GET  /v/{secret}            → viewer entry (path-carried secret; no ?token= legacy)
 //   GET  /v/{secret}/{path...}  → deck asset relative to the version manifest
 //   POST /v/{secret}            → password-gate unlock (browser form)
-//   POST /api/v1/viewer/*       → reserved for Phase 5: token-session surface
-//                                 (annotation create/list), authenticated by the
-//                                 share-token secret, never by this file's
-//                                 principal machinery.
-
-const notImplemented = jsonBody(apiErrorSchema, 'Not implemented yet — arrives in a later build phase');
+//
+// TOKEN-SESSION ANNOTATION SURFACE (Phase 5 — LIVE,
+// apps/server/src/viewer/annotations-api.ts), authenticated by the
+// share-token secret (never by this file's principal machinery), CORS-open
+// because the caller is the injected overlay inside the sandboxed OPAQUE
+// origin (ADR 012). Deliberately outside this OpenAPI contract — it is not
+// an agent surface:
+//   GET  /api/v1/viewer/{secret}/annotations → this token's notes on the resolved version
+//   POST /api/v1/viewer/{secret}/annotations → create a note (can_annotate tokens only)
 
 /** Two-level params: `{id}` is always the presentation. */
 const tokenParams = z.object({ id: z.uuid(), tokenId: z.uuid() });
@@ -774,8 +779,7 @@ export const collaboratorsListRoute = createRoute({
   responses: {
     200: jsonBody(collaboratorsListSchema, 'Collaborators, newest first'),
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -795,8 +799,7 @@ export const collaboratorInviteRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Already a collaborator, or idempotency conflict'),
-    501: notImplemented
+    409: jsonBody(apiErrorSchema, 'Already a collaborator, or idempotency conflict')
   }
 });
 
@@ -810,8 +813,34 @@ export const collaboratorRemoveRoute = createRoute({
     200: jsonBody(collaboratorSchema, 'Revoked grant'),
     401: errorResponses[401],
     403: errorResponses[403],
+    404: errorResponses[404]
+  }
+});
+
+export const collaboratorLookupRoute = createRoute({
+  method: 'get',
+  path: '/collaborators/lookup',
+  tags: ['collaborators'],
+  summary: 'Resolve a collaborator claim token (public; drives the claim page)',
+  request: { query: z.object({ token: z.string().min(16) }) },
+  responses: {
+    200: jsonBody(collaboratorLookupSchema, 'Claim context'),
+    404: errorResponses[404]
+  }
+});
+
+export const collaboratorClaimRoute = createRoute({
+  method: 'post',
+  path: '/collaborators/claim',
+  tags: ['collaborators'],
+  summary: 'Claim a collaborator grant (public: creates the account when needed)',
+  request: { body: jsonBody(collaboratorClaimSchema, 'Token + credentials for new accounts') },
+  responses: {
+    200: jsonBody(collaboratorClaimedSchema, 'Grant claimed (the account is now an active dev collaborator)'),
+    400: errorResponses[400],
     404: errorResponses[404],
-    501: notImplemented
+    409: jsonBody(apiErrorSchema, 'Account exists — sign in to claim'),
+    410: errorResponses[410]
   }
 });
 
@@ -826,8 +855,7 @@ export const annotationsListRoute = createRoute({
   responses: {
     200: jsonBody(annotationsListSchema, 'Annotations, newest first'),
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -844,8 +872,7 @@ export const annotationCreateRoute = createRoute({
     201: jsonBody(annotationSchema, 'Created annotation'),
     400: errorResponses[400],
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -863,8 +890,7 @@ export const annotationUpdateRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -878,8 +904,7 @@ export const annotationDeleteRoute = createRoute({
     200: jsonBody(annotationSchema, 'Deleted annotation (final snapshot)'),
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -891,7 +916,6 @@ export const annotationsInboxRoute = createRoute({
   request: { query: annotationsListQuerySchema },
   responses: {
     200: jsonBody(annotationsListSchema, 'Annotations across the workspace, newest first'),
-    401: errorResponses[401],
-    501: notImplemented
+    401: errorResponses[401]
   }
 });

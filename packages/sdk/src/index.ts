@@ -14,8 +14,11 @@ import type {
   BreakGlassResetTwoFactor,
   BreakGlassResetTwoFactorRequest,
   Collaborator,
+  CollaboratorClaim,
+  CollaboratorClaimed,
   CollaboratorInvite,
   CollaboratorInvited,
+  CollaboratorLookup,
   FileInfo,
   InstanceInfo,
   InvitationAccept,
@@ -546,6 +549,16 @@ export class PlatformClient {
       'DELETE',
       `/presentations/${encodeURIComponent(id)}/collaborators/${encodeURIComponent(collaboratorId)}`
     );
+  }
+
+  /** Public: resolves a collaborator claim token for the claim page. */
+  lookupCollaboratorInvite(token: string): Promise<CollaboratorLookup> {
+    return this.request('GET', `/collaborators/lookup?token=${encodeURIComponent(token)}`);
+  }
+
+  /** Public: claims a collaborator grant (creates the account when needed). */
+  claimCollaboratorInvite(req: CollaboratorClaim): Promise<CollaboratorClaimed> {
+    return this.request('POST', '/collaborators/claim', req);
   }
 
   // ── Annotations ───────────────────────────────────────────────────────────
