@@ -1,12 +1,21 @@
 import type {
+  Annotation,
+  AnnotationCreate,
+  AnnotationStatus,
+  AnnotationUpdate,
   ApiKeyCreate,
   ApiKeyCreated,
   ApiKeyInfo,
+  AssetPrecheckResponse,
+  AssetUploaded,
   AuditEntry,
   BreakGlassClaimOwnership,
   BreakGlassClaimOwnershipRequest,
   BreakGlassResetTwoFactor,
   BreakGlassResetTwoFactorRequest,
+  Collaborator,
+  CollaboratorInvite,
+  CollaboratorInvited,
   FileInfo,
   InstanceInfo,
   InvitationAccept,
@@ -20,8 +29,21 @@ import type {
   MemberResetLink,
   MemberUpdate,
   MeResponse,
+  Presentation,
+  PresentationVersion,
+  PresentationVersionDetail,
   SetupRequest,
   SetupResponse,
+  ShareToken,
+  ShareTokenCreate,
+  ShareTokenCreated,
+  ShareTokenSend,
+  ShareTokenSent,
+  ShareTokenUpdate,
+  UploadSession,
+  UploadSessionCommit,
+  VersionCommit,
+  VersionCommitted,
   WorkspaceRole
 } from '@slideless/contract';
 
@@ -72,6 +94,13 @@ export interface InvitationAccepted {
 export interface FileUploaded {
   file: FileInfo;
   deduplicated: boolean;
+}
+
+/** Cursor pagination + the annotation-specific filters. */
+export interface AnnotationListParams extends ListParams {
+  /** Only notes anchored to this deck version. */
+  version?: number;
+  status?: AnnotationStatus;
 }
 
 /**
@@ -328,6 +357,243 @@ export class PlatformClient {
   /** URL of the streamed (Range-capable) content endpoint for a file. */
   fileContentUrl(id: string): string {
     return `${this.baseUrl}/api/v1/files/${encodeURIComponent(id)}/content`;
+  }
+
+  // ── Presentations ─────────────────────────────────────────────────────────
+
+  presentations(params: ListParams = {}): Promise<{ presentations: Presentation[]; nextCursor: string | null }> {
+    return this.request('GET', this.pathWithQuery('/presentations', params));
+  }
+
+  presentation(id: string): Promise<Presentation> {
+    return this.request('GET', `/presentations/${encodeURIComponent(id)}`);
+  }
+
+  /** Soft delete: versions and share tokens stop resolving. */
+  deletePresentation(id: string): Promise<Presentation> {
+    return this.request('DELETE', `/presentations/${encodeURIComponent(id)}`);
+  }
+
+  // ── Upload (push) ─────────────────────────────────────────────────────────
+
+  /** Reserve a new-deck upload session (~1 h): mints the future presentation id. */
+  createUploadSession(opts: IdempotentRequestOptions = {}): Promise<{ uploadSession: UploadSession }> {
+    return this.request('POST', '/presentations/uploads', undefined, idempotencyHeader(opts));
+  }
+
+  /** Which of these blobs the workspace is missing (upload exactly those). */
+  precheckAssets(sha256: string[]): Promise<AssetPrecheckResponse> {
+    return this.request('POST', '/presentations/precheck', { sha256 });
+  }
+
+  /** Upload one deck asset (multipart); the server re-hashes and rejects a mismatch. */
+  async uploadAsset(
+    sha256: string,
+    body: Blob | ArrayBuffer | Uint8Array,
+    contentType?: string
+  ): Promise<AssetUploaded> {
+    const blob =
+      typeof Blob !== 'undefined' && body instanceof Blob
+        ? body
+        : new Blob([body as ArrayBuffer], contentType ? { type: contentType } : undefined);
+    const form = new FormData();
+    form.set('sha256', sha256);
+    form.set('file', blob, sha256);
+
+    const headers: Record<string, string> = {};
+    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v1/presentations/assets`, {
+      method: 'POST',
+      headers, // content-type comes from FormData (boundary included)
+      credentials: 'same-origin',
+      body: form as unknown as RequestInit['body']
+    } as RequestInit);
+    return this.parse<AssetUploaded>(res);
+  }
+
+  /** Commit an upload session: creates the deck and its version 1 (one-shot). */
+  commitUploadSession(sessionId: string, req: UploadSessionCommit): Promise<VersionCommitted> {
+    return this.request('POST', `/presentations/uploads/${encodeURIComponent(sessionId)}/commit`, req);
+  }
+
+  /**
+   * Commit a new immutable version. `expectedBaseVersion` must equal the
+   * deck's currentVersion or the server answers 409 version_conflict.
+   */
+  commitVersion(id: string, req: VersionCommit): Promise<VersionCommitted> {
+    return this.request('POST', `/presentations/${encodeURIComponent(id)}/versions`, req);
+  }
+
+  // ── Pull ──────────────────────────────────────────────────────────────────
+
+  presentationVersions(
+    id: string,
+    params: ListParams = {}
+  ): Promise<{ versions: PresentationVersion[]; nextCursor: string | null }> {
+    return this.request(
+      'GET',
+      this.pathWithQuery(`/presentations/${encodeURIComponent(id)}/versions`, params)
+    );
+  }
+
+  /** One version including its full manifest (path → sha256). */
+  presentationVersion(id: string, version: number): Promise<PresentationVersionDetail> {
+    return this.request('GET', `/presentations/${encodeURIComponent(id)}/versions/${version}`);
+  }
+
+  /** URL of the streamed asset download endpoint (content-addressed). */
+  presentationAssetUrl(id: string, sha256: string): string {
+    return `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/assets/${encodeURIComponent(sha256)}`;
+  }
+
+  /**
+   * Downloads one deck blob. Returns the raw Response so callers can stream
+   * the bytes; a non-2xx answer throws PlatformApiError like every method.
+   */
+  async downloadPresentationAsset(id: string, sha256: string): Promise<Response> {
+    const headers: Record<string, string> = {};
+    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    const res = await this.fetchImpl(this.presentationAssetUrl(id, sha256), {
+      method: 'GET',
+      headers,
+      credentials: 'same-origin',
+      // Browser-only field; cast keeps this isomorphic under a Node lib.
+      cache: 'no-store'
+    } as RequestInit);
+    if (!res.ok) {
+      await this.parse(res); // throws PlatformApiError with the wire shape
+    }
+    return res;
+  }
+
+  // ── Sharing ───────────────────────────────────────────────────────────────
+
+  shareTokens(
+    id: string,
+    params: ListParams = {}
+  ): Promise<{ shareTokens: ShareToken[]; nextCursor: string | null }> {
+    return this.request('GET', this.pathWithQuery(`/presentations/${encodeURIComponent(id)}/tokens`, params));
+  }
+
+  /** The returned `secret`/`url` appear only here — never retrievable again. */
+  createShareToken(
+    id: string,
+    req: ShareTokenCreate,
+    opts: IdempotentRequestOptions = {}
+  ): Promise<ShareTokenCreated> {
+    return this.request(
+      'POST',
+      `/presentations/${encodeURIComponent(id)}/tokens`,
+      req,
+      idempotencyHeader(opts)
+    );
+  }
+
+  /** Pin/unpin version, rename, annotate flag, expiry, password (null clears). */
+  updateShareToken(id: string, tokenId: string, patch: ShareTokenUpdate): Promise<ShareToken> {
+    return this.request(
+      'PATCH',
+      `/presentations/${encodeURIComponent(id)}/tokens/${encodeURIComponent(tokenId)}`,
+      patch
+    );
+  }
+
+  /** Soft revoke — access stats survive. */
+  revokeShareToken(id: string, tokenId: string): Promise<ShareToken> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/tokens/${encodeURIComponent(tokenId)}`
+    );
+  }
+
+  /** Email the viewer link to a recipient (best-effort on top of the copyable URL). */
+  sendShareToken(id: string, tokenId: string, req: ShareTokenSend): Promise<ShareTokenSent> {
+    return this.request(
+      'POST',
+      `/presentations/${encodeURIComponent(id)}/tokens/${encodeURIComponent(tokenId)}/send`,
+      req
+    );
+  }
+
+  // ── Collaborators ─────────────────────────────────────────────────────────
+
+  collaborators(
+    id: string,
+    params: ListParams = {}
+  ): Promise<{ collaborators: Collaborator[]; nextCursor: string | null }> {
+    return this.request(
+      'GET',
+      this.pathWithQuery(`/presentations/${encodeURIComponent(id)}/collaborators`, params)
+    );
+  }
+
+  /** `claimUrl` is always returned — email delivery is best-effort on top. */
+  inviteCollaborator(
+    id: string,
+    req: CollaboratorInvite,
+    opts: IdempotentRequestOptions = {}
+  ): Promise<CollaboratorInvited> {
+    return this.request(
+      'POST',
+      `/presentations/${encodeURIComponent(id)}/collaborators`,
+      req,
+      idempotencyHeader(opts)
+    );
+  }
+
+  removeCollaborator(id: string, collaboratorId: string): Promise<Collaborator> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/collaborators/${encodeURIComponent(collaboratorId)}`
+    );
+  }
+
+  // ── Annotations ───────────────────────────────────────────────────────────
+
+  private pathWithAnnotationQuery(base: string, params: AnnotationListParams): string {
+    const query = new URLSearchParams();
+    if (params.cursor) query.set('cursor', params.cursor);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.version !== undefined) query.set('version', String(params.version));
+    if (params.status) query.set('status', params.status);
+    const qs = query.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
+
+  annotations(
+    id: string,
+    params: AnnotationListParams = {}
+  ): Promise<{ annotations: Annotation[]; nextCursor: string | null }> {
+    return this.request(
+      'GET',
+      this.pathWithAnnotationQuery(`/presentations/${encodeURIComponent(id)}/annotations`, params)
+    );
+  }
+
+  /** Workspace-wide inbox: annotations across all decks, newest first. */
+  annotationInbox(
+    params: AnnotationListParams = {}
+  ): Promise<{ annotations: Annotation[]; nextCursor: string | null }> {
+    return this.request('GET', this.pathWithAnnotationQuery('/annotations', params));
+  }
+
+  createAnnotation(id: string, req: AnnotationCreate): Promise<Annotation> {
+    return this.request('POST', `/presentations/${encodeURIComponent(id)}/annotations`, req);
+  }
+
+  updateAnnotation(id: string, annotationId: string, patch: AnnotationUpdate): Promise<Annotation> {
+    return this.request(
+      'PATCH',
+      `/presentations/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationId)}`,
+      patch
+    );
+  }
+
+  deleteAnnotation(id: string, annotationId: string): Promise<Annotation> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationId)}`
+    );
   }
 
   // ── Workspace export ──────────────────────────────────────────────────────

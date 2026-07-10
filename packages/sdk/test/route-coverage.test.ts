@@ -17,7 +17,13 @@ import { PlatformClient } from '../src/index.js';
  */
 
 const SAMPLE_ID = '11111111-1111-1111-1111-111111111111';
+const SAMPLE_CHILD_ID = '22222222-2222-2222-2222-222222222222';
 const SAMPLE_TOKEN = 'x'.repeat(24);
+const SAMPLE_SHA256 = 'a'.repeat(64);
+const SAMPLE_VERSION = 3;
+const SAMPLE_MANIFEST = [
+  { path: 'index.html', sha256: SAMPLE_SHA256, sizeBytes: 1, contentType: 'text/html' }
+];
 
 /** contract route → an SDK call. Keyed by `METHOD path` (contract shape). */
 const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
@@ -49,7 +55,49 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /files': (c) => c.files(),
   'GET /files/{id}': (c) => c.file(SAMPLE_ID),
   'POST /files': (c) => c.uploadFile('n.txt', new Uint8Array([1])),
-  'DELETE /files/{id}': (c) => c.deleteFile(SAMPLE_ID)
+  'DELETE /files/{id}': (c) => c.deleteFile(SAMPLE_ID),
+  'GET /presentations': (c) => c.presentations(),
+  'GET /presentations/{id}': (c) => c.presentation(SAMPLE_ID),
+  'DELETE /presentations/{id}': (c) => c.deletePresentation(SAMPLE_ID),
+  'POST /presentations/uploads': (c) => c.createUploadSession(),
+  'POST /presentations/precheck': (c) => c.precheckAssets([SAMPLE_SHA256]),
+  'POST /presentations/assets': (c) => c.uploadAsset(SAMPLE_SHA256, new Uint8Array([1])),
+  'POST /presentations/uploads/{id}/commit': (c) =>
+    c.commitUploadSession(SAMPLE_ID, {
+      title: 'T',
+      kind: 'presentation',
+      interactive: false,
+      entryPath: 'index.html',
+      manifest: SAMPLE_MANIFEST
+    }),
+  'POST /presentations/{id}/versions': (c) =>
+    c.commitVersion(SAMPLE_ID, {
+      expectedBaseVersion: 1,
+      entryPath: 'index.html',
+      manifest: SAMPLE_MANIFEST
+    }),
+  'GET /presentations/{id}/versions': (c) => c.presentationVersions(SAMPLE_ID),
+  'GET /presentations/{id}/versions/{version}': (c) => c.presentationVersion(SAMPLE_ID, SAMPLE_VERSION),
+  'GET /presentations/{id}/assets/{sha256}': (c) => c.downloadPresentationAsset(SAMPLE_ID, SAMPLE_SHA256),
+  'GET /presentations/{id}/tokens': (c) => c.shareTokens(SAMPLE_ID),
+  'POST /presentations/{id}/tokens': (c) => c.createShareToken(SAMPLE_ID, { name: 'Alice' }),
+  'PATCH /presentations/{id}/tokens/{tokenId}': (c) =>
+    c.updateShareToken(SAMPLE_ID, SAMPLE_CHILD_ID, { canAnnotate: true }),
+  'DELETE /presentations/{id}/tokens/{tokenId}': (c) => c.revokeShareToken(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'POST /presentations/{id}/tokens/{tokenId}/send': (c) =>
+    c.sendShareToken(SAMPLE_ID, SAMPLE_CHILD_ID, { email: 'a@b.co' }),
+  'GET /presentations/{id}/collaborators': (c) => c.collaborators(SAMPLE_ID),
+  'POST /presentations/{id}/collaborators': (c) => c.inviteCollaborator(SAMPLE_ID, { email: 'a@b.co' }),
+  'DELETE /presentations/{id}/collaborators/{collaboratorId}': (c) =>
+    c.removeCollaborator(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'GET /presentations/{id}/annotations': (c) => c.annotations(SAMPLE_ID),
+  'POST /presentations/{id}/annotations': (c) =>
+    c.createAnnotation(SAMPLE_ID, { version: 1, selection: { slide: 1 }, body: 'n' }),
+  'PATCH /presentations/{id}/annotations/{annotationId}': (c) =>
+    c.updateAnnotation(SAMPLE_ID, SAMPLE_CHILD_ID, { status: 'resolved' }),
+  'DELETE /presentations/{id}/annotations/{annotationId}': (c) =>
+    c.deleteAnnotation(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'GET /annotations': (c) => c.annotationInbox()
 };
 
 interface ContractRoute {
@@ -81,9 +129,13 @@ function recordingClient(): { client: PlatformClient; calls: Array<{ method: str
   return { client: new PlatformClient({ fetch }), calls };
 }
 
-/** `/members/{id}` with the sample id substituted, to compare against the SDK's real path. */
+/** The contract path with every param substituted, to compare against the SDK's real path. */
 function expectedPath(contractPath: string): string {
-  return `/api/v1${contractPath.replace('{id}', SAMPLE_ID)}`;
+  return `/api/v1${contractPath
+    .replace('{id}', SAMPLE_ID)
+    .replace(/\{(tokenId|collaboratorId|annotationId)\}/, SAMPLE_CHILD_ID)
+    .replace('{version}', String(SAMPLE_VERSION))
+    .replace('{sha256}', SAMPLE_SHA256)}`;
 }
 
 describe('SDK route coverage (contract drift guard)', () => {
