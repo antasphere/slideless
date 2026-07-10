@@ -217,7 +217,15 @@ export class AnnotationService {
   }
 }
 
-/** Wire mapping for the authenticated owner/dev surface (the contract shape). */
+/**
+ * Wire mapping for the authenticated owner/dev surface (the contract shape).
+ *
+ * ⚠️ RAW CONTENT — `body`, `authorName`, and `selection` are stored and
+ * returned EXACTLY as the (possibly anonymous) author supplied them: no HTML
+ * escaping or sanitization happens server-side. Any consumer that renders
+ * these fields into markup (the dashboard first of all) MUST HTML-escape
+ * them, or an annotation becomes a stored-XSS vector against deck owners.
+ */
 export function annotationToWire(a: AnnotationRow): {
   id: string;
   presentationId: string;
@@ -250,6 +258,10 @@ export function annotationToWire(a: AnnotationRow): {
  * Wire mapping for the PUBLIC reviewer session (viewer/annotations-api.ts):
  * a deliberate subset — never author_user_id, share_token_id, workspace or
  * presentation ids. The reviewer sees only what they themselves supplied.
+ *
+ * ⚠️ RAW CONTENT — same warning as annotationToWire above: `body`,
+ * `authorName`, and `selection` come back unescaped; every rendering
+ * surface MUST HTML-escape them before putting them in markup.
  */
 export function annotationToReviewerWire(a: AnnotationRow): {
   id: string;

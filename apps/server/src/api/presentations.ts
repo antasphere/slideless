@@ -328,11 +328,18 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   });
 
   // ── Presentations ──────────────────────────────────────────────────────────
+  // READ POSTURE (ADR 013): decks are private to their owner. Every read —
+  // get, versions, version detail, asset download — requires canRead (owner,
+  // workspace admin/owner, or an ACTIVE collaborator grant on that deck),
+  // and a failed check answers 404, never 403: a deck a principal cannot
+  // read must not reveal its existence. The list is scoped the same way.
 
   api.openapi(presentationsListRoute, async (c) => {
     const principal = c.get('principal')!;
     const { cursor, limit } = c.req.valid('query');
-    const { presentations, nextCursor } = await service.list(principal.workspaceId, {
+    // Scoped in the service (ADR 013): admins/owners see the whole
+    // workspace; members see owned decks + active collaborations only.
+    const { presentations, nextCursor } = await service.list(principal, {
       ...(cursor !== undefined ? { cursor } : {}),
       limit
     });
@@ -343,7 +350,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     return c.json(presentationToWire(deck), 200);
   });
 
@@ -374,7 +383,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const { cursor, limit } = c.req.valid('query');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     const { versions, nextCursor } = await service.listVersions(principal.workspaceId, id, {
       ...(cursor !== undefined ? { cursor } : {}),
       limit
@@ -386,7 +397,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const { id, version } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     const row = await service.getVersion(principal.workspaceId, id, version);
     if (!row) return c.json(err('not_found', 'Version not found'), 404);
     return c.json({ ...versionToWire(row), manifest: row.manifest as ManifestEntry[] }, 200);
@@ -396,7 +409,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const { id, sha256 } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     // Reference check: the blob must appear in one of THIS deck's manifests —
     // a deck id is never a handle to pull arbitrary workspace blobs.
     const entry = await service.findManifestEntry(principal.workspaceId, id, sha256);

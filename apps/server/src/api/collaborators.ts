@@ -49,6 +49,23 @@ import {
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
+/**
+ * True when a failed signUpEmail means "this email already has an account":
+ * either Better Auth's own pre-check (APIError USER_ALREADY_EXISTS / 422) or,
+ * in the tight concurrent-claim race where two claims pass the account lookup
+ * together, the losing INSERT's Postgres unique_violation (23505) on the
+ * user email — found anywhere down the wrapped error's `cause` chain.
+ */
+function isDuplicateAccountError(e: unknown): boolean {
+  for (let cur: unknown = e, depth = 0; cur instanceof Error && depth < 10; cur = cur.cause, depth++) {
+    const anyErr = cur as { code?: unknown; status?: unknown; body?: { code?: unknown } };
+    if (anyErr.code === '23505') return true;
+    if (anyErr.body?.code === 'USER_ALREADY_EXISTS') return true;
+    if (anyErr.status === 'UNPROCESSABLE_ENTITY' || anyErr.status === 422) return true;
+  }
+  return false;
+}
+
 export interface CollaboratorRouteDeps {
   db: Db;
   env: Pick<Env, 'PUBLIC_BASE_URL'>;
@@ -231,10 +248,24 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
       if (!body.name || !body.password) {
         return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
       }
-      const created = await auth.api.signUpEmail({
-        body: { email: grant.email, password: body.password, name: body.name }
-      });
-      userId = created.user.id;
+      try {
+        const created = await auth.api.signUpEmail({
+          body: { email: grant.email, password: body.password, name: body.name }
+        });
+        userId = created.user.id;
+      } catch (e) {
+        // Two concurrent claims of one invite can both pass the account
+        // lookup above and race signUpEmail; the DB's unique email makes
+        // exactly ONE account — map the loser to the same clean 409 the
+        // account-exists branch answers instead of an uncaught 500.
+        if (isDuplicateAccountError(e)) {
+          return c.json(
+            err('account_exists', 'An account with this email exists — sign in with it, then claim again'),
+            409
+          );
+        }
+        throw e;
+      }
     }
 
     const claimed = await collaborators.claim(grant.id, userId);

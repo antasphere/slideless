@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   collaborators,
   files,
@@ -324,19 +324,46 @@ export class PresentationService {
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
+  // Deck reads are PRIVATE, not workspace-wide (ADR 013, diverging from ADR
+  // 006): a workspace admin/owner sees every deck (the operator view); a
+  // plain member sees ONLY the decks they own or actively collaborate on.
 
   async list(
-    workspaceId: string,
+    principal: Principal,
     opts: { cursor?: string; limit: number }
   ): Promise<{ presentations: PresentationRow[]; nextCursor: string | null }> {
     const cursorId = cursorRowId(opts.cursor);
+    // Visibility scope (ADR 013): admins/owners get the operator view; a
+    // plain member's page is ownership OR an ACTIVE collaborator grant —
+    // revoked/expired grants drop the deck from the listing immediately.
+    const operatorView = principal.role === 'owner' || principal.role === 'admin';
+    const visibility = operatorView
+      ? []
+      : [
+          or(
+            eq(presentations.ownerUserId, principal.userId),
+            exists(
+              this.db
+                .select({ one: sql`1` })
+                .from(collaborators)
+                .where(
+                  and(
+                    eq(collaborators.presentationId, presentations.id),
+                    eq(collaborators.userId, principal.userId),
+                    eq(collaborators.status, 'active')
+                  )
+                )
+            )
+          )!
+        ];
     const rows = await this.db
       .select()
       .from(presentations)
       .where(
         and(
-          eq(presentations.workspaceId, workspaceId),
+          eq(presentations.workspaceId, principal.workspaceId),
           isNull(presentations.deletedAt),
+          ...visibility,
           ...(cursorId
             ? [
                 keysetBefore({
@@ -345,7 +372,7 @@ export class PresentationService {
                   createdAt: presentations.createdAt,
                   workspaceId: presentations.workspaceId,
                   cursorId,
-                  workspace: workspaceId
+                  workspace: principal.workspaceId
                 })
               ]
             : [])
@@ -375,6 +402,11 @@ export class PresentationService {
   /** Handler-facing wrapper over the module-level canWriteDeck (needs a conn). */
   canWrite(principal: Principal, deck: PresentationRow): Promise<boolean> {
     return canWriteDeck(this.db, principal, deck);
+  }
+
+  /** Handler-facing wrapper over the module-level canReadDeck (needs a conn). */
+  canRead(principal: Principal, deck: PresentationRow): Promise<boolean> {
+    return canReadDeck(this.db, principal, deck);
   }
 
   /**
@@ -552,6 +584,30 @@ export async function isActiveDevCollaborator(
  * writes exactly what the dev's session could.
  */
 export async function canWriteDeck(
+  conn: DbConn,
+  principal: Principal,
+  deck: PresentationRow
+): Promise<boolean> {
+  if (canAdministerDeck(principal, deck)) return true;
+  return isActiveDevCollaborator(conn, deck.id, principal.userId);
+}
+
+/**
+ * READ access to a deck (ADR 013 — decks are PRIVATE to their owner):
+ * the deck owner, a workspace admin/owner (the instance-operator view), or
+ * the holder of an ACTIVE collaborator grant on THIS deck. This deliberately
+ * diverges from ADR 006's "workspace data" read posture: collaborators are
+ * routinely EXTERNAL parties (a reviewer/client invited to exactly one
+ * deck), so workspace membership alone must never be a handle to read every
+ * deck — and revoking a grant must cut content access off immediately.
+ *
+ * Today this coincides with canWriteDeck; it is a SEPARATE policy on purpose
+ * (a future read-only collaborator role widens reads without widening
+ * writes). Handlers answer 404 — never 403 — when this returns false: a deck
+ * a principal cannot read must not reveal its existence (the codebase's
+ * standing not-found posture).
+ */
+export async function canReadDeck(
   conn: DbConn,
   principal: Principal,
   deck: PresentationRow
