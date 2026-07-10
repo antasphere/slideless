@@ -1,0 +1,1 @@
+CREATE INDEX "presentation_versions_manifest_gin" ON "presentation_versions" USING gin ("manifest" jsonb_path_ops);

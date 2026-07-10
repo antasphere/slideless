@@ -24,6 +24,19 @@ export const AUDIT_PURGE_QUEUE = 'audit-purge';
 export const APIKEY_EXPIRY_QUEUE = 'apikey-expiry-sweep';
 export const IDEMPOTENCY_PURGE_QUEUE = 'idempotency-purge';
 export const ORPHAN_USER_PURGE_QUEUE = 'orphan-user-purge';
+export const UPLOAD_SESSION_PURGE_QUEUE = 'upload-session-purge';
+
+/**
+ * Upload sessions carry a ~1 h TTL (ADR 011), so the table is bounded by an
+ * hour of reserve traffic plus consumed rows kept until their expiry for
+ * debuggability: one unbatched, index-backed DELETE is fine (the audit-purge
+ * batching lesson applies to unbounded tables only). Exported standalone so
+ * the integration suite exercises the exact statement the nightly job runs.
+ */
+export async function purgeExpiredUploadSessions(db: Db): Promise<number> {
+  const res = await db.execute(sql`DELETE FROM upload_sessions WHERE expires_at < now()`);
+  return res.rowCount ?? 0;
+}
 
 /**
  * Advisory-lock key serializing pg-boss's install DDL across replicas.
@@ -119,6 +132,8 @@ export async function createJobs(
       await boss.schedule(APIKEY_EXPIRY_QUEUE, '0 3 * * *');
       await boss.createQueue(IDEMPOTENCY_PURGE_QUEUE);
       await boss.schedule(IDEMPOTENCY_PURGE_QUEUE, '0 3 * * *');
+      await boss.createQueue(UPLOAD_SESSION_PURGE_QUEUE);
+      await boss.schedule(UPLOAD_SESSION_PURGE_QUEUE, '0 3 * * *');
       // Orphaned-user GC: 0 = disabled; the queue always exists so the
       // schedule can be flipped later (audit-purge pattern).
       await boss.createQueue(ORPHAN_USER_PURGE_QUEUE);
@@ -188,6 +203,13 @@ export async function createJobs(
         DELETE FROM idempotency_keys WHERE expires_at < now()
       `);
       logger.info({ deleted: res.rowCount ?? 0 }, 'idempotency purge ran');
+    });
+
+    // Upload-session purge: expired reservations (consumed or abandoned) are
+    // transient by design — ADR 011's nightly cleanup.
+    await boss.work(UPLOAD_SESSION_PURGE_QUEUE, async () => {
+      const deleted = await purgeExpiredUploadSessions(db);
+      logger.info({ deleted }, 'upload session purge ran');
     });
 
     // Orphaned-user GC: setup-race losers (and any other path) leave Better

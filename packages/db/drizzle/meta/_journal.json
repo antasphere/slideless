@@ -99,6 +99,13 @@
       "when": 1783673611503,
       "tag": "0013_presentation_domain",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783675409178,
+      "tag": "0014_presentation_manifest_gin",
+      "breakpoints": true
     }
   ]
 }

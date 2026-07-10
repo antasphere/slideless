@@ -336,7 +336,12 @@ export const presentationVersions = pgTable(
   (t) => [
     uniqueIndex('presentation_versions_presentation_version_uniq').on(t.presentationId, t.version),
     // Serves the API's keyset pagination (created_at DESC, id DESC per deck).
-    index('presentation_versions_presentation_created_id_idx').on(t.presentationId, t.createdAt, t.id)
+    index('presentation_versions_presentation_created_id_idx').on(t.presentationId, t.createdAt, t.id),
+    // Serves the manifest containment probes (`manifest @> '[{"sha256": …}]'`):
+    // the DELETE /files/{id} in-use guard scans ALL of a workspace's versions
+    // per delete, and a future asset-GC pass derives blob liveness the same
+    // way (ADR 011's no-join-table decision leans on this staying fast).
+    index('presentation_versions_manifest_gin').using('gin', t.manifest.op('jsonb_path_ops'))
   ]
 );
 

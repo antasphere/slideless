@@ -146,3 +146,40 @@ actionable; link the template file/line it concerns.
   Origin/`Sec-Fetch-Site: cross-site` rejection to the `/api/v1` surface would
   refuse the request outright — a template-level defense-in-depth that every
   content-rendering product inherits.
+
+## 2026-07-10 — Phase 3 (upload + versioning pipeline)
+
+- **Hono/zod-openapi multipart validation buffers whole parts in memory.** The
+  contract fixed `multipart/form-data` for the asset upload, and
+  `zValidator('form')` rides `c.req.parseBody()`, which materializes every part
+  as a `File` in RAM; we then buffer once more (`file.arrayBuffer()`) to
+  hash-verify the declared sha256 BEFORE any row/blob exists. Fine at
+  slide-asset sizes (and a `bodyLimit` bounds the parse), but the template's
+  streamed-with-mid-stream-cap upload pattern (`POST /files`, spool + hash in
+  one pipeline) is strictly better for large payloads. If a future template
+  revision grows a multipart helper, make it a streaming multipart parser
+  (busboy-style) that can hash-and-spool per part — products then get
+  hash-verified multipart for free instead of choosing between "multipart" and
+  "streaming".
+- **The global 1 MiB JSON `bodyLimit` needs per-surface routing as soon as a
+  product has legitimately-large JSON.** Contract-valid commit manifests (5000
+  entries × 1 KiB paths) exceed 1 MiB, so `api/index.ts` now routes body
+  limits by path (1 MiB default / 16 MiB manifests / MAX_FILE_SIZE_MB+1 MiB
+  multipart). A template-level `bodyLimitByPrefix([...])` helper would make
+  this a declaration instead of an if-chain every product re-grows.
+- **`FileService.delete` needed a transactional in-use seam.** ADR 011's
+  blob-guard (a deck manifest must pin its blobs against the generic
+  `DELETE /files/{id}`) only closes race-free if the reference check runs
+  inside the delete transaction with the files row locked FOR UPDATE, while
+  commits lock referenced rows FOR SHARE. The template's delete was
+  fire-and-forget (soft-delete then blob removal). The optional
+  `inUse(tx, row)` callback added here is a clean general seam — consider
+  upstreaming it: any product that builds references onto `files` (the whole
+  point of reusing the table) needs exactly this hook.
+- **`pageOf`/`keysetBefore` generalized cleanly to a child collection** by
+  passing the parent-id column as the "workspace" scope column (version
+  listings scope the cursor subquery to the deck, not the workspace) — nice
+  property of the helper's shape; worth a doc line in pagination.ts.
+- **The explicit idempotency target list is the right shape** — adding
+  `POST /presentations/uploads` was one Set entry + a doc line. No friction,
+  recording the confirmation.

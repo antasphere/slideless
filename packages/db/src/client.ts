@@ -4,6 +4,13 @@ import * as schema from './schema.js';
 
 export type Db = NodePgDatabase<typeof schema>;
 
+/**
+ * A database handle OR an open transaction — for code that must run either
+ * standalone or inside a caller's transaction (e.g. the presentation blob
+ * in-use guard inside the file-delete transaction).
+ */
+export type DbConn = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
+
 export interface DbHandle {
   db: Db;
   pool: pg.Pool;

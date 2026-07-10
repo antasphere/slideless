@@ -32,6 +32,7 @@ import { registerAuditRoutes } from './audit.js';
 import { registerFileRoutes } from './files.js';
 import { registerExportRoutes } from './export.js';
 import { registerPresentationRoutes } from './presentations.js';
+import { PresentationService } from '../presentations/service.js';
 import type { AccountDeletionService } from '../accounts/deletion.js';
 import type { FileService } from '../files/service.js';
 import type { StorageDriver } from '../storage/driver.js';
@@ -90,15 +91,36 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // on token responses. Before the rate limits so preflights cost nothing.
   api.use('/auth/*', oauthPublicEndpoints());
 
-  // ── Body size cap: 1 MiB is generous for every JSON/auth body. File uploads
-  // stream to disk with their own mid-stream cap (MAX_FILE_SIZE_MB) plus a
-  // Content-Length entitlement check, so they MUST bypass this or large
-  // uploads would 413 at 1 MiB.
+  // ── Body size caps, path-routed. 1 MiB is generous for every JSON/auth
+  // body. Exceptions:
+  //  - /files: streamed uploads with their own mid-stream cap
+  //    (MAX_FILE_SIZE_MB) plus a Content-Length entitlement check;
+  //  - /presentations/assets: multipart deck-asset uploads — capped at
+  //    MAX_FILE_SIZE_MB (+1 MiB multipart framing headroom) so an unbounded
+  //    body can never balloon the buffering parse;
+  //  - the rest of /presentations: JSON, but commit manifests are legal up to
+  //    5000 entries × 1 KiB paths — a 16 MiB cap fits any contract-valid
+  //    manifest while still bounding abuse.
   const jsonBodyLimit = bodyLimit({
     maxSize: 1024 * 1024,
     onError: (c) => c.json(err('payload_too_large', 'Request body exceeds the 1 MiB limit'), 413)
   });
-  api.use('*', (c, next) => (c.req.path.startsWith('/api/v1/files') ? next() : jsonBodyLimit(c, next)));
+  const manifestBodyLimit = bodyLimit({
+    maxSize: 16 * 1024 * 1024,
+    onError: (c) => c.json(err('payload_too_large', 'Request body exceeds the 16 MiB limit'), 413)
+  });
+  const assetBodyLimit = bodyLimit({
+    maxSize: env.MAX_FILE_SIZE_MB * 1024 * 1024 + 1024 * 1024,
+    onError: (c) =>
+      c.json(err('file_too_large', `Asset exceeds the ${env.MAX_FILE_SIZE_MB} MB instance cap`), 413)
+  });
+  api.use('*', (c, next) => {
+    const path = c.req.path;
+    if (path.startsWith('/api/v1/files')) return next();
+    if (path === '/api/v1/presentations/assets') return assetBodyLimit(c, next);
+    if (path.startsWith('/api/v1/presentations')) return manifestBodyLimit(c, next);
+    return jsonBodyLimit(c, next);
+  });
 
   // ── Auth-surface rate limits: registered FIRST so they run before auth
   // resolution — abusive traffic is rejected before it costs a DB query.
@@ -343,17 +365,29 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     cachedInstanceId = row?.id ?? 'unsetup';
     return cachedInstanceId;
   };
+  // Presentation domain (ADR 011): Phase 3 (upload/versioning/pull) is live;
+  // Phases 4 (sharing) and 5 (collaboration) still answer contract 501s.
+  const presentationService = new PresentationService(db);
   registerFileRoutes(api, {
     service: deps.fileService,
     storage: deps.storage,
     registry,
     env,
     logger,
+    instanceId,
+    // ADR 011 sharp edge closed: a blob referenced by a live deck version
+    // manifest is not deletable through the generic files surface.
+    blobInUse: (tx, workspaceId, sha256) => presentationService.blobInUse(tx, workspaceId, sha256)
+  });
+  registerPresentationRoutes(api, {
+    service: presentationService,
+    fileService: deps.fileService,
+    storage: deps.storage,
+    registry,
+    env,
+    logger,
     instanceId
   });
-  // Presentation domain (ADR 011): contract-frozen 501 stubs until their
-  // build phases land handlers (3 upload, 4 sharing, 5 collaboration).
-  registerPresentationRoutes(api);
 
   api.doc('/openapi.json', {
     openapi: '3.1.0',

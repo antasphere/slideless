@@ -6,7 +6,7 @@ import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { files, type Db, type FileRow } from '@slideless/db';
+import { files, type Db, type DbConn, type FileRow } from '@slideless/db';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import type { Logger } from '../logger.js';
@@ -104,6 +104,17 @@ export class FileService {
     }
   }
 
+  /** Content-addressed lookup — the presentation asset pull path. */
+  async getBySha(workspaceId: string, sha256: string): Promise<FileRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(files)
+      .where(and(eq(files.workspaceId, workspaceId), eq(files.sha256, sha256)))
+      .limit(1);
+    if (!row || row.deletedAt) return null;
+    return row;
+  }
+
   async get(workspaceId: string, id: string): Promise<FileRow | null> {
     const [row] = await this.db
       .select()
@@ -148,18 +159,42 @@ export class FileService {
     return { files: page, nextCursor };
   }
 
-  /** Soft-deletes the row and removes the blob (one row per (ws, sha) by constraint). */
-  async delete(row: FileRow): Promise<void> {
+  /**
+   * Soft-deletes the row and removes the blob (one row per (ws, sha) by
+   * constraint). `inUse` is the ADR 011 blob-delete guard: it runs INSIDE the
+   * delete transaction with the files row locked FOR UPDATE, so it serializes
+   * against version commits (which lock referenced rows FOR SHARE) — a blob
+   * can never be deleted and referenced concurrently. Returns 'in_use'
+   * without touching anything when the guard refuses.
+   */
+  async delete(
+    row: FileRow,
+    inUse?: (tx: DbConn, row: FileRow) => Promise<boolean>
+  ): Promise<'deleted' | 'in_use'> {
+    const outcome = await this.db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: files.id, deletedAt: files.deletedAt })
+        .from(files)
+        .where(eq(files.id, row.id))
+        .for('update')
+        .limit(1);
+      // Already gone (raced another delete): idempotent success.
+      if (!locked || locked.deletedAt) return 'deleted' as const;
+      if (inUse && (await inUse(tx, row))) return 'in_use' as const;
+      await tx.update(files).set({ deletedAt: new Date() }).where(eq(files.id, row.id));
+      return 'deleted' as const;
+    });
+    if (outcome === 'in_use') return outcome;
     // The soft-delete is authoritative; blob removal is best-effort cleanup —
     // a storage failure must not fail the request (a re-upload self-heals via
     // content addressing). Now that the driver surfaces real transport errors,
     // swallow them here rather than in the driver.
-    await this.db.update(files).set({ deletedAt: new Date() }).where(eq(files.id, row.id));
     try {
       await this.storage.delete(blobKey(row.workspaceId, row.sha256));
     } catch (err) {
       this.logger.error({ err, fileId: row.id }, 'blob delete failed — row soft-deleted, blob orphaned');
     }
+    return 'deleted';
   }
 
   async spoolDirUsable(): Promise<boolean> {

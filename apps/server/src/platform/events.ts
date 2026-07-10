@@ -16,6 +16,8 @@ export type PlatformEvents = {
   'invitation.created': { workspaceId: string; invitationId: string };
   'invitation.accepted': { workspaceId: string; invitationId: string; userId: string };
   'file.uploaded': { workspaceId: string; fileId: string; sizeBytes: number };
+  'presentation.created': { workspaceId: string; presentationId: string };
+  'presentation.version_committed': { workspaceId: string; presentationId: string; version: number };
   'setup.completed': { workspaceId: string; instanceId: string };
 };
 

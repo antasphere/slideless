@@ -3,15 +3,15 @@ import type { Context } from 'hono';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { fileDeleteRoute, fileGetRoute, filesListRoute, fileUploadRoute } from '@slideless/contract/routes';
-import type { FileRow } from '@slideless/db';
+import type { DbConn, FileRow } from '@slideless/db';
 import { ulid } from 'ulid';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { PlatformRegistry } from '../platform/registry.js';
 import type { FileService } from '../files/service.js';
 import { FileTooLargeError } from '../files/service.js';
-import { contentDispositionFor, parseRangeHeader } from '../files/http.js';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
+import { serveBlob } from '../files/serve.js';
+import type { StorageDriver } from '../storage/driver.js';
 import { isUuid } from '../pagination.js';
 import { requireAuth } from '../middleware/auth-context.js';
 
@@ -34,6 +34,13 @@ export interface FileRouteDeps {
   env: Pick<Env, 'MAX_FILE_SIZE_MB' | 'EDITION' | 'APP_VERSION'>;
   logger: Logger;
   instanceId: () => Promise<string>;
+  /**
+   * ADR 011 blob-delete guard: true when the blob is referenced by a live
+   * presentation version manifest — DELETE answers 409 file_in_use instead
+   * of removing it. Runs inside the delete transaction (files module stays
+   * presentation-agnostic; the wiring point injects the presentation check).
+   */
+  blobInUse: (tx: DbConn, workspaceId: string, sha256: string) => Promise<boolean>;
 }
 
 export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void {
@@ -127,7 +134,15 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
     const { id } = c.req.valid('param');
     const file = await service.get(principal.workspaceId, id);
     if (!file) return c.json(err('not_found', 'File not found'), 404);
-    await service.delete(file);
+    const outcome = await service.delete(file, (tx, row) =>
+      deps.blobInUse(tx, row.workspaceId, row.sha256)
+    );
+    if (outcome === 'in_use') {
+      return c.json(
+        err('file_in_use', 'This file is referenced by a presentation version — delete the presentation first'),
+        409
+      );
+    }
     c.set('audit', { action: 'file.delete', resourceType: 'file', resourceId: file.id });
     return c.json(toWire(file), 200);
   });
@@ -135,6 +150,8 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
   // ── Content: streamed, Range-capable. Registered as plain Hono routes (a
   // byte endpoint, not part of the JSON OpenAPI surface); guarded by the
   // same requireAuth + scope machinery as everything else under /files.
+  // The streaming machinery itself (ETag/304/Range/safe-serving) is shared
+  // with the presentation asset download — files/serve.ts.
   const contentHandler = async (c: Context, headOnly: boolean) => {
     const principal = c.get('principal')!;
     const id = c.req.param('id') ?? '';
@@ -144,65 +161,16 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
     const file = await service.get(principal.workspaceId, id);
     if (!file) return c.json(err('not_found', 'File not found'), 404);
 
-    // Content-addressed: the ETag IS the content hash, immutable forever.
-    const etag = `"${file.sha256}"`;
-    const baseHeaders: Record<string, string> = {
-      'content-type': file.contentType,
-      'x-content-type-options': 'nosniff',
-      'content-disposition': contentDispositionFor(file.contentType, file.originalName),
-      'accept-ranges': 'bytes',
-      etag,
-      'cache-control': 'private, max-age=31536000, immutable'
-    };
-
-    if (c.req.header('if-none-match') === etag) {
-      return c.body(null, 304, baseHeaders);
-    }
-
-    // The metadata row is shared (Postgres) but the blob must be reachable
-    // from THIS replica before any status line is committed: with local
-    // storage behind a multi-replica load balancer the bytes live on another
-    // replica's private disk, and streaming ahead sent 200 + headers, then
-    // died mid-body — silent truncation the client cannot distinguish from
-    // the real file (scale drill, I2). The clean 404 is a safety net, not a
-    // supported topology: multi-replica requires shared storage
-    // (STORAGE_DRIVER=s3), docs/deployment-profiles.md.
-    const key = blobKey(file.workspaceId, file.sha256);
-    if (!(await storage.exists(key))) {
-      logger.error(
-        { fileId: file.id, key, driver: storage.name },
-        'file blob unreachable: metadata row exists but storage has no bytes (local storage behind multiple replicas?)'
-      );
-      return c.json(err('not_found', 'File content not available'), 404);
-    }
-
-    const parsed = parseRangeHeader(c.req.header('range'), file.sizeBytes);
-    if (parsed.kind === 'unsatisfiable') {
-      return c.body(null, 416, { ...baseHeaders, 'content-range': `bytes */${file.sizeBytes}` });
-    }
-
-    const isPartial = parsed.kind === 'range';
-    const start = isPartial ? parsed.range.start : 0;
-    const end = isPartial ? parsed.range.end : file.sizeBytes - 1;
-    const length = file.sizeBytes === 0 ? 0 : end - start + 1;
-
-    const headers: Record<string, string> = {
-      ...baseHeaders,
-      'content-length': String(length),
-      ...(isPartial ? { 'content-range': `bytes ${start}-${end}/${file.sizeBytes}` } : {})
-    };
-    const status = isPartial ? 206 : 200;
-
-    if (headOnly || file.sizeBytes === 0) {
-      return c.body(null, status, headers);
-    }
-
-    const nodeStream = await storage.getStream(key, isPartial ? parsed.range : undefined);
-    // Backpressure rides Readable.toWeb; a client abort must destroy the
-    // source or every seek-away leaks a descriptor/S3 socket.
-    c.req.raw.signal.addEventListener('abort', () => nodeStream.destroy());
-    const web = Readable.toWeb(nodeStream) as unknown as ReadableStream;
-    return c.body(web, status, headers);
+    return serveBlob(c, {
+      storage,
+      logger,
+      workspaceId: file.workspaceId,
+      sha256: file.sha256,
+      sizeBytes: file.sizeBytes,
+      contentType: file.contentType,
+      filename: file.originalName,
+      headOnly
+    });
   };
 
   api.get('/files/:id/content', (c) => contentHandler(c, false));

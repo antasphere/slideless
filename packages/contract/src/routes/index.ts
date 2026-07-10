@@ -471,13 +471,16 @@ export const fileDeleteRoute = createRoute({
   responses: {
     200: jsonBody(fileSchema, 'Deleted file'),
     401: errorResponses[401],
-    404: errorResponses[404]
+    404: errorResponses[404],
+    // ADR 011 blob-delete guard: a blob referenced by any live presentation
+    // version manifest is not deletable through the generic files surface.
+    409: jsonBody(apiErrorSchema, 'file_in_use: referenced by a presentation version')
   }
 });
 
 // ═══ Presentation domain (ADR 011) ═══════════════════════════════════════════
 //
-// The contract below is FROZEN shape-first: Phase 3 (upload/versioning),
+// The contract below is FROZEN shape-first: Phase 3 (upload/versioning — LIVE),
 // Phase 4 (sharing/viewer) and Phase 5 (collaborators/annotations) implement
 // the handlers. Until then the registered stubs answer the 501 declared on
 // each route — implementers delete that entry as they land the handler.
@@ -509,8 +512,7 @@ export const presentationsListRoute = createRoute({
   request: { query: cursorPageQuerySchema },
   responses: {
     200: jsonBody(presentationsListSchema, 'Presentations, newest first'),
-    401: errorResponses[401],
-    501: notImplemented
+    401: errorResponses[401]
   }
 });
 
@@ -523,8 +525,7 @@ export const presentationGetRoute = createRoute({
   responses: {
     200: jsonBody(presentationSchema, 'Presentation'),
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -538,8 +539,7 @@ export const presentationDeleteRoute = createRoute({
     200: jsonBody(presentationSchema, 'Deleted presentation (final snapshot)'),
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -555,8 +555,7 @@ export const uploadSessionCreateRoute = createRoute({
     201: jsonBody(uploadSessionCreatedSchema, 'Upload session reserved'),
     401: errorResponses[401],
     403: errorResponses[403],
-    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
-    501: notImplemented
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict')
   }
 });
 
@@ -569,8 +568,7 @@ export const assetPrecheckRoute = createRoute({
   responses: {
     200: jsonBody(assetPrecheckResponseSchema, 'Hashes to upload'),
     400: errorResponses[400],
-    401: errorResponses[401],
-    501: notImplemented
+    401: errorResponses[401]
   }
 });
 
@@ -590,8 +588,7 @@ export const assetUploadRoute = createRoute({
     400: jsonBody(apiErrorSchema, 'Hash mismatch or malformed form'),
     401: errorResponses[401],
     403: errorResponses[403],
-    413: jsonBody(apiErrorSchema, 'Payload exceeds the instance size cap'),
-    501: notImplemented
+    413: jsonBody(apiErrorSchema, 'Payload exceeds the instance size cap')
   }
 });
 
@@ -611,8 +608,7 @@ export const uploadSessionCommitRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Session already consumed'),
-    410: jsonBody(apiErrorSchema, 'Session expired'),
-    501: notImplemented
+    410: jsonBody(apiErrorSchema, 'Session expired')
   }
 });
 
@@ -631,8 +627,7 @@ export const versionCommitRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'version_conflict: expectedBaseVersion is stale — pull and retry'),
-    501: notImplemented
+    409: jsonBody(apiErrorSchema, 'version_conflict: expectedBaseVersion is stale — pull and retry')
   }
 });
 
@@ -647,8 +642,7 @@ export const versionsListRoute = createRoute({
   responses: {
     200: jsonBody(presentationVersionsListSchema, 'Versions, newest first'),
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -661,8 +655,7 @@ export const versionGetRoute = createRoute({
   responses: {
     200: jsonBody(presentationVersionDetailSchema, 'Version + manifest'),
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 
@@ -677,8 +670,7 @@ export const assetDownloadRoute = createRoute({
     // the handler returns a plain streamed Response.
     200: { description: 'Asset bytes (streamed)' },
     401: errorResponses[401],
-    404: errorResponses[404],
-    501: notImplemented
+    404: errorResponses[404]
   }
 });
 

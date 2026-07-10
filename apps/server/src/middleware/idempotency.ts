@@ -12,15 +12,20 @@ import { apiError } from '../api/errors.js';
  * inserted BEFORE the handler runs (the unique index is the mutex), so two
  * concurrent requests with the same key can never both execute.
  *
- * Explicit target list, fail-closed style — only these three consult it:
+ * Explicit target list, fail-closed style — only these four consult it:
  *   POST /api/v1/api-keys
  *   POST /api/v1/invitations
  *   POST /api/v1/members/{id}/reset-link
+ *   POST /api/v1/presentations/uploads (a retried reserve must not leak a
+ *     second session + reserved deck id)
  * Deliberate NON-targets:
- *   POST /api/v1/files — content-addressed dedupe already makes it
- *     idempotent, and its raw streamed body must never be buffered here;
+ *   POST /api/v1/files and /api/v1/presentations/assets — content-addressed
+ *     dedupe already makes them idempotent, and upload bodies must never be
+ *     buffered here;
  *   POST /api/v1/setup and /api/v1/invitations/accept — one-shot by
- *     construction (retries answer 410), and they run without a principal.
+ *     construction (retries answer 410), and they run without a principal;
+ *   the presentation commits — one-shot (session consumed / version counter)
+ *     by construction: a retry answers 409.
  *
  * The cached response body is stored AES-256-GCM ENCRYPTED: these responses
  * carry one-shot secrets (the full API key, the invitation acceptUrl token,
@@ -42,7 +47,11 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 
 const KEY_MAX_LENGTH = 200;
 
-const TARGET_PATHS = new Set(['/api/v1/api-keys', '/api/v1/invitations']);
+const TARGET_PATHS = new Set([
+  '/api/v1/api-keys',
+  '/api/v1/invitations',
+  '/api/v1/presentations/uploads'
+]);
 const RESET_LINK_RE = /^\/api\/v1\/members\/[^/]+\/reset-link$/;
 
 function isTarget(method: string, path: string): boolean {

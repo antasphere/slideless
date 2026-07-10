@@ -13,11 +13,13 @@ import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, 
 
 /**
  * Presentation domain, Phase 2 (ADR 011): the SCHEMA and the CONTRACT
- * SURFACE exist — handlers are 501 stubs until Phases 3–5. This suite proves
- * (1) migration 0013's tables round-trip through drizzle with their
- * constraints live, and (2) the fail-closed scope allowlist consciously
- * opened the /presentations tree to machine principals (501 = reachable,
- * never 403) with reads and writes split across the two scopes.
+ * SURFACE. This suite proves (1) migration 0013's tables round-trip through
+ * drizzle with their constraints live, and (2) the fail-closed scope
+ * allowlist consciously opened the /presentations tree to machine principals
+ * (reachable — never 403) with reads and writes split across the two scopes.
+ * Phase 3 made upload/versioning/pull LIVE (200/201 below); Phases 4–5
+ * (sharing, collaboration) still answer their contract-declared 501s. The
+ * upload pipeline itself is covered in presentations-upload.test.ts.
  */
 
 const OWNER = { email: 'owner@decks.test', name: 'Deck Owner', password: 'deck-owner-password-1' };
@@ -209,23 +211,27 @@ describe('contract surface + fail-closed scope allowlist', () => {
     readOnlyKey = await mint('ro', ['presentations:read']);
   });
 
-  it('sessions reach the stub surface (501, the Phase-2 answer — never 404)', async () => {
+  it('sessions reach the live surface (200 — never 404)', async () => {
     const res = await app.app.request('/api/v1/presentations', { headers: { cookie } });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
     const body = await readJson(res);
-    expect(body.error.code).toBe('not_implemented');
+    expect(Array.isArray(body.presentations)).toBe(true);
   });
 
-  it('an API key with presentations:read reaches reads (501, not 403)', async () => {
-    for (const path of ['/api/v1/presentations', '/api/v1/annotations']) {
-      const res = await app.app.request(path, {
-        headers: { authorization: `Bearer ${readOnlyKey}` }
-      });
-      expect(res.status, path).toBe(501);
-    }
+  it('an API key with presentations:read reaches reads (never 403)', async () => {
+    const live = await app.app.request('/api/v1/presentations', {
+      headers: { authorization: `Bearer ${readOnlyKey}` }
+    });
+    expect(live.status).toBe(200);
+    // Annotations arrive in Phase 5 — reachable, answering the contract 501.
+    const stub = await app.app.request('/api/v1/annotations', {
+      headers: { authorization: `Bearer ${readOnlyKey}` }
+    });
+    expect(stub.status).toBe(501);
+    expect((await readJson(stub)).error.code).toBe('not_implemented');
   });
 
-  it('mutations need presentations:write (read-only key 403s, write key passes to the stub)', async () => {
+  it('mutations need presentations:write (read-only key 403s, write key reaches the handler)', async () => {
     const denied = await app.app.request('/api/v1/presentations/uploads', {
       method: 'POST',
       headers: { authorization: `Bearer ${readOnlyKey}` }
@@ -237,7 +243,8 @@ describe('contract surface + fail-closed scope allowlist', () => {
       method: 'POST',
       headers: { authorization: `Bearer ${readWriteKey}` }
     });
-    expect(allowed.status).toBe(501);
+    expect(allowed.status).toBe(201);
+    expect((await readJson(allowed)).uploadSession.presentationId).toBeDefined();
   });
 
   it('the annotation inbox stays fail-closed for mutations (unlisted method 403s)', async () => {

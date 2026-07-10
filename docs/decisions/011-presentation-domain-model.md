@@ -50,8 +50,14 @@ change).
 manifest references content the generic `DELETE /files/{id}` can remove
 (soft-deletes the row AND deletes the blob). Phase 3 must protect deck
 assets — either check manifest references before blob deletion, or keep
-deck-asset file rows out of the user-facing files surface. Until then this
-is a documented sharp edge, not a solved one.
+deck-asset file rows out of the user-facing files surface.
+*Status update (Phase 3, 2026-07-10): closed.* `DELETE /files/{id}` now runs
+a manifest-containment check (any live deck's version, GIN-indexed —
+migration 0014) inside the delete transaction with the files row locked FOR
+UPDATE, answering **409 file_in_use**; commits lock referenced rows FOR
+SHARE, so delete-vs-commit races serialize instead of dangling a manifest.
+Soft-deleted decks do not pin blobs (their manifests may dangle; a future GC
+reclaims properly).
 
 Other shapes fixed here:
 
