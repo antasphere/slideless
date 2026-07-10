@@ -106,3 +106,43 @@ actionable; link the template file/line it concerns.
   here" comment made the fail-closed extension obvious; reusing the
   content-addressed `files` machinery for a product blob store required zero
   template changes (ADR 011).
+
+## 2026-07-10 — Viewer-origin security spike (ADR 012)
+
+- **The global `securityHeaders` middleware CLOBBERS per-route CSP and
+  `Referrer-Policy`.** `middleware/security-headers.ts` runs after `next()` and
+  unconditionally calls `c.header('referrer-policy', …)` and, on any `text/html`
+  response, `c.header('content-security-policy', <dashboard csp>)`. Both are
+  hard overwrites, so a route cannot serve its own policy: a viewer route
+  setting `Content-Security-Policy: sandbox …` and `Referrer-Policy: no-referrer`
+  gets silently reverted to the dashboard CSP + `strict-origin-when-cross-origin`
+  at the wire. Any product that must serve a second HTML policy on the app origin
+  (a sandboxed content viewer, an embeddable widget, a differently-CSP'd public
+  page) hits this. Fix is a one-line guard — only set the default when the route
+  has not already set one: `if (!c.res.headers.has('content-security-policy'))`
+  and likewise for `referrer-policy`. Consider making the template's middleware
+  respect a route-set value by default. (Guard demonstrated on branch
+  `spike/viewer-origin`.)
+- **The route-precedence "open slot" in `app.ts` works as intended.** Mounting a
+  public product sub-app with `app.route('/', …)` in the documented slot before
+  `serveStatic`/the SPA fallback took the request cleanly, ahead of the catch-all
+  — no precedence surprises. Keep the slot and its comment.
+- **`files/http.ts`'s attachment-by-default is the right default, but a product
+  that renders user content needs a documented, first-class escape hatch.**
+  Slideless must serve user HTML **inline** under a sandboxing CSP (ADR 012).
+  Today that means bypassing `contentDispositionFor` entirely and hand-rolling
+  the headers. The template could offer a blessed "isolated inline" serving
+  helper (inline + `nosniff` + `Referrer-Policy: no-referrer` + a required
+  `Content-Security-Policy: sandbox …` that refuses to emit without the sandbox
+  directive and hard-bans `allow-same-origin`), so the one dangerous exception to
+  the "never render user content on the app origin" rule is centralized and
+  test-guarded rather than re-derived per product.
+- **`/api/v1` cross-site credentialed hardening would help isolated viewers.**
+  security.md already flags that the custom `/api/v1` routes rely on
+  `SameSite=Lax` alone (no per-request Origin/Sec-Fetch-Site symmetry check). The
+  spike showed Firefox will still transmit the session cookie on an
+  opaque-origin credentialed fetch to `/api/v1/me` (the response was CORS-blocked
+  so nothing leaked, and the server answered 401). Adding the noted
+  Origin/`Sec-Fetch-Site: cross-site` rejection to the `/api/v1` surface would
+  refuse the request outright — a template-level defense-in-depth that every
+  content-rendering product inherits.
