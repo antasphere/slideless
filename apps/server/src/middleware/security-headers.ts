@@ -48,11 +48,20 @@ export function securityHeaders({ csp, state }: SecurityHeaderOptions): Middlewa
   return async (c, next) => {
     await next();
     c.header('x-content-type-options', 'nosniff');
-    c.header('referrer-policy', 'strict-origin-when-cross-origin');
+    // Baseline defaults, but NEVER clobber a value a route set for itself:
+    // the public viewer (ADR 012) serves user-authored HTML under its own
+    // `Content-Security-Policy: sandbox …` + `Referrer-Policy: no-referrer`,
+    // and an unconditional overwrite here would silently replace the sandbox
+    // CSP with the dashboard CSP — re-opening the session-theft surface the
+    // sandbox exists to close (found by the ADR 012 spike; fail-dangerous
+    // class, see the ADR's residual-risk #1 and the viewer regression tests).
+    if (!c.res.headers.has('referrer-policy')) {
+      c.header('referrer-policy', 'strict-origin-when-cross-origin');
+    }
     // Draining: ask keep-alive clients to reconnect elsewhere (rolling deploy).
     if (state.draining) c.header('connection', 'close');
     const contentType = c.res.headers.get('content-type') ?? '';
-    if (contentType.includes('text/html')) {
+    if (contentType.includes('text/html') && !c.res.headers.has('content-security-policy')) {
       c.header('content-security-policy', csp);
     }
   };
