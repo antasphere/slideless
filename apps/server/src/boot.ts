@@ -329,7 +329,7 @@ export async function boot(
     instanceName: async () => {
       if (cachedName) return cachedName;
       const [row] = await db.db.select({ name: instanceSettings.name }).from(instanceSettings).limit(1);
-      cachedName = row?.name ?? 'Platform';
+      cachedName = row?.name ?? 'Slideless';
       return cachedName;
     }
   });

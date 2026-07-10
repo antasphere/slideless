@@ -5,7 +5,7 @@
  *
  * Products: change PRODUCT_NAME and the accent color, keep the builders.
  */
-export const PRODUCT_NAME = 'Platform';
+export const PRODUCT_NAME = 'Slideless';
 
 /** User-controlled values never reach email HTML unescaped. */
 const esc = (s: string): string =>

@@ -174,7 +174,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     c.header('Cache-Control', 'public, max-age=60');
     return c.json(
       {
-        name: row?.name ?? 'Platform',
+        name: row?.name ?? 'Slideless',
         instanceId: row?.instanceId ?? null,
         edition: env.EDITION,
         version: env.APP_VERSION,
