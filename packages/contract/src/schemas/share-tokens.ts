@@ -11,6 +11,16 @@ import { z } from 'zod';
 export const shareTokenVersionModeSchema = z.enum(['latest', 'pinned']);
 export type ShareTokenVersionMode = z.infer<typeof shareTokenVersionModeSchema>;
 
+/**
+ * Reserved recipient label for the dashboard's own transient preview tokens
+ * (ADR 012 Surface D). Tokens with this exact name are dashboard plumbing:
+ * the deck detail page mints them short-lived for its sandboxed iframe,
+ * hides them from the share-links panel, and the server EXCLUDES their
+ * access counts from the `totalViews` list aggregate so owner previews
+ * never inflate share statistics.
+ */
+export const PREVIEW_SHARE_TOKEN_NAME = 'Dashboard preview';
+
 export const shareTokenSchema = z.object({
   id: z.string(),
   presentationId: z.string(),

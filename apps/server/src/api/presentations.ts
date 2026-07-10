@@ -63,6 +63,9 @@ const presentationToWire = (p: PresentationRow) => ({
   entryPath: p.entryPath,
   ownerUserId: p.ownerUserId,
   remixedFrom: p.remixedFrom,
+  // Viewer entry loads recorded by recordEntryView (dashboard preview
+  // tokens excluded at the viewer, so owner previews never count).
+  totalViews: p.totalViews,
   createdAt: p.createdAt.toISOString(),
   updatedAt: p.updatedAt.toISOString()
 });

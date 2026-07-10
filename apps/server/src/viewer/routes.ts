@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import type { ManifestEntry } from '@slideless/contract';
+import { PREVIEW_SHARE_TOKEN_NAME, type ManifestEntry } from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { FileService } from '../files/service.js';
@@ -337,8 +337,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     }
 
     // View accounting: the ENTRY serve is the view — assets never count.
-    // Awaited so the count is durable before the bytes go out.
-    if (c.req.method === 'GET') {
+    // Awaited so the count is durable before the bytes go out. The
+    // dashboard's own transient preview tokens (reserved name) are excluded
+    // so an owner previewing their deck never inflates its view stats.
+    if (c.req.method === 'GET' && token.name !== PREVIEW_SHARE_TOKEN_NAME) {
       await sharing.recordEntryView(token.id, deck.id);
     }
 

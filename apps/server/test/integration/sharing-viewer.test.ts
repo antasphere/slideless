@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
+import { PREVIEW_SHARE_TOKEN_NAME } from '@slideless/contract';
 import { presentations } from '@slideless/db';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
 import {
@@ -324,6 +325,34 @@ describe('public viewer (ADR 012)', () => {
     const after = await totalViewsOf(deckId);
     expect(after.totalViews).toBe(before.totalViews + 2);
     expect(after.lastViewedAt).not.toBeNull();
+  });
+
+  it('exposes totalViews on the wire and never counts dashboard preview tokens', async () => {
+    // The dashboard detail page mints a transient token under the RESERVED
+    // name for its sandboxed iframe (ADR 012 Surface D) — those opens must
+    // not inflate the deck's view stats.
+    const preview = await createToken({ name: PREVIEW_SHARE_TOKEN_NAME });
+    const before = await totalViewsOf(deckId);
+
+    const served = await app.app.request(`/v/${preview.secret}`);
+    expect(served.status).toBe(200); // the preview still renders…
+    const after = await totalViewsOf(deckId);
+    expect(after.totalViews).toBe(before.totalViews); // …but never counts
+
+    const listed = await listTokens();
+    const row = listed.shareTokens.find((t: { id: string }) => t.id === preview.shareToken.id);
+    expect(row.accessCount).toBe(0);
+
+    // The deck wire shape carries the counter (list + get agree).
+    const listRes = await readJson(
+      await app.app.request('/api/v1/presentations', { headers: { cookie } })
+    );
+    const deckRow = listRes.presentations.find((p: { id: string }) => p.id === deckId);
+    expect(deckRow.totalViews).toBe(before.totalViews);
+    const getRes = await readJson(
+      await app.app.request(`/api/v1/presentations/${deckId}`, { headers: { cookie } })
+    );
+    expect(getRes.totalViews).toBe(before.totalViews);
   });
 
   it('unknown → 404, revoked → 403, expired → 410', async () => {

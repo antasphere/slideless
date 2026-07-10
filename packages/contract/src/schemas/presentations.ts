@@ -48,6 +48,12 @@ export const presentationSchema = z.object({
   ownerUserId: z.string().nullable(),
   /** Marketplace lineage (reserved) — the deck this one was remixed from. */
   remixedFrom: z.string().nullable(),
+  /**
+   * Anonymous viewer opens of the ENTRY document, across all share tokens
+   * and versions (assets never count; the dashboard's own preview tokens
+   * never count). Survives token revocation.
+   */
+  totalViews: z.number().int().min(0),
   createdAt: z.string(),
   updatedAt: z.string()
 });
