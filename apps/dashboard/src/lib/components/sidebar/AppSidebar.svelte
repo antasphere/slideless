@@ -3,6 +3,7 @@
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import NavUser from './NavUser.svelte';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+  import Presentation from '@lucide/svelte/icons/presentation';
   import Users from '@lucide/svelte/icons/users';
   import Mail from '@lucide/svelte/icons/mail';
   import KeyRound from '@lucide/svelte/icons/key-round';
@@ -27,6 +28,8 @@
       label: t('nav.platform'),
       items: [
         { title: t('nav.overview'), href: '/', icon: LayoutDashboard },
+        // The product surface first: decks are what this instance is FOR.
+        { title: t('nav.decks'), href: '/decks', icon: Presentation },
         { title: t('nav.members'), href: '/members', icon: Users },
         ...(isAdmin ? [{ title: t('nav.invitations'), href: '/invitations', icon: Mail }] : []),
         { title: t('nav.apiKeys'), href: '/api-keys', icon: KeyRound },

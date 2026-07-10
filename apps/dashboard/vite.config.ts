@@ -11,12 +11,13 @@ export default defineConfig({
     noExternal: ['@slideless/sdk', '@slideless/contract']
   },
   server: {
-    // Dev-only: the SPA calls the API same-origin in production; in dev the
-    // Hono server runs on :3000 and vite proxies to it.
+    // Dev-only: the SPA calls the API same-origin in production; in dev
+    // vite proxies to the API origin. Override with DEV_API_ORIGIN when the
+    // stack is not on :3000 (e.g. the compose stack publishes :3100).
     proxy: {
-      '/api': 'http://localhost:3000',
-      '/healthz': 'http://localhost:3000',
-      '/readyz': 'http://localhost:3000'
+      '/api': process.env.DEV_API_ORIGIN ?? 'http://localhost:3000',
+      '/healthz': process.env.DEV_API_ORIGIN ?? 'http://localhost:3000',
+      '/readyz': process.env.DEV_API_ORIGIN ?? 'http://localhost:3000'
     }
   }
 });

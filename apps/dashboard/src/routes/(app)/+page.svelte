@@ -5,10 +5,17 @@
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
-  import type { FileInfo, Member } from '@slideless/contract';
+  import type { FileInfo, Member, Presentation } from '@slideless/contract';
 
   let { data } = $props();
 
+  const decksList = createPagedList<Presentation>(
+    async (p) => {
+      const { presentations, nextCursor } = await api.presentations(p);
+      return { items: presentations, nextCursor };
+    },
+    { limit: 100 }
+  );
   const membersList = createPagedList<Member>(
     async (p) => {
       const { members, nextCursor } = await api.members(p);
@@ -25,6 +32,7 @@
   );
 
   $effect(() => {
+    void decksList.load();
     void membersList.load();
     void filesList.load();
   });
@@ -41,6 +49,11 @@
       ? null
       : `${filesList.items.length}${filesList.nextCursor ? '+' : ''}`
   );
+  const deckCount = $derived(
+    decksList.loading || (decksList.error && !decksList.items.length)
+      ? null
+      : `${decksList.items.length}${decksList.nextCursor ? '+' : ''}`
+  );
 </script>
 
 <PageHeader title={t('overview.title')} description={t('overview.description')} />
@@ -55,6 +68,18 @@
       <Badge variant="secondary">v{data.instance.version}</Badge>
       <Badge variant="outline">{data.instance.edition}</Badge>
       <Badge variant="outline">API {data.instance.apiVersion}</Badge>
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Description>{t('overview.decksCard')}</Card.Description>
+      <Card.Title class="text-2xl">{deckCount ?? '—'}</Card.Title>
+    </Card.Header>
+    <Card.Content>
+      <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/decks">
+        {t('overview.browseDecks')}
+      </a>
     </Card.Content>
   </Card.Root>
 
