@@ -42,6 +42,12 @@ deploys) + `dev` (day-to-day work).
   migration. CI's `drift:check` gates it.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security.md).
+- **Deck reads are private, never workspace-wide (ADR 013)**: every presentation read (get,
+  versions, version detail, asset download, and the list's WHERE scope) goes through
+  `canReadDeck` — deck owner, workspace admin/owner, or an ACTIVE collaborator grant on THAT
+  deck. A failed read check answers **404, never 403** (deck existence is not probeable).
+  Workspace membership alone is NOT a deck read grant — collaborators are external parties
+  invited to one deck, and revoking a grant must cut content access immediately.
 
 ## Commands
 

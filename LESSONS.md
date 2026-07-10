@@ -483,3 +483,24 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   transaction (`isActiveDevCollaborator(tx, …)`), so a concurrent revoke
   serializes against the commit instead of racing it — same discipline as
   the blob FOR SHARE locks.
+
+## Phase 5 security review (deck read privacy, 2026-07-10)
+
+- **Inheriting the template's "workspace data" read posture silently made
+  every collaborator a whole-workspace reader.** The Phase 3 read handlers
+  authorized list/get/versions/asset-download on `workspace_id` alone (ADR
+  006's stance for files); Phase 5's claim flow then minted workspace
+  memberships for EXTERNAL per-deck collaborators — proven live: a deck-A
+  collaborator downloaded deck B's content, and revoking the grant changed
+  nothing. Whenever onboarding mints memberships for outsiders, every
+  resource read path must re-derive its own authorization (`canReadDeck`,
+  ADR 013) instead of riding the workspace boundary. Failed read checks
+  answer 404, never 403 — matching the existing hide-existence posture.
+- **Every public account-minting endpoint needs a duplicate-account catch
+  around `signUpEmail`.** Two concurrent claims of one invite both pass the
+  account lookup (password hashing is tens of ms, the lookup is ~1 ms), so
+  the loser's INSERT hits the unique-email violation — an uncaught 500
+  until mapped to the same 409 `account_exists` the sequential path
+  answers. The integration test hits this interleaving deterministically
+  for the same timing reason. `api/invitations.ts` accept has the identical
+  window (recorded in TEMPLATE-FEEDBACK.md, not fixed here).

@@ -260,3 +260,50 @@ actionable; link the template file/line it concerns.
   Template guidance for contract authors — "every authed resource route
   declares 401 AND 403 AND 404 unless hiding existence is deliberate" —
   would make that a choice instead of an accident.
+
+## 2026-07-10 — Phase 5 adversarial review: open items deliberately NOT fixed
+
+Fixed in this pass: workspace-wide deck reads (ADR 013, `canReadDeck` +
+scoped list) and the concurrent-claim 500 (duplicate-account error now maps
+to 409 `account_exists`). The following were surfaced by the same review and
+are RECORDED HERE ON PURPOSE — policy calls for the product owner or
+template-level robustness gaps, not silent fixes:
+
+- **`/members` roster visibility to collaborators (policy decision, template
+  route).** A claimed collaborator is a workspace member and can GET
+  `/members` — the full name/email roster, including other external
+  collaborators. Under the ADR 013 "external parties" model that may be more
+  than a one-deck reviewer should see. Needs an owner decision: hide the
+  roster from plain members, or accept it as the price of the
+  membership-based auth layer.
+- **Members can create decks and every deck owner can invite collaborators
+  (the account-minting policy).** Any claimed collaborator can create their
+  own deck, become its owner, and invite further emails — each claim mints a
+  real account on the instance. Transitively, one invited reviewer can
+  populate the instance with accounts. If that is not intended, deck
+  creation and/or invite rights need a role gate; owner decision pending.
+- **Annotation bodies are stored and served RAW (P8 escaping directive).**
+  `annotationToWire` / `annotationToReviewerWire` now carry a prominent
+  warning: no server-side sanitization; every rendering surface (dashboard
+  first) MUST HTML-escape `body`, `authorName`, and `selection` or
+  annotations become stored XSS against deck owners. The P8 dashboard pass
+  must ship that escaping.
+- **Finding 6 — orphan account on revoke-during-claim window.** The claim
+  endpoint creates the account via `auth.api.signUpEmail` BEFORE the guarded
+  grant claim; a revoke landing in between leaves a real account +
+  membership with no active grant (the claim answers 410, the account
+  stays). Same shape as setup's documented "orphaned user" trade-off; a fix
+  needs an account-creation/claim transaction seam the identity layer does
+  not expose today. The template's invitation-accept path shares the window.
+- **Finding 7 — lock-free collaborator-cap COUNT race.** `assertUnderCap`
+  COUNTs live grants inside the invite transaction, but two concurrent
+  invites for DIFFERENT emails on one deck take no common lock (the
+  FOR UPDATE is per (deck, email) row), so both can pass at cap-1 and land
+  cap+1. Low stakes (cap 10 is a soft product bound); a per-deck advisory
+  lock or a recheck-after-insert would close it. The template's invitations
+  service has the same pattern.
+- **Duplicate-email signUpEmail races are a template-wide pattern.** The
+  collaborator claim handler now maps the loser's unique-violation to a
+  clean 409; `api/invitations.ts` accept (and any future public
+  account-minting endpoint) has the identical uncaught-500 window and should
+  get the same mapping upstream.

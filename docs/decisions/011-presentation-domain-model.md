@@ -93,6 +93,12 @@ Other shapes fixed here:
 - **Deck ownership follows ADR 006**: decks are workspace data;
   `owner_user_id` (and version/token `created_by`) anonymize to NULL on
   account deletion rather than cascading content away.
+  *Status update (Phase 5 security review, 2026-07-10): the READ posture of
+  this bullet is superseded by ADR 013.* Deletion/anonymization semantics
+  stand, but deck reads are no longer workspace-wide — they require the deck
+  owner, a workspace admin/owner, or an active collaborator grant
+  (`canReadDeck`), because collaborator onboarding makes external parties
+  workspace members.
 
 ## Alternatives rejected
 
