@@ -41,7 +41,7 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     await expect(secretDialog.getByText('You will not see this key again')).toBeVisible();
     const secret = await secretDialog.getByLabel('API key secret').inputValue();
     // keyId + secret are base64url: '-' is in the alphabet (\w is not enough).
-    expect(secret).toMatch(/^key_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{20,}$/);
+    expect(secret).toMatch(/^slk_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{20,}$/);
     await expect(secretDialog.getByRole('button', { name: 'Copy API key' })).toBeVisible();
     await secretDialog.getByRole('button', { name: 'I saved it' }).click();
     await expect(page.getByRole('cell', { name: 'smoke-key' })).toBeVisible();

@@ -60,7 +60,7 @@ describe('API keys (exit criterion 4, API half)', () => {
     });
     expect(res.status).toBe(201);
     const body = await readJson(res);
-    expect(body.key).toMatch(/^key_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{20,}$/);
+    expect(body.key).toMatch(/^slk_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{20,}$/);
     expect(body.apiKey.scopes).toEqual(['presentations:read']);
     mintedKey = body.key;
     keyRecordId = body.apiKey.id;
@@ -130,7 +130,7 @@ describe('API keys (exit criterion 4, API half)', () => {
   it('rejects a tampered key and rate-limits repeated failures per IP', async () => {
     // Use the real keyId (a base64url string that may contain '_') so the
     // tampered key still passes the format check and reaches the wall.
-    const bad = `key_${keyId}_${'A'.repeat(43)}`;
+    const bad = `slk_${keyId}_${'A'.repeat(43)}`;
     // Own bucket via spoofed client IP: the wall must not bleed into the
     // other tests' default bucket.
     const attacker = { authorization: `Bearer ${bad}`, 'x-forwarded-for': '203.0.113.9' };
