@@ -15,6 +15,7 @@ import {
   presentationDeleteRoute,
   presentationGetRoute,
   presentationsListRoute,
+  previewTokenCreateRoute,
   shareTokenCreateRoute,
   shareTokenRevokeRoute,
   shareTokenSendRoute,
@@ -26,7 +27,7 @@ import {
   versionGetRoute,
   versionsListRoute
 } from '@slideless/contract/routes';
-import type { ManifestEntry } from '@slideless/contract';
+import { PREVIEW_SHARE_TOKEN_NAME, type ManifestEntry } from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
@@ -38,7 +39,12 @@ import { FileTooLargeError } from '../files/service.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
-import { buildViewerUrl, shareTokenToWire, type ShareTokenService } from '../sharing/service.js';
+import {
+  buildViewerUrl,
+  PREVIEW_TOKEN_TTL_MS,
+  shareTokenToWire,
+  type ShareTokenService
+} from '../sharing/service.js';
 import { hashViewerPassword } from '../sharing/password.js';
 import { annotationToWire, type AnnotationService } from '../annotations/service.js';
 import { requireAuth } from '../middleware/auth-context.js';
@@ -498,6 +504,13 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       presentationId: id,
       createdBy: principal.userId,
       name: body.name,
+      // SECURITY: the PUBLIC create path mints NORMAL tokens, always —
+      // visible in the sharing panel, counted in view stats — whatever the
+      // caller names them (even "Dashboard preview"). The 'preview' marker
+      // is reachable only through the owner/admin-gated preview-token route
+      // below; were it name- or body-derived, any deck writer (a dev
+      // collaborator included) could mint a concealed, stat-silent link.
+      purpose: 'share',
       pinnedVersion,
       canAnnotate: body.canAnnotate,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
@@ -525,6 +538,64 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     );
   });
 
+  // The dashboard's own transient preview token (ADR 012 Surface D). The
+  // sandboxed iframe cannot ride the session cookie (opaque origin), so the
+  // deck detail page needs a capability URL — but a token that is hidden
+  // from the sharing panel and excluded from view stats is a concealment
+  // primitive, so minting one is OWNER-LEVEL only (never a dev collaborator)
+  // and every property is fixed server-side: purpose 'preview', a 1 h
+  // expiry, no annotations, no password. Preview tokens are immutable
+  // (update/send reject them below); the 1 h expiry is the hard cleanup.
+  api.openapi(previewTokenCreateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!canAdministerDeck(principal, deck)) {
+      return c.json(
+        err('forbidden', 'Only the deck owner or a workspace admin can mint preview tokens'),
+        403
+      );
+    }
+
+    let pinnedVersion: number | null = null;
+    if (body.version !== undefined) {
+      const versionRow = await service.getVersion(principal.workspaceId, id, body.version);
+      if (!versionRow) {
+        return c.json(err('invalid_version', `Version ${body.version} does not exist on this presentation`), 400);
+      }
+      pinnedVersion = body.version;
+    }
+
+    const { row, secret } = await sharing.create({
+      workspaceId: principal.workspaceId,
+      presentationId: id,
+      createdBy: principal.userId,
+      name: PREVIEW_SHARE_TOKEN_NAME, // cosmetic label — nothing keys on it
+      purpose: 'preview',
+      pinnedVersion,
+      canAnnotate: false,
+      expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS),
+      passwordHash: null
+    });
+
+    c.set('audit', {
+      action: 'presentation.preview_token_create',
+      resourceType: 'share_token',
+      resourceId: row.id,
+      metadata: {
+        presentationId: id,
+        pinnedVersion: row.pinnedVersion,
+        expiresAt: row.expiresAt?.toISOString() ?? null
+      }
+    });
+    return c.json(
+      { shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) },
+      201
+    );
+  });
+
   api.openapi(shareTokenUpdateRoute, async (c) => {
     const principal = c.get('principal')!;
     const { id, tokenId } = c.req.valid('param');
@@ -533,6 +604,15 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if ('status' in loaded) return c.json(loaded.body, loaded.status);
     const token = await sharing.get(principal.workspaceId, id, tokenId);
     if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+    // Preview tokens are IMMUTABLE: mint a new one instead. Allowing any
+    // patch (expiry above all) would let a hidden, stat-excluded token be
+    // stretched beyond its 1 h life — the concealment channel again.
+    if (token.purpose === 'preview') {
+      return c.json(
+        err('preview_token_immutable', 'Preview tokens cannot be modified — mint a new one'),
+        400
+      );
+    }
 
     const set: Partial<typeof token> = {};
     // A bare pinnedVersion implies 'pinned' (least surprise); 'latest' clears.
@@ -585,6 +665,14 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if ('status' in loaded) return c.json(loaded.body, loaded.status);
     const token = await sharing.get(principal.workspaceId, id, tokenId);
     if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+    // Preview tokens belong to the owner/admin preview surface end-to-end;
+    // a dev collaborator neither mints nor revokes them.
+    if (token.purpose === 'preview' && !canAdministerDeck(principal, loaded.deck)) {
+      return c.json(
+        err('forbidden', 'Only the deck owner or a workspace admin can revoke preview tokens'),
+        403
+      );
+    }
     const revoked = (await sharing.revoke(token.id)) ?? token;
     c.set('audit', {
       action: 'presentation.share_token_revoke',
@@ -603,6 +691,15 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if ('status' in loaded) return c.json(loaded.body, loaded.status);
     const token = await sharing.get(principal.workspaceId, id, tokenId);
     if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+    // A send ROTATES the token onto a fresh secret and mails it out — on a
+    // hidden, stat-excluded preview token that would hand the caller a
+    // working concealed link. Preview tokens are never sendable.
+    if (token.purpose === 'preview') {
+      return c.json(
+        err('preview_token_immutable', 'Preview tokens cannot be sent — create a share token'),
+        400
+      );
+    }
     if (token.revokedAt) {
       return c.json(err('token_revoked', 'This share token is revoked — create a new one'), 400);
     }

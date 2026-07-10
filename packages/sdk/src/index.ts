@@ -39,6 +39,7 @@ import type {
   Presentation,
   PresentationVersion,
   PresentationVersionDetail,
+  PreviewTokenCreate,
   SetupRequest,
   SetupResponse,
   ShareToken,
@@ -509,6 +510,16 @@ export class PlatformClient {
       req,
       idempotencyHeader(opts)
     );
+  }
+
+  /**
+   * Mint the dashboard's transient preview token (deck owner / workspace
+   * admin only — 403 for dev collaborators). Server-fixed: purpose
+   * 'preview', 1 h expiry, hidden from the sharing panel, excluded from view
+   * stats, immutable. `version` pins the preview; omitted = latest.
+   */
+  createPreviewToken(id: string, req: PreviewTokenCreate = {}): Promise<ShareTokenCreated> {
+    return this.request('POST', `/presentations/${encodeURIComponent(id)}/preview-token`, req);
   }
 
   /** Pin/unpin version, rename, annotate flag, expiry, password (null clears). */

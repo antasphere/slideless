@@ -1,6 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { presentations, shareTokens, type Db, type ShareTokenRow } from '@slideless/db';
+import {
+  presentations,
+  shareTokens,
+  type Db,
+  type ShareTokenPurpose,
+  type ShareTokenRow
+} from '@slideless/db';
 import type { PepperRegistry } from '../apikeys/peppers.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 
@@ -21,6 +27,14 @@ import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
  * with 384 bits of secret entropy, remote timing yields nothing usable.
  */
 export const SHARE_SECRET_BYTES = 48; // 64 base64url chars
+
+/**
+ * Preview tokens (purpose 'preview') self-destruct after an hour. The TTL is
+ * SERVER-fixed at mint time (api/presentations.ts preview-token route) and
+ * preview tokens are immutable, so nothing can extend one into a long-lived
+ * hidden link.
+ */
+export const PREVIEW_TOKEN_TTL_MS = 60 * 60 * 1000;
 
 function hashSecret(secret: string, pepper: string): string {
   return createHash('sha256')
@@ -56,6 +70,12 @@ export class ShareTokenService {
     presentationId: string;
     createdBy: string;
     name: string;
+    /**
+     * SECURITY: set by the HANDLER from its code path, never from request
+     * input. Only the dedicated preview-token route (owner/admin gated)
+     * passes 'preview'; the public token-create route always passes 'share'.
+     */
+    purpose: ShareTokenPurpose;
     pinnedVersion: number | null;
     canAnnotate: boolean;
     expiresAt: Date | null;
@@ -68,6 +88,7 @@ export class ShareTokenService {
         workspaceId: opts.workspaceId,
         presentationId: opts.presentationId,
         name: opts.name,
+        purpose: opts.purpose,
         tokenHash,
         pinnedVersion: opts.pinnedVersion,
         canAnnotate: opts.canAnnotate,
@@ -193,6 +214,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
   id: string;
   presentationId: string;
   name: string;
+  purpose: ShareTokenPurpose;
   versionMode: 'latest' | 'pinned';
   pinnedVersion: number | null;
   canAnnotate: boolean;
@@ -207,6 +229,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
     id: t.id,
     presentationId: t.presentationId,
     name: t.name,
+    purpose: t.purpose,
     versionMode: t.pinnedVersion === null ? 'latest' : 'pinned',
     pinnedVersion: t.pinnedVersion,
     canAnnotate: t.canAnnotate,

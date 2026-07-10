@@ -163,6 +163,35 @@ Always embed the deck in a `sandbox` iframe **without `allow-same-origin`**
 blocks storage, credentialed reads, framebusting, and parent access — a second
 lock that survives a viewer-origin misconfiguration.
 
+### Preview tokens are a server-set `purpose`, never a name (2026-07 fix)
+
+The sandboxed preview iframe cannot ride the session cookie (opaque origin), so
+the deck detail page feeds it a **transient share token**. Those tokens are
+hidden from the sharing panel and excluded from view counts — and both behaviors
+were originally keyed on the token **name** (`"Dashboard preview"`,
+`PREVIEW_SHARE_TOKEN_NAME`). That name is client input on the public
+token-create endpoint, so **any deck writer — a dev collaborator included —
+could mint a working share link that was invisible in the owner's dashboard and
+silent in stats**: a covert access channel.
+
+The release-gate fix (migration `0017`):
+
+- `share_tokens.purpose` (`'share'` default | `'preview'`) is **set by the
+  server from the code path**, never accepted from request input. Concealment
+  (dashboard `isPreviewToken`) and stat exclusion (`viewer/routes.ts`) key on
+  this column only; the name has **no** special meaning anywhere — a token
+  named "Dashboard preview" is a normal, visible, counted token.
+- Preview tokens are minted **only** by `POST /presentations/{id}/preview-token`,
+  gated on `canAdministerDeck` (deck owner / workspace admin — **never** a dev
+  collaborator), with every property server-fixed: 1 h expiry, no annotations,
+  no password.
+- Preview tokens are **immutable** (update and send answer
+  `preview_token_immutable`; a send would rotate-and-mail a concealed link, a
+  patch could stretch the 1 h life) and revocable only by owner/admin. The
+  dashboard mints a fresh one to switch previewed versions.
+
+Regression tests: `apps/server/test/integration/preview-tokens.test.ts`.
+
 ## Residual risks / follow-ups for the hardening phase (P9)
 
 1. **Fail-dangerous header (same-origin mode).** The whole protection is one

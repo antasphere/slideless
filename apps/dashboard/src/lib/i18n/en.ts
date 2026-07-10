@@ -447,6 +447,8 @@ export const en = {
   'deck.previewPinned': 'Previewing v{n}',
   'deck.previewEmpty': 'Nothing to preview yet — push a first version with the CLI.',
   'deck.previewFailed': 'Preview unavailable: {error}',
+  'deck.previewOwnerOnly':
+    'The preview is available to the deck owner and workspace admins. Create a share link below to view this deck.',
 
   // ── Share links (per-recipient viewer tokens) ────────────────────────
   'tokens.title': 'Share links',

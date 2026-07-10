@@ -1,0 +1,1 @@
+ALTER TABLE "share_tokens" ADD COLUMN "purpose" text DEFAULT 'share' NOT NULL;

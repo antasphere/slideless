@@ -12,12 +12,24 @@ export const shareTokenVersionModeSchema = z.enum(['latest', 'pinned']);
 export type ShareTokenVersionMode = z.infer<typeof shareTokenVersionModeSchema>;
 
 /**
- * Reserved recipient label for the dashboard's own transient preview tokens
- * (ADR 012 Surface D). Tokens with this exact name are dashboard plumbing:
- * the deck detail page mints them short-lived for its sandboxed iframe,
- * hides them from the share-links panel, and the server EXCLUDES their
- * access counts from the `totalViews` list aggregate so owner previews
- * never inflate share statistics.
+ * SERVER-SET token purpose. 'preview' rows are the dashboard's own transient
+ * iframe tokens (ADR 012 Surface D): hidden from the share-links panel,
+ * excluded from view stats, minted ONLY through the dedicated preview-token
+ * endpoint (deck owner / workspace admin, 1 h expiry), and immutable once
+ * minted. SECURITY: every preview behavior keys on this column — never on
+ * the token NAME, which is client input (keying concealment on the name let
+ * any deck writer, dev collaborators included, mint stat-silent hidden
+ * links). The public token-create endpoint always mints 'share'.
+ */
+export const shareTokenPurposeSchema = z.enum(['share', 'preview']);
+export type ShareTokenPurpose = z.infer<typeof shareTokenPurposeSchema>;
+
+/**
+ * Default display label the SERVER gives preview tokens it mints. Purely
+ * cosmetic (audit metadata, admin tooling): a user may freely name a normal
+ * share token "Dashboard preview" and it behaves like any other token —
+ * visible in the panel, counted in stats. Nothing keys on this string; the
+ * marker is the `purpose` column above.
  */
 export const PREVIEW_SHARE_TOKEN_NAME = 'Dashboard preview';
 
@@ -26,6 +38,8 @@ export const shareTokenSchema = z.object({
   presentationId: z.string(),
   /** Owner-facing recipient label — never shown to the recipient. */
   name: z.string(),
+  /** 'share' (normal, visible, counted) or 'preview' (dashboard plumbing). */
+  purpose: shareTokenPurposeSchema,
   versionMode: shareTokenVersionModeSchema,
   /** The frozen version — null while versionMode is 'latest'. */
   pinnedVersion: z.number().int().nullable(),
@@ -65,6 +79,18 @@ export const shareTokenCreateSchema = z
     message: 'pinnedVersion is required when versionMode is "pinned"'
   });
 export type ShareTokenCreate = z.infer<typeof shareTokenCreateSchema>;
+
+/**
+ * Body of the dedicated preview-token endpoint (owner/admin only). The
+ * server fixes everything else: purpose 'preview', the display name, a 1 h
+ * expiry, no annotations, no password. `version` pins the preview; omitted
+ * = follow latest.
+ */
+export const previewTokenCreateSchema = z.object({
+  /** Pin the preview to this version; omitted = latest. */
+  version: z.number().int().min(1).optional()
+});
+export type PreviewTokenCreate = z.infer<typeof previewTokenCreateSchema>;
 
 /**
  * The secret appears ONLY here (like API keys): store `url`, hand it to the

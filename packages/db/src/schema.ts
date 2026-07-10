@@ -358,6 +358,9 @@ export const presentationVersions = pgTable(
  * v2 improvements over the legacy model; revocation is soft (`revoked_at`)
  * so access stats survive.
  */
+export const shareTokenPurposes = ['share', 'preview'] as const;
+export type ShareTokenPurpose = (typeof shareTokenPurposes)[number];
+
 export const shareTokens = pgTable(
   'share_tokens',
   {
@@ -370,6 +373,17 @@ export const shareTokens = pgTable(
       .references(() => presentations.id, { onDelete: 'cascade' }),
     /** Recipient label ("Investor deck — Alice"), owner-facing only. */
     name: text('name').notNull(),
+    /**
+     * SERVER-SET marker, never client input. 'preview' rows are the
+     * dashboard's own transient iframe tokens (ADR 012 Surface D): hidden
+     * from the sharing panel, excluded from view stats, mintable only by the
+     * deck owner / a workspace admin through the dedicated preview-token
+     * endpoint, and immutable once minted. SECURITY: concealment and stat
+     * exclusion key on THIS COLUMN — never on the token NAME, which is
+     * client-controlled (keying on the name let any deck writer, including a
+     * dev collaborator, mint stat-silent hidden share links).
+     */
+    purpose: text('purpose', { enum: shareTokenPurposes }).notNull().default('share'),
     tokenHash: text('token_hash').notNull(),
     pinnedVersion: integer('pinned_version'),
     canAnnotate: boolean('can_annotate').notNull().default(false),

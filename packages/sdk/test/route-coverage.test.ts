@@ -83,6 +83,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /presentations/{id}/assets/{sha256}': (c) => c.downloadPresentationAsset(SAMPLE_ID, SAMPLE_SHA256),
   'GET /presentations/{id}/tokens': (c) => c.shareTokens(SAMPLE_ID),
   'POST /presentations/{id}/tokens': (c) => c.createShareToken(SAMPLE_ID, { name: 'Alice' }),
+  'POST /presentations/{id}/preview-token': (c) => c.createPreviewToken(SAMPLE_ID),
   'PATCH /presentations/{id}/tokens/{tokenId}': (c) =>
     c.updateShareToken(SAMPLE_ID, SAMPLE_CHILD_ID, { canAnnotate: true }),
   'DELETE /presentations/{id}/tokens/{tokenId}': (c) => c.revokeShareToken(SAMPLE_ID, SAMPLE_CHILD_ID),

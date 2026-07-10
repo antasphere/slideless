@@ -328,10 +328,17 @@ describe('public viewer (ADR 012)', () => {
   });
 
   it('exposes totalViews on the wire and never counts dashboard preview tokens', async () => {
-    // The dashboard detail page mints a transient token under the RESERVED
-    // name for its sandboxed iframe (ADR 012 Surface D) — those opens must
-    // not inflate the deck's view stats.
-    const preview = await createToken({ name: PREVIEW_SHARE_TOKEN_NAME });
+    // The dashboard detail page mints a transient preview token through the
+    // DEDICATED endpoint for its sandboxed iframe (ADR 012 Surface D) —
+    // those opens must not inflate the deck's view stats. The exclusion
+    // keys on the server-set purpose column (the name is cosmetic).
+    const res = await app.app.request(
+      `/api/v1/presentations/${deckId}/preview-token`,
+      json({}, { cookie })
+    );
+    expect(res.status).toBe(201);
+    const preview = await readJson(res);
+    expect(preview.shareToken.purpose).toBe('preview');
     const before = await totalViewsOf(deckId);
 
     const served = await app.app.request(`/v/${preview.secret}`);
@@ -353,6 +360,25 @@ describe('public viewer (ADR 012)', () => {
       await app.app.request(`/api/v1/presentations/${deckId}`, { headers: { cookie } })
     );
     expect(getRes.totalViews).toBe(before.totalViews);
+  });
+
+  it('SECURITY: a token merely NAMED "Dashboard preview" is a NORMAL token — visible and counted', async () => {
+    // The old model keyed concealment on this client-controlled name; any
+    // deck writer could mint a hidden, stat-silent link. The name must have
+    // no special meaning anywhere anymore.
+    const spoofed = await createToken({ name: PREVIEW_SHARE_TOKEN_NAME });
+    expect(spoofed.shareToken.purpose).toBe('share');
+    const before = await totalViewsOf(deckId);
+
+    expect((await app.app.request(`/v/${spoofed.secret}`)).status).toBe(200);
+    const after = await totalViewsOf(deckId);
+    expect(after.totalViews).toBe(before.totalViews + 1); // counted like any token
+
+    const listed = await listTokens();
+    const row = listed.shareTokens.find((t: { id: string }) => t.id === spoofed.shareToken.id);
+    expect(row).toBeDefined();
+    expect(row.purpose).toBe('share'); // the panel filter keys on purpose → visible
+    expect(row.accessCount).toBe(1);
   });
 
   it('unknown → 404, revoked → 403, expired → 410', async () => {

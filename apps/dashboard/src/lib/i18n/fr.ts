@@ -463,6 +463,8 @@ export const fr: Record<MessageKey, string> = {
   'deck.previewPinned': 'Aperçu de la v{n}',
   'deck.previewEmpty': 'Rien à prévisualiser pour l’instant — poussez une première version avec la CLI.',
   'deck.previewFailed': 'Aperçu indisponible : {error}',
+  'deck.previewOwnerOnly':
+    'L’aperçu est réservé au propriétaire du deck et aux admins de l’espace. Créez un lien de partage ci-dessous pour voir ce deck.',
 
   // ── Share links (per-recipient viewer tokens) ────────────────────────
   'tokens.title': 'Liens de partage',

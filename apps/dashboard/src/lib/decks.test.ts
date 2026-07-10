@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isPreviewToken,
-  kindLabel,
-  PREVIEW_SANDBOX,
-  PREVIEW_TOKEN_NAME,
-  tokenStatus
-} from './decks';
+import { isPreviewToken, kindLabel, PREVIEW_SANDBOX, tokenStatus } from './decks';
 
 describe('PREVIEW_SANDBOX (ADR 012 Surface D tripwire)', () => {
   it('never contains allow-same-origin — that one token re-opens session theft', () => {
@@ -42,10 +36,17 @@ describe('tokenStatus', () => {
 });
 
 describe('isPreviewToken', () => {
-  it('matches the reserved preview name exactly', () => {
-    expect(isPreviewToken({ name: PREVIEW_TOKEN_NAME })).toBe(true);
-    expect(isPreviewToken({ name: 'alice@client.com' })).toBe(false);
-    expect(isPreviewToken({ name: `${PREVIEW_TOKEN_NAME} 2` })).toBe(false);
+  it('keys on the SERVER-SET purpose column, never the client-controlled name', () => {
+    expect(isPreviewToken({ purpose: 'preview' })).toBe(true);
+    expect(isPreviewToken({ purpose: 'share' })).toBe(false);
+  });
+
+  it('SECURITY: a share token merely NAMED "Dashboard preview" stays visible', () => {
+    // Any deck writer (a dev collaborator included) controls token names;
+    // hiding by name was a covert-channel primitive. purpose 'share' must
+    // never be filtered from the panel, whatever the name says.
+    const spoofed = { name: 'Dashboard preview', purpose: 'share' } as const;
+    expect(isPreviewToken(spoofed)).toBe(false);
   });
 });
 

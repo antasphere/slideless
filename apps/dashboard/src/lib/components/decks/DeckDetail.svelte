@@ -11,7 +11,7 @@
   import VersionsPanel from './VersionsPanel.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { kindLabel, PREVIEW_SANDBOX, PREVIEW_TOKEN_NAME, PREVIEW_TOKEN_TTL_MS } from '$lib/decks';
+  import { kindLabel, PREVIEW_SANDBOX } from '$lib/decks';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -80,31 +80,43 @@
   }
 
   // ── Sandboxed preview (ADR 012 Surface D) ──────────────────────────────
-  // The viewer only speaks share tokens, so the page mints a TRANSIENT one
-  // (reserved name, 1 h expiry, no annotations) and revokes it on the way
-  // out. Its secret lives only in this component's memory.
+  // The viewer only speaks share tokens, so the page mints a TRANSIENT
+  // preview token through the dedicated endpoint (server-fixed: purpose
+  // 'preview', 1 h expiry, no annotations) and revokes it on the way out.
+  // Its secret lives only in this component's memory. Preview minting is
+  // OWNER-LEVEL (deck owner / workspace admin) — a dev collaborator gets a
+  // quiet placeholder instead, never a hidden stat-excluded token. Preview
+  // tokens are immutable server-side: switching versions mints a fresh one.
   let previewUrl = $state<string | null>(null);
   let previewError = $state<string | null>(null);
   let previewedVersion = $state<number | null>(null);
   let previewKey = $state(0);
   let previewTokenId: string | null = null;
 
+  const canPreview = $derived(
+    me.role === 'owner' || me.role === 'admin' || deck?.ownerUserId === me.user.id
+  );
+
+  async function mintPreview(version?: number) {
+    // Each mint produces its own short-lived token (secrets are
+    // unrecoverable — hash-only storage — so reuse is impossible). Other
+    // sessions' live previews are never revoked from here; the 1 h expiry
+    // is the cleanup. Preview tokens are hidden from the panel and
+    // excluded from view stats (purpose column, server-set).
+    const created = await api.createPreviewToken(
+      deckId,
+      version !== undefined ? { version } : {}
+    );
+    const staleId = previewTokenId;
+    previewTokenId = created.shareToken.id;
+    previewUrl = created.url;
+    if (staleId) api.revokeShareToken(deckId, staleId).catch(() => {});
+  }
+
   async function initPreview() {
-    if (!deck || deck.currentVersion < 1) return;
+    if (!deck || deck.currentVersion < 1 || !canPreview) return;
     try {
-      // Each visit mints its own short-lived token (secrets are
-      // unrecoverable — hash-only storage — so reuse is impossible). Other
-      // sessions' live previews are never revoked from here; the 1 h expiry
-      // is the cleanup. Preview tokens are hidden from the panel and
-      // excluded from view stats either way.
-      const created = await api.createShareToken(deckId, {
-        name: PREVIEW_TOKEN_NAME,
-        versionMode: 'latest',
-        canAnnotate: false,
-        expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS).toISOString()
-      });
-      previewTokenId = created.shareToken.id;
-      previewUrl = created.url;
+      await mintPreview();
       previewedVersion = deck.currentVersion;
     } catch (e) {
       previewError = errorMessage(e, t('common.genericError'));
@@ -114,10 +126,7 @@
   async function selectPreviewVersion(version: number) {
     if (!previewTokenId || version === previewedVersion) return;
     try {
-      await api.updateShareToken(deckId, previewTokenId, {
-        versionMode: 'pinned',
-        pinnedVersion: version
-      });
+      await mintPreview(version);
       previewedVersion = version;
       previewKey += 1; // Remount the iframe — the viewer entry is no-store.
     } catch (e) {
@@ -126,7 +135,7 @@
   }
 
   onDestroy(() => {
-    // Best-effort: the token also self-expires after PREVIEW_TOKEN_TTL_MS.
+    // Best-effort: the token also self-expires after its server-set 1 h TTL.
     if (previewTokenId) {
       api.revokeShareToken(deckId, previewTokenId).catch(() => {});
       previewTokenId = null;
@@ -216,6 +225,10 @@
       <Card.Content>
         {#if deck.currentVersion < 1}
           <p class="text-sm text-muted-foreground">{t('deck.previewEmpty')}</p>
+        {:else if !canPreview}
+          <!-- Preview tokens are hidden + stat-excluded, so minting them is
+               owner/admin only (never a dev collaborator) — see ADR 012. -->
+          <p class="text-sm text-muted-foreground">{t('deck.previewOwnerOnly')}</p>
         {:else if previewError}
           <p class="text-sm text-destructive">{t('deck.previewFailed', { error: previewError })}</p>
         {:else if !previewUrl}

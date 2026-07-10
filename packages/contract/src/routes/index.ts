@@ -55,6 +55,7 @@ import {
   versionCommittedSchema
 } from '../schemas/presentations.js';
 import {
+  previewTokenCreateSchema,
   shareTokenCreatedSchema,
   shareTokenCreateSchema,
   shareTokenSchema,
@@ -90,6 +91,19 @@ import {
 const jsonBody = <T>(schema: T, description: string) => ({
   content: { 'application/json': { schema } },
   description
+});
+
+/**
+ * JSON REQUEST bodies are marked `required` so @hono/zod-openapi always runs
+ * the body validator. Without the flag, a request with a missing/non-JSON
+ * content-type SKIPS validation entirely and hands the handler `{}` cast as
+ * the body type — a guaranteed TypeError → 500 on every pre-auth body route
+ * (the schema-mismatch 400 path never runs). Responses keep plain jsonBody
+ * (`required` is not a response-object field).
+ */
+const jsonRequestBody = <T>(schema: T, description: string) => ({
+  ...jsonBody(schema, description),
+  required: true
 });
 
 export const errorResponses = {
@@ -130,7 +144,7 @@ export const setupRoute = createRoute({
   tags: ['instance'],
   summary: 'One-shot first-boot setup: create the owner and the workspace',
   request: {
-    body: jsonBody(setupRequestSchema, 'Setup payload')
+    body: jsonRequestBody(setupRequestSchema, 'Setup payload')
   },
   responses: {
     201: jsonBody(setupResponseSchema, 'Instance initialized'),
@@ -170,7 +184,7 @@ export const memberUpdateRoute = createRoute({
   summary: 'Change a member role or active state (admin+)',
   request: {
     params: uuidParams,
-    body: jsonBody(memberUpdateSchema, 'Fields to change')
+    body: jsonRequestBody(memberUpdateSchema, 'Fields to change')
   },
   responses: {
     200: jsonBody(memberSchema, 'Updated member'),
@@ -219,7 +233,7 @@ export const memberChangeEmailLinkRoute = createRoute({
   summary: 'Generate a one-time email change link for a member (admin+; the link also signs them in)',
   request: {
     params: uuidParams,
-    body: jsonBody(memberChangeEmailLinkRequestSchema, 'The new email address'),
+    body: jsonRequestBody(memberChangeEmailLinkRequestSchema, 'The new email address'),
     headers: idempotencyHeaders
   },
   responses: {
@@ -248,7 +262,7 @@ export const apiKeyCreateRoute = createRoute({
   path: '/api-keys',
   tags: ['api-keys'],
   summary: 'Mint an API key (sessions only — a key never mints a key)',
-  request: { body: jsonBody(apiKeyCreateSchema, 'Key name and scopes'), headers: idempotencyHeaders },
+  request: { body: jsonRequestBody(apiKeyCreateSchema, 'Key name and scopes'), headers: idempotencyHeaders },
   responses: {
     201: jsonBody(apiKeyCreatedSchema, 'Created; the full key appears only here'),
     400: errorResponses[400],
@@ -292,7 +306,7 @@ export const invitationCreateRoute = createRoute({
   path: '/invitations',
   tags: ['invitations'],
   summary: 'Invite by email (admin+). Always returns a copyable accept link.',
-  request: { body: jsonBody(invitationCreateSchema, 'Invitee'), headers: idempotencyHeaders },
+  request: { body: jsonRequestBody(invitationCreateSchema, 'Invitee'), headers: idempotencyHeaders },
   responses: {
     201: jsonBody(invitationCreatedSchema, 'Invitation + copyable link'),
     400: errorResponses[400],
@@ -333,7 +347,7 @@ export const invitationAcceptRoute = createRoute({
   path: '/invitations/accept',
   tags: ['invitations'],
   summary: 'Accept an invitation (public: creates the account when needed)',
-  request: { body: jsonBody(invitationAcceptSchema, 'Token + credentials for new accounts') },
+  request: { body: jsonRequestBody(invitationAcceptSchema, 'Token + credentials for new accounts') },
   responses: {
     200: jsonBody(invitationAcceptedSchema, 'Joined the workspace'),
     400: errorResponses[400],
@@ -358,7 +372,7 @@ export const cliAuthRequestRoute = createRoute({
   path: '/cli/auth/request',
   tags: ['cli-auth'],
   summary: 'Send a sign-in code to an email (public; generic success — no account enumeration)',
-  request: { body: jsonBody(cliAuthRequestSchema, 'The account email') },
+  request: { body: jsonRequestBody(cliAuthRequestSchema, 'The account email') },
   responses: {
     200: jsonBody(cliAuthRequestedSchema, 'Code sent if the account exists'),
     400: jsonBody(apiErrorSchema, 'Validation error, or no email driver (otp_unavailable)'),
@@ -372,7 +386,7 @@ export const cliAuthCompleteRoute = createRoute({
   path: '/cli/auth/complete',
   tags: ['cli-auth'],
   summary: 'Verify a sign-in code and mint an API key (shown once, presentations:read+write)',
-  request: { body: jsonBody(cliAuthCompleteSchema, 'Email + code (+ optional key name/TTL)') },
+  request: { body: jsonRequestBody(cliAuthCompleteSchema, 'Email + code (+ optional key name/TTL)') },
   responses: {
     201: jsonBody(cliAuthCompletedSchema, 'Key minted; the full key appears only here'),
     400: jsonBody(apiErrorSchema, 'Validation error, or no email driver (otp_unavailable)'),
@@ -414,7 +428,7 @@ export const breakGlassClaimOwnershipRoute = createRoute({
   summary:
     'Break-glass: make the calling superadmin (or a named existing user) an ACTIVE OWNER of the workspace (superadmin sessions only; adds an owner, never removes one)',
   request: {
-    body: jsonBody(breakGlassClaimOwnershipRequestSchema, 'Optional target user (default: the caller)')
+    body: jsonRequestBody(breakGlassClaimOwnershipRequestSchema, 'Optional target user (default: the caller)')
   },
   responses: {
     200: jsonBody(breakGlassClaimOwnershipSchema, 'The recovered owner membership'),
@@ -433,7 +447,7 @@ export const breakGlassResetTwoFactorRoute = createRoute({
   tags: ['admin'],
   summary: "Break-glass: clear a locked-out user's 2FA (superadmin sessions only, audited)",
   request: {
-    body: jsonBody(breakGlassResetTwoFactorRequestSchema, 'The target user')
+    body: jsonRequestBody(breakGlassResetTwoFactorRequestSchema, 'The target user')
   },
   responses: {
     200: jsonBody(breakGlassResetTwoFactorSchema, '2FA cleared (idempotent)'),
@@ -617,7 +631,7 @@ export const assetPrecheckRoute = createRoute({
   path: '/presentations/precheck',
   tags: ['upload'],
   summary: 'Which blobs are missing from the workspace (content-addressed dedupe)',
-  request: { body: jsonBody(assetPrecheckRequestSchema, 'Candidate sha256 list') },
+  request: { body: jsonRequestBody(assetPrecheckRequestSchema, 'Candidate sha256 list') },
   responses: {
     200: jsonBody(assetPrecheckResponseSchema, 'Hashes to upload'),
     400: errorResponses[400],
@@ -652,7 +666,7 @@ export const uploadSessionCommitRoute = createRoute({
   summary: 'Commit an upload session: creates the deck and its version 1 (one-shot)',
   request: {
     params: uuidParams,
-    body: jsonBody(uploadSessionCommitSchema, 'Deck metadata + version-1 manifest')
+    body: jsonRequestBody(uploadSessionCommitSchema, 'Deck metadata + version-1 manifest')
   },
   responses: {
     201: jsonBody(versionCommittedSchema, 'Deck created at version 1'),
@@ -672,7 +686,7 @@ export const versionCommitRoute = createRoute({
   summary: 'Commit a new immutable version (optimistic concurrency via expectedBaseVersion)',
   request: {
     params: uuidParams,
-    body: jsonBody(versionCommitSchema, 'Manifest + expectedBaseVersion')
+    body: jsonRequestBody(versionCommitSchema, 'Manifest + expectedBaseVersion')
   },
   responses: {
     201: jsonBody(versionCommittedSchema, 'Version committed; currentVersion advanced'),
@@ -750,7 +764,7 @@ export const shareTokenCreateRoute = createRoute({
   summary: 'Create a per-recipient share token (the secret + viewer URL appear only here)',
   request: {
     params: uuidParams,
-    body: jsonBody(shareTokenCreateSchema, 'Recipient label + access options'),
+    body: jsonRequestBody(shareTokenCreateSchema, 'Recipient label + access options'),
     headers: idempotencyHeaders
   },
   responses: {
@@ -763,6 +777,29 @@ export const shareTokenCreateRoute = createRoute({
   }
 });
 
+export const previewTokenCreateRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/preview-token',
+  tags: ['sharing'],
+  summary:
+    "Mint the dashboard's own transient preview token (deck owner / workspace admin ONLY — " +
+    'never dev collaborators). The server fixes every property: purpose "preview" (hidden ' +
+    'from the sharing panel, excluded from view stats), a 1 hour expiry, no annotations, no ' +
+    'password. Preview tokens are immutable: no update, no send; revocation is owner/admin ' +
+    'only. The public token-create endpoint can never produce one — this route is the sole mint.',
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(previewTokenCreateSchema, 'Optional version pin (omitted = latest)')
+  },
+  responses: {
+    201: jsonBody(shareTokenCreatedSchema, 'Created; secret shown once, never retrievable'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404]
+  }
+});
+
 export const shareTokenUpdateRoute = createRoute({
   method: 'patch',
   path: '/presentations/{id}/tokens/{tokenId}',
@@ -770,7 +807,7 @@ export const shareTokenUpdateRoute = createRoute({
   summary: 'Update a share token: pin/unpin version, rename, annotate flag, expiry, password',
   request: {
     params: tokenParams,
-    body: jsonBody(shareTokenUpdateSchema, 'Fields to change (null clears expiry/password)')
+    body: jsonRequestBody(shareTokenUpdateSchema, 'Fields to change (null clears expiry/password)')
   },
   responses: {
     200: jsonBody(shareTokenSchema, 'Updated share token'),
@@ -803,7 +840,7 @@ export const shareTokenSendRoute = createRoute({
     'Email the viewer link to a recipient. Hash-only storage means the server cannot recover the original secret, so each successful send ROTATES the token onto a fresh secret and mails that — earlier links for THIS token stop resolving (per-recipient tokens make that the natural resend semantics). No delivering email driver = nothing sent, nothing rotated (emailSent false).',
   request: {
     params: tokenParams,
-    body: jsonBody(shareTokenSendSchema, 'Recipient email + optional note')
+    body: jsonRequestBody(shareTokenSendSchema, 'Recipient email + optional note')
   },
   responses: {
     200: jsonBody(shareTokenSentSchema, 'Delivery attempted; emailSent says whether mail went out'),
@@ -836,7 +873,7 @@ export const collaboratorInviteRoute = createRoute({
   summary: 'Invite a dev collaborator by email (always returns a copyable claim link)',
   request: {
     params: uuidParams,
-    body: jsonBody(collaboratorInviteSchema, 'Invitee email'),
+    body: jsonRequestBody(collaboratorInviteSchema, 'Invitee email'),
     headers: idempotencyHeaders
   },
   responses: {
@@ -880,7 +917,7 @@ export const collaboratorClaimRoute = createRoute({
   path: '/collaborators/claim',
   tags: ['collaborators'],
   summary: 'Claim a collaborator grant (public: creates the account when needed)',
-  request: { body: jsonBody(collaboratorClaimSchema, 'Token + credentials for new accounts') },
+  request: { body: jsonRequestBody(collaboratorClaimSchema, 'Token + credentials for new accounts') },
   responses: {
     200: jsonBody(collaboratorClaimedSchema, 'Grant claimed (the account is now an active dev collaborator)'),
     400: errorResponses[400],
@@ -912,7 +949,7 @@ export const annotationCreateRoute = createRoute({
   summary: 'Create an annotation as a signed-in principal (owner/dev note on a version)',
   request: {
     params: uuidParams,
-    body: jsonBody(annotationCreateSchema, 'Version + anchor + note')
+    body: jsonRequestBody(annotationCreateSchema, 'Version + anchor + note')
   },
   responses: {
     201: jsonBody(annotationSchema, 'Created annotation'),
@@ -929,7 +966,7 @@ export const annotationUpdateRoute = createRoute({
   summary: 'Update an annotation (edit body, resolve/reopen)',
   request: {
     params: annotationParams,
-    body: jsonBody(annotationUpdateSchema, 'Fields to change')
+    body: jsonRequestBody(annotationUpdateSchema, 'Fields to change')
   },
   responses: {
     200: jsonBody(annotationSchema, 'Updated annotation'),
