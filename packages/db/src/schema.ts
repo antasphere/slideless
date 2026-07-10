@@ -9,7 +9,8 @@ import {
   text,
   timestamp,
   uniqueIndex,
-  uuid
+  uuid,
+  type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 import { user } from './auth-schema.js';
 
@@ -252,6 +253,247 @@ export const files = pgTable(
   ]
 );
 
+// ═══ Presentation domain (ADR 011) ══════════════════════════════════════════
+// The Slideless product model: decks with append-only immutable versions,
+// per-recipient share tokens, per-deck dev collaborators, reviewer
+// annotations, and transient upload sessions. Blob storage REUSES the
+// content-addressed `files` table above (one blob per (workspace, sha256));
+// each version's manifest — the path → sha256 listing — lives as jsonb on
+// the version row so a commit is one transactional insert (ADR 011).
+
+export const presentationKinds = ['presentation', 'app', 'plan'] as const;
+export type PresentationKind = (typeof presentationKinds)[number];
+
+/**
+ * A deck. `current_version` is 0 until the first version commit; it is only
+ * ever advanced by the optimistic-concurrency commit (expectedBaseVersion →
+ * 409 on mismatch). `interactive` is the legacy badge orthogonal to `kind`.
+ * `owner_user_id` anonymizes on account delete (decks are WORKSPACE data,
+ * like files — ADR 006); `remixed_from` is lineage-only for the future
+ * marketplace (column reserved, no behavior yet).
+ */
+export const presentations = pgTable(
+  'presentations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id').references(() => user.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    kind: text('kind', { enum: presentationKinds }).notNull().default('presentation'),
+    interactive: boolean('interactive').notNull().default(false),
+    currentVersion: integer('current_version').notNull().default(0),
+    // Mirrors the current version's entry path so viewers/listings never
+    // join presentation_versions for the common case.
+    entryPath: text('entry_path').notNull().default('index.html'),
+    remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
+      onDelete: 'set null'
+    }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // Serves the API's keyset pagination (workspace_id, created_at DESC, id DESC).
+    index('presentations_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id),
+    // Serves the owner's "my decks" listing.
+    index('presentations_workspace_owner_idx').on(t.workspaceId, t.ownerUserId, t.createdAt, t.id)
+  ]
+);
+
+/** Who committed a version: the deck owner or a per-deck dev collaborator. */
+export const versionAuthorRoles = ['owner', 'dev'] as const;
+export type VersionAuthorRole = (typeof versionAuthorRoles)[number];
+
+/**
+ * Append-only immutable versions. `manifest` is the canonical path → blob
+ * listing: `[{ path, sha256, sizeBytes, contentType }]`, where every sha256
+ * resolves to a `files` row of the same workspace (blobs at
+ * blobKey(workspaceId, sha256)). Never UPDATE a row here — a new upload is a
+ * new version.
+ */
+export const presentationVersions = pgTable(
+  'presentation_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    entryPath: text('entry_path').notNull(),
+    manifest: jsonb('manifest').notNull(),
+    // Denormalized totals so listings never aggregate the manifest.
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    fileCount: integer('file_count').notNull(),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdByRole: text('created_by_role', { enum: versionAuthorRoles }).notNull().default('owner'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex('presentation_versions_presentation_version_uniq').on(t.presentationId, t.version),
+    // Serves the API's keyset pagination (created_at DESC, id DESC per deck).
+    index('presentation_versions_presentation_created_id_idx').on(t.presentationId, t.createdAt, t.id)
+  ]
+);
+
+/**
+ * Per-recipient share tokens. The 48-byte secret is never stored — only its
+ * sha256 — and lookups ride the unique hash index. `pinned_version` NULL
+ * means "always the latest version"; a value pins the recipient to that
+ * version. `password_hash` (nullable) and `expires_at` (nullable) are the
+ * v2 improvements over the legacy model; revocation is soft (`revoked_at`)
+ * so access stats survive.
+ */
+export const shareTokens = pgTable(
+  'share_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    /** Recipient label ("Investor deck — Alice"), owner-facing only. */
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    pinnedVersion: integer('pinned_version'),
+    canAnnotate: boolean('can_annotate').notNull().default(false),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    passwordHash: text('password_hash'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    accessCount: integer('access_count').notNull().default(0),
+    lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex('share_tokens_token_hash_uniq').on(t.tokenHash),
+    // Serves the API's keyset pagination (created_at DESC, id DESC per deck).
+    index('share_tokens_presentation_created_id_idx').on(t.presentationId, t.createdAt, t.id)
+  ]
+);
+
+export const collaboratorRoles = ['owner', 'dev'] as const;
+export type CollaboratorRole = (typeof collaboratorRoles)[number];
+export const collaboratorStatuses = ['pending', 'active', 'revoked'] as const;
+export type CollaboratorStatus = (typeof collaboratorStatuses)[number];
+
+/**
+ * Per-deck dev grants, invited by email. `user_id` stays NULL until the
+ * invitee claims the grant (at sign-in/sign-up via the emailed claim token —
+ * sha256 stored, never the token). Deleting the claimed account reverts the
+ * grant to unclaimed (set null) rather than silently keeping a dangling
+ * identity.
+ */
+export const collaborators = pgTable(
+  'collaborators',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    role: text('role', { enum: collaboratorRoles }).notNull().default('dev'),
+    status: text('status', { enum: collaboratorStatuses }).notNull().default('pending'),
+    invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
+    claimTokenHash: text('claim_token_hash'),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex('collaborators_presentation_email_uniq').on(t.presentationId, t.email),
+    uniqueIndex('collaborators_claim_token_hash_uniq').on(t.claimTokenHash),
+    // Serves "decks shared with me" for a signed-in collaborator.
+    index('collaborators_user_idx').on(t.userId),
+    // Serves the API's keyset pagination (created_at DESC, id DESC per deck).
+    index('collaborators_presentation_created_id_idx').on(t.presentationId, t.createdAt, t.id)
+  ]
+);
+
+export const annotationStatuses = ['open', 'resolved'] as const;
+export type AnnotationStatus = (typeof annotationStatuses)[number];
+
+/**
+ * Reviewer notes on a specific deck version. Authored either by a signed-in
+ * principal (`author_user_id`) or by an anonymous reviewer through a share
+ * token (`share_token_id` + free-text `author_name`); both identity columns
+ * are nullable and survive token/account deletion via set null. `selection`
+ * is the client anchor payload (element/slide/rect), opaque jsonb to the
+ * server.
+ */
+export const annotations = pgTable(
+  'annotations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    shareTokenId: uuid('share_token_id').references(() => shareTokens.id, { onDelete: 'set null' }),
+    authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),
+    authorName: text('author_name'),
+    selection: jsonb('selection').notNull(),
+    body: text('body').notNull(),
+    status: text('status', { enum: annotationStatuses }).notNull().default('open'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // Serves the per-deck (optionally per-version) listing + keyset pagination.
+    index('annotations_presentation_version_created_id_idx').on(
+      t.presentationId,
+      t.version,
+      t.createdAt,
+      t.id
+    ),
+    // Serves the workspace-wide owner inbox (created_at DESC, id DESC).
+    index('annotations_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id),
+    index('annotations_share_token_idx').on(t.shareTokenId)
+  ]
+);
+
+/**
+ * Transient reservation for new-deck uploads (~1 h): mints the future
+ * presentation id up front so asset uploads and the final commit share one
+ * handle. `presentation_id` deliberately has NO foreign key — the
+ * presentation row does not exist until the session's commit creates it.
+ * `consumed_at` makes commits one-shot; a nightly purge deletes expired rows.
+ */
+export const uploadSessions = pgTable(
+  'upload_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // Serves the nightly purge (expires_at range scan).
+    index('upload_sessions_expires_idx').on(t.expiresAt)
+  ]
+);
+
 export type InstanceSettings = typeof instanceSettings.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
@@ -260,3 +502,9 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
+export type PresentationRow = typeof presentations.$inferSelect;
+export type PresentationVersionRow = typeof presentationVersions.$inferSelect;
+export type ShareTokenRow = typeof shareTokens.$inferSelect;
+export type CollaboratorRow = typeof collaborators.$inferSelect;
+export type AnnotationRow = typeof annotations.$inferSelect;
+export type UploadSessionRow = typeof uploadSessions.$inferSelect;
