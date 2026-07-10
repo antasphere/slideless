@@ -11,7 +11,7 @@ boot as `PUBLIC_BASE_URL + '/mcp'`.
 Add a custom connector with the URL:
 
 ```
-https://platform.example.com/mcp
+https://slides.example.com/mcp
 ```
 
 The client discovers everything itself: the 401 challenge points at the RFC
@@ -27,7 +27,7 @@ every call).
 `/mcp` also accepts the instance's API keys directly — no OAuth dance:
 
 ```bash
-claude mcp add --transport http platform https://platform.example.com/mcp \
+claude mcp add --transport http slideless https://slides.example.com/mcp \
   --header "Authorization: Bearer slk_..."
 ```
 
@@ -37,7 +37,7 @@ Mint keys in the dashboard (API keys → New). Scopes gate what tools can do:
 ## Verify an instance
 
 ```bash
-curl -s https://platform.example.com/.well-known/oauth-protected-resource/mcp | jq
+curl -s https://slides.example.com/.well-known/oauth-protected-resource/mcp | jq
 npx @modelcontextprotocol/inspector   # connect → OAuth dance → call get_me
 ```
 
@@ -53,26 +53,26 @@ never from a tool parameter. Reads require `presentations:read`, writes
 `presentations:write`; the API's fail-closed allowlist and ADR 013 deck-read
 privacy apply unchanged (a tool can never read a deck the caller can't).
 
-| Tool | Scope | Does |
-| ---- | ----- | ---- |
-| `slideless_whoami` | read | The connected user, workspace, role, scopes (`get_me` is the chassis alias) |
-| `slideless_list_presentations` | read | Cursor-paginated deck list, scoped by ADR 013 |
-| `slideless_get_presentation` | read | One deck's metadata |
-| `slideless_list_versions` | read | Version history (metadata only) |
-| `slideless_get_version` | read | One version incl. its full manifest (omit `version` = latest) |
-| `slideless_download_version` | read | Manifest + text-file contents inlined (≤256 KiB/file, ≤1 MiB total); binary/oversized → CLI note |
-| `slideless_upload_html_presentation` | write | One HTML string → a new 1-file deck (precheck → upload → commit) |
+| Tool                                  | Scope | Does                                                                                                                                                     |
+| ------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `slideless_whoami`                    | read  | The connected user, workspace, role, scopes (`get_me` is the chassis alias)                                                                              |
+| `slideless_list_presentations`        | read  | Cursor-paginated deck list, scoped by ADR 013                                                                                                            |
+| `slideless_get_presentation`          | read  | One deck's metadata                                                                                                                                      |
+| `slideless_list_versions`             | read  | Version history (metadata only)                                                                                                                          |
+| `slideless_get_version`               | read  | One version incl. its full manifest (omit `version` = latest)                                                                                            |
+| `slideless_download_version`          | read  | Manifest + text-file contents inlined (≤256 KiB/file, ≤1 MiB total); binary/oversized → CLI note                                                         |
+| `slideless_upload_html_presentation`  | write | One HTML string → a new 1-file deck (precheck → upload → commit)                                                                                         |
 | `slideless_upload_presentation_files` | write | Inline multi-file upload (`contentText`/`contentBase64`); with `presentationId` commits a new version. ≤768 KiB decoded total — bigger decks use the CLI |
-| `slideless_delete_presentation` | write | Soft delete (destructive, confirm-first) |
-| `slideless_add_share_token` | write | Mint a share link (name/pin/annotate/expiry/password); returns the viewer URL once |
-| `slideless_list_share_tokens` | read | A deck's tokens with access stats (secrets never retrievable) |
-| `slideless_set_token_version_mode` | write | Pin a token to a version / follow latest |
-| `slideless_unshare_presentation` | write | Revoke one token, or ALL active tokens when `tokenId` is omitted (destructive) |
-| `slideless_share_via_email` | write | Email a token's link (delivered sends ROTATE the secret) |
-| `slideless_invite_collaborator` | write | Per-deck dev grant; returns the claim URL |
-| `slideless_uninvite_collaborator` | write | Revoke a grant (destructive, immediate) |
-| `slideless_list_collaborators` | read | A deck's grant roster |
-| `slideless_list_annotations` | read | Per-deck notes, or the workspace inbox when `presentationId` is omitted; filters `version`/`status` |
+| `slideless_delete_presentation`       | write | Soft delete (destructive, confirm-first)                                                                                                                 |
+| `slideless_add_share_token`           | write | Mint a share link (name/pin/annotate/expiry/password); returns the viewer URL once                                                                       |
+| `slideless_list_share_tokens`         | read  | A deck's tokens with access stats (secrets never retrievable)                                                                                            |
+| `slideless_set_token_version_mode`    | write | Pin a token to a version / follow latest                                                                                                                 |
+| `slideless_unshare_presentation`      | write | Revoke one token, or ALL active tokens when `tokenId` is omitted (destructive)                                                                           |
+| `slideless_share_via_email`           | write | Email a token's link (delivered sends ROTATE the secret)                                                                                                 |
+| `slideless_invite_collaborator`       | write | Per-deck dev grant; returns the claim URL                                                                                                                |
+| `slideless_uninvite_collaborator`     | write | Revoke a grant (destructive, immediate)                                                                                                                  |
+| `slideless_list_collaborators`        | read  | A deck's grant roster                                                                                                                                    |
+| `slideless_list_annotations`          | read  | Per-deck notes, or the workspace inbox when `presentationId` is omitted; filters `version`/`status`                                                      |
 
 The `/mcp` transport caps request bodies at 1 MiB, so inline uploads are
 bounded at 768 KiB of decoded content (base64 inflation means anything larger

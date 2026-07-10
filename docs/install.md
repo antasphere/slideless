@@ -6,7 +6,7 @@ Two supported paths. Both end with the first-boot wizard in the browser.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/main/install.sh | \
-  sudo bash -s -- --domain platform.example.com
+  sudo bash -s -- --domain slides.example.com
 ```
 
 Installs git + Docker if missing, clones to `/opt/slideless`, generates
@@ -18,8 +18,8 @@ wiring the reverse proxy ([reverse-proxy.md](reverse-proxy.md)) and setting
 ## Manual (any machine with Docker)
 
 ```bash
-git clone https://github.com/antasphere/slideless.git platform
-cd platform
+git clone https://github.com/antasphere/slideless.git slideless
+cd slideless
 ./setup.sh            # generates .env secrets, pulls images, starts
 open http://localhost:3000
 ```
@@ -41,10 +41,10 @@ emails, configure an email driver in `.env` ([env-reference.md](env-reference.md
 
 ## What's running
 
-| Service | Image                                        | Data                                                  |
-| ------- | -------------------------------------------- | ----------------------------------------------------- |
+| Service | Image                          | Data                                                  |
+| ------- | ------------------------------ | ----------------------------------------------------- |
 | `app`   | `ghcr.io/antasphere/slideless` | `app_data` volume → `/data` (files, generated secret) |
-| `db`    | `pgvector/pgvector:pg17`                     | `pg_data` volume                                      |
+| `db`    | `pgvector/pgvector:pg17`       | `pg_data` volume                                      |
 
 The app container is stateless by design — all state lives in Postgres and
 the `/data` volume. Migrations apply automatically at boot under an advisory

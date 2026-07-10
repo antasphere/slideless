@@ -13,7 +13,7 @@ sudo apt install -y caddy    # or: docker run caddy (see below)
 `/etc/caddy/Caddyfile`:
 
 ```caddyfile
-platform.example.com {
+slides.example.com {
     reverse_proxy localhost:3000
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -23,10 +23,10 @@ platform.example.com {
 
 `sudo systemctl reload caddy` — certificates are issued automatically.
 
-Then in the platform's `.env`:
+Then in the instance's `.env`:
 
 ```bash
-PUBLIC_BASE_URL=https://platform.example.com   # https ⇒ Secure cookies
+PUBLIC_BASE_URL=https://slides.example.com   # https ⇒ Secure cookies
 TRUST_PROXY=true                               # trust Caddy's x-forwarded-for
 ```
 
@@ -49,6 +49,23 @@ Notes:
 - WebSockets and streaming (file downloads, MCP) proxy transparently; no
   extra config.
 
+## Optional: a dedicated user-content origin (`VIEWER_BASE_URL`)
+
+The share-link viewer hardening
+([viewer-security-model.md](viewer-security-model.md)) is one more site
+block pointing at the **same** app — a second hostname that carries no app
+cookies:
+
+```caddyfile
+usercontent.example.net {
+    reverse_proxy localhost:3000
+}
+```
+
+plus `VIEWER_BASE_URL=https://usercontent.example.net` in `.env`. Share
+URLs are then minted on that origin; the dashboard and API stay on
+`PUBLIC_BASE_URL`.
+
 ## Caddy in compose (alternative)
 
 Add to `docker-compose.yml` when you prefer everything containerized:
@@ -63,5 +80,5 @@ caddy:
     - caddy_data:/data
 ```
 
-with a `Caddyfile` of `platform.example.com { reverse_proxy app:3000 }`, and
+with a `Caddyfile` of `slides.example.com { reverse_proxy app:3000 }`, and
 remove the app's host port mapping.
