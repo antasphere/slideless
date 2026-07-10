@@ -77,3 +77,32 @@ actionable; link the template file/line it concerns.
   3000 was occupied (by the template's own dev stack, amusingly): setting
   `APP_PORT` + `PUBLIC_BASE_URL` in `.env` was sufficient, in-container port
   untouched. Good design; keep it.
+
+## 2026-07-10 — Phase 2 (presentation domain model + contracts)
+
+- **The SDK route-coverage test hardcodes `{id}` substitution.** Its
+  `expectedPath` helper only replaces `{id}`, so the first product route with
+  a second path param (`{tokenId}`, `{version}`, `{sha256}`) forces editing
+  the test. Suggest the template ship a param-name → sample-value map (or
+  substitute any `{param}` with a type-appropriate sample) so products only
+  add INVOKERS entries.
+- **No recipe for contract-first phased builds.** We froze 24 routes ahead of
+  their handlers by declaring a `501` response on each contract route and
+  registering stubs that answer it (implementers delete the 501 entry with
+  the handler). Worked cleanly with @hono/zod-openapi's typed handlers —
+  worth documenting as the blessed pattern, since `errorResponses` ships no
+  501 and an undeclared status fails typecheck.
+- **No multipart example in the contract layer.** Modeling
+  `multipart/form-data` (file + field) via `content: { 'multipart/form-data':
+  { schema: z.object({ sha256, file: z.any() }) } }` renders valid OpenAPI
+  3.1; a template example would have saved the trial run.
+- **Drizzle wraps pg errors: constraint assertions must inspect `.cause`.**
+  `expect(...).rejects.toThrow(/constraint_name/)` never matches because
+  DrizzleQueryError's message is `Failed query: <sql>`; the pg error (with
+  `.code === '23505'` and `.constraint`) hangs off `error.cause`. Worth a
+  line in the template's testing docs.
+- **Positives:** `drizzle-kit generate --name <slug>` slotted a cleanly named
+  0013 into the journal; the scopes.ts "Products: open your domain endpoints
+  here" comment made the fail-closed extension obvious; reusing the
+  content-addressed `files` machinery for a product blob store required zero
+  template changes (ADR 011).
