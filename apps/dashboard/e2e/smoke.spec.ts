@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { INSTANCE_NAME, INVITEE, OWNER } from './accounts';
 
 /**
  * One end-to-end pass over a FRESH instance (empty database):
@@ -6,11 +7,10 @@ import { test, expect } from '@playwright/test';
  * link) → invite acceptance in a second, cookie-less context → audit trail →
  * deep-link cold load → sign out → sign back in → consent page fail-closed
  * check. (The full OAuth dance is covered by server integration tests.)
+ *
+ * The owner account it creates is reused by the `decks` project
+ * (decks.spec.ts), which depends on this one.
  */
-
-const INSTANCE_NAME = 'Smoke Test Instance';
-const OWNER = { name: 'Owner One', email: 'owner@example.com', password: 'owner-password-123' };
-const INVITEE = { name: 'Invited Member', email: 'invitee@example.com', password: 'invitee-password-123' };
 
 test('fresh instance: setup → key → invite → audit → re-login', async ({ page, browser, request }) => {
   await test.step('health endpoint answers', async () => {

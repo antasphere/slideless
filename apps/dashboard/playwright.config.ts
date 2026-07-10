@@ -16,6 +16,12 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   globalTeardown: './e2e/global-teardown.mjs',
+  // Explicit ordering: smoke sets up the fresh instance (setup wizard) and
+  // creates the owner; the decks product suite signs in as that owner.
+  projects: [
+    { name: 'smoke', testMatch: /smoke\.spec\.ts/ },
+    { name: 'decks', testMatch: /decks\.spec\.ts/, dependencies: ['smoke'] }
+  ],
   use: {
     baseURL: 'http://localhost:3100',
     trace: 'retain-on-failure'
