@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { readFile } from 'node:fs/promises';
@@ -72,6 +73,28 @@ export async function createApp({
 
   // Uncaught handler errors: log with the request id, answer the wire shape.
   app.onError((error, c) => {
+    // Malformed request bodies first: Hono's body validators throw
+    // HTTPException(400) on unparseable JSON ("Malformed JSON in request
+    // body") or broken multipart BEFORE zod runs, so the zod-openapi
+    // defaultHook never sees them — and Hono routes a thrown error straight
+    // here from the throwing handler's own dispatch frame, so an upstream
+    // try/catch middleware never observes it either. This is therefore THE
+    // seam: map the framework's 400s to the wire shape with a stable
+    // machine code instead of amplifying a pre-auth-reachable client
+    // mistake into a 500 + an error-level log. Only hono's validators throw
+    // HTTPException(400) on this app (the MCP sub-app handles its own).
+    if (error instanceof HTTPException && error.status === 400) {
+      const isJson = error.message.includes('JSON');
+      return c.json(
+        {
+          error: {
+            code: isJson ? 'invalid_json' : 'invalid_body',
+            message: isJson ? 'Request body is not valid JSON' : 'Malformed request body'
+          }
+        },
+        400
+      );
+    }
     (c.get('logger') ?? logger).error({ err: error }, 'unhandled error');
     return c.json({ error: { code: 'internal', message: 'Internal server error' } }, 500);
   });

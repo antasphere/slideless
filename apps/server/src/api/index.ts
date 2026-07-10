@@ -97,6 +97,13 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     }
   });
 
+  // NOTE (release-gate fix): malformed/empty JSON bodies used to 500 here —
+  // hono's json validator throws HTTPException(400) BEFORE zod runs, so the
+  // defaultHook above never fires. Hono routes thrown errors straight to the
+  // top-level errorHandler from the throwing frame (an upstream middleware
+  // try/catch never sees them), so the mapping to the 400 wire shape lives
+  // in app.ts app.onError — the one seam that covers every body route.
+
   // ── Public OAuth endpoints first: wildcard CORS + OPTIONS 204 + no-store
   // on token responses. Before the rate limits so preflights cost nothing.
   api.use('/auth/*', oauthPublicEndpoints());

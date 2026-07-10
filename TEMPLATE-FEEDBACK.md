@@ -403,3 +403,35 @@ template-level robustness gaps, not silent fixes:
   `no-irregular-whitespace` then rejects (strings are exempted, comments are
   not). A tiny catalog lint (NBSP required before double punctuation inside
   fr string VALUES only) would make the convention self-enforcing.
+
+## Release-gate security campaign (2026-07-10)
+
+- **CHASSIS BUG — malformed/empty JSON bodies 500 on every zod-openapi body
+  route.** Hono's json validator throws `HTTPException(400, "Malformed JSON
+  in request body")` BEFORE zod runs; the chassis `defaultHook` in
+  api/index.ts only handles `result.success === false`, so the exception
+  falls through to `app.onError` → 500 `{"error":{"code":"internal"}}` plus
+  an error-level log. Pre-auth reachable (/setup, /cli/auth/request,
+  /invitations/accept) → a log-noise amplifier any anonymous client can
+  drive. Slideless' fix (port it upstream): (1) handle
+  `HTTPException && status === 400` FIRST inside the top-level `app.onError`
+  in app.ts, answering the wire shape — code `invalid_json` for the JSON
+  parse case, `invalid_body` for malformed multipart, and NO error log.
+  That is the only workable seam: Hono catches a thrown error at the
+  throwing handler's own dispatch frame and routes it straight to the app
+  errorHandler, so a try/catch middleware around `next()` never observes
+  it, and a sub-app `onError` is ignored when mounted via `app.route()`.
+  (2) Mark every contract REQUEST body `required: true` (a
+  `jsonRequestBody` helper next to `jsonBody`) — without it, zod-openapi
+  SKIPS body validation entirely when the content-type is missing/non-JSON
+  and hands the handler `{}` cast as the body type, which is a guaranteed
+  TypeError → 500 on `/setup` et al.
+  Regression suite: apps/server/test/integration/body-validation.test.ts.
+- **Design lesson for product templates: never key server behavior on a
+  client-controlled NAME.** Slideless' dashboard preview minted share tokens
+  under a reserved name ("Dashboard preview") and keyed panel-hiding and
+  view-stat exclusion on that name — any deck writer could mint a concealed,
+  stat-silent share link (covert access channel; fixed with a server-set
+  `purpose` column + a dedicated owner-gated mint endpoint, migration 0017).
+  If the template ever grows "system-minted rows sharing a user table",
+  ship the discriminator as a server-set column from day one.
