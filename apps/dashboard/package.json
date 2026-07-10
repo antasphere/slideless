@@ -1,5 +1,5 @@
 {
-  "name": "@platform/dashboard",
+  "name": "@slideless/dashboard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@platform/contract": "workspace:*",
-    "@platform/sdk": "workspace:*",
+    "@slideless/contract": "workspace:*",
+    "@slideless/sdk": "workspace:*",
     "better-auth": "1.6.15"
   },
   "devDependencies": {

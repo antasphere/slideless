@@ -24,7 +24,7 @@
   import { formatDate, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { ApiKeyInfo, Scope } from '@platform/contract';
+  import type { ApiKeyInfo, Scope } from '@slideless/contract';
 
   const list = createPagedList<ApiKeyInfo>(async (p) => {
     const { apiKeys, nextCursor } = await api.apiKeys(p);
@@ -69,8 +69,8 @@
 
   async function submitCreate() {
     const scopes: Scope[] = [
-      ...(scopeRead ? (['data:read'] as const) : []),
-      ...(scopeWrite ? (['data:write'] as const) : []),
+      ...(scopeRead ? (['presentations:read'] as const) : []),
+      ...(scopeWrite ? (['presentations:write'] as const) : []),
       ...(scopeExport ? (['data:export'] as const) : [])
     ];
     if (scopes.length === 0) {
@@ -254,13 +254,13 @@
     <div class="flex items-center gap-2">
       <Checkbox id="scope-read" bind:checked={scopeRead} />
       <Label for="scope-read" class="font-normal">
-        data:read <span class="text-muted-foreground">{t('apiKeys.scopeReadDesc')}</span>
+        presentations:read <span class="text-muted-foreground">{t('apiKeys.scopeReadDesc')}</span>
       </Label>
     </div>
     <div class="flex items-center gap-2">
       <Checkbox id="scope-write" bind:checked={scopeWrite} />
       <Label for="scope-write" class="font-normal">
-        data:write <span class="text-muted-foreground">{t('apiKeys.scopeWriteDesc')}</span>
+        presentations:write <span class="text-muted-foreground">{t('apiKeys.scopeWriteDesc')}</span>
       </Label>
     </div>
     <div class="flex items-center gap-2">

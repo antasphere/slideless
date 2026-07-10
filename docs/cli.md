@@ -1,6 +1,6 @@
 # CLI
 
-`@platform/cli` is a thin, typed command-line client over the SDK — the
+`@slideless/cli` is a thin, typed command-line client over the SDK — the
 agent-and-human face of an instance. Its surface is exactly what an API key
 can reach (the fail-closed scope allowlist confines keys to discovery, `/me`,
 files, and — with the opt-in `data:export` scope — the workspace export), so
@@ -12,11 +12,11 @@ It is a workspace package, not published by default (rename and publish it
 per product — see [instantiation.md](instantiation.md)). From a checkout:
 
 ```bash
-pnpm --filter @platform/cli build
+pnpm --filter @slideless/cli build
 node packages/cli/dist/bin.js --help
 ```
 
-Once published, `npm i -g <your-cli-name>` exposes the `platform` binary.
+Once published, `npm i -g <your-cli-name>` exposes the `slideless` binary.
 
 ## Configure
 
@@ -24,8 +24,8 @@ Two settings, from flags or environment:
 
 | Setting  | Flag        | Env                | Default                 |
 | -------- | ----------- | ------------------ | ----------------------- |
-| Base URL | `--url`     | `PLATFORM_URL`     | `http://localhost:3000` |
-| API key  | `--api-key` | `PLATFORM_API_KEY` | —                       |
+| Base URL | `--url`     | `SLIDELESS_URL`     | `http://localhost:3000` |
+| API key  | `--api-key` | `SLIDELESS_API_KEY` | —                       |
 
 Mint an API key in the dashboard (API keys → New). `instance` needs no key;
 everything else does.
@@ -33,17 +33,17 @@ everything else does.
 ## Commands
 
 ```bash
-platform instance                       # discovery: name, version, auth methods
-platform whoami                         # the identity behind the API key
-platform export [-o <path>]             # full workspace export as a zip
-platform files list                     # list workspace files (newest first)
-platform files upload ./report.pdf      # upload (── name defaults to the basename)
-platform files download <id> --out ./f  # download by id
-platform files rm <id>                  # delete by id
+slideless instance                       # discovery: name, version, auth methods
+slideless whoami                         # the identity behind the API key
+slideless export [-o <path>]             # full workspace export as a zip
+slideless files list                     # list workspace files (newest first)
+slideless files upload ./report.pdf      # upload (── name defaults to the basename)
+slideless files download <id> --out ./f  # download by id
+slideless files rm <id>                  # delete by id
 ```
 
 `export` needs a key granted the opt-in `data:export` scope (it is never
-implied by `data:read`) and an admin+ creator; the zip streams to disk
+implied by `presentations:read`) and an admin+ creator; the zip streams to disk
 (default filename `export-<yyyy-mm-dd>.zip`). Account deletion is
 deliberately NOT in the CLI — it is a session-only act (see
 [security.md](security.md)).
@@ -67,8 +67,8 @@ write) is a clean `403` message.
 ## Example (agent-style)
 
 ```bash
-export PLATFORM_URL=https://platform.example.com
-export PLATFORM_API_KEY=key_xxx_yyy
-platform whoami --json | jq .workspace.name
-platform files upload ./out.csv --content-type text/csv --json | jq -r .file.id
+export SLIDELESS_URL=https://slideless.example.com
+export SLIDELESS_API_KEY=slk_xxx_yyy
+slideless whoami --json | jq .workspace.name
+slideless files upload ./out.csv --content-type text/csv --json | jq -r .file.id
 ```

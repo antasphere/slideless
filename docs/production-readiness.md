@@ -54,7 +54,7 @@ everything still unchecked remains genuinely open.
       drifts.
 - [x] **P0 · L — No CLI, despite "agents as first-class API consumers" being
       the template's thesis.** (Shipped: `packages/cli`, a thin typed CLI
-      over the SDK exposing the `platform` binary: API-key auth, discovery
+      over the SDK exposing the `slideless` binary: API-key auth, discovery
       via `/api/v1/instance`, whoami, files commands, `--json` output. See
       docs/cli.md.)
 
@@ -190,11 +190,11 @@ everything still unchecked remains genuinely open.
       release.yml builds the image on every push, so it is a CI gate.
       Bundling the server remains off the table — pino/pg/pg-boss dynamic
       requires, see LESSONS.md.)
-- [x] **P1 — The built CLI could not run standalone.** `@platform/sdk`'s
+- [x] **P1 — The built CLI could not run standalone.** `@slideless/sdk`'s
       `exports` pointed at `./src/index.ts`, so `node packages/cli/dist/bin.js`
       loaded raw TypeScript and threw `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`.
       (Fixed M9: the sdk `exports` point at built `dist` JS with a `types`
-      condition — matching `@platform/contract`/`@platform/db` — and the sdk
+      condition — matching `@slideless/contract`/`@slideless/db` — and the sdk
       is now in the build graph. `node packages/cli/dist/bin.js --help` runs
       from a clean `pnpm build` without tsx.)
 - [ ] **P2 — Cross-workspace blob duplication.** Content-addressed keys
@@ -229,7 +229,7 @@ everything still unchecked remains genuinely open.
 - [x] **No data export / workspace + account deletion (GDPR).** (Shipped:
       `GET /workspace/export` streams a zip — tables as JSON, audit log as
       NDJSON, every live blob — behind admin+ or the opt-in `data:export`
-      scope, with a dashboard card and `platform export` in the CLI; account
+      scope, with a dashboard card and `slideless export` in the CLI; account
       deletion via the password-gated danger zone and the admin Members
       action, hard cascade with a last-owner guard, files staying with the
       workspace per ADR 006. No grace period — the type-DELETE confirm is

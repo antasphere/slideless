@@ -8,8 +8,8 @@ import {
   memberResetLinkRoute,
   memberUpdateRoute,
   membersListRoute
-} from '@platform/contract/routes';
-import { workspaceMembers, user as userTable, type Db } from '@platform/db';
+} from '@slideless/contract/routes';
+import { workspaceMembers, user as userTable, type Db } from '@slideless/db';
 import type { Auth } from '../identity/better-auth.js';
 import { isLastOwnerDbError, LastOwnerError, type AccountDeletionService } from '../accounts/deletion.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';

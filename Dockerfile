@@ -20,15 +20,15 @@ COPY apps ./apps
 # then the server compiles, then pnpm deploy prunes a production-only bundle.
 # pnpm deploy honors the server package's "files" (dist + public), so the
 # runtime gets exactly the built artifacts plus pruned prod node_modules.
-# @platform/sdk is built BEFORE the dashboard: the dashboard imports it and its
+# @slideless/sdk is built BEFORE the dashboard: the dashboard imports it and its
 # package `exports` resolve to `dist` (so the built CLI runs standalone), and
 # `.dockerignore` strips any host-built `dist` from the context.
-RUN pnpm --filter @platform/db build \
- && pnpm --filter @platform/contract build \
- && pnpm --filter @platform/sdk build \
- && pnpm --filter @platform/dashboard build \
- && pnpm --filter @platform/server build \
- && pnpm --filter @platform/server deploy --prod --legacy /out \
+RUN pnpm --filter @slideless/db build \
+ && pnpm --filter @slideless/contract build \
+ && pnpm --filter @slideless/sdk build \
+ && pnpm --filter @slideless/dashboard build \
+ && pnpm --filter @slideless/server build \
+ && pnpm --filter @slideless/server deploy --prod --legacy /out \
  && cp -r packages/db/drizzle /out/drizzle
 
 # Prune build-time tooling that pnpm's peer resolution drags into the prod
@@ -67,8 +67,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=30s \
   CMD wget --spider -q "http://localhost:${PORT:-3000}/healthz" || exit 1
 
-LABEL org.opencontainers.image.title="platform" \
-      org.opencontainers.image.description="Self-hosted platform (API + dashboard + MCP) in one image" \
+LABEL org.opencontainers.image.title="slideless" \
+      org.opencontainers.image.description="Self-hosted Slideless (API + dashboard + MCP) in one image" \
       org.opencontainers.image.version=$APP_VERSION
 
 ENTRYPOINT ["tini", "--"]

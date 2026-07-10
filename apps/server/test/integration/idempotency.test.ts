@@ -71,7 +71,7 @@ afterAll(async () => {
 });
 
 describe('api-key create replay', () => {
-  const body = { name: 'idem-one', scopes: ['data:read'] };
+  const body = { name: 'idem-one', scopes: ['presentations:read'] };
 
   it('replays the identical response (same secret, one row) and marks it', async () => {
     const first = await post('/api/v1/api-keys', body, 'K1');
@@ -92,7 +92,7 @@ describe('api-key create replay', () => {
   });
 
   it('409s when the same key arrives with a different request body', async () => {
-    const res = await post('/api/v1/api-keys', { name: 'idem-other', scopes: ['data:read'] }, 'K1');
+    const res = await post('/api/v1/api-keys', { name: 'idem-other', scopes: ['presentations:read'] }, 'K1');
     expect(res.status).toBe(409);
     expect((await readJson(res)).error.code).toBe('idempotency_key_reuse');
   });
@@ -114,10 +114,10 @@ describe('api-key create replay', () => {
   });
 
   it('writes no second audit row on replay', async () => {
-    const create = await post('/api/v1/api-keys', { name: 'idem-audit', scopes: ['data:read'] }, 'K-audit');
+    const create = await post('/api/v1/api-keys', { name: 'idem-audit', scopes: ['presentations:read'] }, 'K-audit');
     expect(create.status).toBe(201);
     const before = await countRows(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'apikey.create'`);
-    const replay = await post('/api/v1/api-keys', { name: 'idem-audit', scopes: ['data:read'] }, 'K-audit');
+    const replay = await post('/api/v1/api-keys', { name: 'idem-audit', scopes: ['presentations:read'] }, 'K-audit');
     expect(replay.status).toBe(201);
     expect(replay.headers.get('idempotency-replayed')).toBe('true');
     const after = await countRows(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'apikey.create'`);
@@ -131,7 +131,7 @@ describe('api-key create replay', () => {
   });
 
   it('creates two rows for two calls without the header (opt-in only)', async () => {
-    const twice = { name: 'idem-twice', scopes: ['data:read'] } as const;
+    const twice = { name: 'idem-twice', scopes: ['presentations:read'] } as const;
     expect((await post('/api/v1/api-keys', twice)).status).toBe(201);
     expect((await post('/api/v1/api-keys', twice)).status).toBe(201);
     expect(await countRows(`SELECT count(*)::int AS n FROM api_keys WHERE name = 'idem-twice'`)).toBe(2);
@@ -194,14 +194,14 @@ describe('claim lifecycle', () => {
     expect(bad.status).toBe(400);
     expect((await readJson(bad)).error.code).toBe('validation_error');
 
-    const good = await post('/api/v1/api-keys', { name: 'idem-retry', scopes: ['data:read'] }, 'K2');
+    const good = await post('/api/v1/api-keys', { name: 'idem-retry', scopes: ['presentations:read'] }, 'K2');
     expect(good.status).toBe(201);
     // Fresh execution, not a replay of anything.
     expect(good.headers.get('idempotency-replayed')).toBeNull();
   });
 
   it('409s in-flight while a claim has no stored response yet', async () => {
-    const body = { name: 'idem-flight', scopes: ['data:read'] };
+    const body = { name: 'idem-flight', scopes: ['presentations:read'] };
     const bodyText = JSON.stringify(body);
     // A claim exactly as the middleware would write it, response still null —
     // the shape a concurrent first request holds while its handler runs.
@@ -242,7 +242,7 @@ describe('nightly purge', () => {
 
     // With K1's row gone, the same key + body executes afresh (a NEW key is
     // minted — the 24h replay window is over).
-    const res = await post('/api/v1/api-keys', { name: 'idem-one', scopes: ['data:read'] }, 'K1');
+    const res = await post('/api/v1/api-keys', { name: 'idem-one', scopes: ['presentations:read'] }, 'K1');
     expect(res.status).toBe(201);
     expect(res.headers.get('idempotency-replayed')).toBeNull();
     const minted = await readJson(res);

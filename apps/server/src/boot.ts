@@ -1,5 +1,5 @@
-import { createDb, type DbHandle } from '@platform/db';
-import { migrationStatus, runMigrations } from '@platform/db/migrate';
+import { createDb, type DbHandle } from '@slideless/db';
+import { migrationStatus, runMigrations } from '@slideless/db/migrate';
 import { eq } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { existsSync } from 'node:fs';
@@ -25,7 +25,7 @@ import { OauthJwtVerifier } from './identity/oauth-jwt.js';
 import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
 import { wellKnownRoutes } from './routes/wellknown.js';
-import { instanceSettings, workspaceMembers } from '@platform/db';
+import { instanceSettings, workspaceMembers } from '@slideless/db';
 import { FileService } from './files/service.js';
 import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
 import { createLogger, type Logger } from './logger.js';
@@ -40,7 +40,7 @@ import { createRegistry, type PlatformRegistry } from './platform/registry.js';
 import { NoopUsageSink } from './platform/usage.js';
 import { resolveAuthSecret } from './secret.js';
 import { createRuntimeState, type RuntimeState } from './state.js';
-import type { UsageSink } from '@platform/contract';
+import type { UsageSink } from '@slideless/contract';
 
 /** Test seams only — production boot never passes overrides. */
 export interface BootOverrides {

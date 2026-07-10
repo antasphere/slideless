@@ -1,4 +1,4 @@
-import type { EntitlementService, IdentityProvider, UsageSink } from '@platform/contract';
+import type { EntitlementService, IdentityProvider, UsageSink } from '@slideless/contract';
 import type { EventBus } from './events.js';
 
 /**

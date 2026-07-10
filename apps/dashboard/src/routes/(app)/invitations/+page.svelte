@@ -22,7 +22,7 @@
   import { formatDate, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { InvitationCreated, InvitationInfo, WorkspaceRole } from '@platform/contract';
+  import type { InvitationCreated, InvitationInfo, WorkspaceRole } from '@slideless/contract';
 
   let { data } = $props();
 

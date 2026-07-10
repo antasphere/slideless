@@ -5,13 +5,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { Command, CommanderError } from 'commander';
-import { PlatformApiError, type ListParams } from '@platform/sdk';
+import { PlatformApiError, type ListParams } from '@slideless/sdk';
 import { printJson, requireApiKey, resolveContext, type CliIo } from './context.js';
 
 export type { CliIo } from './context.js';
 
 /**
- * A thin typed CLI over @platform/sdk. Human-readable by default, `--json`
+ * A thin typed CLI over @slideless/sdk. Human-readable by default, `--json`
  * for agents/scripts; a non-2xx response prints to stderr and exits 1. The
  * surface mirrors what an API key can reach (discovery + /me + files).
  */
@@ -27,11 +27,11 @@ function fmtBytes(n: number): string {
 function buildProgram(io: CliIo): Command {
   const program = new Command();
   program
-    .name('platform')
-    .description('Command-line client for a self-hosted platform instance')
+    .name('slideless')
+    .description('Command-line client for a self-hosted Slideless instance')
     .version(VERSION)
-    .option('--url <url>', 'instance base URL (or PLATFORM_URL)')
-    .option('--api-key <key>', 'API key (or PLATFORM_API_KEY)')
+    .option('--url <url>', 'instance base URL (or SLIDELESS_URL)')
+    .option('--api-key <key>', 'API key (or SLIDELESS_API_KEY)')
     .option('--json', 'machine-readable JSON output', false);
 
   program

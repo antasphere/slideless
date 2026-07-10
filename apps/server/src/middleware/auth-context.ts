@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import type { Principal } from '@platform/contract';
+import type { Principal } from '@slideless/contract';
 import type { PlatformRegistry } from '../platform/registry.js';
 import { apiError } from '../api/errors.js';
 import {

@@ -4,7 +4,7 @@ import { serve, type ServerType } from '@hono/node-server';
 import { createServer } from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { workspaceMembers } from '@platform/db';
+import { workspaceMembers } from '@slideless/db';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -130,7 +130,7 @@ describe('discovery surface', () => {
       expect(doc.resource).toBe(`${base}/mcp`);
       expect(doc.authorization_servers).toEqual([base]);
       expect(doc.bearer_methods_supported).toEqual(['header']);
-      expect(doc.scopes_supported).toContain('data:read');
+      expect(doc.scopes_supported).toContain('presentations:read');
     }
   });
 
@@ -234,7 +234,7 @@ describe('the full dance', () => {
       response_type: 'code',
       client_id: clientId,
       redirect_uri: REDIRECT_URI,
-      scope: 'openid profile email offline_access data:read data:write',
+      scope: 'openid profile email offline_access presentations:read presentations:write',
       state: 'dance-state',
       code_challenge: challenge,
       code_challenge_method: 'S256',
@@ -309,8 +309,8 @@ describe('the full dance', () => {
     const body = await readJson(res);
     expect(body.user.email).toBe(OWNER.email);
     expect(body.via).toBe('oauth');
-    expect(body.scopes).toContain('data:read');
-    expect(body.scopes).toContain('data:write');
+    expect(body.scopes).toContain('presentations:read');
+    expect(body.scopes).toContain('presentations:write');
   });
 
   it('the token reaches allowlisted endpoints only (fail-closed scope gate)', async () => {
@@ -383,7 +383,7 @@ describe('the full dance', () => {
       response_type: 'code',
       client_id: clientId,
       redirect_uri: REDIRECT_URI,
-      scope: 'data:read',
+      scope: 'presentations:read',
       code_challenge: challenge2,
       code_challenge_method: 'S256'
       // no `resource`

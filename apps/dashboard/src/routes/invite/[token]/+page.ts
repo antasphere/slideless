@@ -1,5 +1,5 @@
 import { api, PlatformApiError } from '$lib/api';
-import type { InvitationLookup } from '@platform/contract';
+import type { InvitationLookup } from '@slideless/contract';
 import type { PageLoad } from './$types';
 
 export interface InviteState {

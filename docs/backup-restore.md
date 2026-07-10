@@ -20,7 +20,7 @@ BACKUP_DIR=/mnt/backups ./scripts/backup.sh # elsewhere
 Dailies via cron:
 
 ```cron
-0 3 * * * /opt/platform/scripts/backup.sh >> /var/log/platform-backup.log 2>&1
+0 3 * * * /opt/slideless/scripts/backup.sh >> /var/log/slideless-backup.log 2>&1
 ```
 
 Retention defaults to 30 days (`RETENTION_DAYS`). Ship the backup directory

@@ -23,7 +23,7 @@ import type {
   SetupRequest,
   SetupResponse,
   WorkspaceRole
-} from '@platform/contract';
+} from '@slideless/contract';
 
 /**
  * Thin typed client over /api/v1. Isomorphic: in the dashboard it rides the

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { invitations, workspaceMembers, user as userTable, type Db, type Invitation } from '@platform/db';
+import { invitations, workspaceMembers, user as userTable, type Db, type Invitation } from '@slideless/db';
 
 /**
  * Token-bearing invitations; the database holds only sha256 hashes.

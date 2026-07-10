@@ -1,7 +1,7 @@
 import { createLocalJWKSet, jwtVerify, type JWK, type JWTVerifyOptions } from 'jose';
 import { and, eq } from 'drizzle-orm';
-import { user as userTable, workspaceMembers, workspaces, type Db } from '@platform/db';
-import type { Principal } from '@platform/contract';
+import { user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
+import type { Principal } from '@slideless/contract';
 import { mcpResourceUrl, type Auth } from './better-auth.js';
 
 /**

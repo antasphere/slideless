@@ -4,7 +4,7 @@ import { isPublicOauthPath } from '../../src/middleware/oauth-public.js';
 
 describe('mcp error → hint mapping', () => {
   it('attaches an actionable hint for known API codes', () => {
-    const err = new ApiToolError(403, 'insufficient_scope', 'This credential was not granted "data:write"');
+    const err = new ApiToolError(403, 'insufficient_scope', 'This credential was not granted "presentations:write"');
     const text = err.toUserFacingText();
     expect(text).toContain('HTTP 403');
     expect(text).toContain('insufficient_scope');

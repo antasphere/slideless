@@ -1,8 +1,9 @@
 # Contributing
 
-For Codika team members, contractors, and engagement contributors working
-on the template itself. Consumers turning the template into a product
-should follow [docs/instantiation.md](docs/instantiation.md) instead.
+For team members, contractors, and engagement contributors working on
+Slideless. The repo was instantiated from the codika-platform-template;
+improvement ideas that concern the upstream template go in
+[TEMPLATE-FEEDBACK.md](TEMPLATE-FEEDBACK.md), not here.
 
 ## Prerequisites
 
@@ -27,7 +28,7 @@ pnpm format                            # prettier --write (CI runs format:check)
 
 ## Better Auth schema drift guard
 
-CI runs `pnpm --filter @platform/server drift:check`, which regenerates the
+CI runs `pnpm --filter @slideless/server drift:check`, which regenerates the
 auth schema with the pinned `@better-auth/cli` and diffs it against the
 committed snapshot. Any Better Auth config change that alters the schema
 (new plugin, changed table shape) therefore requires, in the same PR:
@@ -56,7 +57,7 @@ configured to ignore the trio for this reason.
 
 - Tests for every behavior change — no untested behavior lands.
 - Docs updated in the same PR (`docs/`, and regenerate
-  `docs/env-reference.md` via `pnpm --filter @platform/server docs:env`
+  `docs/env-reference.md` via `pnpm --filter @slideless/server docs:env`
   when env vars change).
 - prettier and eslint clean (`pnpm format`, `pnpm turbo lint`).
 - Call out breaking changes and migration impact explicitly in the PR

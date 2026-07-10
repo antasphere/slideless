@@ -4,7 +4,7 @@ import type {
   MeteredAction,
   Principal,
   RequestQuota
-} from '@platform/contract';
+} from '@slideless/contract';
 
 /**
  * Default EntitlementService: everything is allowed, bounded only by

@@ -8,7 +8,7 @@
   import { api } from '$lib/api';
   import { formatDateTime } from '$lib/format';
   import { t } from '$lib/i18n';
-  import type { AuditEntry } from '@platform/contract';
+  import type { AuditEntry } from '@slideless/contract';
 
   const list = createPagedList<AuditEntry>(
     async (p) => {

@@ -22,13 +22,13 @@ jobs:
         with:
           context: .
           load: true
-          tags: platform-smoke:test
+          tags: slideless-smoke:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Compose up + exercise the platform flow
         run: |
           set -euo pipefail
-          export APP_IMAGE=platform-smoke:test
+          export APP_IMAGE=slideless-smoke:test
           echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > .env
           docker compose up -d --no-build --wait --wait-timeout 120
 
@@ -47,7 +47,7 @@ jobs:
           curl -sf -c /tmp/smoke.txt -X POST "$BASE/api/v1/auth/sign-in/email" -H 'content-type: application/json' \
             -d '{"email":"smoke@test.io","password":"smoke-password-1234"}' >/dev/null
           KEY=$(curl -sf -b /tmp/smoke.txt -X POST "$BASE/api/v1/api-keys" -H 'content-type: application/json' \
-            -d '{"name":"smoke","scopes":["data:read"]}' | jq -r '.key')
+            -d '{"name":"smoke","scopes":["presentations:read"]}' | jq -r '.key')
           curl -sf -H "authorization: Bearer $KEY" "$BASE/api/v1/me" | jq -e '.via == "api_key"' >/dev/null
           curl -sf -b /tmp/smoke.txt "$BASE/api/v1/audit?limit=20" | jq -e '[.entries[].actorVia] | index("api_key") != null' >/dev/null
 
@@ -72,7 +72,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: platform-scan:test
+          tags: slideless-scan:test
           cache-from: type=gha
       # Run Trivy from its own container rather than the marketplace action,
       # whose binary-installer step is flaky on GitHub runners. GITHUB_TOKEN
@@ -86,7 +86,7 @@ jobs:
             aquasec/trivy:latest image \
               --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln \
               --exit-code 1 --no-progress \
-              platform-scan:test
+              slideless-scan:test
 
   publish:
     runs-on: ubuntu-latest

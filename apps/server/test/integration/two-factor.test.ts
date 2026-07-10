@@ -248,7 +248,7 @@ describe('2FA lifecycle (TOTP + backup codes)', () => {
 
   it('machine principals (API keys) never see a 2FA step', async () => {
     const minted = await readJson(
-      await app.app.request('/api/v1/api-keys', json({ name: 'tf-key', scopes: ['data:read'] }, ownerCookie))
+      await app.app.request('/api/v1/api-keys', json({ name: 'tf-key', scopes: ['presentations:read'] }, ownerCookie))
     );
     // The key belongs to the 2FA-enabled owner; bearer auth is single-step.
     const res = await app.app.request('/api/v1/me', {

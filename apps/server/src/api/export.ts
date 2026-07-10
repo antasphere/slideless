@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { ZipFile } from 'yazl';
-import { workspaceExportRoute } from '@platform/contract/routes';
+import { workspaceExportRoute } from '@slideless/contract/routes';
 import {
   apiKeys,
   auditLog,
@@ -14,7 +14,7 @@ import {
   workspaceMembers,
   workspaces,
   type Db
-} from '@platform/db';
+} from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { AuditService } from '../audit/service.js';

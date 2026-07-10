@@ -6,7 +6,7 @@ import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { files, type Db, type FileRow } from '@platform/db';
+import { files, type Db, type FileRow } from '@slideless/db';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import type { Logger } from '../logger.js';

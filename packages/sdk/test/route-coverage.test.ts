@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import * as routes from '@platform/contract/routes';
+import * as routes from '@slideless/contract/routes';
 import { PlatformClient } from '../src/index.js';
 
 /**
@@ -35,7 +35,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'POST /members/{id}/change-email-link': (c) =>
     c.createMemberChangeEmailLink(SAMPLE_ID, { newEmail: 'a@b.co' }),
   'GET /api-keys': (c) => c.apiKeys(),
-  'POST /api-keys': (c) => c.createApiKey({ name: 'k', scopes: ['data:read'] }),
+  'POST /api-keys': (c) => c.createApiKey({ name: 'k', scopes: ['presentations:read'] }),
   'DELETE /api-keys/{id}': (c) => c.revokeApiKey(SAMPLE_ID),
   'GET /invitations': (c) => c.invitations(),
   'POST /invitations': (c) => c.createInvitation({ email: 'a@b.co', role: 'member' }),

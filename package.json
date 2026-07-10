@@ -1,8 +1,8 @@
 {
-  "name": "codika-platform-template",
+  "name": "slideless",
   "private": true,
   "version": "0.1.0",
-  "description": "Self-hosted platform template: one Docker image + Postgres, Hono API, SvelteKit dashboard, Better Auth, MCP endpoint",
+  "description": "Self-hosted Slideless: one Docker image + Postgres, Hono API, SvelteKit dashboard, Better Auth, MCP endpoint",
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "pnpm": {

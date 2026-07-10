@@ -1,6 +1,6 @@
 import { api } from '$lib/api';
 import { initLocale } from '$lib/i18n';
-import type { MeResponse } from '@platform/contract';
+import type { MeResponse } from '@slideless/contract';
 import type { LayoutLoad } from './$types';
 
 // Pure SPA: no SSR, no prerender — one index.html fallback boots the app.

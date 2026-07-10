@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Upgrade: pull newer images and restart. Data survives in the volumes;
 # migrations apply automatically at boot under an advisory lock.
-# Pin a version: set APP_IMAGE=ghcr.io/codika-io/codika-platform-template:X.Y.Z in .env first.
+# Pin a version: set APP_IMAGE=ghcr.io/antasphere/slideless:X.Y.Z in .env first.
 set -euo pipefail
 cd "$(dirname "$0")"
 

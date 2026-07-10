@@ -1,10 +1,10 @@
 {
-  "name": "@platform/cli",
+  "name": "@slideless/cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "platform": "./dist/bin.js"
+    "slideless": "./dist/bin.js"
   },
   "exports": {
     ".": {
@@ -22,7 +22,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@platform/sdk": "workspace:*",
+    "@slideless/sdk": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

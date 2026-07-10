@@ -3,7 +3,7 @@
  * 13): discovery → dynamic client registration → login → consent → PKCE
  * token exchange → official MCP SDK client calling get_me.
  *
- *   pnpm --filter @platform/server exec tsx scripts/verify-mcp-dance.mts \
+ *   pnpm --filter @slideless/server exec tsx scripts/verify-mcp-dance.mts \
  *     http://localhost:3000 owner@example.com 'password'
  */
 import { createHash, randomBytes } from 'node:crypto';
@@ -78,7 +78,7 @@ authorizeUrl.search = new URLSearchParams({
   response_type: 'code',
   client_id: reg.client_id,
   redirect_uri: 'http://localhost:19191/callback',
-  scope: 'openid data:read data:write offline_access',
+  scope: 'openid presentations:read presentations:write offline_access',
   state: 'drill-state',
   code_challenge: challengeS256,
   code_challenge_method: 'S256',

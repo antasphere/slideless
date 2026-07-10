@@ -38,7 +38,7 @@ export async function createTestApp(
   extraEnv: Record<string, string> = {},
   overrides: BootOverrides = {}
 ): Promise<TestApp> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'platform-test-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'slideless-test-'));
   const result = await boot(
     {
       DATABASE_URL: connectionString,

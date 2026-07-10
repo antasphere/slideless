@@ -152,7 +152,7 @@ describe('with SUPERADMIN_EMAILS set', () => {
     // Key minted BY the superadmin themselves — ownership must not transfer.
     const minted = await app.app.request(
       '/api/v1/api-keys',
-      json({ name: 'root-key', scopes: ['data:read', 'data:write'] }, { cookie: rootCookie })
+      json({ name: 'root-key', scopes: ['presentations:read', 'presentations:write'] }, { cookie: rootCookie })
     );
     expect(minted.status).toBe(201);
     const { key } = await readJson(minted);

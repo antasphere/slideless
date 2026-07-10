@@ -36,7 +36,7 @@ x-app: &app
       condition: service_healthy
 
 x-app-env: &app-env
-  DATABASE_URL: postgres://platform:${DRILL_PG_PASSWORD:?set by scripts/scale-drill.sh}@db:5432/platform
+  DATABASE_URL: postgres://slideless:${DRILL_PG_PASSWORD:?set by scripts/scale-drill.sh}@db:5432/slideless
   # Profile B invariant under test: every replica shares one explicit secret.
   AUTH_SECRET: ${DRILL_AUTH_SECRET:?set by scripts/scale-drill.sh}
   # redis://redis:6379 for the shared-bucket stacks, empty for the
@@ -54,11 +54,11 @@ services:
     # drill can prove exactly ONE session applied the schema migrations.
     command: ['postgres', '-c', 'log_statement=ddl']
     environment:
-      POSTGRES_USER: platform
+      POSTGRES_USER: slideless
       POSTGRES_PASSWORD: ${DRILL_PG_PASSWORD:?set by scripts/scale-drill.sh}
-      POSTGRES_DB: platform
+      POSTGRES_DB: slideless
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U platform -d platform']
+      test: ['CMD-SHELL', 'pg_isready -U slideless -d slideless']
       interval: 5s
       timeout: 5s
       retries: 20

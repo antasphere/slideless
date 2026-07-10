@@ -25,7 +25,7 @@
 # "minted on A, verified on B" is deterministic (no LB guessing).
 #
 # Usage: ./scripts/scale-drill.sh
-#   DRILL_IMAGE=name:tag   image tag to build/use (default codika-platform-template:scale)
+#   DRILL_IMAGE=name:tag   image tag to build/use (default slideless:scale)
 #   DRILL_SKIP_BUILD=1     reuse the image if it already exists (CI pre-builds it)
 #   DRILL_KEEP_IMAGE=1     keep the image after the run (faster local iteration)
 #
@@ -36,7 +36,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 COMPOSE_FILE="$REPO/docker-compose.scale.yml"
 PROJECT=scale-drill
-IMAGE="${DRILL_IMAGE:-codika-platform-template:scale}"
+IMAGE="${DRILL_IMAGE:-slideless:scale}"
 MIGRATION_LOCK_KEY=7432001 # packages/db/src/migrate.ts
 PASS_COUNT=0
 
@@ -89,7 +89,7 @@ dc() {
     --profile flat --profile split "$@"
 }
 
-psqlq() { dc exec -T db psql -U platform -d platform -v ON_ERROR_STOP=1 -tAc "$1"; }
+psqlq() { dc exec -T db psql -U slideless -d slideless -v ON_ERROR_STOP=1 -tAc "$1"; }
 
 applogs() { dc logs --no-log-prefix "$1" 2>/dev/null || true; }
 
@@ -164,7 +164,7 @@ dc up -d --wait db redis
 # Determinism gate: hold the migration lock from a psql session BEFORE any
 # replica boots, so all three replicas provably contend at the same instant
 # (no reliance on container start jitter).
-dc exec -T -d db psql -U platform -d platform \
+dc exec -T -d db psql -U slideless -d slideless \
   -c "SELECT pg_advisory_lock($MIGRATION_LOCK_KEY), pg_sleep(600)"
 held=""
 for _ in $(seq 1 30); do
@@ -275,7 +275,7 @@ done
 pass "session cookie minted on app1 authenticates on app2 AND app3 (via=session)"
 
 KEY=$(curl -s -b "$JAR" -X POST http://localhost:3801/api/v1/api-keys \
-  -H 'content-type: application/json' -d '{"name":"drill","scopes":["data:read"]}' | jq -r '.key')
+  -H 'content-type: application/json' -d '{"name":"drill","scopes":["presentations:read"]}' | jq -r '.key')
 [ -n "$KEY" ] && [ "$KEY" != "null" ] || fail "API key mint on app1 failed"
 code=$(curl -s -H "authorization: Bearer $KEY" -o "$SCRATCH/me.json" -w '%{http_code}' http://localhost:3802/api/v1/me)
 [ "$code" = "200" ] || fail "API key minted on app1 rejected by app2 ($code)"

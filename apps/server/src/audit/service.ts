@@ -1,5 +1,5 @@
-import { auditLog, type Db } from '@platform/db';
-import type { Principal } from '@platform/contract';
+import { auditLog, type Db } from '@slideless/db';
+import type { Principal } from '@slideless/contract';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { Logger } from '../logger.js';
 

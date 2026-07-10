@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { apiKeys, files, invitations, user as userTable, workspaceMembers } from '@platform/db';
+import { apiKeys, files, invitations, user as userTable, workspaceMembers } from '@slideless/db';
 import {
   createDatabase,
   createTestApp,
@@ -309,7 +309,7 @@ describe('api-key scoping holds on every page', () => {
 
     const mint = async (cookie: string, name: string) => {
       const res = await app.app.request('/api/v1/api-keys', {
-        ...json({ name, scopes: ['data:read'] }),
+        ...json({ name, scopes: ['presentations:read'] }),
         headers: { 'content-type': 'application/json', cookie }
       });
       expect(res.status).toBe(201);

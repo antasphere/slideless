@@ -18,7 +18,7 @@ export const composeArgs = [
 export function stackEnv() {
   return {
     ...process.env,
-    APP_IMAGE: 'codika-platform-template:pw-smoke',
+    APP_IMAGE: 'slideless:pw-smoke',
     APP_PORT,
     PUBLIC_BASE_URL: `http://localhost:${APP_PORT}`,
     POSTGRES_PASSWORD: process.env.PW_SMOKE_PG_PASSWORD ?? randomBytes(16).toString('hex'),

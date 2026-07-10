@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
-import { workspaceMembers, workspaces, type Db } from '@platform/db';
-import type { IdentityProvider, InstanceAuthDescriptor, Principal, RequestContext } from '@platform/contract';
+import { workspaceMembers, workspaces, type Db } from '@slideless/db';
+import type { IdentityProvider, InstanceAuthDescriptor, Principal, RequestContext } from '@slideless/contract';
 import type { Auth } from '../identity/better-auth.js';
 
 /**

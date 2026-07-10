@@ -1,10 +1,19 @@
-# codika-platform-template
+# Slideless
 
-Self-hosted platform template in the n8n mold: one Docker image plus a Postgres container. Ships a
+The Slideless product monorepo, in the n8n mold: one Docker image plus a Postgres container. Ships a
 versioned Hono API (`/api/v1`), a SvelteKit dashboard, Better Auth (sessions, API keys, a built-in
 OAuth 2.1 authorization server), file storage, pg-boss jobs, an audit log, and a bundled MCP endpoint
-(`/mcp`) — so agents are first-class consumers of every instance. Codika-internal; products instantiate
-and rename it. This repo stays on `main` only (template exception to the prod/dev rule).
+(`/mcp`) — so agents are first-class consumers of every instance. Instantiated from the
+codika-platform-template (commit `b0dcd13`); branches follow the workspace rule: `prod` (default,
+deploys) + `dev` (day-to-day work).
+
+## Identity (fixed at instantiation)
+
+- npm scope `@slideless/*`; CLI binary `slideless`; env var prefix `SLIDELESS_` — the CLI reads
+  `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
+- API key prefix `slk` (`apps/server/src/apikeys/service.ts`).
+- Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
+- Docker image `ghcr.io/antasphere/slideless`; Postgres role/db `slideless`; port 3000; `EDITION=oss`.
 
 ## Layout
 
@@ -15,7 +24,7 @@ and rename it. This repo stays on `main` only (template exception to the prod/de
 | `packages/db`                       | drizzle schema + migrations, incl. generated `auth-schema.ts`  |
 | `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard |
 | `packages/sdk`                      | Typed client over the contract (hand-written today)            |
-| `packages/cli`                      | Typed CLI over the SDK; the `platform` binary (docs/cli.md)    |
+| `packages/cli`                      | Typed CLI over the SDK; the `slideless` binary (docs/cli.md)   |
 | `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                       |
 | `docs/`                             | Operator guides + ADRs (`docs/README.md` is the index)         |
 
@@ -42,14 +51,18 @@ pnpm turbo lint typecheck test build   # the CI gate
 pnpm turbo test:integration            # real Postgres via testcontainers; needs Docker
 ```
 
+Local dev mail: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d` runs Mailpit
+and points the SMTP driver at it (docs/dev-mailpit.md).
+
 ## Before you change things
 
 - **LESSONS.md** — read it before touching auth, MCP, or Docker packaging; it records the traps
-  already hit and why the current shapes exist.
+  already hit (inherited from the template) and why the current shapes exist.
+- **TEMPLATE-FEEDBACK.md** — friction/improvement ideas that concern the upstream
+  codika-platform-template. Never fix the template from here; append to this backlog instead.
 - **docs/decisions/** — ADRs: version pins (001, the exact-pinned Better Auth trio), MCP transport
   (002), OIDC client deferral (003), pgvector (004), auth-surface + metrics defaults (005).
 - **docs/production-readiness.md** — the honest gap list and roadmap.
-- **docs/instantiation.md** — the rename checklist when turning the template into a product.
 - **docs/backup-and-data-sovereignty.md** — deferred design note: why durable backups must stay
   EU-sovereign (self-hosted DB in the instance + encrypted offsite to European object storage, not
   Neon/US), the AUTH_SECRET-in-/data recovery trap, and the open decisions. Read before building a

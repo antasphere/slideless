@@ -105,7 +105,7 @@ describe('request body size cap', () => {
     const res = await app.app.request('/api/v1/api-keys', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: ownerCookie },
-      body: JSON.stringify({ name: huge, scopes: ['data:read'] })
+      body: JSON.stringify({ name: huge, scopes: ['presentations:read'] })
     });
     expect(res.status).toBe(413);
   });
@@ -167,7 +167,7 @@ describe('audit writes are best-effort (a committed mutation must not 500)', () 
     await app.db.pool.query('ALTER TABLE audit_log RENAME TO audit_log_broken');
     try {
       const res = await app.app.request('/api/v1/api-keys', {
-        ...json({ name: 'survives-audit-outage', scopes: ['data:read'] }),
+        ...json({ name: 'survives-audit-outage', scopes: ['presentations:read'] }),
         headers: { 'content-type': 'application/json', cookie: ownerCookie }
       });
       // The mutation committed; the failed audit write is logged, not fatal.

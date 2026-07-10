@@ -2,8 +2,8 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { ulid } from 'ulid';
 import { eq } from 'drizzle-orm';
-import { instanceRoute, meRoute, setupRoute } from '@platform/contract/routes';
-import { instanceSettings, workspaceMembers, workspaces, type Db } from '@platform/db';
+import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
+import { instanceSettings, workspaceMembers, workspaces, type Db } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
@@ -61,7 +61,7 @@ class SetupAlreadyDone extends Error {}
 
 /**
  * The versioned API, mounted at /api/v1. Every route is defined by a contract
- * in @platform/contract/routes; the OpenAPI document is generated from those
+ * in @slideless/contract/routes; the OpenAPI document is generated from those
  * contracts and served at /api/v1/openapi.json.
  */
 export function createApiApp(deps: ApiDeps): OpenAPIHono {
@@ -296,7 +296,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         role: principal.role,
         via: principal.via,
         scopes: principal.scopes
-          ? ([...principal.scopes] as Array<'data:read' | 'data:write' | 'data:export'>)
+          ? ([...principal.scopes] as Array<'presentations:read' | 'presentations:write' | 'data:export'>)
           : null,
         apiKeyExpiresAt: principal.apiKeyExpiresAt ?? null
       },

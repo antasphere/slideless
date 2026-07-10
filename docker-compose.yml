@@ -2,7 +2,7 @@
 # Upgrade: docker compose pull && docker compose up -d
 services:
   app:
-    image: ${APP_IMAGE:-ghcr.io/codika-io/codika-platform-template:latest}
+    image: ${APP_IMAGE:-ghcr.io/antasphere/slideless:latest}
     build: .
     restart: unless-stopped
     stop_grace_period: 60s
@@ -10,7 +10,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgres://platform:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/platform
+      - DATABASE_URL=postgres://slideless:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/slideless
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:3000}
       - AUTH_SECRET=${AUTH_SECRET:-}
       # Versioned API-key peppers for secret rotation (docs/security.md).
@@ -70,9 +70,9 @@ services:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=platform
+      - POSTGRES_USER=slideless
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      - POSTGRES_DB=platform
+      - POSTGRES_DB=slideless
     volumes:
       - pg_data:/var/lib/postgresql/data
     # Uncomment for local development (psql/drizzle against the compose db).
@@ -80,7 +80,7 @@ services:
     # ports:
     #   - '127.0.0.1:5432:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U platform -d platform']
+      test: ['CMD-SHELL', 'pg_isready -U slideless -d slideless']
       interval: 10s
       timeout: 5s
       retries: 10

@@ -6,8 +6,8 @@ import {
   invitationLookupRoute,
   invitationRevokeRoute,
   invitationsListRoute
-} from '@platform/contract/routes';
-import { invitations, workspaces, user as userTable, type Db, type Invitation } from '@platform/db';
+} from '@slideless/contract/routes';
+import { invitations, workspaces, user as userTable, type Db, type Invitation } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';

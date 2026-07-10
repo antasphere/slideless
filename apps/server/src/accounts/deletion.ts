@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { and, eq, ne } from 'drizzle-orm';
-import { user as userTable, workspaceMembers, type Db } from '@platform/db';
+import { user as userTable, workspaceMembers, type Db } from '@slideless/db';
 import type { AuditService } from '../audit/service.js';
 import type { Logger } from '../logger.js';
 

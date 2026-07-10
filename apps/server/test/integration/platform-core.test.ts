@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { desc, eq } from 'drizzle-orm';
-import { auditLog } from '@platform/db';
+import { auditLog } from '@slideless/db';
 import {
   createDatabase,
   createTestApp,
@@ -55,13 +55,13 @@ describe('API keys (exit criterion 4, API half)', () => {
 
   it('mints a key from a session; the secret appears exactly once', async () => {
     const res = await app.app.request('/api/v1/api-keys', {
-      ...json({ name: 'ci key', scopes: ['data:read'] }),
+      ...json({ name: 'ci key', scopes: ['presentations:read'] }),
       headers: { 'content-type': 'application/json', cookie: ownerCookie }
     });
     expect(res.status).toBe(201);
     const body = await readJson(res);
     expect(body.key).toMatch(/^key_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{20,}$/);
-    expect(body.apiKey.scopes).toEqual(['data:read']);
+    expect(body.apiKey.scopes).toEqual(['presentations:read']);
     mintedKey = body.key;
     keyRecordId = body.apiKey.id;
     keyId = body.apiKey.keyId; // authoritative — never derive it by splitting on '_'
@@ -84,7 +84,7 @@ describe('API keys (exit criterion 4, API half)', () => {
     expect(me.status).toBe(200);
     const body = await readJson(me);
     expect(body.via).toBe('api_key');
-    expect(body.scopes).toEqual(['data:read']);
+    expect(body.scopes).toEqual(['presentations:read']);
 
     // Exit criterion 4: the key-authenticated request itself appears in the
     // audit log with the KEY identity (machine reads are audited).
@@ -121,7 +121,7 @@ describe('API keys (exit criterion 4, API half)', () => {
 
   it('refuses to mint a key with a key (sessions only)', async () => {
     const res = await app.app.request('/api/v1/api-keys', {
-      ...json({ name: 'evil', scopes: ['data:read'] }),
+      ...json({ name: 'evil', scopes: ['presentations:read'] }),
       headers: { 'content-type': 'application/json', authorization: `Bearer ${mintedKey}` }
     });
     expect(res.status).toBe(403);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
-import type { EntitlementService, Principal, RequestQuota } from '@platform/contract';
+import type { EntitlementService, Principal, RequestQuota } from '@slideless/contract';
 import { createRequestQuota, principalBucketKey } from '../../src/middleware/rate-limit.js';
 import type { Logger } from '../../src/logger.js';
 
@@ -38,12 +38,12 @@ const memoryMake = (prefix: string, points: number, duration: number) =>
 
 describe('principalBucketKey', () => {
   it('keys API-key principals by the key id, not the user', () => {
-    const p = principal({ via: 'api_key', apiKeyId: 'key-abc', scopes: new Set(['data:read']) });
+    const p = principal({ via: 'api_key', apiKeyId: 'key-abc', scopes: new Set(['presentations:read']) });
     expect(principalBucketKey(p)).toBe('key:key-abc');
   });
 
   it('keys OAuth principals by the token subject (userId)', () => {
-    const p = principal({ via: 'oauth', scopes: new Set(['data:read']) });
+    const p = principal({ via: 'oauth', scopes: new Set(['presentations:read']) });
     expect(principalBucketKey(p)).toBe('oauth:user-1');
   });
 

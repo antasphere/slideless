@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backup: Postgres dump + the app data volume (uploaded files, generated
 # secret) + the local config. Run from cron for dailies:
-#   0 3 * * * /opt/platform/scripts/backup.sh >> /var/log/platform-backup.log 2>&1
+#   0 3 * * * /opt/slideless/scripts/backup.sh >> /var/log/slideless-backup.log 2>&1
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,7 +12,7 @@ STAMP=$(date -u +%Y%m%d-%H%M%S)
 mkdir -p "$BACKUP_DIR"
 
 echo "▸ dumping database"
-docker compose exec -T db pg_dump -U platform platform | gzip > "$BACKUP_DIR/db-$STAMP.sql.gz"
+docker compose exec -T db pg_dump -U slideless slideless | gzip > "$BACKUP_DIR/db-$STAMP.sql.gz"
 [ -s "$BACKUP_DIR/db-$STAMP.sql.gz" ] || { echo "✖ empty dump" >&2; exit 1; }
 
 echo "▸ archiving app data volume (/data: files, secret)"

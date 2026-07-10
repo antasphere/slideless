@@ -10,7 +10,7 @@
   import ScrollText from '@lucide/svelte/icons/scroll-text';
   import Settings from '@lucide/svelte/icons/settings';
   import { t } from '$lib/i18n';
-  import type { WorkspaceRole } from '@platform/contract';
+  import type { WorkspaceRole } from '@slideless/contract';
 
   interface Props {
     instanceName: string;

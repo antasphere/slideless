@@ -1,4 +1,4 @@
-import { PlatformClient, PlatformApiError } from '@platform/sdk';
+import { PlatformClient, PlatformApiError } from '@slideless/sdk';
 import { t } from '$lib/i18n';
 
 /** Same-origin client — the HttpOnly session cookie rides every call. */

@@ -53,10 +53,10 @@ const ME = {
   workspace: { id: 'w1', name: 'Acme' },
   role: 'owner',
   via: 'api_key',
-  scopes: ['data:read']
+  scopes: ['presentations:read']
 };
 
-describe('platform CLI', () => {
+describe('slideless CLI', () => {
   it('instance → GET /api/v1/instance (no key needed)', async () => {
     const h = harness([{ body: INSTANCE }]);
     const code = await run(['instance', '--url', 'http://x'], h.io);
@@ -73,10 +73,10 @@ describe('platform CLI', () => {
     expect(h.out()).toContain('ada@x.co');
   });
 
-  it('reads PLATFORM_URL / PLATFORM_API_KEY from the environment', async () => {
+  it('reads SLIDELESS_URL / SLIDELESS_API_KEY from the environment', async () => {
     const h = harness([{ body: ME }]);
-    h.io.env.PLATFORM_URL = 'http://from-env';
-    h.io.env.PLATFORM_API_KEY = 'key_env';
+    h.io.env.SLIDELESS_URL = 'http://from-env';
+    h.io.env.SLIDELESS_API_KEY = 'key_env';
     const code = await run(['whoami'], h.io);
     expect(code).toBe(0);
     expect(h.calls[0]).toEqual({ method: 'GET', path: '/api/v1/me' });

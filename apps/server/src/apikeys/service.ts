@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { apiKeys, workspaceMembers, user as userTable, type Db } from '@platform/db';
-import type { Principal } from '@platform/contract';
+import { apiKeys, workspaceMembers, user as userTable, type Db } from '@slideless/db';
+import type { Principal } from '@slideless/contract';
 import type { PepperRegistry } from './peppers.js';
 
 /**
@@ -16,7 +16,7 @@ import type { PepperRegistry } from './peppers.js';
  * mint uses the registry's current version, and resolution uses the stored
  * version's pepper or fails closed. Keys are minted by sessions only.
  */
-export const API_KEY_PREFIX = 'key';
+export const API_KEY_PREFIX = 'slk';
 
 const KEY_ID_BYTES = 6; // 8 chars base64url
 const SECRET_BYTES = 32; // 43 chars base64url

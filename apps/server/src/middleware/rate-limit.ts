@@ -6,7 +6,7 @@ import {
 } from 'rate-limiter-flexible';
 import type { Context, MiddlewareHandler } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
-import type { EntitlementService, Principal } from '@platform/contract';
+import type { EntitlementService, Principal } from '@slideless/contract';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 

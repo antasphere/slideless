@@ -73,7 +73,7 @@ afterAll(async () => {
 
 describe('minting with a TTL', () => {
   it('computes an absolute expiry ~expiresInDays out and surfaces it in the list', async () => {
-    const res = await mint({ name: 'seven-days', scopes: ['data:read'], expiresInDays: 7 });
+    const res = await mint({ name: 'seven-days', scopes: ['presentations:read'], expiresInDays: 7 });
     expect(res.status).toBe(201);
     const body = await readJson(res);
     expect(body.apiKey.expiresAt).toBeTruthy();
@@ -88,14 +88,14 @@ describe('minting with a TTL', () => {
   });
 
   it('omitting the TTL mints a never-expiring key', async () => {
-    const res = await mint({ name: 'forever', scopes: ['data:read'] });
+    const res = await mint({ name: 'forever', scopes: ['presentations:read'] });
     expect(res.status).toBe(201);
     const body = await readJson(res);
     expect(body.apiKey.expiresAt).toBeNull();
   });
 
   it('rejects expiresInDays: 0 as a validation error', async () => {
-    const res = await mint({ name: 'zero-days', scopes: ['data:read'], expiresInDays: 0 });
+    const res = await mint({ name: 'zero-days', scopes: ['presentations:read'], expiresInDays: 0 });
     expect(res.status).toBe(400);
     const body = await readJson(res);
     expect(body.error.code).toBe('validation_error');
@@ -105,9 +105,9 @@ describe('minting with a TTL', () => {
 describe('resolution treats expired exactly like revoked', () => {
   it('answers an expired key with the identical 401 body a revoked key gets', async () => {
     const expired = await readJson(
-      await mint({ name: 'to-expire', scopes: ['data:read'], expiresInDays: 7 })
+      await mint({ name: 'to-expire', scopes: ['presentations:read'], expiresInDays: 7 })
     );
-    const revoked = await readJson(await mint({ name: 'to-revoke', scopes: ['data:read'] }));
+    const revoked = await readJson(await mint({ name: 'to-revoke', scopes: ['presentations:read'] }));
 
     // Both keys are live before their terminal states.
     expect((await me(expired.key)).status).toBe(200);
@@ -131,7 +131,7 @@ describe('resolution treats expired exactly like revoked', () => {
   });
 
   it('a key expiring in the future still resolves and reports its expiry on /me', async () => {
-    const minted = await readJson(await mint({ name: 'boundary', scopes: ['data:read'] }));
+    const minted = await readJson(await mint({ name: 'boundary', scopes: ['presentations:read'] }));
     await app.db.pool.query(`UPDATE api_keys SET expires_at = now() + interval '1 hour' WHERE key_id = $1`, [
       minted.apiKey.keyId
     ]);
@@ -146,10 +146,10 @@ describe('resolution treats expired exactly like revoked', () => {
 describe('nightly expiry sweep', () => {
   it('normalizes expired keys to revoked_at = expires_at and leaves live keys alone', async () => {
     const doomed = await readJson(
-      await mint({ name: 'sweep-doomed', scopes: ['data:read'], expiresInDays: 7 })
+      await mint({ name: 'sweep-doomed', scopes: ['presentations:read'], expiresInDays: 7 })
     );
     const survivor = await readJson(
-      await mint({ name: 'sweep-survivor', scopes: ['data:read'], expiresInDays: 7 })
+      await mint({ name: 'sweep-survivor', scopes: ['presentations:read'], expiresInDays: 7 })
     );
     await app.db.pool.query(`UPDATE api_keys SET expires_at = now() - interval '1 hour' WHERE key_id = $1`, [
       doomed.apiKey.keyId

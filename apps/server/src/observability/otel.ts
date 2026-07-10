@@ -24,7 +24,7 @@ export async function createOtel(
   logger: Logger
 ): Promise<Otel> {
   const resource = resourceFromAttributes({
-    'service.name': 'platform',
+    'service.name': 'slideless',
     'service.version': env.APP_VERSION,
     'deployment.environment.name': env.EDITION
   });
@@ -40,7 +40,7 @@ export async function createOtel(
 
   const provider = new NodeTracerProvider({ resource, spanProcessors });
   provider.register();
-  const tracer = trace.getTracer('platform');
+  const tracer = trace.getTracer('slideless');
 
   const middleware: MiddlewareHandler = async (c, next) => {
     // Start with a low-cardinality name (the matched route pattern isn't known

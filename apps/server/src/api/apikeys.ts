@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, desc, eq } from 'drizzle-orm';
-import { apiKeyCreateRoute, apiKeyRevokeRoute, apiKeysListRoute } from '@platform/contract/routes';
-import { apiKeys, type ApiKey, type Db } from '@platform/db';
+import { apiKeyCreateRoute, apiKeyRevokeRoute, apiKeysListRoute } from '@slideless/contract/routes';
+import { apiKeys, type ApiKey, type Db } from '@slideless/db';
 import { sql } from 'drizzle-orm';
 import type { ApiKeyService } from '../apikeys/service.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
@@ -13,7 +13,7 @@ const toWire = (k: ApiKey) => ({
   id: k.id,
   name: k.name,
   keyId: k.keyId,
-  scopes: k.scopes as Array<'data:read' | 'data:write' | 'data:export'>,
+  scopes: k.scopes as Array<'presentations:read' | 'presentations:write' | 'data:export'>,
   createdBy: k.createdBy,
   createdAt: k.createdAt.toISOString(),
   lastUsedAt: k.lastUsedAt?.toISOString() ?? null,

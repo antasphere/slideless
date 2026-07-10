@@ -5,7 +5,7 @@ and CI; the manual drills below are reproducible with the scripts named.
 
 ## Automated
 
-- **Unit** (`pnpm --filter @platform/server test`, `@platform/dashboard test`):
+- **Unit** (`pnpm --filter @slideless/server test`, `@slideless/dashboard test`):
   scope allowlist, key format + constant-time verify, content-address +
   traversal guard, Range parser, disposition policy, env schema, CSP hashes,
   pino redaction (the real `REDACT_PATHS`), `safeNext` open-redirect guard.
@@ -15,7 +15,7 @@ and CI; the manual drills below are reproducible with the scripts named.
   all three credential paths, API keys, invitations, audit, files (local +
   MinIO), metrics, request-id correlation, usage pipeline, and the full
   OAuth dance driven by the official MCP SDK client.
-- **Dashboard e2e** (`@platform/dashboard test:e2e`): builds the real image,
+- **Dashboard e2e** (`@slideless/dashboard test:e2e`): builds the real image,
   boots an isolated compose stack, walks setup → key → invite → accept →
   audit → deep-link → re-login → consent error state.
 - **CI** (`.github/workflows/ci.yml`): lint, typecheck, unit, build, format,

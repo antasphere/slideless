@@ -19,9 +19,9 @@ echo "▸ stopping app (db stays up)"
 docker compose stop app
 
 echo "▸ restoring database"
-gunzip -c "$DB_DUMP" | docker compose exec -T db psql -q -U platform -d postgres \
-  -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" -c "CREATE DATABASE platform OWNER platform;" >/dev/null
-gunzip -c "$DB_DUMP" | docker compose exec -T db psql -q -U platform -d platform >/dev/null
+gunzip -c "$DB_DUMP" | docker compose exec -T db psql -q -U slideless -d postgres \
+  -c "DROP DATABASE IF EXISTS slideless WITH (FORCE);" -c "CREATE DATABASE slideless OWNER slideless;" >/dev/null
+gunzip -c "$DB_DUMP" | docker compose exec -T db psql -q -U slideless -d slideless >/dev/null
 
 echo "▸ restoring data volume"
 docker compose run --rm --no-deps -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint sh app \

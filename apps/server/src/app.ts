@@ -79,7 +79,7 @@ export async function createApp({
   app.get('*', (c) => {
     if (indexHtml) return c.html(indexHtml);
     return c.html(
-      '<!doctype html><title>platform</title><h1>Platform API is running</h1>' +
+      '<!doctype html><title>Slideless</title><h1>Slideless API is running</h1>' +
         '<p>No dashboard build found. API health: <a href="/healthz">/healthz</a></p>'
     );
   });

@@ -9,9 +9,9 @@
  * Session principals are role-gated instead and never pass through this.
  *
  * Pure logic (no I/O) so it stays unit-testable. Products rename the generic
- * data:read / data:write scopes to their domain's.
+ * presentations:read / presentations:write scopes to their domain's.
  */
-export type Scope = 'data:read' | 'data:write' | 'data:export';
+export type Scope = 'presentations:read' | 'presentations:write' | 'data:export';
 
 export function looksLikeJwt(token: string): boolean {
   return token.split('.').length === 3;
@@ -19,13 +19,13 @@ export function looksLikeJwt(token: string): boolean {
 
 export function requiredScopeFor(path: string, method: string): Scope | null {
   const isRead = method === 'GET' || method === 'HEAD';
-  if (path === '/api/v1/me' && isRead) return 'data:read';
+  if (path === '/api/v1/me' && isRead) return 'presentations:read';
   // Files: the substrate machine callers actually need (agents pushing and
-  // pulling artifacts). Reads → data:read, mutations → data:write.
+  // pulling artifacts). Reads → presentations:read, mutations → presentations:write.
   if (path === '/api/v1/files' || path.startsWith('/api/v1/files/')) {
-    return isRead ? 'data:read' : 'data:write';
+    return isRead ? 'presentations:read' : 'presentations:write';
   }
-  // Full-workspace export: a dedicated opt-in scope, NEVER data:read — any
+  // Full-workspace export: a dedicated opt-in scope, NEVER presentations:read — any
   // admin read key would otherwise be a whole-tenant exfiltration tool.
   // (Account deletion, DELETE /members/{id}, stays deliberately UNLISTED:
   // machines 403 fail-closed; deleting people is a session-only act.
@@ -33,8 +33,8 @@ export function requiredScopeFor(path: string, method: string): Scope | null {
   // superadmin recovery is a human session act — a key or token whose owner
   // is on SUPERADMIN_EMAILS still 403s here, fail-closed. Never list it.)
   if (path === '/api/v1/workspace/export' && isRead) return 'data:export';
-  // Products: open your domain endpoints here — reads → data:read,
-  // mutations → data:write. Example:
-  //   if (path.startsWith('/api/v1/items')) return isRead ? 'data:read' : 'data:write';
+  // Products: open your domain endpoints here — reads → presentations:read,
+  // mutations → presentations:write. Example:
+  //   if (path.startsWith('/api/v1/items')) return isRead ? 'presentations:read' : 'presentations:write';
   return null;
 }

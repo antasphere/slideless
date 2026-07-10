@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { Principal } from '@platform/contract';
+import type { Principal } from '@slideless/contract';
 import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } from './errors.js';
 
 /**
@@ -11,8 +11,8 @@ import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } fro
  * from the verified credential, never from a tool parameter.
  *
  * Conventions (ported from the predecessor MCP template):
- *  - read tools: `readOnlyHint: true` + a data:read checkScope
- *  - write tools: confirm-first description + data:write (+ destructiveHint
+ *  - read tools: `readOnlyHint: true` + a presentations:read checkScope
+ *  - write tools: confirm-first description + presentations:write (+ destructiveHint
  *    for deletes); see the write-pattern comment at the bottom
  *  - checkScope is UX only — the API's fail-closed allowlist is the
  *    enforcement point; this just gives the model a clean, actionable error.
@@ -31,11 +31,11 @@ export interface McpServerInfo {
   instanceName: string;
 }
 
-function checkScope(principal: Principal, scope: 'data:read' | 'data:write'): ToolTextResult | null {
+function checkScope(principal: Principal, scope: 'presentations:read' | 'presentations:write'): ToolTextResult | null {
   if (principal.scopes && !principal.scopes.has(scope)) {
     return deny(
       `Missing scope "${scope}": this connection was not granted ` +
-        (scope === 'data:write' ? 'permission to create or edit data.' : 'permission to read data.') +
+        (scope === 'presentations:write' ? 'permission to create or edit data.' : 'permission to read data.') +
         ' Reconnect the MCP server and approve the permission on the consent screen.'
     );
   }
@@ -62,7 +62,7 @@ async function callApi(ctx: McpToolContext, path: string, init: RequestInit = {}
 
 export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpServer {
   const server = new McpServer(
-    { name: 'platform', version: info.version },
+    { name: 'slideless', version: info.version },
     {
       instructions:
         `MCP endpoint of the "${info.instanceName}" instance. Every tool acts as the connected ` +
@@ -83,7 +83,7 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
       annotations: { readOnlyHint: true }
     },
     async () => {
-      const denied = checkScope(ctx.principal, 'data:read');
+      const denied = checkScope(ctx.principal, 'presentations:read');
       if (denied) return denied;
       return wrapToolErrors(async () => jsonText(await callApi(ctx, '/api/v1/me')));
     }
@@ -111,7 +111,7 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
       annotations: { readOnlyHint: true }
     },
     async ({ limit, cursor }) => {
-      const denied = checkScope(ctx.principal, 'data:read');
+      const denied = checkScope(ctx.principal, 'presentations:read');
       if (denied) return denied;
       return wrapToolErrors(async () => {
         const query = new URLSearchParams();
@@ -127,7 +127,7 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
   // mutation to machine credentials). Rules: no readOnlyHint; add
   // `destructiveHint: true` for deletes; the description MUST tell the model
   // to confirm with the user first (hosts rely on that sentence); gate on
-  // data:write; NEVER accept the acting user as a parameter (identity comes
+  // presentations:write; NEVER accept the acting user as a parameter (identity comes
   // from the verified credential, bound server-side by the API).
   //
   // server.registerTool(
@@ -138,7 +138,7 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
   //     inputSchema: { name: z.string().max(200).describe('Item name (1-200 chars).') }
   //   },
   //   async ({ name }) => {
-  //     const denied = checkScope(ctx.principal, 'data:write');
+  //     const denied = checkScope(ctx.principal, 'presentations:write');
   //     if (denied) return denied;
   //     return wrapToolErrors(async () =>
   //       jsonText(

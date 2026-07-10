@@ -63,7 +63,7 @@ full-workspace export, with these load-bearing semantics:
   admin on the admin surface, `user.account_delete` with the `system` actor
   on the self-service surface (written after the cascade, FK-safe).
 - **Export rides a dedicated opt-in `data:export` scope**, never
-  `data:read` — otherwise any admin read key would be a whole-tenant
+  `presentations:read` — otherwise any admin read key would be a whole-tenant
   exfiltration tool. Session access requires admin+. The export-vs-delete
   race is not locked: an export running while an account is deleted may see
   partially anonymized rows — accepted for a single-workspace instance.

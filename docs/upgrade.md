@@ -14,7 +14,7 @@ nothing left to do). `/readyz` stays 503 until the schema is current.
 `latest` follows tagged releases. To pin, set in `.env`:
 
 ```bash
-APP_IMAGE=ghcr.io/codika-io/codika-platform-template:1.2.3
+APP_IMAGE=ghcr.io/antasphere/slideless:1.2.3
 ```
 
 Tags published per release: `latest`, `X`, `X.Y`, `X.Y.Z`; the main branch

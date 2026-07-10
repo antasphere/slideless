@@ -5,8 +5,8 @@ import { createServer } from 'node:net';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { run } from '@platform/cli';
-import type { CliIo } from '@platform/cli';
+import { run } from '@slideless/cli';
+import type { CliIo } from '@slideless/cli';
 import {
   createDatabase,
   createTestApp,
@@ -48,7 +48,7 @@ async function cli(args: string[], apiKey?: string): Promise<{ code: number; out
   const out: string[] = [];
   const err: string[] = [];
   const io: CliIo = {
-    env: { PLATFORM_URL: base, ...(apiKey ? { PLATFORM_API_KEY: apiKey } : {}) },
+    env: { SLIDELESS_URL: base, ...(apiKey ? { SLIDELESS_API_KEY: apiKey } : {}) },
     out: { write: (s) => out.push(s) },
     err: { write: (s) => err.push(s) }
   };
@@ -84,8 +84,8 @@ beforeAll(async () => {
         body: JSON.stringify({ name: `cli-${scopes.join('-')}`, scopes })
       })
     );
-  writeKey = (await mint(['data:read', 'data:write'])).key;
-  readKey = (await mint(['data:read'])).key;
+  writeKey = (await mint(['presentations:read', 'presentations:write'])).key;
+  readKey = (await mint(['presentations:read'])).key;
 }, 240_000);
 
 afterAll(async () => {
@@ -94,7 +94,7 @@ afterAll(async () => {
   await container?.stop();
 });
 
-describe('platform CLI against a live instance', () => {
+describe('slideless CLI against a live instance', () => {
   it('instance discovery works without a key', async () => {
     const { code, out } = await cli(['instance']);
     expect(code).toBe(0);
@@ -115,7 +115,7 @@ describe('platform CLI against a live instance', () => {
       await fetch(`${base}/api/v1/api-keys`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: ownerCookie },
-        body: JSON.stringify({ name: 'cli-ttl', scopes: ['data:read'], expiresInDays: 30 })
+        body: JSON.stringify({ name: 'cli-ttl', scopes: ['presentations:read'], expiresInDays: 30 })
       })
     );
     const { code, out } = await cli(['whoami'], minted.key);

@@ -13,7 +13,7 @@
   import { formatBytes, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { FileInfo } from '@platform/contract';
+  import type { FileInfo } from '@slideless/contract';
 
   const list = createPagedList<FileInfo>(async (p) => {
     const { files, nextCursor } = await api.files(p);

@@ -18,7 +18,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo lint typecheck test build
       - run: pnpm format:check
-      - run: pnpm --filter @platform/server drift:check
+      - run: pnpm --filter @slideless/server drift:check
 
   integration:
     runs-on: ubuntu-latest
@@ -30,7 +30,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@platform/db --filter=@platform/server --filter=@platform/cli
+      - run: pnpm turbo build --filter=@slideless/db --filter=@slideless/server --filter=@slideless/cli
       - run: pnpm turbo test:integration
 
   # The Profile B rehearsal: a real multi-replica stack (advisory-lock
@@ -47,7 +47,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: codika-platform-template:scale
+          tags: slideless:scale
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Run the multi-replica scale drill

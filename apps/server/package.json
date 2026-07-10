@@ -1,5 +1,5 @@
 {
-  "name": "@platform/server",
+  "name": "@slideless/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -30,8 +30,8 @@
     "@opentelemetry/resources": "^2.9.0",
     "@opentelemetry/sdk-trace-base": "^2.9.0",
     "@opentelemetry/sdk-trace-node": "^2.9.0",
-    "@platform/contract": "workspace:*",
-    "@platform/db": "workspace:*",
+    "@slideless/contract": "workspace:*",
+    "@slideless/db": "workspace:*",
     "better-auth": "1.6.15",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.9.0",
@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@better-auth/cli": "1.4.21",
-    "@platform/cli": "workspace:*",
+    "@slideless/cli": "workspace:*",
     "@testcontainers/postgresql": "^11.0.0",
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.15.0",

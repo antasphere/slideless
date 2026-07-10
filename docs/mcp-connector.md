@@ -28,11 +28,11 @@ every call).
 
 ```bash
 claude mcp add --transport http platform https://platform.example.com/mcp \
-  --header "Authorization: Bearer key_..."
+  --header "Authorization: Bearer slk_..."
 ```
 
 Mint keys in the dashboard (API keys → New). Scopes gate what tools can do:
-`data:read` for reads, `data:write` for mutations.
+`presentations:read` for reads, `presentations:write` for mutations.
 
 ## Verify an instance
 
@@ -48,8 +48,8 @@ one call.
 ## For products extending the template
 
 Tools live in `apps/server/src/mcp/`. Conventions (ported from a proven
-predecessor MCP template): reads declare `readOnlyHint` and check `data:read`;
-writes describe themselves as confirm-first and check `data:write`
+predecessor MCP template): reads declare `readOnlyHint` and check `presentations:read`;
+writes describe themselves as confirm-first and check `presentations:write`
 (tool-level checks are UX — the API's fail-closed allowlist in
 `middleware/scopes.ts` is the enforcement point); tools call the instance's
 own API in-process forwarding the caller's bearer (MCP is just another API

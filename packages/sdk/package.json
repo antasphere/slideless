@@ -1,5 +1,5 @@
 {
-  "name": "@platform/sdk",
+  "name": "@slideless/sdk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@platform/contract": "workspace:*"
+    "@slideless/contract": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.0"

@@ -88,8 +88,8 @@
 
   const scopeLines = $derived.by(() => {
     const lines: { icon: typeof Eye; text: string }[] = [];
-    if (scopes.includes('data:read')) lines.push({ icon: Eye, text: t('consent.scopeRead') });
-    if (scopes.includes('data:write')) lines.push({ icon: Pencil, text: t('consent.scopeWrite') });
+    if (scopes.includes('presentations:read')) lines.push({ icon: Eye, text: t('consent.scopeRead') });
+    if (scopes.includes('presentations:write')) lines.push({ icon: Pencil, text: t('consent.scopeWrite') });
     if (scopes.includes('data:export')) {
       lines.push({ icon: Download, text: t('consent.scopeExport') });
     }

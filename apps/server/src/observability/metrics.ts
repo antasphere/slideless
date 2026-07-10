@@ -2,7 +2,7 @@ import { collectDefaultMetrics, Gauge, Histogram, Registry } from 'prom-client';
 import type { MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
-import { files, type Db } from '@platform/db';
+import { files, type Db } from '@slideless/db';
 import type PgBoss from 'pg-boss';
 import { constantTimeEquals } from '../constant-time.js';
 import { USAGE_QUEUE } from '../jobs/pgboss.js';

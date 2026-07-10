@@ -17,7 +17,7 @@ COOKIE=$(mktemp)
 curl -s -c "$COOKIE" -X POST "$BASE/api/v1/auth/sign-in/email" -H 'content-type: application/json' \
   -H "origin: $BASE" -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" >/dev/null
 KEY=$(curl -s -b "$COOKIE" -X POST "$BASE/api/v1/api-keys" -H 'content-type: application/json' \
-  -d '{"name":"loadtest","scopes":["data:read"]}' | grep -o '"key":"[^"]*"' | cut -d'"' -f4)
+  -d '{"name":"loadtest","scopes":["presentations:read"]}' | grep -o '"key":"[^"]*"' | cut -d'"' -f4)
 rm -f "$COOKIE"
 
 run() { echo; echo "=== $1"; npx -y autocannon -c 50 -d 10 "${@:2}"; }

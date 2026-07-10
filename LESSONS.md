@@ -225,8 +225,8 @@ uuid` → sanitized 500. Validate at the contract (`uuidParams` in
   feeding it to `lt(id, …)` overflows Postgres → 500. Treat out-of-range
   like NaN (ignore, serve page 1).
 - **The sdk/contract/cli `exports` must point at built `dist` JS, not
-  `./src/index.ts`.** The CLI ships as built JS; when `@platform/sdk` (and
-  `@platform/contract`) resolved to raw TS, `node dist/bin.js` loaded
+  `./src/index.ts`.** The CLI ships as built JS; when `@slideless/sdk` (and
+  `@slideless/contract`) resolved to raw TS, `node dist/bin.js` loaded
   TypeScript with parameter-property constructors and threw
   `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. Any package a built binary loads at
   runtime needs a `dist`-pointing `exports` (+ a real build step) so it runs

@@ -93,7 +93,7 @@ What the template enforces, and the one rule its consumers must keep.
   workspace as a zip (tables as JSON, audit log as NDJSON, every live blob;
   invitation token hashes and API-key secret hashes never leave) — for an
   admin+ session, or an API key deliberately granted the opt-in
-  `data:export` scope (never implied by `data:read`, or any admin read key
+  `data:export` scope (never implied by `presentations:read`, or any admin read key
   would double as a whole-tenant exfiltration tool). Account deletion is
   **sessions only, never machines**: the self-service danger zone
   (password-gated) and the admin Members action; `DELETE /members/{id}` is

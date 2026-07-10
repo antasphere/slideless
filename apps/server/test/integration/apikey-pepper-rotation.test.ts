@@ -53,7 +53,7 @@ async function signIn(): Promise<string> {
 
 async function mint(cookie: string, name: string) {
   const res = await app.app.request('/api/v1/api-keys', {
-    ...json({ name, scopes: ['data:read'] }),
+    ...json({ name, scopes: ['presentations:read'] }),
     headers: { 'content-type': 'application/json', cookie }
   });
   expect(res.status).toBe(201);

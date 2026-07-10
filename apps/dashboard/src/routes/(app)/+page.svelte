@@ -5,7 +5,7 @@
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
-  import type { FileInfo, Member } from '@platform/contract';
+  import type { FileInfo, Member } from '@slideless/contract';
 
   let { data } = $props();
 

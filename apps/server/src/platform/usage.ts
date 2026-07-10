@@ -1,4 +1,4 @@
-import type { UsageEvent, UsageSink } from '@platform/contract';
+import type { UsageEvent, UsageSink } from '@slideless/contract';
 
 /**
  * Default UsageSink: drop everything. Domain code always emits usage events

@@ -20,7 +20,7 @@ import {
   verification,
   workspaceMembers,
   type Db
-} from '@platform/db';
+} from '@slideless/db';
 import type { Env } from '../env.js';
 
 /**
@@ -95,7 +95,7 @@ export interface CreateAuthOptions {
 export const AUTH_BASE_PATH = '/api/v1/auth';
 
 /**
- * Products rename data:read / data:write to their domain's scopes — also in
+ * Products rename presentations:read / presentations:write to their domain's scopes — also in
  * middleware/scopes.ts and the consent page copy.
  */
 export const OAUTH_SCOPES = [
@@ -103,10 +103,10 @@ export const OAUTH_SCOPES = [
   'profile',
   'email',
   'offline_access',
-  'data:read',
-  'data:write',
+  'presentations:read',
+  'presentations:write',
   // Full-workspace export download — a deliberate opt-in, never implied by
-  // data:read (see middleware/scopes.ts).
+  // presentations:read (see middleware/scopes.ts).
   'data:export'
 ] as const;
 

@@ -7,9 +7,9 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, eq, isNull } from 'drizzle-orm';
-import { apiKeys, auditLog, files, workspaceMembers } from '@platform/db';
-import { run } from '@platform/cli';
-import type { CliIo } from '@platform/cli';
+import { apiKeys, auditLog, files, workspaceMembers } from '@slideless/db';
+import { run } from '@slideless/cli';
+import type { CliIo } from '@slideless/cli';
 import { AccountDeletionService, LastOwnerError } from '../../src/accounts/deletion.js';
 import { AuditService } from '../../src/audit/service.js';
 import {
@@ -25,7 +25,7 @@ import {
  * GDPR export + delete (M5):
  *  - GET /workspace/export streams a complete zip (sections, no secrets,
  *    blobs byte-identical, soft-deleted blobs skipped with a reason);
- *  - the dedicated opt-in data:export scope (data:read must NOT reach it),
+ *  - the dedicated opt-in data:export scope (presentations:read must NOT reach it),
  *    the admin role gate, the ws-export rate limit, and audit coverage for
  *    session AND machine principals;
  *  - self-service and admin account deletion: cascade semantics with files
@@ -295,8 +295,8 @@ describe('GET /workspace/export', () => {
     const zip = new AdmZip(Buffer.from(await ok.arrayBuffer()));
     expect(zip.getEntry('manifest.json')).toBeTruthy();
 
-    // data:read alone must NEVER reach the export (exfiltration guard).
-    const readOnly = await mintKey(ownerCookie, 'read-only', ['data:read']);
+    // presentations:read alone must NEVER reach the export (exfiltration guard).
+    const readOnly = await mintKey(ownerCookie, 'read-only', ['presentations:read']);
     const denied = await exportRequest({
       authorization: `Bearer ${readOnly.key}`,
       'x-forwarded-for': IPS.machine
@@ -366,7 +366,7 @@ describe('self-service account deletion (POST /auth/delete-user)', () => {
     );
     const victimUserId = victimMe.user.id as string;
     const victimFileId = await upload(victimCookie, 'victim-notes.txt', 'personal upload by victim');
-    const victimKey = await mintKey(victimCookie, 'victim-key', ['data:read']);
+    const victimKey = await mintKey(victimCookie, 'victim-key', ['presentations:read']);
 
     const [uploadAudit] = await app.db.db
       .select({ id: auditLog.id, actorUserId: auditLog.actorUserId })
@@ -486,7 +486,7 @@ describe('admin member deletion (DELETE /members/{id})', () => {
     );
     const victim2UserId = victim2Me.user.id as string;
     const victim2FileId = await upload(victim2Cookie, 'victim2-report.txt', 'uploaded by victim2');
-    const victim2Key = await mintKey(victim2Cookie, 'victim2-key', ['data:read']);
+    const victim2Key = await mintKey(victim2Cookie, 'victim2-key', ['presentations:read']);
     const victim2MemberId = await memberIdOf(VICTIM2.email);
 
     const res = await app.app.request(`/api/v1/members/${victim2MemberId}`, {
@@ -525,13 +525,13 @@ describe('admin member deletion (DELETE /members/{id})', () => {
 });
 
 describe('CLI export against a live server', () => {
-  it('platform export -o <path> writes a valid zip', async () => {
+  it('slideless export -o <path> writes a valid zip', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'gdpr-cli-'));
     const out = join(dir, 'bundle.zip');
     const outLines: string[] = [];
     const errLines: string[] = [];
     const io: CliIo = {
-      env: { PLATFORM_URL: base, PLATFORM_API_KEY: exportKey },
+      env: { SLIDELESS_URL: base, SLIDELESS_API_KEY: exportKey },
       out: { write: (s) => outLines.push(s) },
       err: { write: (s) => errLines.push(s) }
     };

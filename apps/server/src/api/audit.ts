@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, eq, lt, desc } from 'drizzle-orm';
-import { auditListRoute } from '@platform/contract/routes';
-import { auditLog, user as userTable, type Db } from '@platform/db';
+import { auditListRoute } from '@slideless/contract/routes';
+import { auditLog, user as userTable, type Db } from '@slideless/db';
 import { requireRole } from '../middleware/auth-context.js';
 
 export function registerAuditRoutes(api: OpenAPIHono, db: Db): void {

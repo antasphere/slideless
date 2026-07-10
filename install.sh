@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-line VPS installer:
-#   curl -fsSL https://raw.githubusercontent.com/codika-io/codika-platform-template/main/install.sh | \
-#     sudo bash -s -- --domain platform.example.com
+#   curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/main/install.sh | \
+#     sudo bash -s -- --domain slideless.example.com
 #
 # Steps: prereqs (git, docker) → clone/update → setup.sh → UFW (22, 80, 443,
 # and 3000 only when no domain/proxy is used). TLS: see docs/reverse-proxy.md.
@@ -11,8 +11,8 @@ info() { printf '\033[0;34m▸ %s\033[0m\n' "$*"; }
 success() { printf '\033[0;32m✔ %s\033[0m\n' "$*"; }
 fail() { printf '\033[0;31m✖ %s\033[0m\n' "$*" >&2; exit 1; }
 
-REPO_URL="https://github.com/codika-io/codika-platform-template.git"
-INSTALL_DIR="/opt/platform"
+REPO_URL="https://github.com/antasphere/slideless.git"
+INSTALL_DIR="/opt/slideless"
 DOMAIN=""
 
 while [ $# -gt 0 ]; do

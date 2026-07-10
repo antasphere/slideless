@@ -3,7 +3,7 @@
  * configuration entry point). Types/defaults/required come from schema
  * introspection; prose comes from the doc comment above each key in
  * env.ts — so the reference cannot drift from the code that parses the
- * environment. Run: pnpm --filter @platform/server docs:env
+ * environment. Run: pnpm --filter @slideless/server docs:env
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -91,7 +91,7 @@ const table = (rs: Row[]) =>
 const out = `# Environment reference
 
 Generated from the zod env schema (\`apps/server/src/env.ts\`) — do not edit
-by hand; run \`pnpm --filter @platform/server docs:env\` after changing the
+by hand; run \`pnpm --filter @slideless/server docs:env\` after changing the
 schema. The app refuses to boot on an invalid environment and prints a
 readable table of problems.
 

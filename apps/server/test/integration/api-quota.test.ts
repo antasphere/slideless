@@ -61,7 +61,7 @@ describe('sustained quota: isolation, threshold, headers, exemptions', () => {
     // These two mints are the session bucket's only pre-test consumption (2/5).
     const mint = (name: string) =>
       app.app.request('/api/v1/api-keys', {
-        ...json({ name, scopes: ['data:read'] }),
+        ...json({ name, scopes: ['presentations:read'] }),
         headers: { 'content-type': 'application/json', cookie: ownerCookie }
       });
     keyA = (await readJson(await mint('key-a'))).key;
@@ -162,7 +162,7 @@ describe('burst cap: 1-second spikes 429 and a fresh window recovers', () => {
     );
     const cookie = extractCookie(signIn);
     const mint = await app.app.request('/api/v1/api-keys', {
-      ...json({ name: 'burst', scopes: ['data:read'] }),
+      ...json({ name: 'burst', scopes: ['presentations:read'] }),
       headers: { 'content-type': 'application/json', cookie }
     });
     key = (await readJson(mint)).key;

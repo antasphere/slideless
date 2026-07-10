@@ -1,8 +1,8 @@
 import PgBoss from 'pg-boss';
 import pg from 'pg';
 import { sql } from 'drizzle-orm';
-import type { Db } from '@platform/db';
-import type { UsageEvent, UsageSink } from '@platform/contract';
+import type { Db } from '@slideless/db';
+import type { UsageEvent, UsageSink } from '@slideless/contract';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';

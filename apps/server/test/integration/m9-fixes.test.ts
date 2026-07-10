@@ -46,7 +46,7 @@ beforeAll(async () => {
   ownerCookie = extractCookie(signIn);
   const minted = await readJson(
     await app.app.request('/api/v1/api-keys', {
-      ...json({ name: 'm9-key', scopes: ['data:read'] }),
+      ...json({ name: 'm9-key', scopes: ['presentations:read'] }),
       headers: { 'content-type': 'application/json', cookie: ownerCookie }
     })
   );

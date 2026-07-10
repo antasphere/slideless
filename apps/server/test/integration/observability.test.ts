@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import type { UsageEvent } from '@platform/contract';
+import type { UsageEvent } from '@slideless/contract';
 import { desc } from 'drizzle-orm';
-import { auditLog } from '@platform/db';
+import { auditLog } from '@slideless/db';
 import {
   createDatabase,
   createTestApp,
@@ -113,7 +113,7 @@ describe('metrics', () => {
 describe('request-id correlation (exit criterion 11)', () => {
   it('one request id flows response header → audit row', async () => {
     const res = await app.app.request('/api/v1/api-keys', {
-      ...json({ name: 'corr key', scopes: ['data:read'] }),
+      ...json({ name: 'corr key', scopes: ['presentations:read'] }),
       headers: { 'content-type': 'application/json', cookie, 'x-request-id': 'corr-test-0001' }
     });
     expect(res.status).toBe(201);
