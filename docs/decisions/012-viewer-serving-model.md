@@ -1,6 +1,11 @@
 # ADR 012 — Viewer serving model: how Slideless renders user-authored HTML
 
-Status: accepted (2026-07-10)
+Status: accepted (2026-07-10) — Phase 4 shipped the same-origin
+`CSP: sandbox` mode with the exact header set below
+(`apps/server/src/viewer/routes.ts`), the securityHeaders clobber guard
+upstreamed, regression tests on every viewer response shape, and
+`VIEWER_BASE_URL` as the config knob for the separate-origin hardening path
+(still the target architecture; wildcard/per-token subdomains remain open).
 
 ## Context
 

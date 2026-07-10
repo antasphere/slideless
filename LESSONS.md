@@ -409,3 +409,38 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   a per-row membership re-check immediately before each delete + the 0009
   trigger backstopping the sole-owner cascade. Bounded batches with a
   no-progress break; `0` disables it.
+
+## Phase 4 (sharing + public viewer, 2026-07-10)
+
+- **The viewer's entire isolation is one header on one route — and the
+  global `securityHeaders` middleware was silently clobbering exactly that
+  header.** Every `text/html` response got the dashboard CSP stamped over a
+  per-route `CSP: sandbox` (found by the ADR 012 spike). The middleware now
+  sets CSP/Referrer-Policy only when the route did not (set-if-absent), and
+  `test/integration/sharing-viewer.test.ts` asserts the exact sandbox set —
+  `sandbox allow-scripts allow-forms allow-popups allow-modals
+  allow-downloads`, never `allow-same-origin` — on every viewer response
+  shape (entry, HTML sub-page, asset, 206, pinned/latest, password-unlocked).
+  Treat any diff touching those headers as security-critical.
+- **A pure secret-as-lookup-key credential cannot store a pepper version.**
+  Share-token resolution computes sha256(secret + pepper) under EVERY
+  registered pepper version and probes the unique hash index (O(rotations));
+  API keys avoid this only because the keyId travels in the credential.
+  Dropping a version from `API_KEY_PEPPERS` fails share links minted under
+  it closed, same as keys.
+- **Hash-only storage means "email this link" cannot resend the original
+  URL** — the send route mints a fresh secret, mails it, and only persists
+  the new hash after the SMTP call succeeds (a failed delivery leaves the
+  old link intact). Consequence: sending retires the create-time URL for
+  that token; per-recipient tokens make that the natural resend semantics
+  (documented on the route contract).
+- **The password-unlock cookie MACs a fingerprint of the current password
+  hash** (HMAC over tokenId + expiry + hash-fingerprint, key = auth secret):
+  changing/clearing the password instantly invalidates every outstanding
+  unlock with zero server-side state. Cookie is token-named + Path-scoped to
+  `/v/{secret}`, so it also covers asset subpaths and never leaks across
+  tokens.
+- **Viewer asset URLs are NOT content-addressed — never serve them
+  `immutable`.** A latest-mode token re-maps paths on every push and
+  revocation must bite, so assets go out `private, no-cache` with the
+  content-sha ETag (cheap 304s), and the entry is `no-store` outright.

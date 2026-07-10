@@ -183,3 +183,39 @@ actionable; link the template file/line it concerns.
 - **The explicit idempotency target list is the right shape** — adding
   `POST /presentations/uploads` was one Set entry + a doc line. No friction,
   recording the confirmation.
+
+## 2026-07-10 — Phase 4 (sharing + the public viewer)
+
+- **The global `securityHeaders` middleware unconditionally clobbered
+  per-route CSP and Referrer-Policy** — the exact fail-dangerous class ADR
+  012 warns about: a route that sets `Content-Security-Policy: sandbox …`
+  for user content had it silently replaced by the dashboard CSP on every
+  `text/html` response. Fixed here with `!c.res.headers.has(...)` guards
+  (set-if-absent). The template should ship the guarded form: a baseline
+  header middleware must be a DEFAULT, never an override — any product that
+  adds a public content route hits this, and nothing fails loudly when it
+  bites.
+- **`serveBlob` needed disposition/header override seams for a sandboxed
+  inline surface.** The safe-serving helper hardcodes
+  `contentDispositionFor` (attachment for active types) and an `immutable`
+  Cache-Control — both correct for the app-origin files surface, both wrong
+  for a sandboxed viewer whose URLs are not content-addressed. Two optional
+  fields (`contentDisposition`, `extraHeaders`) made it reusable; consider
+  upstreaming that shape (documented as "only under an isolation regime").
+- **`PepperRegistry` only exposed `get(version)` + `current` — resolution
+  for versionless credentials was impossible.** API keys carry their pepper
+  version in the row (keyId lookup first); a share-token secret IS the
+  lookup key, so resolving across rotations needs the registered version
+  list to compute candidate hashes. Added `versions: readonly number[]` to
+  the registry. Any product token whose hash is the index key (share links,
+  claim tokens...) needs this — worth having in the template from the start.
+- **Hash-only token storage forces a choice on "email this link later":
+  the server cannot re-derive the URL.** We made send ROTATE the token onto
+  a fresh secret (mint → mail → persist, so a failed delivery never bricks
+  the old link) and documented it in the route contract. A template-level
+  note on this pattern (one-shot secrets vs. later-delivery flows) would
+  save every product the same design detour.
+- **The auth-surface rate-limiter registry extended cleanly** — one
+  `viewerPassword: make('viewer-pw', 10, 15*60)` entry for the password
+  gate's per-IP+token failure wall. Confirming the registry-of-named-buckets
+  shape scales to product surfaces.

@@ -254,3 +254,28 @@ session cookies equals session theft. A product that must render user
 content (e.g. a presentation viewer) does it under a sandboxing CSP without
 `allow-same-origin`, or on a separate origin entirely. The files module's
 attachment-by-default policy implements this; keep it when extending.
+
+### The one sanctioned exception: the public viewer (Phase 4, ADR 012)
+
+Slideless's whole point is rendering user-authored HTML, so `/v/{secret}`
+(apps/server/src/viewer/routes.ts) serves deck content **inline** — under
+the exact regime the ADR 012 browser spike proved safe on Chromium, WebKit,
+and Firefox:
+
+- Every user-content response carries
+  `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups
+  allow-modals allow-downloads` (an **opaque origin**: no cookies, no
+  storage, no service workers, no credentialed same-origin API),
+  `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
+  **Never `allow-same-origin`, never `allow-top-navigation*`** — either one
+  re-opens session theft.
+- The global `securityHeaders` middleware is guarded to never clobber those
+  per-route headers, and regression tests assert the header set on every
+  viewer response shape (the protection is one header on one route — treat
+  any change there as security-critical).
+- Share links are per-recipient 384-bit path secrets, stored hash-only
+  (sha256 + the versioned API-key pepper, ADR 008); optional expiry and an
+  scrypt-hashed viewer password gate the bytes; revocation is instant
+  (`no-store` entries, revalidated assets).
+- `VIEWER_BASE_URL` moves share links onto a dedicated user-content origin —
+  the ADR 012 hardening path; the sandbox stays on as defense-in-depth.
