@@ -279,3 +279,55 @@ and Firefox:
   (`no-store` entries, revalidated assets).
 - `VIEWER_BASE_URL` moves share links onto a dedicated user-content origin —
   the ADR 012 hardening path; the sandbox stays on as defense-in-depth.
+
+### The second sanctioned exception: the token-authed annotation surface (Phase 5)
+
+Annotator share links (`can_annotate`) get an overlay client injected into
+the viewer's ENTRY HTML (browser navigations only — never `?raw`, never
+non-HTML Accepts, never agent-style `x-viewer-password` unlocks; the sandbox
+header set is re-asserted on injected responses and the content-sha ETag is
+dropped because the bytes are mutated). That overlay runs inside the
+sandboxed OPAQUE origin, so it authenticates the way the viewer does — with
+the token secret from `location.pathname` — against a deliberately PUBLIC
+surface, `GET|POST /api/v1/viewer/{secret}/annotations`
+(apps/server/src/viewer/annotations-api.ts):
+
+- **Token-authed, never principal-authed.** Every call re-resolves the
+  secret (revoked → 403, expired → 410, unknown → 404) and requires
+  `can_annotate`; password-protected tokens must additionally present the
+  signed unlock MAC the server injected after the entry passed the password
+  gate (or the raw `x-viewer-password`). No cookie, session, or scope is
+  ever consulted — and a machine credential presented there dies at the
+  fail-closed scope gate (the path is deliberately unlisted).
+- **Narrow by construction.** It can only create annotations on, and list
+  the token's OWN annotations of, the one deck+version the token resolves
+  to; the reviewer wire shape exposes no workspace/deck/user ids.
+- **Abuse-bounded.** Creates burn a per-IP+token bucket (60/10 min), failed
+  secret resolutions a per-IP one; bodies are zod-validated (10 KB note,
+  8 KB selection, 120-char name).
+- **CORS is wide open (`*`) on exactly this route pair** because the caller
+  sits in an opaque origin (`Origin: null`) and nothing here is
+  credentialed — the token in the path is the whole credential, so CORS is
+  not the boundary (the public-OAuth-endpoints precedent). The overlay
+  itself always fetches `credentials: 'omit'`, closing ADR 012's Firefox
+  cookie-forwarding residual on this path.
+- **Trust boundary:** the overlay shares the document with hostile deck JS.
+  It holds nothing the deck could not already reach (the secret is in the
+  URL; the unlock MAC only unlocks annotation calls for this same token),
+  so a malicious deck gains no capability beyond spamming its own reviewers'
+  notes into its own owner's inbox — bounded by the rate limit.
+
+### Per-deck collaborators (Phase 5)
+
+Dev collaborators are per-deck email grants (ADR 011) claimed through the
+invitations pattern: hash-only two-token storage (the emailed token proves
+mailbox control and may set `emailVerified`; the copyable link never does),
+14-day pending TTL, 10 live grants per deck. Claiming makes a new account an
+ordinary workspace MEMBER (the platform authenticates through memberships) —
+so a collaborator can read workspace-scoped listings like any member, while
+deck WRITE stays gated: an active dev can push versions (recorded as
+`created_by_role = 'dev'`), manage the deck's share tokens and annotations,
+but never delete the deck or alter its collaborator roster (owner/admin
+only). `/collaborators/lookup` + `/collaborators/claim` are public
+token-redemption endpoints for humans, rate-limited like invitation
+acceptance and deliberately unlisted in the machine scope allowlist.

@@ -73,6 +73,16 @@ Other shapes fixed here:
 - **Collaborators are per-deck email grants** claimed at sign-in/sign-up via
   a hashed claim token (the invitations pattern); `user_id` set-nulls if the
   claimed account dies, reverting the grant to unclaimed.
+  *Status update (Phase 5, 2026-07-10): shipped.* The claim token became the
+  full two-token invitation pattern (ADR 009): `claim_email_token_hash`
+  (migration 0016, additive) carries a second token that exists only in the
+  invite email, so claiming with it may honestly set `emailVerified`.
+  Grants cap at 10 live (active + unexpired-pending) per deck, pendings
+  expire after 14 days, and an ACTIVE dev commits versions as
+  `created_by_role = 'dev'`, manages share tokens and annotations, but can
+  neither delete the deck nor touch its collaborator roster. Claiming makes
+  a new account an ordinary workspace MEMBER (the platform authenticates
+  through memberships); the per-deck grant rides on top.
 - **Annotations anchor to (presentation, version)** with an opaque jsonb
   `selection`; author is either a principal (`author_user_id`) or an
   anonymous reviewer through a token (`share_token_id` + `author_name`),

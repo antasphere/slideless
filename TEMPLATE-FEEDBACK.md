@@ -219,3 +219,44 @@ actionable; link the template file/line it concerns.
   `viewerPassword: make('viewer-pw', 10, 15*60)` entry for the password
   gate's per-IP+token failure wall. Confirming the registry-of-named-buckets
   shape scales to product surfaces.
+
+## 2026-07-10 — Phase 5 (collaborators + annotations)
+
+- **The two-token invitation pattern is not extractable.**
+  `invitations/service.ts` (mint pair → sha256 both → find-live-and-report-
+  which → guarded one-shot redeem) had to be re-implemented verbatim for the
+  per-deck collaborator grants (`collaborators/service.ts`) because the
+  service is welded to the `invitations`/`workspace_members` tables. A tiny
+  template helper — `mintClaimTokenPair()` + `matchClaimToken(hashA, hashB,
+  presented)` — would let every product token-redemption surface (deck
+  grants here; any future resource-scoped invite) reuse the crypto + the
+  ADR 009 which-token-proves-mailbox semantics instead of copying them.
+- **"Public API path" means two different things and only one is written
+  down.** `isPublicApiPath` (auth-context.ts) skips credential resolution
+  entirely; the OTHER public tier — routes like `/invitations/accept` that
+  stay outside `requireAuth` but still resolve an optional session and rely
+  on the fail-closed scope gate to keep machines out — exists only as an
+  unwritten convention. Phase 5 added two more of the second kind
+  (`/collaborators/lookup|claim`) plus a genuinely anonymous surface
+  (`/api/v1/viewer/*`). A short doc block over `isPublicApiPath` naming the
+  two tiers (and that "not requireAuth + unlisted in scopes.ts" is the
+  sanctioned pattern for human token-redemption endpoints) would prevent a
+  future implementer from "fixing" one into the other.
+- **`user.created` is emitted from exactly one call site (invitation
+  accept), not from a central identity seam.** Products subscribing to it
+  for claim-at-signup semantics (collaborator grants here) must know that
+  setup's owner creation and any future account entrance do NOT fire it —
+  Phase 5's claim endpoint has to emit it manually. Emitting from a single
+  identity-layer hook (Better Auth databaseHooks user.create.after) would
+  make the event trustworthy by construction.
+- **`keysetBefore`'s `workspaceId` parameter is really a scope column.**
+  Phase 4 already scoped it by `presentationId` for tokens/versions; Phase 5
+  repeated that for collaborators and annotations. The name keeps demanding
+  a comment at every call site — renaming the field to `scopeColumn` /
+  `scope` in the template would erase four copies of the same explanation.
+- **Contract routes that declare no 403 force forbidden-as-404.** The frozen
+  annotation list/create entries declare only 401/404, so the handlers must
+  answer 404 for an authorized-user-but-wrong-role (they do, documented).
+  Template guidance for contract authors — "every authed resource route
+  declares 401 AND 403 AND 404 unless hiding existence is deliberate" —
+  would make that a choice instead of an accident.

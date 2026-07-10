@@ -444,3 +444,42 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   `immutable`.** A latest-mode token re-maps paths on every push and
   revocation must bite, so assets go out `private, no-cache` with the
   content-sha ETag (cheap 304s), and the entry is `no-store` outright.
+
+## Phase 5 (collaborators + annotations, 2026-07-10)
+
+- **"Browser entry" for overlay injection is three conditions, not one.**
+  `can_annotate` alone would hand the overlay to agents: the transform fires
+  only when the Accept header includes `text/html` AND the request is not
+  `?raw`/`?format=html` AND it did not authenticate agent-style via
+  `x-viewer-password`. Injected responses must re-assert the full ADR 012
+  sandbox header set and DROP the ETag — serveBlob's content-sha ETag would
+  lie about mutated bytes (raw/plain entries keep it, tests pin both).
+- **The opaque origin makes the overlay a `credentials: 'omit'`,
+  `Origin: null` caller.** Its POSTs preflight (application/json is not a
+  "simple" content type), so the public annotation routes need explicit
+  OPTIONS handling + wildcard CORS — safe ONLY because the surface is
+  token-authed, never cookie-authed (the oauth-public precedent). `omit`
+  also closes ADR 012's Firefox cookie-forwarding residual for this path.
+- **A password-gated token cannot re-prove the password from inside the
+  sandbox** (the unlock cookie never travels cross-origin from the opaque
+  origin). The server injects a signed unlock proof INTO the overlay it
+  serves after the entry passed the password gate — reusing the
+  viewer/unlock.ts MAC (token-scoped, password-fingerprint-bound, 1 h) as a
+  header instead of a cookie. No new state, dies on password change.
+- **Principals REQUIRE a workspace membership, so claim-at-signup must mint
+  one.** A collaborator account created via the claim endpoint would 401 on
+  every route without a `workspace_members` row (identity.resolve re-checks
+  live membership) — the claim creates an ordinary `member` row, making the
+  per-deck grant a layer ON TOP of workspace read access, not a substitute.
+  Consequence worth remembering: any future "grant-only, no workspace reads"
+  collaborator model is an auth-layer change, not a Phase 5 tweak.
+- **Emit `user.created` only AFTER explicitly claiming the triggering
+  grant.** The boot hook sweeps pending grants for a new account's email;
+  emitting before the claim endpoint's own guarded claim would race it into
+  a false "already used" 410 (the sweep and the endpoint both flip the same
+  row). Order: claim → membership → sibling sweep → emit.
+- **In-transaction collaborator checks keep revocation honest.**
+  `commitVersion` resolves owner-vs-dev INSIDE the deck's FOR UPDATE
+  transaction (`isActiveDevCollaborator(tx, …)`), so a concurrent revoke
+  serializes against the commit instead of racing it — same discipline as
+  the blob FOR SHARE locks.
