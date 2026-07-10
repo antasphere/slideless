@@ -1,0 +1,29 @@
+# Dev/E2E overlay: real, inspectable email via Mailpit (https://mailpit.axllent.org).
+# The app's SMTP driver points at the bundled Mailpit container, so every email
+# the instance sends (invitations, OTP, email change, reset) is actually
+# delivered — into Mailpit's inbox, browsable at http://localhost:8025.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Never use this overlay in production: Mailpit accepts unauthenticated SMTP
+# and stores mail unencrypted. See docs/dev-mailpit.md.
+services:
+  app:
+    environment:
+      - EMAIL_DRIVER=smtp
+      - SMTP_URL=smtp://mailpit:1025
+      - EMAIL_FROM=${EMAIL_FROM:-Slideless Dev <dev@slideless.local>}
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      # Web UI + JSON API (loopback only). SMTP (1025) stays compose-internal.
+      - '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025'
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=1
+      - MP_SMTP_AUTH_ALLOW_INSECURE=1
