@@ -370,3 +370,36 @@ template-level robustness gaps, not silent fixes:
   document, issuer and `/mcp` audience all derive from PUBLIC_BASE_URL
   (verified against :3100 and in tests against an ephemeral origin). The
   legacy MCP's app.slideless.ai bug has no structural equivalent here.
+
+## Phase 8 (dashboard product UI, 2026-07-10)
+
+- **The api-keys page's `createRawSnippet` badge pattern is an XSS invitation
+  when copied.** The template renders table badges via
+  `createRawSnippet(() => ({ render: () => `<span>${value}</span>` }))` —
+  fine for the server-generated keyId it interpolates today, but the first
+  product page that copies the pattern for a USER-supplied field ships
+  stored XSS on the app origin. Slideless kept the pattern strictly for
+  static i18n strings and rendered every user field through FlexRender's
+  escaped string path, with SECURITY comments at each site. The template
+  should ship a tiny `TextBadge` cell component (props-based, auto-escaped)
+  and a warning comment on createRawSnippet usage.
+- **The dashboard vite dev proxy hardcodes `http://localhost:3000`.** With
+  several template-derived stacks on one laptop, `pnpm dev` silently proxies
+  /api to whatever occupies :3000 — in this workspace that was a DIFFERENT
+  product's container. Make the target an env override
+  (e.g. `DEV_API_ORIGIN ?? 'http://localhost:3000'`).
+- **`createPagedList` swallows the HTTP status.** Panels that must fall back
+  gracefully on 403 (role-gated sub-resources on a page others can read)
+  can't distinguish "forbidden" from "network down" — the store only keeps
+  `e.message`. Worth keeping the PlatformApiError (or at least its status)
+  on the store's error state.
+- **Playwright: one flat project made suite ordering an accident of file
+  names.** The smoke spec assumes a virgin database (first-boot wizard), so
+  any second spec file sorting before it breaks the run. Slideless moved to
+  `projects` with `dependencies: ['smoke']`; the template should ship that
+  shape from the start.
+- **The French catalog's NBSP typography is easy to break mechanically.**
+  A blanket "space before :/?/!" fixup also rewrites comments, which
+  `no-irregular-whitespace` then rejects (strings are exempted, comments are
+  not). A tiny catalog lint (NBSP required before double punctuation inside
+  fr string VALUES only) would make the convention self-enforcing.
