@@ -41,7 +41,8 @@ slideless auth login-complete --api-url https://slides.example.com --email you@e
 
 `login-complete` mints an `slk_` API key server-side (scopes
 `presentations:read` + `presentations:write`) and stores it as the active
-profile in `~/.config/slideless/config.json` (mode 600).
+profile in `~/.config/antasphere/tools/slideless.json` (mode 600; the
+shared Antasphere CLI config home, see [cli.md](cli.md)).
 
 **Sign in, option B — paste a dashboard key** (works with `EMAIL_DRIVER=none`,
 and required for accounts with 2FA):
