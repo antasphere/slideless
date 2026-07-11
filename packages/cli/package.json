@@ -1,8 +1,14 @@
 {
-  "name": "@slideless/cli",
+  "name": "@antasphere/slideless",
   "version": "0.2.0",
-  "private": true,
+  "description": "The Slideless CLI — push, share, pull, and preview decks on a Slideless instance",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "slideless": "./dist/bin.js"
   },
@@ -16,19 +22,19 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && esbuild src/bin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/bin.js --log-level=warning --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {
+  "devDependencies": {
     "@antasphere/cli-core": "github:antasphere/cli-core#v0.1.0",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
-    "commander": "^12.1.0"
-  },
-  "devDependencies": {
     "@types/node": "^22.15.0",
+    "commander": "^12.1.0",
+    "esbuild": "^0.25.0",
     "vitest": "^3.2.0"
   }
 }

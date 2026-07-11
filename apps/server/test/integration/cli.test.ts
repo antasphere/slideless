@@ -5,8 +5,8 @@ import { createServer } from 'node:net';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { run } from '@slideless/cli';
-import type { CliIo } from '@slideless/cli';
+import { run } from '@antasphere/slideless';
+import type { CliIo } from '@antasphere/slideless';
 import {
   createDatabase,
   createTestApp,

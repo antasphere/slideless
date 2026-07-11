@@ -30,7 +30,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@slideless/db --filter=@slideless/server --filter=@slideless/cli
+      - run: pnpm turbo build --filter=@slideless/db --filter=@slideless/server --filter=@antasphere/slideless
       - run: pnpm turbo test:integration
 
   # The Profile B rehearsal: a real multi-replica stack (advisory-lock

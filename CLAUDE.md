@@ -9,8 +9,10 @@ deploys) + `dev` (day-to-day work).
 
 ## Identity (fixed at instantiation)
 
-- npm scope `@slideless/*`; CLI binary `slideless`; env var prefix `SLIDELESS_` — the CLI reads
-  `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
+- npm scope `@slideless/*` for the internal workspace packages; the CLI is the one exception —
+  it publishes to npm as **`@antasphere/slideless`** (binary still `slideless`, released via
+  `.github/workflows/publish-cli.yml` on `cli-v*` tags — docs/cli.md "Release"). Env var prefix
+  `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
 - API key prefix `slk` (`apps/server/src/apikeys/service.ts`).
 - Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
 - Docker image `ghcr.io/antasphere/slideless`; Postgres role/db `slideless`; port 3000; `EDITION=oss`.

@@ -27,8 +27,8 @@ open http://localhost:3000
 1. **Create the owner.** The dashboard shows the first-boot wizard: instance
    name + owner account. It asks for the setup token `setup.sh` printed.
 2. **Connect the CLI.** Get the `slideless` binary (from this repo:
-   `pnpm install && pnpm --filter @slideless/cli... build`, then alias
-   `node packages/cli/dist/bin.js`; or `npm i -g @slideless/cli` once
+   `pnpm install && pnpm --filter @antasphere/slideless... build`, then alias
+   `node packages/cli/dist/bin.js`; or `npm i -g @antasphere/slideless` once
    published). Mint an API key in the dashboard (API keys → New) and save it
    as a profile:
 

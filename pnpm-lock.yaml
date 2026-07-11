@@ -215,12 +215,12 @@ importers:
         specifier: ^4.1.0
         version: 4.4.3
     devDependencies:
+      '@antasphere/slideless':
+        specifier: workspace:*
+        version: link:../../packages/cli
       '@better-auth/cli':
         specifier: 1.4.21
         version: 1.4.21(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.4.3))(drizzle-kit@0.31.10)(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
-      '@slideless/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
       '@testcontainers/postgresql':
         specifier: ^11.0.0
         version: 11.14.0
@@ -259,7 +259,7 @@ importers:
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
   packages/cli:
-    dependencies:
+    devDependencies:
       '@antasphere/cli-core':
         specifier: github:antasphere/cli-core#v0.1.0
         version: git+ssh://git@github.com/antasphere/cli-core.git#dd9b7fb737937d641760be35215e08c1682833ef
@@ -269,13 +269,15 @@ importers:
       '@slideless/sdk':
         specifier: workspace:*
         version: link:../sdk
-      commander:
-        specifier: ^12.1.0
-        version: 12.1.0
-    devDependencies:
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.0
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
       vitest:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)

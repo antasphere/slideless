@@ -1,0 +1,76 @@
+name: Publish CLI (npm)
+
+# Tokenless npm release of @antasphere/slideless via OIDC trusted publishing:
+# pushing a tag cli-vX.Y.Z publishes @antasphere/slideless@X.Y.Z from
+# packages/cli (the binary stays `slideless`). The cli-v prefix cannot collide
+# with release.yml (the Docker image release), whose tag trigger is 'v*' —
+# GitHub tag filters are anchored, so 'v*' never matches 'cli-v…' and
+# 'cli-v*.*.*' never matches 'v…'.
+#
+# There is no NPM_TOKEN anywhere — npm authenticates with a short-lived
+# credential minted from this workflow's OIDC identity, so the trusted
+# publisher configured on npmjs.com must name exactly: org `antasphere`,
+# repo `slideless`, workflow `publish-cli.yml`.
+#
+# Bootstrap: trusted publishing can only be configured on a package that
+# already exists, so the very FIRST publish of the name is manual
+# (`npm publish` from packages/cli while logged in). Every release after that
+# is this workflow, driven purely by the tag.
+#
+# No explicit --provenance flag: npm hard-rejects provenance generation for
+# private source repositories, and this repo is private today. With trusted
+# publishing npm attaches provenance automatically once a repo is public.
+#
+# Install caveat: @antasphere/cli-core is pinned as a git dependency on the
+# private antasphere/cli-core repo, which this workflow's GITHUB_TOKEN cannot
+# read. Until cli-core is public (or the devDependency pin is switched to the
+# published npm version, the one-line swap documented in cli-core's README),
+# the install step below can only succeed where that repo is reachable.
+
+on:
+  push:
+    tags: ['cli-v*.*.*']
+
+permissions:
+  id-token: write # the OIDC token npm exchanges for a publish credential
+  contents: read
+
+concurrency:
+  group: publish-cli-${{ github.ref }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # pnpm version from package.json#packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+      # Trusted publishing needs npm >= 11.5.1; the runner image may lag.
+      - run: npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - name: Verify tag matches packages/cli version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#cli-v}"
+          PKG_VERSION="$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match packages/cli version ${PKG_VERSION} — bump packages/cli/package.json and retag"
+            exit 1
+          fi
+      # Gate + build only the CLI and its workspace dependencies.
+      - run: pnpm turbo lint typecheck test build --filter=@antasphere/slideless...
+      - name: Verify the bundled binary reports the same version
+        run: |
+          BIN_VERSION="$(node packages/cli/dist/bin.js --version)"
+          PKG_VERSION="$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$BIN_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::dist/bin.js --version reports ${BIN_VERSION} but package.json says ${PKG_VERSION} — keep VERSION in src/index.ts in sync"
+            exit 1
+          fi
+      - run: npm publish --access public
+        working-directory: packages/cli
+      - name: Step summary
+        run: echo "Published \`@antasphere/slideless@${GITHUB_REF_NAME#cli-v}\` to npm (trusted publishing)" >> "$GITHUB_STEP_SUMMARY"

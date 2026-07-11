@@ -17,11 +17,10 @@ issuer, so nothing works or breaks because of anyone else's infrastructure.
 
 ## The CLI
 
-Get the binary (workspace build today, `npm i -g @slideless/cli` once
-published):
+Get the binary (`npm i -g @antasphere/slideless`, or a workspace build):
 
 ```bash
-pnpm --filter @slideless/cli... build
+pnpm --filter @antasphere/slideless... build
 alias slideless='node /path/to/slideless/packages/cli/dist/bin.js'
 ```
 

@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, eq, isNull } from 'drizzle-orm';
 import { apiKeys, auditLog, files, workspaceMembers } from '@slideless/db';
-import { run } from '@slideless/cli';
-import type { CliIo } from '@slideless/cli';
+import { run } from '@antasphere/slideless';
+import type { CliIo } from '@antasphere/slideless';
 import { AccountDeletionService, LastOwnerError } from '../../src/accounts/deletion.js';
 import { AuditService } from '../../src/audit/service.js';
 import {
