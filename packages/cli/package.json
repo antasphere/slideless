@@ -29,7 +29,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
-    "@antasphere/cli-core": "github:antasphere/cli-core#v0.1.0",
+    "@antasphere/cli-core": "^0.1.0",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
     "@types/node": "^22.15.0",
