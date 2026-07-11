@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { CliAuthClient } from '@antasphere/cli-core';
 import { PlatformClient } from '@slideless/sdk';
 import { clearConfig, configPath, loadConfig, redactKey, saveConfig, type CliConfig } from '../config.js';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
@@ -59,9 +60,10 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
     .requiredOption('--email <email>', 'account email on the instance')
     .action(async (opts: { email: string }, cmd: Command) => {
       const baseUrl = resolveAuthUrl(cmd, io);
-      const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
-      const client = new PlatformClient({ baseUrl, fetch: fetchImpl });
-      const result = await client.cliAuthRequest({ email: opts.email });
+      // The OTP pair rides cli-core's instance auth client — the same
+      // plumbing every Antasphere tool CLI signs in with.
+      const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
+      const result = await client.request({ email: opts.email });
       const json = Boolean((cmd.optsWithGlobals() as AuthGlobals).json);
       if (json) return printJson(io, { ...result, email: opts.email, baseUrl });
       io.out.write(
@@ -86,9 +88,8 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       ) => {
         const globals = cmd.optsWithGlobals() as AuthGlobals;
         const baseUrl = resolveAuthUrl(cmd, io);
-        const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
-        const client = new PlatformClient({ baseUrl, fetch: fetchImpl });
-        const result = await client.cliAuthComplete({
+        const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
+        const result = await client.complete({
           email: opts.email,
           otp: opts.code,
           ...(opts.keyName ? { keyName: opts.keyName } : {}),

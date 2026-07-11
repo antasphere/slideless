@@ -4,7 +4,7 @@ import { clearConfig, configPath, loadConfig, redactKey, saveConfig } from '../s
 import { tempConfigEnv } from './harness.js';
 
 describe('CLI config store', () => {
-  it('round-trips profiles through $XDG_CONFIG_HOME/slideless/config.json', async () => {
+  it('round-trips profiles through $XDG_CONFIG_HOME/antasphere/tools/slideless.json', async () => {
     const env = await tempConfigEnv();
     expect(loadConfig(env)).toEqual({ profiles: {} });
     saveConfig(env, {
@@ -25,8 +25,10 @@ describe('CLI config store', () => {
   });
 
   it('falls back to HOME/.config when XDG_CONFIG_HOME is unset', () => {
-    expect(configPath({ HOME: '/home/u' })).toBe('/home/u/.config/slideless/config.json');
-    expect(configPath({ XDG_CONFIG_HOME: '/xdg' })).toBe('/xdg/slideless/config.json');
+    // The slideless namespace of the SHARED antasphere config home
+    // (@antasphere/cli-core) — moved here from ~/.config/slideless/.
+    expect(configPath({ HOME: '/home/u' })).toBe('/home/u/.config/antasphere/tools/slideless.json');
+    expect(configPath({ XDG_CONFIG_HOME: '/xdg' })).toBe('/xdg/antasphere/tools/slideless.json');
     expect(configPath({})).toBeNull();
   });
 

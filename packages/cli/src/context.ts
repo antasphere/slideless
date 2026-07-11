@@ -1,14 +1,20 @@
 import { PlatformClient } from '@slideless/sdk';
 import type { Command } from 'commander';
+import {
+  CliUsageError,
+  resolveApiKey,
+  resolveBaseUrl,
+  resolveProfile as coreResolveProfile,
+  type CliIo,
+  type ResolvedProfile
+} from '@antasphere/cli-core';
 import { loadConfig, type CliConfig, type CliProfile } from './config.js';
 
-/** Injectable I/O so the CLI is testable in-process (defaults wired in the bin). */
-export interface CliIo {
-  env: Record<string, string | undefined>;
-  out: { write(s: string): void };
-  err: { write(s: string): void };
-  fetch?: typeof globalThis.fetch;
-}
+// The injectable I/O seam, the usage-error class, and the resolution
+// helpers live in @antasphere/cli-core (extracted from this CLI); re-exported
+// so the command modules' imports stay unchanged.
+export { CliUsageError, printJson } from '@antasphere/cli-core';
+export type { CliIo } from '@antasphere/cli-core';
 
 export interface CliContext {
   client: PlatformClient;
@@ -29,23 +35,15 @@ interface GlobalOpts {
   json?: boolean;
 }
 
-export class CliUsageError extends Error {}
-
 /** The named (or active) profile, erroring on an explicitly named missing one. */
 export function resolveProfile(
   config: CliConfig,
   requested: string | undefined
 ): { name: string | undefined; profile: CliProfile | undefined } {
-  if (requested) {
-    const profile = config.profiles[requested];
-    if (!profile) {
-      throw new CliUsageError(`Unknown profile "${requested}" — run \`slideless profiles\` to list them.`);
-    }
-    return { name: requested, profile };
-  }
-  const name = config.activeProfile;
-  const profile = name ? config.profiles[name] : undefined;
-  return { name: profile ? name : undefined, profile };
+  const resolved: ResolvedProfile = coreResolveProfile(config, requested, {
+    unknownHint: 'run `slideless profiles` to list them.'
+  });
+  return resolved;
 }
 
 /**
@@ -63,15 +61,16 @@ export function resolveContext(cmd: Command, io: CliIo): CliContext {
   const config = loadConfig(io.env);
   const { name: profileName, profile } = resolveProfile(config, opts.profile);
 
-  const rawUrl = opts.apiUrl ?? opts.url ?? io.env.SLIDELESS_URL ?? profile?.baseUrl;
-  if (!rawUrl) {
-    throw new CliUsageError(
+  const baseUrl = resolveBaseUrl({
+    flag: opts.apiUrl ?? opts.url,
+    env: io.env,
+    envVar: 'SLIDELESS_URL',
+    profile,
+    missingMessage:
       'No instance configured. Pass --api-url <url>, set SLIDELESS_URL, or sign in once with ' +
-        '`slideless auth login-request --api-url <url> --email <you>` to save a profile.'
-    );
-  }
-  const baseUrl = rawUrl.replace(/\/+$/, '');
-  const apiKey = opts.apiKey ?? io.env.SLIDELESS_API_KEY ?? profile?.apiKey;
+      '`slideless auth login-request --api-url <url> --email <you>` to save a profile.'
+  });
+  const apiKey = resolveApiKey({ flag: opts.apiKey, env: io.env, envVar: 'SLIDELESS_API_KEY', profile });
   const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
   return {
     client: new PlatformClient({ baseUrl, ...(apiKey ? { apiKey } : {}), fetch: fetchImpl }),
@@ -93,10 +92,6 @@ export function requireApiKey(ctx: CliContext): string {
     );
   }
   return ctx.apiKey;
-}
-
-export function printJson(io: CliIo, value: unknown): void {
-  io.out.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
 /** Minimal aligned two-space table for human output. */

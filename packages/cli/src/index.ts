@@ -1,4 +1,5 @@
 import { Command, CommanderError } from 'commander';
+import { CliAuthError } from '@antasphere/cli-core';
 import { PlatformApiError } from '@slideless/sdk';
 import { CliUsageError, type CliIo } from './context.js';
 import { registerAuthCommands } from './commands/auth.js';
@@ -13,8 +14,10 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
 
 /**
  * `slideless` — the typed CLI over @slideless/sdk; the primary human/agent
- * face of an instance. Multi-profile (config at
- * $XDG_CONFIG_HOME/slideless/config.json, default ~/.config/slideless/),
+ * face of an instance. Multi-profile (the `slideless` namespace of the
+ * shared Antasphere config home: $XDG_CONFIG_HOME/antasphere/tools/
+ * slideless.json, default ~/.config/antasphere/; pre-cli-core configs at
+ * ~/.config/slideless/config.json are imported once, non-destructively),
  * instance-portable, human tables by default and `--json` everywhere; any
  * error prints to stderr and exits non-zero.
  *
@@ -73,7 +76,7 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       // --help / --version and usage errors already wrote their output.
       return e.exitCode;
     }
-    if (e instanceof PlatformApiError) {
+    if (e instanceof PlatformApiError || e instanceof CliAuthError) {
       const hint =
         e.status === 403
           ? ' (this API key is not allowed to do that)'

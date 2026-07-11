@@ -1,3 +1,12 @@
 packages:
   - apps/*
   - packages/*
+
+# pnpm only honors build-script allowlisting for git dependencies here (not in
+# the package.json "pnpm" field), and only as the EXACT resolved spec (no
+# globs): cli-core needs its prepare script to build dist/ when pnpm fetches
+# it from GitHub. When the pinned tag moves, pnpm install fails with the new
+# line to paste here.
+onlyBuiltDependencies:
+  - esbuild
+  - '@antasphere/cli-core@git+ssh://git@github.com/antasphere/cli-core.git#dd9b7fb737937d641760be35215e08c1682833ef'

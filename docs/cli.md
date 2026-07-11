@@ -19,8 +19,11 @@ Once published, `npm i -g @slideless/cli` exposes the `slideless` binary.
 
 ## Configuration: profiles, flags, environment
 
-Config lives at `$XDG_CONFIG_HOME/slideless/config.json` (default
-`~/.config/slideless/config.json`), directory `0700`, file `0600`:
+Config lives in the **shared Antasphere CLI config home** (provided by
+`@antasphere/cli-core` — one home for the whole tool family), under the
+`slideless` namespace: `$XDG_CONFIG_HOME/antasphere/tools/slideless.json`
+(default `~/.config/antasphere/tools/slideless.json`), directories `0700`,
+file `0600`:
 
 ```json
 {
@@ -30,6 +33,15 @@ Config lives at `$XDG_CONFIG_HOME/slideless/config.json` (default
   }
 }
 ```
+
+**Migrating from older builds**: the config used to live at
+`~/.config/slideless/config.json`. On first run, if that file still exists,
+holds at least one profile, and the new home has no slideless profiles yet,
+it is imported automatically and non-destructively — the old file stays in
+place (older CLI builds keep working) but stops being read. Note the
+corollary: after `slideless config clear`, a still-present legacy file is
+imported again on the next run; delete `~/.config/slideless/config.json` too
+if you want a truly clean slate.
 
 Every command accepts `--api-url` (alias `--url`), `--api-key`, `--profile`,
 and `--json`. Resolution order:

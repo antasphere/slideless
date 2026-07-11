@@ -260,6 +260,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@antasphere/cli-core':
+        specifier: github:antasphere/cli-core#v0.1.0
+        version: git+ssh://git@github.com/antasphere/cli-core.git#dd9b7fb737937d641760be35215e08c1682833ef
       '@slideless/contract':
         specifier: workspace:*
         version: link:../contract
@@ -327,6 +330,11 @@ packages:
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
+
+  '@antasphere/cli-core@git+ssh://git@github.com/antasphere/cli-core.git#dd9b7fb737937d641760be35215e08c1682833ef':
+    resolution: {commit: dd9b7fb737937d641760be35215e08c1682833ef, repo: git@github.com:antasphere/cli-core.git, type: git}
+    version: 0.1.0
+    engines: {node: '>=22'}
 
   '@asteasolutions/zod-to-openapi@8.5.0':
     resolution: {integrity: sha512-SABbKiObg5dLRiTFnqiW1WWwGcg1BJfmHtT2asIBnBHg6Smy/Ms2KHc650+JI4Hw7lSkdiNebEGXpwoxfben8Q==}
@@ -4927,6 +4935,8 @@ packages:
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@antasphere/cli-core@git+ssh://git@github.com/antasphere/cli-core.git#dd9b7fb737937d641760be35215e08c1682833ef': {}
 
   '@asteasolutions/zod-to-openapi@8.5.0(zod@4.4.3)':
     dependencies:

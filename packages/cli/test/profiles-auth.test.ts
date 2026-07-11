@@ -193,7 +193,8 @@ describe('auth login flow', () => {
     const h = routedHarness([], env);
     expect(await run(['config', 'show'], h.io)).toBe(0);
     expect(h.out()).not.toContain('slk_abcdefgh_0123456789abcdef');
-    expect(h.out()).toContain('config.json');
+    // The slideless namespace file in the shared antasphere config home.
+    expect(h.out()).toContain('antasphere/tools/slideless.json');
 
     const h2 = routedHarness([], env);
     expect(await run(['config', 'clear'], h2.io)).toBe(0);
