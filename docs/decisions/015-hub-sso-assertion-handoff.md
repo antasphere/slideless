@@ -81,7 +81,10 @@ its hub-asserted projection never exists.
    assertion. If another local user holds the asserted address, the login
    fails with `sso_email_conflict` — never corrupting either account; the
    unique constraint on `user.email` backstops the check-then-write race.
-   `emailVerified` follows the hub's `email_verified` honestly.
+   For an UNCHANGED address `emailVerified` is a latch (never re-flipped to
+   false by a weaker hub assertion — break-glass refuses unverified
+   operators, so a downward sync could close the operator door); a CHANGED
+   address takes the hub's asserted state honestly.
 3. **Lazy projection + membership assertion (D11).** Look up
    `workspaces.centralAccountId = workspace_id`; create on miss (name from
    `workspace_name`, or a recognizable placeholder that self-heals at the

@@ -310,8 +310,19 @@ export class HubSsoService {
       .where(eq(userTable.id, localUserId))
       .limit(1);
     if (!row) throw new HubSsoLoginError('sso_login_failed', 'user row missing after callback');
-    if (row.email === email && row.emailVerified === assertion.emailVerified) return;
-    if (row.email !== email) {
+    const emailChanged = row.email !== email;
+    // For an UNCHANGED address, emailVerified is a LATCH: once this instance
+    // holds the address as verified, a weaker hub assertion never flips it
+    // back — break-glass (api/break-glass.ts) refuses unverified users, so a
+    // downward sync could close the operator door if the hub's posture ever
+    // allowed an unverified login. A CHANGED address takes the hub's
+    // asserted state honestly (the new mailbox is unproven). Mirrors
+    // better-auth's own overrideUserInfo semantics.
+    const emailVerified = emailChanged
+      ? assertion.emailVerified
+      : row.emailVerified || assertion.emailVerified;
+    if (!emailChanged && row.emailVerified === emailVerified) return;
+    if (emailChanged) {
       const [holder] = await this.opts.db
         .select({ id: userTable.id })
         .from(userTable)
@@ -327,7 +338,7 @@ export class HubSsoService {
     try {
       await this.opts.db
         .update(userTable)
-        .set({ email, emailVerified: assertion.emailVerified, updatedAt: new Date() })
+        .set({ email, emailVerified, updatedAt: new Date() })
         .where(eq(userTable.id, localUserId));
     } catch {
       // Concurrent claim of the same address between check and write.

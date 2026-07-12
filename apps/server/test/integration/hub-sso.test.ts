@@ -472,6 +472,42 @@ describe('cloud edition: the SSO entrance', () => {
     expect(rows).toEqual([{ email_verified: false }]);
   });
 
+  it('never syncs emailVerified DOWNWARD for an unchanged address (the break-glass latch)', async () => {
+    const grace: HubUserFixture = {
+      sub: 'hub-u11',
+      email: 'grace@latch.test',
+      workspaceId: ORG_BETA,
+      role: 'member',
+      workspaceName: 'Beta LLC'
+    };
+    await ssoLogin(app, grace); // JIT, verified (hub default)
+    // The hub now asserts email_verified=false for the SAME address (a hub
+    // posture change / bug): the local latch must hold — break-glass refuses
+    // unverified users, so a downward flip would close the operator door.
+    await ssoLogin(app, { ...grace, emailVerified: false });
+    const { rows } = await app.db.pool.query(`SELECT email_verified FROM "user" WHERE email = $1`, [
+      'grace@latch.test'
+    ]);
+    expect(rows).toEqual([{ email_verified: true }]);
+  });
+
+  it('takes the hub-asserted verification state when the address CHANGES (no false latch)', async () => {
+    // grace's hub email changes to a NEW address asserted unverified: the
+    // new mailbox is unproven, so the honest state is unverified.
+    await ssoLogin(app, {
+      sub: 'hub-u11',
+      email: 'grace.moved@latch.test',
+      emailVerified: false,
+      workspaceId: ORG_BETA,
+      role: 'member',
+      workspaceName: 'Beta LLC'
+    });
+    const { rows } = await app.db.pool.query(`SELECT email, email_verified FROM "user" WHERE email = $1`, [
+      'grace.moved@latch.test'
+    ]);
+    expect(rows).toEqual([{ email: 'grace.moved@latch.test', email_verified: false }]);
+  });
+
   it('a residue second hub link is undone in favor of the OLDER identity (guard keys on recency)', async () => {
     const frank: HubUserFixture = {
       sub: 'hub-u10',
