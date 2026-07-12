@@ -119,6 +119,50 @@ export class FakeHub {
     return this.accessToken(fixture, resource);
   }
 
+  /**
+   * Sign an H3 exchange token — what the real hub's `POST /sso/tool-token`
+   * mints for `slideless /sso/cli-connect` (the P5 pinned contract): a
+   * 120 s RS256 JWT, `aud` = the TOOL's resource URL (single string, no
+   * userinfo entry — this is not an OIDC access token), the
+   * membershipAccessClaims org payload, `purpose: 'sso-connect'`, and a
+   * unique `jti`. `opts` bends the connect-specific claims for negative
+   * tests; `fixture.overrides` still bends iss/exp/aud like everywhere else.
+   */
+  async signConnectToken(
+    fixture: HubUserFixture,
+    resource: string,
+    opts: {
+      /** Explicit jti (replay tests share one); default = fresh unique. */
+      jti?: string | undefined;
+      /** true = omit the jti claim entirely. */
+      omitJti?: boolean | undefined;
+      /** Replacement purpose; null = omit the claim. Default 'sso-connect'. */
+      purpose?: string | null | undefined;
+    } = {}
+  ): Promise<{ token: string; jti: string }> {
+    const key = this.signingKey();
+    const o = fixture.overrides ?? {};
+    const now = Math.floor(Date.now() / 1000);
+    const jti = opts.jti ?? `jti_${randomUUID()}`;
+    const purpose = opts.purpose === undefined ? 'sso-connect' : opts.purpose;
+    const token = await new SignJWT({
+      role: fixture.role,
+      workspace_id: fixture.workspaceId,
+      ...(fixture.workspaceName === null ? {} : { workspace_name: fixture.workspaceName ?? 'Fake Org' }),
+      email: fixture.email,
+      ...(purpose === null ? {} : { purpose }),
+      ...(opts.omitJti ? {} : { jti }),
+      aud: o.accessAud ?? resource
+    })
+      .setProtectedHeader({ alg: 'RS256', kid: key.kid })
+      .setSubject(fixture.sub)
+      .setIssuer(o.iss ?? this.issuer)
+      .setIssuedAt(now)
+      .setExpirationTime(now + (o.expiresInSeconds ?? 120))
+      .sign(key.privateKey);
+    return { token, jti };
+  }
+
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', this.issuer);
     if (req.method === 'GET' && url.pathname === '/.well-known/openid-configuration') {

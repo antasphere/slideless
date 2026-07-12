@@ -70,9 +70,49 @@ export interface HubSsoAssertion {
 }
 
 /**
+ * What one VERIFIED hub exchange JWT asserts (`POST /sso/cli-connect`,
+ * docs/federation.md P5) — the same org assertion an SSO login carries,
+ * plus the token's one-time-use handle.
+ */
+export interface HubConnectAssertion extends HubSsoAssertion {
+  /** Unique per-token id — consumed one-time-use by the replay ledger. */
+  jti: string;
+  /** The token's own `exp` — how long the consumed jti must stay claimed. */
+  expiresAt: Date;
+}
+
+/**
+ * The minimal slice of better-auth's server API `provisionConnect` needs
+ * (structural — `Auth` from identity/better-auth.ts satisfies it; typing it
+ * here keeps hub-sso.ts free of an import cycle with that module). Going
+ * through the INTERNAL ADAPTER is the point: `createOAuthUser` is the exact
+ * call the genericOAuth callback makes for a browser-SSO JIT, so the
+ * databaseHooks.user.create.after seam (`user.created` → the collaborator
+ * grant sweep) fires identically, and the rows are byte-identical.
+ */
+export interface ConnectAuthSeam {
+  $context: Promise<{
+    internalAdapter: {
+      createOAuthUser: (
+        user: { email: string; name: string; emailVerified: boolean },
+        account: { providerId: string; accountId: string }
+      ) => Promise<{ user: { id: string } }>;
+      linkAccount: (account: {
+        providerId: string;
+        accountId: string;
+        userId: string;
+      }) => Promise<unknown>;
+    };
+  }>;
+}
+
+/**
  * A login failure the after-hook converts into a clean, session-less
  * redirect back to /login?error=<code>. Codes are stable (the dashboard
  * maps them to copy); anything unexpected becomes `sso_login_failed`.
+ * `/sso/cli-connect` reuses the same errors as 403 bodies —
+ * `sso_link_refused` is its trusted-link refusal (never thrown on the
+ * browser login path, where better-auth's own linking gate answers first).
  */
 export class HubSsoLoginError extends Error {
   constructor(
@@ -80,6 +120,7 @@ export class HubSsoLoginError extends Error {
       | 'sso_assertion_missing'
       | 'sso_identity_conflict'
       | 'sso_email_conflict'
+      | 'sso_link_refused'
       | 'sso_projection_failed'
       | 'sso_login_failed',
     message: string
@@ -243,11 +284,164 @@ export class HubSsoService {
    *
    * Throws HubSsoLoginError; the caller revokes the just-minted session and
    * redirects. Any other throw is mapped to the generic failure code there.
+   * Returns the LOCAL id of the projected workspace — the SSO after-hook
+   * ignores it; `/sso/cli-connect` binds its minted key to it.
    */
-  async assertLogin(localUserId: string, assertion: HubSsoAssertion): Promise<void> {
+  async assertLogin(localUserId: string, assertion: HubSsoAssertion): Promise<{ workspaceId: string }> {
     await this.guardSingleHubIdentity(localUserId, assertion.sub);
     await this.syncEmail(localUserId, assertion);
-    await this.project(localUserId, assertion);
+    return await this.project(localUserId, assertion);
+  }
+
+  /**
+   * Verify a hub-minted exchange JWT (`POST /sso/cli-connect`, the H3
+   * counterpart — docs/federation.md P5) and extract its assertion. The
+   * chain, every link fail-closed:
+   *
+   *  1. `HubJwtVerifier.verify` — hub JWKS signature, `iss` pinned to the
+   *     hub, `aud` pinned to OUR resource URL (a token minted for another
+   *     tool dies here; a Slideless-minted MCP token dies on `iss`),
+   *     RS256 allowlist, expiry (5 s tolerance).
+   *  2. `exp` REQUIRED — jose only validates expiry when the claim exists,
+   *     and the replay ledger needs a bound; a token without one is a
+   *     contract break, refused.
+   *  3. `purpose === 'sso-connect'` REQUIRED — a flow-(a) hub access token
+   *     carries no purpose claim and dies here even though iss/aud match.
+   *  4. `jti` REQUIRED (bounded) — the caller consumes it one-time-use.
+   *  5. The org claims pass the same shape validation as an SSO login's.
+   *
+   * Throws on any failure; the route maps every throw to one uniform 401
+   * (no oracle distinguishing replay from expiry from a foreign audience).
+   */
+  async verifyConnectToken(token: string): Promise<HubConnectAssertion> {
+    const claims = await this.verifier.verify(token, this.opts.resourceUrl);
+    if (typeof claims.exp !== 'number') throw new Error('exchange token carries no exp');
+    if (claims.purpose !== 'sso-connect') {
+      throw new Error('token is not an sso-connect exchange token (purpose claim)');
+    }
+    const jti = claims.jti;
+    if (typeof jti !== 'string' || !jti || jti.length > 256) {
+      throw new Error('exchange token carries no usable jti');
+    }
+    const org = assertOrgClaims(claims);
+    return {
+      ...org,
+      // The hub mints exchange tokens only for a live, authenticated hub
+      // user — an identity whose email the hub itself verified (its CLI
+      // login IS an email OTP). The H3 contract carries no email_verified
+      // or name claim, so the honest mirror of the SSO id_token's
+      // `email_verified: true` is asserted here, and the display name
+      // falls back exactly like an SSO login with a blank profile name.
+      emailVerified: true,
+      name: org.email.split('@')[0]!,
+      jti,
+      expiresAt: new Date(claims.exp * 1000)
+    };
+  }
+
+  /**
+   * JIT-provision for `/sso/cli-connect`: resolve-or-create the local user
+   * for a VERIFIED connect assertion, then run the SAME per-login work as
+   * a browser SSO login (`assertLogin`: identity guard, D10 email sync,
+   * lazy projection + origin='hub' membership upsert) so both entrances
+   * produce identical rows. User resolution mirrors better-auth's own
+   * OAuth linking exactly (oauth2/link-account.mjs on the pinned 1.6.15):
+   *
+   *  1. account row (providerId='antasphere', accountId=sub) → that user;
+   *  2. else a local user holding the asserted email → TRUSTED LINK (D9),
+   *     but only onto a VERIFIED local email (requireLocalEmailVerified —
+   *     an attacker-parked unverified account can never be taken over);
+   *  3. else create user + account through the internal adapter's
+   *     `createOAuthUser` — the genericOAuth JIT call, so the
+   *     databaseHooks.user.create.after seam (`user.created` → collaborator
+   *     grant sweep) fires exactly as it would for a browser SSO signup.
+   *     Closed-signup stays intact: this is the sanctioned hub entrance
+   *     (the deliberate fourth switch), reached only with a VERIFIED hub
+   *     token — never an anonymous signup surface.
+   *
+   * Two concurrent first-connects race the create; the loser's unique-email
+   * violation is caught and resolved by re-running the lookup (the Phase 5
+   * duplicate-account lesson).
+   */
+  async provisionConnect(
+    auth: ConnectAuthSeam,
+    assertion: HubSsoAssertion
+  ): Promise<{ user: { id: string; email: string; name: string }; workspaceId: string }> {
+    let userId = await this.resolveConnectUser(auth, assertion, true);
+    if (userId === null) {
+      // Lost the create race: the winner's rows are committed now (the
+      // adapter's transaction passthrough) — one retry must resolve.
+      userId = await this.resolveConnectUser(auth, assertion, false);
+      if (userId === null) {
+        throw new HubSsoLoginError('sso_login_failed', 'user provisioning raced and re-lookup failed');
+      }
+    }
+    const { workspaceId } = await this.assertLogin(userId, assertion);
+    // Re-read AFTER assertLogin: the D10 sync may have just rewritten the
+    // email; the response must carry what the database now holds.
+    const [row] = await this.opts.db
+      .select({ id: userTable.id, email: userTable.email, name: userTable.name })
+      .from(userTable)
+      .where(eq(userTable.id, userId))
+      .limit(1);
+    if (!row) throw new HubSsoLoginError('sso_login_failed', 'user row missing after provisioning');
+    return { user: row, workspaceId };
+  }
+
+  /**
+   * One resolution pass (see provisionConnect). Returns the local user id,
+   * or null when `mayCreate` and the create lost a uniqueness race —
+   * signalling the caller to re-run with the winner's rows visible.
+   */
+  private async resolveConnectUser(
+    auth: ConnectAuthSeam,
+    assertion: HubSsoAssertion,
+    mayCreate: boolean
+  ): Promise<string | null> {
+    const db = this.opts.db;
+    const [linked] = await db
+      .select({ userId: account.userId })
+      .from(account)
+      .where(and(eq(account.providerId, HUB_SSO_PROVIDER_ID), eq(account.accountId, assertion.sub)))
+      .limit(1);
+    if (linked) return linked.userId;
+
+    const [existing] = await db
+      .select({ id: userTable.id, emailVerified: userTable.emailVerified })
+      .from(userTable)
+      .where(eq(userTable.email, assertion.email))
+      .limit(1);
+    const authCtx = await auth.$context;
+    if (existing) {
+      if (!existing.emailVerified) {
+        // requireLocalEmailVerified, mirrored: linking a trusted provider
+        // onto an UNVERIFIED local account is the classic pre-registration
+        // takeover — refuse, exactly like the browser SSO path does.
+        throw new HubSsoLoginError(
+          'sso_link_refused',
+          'a local account holds this email but its address is unverified — refusing the trusted link'
+        );
+      }
+      await authCtx.internalAdapter.linkAccount({
+        providerId: HUB_SSO_PROVIDER_ID,
+        accountId: assertion.sub,
+        userId: existing.id
+      });
+      return existing.id;
+    }
+    if (!mayCreate) return null;
+    try {
+      const created = await authCtx.internalAdapter.createOAuthUser(
+        { email: assertion.email, name: assertion.name, emailVerified: assertion.emailVerified },
+        { providerId: HUB_SSO_PROVIDER_ID, accountId: assertion.sub }
+      );
+      return created.user.id;
+    } catch (err) {
+      // The only expected failure is the unique-email (or duplicate-link)
+      // violation from a concurrent first-connect — resolvable by retry.
+      this.opts.logger.warn({ err }, 'sso cli-connect: JIT create raced — retrying resolution');
+      return null;
+    }
   }
 
   /**
@@ -355,7 +549,7 @@ export class HubSsoService {
    * ON CONFLICT semantics on the 0021 unique partial index, the hub's role
    * (not owner), and origin='hub'.
    */
-  private async project(localUserId: string, assertion: HubSsoAssertion): Promise<void> {
+  private async project(localUserId: string, assertion: HubSsoAssertion): Promise<{ workspaceId: string }> {
     const db = this.opts.db;
     try {
       let [ws] = await db
@@ -405,6 +599,7 @@ export class HubSsoService {
           target: [workspaceMembers.workspaceId, workspaceMembers.userId],
           set: { role: assertion.role, origin: 'hub', isActive: true }
         });
+      return { workspaceId: ws.id };
     } catch (err) {
       if (err instanceof HubSsoLoginError) throw err;
       this.opts.logger.error({ err }, 'hub SSO: org projection failed');
@@ -413,8 +608,15 @@ export class HubSsoService {
   }
 }
 
-/** Claim-shape validation — a malformed hub token must fail the login, not corrupt state. */
-function buildAssertion(accessClaims: JWTPayload, idClaims: JWTPayload): HubSsoAssertion {
+/**
+ * Claim-shape validation for the ORG half of a hub assertion — shared by the
+ * SSO login (access token) and the cli-connect exchange token, which carry
+ * the same `membershipAccessClaims` payload. A malformed token must fail the
+ * flow, not corrupt state.
+ */
+function assertOrgClaims(
+  accessClaims: JWTPayload
+): Pick<HubSsoAssertion, 'sub' | 'email' | 'hubWorkspaceId' | 'role' | 'hubWorkspaceName'> {
   const sub = accessClaims.sub;
   if (typeof sub !== 'string' || !sub) throw new Error('missing sub');
   const email = accessClaims.email;
@@ -429,16 +631,24 @@ function buildAssertion(accessClaims: JWTPayload, idClaims: JWTPayload): HubSsoA
   if (typeof role !== 'string' || !(workspaceRoles as readonly string[]).includes(role)) {
     throw new Error(`unknown hub role claim: ${String(role)}`);
   }
-  const rawName = idClaims.name;
-  const name = typeof rawName === 'string' && rawName.trim() ? rawName : email.split('@')[0]!;
   const rawWsName = accessClaims.workspace_name;
   return {
     sub,
     email: email.toLowerCase(),
-    emailVerified: idClaims.email_verified === true,
-    name,
     hubWorkspaceId,
     role: role as WorkspaceRole,
     hubWorkspaceName: typeof rawWsName === 'string' && rawWsName.trim() ? rawWsName : null
+  };
+}
+
+/** The full SSO-login assertion: org claims (access token) + user claims (id token). */
+function buildAssertion(accessClaims: JWTPayload, idClaims: JWTPayload): HubSsoAssertion {
+  const org = assertOrgClaims(accessClaims);
+  const rawName = idClaims.name;
+  const name = typeof rawName === 'string' && rawName.trim() ? rawName : org.email.split('@')[0]!;
+  return {
+    ...org,
+    emailVerified: idClaims.email_verified === true,
+    name
   };
 }

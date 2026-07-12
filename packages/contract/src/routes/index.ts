@@ -33,6 +33,7 @@ import {
   cliAuthRequestedSchema,
   cliAuthRequestSchema
 } from '../schemas/cli-auth.js';
+import { ssoCliConnectSchema } from '../schemas/sso-connect.js';
 import {
   breakGlassClaimOwnershipRequestSchema,
   breakGlassClaimOwnershipSchema,
@@ -418,6 +419,33 @@ export const cliAuthCompleteRoute = createRoute({
     401: jsonBody(apiErrorSchema, 'invalid_otp: wrong/expired code or no such account'),
     403: jsonBody(apiErrorSchema, 'two_factor_required or no active workspace membership'),
     429: jsonBody(apiErrorSchema, 'Too many attempts'),
+    500: errorResponses[500]
+  }
+});
+
+// ── CLI cross-tool connect (cloud edition only) ─────────────────────────────
+// PUBLIC pre-auth endpoint like /cli/auth/* (listed in PUBLIC_API_PATHS,
+// unlisted in the machine scope allowlist): the hub-minted 120 s exchange
+// JWT IS the credential — verified against the hub JWKS with hard iss/aud
+// pinning, `purpose: 'sso-connect'` required, and the `jti` consumed
+// one-time-use (a replay inside the TTL mints nothing). On success the user
+// is JIT-provisioned through the SAME projection path as an SSO login and
+// an ordinary `slk_` key is minted, bound to the projected workspace. The
+// route exists ONLY on EDITION=cloud; oss answers 404. Rate-limited (the
+// login wall, per IP).
+
+export const ssoCliConnectRoute = createRoute({
+  method: 'post',
+  path: '/sso/cli-connect',
+  tags: ['sso'],
+  summary: 'Exchange a hub-minted connect JWT for an API key (cloud edition; shown once)',
+  request: { body: jsonRequestBody(ssoCliConnectSchema, 'The hub exchange token') },
+  responses: {
+    201: jsonBody(cliAuthCompletedSchema, 'Key minted; the full key appears only here'),
+    400: jsonBody(apiErrorSchema, 'Validation error'),
+    401: jsonBody(apiErrorSchema, 'invalid_token: bad signature/iss/aud/purpose, expired, or replayed jti'),
+    403: jsonBody(apiErrorSchema, 'Provisioning refused (identity/email conflict, link refused)'),
+    429: errorResponses[429],
     500: errorResponses[500]
   }
 });

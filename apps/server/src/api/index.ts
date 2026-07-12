@@ -27,6 +27,7 @@ import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
 import type { HubSsoService } from '../identity/hub-sso.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
+import { registerSsoConnectRoutes } from './sso-connect.js';
 import { registerOauthRoutes } from './oauth.js';
 import { registerMemberRoutes } from './members.js';
 import { registerApiKeyRoutes } from './apikeys.js';
@@ -201,6 +202,13 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // per IP + email) on top of better-auth's own 3-attempts-per-code limit.
   api.use('/cli/auth/request', rateLimit(limiters.otp, clientIp, emailKeyOf));
   api.use('/cli/auth/complete', rateLimit(limiters.login, clientIp, emailKeyOf));
+  // CLI cross-tool connect (cloud only, api/sso-connect.ts): presenting an
+  // exchange token is a credential presentation — the same login wall as
+  // /cli/auth/complete (per IP; no email dimension exists pre-verification).
+  // Conditional like the route itself: oss mounts zero hub surface.
+  if (deps.hubSso) {
+    api.use('/sso/cli-connect', rateLimit(limiters.login, clientIp));
+  }
 
   // Better Auth owns /api/v1/auth/* (mounted before the credential middleware
   // — it IS the credential machinery). On cloud the whole mount runs inside
@@ -414,6 +422,13 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // CLI email-OTP → API-key mint: PUBLIC pre-auth routes (listed in
   // PUBLIC_API_PATHS) riding the emailOTP plugin; rate-limited above.
   registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger });
+  // CLI cross-tool connect (docs/federation.md P5): PUBLIC exchange of a
+  // hub-minted 120 s JWT for an `slk_` key. Registered ONLY on cloud —
+  // an oss boot leaves the path to the JSON 404 terminator below, so the
+  // self-host edition provably carries zero hub surface here.
+  if (hubSso) {
+    registerSsoConnectRoutes(api, { db, auth, hubSso, apiKeys: apiKeyService, audit, logger });
+  }
   // OAuth consent workspace selection (ADR 014): session-only, feeds the
   // consentReferenceId seam that binds grants to one workspace.
   registerOauthRoutes(api, { db, auth });

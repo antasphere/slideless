@@ -604,3 +604,27 @@ allow-downloads`, never `allow-same-origin` — on every viewer response
   `throw ctx.redirect(...)` — the dispatch pipeline catches the APIError and
   replaces the success redirect (same undo dance as the email-OTP 2FA
   interstitial). Used by the SSO after-hook's fail-closed path (ADR 015).
+
+## Cloud-binding Phase 5 (CLI cross-tool connect, 2026-07-12)
+
+- **jose's `jwtVerify` validates `exp` only when the claim EXISTS** — a
+  token minted without one sails through signature+iss+aud verification.
+  Any flow whose security story says "bounded by the TTL" must REQUIRE the
+  claim itself (`verifyConnectToken` refuses a missing `exp`); the same
+  goes for `jti` before using it as a replay handle.
+- **One-time-use must be claim-FIRST**: `/sso/cli-connect` INSERTs the jti
+  into `sso_connect_jtis` (PK conflict = replay, multi-replica safe) BEFORE
+  provisioning/minting. Insert-after-work would let two concurrent
+  presentations of one token both reach the mint. Corollary: a transient
+  provisioning failure burns the token — deliberate; the caller re-exchanges
+  with the hub for a fresh one (120 s tokens are free), and the safe side of
+  the race is the only acceptable side on a public endpoint.
+- **`internalAdapter.createOAuthUser` is the reusable SSO-JIT primitive**
+  for server-side entrances (no HTTP dance): it is the exact call the
+  genericOAuth callback makes, wraps user+account in the transaction
+  passthrough, lowercases the email, and fires `databaseHooks.user.create`
+  — so the `user.created` seam (collaborator sweep) covers a
+  non-better-auth entrance for free. Mirror better-auth's own linking rules
+  around it (account-by-(provider,sub) first, then trusted-link by email
+  ONLY onto a VERIFIED local address) or the entrance diverges from the
+  browser SSO path's takeover posture.

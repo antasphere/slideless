@@ -240,6 +240,53 @@ is not gated — it is not an authenticated workspace surface; revoke share
 tokens to cut it. The MCP transport handshake itself is not gated either;
 every MCP tool call is, since it re-enters `/api/v1`.
 
+## CLI cross-tool connect (Phase 5): `POST /api/v1/sso/cli-connect`
+
+One hub login serves every tool CLI (the gcloud model, D4): `antasphere
+login` mints a hub `ant_` key once; when the `slideless` CLI needs a
+credential for a cloud instance, cli-core asks the hub's H3 endpoint
+(`POST {hub}/api/v1/sso/tool-token`, scope `sso:exchange`) for a
+**short-lived exchange JWT** and presents it here. The endpoint —
+`api/sso-connect.ts`, registered ONLY on `EDITION=cloud` (an oss instance
+answers 404; the path never exists there) — is **public** (tier 2, listed
+in `PUBLIC_API_PATHS`): the hub JWT is the only credential, so verification
+is the entire security story.
+
+**The exchange token (pinned contract with H3)**: a 120 s RS256 JWT signed
+by the hub's OIDC key — `iss` = the hub issuer, `aud` = THIS instance's
+resource URL (`<PUBLIC_BASE_URL>/mcp`), `sub` = hub user id, the
+`membershipAccessClaims` org payload (`workspace_id`, `role`, `email`,
+`workspace_name`), a discriminator `purpose: 'sso-connect'`, and a unique
+`jti`.
+
+**Verification chain** (`HubSsoService.verifyConnectToken`, every link
+fail-closed, one uniform 401 for every rejection):
+
+1. hub-JWKS signature + hard `iss`/`aud` pinning + RS256 allowlist + expiry
+   (`HubJwtVerifier` — the same trust anchor as the SSO login). A token for
+   another tool fails `aud`; anything this instance minted itself (MCP
+   access tokens) fails `iss`.
+2. `exp`, `purpose === 'sso-connect'`, and `jti` are REQUIRED — a flow-(a)
+   hub access token carries no `purpose` and dies despite matching iss/aud.
+3. **jti one-time-use**: consuming a token INSERTs its jti into the
+   `sso_connect_jtis` table (migration 0022); the primary-key conflict IS
+   the replay signal — Postgres-backed, so multi-replica safe. Claim-first:
+   the jti burns BEFORE provisioning, so a replay (even concurrent) can
+   never mint a second key; a transient provisioning failure costs one
+   fresh hub exchange.
+
+**On success** the user is JIT-provisioned through the SAME
+`HubSsoService` path as a browser SSO login — the internal adapter's
+`createOAuthUser` (the `user.created` hook and collaborator sweep fire),
+the D9 trusted link (verified local emails only), the D10 email sync, and
+the lazy projection + `origin='hub'` membership upsert — then an ordinary
+`slk_` key is minted, bound to the ONE projected workspace, scopes
+`presentations:read presentations:write` (never `data:export`), named
+"Antasphere CLI <date>", audited like `/cli/auth/complete`, returned once.
+Day-to-day CLI calls are then the ordinary local API-key path — the hub is
+out of the loop until the next exchange; `slideless logout` is the tool's
+own key revocation.
+
 ## The hub registry entry (what the HUB operator configures)
 
 The hub seeds first-party tool clients from its `TOOL_REGISTRY` env var
@@ -318,7 +365,7 @@ docker compose -f docker-compose.federation.yml down -v
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P3 — SSO entrance   | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021. |
 | P4 — hub gates      | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice. |
-| P5 — CLI cross-tool | `POST /api/v1/sso/cli-connect` verifying hub-minted 120s JWTs; hub H3 `/sso/tool-token`.                                                                                     |
+| P5 — CLI cross-tool | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side. |
 
 ## Related decisions
 

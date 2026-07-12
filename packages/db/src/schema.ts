@@ -235,6 +235,26 @@ export const idempotencyKeys = pgTable(
 );
 
 /**
+ * One-time-use ledger for hub→tool exchange JWTs (`POST /sso/cli-connect`,
+ * cloud edition only — docs/federation.md P5). The hub mints every 120 s
+ * exchange token with a unique `jti`; consuming a token INSERTs its jti
+ * here first, and the primary-key conflict IS the replay detection — a
+ * replayed token inside its TTL loses the insert and is rejected before it
+ * can mint a second key. Postgres-backed so the guard is MULTI-REPLICA
+ * SAFE by construction (every replica races the same table), unlike any
+ * in-memory set. Rows are inert once `expires_at` passes (the token itself
+ * is expired then — the hub never re-mints a jti) and are swept
+ * best-effort on later exchanges; the table stays tiny (rows live ~2 min,
+ * arrivals are rate-limited), so the sweep needs no index.
+ */
+export const ssoConnectJtis = pgTable('sso_connect_jtis', {
+  jti: text('jti').primaryKey(),
+  /** The token's own `exp` — after this the row only documents history. */
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+/**
  * Audit log: who did what to which resource, when, with which credential.
  * Append-only; bigint identity keeps inserts cheap on the hot path.
  */

@@ -25,7 +25,13 @@ const PUBLIC_API_PATHS = new Set([
   // CLI email-OTP sign-in (api/cli-auth.ts): pre-auth by definition — the
   // flow exists to OBTAIN a credential. Both are rate-limited in api/index.ts.
   '/api/v1/cli/auth/request',
-  '/api/v1/cli/auth/complete'
+  '/api/v1/cli/auth/complete',
+  // CLI cross-tool connect (api/sso-connect.ts, cloud edition): pre-auth by
+  // the same definition — the hub-minted exchange JWT in the body IS the
+  // credential, verified hard by the handler. Rate-limited in api/index.ts.
+  // The entry is inert on oss: the route is never registered there, so the
+  // path falls through to the JSON 404 terminator for every caller.
+  '/api/v1/sso/cli-connect'
 ]);
 
 export function isPublicApiPath(path: string): boolean {

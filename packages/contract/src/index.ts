@@ -7,6 +7,7 @@ export * from './schemas/me.js';
 export * from './schemas/members.js';
 export * from './schemas/api-keys.js';
 export * from './schemas/cli-auth.js';
+export * from './schemas/sso-connect.js';
 export * from './schemas/invitations.js';
 export * from './schemas/audit.js';
 export * from './schemas/break-glass.js';

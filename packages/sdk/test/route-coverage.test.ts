@@ -36,6 +36,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /me': (c) => c.me(),
   'POST /cli/auth/request': (c) => c.cliAuthRequest({ email: 'a@b.co' }),
   'POST /cli/auth/complete': (c) => c.cliAuthComplete({ email: 'a@b.co', otp: '123456' }),
+  'POST /sso/cli-connect': (c) => c.ssoCliConnect({ token: SAMPLE_TOKEN }),
   'GET /members': (c) => c.members(),
   'PATCH /members/{id}': (c) => c.updateMember(SAMPLE_ID, { role: 'admin' }),
   'DELETE /members/{id}': (c) => c.deleteMember(SAMPLE_ID),

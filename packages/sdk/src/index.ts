@@ -49,6 +49,7 @@ import type {
   ShareTokenSend,
   ShareTokenSent,
   ShareTokenUpdate,
+  SsoCliConnect,
   UploadSession,
   UploadSessionCommit,
   VersionCommit,
@@ -248,6 +249,16 @@ export class PlatformClient {
    */
   cliAuthComplete(req: CliAuthComplete): Promise<CliAuthCompleted> {
     return this.request('POST', '/cli/auth/complete', req);
+  }
+
+  /**
+   * Public, CLOUD EDITION only (404 on oss): exchange a hub-minted 120 s
+   * connect JWT (the hub's /sso/tool-token response) for an `slk_` API key
+   * bound to the projected workspace — same grant and one-shot response
+   * shape as cliAuthComplete. Each token works exactly once (jti).
+   */
+  ssoCliConnect(req: SsoCliConnect): Promise<CliAuthCompleted> {
+    return this.request('POST', '/sso/cli-connect', req);
   }
 
   // ── Members ───────────────────────────────────────────────────────────────
