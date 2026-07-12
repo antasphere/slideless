@@ -1,4 +1,4 @@
-import { api } from '$lib/api';
+import { api, clearWorkspaceSelection, storedWorkspaceId } from '$lib/api';
 import { initLocale } from '$lib/i18n';
 import type { MeResponse } from '@slideless/contract';
 import type { LayoutLoad } from './$types';
@@ -26,6 +26,13 @@ export const load: LayoutLoad = async () => {
       // A session without a live membership (deactivated member) counts as
       // signed out — /me is the source of truth for role + workspace.
       me = await api.me().catch(() => null);
+      if (!me && storedWorkspaceId()) {
+        // Stale persisted workspace (membership revoked, workspace gone):
+        // X-Workspace-Id fails closed server-side. Self-heal — drop the
+        // selection and retry once against the server default.
+        clearWorkspaceSelection();
+        me = await api.me().catch(() => null);
+      }
     }
   }
 

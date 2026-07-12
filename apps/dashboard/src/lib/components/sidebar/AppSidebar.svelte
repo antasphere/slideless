@@ -11,15 +11,23 @@
   import ScrollText from '@lucide/svelte/icons/scroll-text';
   import Settings from '@lucide/svelte/icons/settings';
   import { t } from '$lib/i18n';
-  import type { WorkspaceRole } from '@slideless/contract';
+  import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
+  import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 
   interface Props {
     instanceName: string;
     role: WorkspaceRole;
     user: { name: string; email: string };
+    /** All the user's workspaces + the one this session targets (ADR 012). */
+    workspaces?: MeResponse['workspaces'];
+    activeWorkspaceId?: string;
   }
 
-  let { instanceName, role, user }: Props = $props();
+  let { instanceName, role, user, workspaces = [], activeWorkspaceId = '' }: Props = $props();
+
+  // The switcher exists ONLY with several memberships — a single-membership
+  // user (every self-host) keeps the plain instance-name header unchanged.
+  const showSwitcher = $derived(workspaces.length > 1 && activeWorkspaceId !== '');
 
   const isAdmin = $derived(role === 'owner' || role === 'admin');
 
@@ -56,14 +64,18 @@
 
 <Sidebar.Root variant="inset" collapsible="icon">
   <Sidebar.Header>
-    <div class="flex items-center gap-2 px-2 py-2">
-      <div
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm"
-      >
-        {initial}
+    {#if showSwitcher}
+      <WorkspaceSwitcher {workspaces} {activeWorkspaceId} />
+    {:else}
+      <div class="flex items-center gap-2 px-2 py-2">
+        <div
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm"
+        >
+          {initial}
+        </div>
+        <span class="truncate text-sm font-semibold">{instanceName}</span>
       </div>
-      <span class="truncate text-sm font-semibold">{instanceName}</span>
-    </div>
+    {/if}
   </Sidebar.Header>
   <Sidebar.Content>
     {#each navGroups as group (group.label)}

@@ -1,8 +1,53 @@
 import { PlatformClient, PlatformApiError } from '@slideless/sdk';
 import { t } from '$lib/i18n';
 
-/** Same-origin client — the HttpOnly session cookie rides every call. */
-export const api = new PlatformClient();
+/** localStorage key for the persisted active-workspace choice (ADR 012). */
+export const WORKSPACE_STORAGE_KEY = 'platform.workspaceId';
+
+/**
+ * The persisted active workspace, or null. Guarded like the i18n read:
+ * localStorage can throw (privacy modes) and does not exist under vitest.
+ */
+export function storedWorkspaceId(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(WORKSPACE_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Same-origin client — the HttpOnly session cookie rides every call, plus
+ * the persisted X-Workspace-Id when the user chose a workspace (only ever
+ * set on multi-workspace instances; absent = the server's default, which
+ * IS the sole workspace on a self-host).
+ */
+export const api = new PlatformClient({ workspaceId: storedWorkspaceId() ?? undefined });
+
+/**
+ * Switch the active workspace: persist + full reload (the setLocale
+ * pattern — every loader and paged store restarts against the new scope).
+ */
+export function switchWorkspace(workspaceId: string): void {
+  try {
+    globalThis.localStorage?.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
+  } catch {
+    // Not persistable — the reload below still applies it for this visit
+    // because the server default takes over (sole workspace) or the user
+    // re-picks; never block the switch on storage.
+  }
+  window.location.reload();
+}
+
+/** Drop a stale selection (revoked membership, deleted workspace) — no reload. */
+export function clearWorkspaceSelection(): void {
+  try {
+    globalThis.localStorage?.removeItem(WORKSPACE_STORAGE_KEY);
+  } catch {
+    // nothing to clear
+  }
+  api.setWorkspace(null);
+}
 
 export { PlatformApiError };
 

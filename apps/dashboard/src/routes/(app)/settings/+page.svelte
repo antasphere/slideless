@@ -6,6 +6,8 @@
   import { Separator } from '$lib/components/ui/separator/index.js';
   import Download from '@lucide/svelte/icons/download';
   import LogOut from '@lucide/svelte/icons/log-out';
+  import { toast } from 'svelte-sonner';
+  import { api, errorMessage } from '$lib/api';
   import { signOutToLogin } from '$lib/session';
   import { t } from '$lib/i18n';
 
@@ -14,6 +16,7 @@
   const isAdmin = $derived(data.me.role === 'owner' || data.me.role === 'admin');
 
   let signingOut = $state(false);
+  let exporting = $state(false);
 
   async function handleSignOut() {
     signingOut = true;
@@ -21,6 +24,34 @@
       await signOutToLogin();
     } finally {
       signingOut = false;
+    }
+  }
+
+  /**
+   * Export via the SDK, not a plain <a href>: an anchor cannot carry the
+   * X-Workspace-Id header, so on a multi-workspace account it would export
+   * the DEFAULT workspace instead of the active one (ADR 012). Trade-off:
+   * the zip is buffered as a Blob before the save dialog — fine for
+   * deck-scale exports; multi-GB exports should move to a server-tokenized
+   * download URL.
+   */
+  async function handleExport() {
+    exporting = true;
+    try {
+      const res = await api.downloadExport();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workspace-export-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      exporting = false;
     }
   }
 </script>
@@ -108,10 +139,9 @@
         </Card.Description>
       </Card.Header>
       <Card.Content>
-        <!-- A plain link: the download rides the session cookie. -->
-        <Button variant="outline" href="/api/v1/workspace/export" download>
+        <Button variant="outline" onclick={() => void handleExport()} disabled={exporting}>
           <Download class="mr-2 h-4 w-4" />
-          {t('settings.exportButton')}
+          {exporting ? t('common.working') : t('settings.exportButton')}
         </Button>
         <p class="pt-3 text-xs text-muted-foreground">
           {t('settings.exportHint')}

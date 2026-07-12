@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..', '..');
 export const COMPOSE_PROJECT = 'pw-smoke';
-export const APP_PORT = '3100';
+// Overridable so the e2e can run beside another instance of the product
+// (or the dev stack) already holding the default host port.
+export const APP_PORT = process.env.PW_SMOKE_PORT ?? '3100';
 
 export const composeArgs = [
   'compose',

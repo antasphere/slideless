@@ -1,5 +1,6 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card/index.js';
+  import * as Select from '$lib/components/ui/select/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
   import Download from '@lucide/svelte/icons/download';
@@ -7,6 +8,7 @@
   import Pencil from '@lucide/svelte/icons/pencil';
   import UserRound from '@lucide/svelte/icons/user-round';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
+  import { api } from '$lib/api';
   import { safeHttpUrl } from '$lib/utils.js';
   import { t } from '$lib/i18n';
 
@@ -16,11 +18,29 @@
    * to the server verbatim as `oauth_query`; the server (fail-closed) is the
    * only validator of the signature. The checks here only pick the right UI
    * state early.
+   *
+   * Workspace binding (ADR 012): the grant is scoped to ONE workspace. The
+   * page always NAMES it; users with several memberships get a picker
+   * (default = this session's active workspace) whose choice is parked via
+   * POST /api/v1/oauth/consent-workspace right before approval — the choice
+   * cannot ride the signed query, so it travels on its own session-scoped
+   * channel. Single-membership users see no picker and no extra request.
    */
+
+  let { data } = $props();
+  // The loader guarantees a signed-in `me` (redirects to /login otherwise).
+  const me = data.me!;
 
   // Captured once, verbatim — this exact string is the signature's payload.
   const oauthQuery = window.location.search.slice(1);
   const params = new URLSearchParams(window.location.search);
+
+  const hasWorkspacePicker = me.workspaces.length > 1;
+  // Default = this session's active workspace.
+  let selectedWorkspaceId = $state(me.activeWorkspaceId);
+  const selectedWorkspaceName = $derived(
+    me.workspaces.find((w) => w.id === selectedWorkspaceId)?.name ?? me.workspace.name
+  );
 
   const clientId = params.get('client_id');
   const redirectUri = params.get('redirect_uri');
@@ -108,6 +128,18 @@
     submitting = true;
     error = null;
     try {
+      // Park the workspace choice for THIS session before approving — only
+      // needed when a picker exists (the server default already names the
+      // sole workspace otherwise). Fail-closed: a rejected selection stops
+      // the approval instead of consenting to the wrong workspace.
+      if (accept && hasWorkspacePicker) {
+        try {
+          await api.oauthConsentWorkspace(selectedWorkspaceId);
+        } catch {
+          error = t('consent.errorWorkspaceSelection');
+          return;
+        }
+      }
       const res = await fetch('/api/v1/auth/oauth2/consent', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -199,6 +231,35 @@
             {error}
           </div>
         {/if}
+
+        <!-- The grant is scoped to ONE workspace (ADR 012) — always name it;
+             a picker only exists for users with several memberships. -->
+        <div>
+          <p class="mb-2 text-sm font-medium">{t('consent.workspaceLabel')}</p>
+          {#if hasWorkspacePicker}
+            <Select.Root
+              type="single"
+              value={selectedWorkspaceId}
+              onValueChange={(v) => {
+                if (v) selectedWorkspaceId = v;
+              }}
+            >
+              <Select.Trigger class="w-full" data-testid="consent-workspace">
+                {selectedWorkspaceName}
+              </Select.Trigger>
+              <Select.Content>
+                {#each me.workspaces as workspace (workspace.id)}
+                  <Select.Item value={workspace.id} label={workspace.name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          {:else}
+            <p class="text-sm text-muted-foreground" data-testid="consent-workspace">
+              {selectedWorkspaceName}
+            </p>
+          {/if}
+          <p class="pt-1 text-xs text-muted-foreground">{t('consent.workspaceNotice')}</p>
+        </div>
 
         {#if scopeLines.length > 0}
           <div>

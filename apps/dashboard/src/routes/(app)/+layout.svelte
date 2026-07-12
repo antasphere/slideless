@@ -11,6 +11,8 @@
     instanceName={data.instance.name}
     role={data.me.role}
     user={{ name: data.me.user.name, email: data.me.user.email }}
+    workspaces={data.me.workspaces}
+    activeWorkspaceId={data.me.activeWorkspaceId}
   />
   <Sidebar.Inset>
     <header class="flex h-12 shrink-0 items-center gap-2 px-4">

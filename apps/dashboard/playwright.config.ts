@@ -1,5 +1,10 @@
 import { defineConfig } from '@playwright/test';
 
+// Keep in lockstep with e2e/stack-env.mjs (this config cannot import the
+// .mjs): the port is overridable so the suite can run beside another
+// instance of the product already holding 3100.
+const APP_PORT = process.env.PW_SMOKE_PORT ?? '3100';
+
 /**
  * Smoke suite against the REAL stack: the docker compose file at the repo
  * root, built fresh, on an isolated compose project (pw-smoke) with its own
@@ -23,12 +28,12 @@ export default defineConfig({
     { name: 'decks', testMatch: /decks\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
-    baseURL: 'http://localhost:3100',
+    baseURL: `http://localhost:${APP_PORT}`,
     trace: 'retain-on-failure'
   },
   webServer: {
     command: 'node e2e/start-stack.mjs',
-    url: 'http://localhost:3100/readyz',
+    url: `http://localhost:${APP_PORT}/readyz`,
     // First run builds the docker image — give it room.
     timeout: 600_000,
     reuseExistingServer: false,
