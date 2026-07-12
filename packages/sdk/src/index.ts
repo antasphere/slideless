@@ -36,6 +36,7 @@ import type {
   MemberResetLink,
   MemberUpdate,
   MeResponse,
+  OauthConsentWorkspace,
   Presentation,
   PresentationVersion,
   PresentationVersionDetail,
@@ -352,6 +353,17 @@ export class PlatformClient {
   }
 
   /** Public: accepts an invitation (creates the account when needed). */
+  // ── OAuth consent ─────────────────────────────────────────────────────────
+
+  /**
+   * Park the workspace the upcoming OAuth consent should bind (ADR 012).
+   * Sessions only; the consent page calls it right before approving when
+   * the user picked a non-default workspace.
+   */
+  oauthConsentWorkspace(workspaceId: string): Promise<OauthConsentWorkspace> {
+    return this.request('POST', '/oauth/consent-workspace', { workspaceId });
+  }
+
   acceptInvitation(req: InvitationAccept): Promise<InvitationAccepted> {
     return this.request('POST', '/invitations/accept', req);
   }

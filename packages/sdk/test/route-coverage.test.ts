@@ -50,6 +50,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'DELETE /invitations/{id}': (c) => c.revokeInvitation(SAMPLE_ID),
   'GET /invitations/lookup': (c) => c.lookupInvitation(SAMPLE_TOKEN),
   'POST /invitations/accept': (c) => c.acceptInvitation({ token: SAMPLE_TOKEN }),
+  'POST /oauth/consent-workspace': (c) => c.oauthConsentWorkspace(SAMPLE_ID),
   'POST /admin/break-glass/claim-ownership': (c) => c.breakGlassClaimOwnership(),
   'POST /admin/break-glass/reset-2fa': (c) => c.breakGlassResetTwoFactor({ userId: SAMPLE_ID }),
   'GET /audit': (c) => c.audit(),

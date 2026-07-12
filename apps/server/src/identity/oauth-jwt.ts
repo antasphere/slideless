@@ -17,6 +17,9 @@ import { mcpResourceUrl, type Auth } from './better-auth.js';
  */
 const JWKS_TTL_MS = 10 * 60 * 1000;
 
+/** Strict UUID shape — a malformed claim must never reach Postgres' uuid cast. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class OauthJwtVerifier {
   private readonly issuer: string;
   private readonly audience: string;
@@ -65,6 +68,14 @@ export class OauthJwtVerifier {
    * Resolve a Bearer JWT to its principal, or null when the token fails
    * verification or the membership row is missing/inactive — the same
    * fail-closed semantics as the session and API-key paths.
+   *
+   * Workspace scoping (ADR 012): the `workspace_id` claim names the ONE
+   * workspace this token was consent-bound to — the membership re-check is
+   * filtered to it, so the token reaches exactly that workspace's data and
+   * nothing else, whatever other memberships the user holds. A token
+   * WITHOUT the claim (minted before workspace binding existed) falls back
+   * to the sole active membership; a multi-workspace user's legacy token
+   * resolves to null (fail closed — re-authorization mints a bound one).
    */
   async resolve(token: string): Promise<Principal | null> {
     let payload: Record<string, unknown>;
@@ -75,10 +86,13 @@ export class OauthJwtVerifier {
     }
     const sub = typeof payload.sub === 'string' ? payload.sub : null;
     if (!sub) return null;
+    const claimedWorkspace = typeof payload.workspace_id === 'string' ? payload.workspace_id : null;
+    if (claimedWorkspace !== null && !UUID_RE.test(claimedWorkspace)) return null;
 
     // LIVE authorization lookup — the instant-revocation point. The token's
-    // role/workspace claims are a 15-min-stale snapshot and never trusted.
-    const [row] = await this.db
+    // role claim is a 15-min-stale snapshot and never trusted; workspace_id
+    // only SELECTS which membership must be live, it grants nothing itself.
+    const rows = await this.db
       .select({
         role: workspaceMembers.role,
         workspaceId: workspaceMembers.workspaceId,
@@ -89,9 +103,18 @@ export class OauthJwtVerifier {
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
       .innerJoin(userTable, eq(workspaceMembers.userId, userTable.id))
-      .where(and(eq(workspaceMembers.userId, sub), eq(workspaceMembers.isActive, true)))
-      .limit(1);
+      .where(
+        and(
+          eq(workspaceMembers.userId, sub),
+          eq(workspaceMembers.isActive, true),
+          ...(claimedWorkspace ? [eq(workspaceMembers.workspaceId, claimedWorkspace)] : [])
+        )
+      )
+      .limit(2);
+    const [row] = rows;
     if (!row) return null;
+    // Legacy claimless token + several workspaces: never guess — fail closed.
+    if (!claimedWorkspace && rows.length > 1) return null;
 
     return {
       userId: sub,

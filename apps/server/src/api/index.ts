@@ -26,6 +26,7 @@ import {
 import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
+import { registerOauthRoutes } from './oauth.js';
 import { registerMemberRoutes } from './members.js';
 import { registerApiKeyRoutes } from './apikeys.js';
 import { registerInvitationRoutes } from './invitations.js';
@@ -378,6 +379,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // CLI email-OTP → API-key mint: PUBLIC pre-auth routes (listed in
   // PUBLIC_API_PATHS) riding the emailOTP plugin; rate-limited above.
   registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger });
+  // OAuth consent workspace selection (ADR 012): session-only, feeds the
+  // consentReferenceId seam that binds grants to one workspace.
+  registerOauthRoutes(api, { db, auth });
   registerMemberRoutes(api, {
     db,
     auth,

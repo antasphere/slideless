@@ -26,6 +26,7 @@ import {
   invitationsListSchema
 } from '../schemas/invitations.js';
 import { auditListSchema } from '../schemas/audit.js';
+import { oauthConsentWorkspaceRequestSchema, oauthConsentWorkspaceSchema } from '../schemas/oauth.js';
 import {
   cliAuthCompletedSchema,
   cliAuthCompleteSchema,
@@ -354,6 +355,29 @@ export const invitationAcceptRoute = createRoute({
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Account exists — sign in to accept'),
     410: errorResponses[410]
+  }
+});
+
+// ── OAuth consent workspace (ADR 012) ───────────────────────────────────────
+// Session-only by construction: deliberately UNLISTED in the machine scope
+// allowlist (middleware/scopes.ts) so keys/tokens 403 fail-closed, and the
+// handler additionally refuses non-session principals. Uniform 403 whether
+// the workspace does not exist or the caller is not an active member — no
+// oracle about other workspaces.
+
+export const oauthConsentWorkspaceRoute = createRoute({
+  method: 'post',
+  path: '/oauth/consent-workspace',
+  tags: ['auth'],
+  summary: 'Choose which workspace the upcoming OAuth consent binds (sessions only, ~10 min)',
+  request: {
+    body: jsonRequestBody(oauthConsentWorkspaceRequestSchema, 'The chosen workspace')
+  },
+  responses: {
+    200: jsonBody(oauthConsentWorkspaceSchema, 'Selection parked for this session'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403]
   }
 });
 

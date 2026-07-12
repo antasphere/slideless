@@ -10,6 +10,7 @@ export * from './schemas/cli-auth.js';
 export * from './schemas/invitations.js';
 export * from './schemas/audit.js';
 export * from './schemas/break-glass.js';
+export * from './schemas/oauth.js';
 export * from './schemas/files.js';
 export * from './schemas/presentations.js';
 export * from './schemas/share-tokens.js';
