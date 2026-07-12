@@ -19,7 +19,7 @@ import {
   buildPasswordResetEmail,
   buildVerifyEmailEmail
 } from './email/templates.js';
-import { parseEnv, type Env } from './env.js';
+import { hubConfig, parseEnv, type Env } from './env.js';
 import { createAuth, type AccountEvent, type Auth } from './identity/better-auth.js';
 import { OauthJwtVerifier } from './identity/oauth-jwt.js';
 import { isApiKeyToken } from './apikeys/service.js';
@@ -33,6 +33,7 @@ import { createStorageDriver } from './storage/factory.js';
 import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-limit.js';
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from './observability/otel.js';
+import { bindEditionSeams } from './platform/edition.js';
 import { AllowAllEntitlements } from './platform/entitlements.js';
 import { EventBus } from './platform/events.js';
 import { LocalIdentityProvider } from './platform/local-identity.js';
@@ -290,21 +291,31 @@ export async function boot(
     audit
   );
 
+  // The edition split (docs/federation.md): the local defaults below are the
+  // oss binding, passed through bindEditionSeams — the ONE place EDITION
+  // decides what the registry gets. oss returns them untouched; cloud
+  // rebinds identity/entitlements as the federation phases land.
   const registry = createRegistry({
-    identity: new LocalIdentityProvider(
-      auth,
-      db.db,
-      Boolean(env.GOOGLE_CLIENT_ID),
-      email.delivers,
-      email.delivers, // self-serve password reset needs a delivering email driver
-      email.delivers // self-serve email change needs one too
+    ...bindEditionSeams(
+      hubConfig(env),
+      {
+        identity: new LocalIdentityProvider(
+          auth,
+          db.db,
+          Boolean(env.GOOGLE_CLIENT_ID),
+          email.delivers,
+          email.delivers, // self-serve password reset needs a delivering email driver
+          email.delivers // self-serve email change needs one too
+        ),
+        entitlements: new AllowAllEntitlements({
+          maxFileSizeMb: env.MAX_FILE_SIZE_MB,
+          apiRequestsPerMinute: env.API_RATE_LIMIT_PER_MINUTE,
+          apiRequestsBurstPerSecond: env.API_RATE_LIMIT_BURST
+        }),
+        usage: new PgBossUsageSink(jobs.boss, logger)
+      },
+      logger
     ),
-    entitlements: new AllowAllEntitlements({
-      maxFileSizeMb: env.MAX_FILE_SIZE_MB,
-      apiRequestsPerMinute: env.API_RATE_LIMIT_PER_MINUTE,
-      apiRequestsBurstPerSecond: env.API_RATE_LIMIT_BURST
-    }),
-    usage: new PgBossUsageSink(jobs.boss, logger),
     events,
     workspaces: new WorkspaceService(db.db)
   });

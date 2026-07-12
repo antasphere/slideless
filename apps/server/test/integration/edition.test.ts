@@ -105,4 +105,36 @@ describe('cloud edition on a fresh database', () => {
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.edition).toBe('cloud');
   });
+
+  it('advertises the hub SSO method — alongside the local entrance, which still works in P2', async () => {
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    expect(info.auth.methods).toContain('antasphere');
+    // The D1 hub-only posture (hide password/OTP) lands with the REAL SSO
+    // binding in Phase 3; until then the local entrance stays advertised
+    // because it is still the only working one.
+    expect(info.auth.methods).toContain('password');
+  });
+
+  it('identity resolution is unchanged by the cloud stub (local sessions work)', async () => {
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
+    const me = await app.app.request('/api/v1/me', { headers: { cookie } });
+    expect(me.status).toBe(200);
+    expect((await readJson(me)).user.email).toBe(OWNER.email);
+  });
+});
+
+describe('oss edition discovery (unchanged)', () => {
+  it('never advertises the hub SSO method', async () => {
+    const app = await createTestApp(await createDatabase(container, 'edition_oss_disc'));
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    expect(info.edition).toBe('oss');
+    expect(info.auth.methods).not.toContain('antasphere');
+    expect(info.auth.methods).toContain('password');
+    await app.stop();
+  });
 });

@@ -56,8 +56,26 @@ export interface Principal {
   accountRef?: string;
 }
 
+/**
+ * Sign-in methods an instance can advertise in discovery. The set is OPEN
+ * (ADR 003 reserved this): clients must IGNORE entries they do not
+ * recognize, so an edition can add a method — like the cloud edition's
+ * 'antasphere' hub SSO — without breaking older SDKs/CLIs. This list is the
+ * known vocabulary, not a closed enum.
+ */
+export const KNOWN_AUTH_METHODS = [
+  'password',
+  'email-otp',
+  'google',
+  'api-key',
+  'oauth',
+  'antasphere'
+] as const;
+export type KnownAuthMethod = (typeof KNOWN_AUTH_METHODS)[number];
+
 export interface InstanceAuthDescriptor {
-  methods: Array<'password' | 'email-otp' | 'google' | 'api-key' | 'oauth'>;
+  /** Open set — known values in {@link KNOWN_AUTH_METHODS}; ignore unknown entries. */
+  methods: Array<KnownAuthMethod | (string & {})>;
   /** Self-serve password reset is available (requires a configured email driver). */
   passwordReset: boolean;
   /** Self-serve email change is available (requires a configured email driver). */

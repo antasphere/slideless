@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { KNOWN_AUTH_METHODS } from '../seams.js';
 
 /**
  * GET /api/v1/instance — unauthenticated, cacheable discovery. This is what
@@ -13,7 +14,10 @@ export const instanceInfoSchema = z.object({
   apiVersion: z.literal('v1'),
   setupRequired: z.boolean(),
   auth: z.object({
-    methods: z.array(z.enum(['password', 'email-otp', 'google', 'api-key', 'oauth'])),
+    // Open enum (ADR 003): the enum documents the known vocabulary, the
+    // string branch keeps older clients parsing newer instances. Clients
+    // ignore entries they do not recognize.
+    methods: z.array(z.enum(KNOWN_AUTH_METHODS).or(z.string())),
     passwordReset: z.boolean(),
     emailChange: z.boolean(),
     twoFactor: z.boolean()
