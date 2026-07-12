@@ -26,7 +26,7 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  *   API key:  --api-key → SLIDELESS_API_KEY → profile apiKey
  */
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 
 function buildProgram(io: CliIo): Command {
   const program = new Command();

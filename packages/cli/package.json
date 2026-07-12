@@ -1,6 +1,6 @@
 {
   "name": "@antasphere/slideless",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The Slideless CLI — push, share, pull, and preview decks on a Slideless instance",
   "license": "MIT",
   "type": "module",
@@ -30,7 +30,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
-    "@antasphere/cli-core": "^0.1.0",
+    "@antasphere/cli-core": "^0.2.0",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
     "@types/node": "^22.15.0",
