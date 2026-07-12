@@ -1,0 +1,181 @@
+# Federation dev harness (docs/federation.md): the Antasphere hub AND a
+# Slideless CLOUD-edition instance in one compose project, pre-wired so the
+# Phase 3+ SSO work has a live two-instance loop to develop against.
+#
+#   docker compose -f docker-compose.federation.yml up -d --build
+#   curl -fsS http://localhost:3300/healthz   # hub
+#   curl -fsS http://localhost:3310/healthz   # slideless (cloud)
+#   docker compose -f docker-compose.federation.yml down -v
+#
+# DEV ONLY — inline secrets, localhost-bound ports, Mailpit accepting
+# unauthenticated SMTP. Never point this file at anything real.
+#
+# Ports (chosen to never collide with the standing local stacks — template
+# :3000, Slideless self-host :3100 (+ Mailpit :8026), hub :3200 (+ :8028)):
+#   3300  hub            http://localhost:3300  (Mailpit UI: http://localhost:8030)
+#   3310  slideless      http://localhost:3310
+#
+# Hostname trick: each app's PUBLIC_BASE_URL uses a *.localhost name
+# (hub.localhost / slideless.localhost) that resolves BOTH ways — browsers
+# resolve *.localhost to 127.0.0.1 (RFC 6761; Chrome/Firefox do, and the
+# host port mapping picks it up), while inside the compose network the same
+# name is a service alias. Each app also LISTENS on its host port (PORT=3300
+# / 3310), so one URL is valid from the browser and from the other
+# container: the OIDC issuer string, the JWKS fetch, and the browser
+# redirects all agree. From plain curl on the host, use localhost:PORT.
+#
+# One-time bootstrap after `up`:
+#   1. Hub setup (operator): POST http://localhost:3300/api/v1/setup or open
+#      http://hub.localhost:3300 in a browser.
+#   2. Slideless setup: POST http://localhost:3310/api/v1/setup or open
+#      http://slideless.localhost:3310. It boots EDITION=cloud (Phase 2
+#      stub: local login still works; discovery already advertises the
+#      'antasphere' method).
+#   3. (Phase 4+) Mint a hub service key with the accounts:status scope and
+#      replace HUB_SERVICE_KEY below — the Phase 2/3 placeholder is never
+#      called.
+#
+# The hub's TOOL_REGISTRY below seeds the OAuth client `tool-slideless-cloud`
+# at hub boot (look for "tool registry: client seeded" in `docker compose -f
+# docker-compose.federation.yml logs hub`). Redirect URI + resource URL are
+# the localhost twins of the production entry (docs/federation.md carries
+# the real slideless.antasphere.com recipe).
+#
+# The hub repo is a sibling checkout; override FEDERATION_HUB_DIR if your
+# layout differs:
+#   FEDERATION_HUB_DIR=/path/to/hub docker compose -f docker-compose.federation.yml up -d --build
+
+name: slideless-federation
+
+services:
+  hub:
+    image: antasphere-hub:federation-dev
+    build: ${FEDERATION_HUB_DIR:-../../../../platform/hub}
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on:
+      hub-db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    networks:
+      default:
+        aliases:
+          - hub.localhost
+    environment:
+      - PORT=3300
+      - DATABASE_URL=postgres://antasphere:federation-dev@hub-db:5432/antasphere
+      - PUBLIC_BASE_URL=http://hub.localhost:3300
+      - EMAIL_DRIVER=smtp
+      - SMTP_URL=smtp://mailpit:1025
+      - EMAIL_FROM=Antasphere Federation Dev <dev@antasphere.local>
+      - LOG_LEVEL=info
+      # Seeds the Slideless cloud tool client at boot (idempotent upsert).
+      # Dev twin of the production recipe in docs/federation.md.
+      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:3310/mcp","redirectUris":["http://slideless.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"}]'
+    ports:
+      - '127.0.0.1:3300:3300'
+    read_only: true
+    volumes:
+      - hub_app_data:/data
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3300/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  hub-db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=antasphere
+      - POSTGRES_PASSWORD=federation-dev
+      - POSTGRES_DB=antasphere
+    volumes:
+      - hub_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U antasphere -d antasphere']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  app:
+    image: slideless:federation-dev
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    networks:
+      default:
+        aliases:
+          - slideless.localhost
+    environment:
+      - PORT=3310
+      - DATABASE_URL=postgres://slideless:federation-dev@db:5432/slideless
+      - PUBLIC_BASE_URL=http://slideless.localhost:3310
+      # ── The cloud edition (docs/federation.md) ──────────────────────────
+      - EDITION=cloud
+      - HUB_ISSUER_URL=http://hub.localhost:3300
+      - HUB_CLIENT_ID=tool-slideless-cloud
+      - HUB_CLIENT_SECRET=federation-dev-client-secret-0001
+      # Placeholder until Phase 4 (the EntitlementService is the only reader);
+      # mint a real accounts:status key on the hub and replace it then.
+      - HUB_SERVICE_KEY=ant_federation_dev_placeholder
+      - EMAIL_DRIVER=smtp
+      - SMTP_URL=smtp://mailpit:1025
+      - EMAIL_FROM=Slideless Federation Dev <dev@slideless.local>
+      - LOG_LEVEL=info
+    ports:
+      - '127.0.0.1:3310:3310'
+    read_only: true
+    volumes:
+      - app_data:/data
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3310/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=slideless
+      - POSTGRES_PASSWORD=federation-dev
+      - POSTGRES_DB=slideless
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U slideless -d slideless']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # One shared mail-catcher for both instances (hub signup OTP, Slideless
+  # invitations). UI: http://localhost:8030
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8030:8025'
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=1
+      - MP_SMTP_AUTH_ALLOW_INSECURE=1
+
+volumes:
+  hub_pg_data:
+  hub_app_data:
+  pg_data:
+  app_data:
