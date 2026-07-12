@@ -134,6 +134,13 @@
       "when": 1783848575851,
       "tag": "0018_handy_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783849296549,
+      "tag": "0019_last_owner_guard_projection_exempt",
+      "breakpoints": true
     }
   ]
 }

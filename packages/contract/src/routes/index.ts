@@ -207,7 +207,8 @@ export const memberDeleteRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
-    404: errorResponses[404]
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Account belongs to other workspaces (member_of_other_workspaces)')
   }
 });
 

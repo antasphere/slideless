@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { cliAuthCompleteRoute, cliAuthRequestRoute } from '@slideless/contract/routes';
 import { apiKeys as apiKeysTable, workspaceMembers, type Db } from '@slideless/db';
 import type { Auth } from '../identity/better-auth.js';
@@ -161,11 +161,23 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
 
     // Same live-membership discipline as every credential path: no active
     // membership, no key (e.g. a deactivated member's account still signs in
-    // at the Better Auth layer but has no standing on this instance).
+    // at the Better Auth layer but has no standing on this instance). The
+    // key binds ONE workspace (ADR 012): the explicitly requested one, or
+    // the deterministic default — the oldest active membership (created_at,
+    // then id), the same rule sessions use. A requested workspace the
+    // account is not an active member of answers the SAME uniform 403 as
+    // having none at all (no oracle about other workspaces).
     const [membership] = await db
       .select({ workspaceId: workspaceMembers.workspaceId })
       .from(workspaceMembers)
-      .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)))
+      .where(
+        and(
+          eq(workspaceMembers.userId, user.id),
+          eq(workspaceMembers.isActive, true),
+          ...(body.workspaceId ? [eq(workspaceMembers.workspaceId, body.workspaceId)] : [])
+        )
+      )
+      .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id))
       .limit(1);
     if (!membership) {
       await dropSession();

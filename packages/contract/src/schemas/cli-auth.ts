@@ -32,7 +32,13 @@ export const cliAuthCompleteSchema = z.object({
   /** Display name for the minted key (defaults to a CLI-login label). */
   keyName: z.string().min(1).max(120).optional(),
   /** TTL at mint; the server computes the absolute expiry. Omit = never expires. */
-  expiresInDays: z.number().int().min(1).max(3650).optional()
+  expiresInDays: z.number().int().min(1).max(3650).optional(),
+  /**
+   * Workspace the key binds (ADR 012) — the account must hold an ACTIVE
+   * membership of it. Omit = the deterministic default (oldest active
+   * membership), which is the only membership for most accounts.
+   */
+  workspaceId: z.uuid().optional()
 });
 export type CliAuthComplete = z.infer<typeof cliAuthCompleteSchema>;
 

@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { createEmailVerificationToken } from 'better-auth/api';
 import {
   memberChangeEmailLinkRoute,
@@ -198,6 +198,29 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     }
     if (target.role === 'owner' && principal.role !== 'owner') {
       return c.json(err('forbidden', 'Only an owner can delete an owner'), 403);
+    }
+    // ADR 012: deleting the ACCOUNT erases the user from EVERY workspace, and
+    // an admin's authority ends at their own — refuse when the target belongs
+    // to any other workspace (deactivate the membership instead; the account
+    // holder can erase themselves). Single-workspace instances never hit this.
+    const [foreign] = await db
+      .select({ id: workspaceMembers.id })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.userId, target.userId),
+          ne(workspaceMembers.workspaceId, principal.workspaceId)
+        )
+      )
+      .limit(1);
+    if (foreign) {
+      return c.json(
+        err(
+          'member_of_other_workspaces',
+          'This account belongs to other workspaces — deactivate the membership instead of deleting the account'
+        ),
+        409
+      );
     }
 
     // Snapshot the wire member BEFORE the cascade removes the joined user row.
