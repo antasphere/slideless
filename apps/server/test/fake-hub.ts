@@ -71,6 +71,11 @@ export class FakeHub {
   readonly members = new Map<string, { active: boolean; role?: string }>();
   /** Failure injection for BOTH status endpoints. */
   statusMode: 'ok' | 'http500' | 'network' = 'ok';
+  /**
+   * Hold every status answer for this many ms (0 = answer immediately).
+   * Race tests use it to keep N concurrent re-assertions in flight at once.
+   */
+  statusDelayMs = 0;
   /** false = the member-status route 404s wholesale (an older hub without H2). */
   h2 = true;
   /** Every status-surface request: path + presented Authorization header. */
@@ -135,6 +140,7 @@ export class FakeHub {
     const memberStatus = /^\/api\/v1\/accounts\/([^/]+)\/members\/([^/]+)\/status$/.exec(url.pathname);
     if (req.method === 'GET' && (orgStatus || memberStatus)) {
       this.statusRequests.push({ path: url.pathname, auth: req.headers.authorization ?? null });
+      if (this.statusDelayMs > 0) await new Promise((r) => setTimeout(r, this.statusDelayMs));
       if (this.statusMode === 'network') {
         req.destroy(); // mid-request connection failure, no HTTP answer
         return;

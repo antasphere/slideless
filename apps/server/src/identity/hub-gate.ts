@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { account, workspaceMembers, type Db } from '@slideless/db';
 import type {
   EntitlementDecision,
@@ -169,29 +169,37 @@ export class HubPrincipalGate {
       // this user out of sessions, API keys, and OAuth bearers everywhere.
       // Reactivation happens ONLY at the next successful SSO login (the
       // projection upsert), which the hub grants only to live members.
-      await db
+      // `isActive = true` in the WHERE makes the flip observable: concurrent
+      // re-assertions all probe the hub (bounded, fail-open — accepted), but
+      // only the racer that actually flipped the row audits/logs, so ONE
+      // logical removal writes ONE `member.deactivate` row, not N.
+      const deactivated = await db
         .update(workspaceMembers)
         .set({ isActive: false })
         .where(
           and(
             eq(workspaceMembers.userId, principal.userId),
             eq(workspaceMembers.workspaceId, principal.workspaceId),
-            eq(workspaceMembers.origin, 'hub')
+            eq(workspaceMembers.origin, 'hub'),
+            eq(workspaceMembers.isActive, true)
           )
-        );
+        )
+        .returning({ id: workspaceMembers.id });
       this.memberCache.delete(key);
-      await this.deps.audit.write({
-        workspaceId: principal.workspaceId,
-        principal: null,
-        action: 'member.deactivate',
-        resourceType: 'member',
-        resourceId: principal.userId,
-        metadata: { reason: 'hub_reassertion' }
-      });
-      this.deps.logger.info(
-        { userId: principal.userId, workspaceId: principal.workspaceId },
-        'hub re-assertion: membership removed hub-side — local membership deactivated'
-      );
+      if (deactivated.length > 0) {
+        await this.deps.audit.write({
+          workspaceId: principal.workspaceId,
+          principal: null,
+          action: 'member.deactivate',
+          resourceType: 'member',
+          resourceId: principal.userId,
+          metadata: { reason: 'hub_reassertion' }
+        });
+        this.deps.logger.info(
+          { userId: principal.userId, workspaceId: principal.workspaceId },
+          'hub re-assertion: membership removed hub-side — local membership deactivated'
+        );
+      }
       return {
         ok: false,
         status: 401,
@@ -201,30 +209,37 @@ export class HubPrincipalGate {
     }
 
     // Live member. Sync a role delta (D11) — hub-origin rows only, and the
-    // fresh role is returned so THIS request already runs under it.
+    // fresh role is returned so THIS request already runs under it. The
+    // `role <> :newRole` predicate mirrors the deactivation above: a
+    // concurrent burst of re-assertions yields ONE audited `member.update`
+    // (the racer that actually changed the row), not one per racer.
     if (status.role && status.role !== row.role) {
-      await db
+      const updated = await db
         .update(workspaceMembers)
         .set({ role: status.role })
         .where(
           and(
             eq(workspaceMembers.userId, principal.userId),
             eq(workspaceMembers.workspaceId, principal.workspaceId),
-            eq(workspaceMembers.origin, 'hub')
+            eq(workspaceMembers.origin, 'hub'),
+            ne(workspaceMembers.role, status.role)
           )
+        )
+        .returning({ id: workspaceMembers.id });
+      if (updated.length > 0) {
+        await this.deps.audit.write({
+          workspaceId: principal.workspaceId,
+          principal: null,
+          action: 'member.update',
+          resourceType: 'member',
+          resourceId: principal.userId,
+          metadata: { reason: 'hub_reassertion', role: status.role, previousRole: row.role }
+        });
+        this.deps.logger.info(
+          { userId: principal.userId, workspaceId: principal.workspaceId, role: status.role },
+          'hub re-assertion: role synced from the hub'
         );
-      await this.deps.audit.write({
-        workspaceId: principal.workspaceId,
-        principal: null,
-        action: 'member.update',
-        resourceType: 'member',
-        resourceId: principal.userId,
-        metadata: { reason: 'hub_reassertion', role: status.role, previousRole: row.role }
-      });
-      this.deps.logger.info(
-        { userId: principal.userId, workspaceId: principal.workspaceId, role: status.role },
-        'hub re-assertion: role synced from the hub'
-      );
+      }
       this.remember(key, now);
       return { ok: true, role: status.role };
     }

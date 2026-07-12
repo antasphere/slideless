@@ -39,6 +39,8 @@ const ORG_OUTAGE = '22222222-aaaa-4bbb-8ccc-000000000003';
 const ORG_REMOVE = '22222222-aaaa-4bbb-8ccc-000000000004';
 const ORG_ROLE = '22222222-aaaa-4bbb-8ccc-000000000005';
 const ORG_QUIET = '22222222-aaaa-4bbb-8ccc-000000000006';
+const ORG_RACE = '22222222-aaaa-4bbb-8ccc-000000000007';
+const ORG_RACE_ROLE = '22222222-aaaa-4bbb-8ccc-000000000008';
 
 const DIALS = { orgTtlMs: 150, orgStaleMaxMs: 600, retryMs: 40, memberTtlMs: 150, timeoutMs: 2000 };
 
@@ -490,6 +492,104 @@ describe('membership re-assertion (D3/D11, hub delta H2)', () => {
       [guest.user.id]
     );
     expect(rows).toEqual([{ is_active: true, origin: 'guest' }]);
+  });
+});
+
+describe('concurrent re-assertions audit once (D1)', () => {
+  // The FakeHub holds every status answer for a beat, so all N racers are
+  // provably in flight inside the member probe at the same time (the probe
+  // fan-out is the accepted residual — N hub calls). Only the racer whose
+  // UPDATE actually flips the row may audit: one logical hub-side event must
+  // write ONE audit row, never one per racer.
+  it('a removal race writes exactly ONE member.deactivate row; every racer is locked out', async () => {
+    const racer: HubUserFixture = {
+      sub: 'hub-race',
+      email: 'race@remove.test',
+      name: 'Race Removed',
+      workspaceId: ORG_RACE,
+      role: 'owner',
+      workspaceName: 'Race Org'
+    };
+    const cookie = await ssoLogin(app, hub, racer);
+    // Removed hub-side BEFORE the first authed request: the member cache is
+    // cold for every racer, so all 8 re-assert concurrently.
+    hub.members.set(`${ORG_RACE}:hub-race`, { active: false });
+    hub.statusDelayMs = 150;
+    let responses: Response[];
+    try {
+      responses = await Promise.all(Array.from({ length: 8 }, () => me(cookie)));
+    } finally {
+      hub.statusDelayMs = 0;
+    }
+
+    // Every racer is refused with the gate's own verdict — the lockout is
+    // unconditional, whoever won the UPDATE.
+    for (const res of responses) {
+      expect(res.status).toBe(401);
+      expect((await readJson(res)).error.code).toBe('membership_revoked');
+    }
+    // The race really fanned out: several racers probed H2 for this pair…
+    const probes = hub.statusRequests.filter(
+      (r) => r.path === `/api/v1/accounts/${ORG_RACE}/members/hub-race/status`
+    );
+    expect(probes.length).toBeGreaterThan(1);
+    // …the row is deactivated…
+    const { rows } = await app.db.pool.query(
+      `SELECT m.is_active, m.origin FROM workspace_members m
+       JOIN workspaces w ON w.id = m.workspace_id WHERE w.central_account_id = $1`,
+      [ORG_RACE]
+    );
+    expect(rows).toEqual([{ is_active: false, origin: 'hub' }]);
+    // …and the ONE removal produced exactly ONE audit row, not 8.
+    const { rows: audit } = await app.db.pool.query(
+      `SELECT a.action FROM audit_log a
+       JOIN workspaces w ON w.id = a.workspace_id
+       WHERE w.central_account_id = $1 AND a.action = 'member.deactivate'
+       AND a.metadata->>'reason' = 'hub_reassertion'`,
+      [ORG_RACE]
+    );
+    expect(audit.length).toBe(1);
+  });
+
+  it('a role-change race writes exactly ONE member.update row; the role still syncs', async () => {
+    const rho: HubUserFixture = {
+      sub: 'hub-rho',
+      email: 'rho@role-race.test',
+      name: 'Rho Raced',
+      workspaceId: ORG_RACE_ROLE,
+      role: 'admin',
+      workspaceName: 'Role Race Org'
+    };
+    const cookie = await ssoLogin(app, hub, rho);
+    hub.members.set(`${ORG_RACE_ROLE}:hub-rho`, { active: true, role: 'member' });
+    hub.statusDelayMs = 150;
+    let responses: Response[];
+    try {
+      responses = await Promise.all(Array.from({ length: 8 }, () => me(cookie)));
+    } finally {
+      hub.statusDelayMs = 0;
+    }
+
+    // Live member throughout: every racer succeeds, already demoted (D11).
+    for (const res of responses) {
+      expect(res.status).toBe(200);
+      expect((await readJson(res)).role).toBe('member');
+    }
+    const { rows } = await app.db.pool.query(
+      `SELECT m.role FROM workspace_members m
+       JOIN workspaces w ON w.id = m.workspace_id WHERE w.central_account_id = $1`,
+      [ORG_RACE_ROLE]
+    );
+    expect(rows).toEqual([{ role: 'member' }]);
+    // One hub-side role change → exactly ONE member.update audit row.
+    const { rows: audit } = await app.db.pool.query(
+      `SELECT a.action FROM audit_log a
+       JOIN workspaces w ON w.id = a.workspace_id
+       WHERE w.central_account_id = $1 AND a.action = 'member.update'
+       AND a.metadata->>'reason' = 'hub_reassertion'`,
+      [ORG_RACE_ROLE]
+    );
+    expect(audit.length).toBe(1);
   });
 });
 
