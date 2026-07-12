@@ -64,7 +64,11 @@ coverage, and a natural template upstream (TEMPLATE-FEEDBACK #57).
 to 15 min from the last success, then fail closed** (`hub_unavailable`).
 Stale-while-revalidate + single-flight + a ~15 s outage re-probe throttle
 keep the hub out of the hot path; a cold cache with a dead hub fails closed
-immediately (an unverifiable NEW org gets no benefit of the doubt).
+immediately (an unverifiable NEW org gets no benefit of the doubt). Corollary:
+the cache — and therefore the 15-min grace — is per-replica process memory,
+so a replica that (re)starts mid-outage is all-cold and fails closed for
+EVERY projected workspace at once, with no grace, until the hub answers it
+once. Local (unprojected) workspaces are unaffected either way.
 
 **Membership re-assertion (~5 min per (user, workspace); `origin='hub'`
 rows only):** the ONLY deactivation signal is a definitive
