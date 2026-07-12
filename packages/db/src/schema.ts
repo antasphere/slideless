@@ -49,6 +49,25 @@ export const workspaces = pgTable('workspaces', {
 export const workspaceRoles = ['owner', 'admin', 'member'] as const;
 export type WorkspaceRole = (typeof workspaceRoles)[number];
 
+/**
+ * Where a membership row came from — who its source of truth is (G2,
+ * slideless-cloud-binding-plan §5). Pure data in Phase 1 (no enforcement):
+ *
+ *  - 'local': created by setup, workspace invitations, or admin surfaces —
+ *    this instance owns it.
+ *  - 'hub':   created/updated ONLY by the cloud edition's SSO JIT projection
+ *    and re-asserted against the hub (Phase 3+); local surfaces never mint it.
+ *  - 'guest': created by the collaborator claim path — an external party
+ *    invited to ONE deck whose membership exists only because principal
+ *    resolution requires one. Excluded from hub re-assertion; guest
+ *    capability limits arrive in Phase 6.
+ *
+ * No backfill needed: pre-launch, no production data — the default covers
+ * every existing row's honest origin.
+ */
+export const workspaceMemberOrigins = ['local', 'hub', 'guest'] as const;
+export type WorkspaceMemberOrigin = (typeof workspaceMemberOrigins)[number];
+
 export const workspaceMembers = pgTable(
   'workspace_members',
   {
@@ -60,6 +79,7 @@ export const workspaceMembers = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     role: text('role', { enum: workspaceRoles }).notNull().default('member'),
+    origin: text('origin', { enum: workspaceMemberOrigins }).notNull().default('local'),
     isActive: boolean('is_active').notNull().default(true),
     invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -198,9 +218,9 @@ export const auditLog = pgTable(
   'audit_log',
   {
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-    workspaceId: uuid('workspace_id')
-      .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    // NULL = INSTANCE-attributed: the event belongs to no workspace (ADR 012)
+    // — e.g. the orphan-user purge, whose subjects have no workspace home.
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
     actorVia: text('actor_via', { enum: ['session', 'api_key', 'oauth', 'system'] }).notNull(),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),

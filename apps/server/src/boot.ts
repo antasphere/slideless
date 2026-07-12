@@ -136,29 +136,34 @@ export async function boot(
   // routes (password reset/change) can be recorded through it.
   const audit = new AuditService(db.db, logger);
 
-  /** Best-effort audit for a Better-Auth credential event (resolves the user's workspace). */
+  /**
+   * Best-effort audit for a Better-Auth credential event. Credential events
+   * are USER-level, so the row lands in EVERY workspace the user belongs to
+   * (ADR 012) — each workspace's trail records its member's password/2FA
+   * changes; a single-workspace instance gets exactly one row, as before.
+   */
   const auditAccountEvent = async (event: AccountEvent, userId: string) => {
-    const [row] = await db.db
+    const rows = await db.db
       .select({ workspaceId: workspaceMembers.workspaceId })
       .from(workspaceMembers)
-      .where(eq(workspaceMembers.userId, userId))
-      .limit(1);
-    if (!row) return;
-    await audit.write({
-      workspaceId: row.workspaceId,
-      principal: {
-        userId,
-        email: '',
-        name: '',
+      .where(eq(workspaceMembers.userId, userId));
+    for (const row of rows) {
+      await audit.write({
         workspaceId: row.workspaceId,
-        role: 'member',
-        via: 'session',
-        scopes: null
-      },
-      action: `user.${event}`,
-      resourceType: 'user',
-      resourceId: userId
-    });
+        principal: {
+          userId,
+          email: '',
+          name: '',
+          workspaceId: row.workspaceId,
+          role: 'member',
+          via: 'session',
+          scopes: null
+        },
+        action: `user.${event}`,
+        resourceType: 'user',
+        resourceId: userId
+      });
+    }
   };
 
   // Account deletion: shared by the self-service /delete-user hooks below

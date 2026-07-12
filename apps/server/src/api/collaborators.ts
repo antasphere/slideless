@@ -283,8 +283,12 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
 
     // The platform authenticates through workspace membership (live re-check
     // on every request), so a claimed collaborator becomes an ordinary
-    // MEMBER of the deck's workspace when they are not one yet. Rejoining
-    // after deactivation reactivates — the invitation-accept semantics.
+    // MEMBER of the deck's workspace when they are not one yet — stamped
+    // origin='guest' (G2): an external party invited to ONE deck, not team.
+    // Pure data in Phase 1 (no capability change); the discriminator is what
+    // lets the cloud edition's hub re-assertion leave these rows alone and
+    // Phase 6 scope guest powers. Rejoining after deactivation reactivates
+    // and PRESERVES the row's origin — the invitation-accept semantics.
     const [membership] = await db
       .select({ id: workspaceMembers.id, isActive: workspaceMembers.isActive })
       .from(workspaceMembers)
@@ -295,6 +299,7 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
         workspaceId: grant.workspaceId,
         userId,
         role: 'member',
+        origin: 'guest',
         invitedBy: grant.invitedBy
       });
       registry.events.emit('member.joined', { workspaceId: grant.workspaceId, userId, role: 'member' });

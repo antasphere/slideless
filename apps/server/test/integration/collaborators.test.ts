@@ -245,12 +245,13 @@ describe('claim-at-signup → active dev', () => {
       .where(eq(userTable.email, DEV.email));
     expect(devUser!.emailVerified).toBe(true);
 
-    // The platform requires a membership to authenticate: created as member.
+    // The platform requires a membership to authenticate: created as member,
+    // stamped origin='guest' (G2 — external per-deck party, not team).
     const [membership] = await app.db.db
       .select()
       .from(workspaceMembers)
       .where(eq(workspaceMembers.userId, body.userId));
-    expect(membership).toMatchObject({ role: 'member', isActive: true });
+    expect(membership).toMatchObject({ role: 'member', isActive: true, origin: 'guest' });
 
     // The claim link is one-shot.
     const replay = await app.app.request(
@@ -457,12 +458,17 @@ describe('G1 regression — the user.created hook races the claim endpoint (idem
     expect(body.collaborator.userId).toBe(body.userId);
 
     // The membership block ran: without it the grant would be active but
-    // the deck unreachable (no principal in the deck's workspace).
+    // the deck unreachable (no principal in the deck's workspace). Claim
+    // rows are stamped origin='guest' (G2).
     const [membership] = await app.db.db
-      .select({ role: workspaceMembers.role, isActive: workspaceMembers.isActive })
+      .select({
+        role: workspaceMembers.role,
+        isActive: workspaceMembers.isActive,
+        origin: workspaceMembers.origin
+      })
       .from(workspaceMembers)
       .where(eq(workspaceMembers.userId, body.userId));
-    expect(membership).toMatchObject({ role: 'member', isActive: true });
+    expect(membership).toMatchObject({ role: 'member', isActive: true, origin: 'guest' });
 
     // And the deck IS reachable for the fresh invitee.
     const cookie = extractCookie(

@@ -275,19 +275,16 @@ export async function createJobs(
         if (progressed === 0) break; // every candidate failed/was skipped — no hot loop
       }
       if (total > 0) {
-        // System-actor audit row against the instance's single workspace
-        // (orphans belong to none). No workspace = pre-setup instance; log only.
-        const ws = await db.execute(sql`SELECT id FROM workspaces LIMIT 1`);
-        const workspaceId = (ws.rows[0] as { id?: string } | undefined)?.id;
-        if (workspaceId) {
-          await audit.write({
-            workspaceId,
-            principal: null, // → actorVia 'system'
-            action: 'user.orphan_purge',
-            resourceType: 'user',
-            metadata: { deleted: total, retentionHours: orphanRetentionHours, sample }
-          });
-        }
+        // INSTANCE-attributed system row (workspace_id NULL, ADR 012):
+        // orphans belong to no workspace, so no workspace's audit trail is
+        // the honest home — the row is an operator-level record.
+        await audit.write({
+          workspaceId: null,
+          principal: null, // → actorVia 'system'
+          action: 'user.orphan_purge',
+          resourceType: 'user',
+          metadata: { deleted: total, retentionHours: orphanRetentionHours, sample }
+        });
       }
       logger.info({ retentionHours: orphanRetentionHours, deleted: total }, 'orphan user purge ran');
     });

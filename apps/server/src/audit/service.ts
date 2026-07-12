@@ -16,7 +16,8 @@ declare module 'hono' {
 }
 
 export interface AuditWrite {
-  workspaceId: string;
+  /** null = INSTANCE-attributed: the event belongs to no workspace (ADR 012). */
+  workspaceId: string | null;
   principal: Principal | null;
   action: string;
   resourceType: string;

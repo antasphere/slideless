@@ -154,13 +154,15 @@ describe('orphan purge (default 72h grace)', () => {
     const owner = await app.db.pool.query(`SELECT 1 FROM "user" WHERE email = $1`, [OWNER.email]);
     expect(owner.rows).toHaveLength(1);
 
-    // Audited as a system actor with the count.
+    // Audited as a system actor with the count — INSTANCE-attributed
+    // (workspace_id NULL, ADR 012): orphans belong to no workspace.
     const audit = await app.db.pool.query(
-      `SELECT actor_via, actor_user_id, metadata FROM audit_log WHERE action = 'user.orphan_purge' ORDER BY id DESC LIMIT 1`
+      `SELECT actor_via, actor_user_id, workspace_id, metadata FROM audit_log WHERE action = 'user.orphan_purge' ORDER BY id DESC LIMIT 1`
     );
     expect(audit.rows).toHaveLength(1);
     expect(audit.rows[0].actor_via).toBe('system');
     expect(audit.rows[0].actor_user_id).toBeNull();
+    expect(audit.rows[0].workspace_id).toBeNull();
     expect(audit.rows[0].metadata.deleted).toBe(1);
     expect(audit.rows[0].metadata.sample).toContain('orphan-old@gc.test');
   }, 40_000);
