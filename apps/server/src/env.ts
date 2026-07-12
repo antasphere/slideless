@@ -78,8 +78,8 @@ const envObjectSchema = z.object({
   /** Optional Google social login. */
   GOOGLE_CLIENT_ID: optionalString(z.string().min(1)),
   GOOGLE_CLIENT_SECRET: optionalString(z.string().min(1)),
-  /** Edition selector (docs/federation.md): `oss` (default, self-host — zero hub surface at runtime) or `cloud` (federates human login + entitlements to the Antasphere hub; requires the HUB_* block). Also surfaced in discovery + usage events. */
-  EDITION: z.string().default('oss'),
+  /** Edition selector (docs/federation.md): `oss` (default, self-host — zero hub surface at runtime) or `cloud` (federates human login + entitlements to the Antasphere hub; requires the HUB_* block). Any other value refuses to boot — the selector decides the identity binding, so a typo must fail loudly, never silently bind `oss`. Also surfaced in discovery + usage events. */
+  EDITION: z.preprocess(blankToUndefined, z.enum(['oss', 'cloud']).default('oss')),
   /** Hub OIDC issuer, e.g. https://account.antasphere.com — discovery, JWKS, and the authorize/token endpoints all derive from it. Required when EDITION=cloud; never read when EDITION=oss. */
   HUB_ISSUER_URL: z.preprocess(blankToUndefined, z.url().optional()),
   /** OAuth client id from this tool's entry in the hub TOOL_REGISTRY (e.g. tool-slideless-cloud). Required when EDITION=cloud. */

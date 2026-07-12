@@ -169,5 +169,13 @@ describe('env schema', () => {
         true
       );
     });
+
+    it('refuses any EDITION other than oss/cloud — a typo must never silently bind oss', () => {
+      const result = envSchema.safeParse({ ...minimal, EDITION: 'clould', ...hubVars });
+      expect(result.success).toBe(false);
+      expect(result.error!.issues.map((i) => i.path.join('.'))).toContain('EDITION');
+      // Blank (EDITION= in compose) still means unset, i.e. the oss default.
+      expect(envSchema.parse({ ...minimal, EDITION: ' ' }).EDITION).toBe('oss');
+    });
   });
 });

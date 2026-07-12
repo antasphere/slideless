@@ -32,13 +32,13 @@ entitlement seams.
 Full variable reference: [env-reference.md](env-reference.md). The cloud
 block:
 
-| Variable | Meaning |
-| --- | --- |
-| `EDITION=cloud` | Selects the cloud binding. Anything else behaves as `oss`. |
-| `HUB_ISSUER_URL` | The hub OIDC issuer, `https://account.antasphere.com` in production. Discovery, JWKS, and the authorize/token endpoints all derive from it. |
-| `HUB_CLIENT_ID` | This tool's OAuth client id from the hub `TOOL_REGISTRY` entry — `tool-slideless-cloud`. |
-| `HUB_CLIENT_SECRET` | The matching client secret (confidential client; PKCE stays on regardless). |
-| `HUB_SERVICE_KEY` | A hub API key (`ant_…`) holding the `accounts:status` scope — the EntitlementService credential (Phase 4; unread before then). |
+| Variable            | Meaning                                                                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `EDITION=cloud`     | Selects the cloud binding. The only other accepted value is `oss` (the default); anything else refuses to boot — a typo'd selector must never silently bind the wrong edition. |
+| `HUB_ISSUER_URL`    | The hub OIDC issuer, `https://account.antasphere.com` in production. Discovery, JWKS, and the authorize/token endpoints all derive from it.                                    |
+| `HUB_CLIENT_ID`     | This tool's OAuth client id from the hub `TOOL_REGISTRY` entry — `tool-slideless-cloud`.                                                                                       |
+| `HUB_CLIENT_SECRET` | The matching client secret (confidential client; PKCE stays on regardless).                                                                                                    |
+| `HUB_SERVICE_KEY`   | A hub API key (`ant_…`) holding the `accounts:status` scope — the EntitlementService credential (Phase 4; unread before then).                                                 |
 
 Rules the boot enforces:
 
@@ -166,11 +166,11 @@ docker compose -f docker-compose.federation.yml down -v
 
 ## What Phase 3+ plugs into this
 
-| Phase | Builds on this scaffolding |
-| --- | --- |
-| P3 — SSO entrance | `genericOAuth` registration in `identity/better-auth.ts`, conditional on `hubConfig()` (the same pattern as the emailOTP/Google blocks); `HubSsoIdentityProvider` replacing the stub in `edition.ts`; JIT + lazy projection onto `workspaces.centralAccountId`; D1 hub-only login posture; D10 email sync. |
-| P4 — entitlements | `HubEntitlementService` using `HUB_SERVICE_KEY` against `GET {hub}/accounts/{id}/status`; H2 membership re-assertion. |
-| P5 — CLI cross-tool | `POST /api/v1/sso/cli-connect` verifying hub-minted 120s JWTs; hub H3 `/sso/tool-token`. |
+| Phase               | Builds on this scaffolding                                                                                                                                                                                                                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P3 — SSO entrance   | `genericOAuth` registration in `identity/better-auth.ts`, conditional on `hubConfig()` (the same pattern as the emailOTP/Google blocks); `HubSsoIdentityProvider` replacing the stub in `edition.ts`; JIT + lazy projection onto `workspaces.centralAccountId`; D1 hub-only login posture; D10 email sync. |
+| P4 — entitlements   | `HubEntitlementService` using `HUB_SERVICE_KEY` against `GET {hub}/accounts/{id}/status`; H2 membership re-assertion.                                                                                                                                                                                      |
+| P5 — CLI cross-tool | `POST /api/v1/sso/cli-connect` verifying hub-minted 120s JWTs; hub H3 `/sso/tool-token`.                                                                                                                                                                                                                   |
 
 ## Related decisions
 
