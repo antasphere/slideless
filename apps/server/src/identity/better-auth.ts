@@ -83,6 +83,14 @@ export interface CreateAuthOptions {
    */
   onAccountEvent?: (event: AccountEvent, userId: string) => Promise<void>;
   /**
+   * Fired from Better Auth's databaseHooks.user.create.after — the ONE seam
+   * every account entrance passes through (setup, invitation accept, the
+   * collaborator claim endpoint, any future SSO JIT), so a `user.created`
+   * event is trustworthy by construction instead of depending on each call
+   * site remembering to emit. Boot wires this to the platform event bus.
+   */
+  onUserCreated?: (user: { id: string; email: string }) => void;
+  /**
    * Self-service account deletion guard, run by POST /delete-user BEFORE the
    * row cascade. Boot wires the AccountDeletionService here and translates
    * LastOwnerError into an APIError('BAD_REQUEST') so the route answers 400.
@@ -144,6 +152,7 @@ export function createAuth({
   sendChangeEmailConfirmation,
   sendVerificationEmail,
   onAccountEvent,
+  onUserCreated,
   beforeUserDelete,
   afterUserDelete
 }: CreateAuthOptions) {
@@ -493,6 +502,23 @@ export function createAuth({
           return ctx.json({ twoFactorRedirect: true, twoFactorMethods: ['totp'] });
         }
       })
+    },
+    // Adapter-level hooks: config only, NOT schema — the drift guard's
+    // generated auth-schema is unaffected (verified via drift:check).
+    databaseHooks: {
+      user: {
+        create: {
+          // Every entrance (setup's signUpEmail, invitation accept, the
+          // collaborator claim endpoint, a future SSO JIT) creates the row
+          // through the internal adapter, so this is the single trustworthy
+          // `user.created` seam. Synchronous dispatch onto the event bus;
+          // subscriber failures are isolated there and never fail account
+          // creation.
+          after: async (user: { id: string; email: string }) => {
+            onUserCreated?.({ id: user.id, email: user.email });
+          }
+        }
+      }
     },
     // Long-lived sliding sessions; safe because the auth-context middleware
     // re-checks workspace membership on every request (instant revocation).

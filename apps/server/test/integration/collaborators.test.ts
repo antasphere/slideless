@@ -434,6 +434,84 @@ describe('claim-at-signup via a WORKSPACE invitation (the user.created hook)', (
   });
 });
 
+describe('G1 regression — the user.created hook races the claim endpoint (idempotent same-user claim)', () => {
+  it('a brand-new invitee claims end-to-end even when the boot sweep activates the grant first', async () => {
+    // The claim endpoint's signUpEmail fires databaseHooks.user.create.after
+    // → the boot sweep flips THIS grant to active before the endpoint's own
+    // claim() runs (the sweep's UPDATE is dispatched before signUpEmail's
+    // remaining round-trips finish). Without the idempotent same-user claim,
+    // the endpoint 410s and the membership insert never runs — an invitee
+    // with an active grant but an unreachable deck.
+    const invitee = { email: 'g1-invitee@collab.test', name: 'G1 Invitee', password: 'g1-invitee-pass-1' };
+    const deck = await createDeck('G1 Deck');
+    const created = await readJson(await invite(deck, invitee.email));
+    const token = created.claimUrl.split('/collab/')[1] as string;
+
+    const res = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token, name: invitee.name, password: invitee.password })
+    );
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    expect(body.collaborator.status).toBe('active');
+    expect(body.collaborator.userId).toBe(body.userId);
+
+    // The membership block ran: without it the grant would be active but
+    // the deck unreachable (no principal in the deck's workspace).
+    const [membership] = await app.db.db
+      .select({ role: workspaceMembers.role, isActive: workspaceMembers.isActive })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.userId, body.userId));
+    expect(membership).toMatchObject({ role: 'member', isActive: true });
+
+    // And the deck IS reachable for the fresh invitee.
+    const cookie = extractCookie(
+      await app.app.request(
+        '/api/v1/auth/sign-in/email',
+        json({ email: invitee.email, password: invitee.password })
+      )
+    );
+    const read = await app.app.request(`/api/v1/presentations/${deck}`, { headers: { cookie } });
+    expect(read.status).toBe(200);
+  });
+
+  it('claim() is idempotent for the SAME user and still refuses a DIFFERENT user', async () => {
+    const email = 'g1-sweep-first@collab.test';
+    const deck = await createDeck('G1 Sweep Deck');
+    const created = await readJson(await invite(deck, email));
+    const grantId = created.collaborator.id as string;
+
+    // Create the account server-side (the hook fires; the sweep activates
+    // the grant) — the deterministic "sweep won" ordering.
+    const signedUp = await app.auth.api.signUpEmail({
+      body: { email, name: 'Sweep First', password: 'sweep-first-pass-1' }
+    });
+    const userId = signedUp.user.id;
+    let status = 'pending';
+    for (let i = 0; i < 20 && status !== 'active'; i++) {
+      const [row] = await app.db.db
+        .select({ status: collaborators.status })
+        .from(collaborators)
+        .where(eq(collaborators.id, grantId));
+      status = row!.status;
+      if (status !== 'active') await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(status).toBe('active');
+
+    // Same user: claim-success (the endpoint's membership block proceeds).
+    const service = new (await import('../../src/collaborators/service.js')).CollaboratorService(app.db.db);
+    const sameUser = await service.claim(grantId, userId);
+    expect(sameUser).not.toBeNull();
+    expect(sameUser!.status).toBe('active');
+    expect(sameUser!.userId).toBe(userId);
+
+    // Different user: still a hard null (a token cannot be redeemed twice
+    // by different people).
+    const other = await service.claim(grantId, 'someone-else');
+    expect(other).toBeNull();
+  });
+});
+
 describe('claim by an EXISTING account (template invitation semantics: explicit claim, never auto-activate)', () => {
   it('unauthenticated claim for an existing email → 409 account_exists; signed-in claim succeeds (no verified flip on the copyable token)', async () => {
     const secondDeck = await createDeck('Second Deck');

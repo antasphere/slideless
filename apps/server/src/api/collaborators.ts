@@ -255,6 +255,10 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
         return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
       }
       try {
+        // `user.created` is emitted by the identity layer's database hook
+        // (identity/better-auth.ts) — never from call sites like this one.
+        // That hook's boot sweep may activate THIS grant before our own
+        // claim() below runs; claim() is idempotent for the same user.
         const created = await auth.api.signUpEmail({
           body: { email: grant.email, password: body.password, name: body.name }
         });
@@ -298,12 +302,9 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
       await db.update(workspaceMembers).set({ isActive: true }).where(eq(workspaceMembers.id, membership.id));
     }
 
-    // Sweep sibling pending grants for the same email, then announce the
-    // account (the boot hook's own sweep is idempotent against this one).
+    // Sweep sibling pending grants for the same email (idempotent against
+    // the user.created hook's own sweep, which races this endpoint).
     await collaborators.claimAllPendingForEmail(grant.email, userId);
-    if (!account) {
-      registry.events.emit('user.created', { userId, email: grant.email });
-    }
 
     // Email-verification honesty (ADR 009): only the emailed token proves
     // mailbox control; the copyable link fires the verification mail instead.

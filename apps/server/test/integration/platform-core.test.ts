@@ -202,6 +202,13 @@ describe('invitations without SMTP (exit criterion 3, API half)', () => {
   });
 
   it('accepts with new-account credentials, then the invitee logs in with member role', async () => {
+    // `user.created` fires from the identity layer's database hook — every
+    // entrance, by construction. Subscribe before accept.
+    const created: Array<{ userId: string; email: string }> = [];
+    const unsubscribe = app.registry.events.on('user.created', (payload) => {
+      created.push(payload);
+    });
+
     const token = acceptUrl.split('/invite/')[1]!;
     const res = await app.app.request(
       '/api/v1/invitations/accept',
@@ -210,6 +217,11 @@ describe('invitations without SMTP (exit criterion 3, API half)', () => {
     expect(res.status).toBe(200);
     const body = await readJson(res);
     expect(body.role).toBe('member');
+
+    unsubscribe();
+    expect(created).toHaveLength(1);
+    expect(created[0]!.email).toBe(INVITEE.email);
+    expect(created[0]!.userId).toBeTruthy();
 
     const signIn = await app.app.request(
       '/api/v1/auth/sign-in/email',

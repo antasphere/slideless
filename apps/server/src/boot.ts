@@ -167,12 +167,20 @@ export async function boot(
   // removals (the migration-lock pattern).
   const accountDeletion = new AccountDeletionService(db.db, audit, logger, env.DATABASE_URL);
 
+  // The event bus exists before auth so identity-layer hooks can publish:
+  // `user.created` fires from Better Auth's databaseHooks.user.create.after,
+  // covering EVERY account entrance by construction (setup, invitation
+  // accept, collaborator claim, future SSO JIT) — never from individual
+  // call sites.
+  const events = new EventBus(logger);
+
   // Identity + seams: local defaults, swappable at this one point.
   const auth = createAuth({
     db: db.db,
     env,
     authSecret,
     onAccountEvent: auditAccountEvent,
+    onUserCreated: (user) => events.emit('user.created', { userId: user.id, email: user.email }),
     beforeUserDelete: async (userId) => {
       try {
         await accountDeletion.beforeUserDelete(userId);
@@ -249,7 +257,6 @@ export async function boot(
     audit
   );
 
-  const events = new EventBus(logger);
   const registry = createRegistry({
     identity: new LocalIdentityProvider(
       auth,

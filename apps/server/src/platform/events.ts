@@ -7,6 +7,12 @@ import type { Logger } from '../logger.js';
  * publisher's request path.
  */
 export type PlatformEvents = {
+  /**
+   * Fired by the identity layer (Better Auth databaseHooks.user.create.after,
+   * wired in boot) for EVERY account entrance — setup, invitation accept,
+   * collaborator claim, future SSO JIT. Trustworthy by construction; call
+   * sites never emit it.
+   */
   'user.created': { userId: string; email: string };
   'member.joined': { workspaceId: string; userId: string; role: string };
   'member.updated': { workspaceId: string; userId: string };

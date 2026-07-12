@@ -168,8 +168,18 @@ export class CollaboratorService {
 
   /**
    * Claim a pending grant for a user. Guarded (status must still be pending,
-   * unexpired) so a token cannot be redeemed twice; returns the updated row
-   * or null when the grant was claimed/revoked/expired meanwhile.
+   * unexpired) so a token cannot be redeemed twice by DIFFERENT users;
+   * returns the updated row or null when the grant was claimed by someone
+   * else, revoked, or expired meanwhile.
+   *
+   * Idempotent for the SAME user: an ACTIVE grant already owned by `userId`
+   * is claim-success, not a replay. Required by construction since the
+   * `user.created` database hook (identity/better-auth.ts): the boot sweep
+   * (`claimAllPendingForEmail`) fires INSIDE the claim endpoint's own
+   * `signUpEmail` and routinely flips the very grant being claimed to
+   * active before this method runs — without the idempotent re-read, a
+   * brand-new invitee would 410 and never get the membership that makes
+   * their deck reachable.
    */
   async claim(grantId: string, userId: string): Promise<CollaboratorRow | null> {
     const [row] = await this.db
@@ -184,7 +194,17 @@ export class CollaboratorService {
         )
       )
       .returning();
-    return row ?? null;
+    if (row) return row;
+    // Pending-only update matched nothing: re-read for the idempotent case.
+    // If the sweep's UPDATE held the row lock, ours re-evaluated after its
+    // commit — the re-read observes the committed truth either way.
+    const [current] = await this.db
+      .select()
+      .from(collaborators)
+      .where(eq(collaborators.id, grantId))
+      .limit(1);
+    if (current && current.status === 'active' && current.userId === userId) return current;
+    return null;
   }
 
   /**

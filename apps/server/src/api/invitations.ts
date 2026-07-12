@@ -228,11 +228,12 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
       if (!body.name || !body.password) {
         return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
       }
+      // `user.created` is emitted by the identity layer's database hook
+      // (identity/better-auth.ts) — never from call sites like this one.
       const created = await auth.api.signUpEmail({
         body: { email: invitation.email, password: body.password, name: body.name }
       });
       userId = created.user.id;
-      registry.events.emit('user.created', { userId, email: invitation.email });
     }
 
     const accepted = await service.accept(invitation, userId);
