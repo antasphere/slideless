@@ -84,6 +84,12 @@ export const en = {
   'login.backToSignIn': 'Back to sign in',
   'login.errorInvalidTotp': 'Invalid or expired code.',
   'login.errorInvalidBackupCode': 'That backup code is not valid.',
+  'login.signInWithAntasphere': 'Sign in with Antasphere',
+  'login.errorSsoGeneric': 'Sign-in through Antasphere failed. Try again.',
+  'login.errorSsoEmailConflict':
+    'Your Antasphere email is already used by another account on this instance. Contact an administrator.',
+  'login.errorSsoIdentityConflict':
+    'This Antasphere account could not be linked to an account here. Contact an administrator.',
 
   // ── Setup wizard ─────────────────────────────────────────────────────
   'setup.title': 'Set up your instance',

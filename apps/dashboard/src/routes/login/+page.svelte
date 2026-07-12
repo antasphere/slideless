@@ -16,6 +16,10 @@
   const methods = $derived(data.instance.auth.methods);
   const hasGoogle = $derived(methods.includes('google'));
   const hasOtp = $derived(methods.includes('email-otp'));
+  // On the cloud edition (D1, hub-only login) 'password' is absent and
+  // 'antasphere' present — the page then renders ONLY the SSO button.
+  const hasPassword = $derived(methods.includes('password'));
+  const hasAntasphere = $derived(methods.includes('antasphere'));
   const hasPasswordReset = $derived(data.instance.auth.passwordReset);
 
   let mode = $state<'password' | 'otp'>('password');
@@ -25,7 +29,16 @@
   let otp = $state('');
   let otpSent = $state(false);
   let loading = $state(false);
-  let error = $state<string | null>(null);
+  // A failed SSO dance lands back here with ?error=<code> (both the
+  // server's per-login checks and the OAuth plugin's own error redirects).
+  let error = $state<string | null>(ssoErrorMessage(page.url.searchParams.get('error')));
+
+  function ssoErrorMessage(code: string | null): string | null {
+    if (!code) return null;
+    if (code === 'sso_email_conflict') return t('login.errorSsoEmailConflict');
+    if (code === 'sso_identity_conflict') return t('login.errorSsoIdentityConflict');
+    return t('login.errorSsoGeneric');
+  }
 
   // Second factor: set when a sign-in answers { twoFactorRedirect } instead
   // of a session (the pending sign-in rides a short-lived signed cookie).
@@ -137,6 +150,28 @@
       callbackURL: safeNext(page.url.searchParams.get('next'))
     });
   }
+
+  async function signInAntasphere() {
+    error = null;
+    loading = true;
+    try {
+      const { error: err } = await authClient.signIn.oauth2({
+        providerId: 'antasphere',
+        callbackURL: safeNext(page.url.searchParams.get('next')),
+        // Failed dances land back on this page with ?error=<code>.
+        errorCallbackURL: '/login'
+      });
+      if (err) {
+        error = authErrorMessage(err.status ?? 0, err.message);
+      }
+      // Success answers { url, redirect: true } and the client navigates
+      // to the hub; keep `loading` on so the button stays disabled while
+      // the browser leaves the page.
+    } catch {
+      loading = false;
+      error = t('login.errorSsoGeneric');
+    }
+  }
 </script>
 
 <LanguageSwitcher class="fixed right-4 top-4" />
@@ -203,7 +238,7 @@
           </Button>
         </form>
       {:else}
-        {#if hasOtp}
+        {#if hasPassword && hasOtp}
           <div class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
             <button
               type="button"
@@ -232,97 +267,99 @@
           </div>
         {/if}
 
-        {#if mode === 'password'}
-          <form
-            class="space-y-4"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void signInPassword();
-            }}
-          >
-            <div class="space-y-2">
-              <Label for="email">{t('login.email')}</Label>
-              <Input id="email" type="email" autocomplete="email" bind:value={email} required />
-            </div>
-            <div class="space-y-2">
-              <Label for="password">{t('login.password')}</Label>
-              <Input
-                id="password"
-                type="password"
-                autocomplete="current-password"
-                bind:value={password}
-                required
-              />
-              {#if hasPasswordReset}
-                <div class="text-right">
-                  <a
-                    href="/forgot-password"
-                    class="text-xs text-muted-foreground underline-offset-4 hover:underline"
-                  >
-                    {t('login.forgotPassword')}
-                  </a>
-                </div>
-              {/if}
-            </div>
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
-            <Button type="submit" class="w-full" disabled={loading}>
-              {loading ? t('login.signingIn') : t('login.signIn')}
-            </Button>
-          </form>
-        {:else}
-          <form
-            class="space-y-4"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void (otpSent ? signInOtp() : sendOtp());
-            }}
-          >
-            <div class="space-y-2">
-              <Label for="otp-email">{t('login.email')}</Label>
-              <Input
-                id="otp-email"
-                type="email"
-                autocomplete="email"
-                bind:value={email}
-                required
-                disabled={otpSent}
-              />
-            </div>
-            {#if otpSent}
+        {#if hasPassword}
+          {#if mode === 'password'}
+            <form
+              class="space-y-4"
+              onsubmit={(e) => {
+                e.preventDefault();
+                void signInPassword();
+              }}
+            >
               <div class="space-y-2">
-                <Label for="otp-code">{t('login.otpCode')}</Label>
+                <Label for="email">{t('login.email')}</Label>
+                <Input id="email" type="email" autocomplete="email" bind:value={email} required />
+              </div>
+              <div class="space-y-2">
+                <Label for="password">{t('login.password')}</Label>
                 <Input
-                  id="otp-code"
-                  inputmode="numeric"
-                  autocomplete="one-time-code"
-                  bind:value={otp}
+                  id="password"
+                  type="password"
+                  autocomplete="current-password"
+                  bind:value={password}
                   required
                 />
-                <p class="text-xs text-muted-foreground">{t('login.otpSentTo', { email })}</p>
+                {#if hasPasswordReset}
+                  <div class="text-right">
+                    <a
+                      href="/forgot-password"
+                      class="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                      {t('login.forgotPassword')}
+                    </a>
+                  </div>
+                {/if}
               </div>
-            {/if}
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
-            <Button type="submit" class="w-full" disabled={loading}>
-              {loading ? t('common.working') : otpSent ? t('login.verifyCode') : t('login.sendCode')}
-            </Button>
-            {#if otpSent}
-              <Button
-                type="button"
-                variant="ghost"
-                class="w-full"
-                onclick={() => {
-                  otpSent = false;
-                  otp = '';
-                }}
-              >
-                {t('login.useDifferentEmail')}
+              {#if error}
+                <p class="text-sm text-destructive">{error}</p>
+              {/if}
+              <Button type="submit" class="w-full" disabled={loading}>
+                {loading ? t('login.signingIn') : t('login.signIn')}
               </Button>
-            {/if}
-          </form>
+            </form>
+          {:else}
+            <form
+              class="space-y-4"
+              onsubmit={(e) => {
+                e.preventDefault();
+                void (otpSent ? signInOtp() : sendOtp());
+              }}
+            >
+              <div class="space-y-2">
+                <Label for="otp-email">{t('login.email')}</Label>
+                <Input
+                  id="otp-email"
+                  type="email"
+                  autocomplete="email"
+                  bind:value={email}
+                  required
+                  disabled={otpSent}
+                />
+              </div>
+              {#if otpSent}
+                <div class="space-y-2">
+                  <Label for="otp-code">{t('login.otpCode')}</Label>
+                  <Input
+                    id="otp-code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    bind:value={otp}
+                    required
+                  />
+                  <p class="text-xs text-muted-foreground">{t('login.otpSentTo', { email })}</p>
+                </div>
+              {/if}
+              {#if error}
+                <p class="text-sm text-destructive">{error}</p>
+              {/if}
+              <Button type="submit" class="w-full" disabled={loading}>
+                {loading ? t('common.working') : otpSent ? t('login.verifyCode') : t('login.sendCode')}
+              </Button>
+              {#if otpSent}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  class="w-full"
+                  onclick={() => {
+                    otpSent = false;
+                    otp = '';
+                  }}
+                >
+                  {t('login.useDifferentEmail')}
+                </Button>
+              {/if}
+            </form>
+          {/if}
         {/if}
 
         {#if hasGoogle}
@@ -334,6 +371,26 @@
           </div>
           <Button variant="outline" class="w-full" onclick={signInGoogle}>
             {t('login.signInWithGoogle')}
+          </Button>
+        {/if}
+
+        {#if hasAntasphere}
+          <!-- Cloud (D1): the hub is the only human entrance, so this button
+               usually stands alone; the divider only renders in the unusual
+               mixed posture. Errors surface here when no password form does. -->
+          {#if hasPassword || hasGoogle}
+            <div class="relative">
+              <div class="absolute inset-0 flex items-center"><span class="w-full border-t"></span></div>
+              <div class="relative flex justify-center text-xs uppercase">
+                <span class="bg-card px-2 text-muted-foreground">{t('login.or')}</span>
+              </div>
+            </div>
+          {/if}
+          {#if error && !hasPassword}
+            <p class="text-sm text-destructive">{error}</p>
+          {/if}
+          <Button class="w-full" disabled={loading} onclick={() => void signInAntasphere()}>
+            {loading ? t('login.signingIn') : t('login.signInWithAntasphere')}
           </Button>
         {/if}
       {/if}

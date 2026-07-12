@@ -89,6 +89,12 @@ export const fr: Record<MessageKey, string> = {
   'login.backToSignIn': 'Retour à la connexion',
   'login.errorInvalidTotp': 'Code invalide ou expiré.',
   'login.errorInvalidBackupCode': 'Ce code de secours n’est pas valide.',
+  'login.signInWithAntasphere': 'Se connecter avec Antasphere',
+  'login.errorSsoGeneric': 'La connexion via Antasphere a échoué. Réessayez.',
+  'login.errorSsoEmailConflict':
+    'Votre e-mail Antasphere est déjà utilisé par un autre compte sur cette instance. Contactez un administrateur.',
+  'login.errorSsoIdentityConflict':
+    'Ce compte Antasphere n’a pas pu être associé à un compte ici. Contactez un administrateur.',
 
   // ── Setup wizard ─────────────────────────────────────────────────────
   'setup.title': 'Configurez votre instance',

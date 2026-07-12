@@ -1,5 +1,5 @@
 import { createAuthClient } from 'better-auth/svelte';
-import { emailOTPClient, twoFactorClient } from 'better-auth/client/plugins';
+import { emailOTPClient, genericOAuthClient, twoFactorClient } from 'better-auth/client/plugins';
 
 // Better Auth is mounted at /api/v1/auth on the same origin that serves the
 // SPA. The origin is resolved at runtime (ssr=false — this module only runs
@@ -13,7 +13,10 @@ export const authClient = createAuthClient({
   baseURL,
   // No onTwoFactorRedirect/twoFactorPage: the login page inspects the
   // sign-in response itself and swaps to its inline second-factor step.
-  plugins: [emailOTPClient(), twoFactorClient()]
+  // genericOAuthClient powers the cloud edition's "Sign in with Antasphere"
+  // (signIn.oauth2); on oss the server has no provider registered and the
+  // login page never renders the button — dead weight only, no surface.
+  plugins: [emailOTPClient(), twoFactorClient(), genericOAuthClient()]
 });
 
 /** A sign-in response body that may be the 2FA interstitial instead of a session. */
