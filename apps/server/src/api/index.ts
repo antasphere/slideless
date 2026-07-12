@@ -290,7 +290,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       workspaceId = await db.transaction(async (tx) => {
         const claimed = await tx
           .insert(instanceSettings)
-          .values({ id: 'instance', instanceId, name: body.instanceName })
+          // The edition stamp is what the R7 boot guard compares against
+          // (boot.ts, docs/federation.md): setup records the edition this
+          // instance was born under.
+          .values({ id: 'instance', instanceId, name: body.instanceName, edition: env.EDITION })
           .onConflictDoNothing()
           .returning({ id: instanceSettings.id });
         if (claimed.length === 0) throw new SetupAlreadyDone();

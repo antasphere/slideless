@@ -128,6 +128,39 @@ export async function boot(
     }
   }
 
+  // R7 edition-flip guard (docs/federation.md): EDITION selects the identity
+  // binding, so flipping it under an already-set-up instance silently changes
+  // who can log in and where workspace ownership is asserted. Setup stamps
+  // the instance's edition; a boot whose env EDITION differs refuses to start
+  // unless the operator explicitly acknowledges with EDITION_CHANGE_ALLOWED=true
+  // (which re-stamps and proceeds). A fresh database (no instance row yet)
+  // boots under any edition — cloud instances start from a fresh DB. Skipped
+  // while migrations are pending: the app refuses readiness anyway and the
+  // stamp column may not exist yet.
+  if (!migrationsPending) {
+    const [instanceRow] = await db.db
+      .select({ edition: instanceSettings.edition })
+      .from(instanceSettings)
+      .limit(1);
+    if (instanceRow && instanceRow.edition !== env.EDITION) {
+      if (!env.EDITION_CHANGE_ALLOWED) {
+        const message =
+          `refusing to boot: EDITION=${env.EDITION} but this instance was set up as ` +
+          `'${instanceRow.edition}'. An edition flip on a populated instance changes identity ` +
+          `semantics for existing users and workspaces. If this is intentional, set ` +
+          `EDITION_CHANGE_ALLOWED=true for ONE boot to re-stamp it (docs/federation.md).`;
+        logger.error({ stamped: instanceRow.edition, env: env.EDITION }, message);
+        await db.pool.end(); // clean refusal — no leaked pool for the caller
+        throw new Error(message);
+      }
+      await db.db.update(instanceSettings).set({ edition: env.EDITION });
+      logger.warn(
+        { from: instanceRow.edition, to: env.EDITION },
+        'edition re-stamped (EDITION_CHANGE_ALLOWED=true) — unset the flag again after this boot'
+      );
+    }
+  }
+
   // Email first: whether it delivers decides whether email-OTP login,
   // self-serve password reset, and self-serve email change exist.
   const email = overrides.email ?? createEmailDriver(env, logger);

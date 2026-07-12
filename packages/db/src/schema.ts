@@ -30,7 +30,15 @@ export const instanceSettings = pgTable('instance_settings', {
   name: text('name').notNull(),
   setupCompletedAt: timestamp('setup_completed_at', { withTimezone: true }).notNull().defaultNow(),
   schemaVersion: integer('schema_version').notNull().default(1),
-  telemetryEnabled: boolean('telemetry_enabled').notNull().default(false)
+  telemetryEnabled: boolean('telemetry_enabled').notNull().default(false),
+  /**
+   * The EDITION this instance was set up as (R7 boot guard,
+   * docs/federation.md). Boot refuses an env EDITION that differs unless
+   * EDITION_CHANGE_ALLOWED=true re-stamps it — an edition flip under
+   * existing users/workspaces silently changes identity semantics. The
+   * default covers pre-column rows honestly: everything so far is oss.
+   */
+  edition: text('edition').notNull().default('oss')
 });
 
 /**

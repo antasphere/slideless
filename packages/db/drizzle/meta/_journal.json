@@ -141,6 +141,13 @@
       "when": 1783849296549,
       "tag": "0019_last_owner_guard_projection_exempt",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783854441180,
+      "tag": "0020_instance_edition",
+      "breakpoints": true
     }
   ]
 }

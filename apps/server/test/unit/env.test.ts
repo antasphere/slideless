@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { envSchema } from '../../src/env.js';
+import { envSchema, hubConfig } from '../../src/env.js';
 
 const minimal = { DATABASE_URL: 'postgres://u:p@localhost:5432/db' };
 
@@ -91,5 +91,83 @@ describe('env schema', () => {
       envSchema.parse({ ...minimal, ORPHAN_USER_RETENTION_HOURS: '0' }).ORPHAN_USER_RETENTION_HOURS
     ).toBe(0);
     expect(envSchema.safeParse({ ...minimal, ORPHAN_USER_RETENTION_HOURS: '-1' }).success).toBe(false);
+  });
+
+  describe('edition split (docs/federation.md)', () => {
+    const hubVars = {
+      HUB_ISSUER_URL: 'https://account.antasphere.com',
+      HUB_CLIENT_ID: 'tool-slideless-cloud',
+      HUB_CLIENT_SECRET: 'a-dev-secret-of-sixteen-chars',
+      HUB_SERVICE_KEY: 'ant_service_key'
+    };
+
+    it('defaults to the oss edition with no hub config read', () => {
+      const env = envSchema.parse(minimal);
+      expect(env.EDITION).toBe('oss');
+      expect(env.HUB_ISSUER_URL).toBeUndefined();
+      expect(env.EDITION_CHANGE_ALLOWED).toBe(false);
+      expect(hubConfig(env)).toBeNull();
+    });
+
+    it('oss boots without any HUB_* var, and hubConfig stays null even when they are set', () => {
+      const env = envSchema.parse({ ...minimal, ...hubVars });
+      expect(hubConfig(env)).toBeNull(); // EDITION=oss: the cloud seams never see hub config
+    });
+
+    it('EDITION=cloud fails LOUDLY listing every missing hub var', () => {
+      const result = envSchema.safeParse({ ...minimal, EDITION: 'cloud' });
+      expect(result.success).toBe(false);
+      const paths = result.error!.issues.map((i) => i.path.join('.'));
+      for (const key of ['HUB_ISSUER_URL', 'HUB_CLIENT_ID', 'HUB_CLIENT_SECRET', 'HUB_SERVICE_KEY']) {
+        expect(paths, `issue for ${key}`).toContain(key);
+      }
+    });
+
+    it('EDITION=cloud reports the SPECIFIC missing vars, not a blanket failure', () => {
+      const result = envSchema.safeParse({
+        ...minimal,
+        EDITION: 'cloud',
+        HUB_ISSUER_URL: hubVars.HUB_ISSUER_URL,
+        HUB_CLIENT_ID: hubVars.HUB_CLIENT_ID
+      });
+      expect(result.success).toBe(false);
+      const paths = result.error!.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('HUB_CLIENT_SECRET');
+      expect(paths).toContain('HUB_SERVICE_KEY');
+      expect(paths).not.toContain('HUB_ISSUER_URL');
+      expect(paths).not.toContain('HUB_CLIENT_ID');
+    });
+
+    it('a blank hub var (VAR= in compose) counts as missing on cloud', () => {
+      const result = envSchema.safeParse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_SERVICE_KEY: ' ' });
+      expect(result.success).toBe(false);
+      expect(result.error!.issues.map((i) => i.path.join('.'))).toContain('HUB_SERVICE_KEY');
+    });
+
+    it('EDITION=cloud with the full hub block parses; hubConfig carries it', () => {
+      const env = envSchema.parse({ ...minimal, EDITION: 'cloud', ...hubVars });
+      expect(hubConfig(env)).toEqual({
+        issuerUrl: hubVars.HUB_ISSUER_URL,
+        clientId: hubVars.HUB_CLIENT_ID,
+        clientSecret: hubVars.HUB_CLIENT_SECRET,
+        serviceKey: hubVars.HUB_SERVICE_KEY
+      });
+    });
+
+    it('validates hub var FORMATS whenever set (a typo fails the boot, per the env philosophy)', () => {
+      expect(
+        envSchema.safeParse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_ISSUER_URL: 'not-a-url' }).success
+      ).toBe(false);
+      expect(
+        envSchema.safeParse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_CLIENT_SECRET: 'short' }).success
+      ).toBe(false);
+    });
+
+    it('parses booleanish EDITION_CHANGE_ALLOWED (unset defaults to false)', () => {
+      expect(envSchema.parse(minimal).EDITION_CHANGE_ALLOWED).toBe(false);
+      expect(envSchema.parse({ ...minimal, EDITION_CHANGE_ALLOWED: 'true' }).EDITION_CHANGE_ALLOWED).toBe(
+        true
+      );
+    });
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "instance_settings" ADD COLUMN "edition" text DEFAULT 'oss' NOT NULL;

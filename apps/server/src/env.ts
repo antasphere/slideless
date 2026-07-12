@@ -25,7 +25,7 @@ const booleanish = z.preprocess(
 /** Optional string where an empty value (e.g. `VAR=` in compose) means unset. */
 const optionalString = (inner: z.ZodString) => z.preprocess(blankToUndefined, inner.optional());
 
-export const envSchema = z.object({
+const envObjectSchema = z.object({
   /** Postgres connection string. The only required variable. */
   DATABASE_URL: z.string().min(1, 'required — postgres://user:pass@host:5432/db'),
   /** Port the single HTTP listener binds. */
@@ -78,8 +78,18 @@ export const envSchema = z.object({
   /** Optional Google social login. */
   GOOGLE_CLIENT_ID: optionalString(z.string().min(1)),
   GOOGLE_CLIENT_SECRET: optionalString(z.string().min(1)),
-  /** Edition tag surfaced in discovery + usage events (products override). */
+  /** Edition selector (docs/federation.md): `oss` (default, self-host — zero hub surface at runtime) or `cloud` (federates human login + entitlements to the Antasphere hub; requires the HUB_* block). Also surfaced in discovery + usage events. */
   EDITION: z.string().default('oss'),
+  /** Hub OIDC issuer, e.g. https://account.antasphere.com — discovery, JWKS, and the authorize/token endpoints all derive from it. Required when EDITION=cloud; never read when EDITION=oss. */
+  HUB_ISSUER_URL: z.preprocess(blankToUndefined, z.url().optional()),
+  /** OAuth client id from this tool's entry in the hub TOOL_REGISTRY (e.g. tool-slideless-cloud). Required when EDITION=cloud. */
+  HUB_CLIENT_ID: optionalString(z.string().min(4)),
+  /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Required when EDITION=cloud. */
+  HUB_CLIENT_SECRET: optionalString(z.string().min(16)),
+  /** Hub API key (ant_…) holding the accounts:status scope — the EntitlementService credential (Phase 4). Required when EDITION=cloud. */
+  HUB_SERVICE_KEY: optionalString(z.string().min(8)),
+  /** R7 escape hatch (docs/federation.md): acknowledge an EDITION change on an already-set-up instance. Without it, boot refuses an EDITION that differs from the one stamped at setup — flipping editions under existing users/workspaces changes identity semantics and must be a conscious operator act. */
+  EDITION_CHANGE_ALLOWED: booleanish.default(false),
   /** Build version stamped by CI (Docker ARG); 'dev' locally. */
   APP_VERSION: z.string().default('dev'),
   /** Instance-level cap read by the default AllowAllEntitlements. */
@@ -129,7 +139,59 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('production')
 });
 
+/**
+ * Vars the cloud edition cannot boot without. Enforced as a schema check so
+ * a cloud instance missing ANY of them fails env parsing with one readable
+ * table listing every gap — never a partial boot that dies later at the
+ * first hub call. On EDITION=oss these stay plain optional strings: unset
+ * is fine and nothing reads them.
+ */
+const HUB_REQUIRED_VARS = [
+  'HUB_ISSUER_URL',
+  'HUB_CLIENT_ID',
+  'HUB_CLIENT_SECRET',
+  'HUB_SERVICE_KEY'
+] as const;
+
+export const envSchema = envObjectSchema.superRefine((env, ctx) => {
+  if (env.EDITION !== 'cloud') return;
+  for (const key of HUB_REQUIRED_VARS) {
+    if (env[key] === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: 'required when EDITION=cloud — see docs/federation.md'
+      });
+    }
+  }
+});
+
 export type Env = z.infer<typeof envSchema>;
+
+/**
+ * The hub half of the edition split (docs/federation.md), extracted once at
+ * boot. Returns null on EDITION=oss — the single switch every cloud seam
+ * hangs off, so the self-host edition provably reads no hub config. The
+ * tool's own OAuth resource URL is DERIVED (`<PUBLIC_BASE_URL>/mcp`, see
+ * mcpResourceUrl), never configured.
+ */
+export interface HubConfig {
+  issuerUrl: string;
+  clientId: string;
+  clientSecret: string;
+  serviceKey: string;
+}
+
+export function hubConfig(env: Env): HubConfig | null {
+  if (env.EDITION !== 'cloud') return null;
+  // parseEnv already refused a cloud env missing any of these.
+  return {
+    issuerUrl: env.HUB_ISSUER_URL!,
+    clientId: env.HUB_CLIENT_ID!,
+    clientSecret: env.HUB_CLIENT_SECRET!,
+    serviceKey: env.HUB_SERVICE_KEY!
+  };
+}
 
 export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const result = envSchema.safeParse(source);
