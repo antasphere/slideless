@@ -77,6 +77,14 @@ export interface ClientOptions {
   baseUrl?: string;
   /** API key (`<prefix>_<keyid>_<secret>`) for machine callers. */
   apiKey?: string;
+  /**
+   * Active workspace for SESSION callers (sent as X-Workspace-Id, ADR 012).
+   * Only meaningful with the session cookie: a user in several workspaces
+   * names which one their requests target. API keys and OAuth tokens are
+   * workspace-bound at mint and need none (a mismatching value is rejected
+   * server-side). Mutable later via setWorkspace().
+   */
+  workspaceId?: string;
   fetch?: typeof globalThis.fetch;
 }
 
@@ -127,12 +135,27 @@ function idempotencyHeader(opts: IdempotentRequestOptions): Record<string, strin
 export class PlatformClient {
   private readonly baseUrl: string;
   private readonly apiKey: string | undefined;
+  private workspaceId: string | undefined;
   private readonly fetchImpl: typeof globalThis.fetch;
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? '';
     this.apiKey = options.apiKey;
+    this.workspaceId = options.workspaceId;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+  }
+
+  /** Set (or clear) the active workspace all subsequent requests target. */
+  setWorkspace(workspaceId: string | null): void {
+    this.workspaceId = workspaceId ?? undefined;
+  }
+
+  /** Base headers shared by every call: credential + active workspace. */
+  private baseHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    if (this.workspaceId) headers['x-workspace-id'] = this.workspaceId;
+    return headers;
   }
 
   private async parse<T>(res: Response): Promise<T> {
@@ -168,9 +191,8 @@ export class PlatformClient {
     body?: unknown,
     extraHeaders?: Record<string, string>
   ): Promise<T> {
-    const headers: Record<string, string> = { ...extraHeaders };
+    const headers: Record<string, string> = { ...this.baseHeaders(), ...extraHeaders };
     if (body !== undefined) headers['content-type'] = 'application/json';
-    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
 
     const res = await this.fetchImpl(`${this.baseUrl}/api/v1${path}`, {
       method,
@@ -357,8 +379,7 @@ export class PlatformClient {
       (typeof Blob !== 'undefined' && body instanceof Blob && body.type
         ? body.type
         : 'application/octet-stream');
-    const headers: Record<string, string> = { 'content-type': type };
-    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    const headers: Record<string, string> = { ...this.baseHeaders(), 'content-type': type };
 
     const res = await this.fetchImpl(`${this.baseUrl}/api/v1/files?name=${encodeURIComponent(name)}`, {
       method: 'POST',
@@ -425,8 +446,7 @@ export class PlatformClient {
     form.set('sha256', sha256);
     form.set('file', blob, sha256);
 
-    const headers: Record<string, string> = {};
-    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    const headers: Record<string, string> = this.baseHeaders();
     const res = await this.fetchImpl(`${this.baseUrl}/api/v1/presentations/assets`, {
       method: 'POST',
       headers, // content-type comes from FormData (boundary included)
@@ -476,8 +496,7 @@ export class PlatformClient {
    * the bytes; a non-2xx answer throws PlatformApiError like every method.
    */
   async downloadPresentationAsset(id: string, sha256: string): Promise<Response> {
-    const headers: Record<string, string> = {};
-    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    const headers: Record<string, string> = this.baseHeaders();
     const res = await this.fetchImpl(this.presentationAssetUrl(id, sha256), {
       method: 'GET',
       headers,
@@ -654,8 +673,7 @@ export class PlatformClient {
    * a non-2xx answer throws PlatformApiError like every other method.
    */
   async downloadExport(): Promise<Response> {
-    const headers: Record<string, string> = {};
-    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
+    const headers: Record<string, string> = this.baseHeaders();
     const res = await this.fetchImpl(this.workspaceExportUrl(), {
       method: 'GET',
       headers,

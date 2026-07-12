@@ -1,18 +1,30 @@
-import { eq, and } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { workspaceMembers, workspaces, type Db } from '@slideless/db';
-import type {
-  IdentityProvider,
-  InstanceAuthDescriptor,
-  Principal,
-  RequestContext
+import {
+  ACTIVE_WORKSPACE_HEADER,
+  type IdentityProvider,
+  type InstanceAuthDescriptor,
+  type Principal,
+  type RequestContext
 } from '@slideless/contract';
 import type { Auth } from '../identity/better-auth.js';
+
+/** Strict UUID shape — a malformed header must never reach Postgres' uuid cast. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The template's default IdentityProvider: Better Auth sessions + a LIVE
  * workspace_members re-check on every request. The membership row — not the
  * cookie — is the authorization decision, so deactivating a member locks
  * them out instantly regardless of cookie age.
+ *
+ * Workspace scoping (ADR 012): a session resolves to exactly ONE workspace
+ * per request. The client MAY name it with the X-Workspace-Id header — an
+ * ACTIVE membership of that workspace is required, else the request
+ * resolves to null (fail closed: an unknown workspace and a workspace the
+ * user does not belong to are indistinguishable). Without the header the
+ * sole active membership wins, or — for multi-workspace users — the
+ * deterministic default: the OLDEST active membership (created_at, then id).
  *
  * API-key and OAuth-bearer resolution live in the auth-context middleware
  * (they are credential formats, not identity sources); this provider is the
@@ -34,16 +46,27 @@ export class LocalIdentityProvider implements IdentityProvider {
     });
     if (!session?.user) return null;
 
+    const requested = ctx.headers.get(ACTIVE_WORKSPACE_HEADER)?.trim() || null;
+    if (requested && !UUID_RE.test(requested)) return null; // fail closed, no uuid-cast 500
+
     const [row] = await this.db
       .select({
         memberRole: workspaceMembers.role,
         workspaceId: workspaceMembers.workspaceId,
-        workspaceName: workspaces.name,
         accountRef: workspaces.centralAccountId
       })
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
-      .where(and(eq(workspaceMembers.userId, session.user.id), eq(workspaceMembers.isActive, true)))
+      .where(
+        and(
+          eq(workspaceMembers.userId, session.user.id),
+          eq(workspaceMembers.isActive, true),
+          ...(requested ? [eq(workspaceMembers.workspaceId, requested)] : [])
+        )
+      )
+      // Deterministic no-header default: the oldest active membership. With
+      // the header the filter pins a single row and the order is inert.
+      .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id))
       .limit(1);
     if (!row) return null;
 

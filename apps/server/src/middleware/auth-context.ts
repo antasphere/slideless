@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import type { Principal } from '@slideless/contract';
+import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@slideless/contract';
 import type { PlatformRegistry } from '../platform/registry.js';
 import { apiError } from '../api/errors.js';
 import {
@@ -116,6 +116,18 @@ export function authContext({
         method: c.req.method,
         requestId: c.get('requestId')
       });
+    }
+
+    // Machine credentials bind ONE workspace at mint/consent time (ADR 012):
+    // an X-Workspace-Id header naming a DIFFERENT workspace is a client bug
+    // or a confused-deputy attempt — reject it loudly instead of silently
+    // serving the credential's workspace. Sessions never reach this: the
+    // identity provider already resolved the header (or null, fail closed).
+    if (principal && principal.via !== 'session') {
+      const requested = c.req.header(ACTIVE_WORKSPACE_HEADER)?.trim();
+      if (requested && requested.toLowerCase() !== principal.workspaceId.toLowerCase()) {
+        return apiError(c, 403, 'workspace_mismatch', 'This credential is bound to a different workspace');
+      }
     }
 
     // General per-principal request quota (I3), consumed BEFORE the scope

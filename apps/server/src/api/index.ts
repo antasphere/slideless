@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { ulid } from 'ulid';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
 import { instanceSettings, workspaceMembers, workspaces, type Db } from '@slideless/db';
 import type { Env } from '../env.js';
@@ -337,21 +337,35 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     if (!principal) {
       return c.json(err('unauthenticated', 'Authentication required'), 401);
     }
-    const [ws] = await db
-      .select({ id: workspaces.id, name: workspaces.name })
-      .from(workspaces)
-      .where(eq(workspaces.id, principal.workspaceId))
-      .limit(1);
+    // Workspaces this credential can name (ADR 012): a session lists ALL of
+    // the user's active memberships (oldest first — index 0 is the no-header
+    // default); a machine credential lists ONLY the workspace it is bound to,
+    // so a workspace-scoped key/token never enumerates the user's others.
+    const memberships = await db
+      .select({ id: workspaces.id, name: workspaces.name, role: workspaceMembers.role })
+      .from(workspaceMembers)
+      .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
+      .where(
+        and(
+          eq(workspaceMembers.userId, principal.userId),
+          eq(workspaceMembers.isActive, true),
+          ...(principal.via === 'session' ? [] : [eq(workspaceMembers.workspaceId, principal.workspaceId)])
+        )
+      )
+      .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id));
+    const active = memberships.find((m) => m.id === principal.workspaceId);
     return c.json(
       {
         user: { id: principal.userId, email: principal.email, name: principal.name },
-        workspace: { id: principal.workspaceId, name: ws?.name ?? '' },
+        workspace: { id: principal.workspaceId, name: active?.name ?? '' },
         role: principal.role,
         via: principal.via,
         scopes: principal.scopes
           ? ([...principal.scopes] as Array<'presentations:read' | 'presentations:write' | 'data:export'>)
           : null,
-        apiKeyExpiresAt: principal.apiKeyExpiresAt ?? null
+        apiKeyExpiresAt: principal.apiKeyExpiresAt ?? null,
+        workspaces: memberships,
+        activeWorkspaceId: principal.workspaceId
       },
       200
     );
