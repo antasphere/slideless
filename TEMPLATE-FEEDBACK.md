@@ -509,6 +509,38 @@ re-assertion (Slideless `identity/hub-status.ts` + `hub-gate.ts`, ADR 016).
     before the seam binding or have `bindEditionSeams` return metrics for
     boot to attach (document the contract).
 
+## 14. Guest semantics: membership origin as a capability axis (cloud-binding Phase 6)
+
+Found while limiting `origin='guest'` memberships to per-deck capability
+(decision D2) and closing the cloud claim flow's local-password entrance.
+
+60. **The chassis has no capability axis besides role, so any product that
+    mints memberships for EXTERNAL parties silently grants them full
+    member capability.** The template's own invitation-accept is a public
+    membership-minting entrance, and principal resolution requires a
+    membership — the same pressure that made Slideless's collaborator claim
+    mint members bit the deck-privacy review (ADR 013) and now the guest
+    phase. Slideless added `workspace_members.origin`
+    ('local'|'hub'|'guest') + a required `Principal.origin` populated by
+    ALL THREE credential resolvers (the accountRef lesson, #58, applied
+    from the start this time) + a `requireNonGuest()` route guard. Fix:
+    upstream the origin column, the Principal field, and the guard as
+    chassis primitives — every tool that federates (or just invites
+    outsiders to one resource) needs exactly this shape, and retrofitting
+    the column later costs a data backfill (Slideless migration 0019 had to
+    infer every existing row's honest origin).
+61. **ADR 006's "files are workspace data" posture composes badly with
+    external-party memberships.** `GET /files`, `GET /files/{id}/content`
+    span every workspace blob with no per-resource authorization — right
+    for teams, but the moment an outsider holds a membership it is a
+    whole-tenant read channel that bypasses any per-resource ACL a product
+    builds (Slideless: deck assets live in the same `files` table their
+    ADR 013 guards protect via /presentations). Slideless closed it with
+    the origin guard (guests: 403 on all of /files, reads included). Fix:
+    when #60 lands, gate /files on non-guest origin in the template too —
+    it is the surface where "membership = workspace-wide read" does the
+    most damage.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
@@ -544,17 +576,19 @@ re-assertion (Slideless `identity/hub-status.ts` + `hub-gate.ts`, ADR 016).
 Surfaced by the adversarial reviews and RECORDED ON PURPOSE — product policy
 calls for Romain, not template bugs. Nothing here is silently fixed.
 
-1. **`/members` roster visibility to collaborators.** A claimed collaborator
-   is a workspace member and can GET `/members` — the full name/email
-   roster, including other external collaborators. Under the ADR 013
-   "external parties" model that may be more than a one-deck reviewer should
-   see. Decide: hide the roster from plain members, or accept it as the
-   price of the membership-based auth layer.
-2. **The member account-minting policy.** Any claimed collaborator can
-   create their own deck, become its owner, and invite further emails — each
-   claim mints a real account, so one invited reviewer can transitively
-   populate the instance with accounts. If not intended, deck creation
-   and/or invite rights need a role gate.
+1. **`/members` roster visibility to collaborators.** ~~A claimed
+   collaborator is a workspace member and can GET `/members` — the full
+   name/email roster.~~ **RESOLVED 2026-07-13 (decision D2, cloud-binding
+   Phase 6)**: guests (origin='guest') are refused the roster
+   (`requireNonGuest`, 403). Ordinary invited members still see it —
+   unchanged, and intended (they are team).
+2. **The member account-minting policy.** ~~Any claimed collaborator can
+   create their own deck, become its owner, and invite further emails.~~
+   **RESOLVED 2026-07-13 (decision D2, cloud-binding Phase 6)**: guests are
+   refused deck creation (and /files, and the export) on both editions;
+   their role is locked so promotion cannot reopen it. Account minting per
+   claim remains (principal resolution requires a membership), but a guest
+   account can no longer populate the host workspace with content.
 3. **Cross-site Origin-symmetry defense-in-depth on `/api/v1`.** The custom
    routes rely on SameSite=Lax alone; the ADR 012 spike showed Firefox still
    transmits the session cookie on an opaque-origin credentialed fetch (the

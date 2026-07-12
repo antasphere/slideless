@@ -618,6 +618,10 @@ export const en = {
   'collab.createAndClaim': 'Create account and claim',
   'collab.errorWrongPassword': 'Wrong password for this account.',
   'collab.errorSignInFailed': 'Sign-in failed.',
+  'collab.ssoIntro': 'This instance signs in with Antasphere. Sign in to claim your invitation.',
+  'collab.ssoWrongAccount':
+    'You are signed in as {current}, but this invitation is for {email}. Sign in with the invited account to claim it.',
+  'collab.finishing': 'Finishing your invitation…',
 
   // ── Audit log ────────────────────────────────────────────────────────
   'audit.title': 'Audit log',

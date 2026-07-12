@@ -287,6 +287,59 @@ Day-to-day CLI calls are then the ordinary local API-key path — the hub is
 out of the loop until the next exchange; `slideless logout` is the tool's
 own key revocation.
 
+## Guests (Phase 6): capability limits + the SSO-first claim
+
+An external party invited to ONE deck (a per-deck collaborator, ADR 013)
+becomes a `workspace_members` row because principal resolution requires a
+membership — stamped **`origin='guest'`**. Phase 6 makes that origin a
+**capability boundary (decision D2, BOTH editions — a deliberate change to
+shipped self-host behavior)**:
+
+- **What a guest keeps**: everything their grant opens on THAT deck — read
+  (404-not-403 privacy unchanged; `canReadDeck` keys on the grant, never
+  the membership), version pushes + asset staging, share tokens,
+  annotations — with a session, their own API key, or an MCP token alike
+  (every credential path reads `origin` live from the membership row into
+  the `Principal`).
+- **What a guest is refused** (`requireNonGuest`, 403 `guest_forbidden`):
+  deck **creation** in the host workspace (`/presentations/uploads` +
+  commit), the generic **`/files`** surface (reads included — it spans
+  every workspace blob with no per-deck authorization, a deck-content
+  bypass for an outsider), the **member roster**, and the **workspace
+  export** (in front of the admin gate, defense in depth). On cloud the
+  same guest creates decks freely in their OWN projected workspace — the
+  capability keys on the origin of the membership backing the request's
+  workspace.
+- **The role is locked**: a guest row cannot be promoted
+  (`guest_role_locked`) — origin is an axis nothing upgrades (the hub
+  never re-asserts guest rows, SSO never touches them), so a "guest admin"
+  half-state cannot exist. Deactivating/reactivating a guest stays an
+  admin act. To empower the person, invite them as a real member.
+
+**The cloud claim flow (SSO-first).** On `EDITION=cloud` the claim
+endpoint's account-creation branch is CLOSED (409 `sso_required` — keyed on
+the same `hubSso` presence switch as every cloud seam, so oss keeps the
+exact local-password behavior and provably carries no hub surface here).
+The claim page (`/collab/{token}`) routes a new invitee through **"Sign in
+with Antasphere"** — the SAME Phase 3 entrance as any cloud login (JIT +
+the deliberate fourth signup switch), opening no new signup hole — and
+completes the claim signed-in (the hub-verified email must equal the grant
+email). **No hub org membership is created anywhere in this path**: the
+guest ends with their own projected workspace (`origin='hub'`) plus the
+`guest` row in the deck's workspace, which stays unprojected.
+
+**The cross-request sweep (G1 residual, closed here).** The JIT login's
+`user.created` sweep flips the pending grant to ACTIVE before the claim
+POST arrives (same shape: a sibling grant swept at signup). The pending-only
+public lookup deliberately stays blind to active grants — widening it would
+leak deck metadata for used tokens — so the CLAIM path alone resolves an
+active grant **for its owner's session only**
+(`findActiveByClaimTokenFor`) and still runs the membership-insert block
+(the sweep flips grants but never mints memberships). To everyone else a
+used token stays indistinguishable from an invalid one; the dashboard
+claim page retries the claim once when a "dead" lookup meets a live
+session before showing the dead screen.
+
 ## The hub registry entry (what the HUB operator configures)
 
 The hub seeds first-party tool clients from its `TOOL_REGISTRY` env var

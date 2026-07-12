@@ -497,7 +497,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     registry,
     logger,
     presentations: presentationService,
-    collaborators: deps.collaborators
+    collaborators: deps.collaborators,
+    // Cloud presence switch (docs/federation.md P6): closes the claim
+    // endpoint's local-password account creation — invitees arrive through
+    // the P3 SSO entrance instead. undefined on oss.
+    hubSso
   });
   // The PUBLIC viewer-token annotation surface (Phase 5): token-authed,
   // deliberately outside requireAuth and the scope allowlist — see the

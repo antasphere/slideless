@@ -54,6 +54,15 @@ deploys) + `dev` (day-to-day work).
   deck. A failed read check answers **404, never 403** (deck existence is not probeable).
   Workspace membership alone is NOT a deck read grant — collaborators are external parties
   invited to one deck, and revoking a grant must cut content access immediately.
+- **Guest origin is a capability boundary (D2, docs/federation.md "Guests")**: a
+  `workspace_members.origin='guest'` row exists for principal resolution only. Guests keep
+  every ADR 013 per-deck surface their grant opens but are refused deck creation, the generic
+  `/files` surface (reads included — it spans every workspace blob with no per-deck authz),
+  the member roster, and the workspace export on BOTH editions (`requireNonGuest`, 403
+  `guest_forbidden`), across sessions, API keys, and OAuth bearers alike. Guest roles are
+  locked (`guest_role_locked`); only the claim path writes guest rows; the hub re-assertion
+  never touches them. On cloud, guests get hub identities (the claim page is SSO-first; the
+  claim endpoint answers `sso_required` instead of minting local-password accounts).
 
 ## Commands
 

@@ -15,6 +15,7 @@ import type { EmailDriver } from '../email/driver.js';
 import type { PlatformRegistry } from '../platform/registry.js';
 import type { AuditService } from '../audit/service.js';
 import { buildCollaboratorInviteEmail } from '../email/templates.js';
+import type { HubSsoService } from '../identity/hub-sso.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import {
   CollaboratorError,
@@ -39,7 +40,15 @@ import {
  *    account (closed sign-up's third sanctioned entrance, next to setup and
  *    invitation accept), makes it a workspace MEMBER (the platform requires
  *    a membership to authenticate at all — the per-deck grant rides on top
- *    of the ordinary lowest role), and activates the grant.
+ *    of the ordinary lowest role), and activates the grant. **oss only**:
+ *    on EDITION=cloud identity is hub-only (D1), so the account-creation
+ *    branch answers 409 sso_required instead — the claim page routes the
+ *    invitee through "Sign in with Antasphere" (the P3 entrance: JIT +
+ *    the deliberate fourth signup switch) and claims signed-in. The JIT
+ *    login's grant sweep usually flips the grant BEFORE the claim POST
+ *    arrives; the G1 cross-request fallback below is what makes that
+ *    sequence land. No hub org membership is created anywhere here — the
+ *    guest gets only the origin='guest' row in the DECK's workspace.
  *  - A user created through a WORKSPACE invitation auto-claims any pending
  *    grants for their email via the `user.created` event hook (boot.ts) —
  *    the same moment the template redeems its own invitations.
@@ -77,10 +86,20 @@ export interface CollaboratorRouteDeps {
   logger: Logger;
   presentations: PresentationService;
   collaborators: CollaboratorService;
+  /**
+   * Cloud edition only (docs/federation.md P6) — the same presence switch
+   * every cloud seam keys on (boot constructs it iff EDITION=cloud, so oss
+   * provably carries zero hub surface here). Present, the claim endpoint's
+   * account-creation branch is CLOSED (409 sso_required): cloud identity is
+   * hub-only (D1), and the invitee arrives through the P3 SSO entrance
+   * instead. Only the boolean presence is consulted — the service itself is
+   * never called from this module.
+   */
+  hubSso?: HubSsoService | undefined;
 }
 
 export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorRouteDeps): void {
-  const { db, env, auth, email, audit, registry, logger, presentations, collaborators } = deps;
+  const { db, env, auth, email, audit, registry, logger, presentations, collaborators, hubSso } = deps;
 
   const claimUrlOf = (token: string): string => `${env.PUBLIC_BASE_URL}/collab/${token}`;
 
@@ -294,6 +313,23 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
         userId = session.user.id;
         alreadyVerified = account.emailVerified;
       } else {
+        if (hubSso) {
+          // Cloud (D1): identity is hub-only — a local-password account
+          // minted here would be one no cloud login surface accepts, and a
+          // second signup entrance beside the sanctioned SSO one. The claim
+          // page routes the invitee through "Sign in with Antasphere" (the
+          // P3 entrance — JIT, the deliberate fourth signup switch), whose
+          // grant sweep + the G1 cross-request fallback above complete the
+          // claim on the re-POST. Checked BEFORE the credentials check so
+          // the answer never depends on the body shape.
+          return c.json(
+            err(
+              'sso_required',
+              'This instance signs in with Antasphere — sign in first, then open the invite link again'
+            ),
+            409
+          );
+        }
         if (!body.name || !body.password) {
           return c.json(
             err('credentials_required', 'Provide name and password to create your account'),

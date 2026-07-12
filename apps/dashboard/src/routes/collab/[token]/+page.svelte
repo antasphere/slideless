@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
@@ -6,22 +7,34 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
-  import { api, PlatformApiError } from '$lib/api';
+  import { api, PlatformApiError, WORKSPACE_STORAGE_KEY } from '$lib/api';
   import { authClient, isTwoFactorRedirect } from '$lib/auth-client';
-  import { refreshSession } from '$lib/session';
   import { t } from '$lib/i18n';
+  import type { CollaboratorClaimed } from '@slideless/contract';
 
   /**
    * Collaborator claim page (the /invite/[token] pattern): resolves the
    * claim token, then claims as the signed-in matching account, signs in an
-   * existing account first, or creates the account inline. Claiming lands
-   * on the deck the grant is for.
+   * existing account first, or creates the account inline (oss). On the
+   * cloud edition (D1: identity is hub-only) the password/create forms give
+   * way to "Sign in with Antasphere" — the P3 SSO entrance JIT-creates the
+   * account and lands back HERE, where the claim completes.
+   *
+   * The post-SSO landing has a twist (G1 cross-request, Phase 6): the JIT
+   * login's grant sweep usually flips the grant to ACTIVE before this page
+   * reloads, so the public lookup answers 404 ("dead"). A dead lookup WITH
+   * a session is therefore not dead yet: the claim endpoint resolves active
+   * grants for their owner and still mints the membership — attempt it once
+   * before showing the dead screen. (Same recovery serves oss users whose
+   * grant was swept at signup through a workspace invitation.)
    */
 
   let { data } = $props();
 
   const token = $derived(data.token);
   const lookup = $derived(data.lookup);
+  // Cloud (D1): 'antasphere' advertised means the hub is the human entrance.
+  const hasAntasphere = $derived(data.instance.auth.methods.includes('antasphere'));
   // Already signed in as the invited account → one-click claim.
   const signedInMatch = $derived(data.me !== null && lookup !== null && data.me.user.email === lookup.email);
 
@@ -30,10 +43,44 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let deadReason = $state<string | null>(null);
+  // G1 recovery in flight: a dead lookup + a live session → try the claim
+  // before believing the 404.
+  let recovering = $state(false);
 
-  async function finish(presentationId: string) {
-    await refreshSession();
-    await goto(`/decks/${presentationId}`);
+  onMount(() => {
+    if (data.state === 'dead' && data.me !== null) {
+      recovering = true;
+      void recoverClaim();
+    }
+  });
+
+  /**
+   * Land on the claimed deck IN ITS WORKSPACE: a multi-workspace guest (a
+   * cloud guest always is one — their own projected workspace exists before
+   * the guest row) would otherwise resolve their default workspace and 404
+   * on the deck. Full navigation, so the api client reboots with the
+   * persisted selection (the switchWorkspace pattern).
+   */
+  function finish(claimed: CollaboratorClaimed) {
+    try {
+      globalThis.localStorage?.setItem(WORKSPACE_STORAGE_KEY, claimed.workspaceId);
+    } catch {
+      // Not persistable — the deck page may fall back to the default
+      // workspace; the claim itself is complete either way.
+    }
+    window.location.assign(`/decks/${claimed.collaborator.presentationId}`);
+  }
+
+  async function recoverClaim() {
+    try {
+      const claimed = await api.claimCollaboratorInvite({ token });
+      finish(claimed);
+      return; // keep the spinner up while the browser navigates
+    } catch {
+      // Genuinely dead (used by someone else, revoked, expired) — fall
+      // through to the dead screen.
+      recovering = false;
+    }
   }
 
   async function claimAsSignedIn() {
@@ -41,11 +88,32 @@
     loading = true;
     try {
       const claimed = await api.claimCollaboratorInvite({ token });
-      await finish(claimed.collaborator.presentationId);
+      finish(claimed);
     } catch (e) {
       handleClaimError(e);
-    } finally {
       loading = false;
+    }
+  }
+
+  /** Cloud: through the hub, back to this exact page, then claim. */
+  async function signInWithAntasphere() {
+    error = null;
+    loading = true;
+    try {
+      const { error: err } = await authClient.signIn.oauth2({
+        providerId: 'antasphere',
+        callbackURL: `/collab/${token}`,
+        errorCallbackURL: `/collab/${token}`
+      });
+      if (err) {
+        loading = false;
+        error = err.message || t('collab.errorSignInFailed');
+      }
+      // Success answers { url, redirect: true } and the client navigates to
+      // the hub; keep `loading` on while the browser leaves the page.
+    } catch {
+      loading = false;
+      error = t('collab.errorSignInFailed');
     }
   }
 
@@ -70,7 +138,7 @@
         return;
       }
       const claimed = await api.claimCollaboratorInvite({ token });
-      await finish(claimed.collaborator.presentationId);
+      finish(claimed);
     } catch (e) {
       handleClaimError(e);
     } finally {
@@ -94,7 +162,7 @@
         await goto('/login');
         return;
       }
-      await finish(claimed.collaborator.presentationId);
+      finish(claimed);
     } catch (e) {
       handleClaimError(e);
     } finally {
@@ -112,6 +180,10 @@
         deadReason = t('collab.deadGone');
         return;
       }
+      if (e.code === 'sso_required') {
+        error = t('collab.ssoIntro');
+        return;
+      }
       error = e.message;
       return;
     }
@@ -123,7 +195,12 @@
 
 <div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
   <Card.Root class="w-full max-w-md">
-    {#if data.state === 'dead' || deadReason}
+    {#if recovering}
+      <Card.Header>
+        <Card.Title class="text-xl">{t('collab.finishing')}</Card.Title>
+        <Card.Description>{t('collab.claiming')}</Card.Description>
+      </Card.Header>
+    {:else if data.state === 'dead' || deadReason}
       <Card.Header>
         <Card.Title class="text-xl">{t('collab.deadTitle')}</Card.Title>
         <Card.Description>
@@ -157,6 +234,23 @@
           {/if}
           <Button class="w-full" disabled={loading} onclick={() => void claimAsSignedIn()}>
             {loading ? t('collab.claiming') : t('collab.claim')}
+          </Button>
+        {:else if hasAntasphere}
+          <!-- Cloud (D1): the hub is the only human entrance — for existing
+               accounts and brand-new invitees alike (the SSO callback
+               JIT-creates the account and returns here). -->
+          {#if data.me !== null}
+            <p class="text-sm text-muted-foreground">
+              {t('collab.ssoWrongAccount', { current: data.me.user.email, email: lookup.email })}
+            </p>
+          {:else}
+            <p class="text-sm text-muted-foreground">{t('collab.ssoIntro')}</p>
+          {/if}
+          {#if error}
+            <p class="text-sm text-destructive">{error}</p>
+          {/if}
+          <Button class="w-full" disabled={loading} onclick={() => void signInWithAntasphere()}>
+            {loading ? t('collab.claiming') : t('login.signInWithAntasphere')}
           </Button>
         {:else if lookup.accountExists}
           <p class="text-sm text-muted-foreground">

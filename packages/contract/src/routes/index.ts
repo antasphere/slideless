@@ -971,13 +971,18 @@ export const collaboratorClaimRoute = createRoute({
   method: 'post',
   path: '/collaborators/claim',
   tags: ['collaborators'],
-  summary: 'Claim a collaborator grant (public: creates the account when needed)',
-  request: { body: jsonRequestBody(collaboratorClaimSchema, 'Token + credentials for new accounts') },
+  summary: 'Claim a collaborator grant (public; oss creates the account inline, cloud signs in via hub SSO first)',
+  request: {
+    body: jsonRequestBody(collaboratorClaimSchema, 'Token + credentials for new accounts (oss only)')
+  },
   responses: {
     200: jsonBody(collaboratorClaimedSchema, 'Grant claimed (the account is now an active dev collaborator)'),
     400: errorResponses[400],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Account exists — sign in to claim'),
+    409: jsonBody(
+      apiErrorSchema,
+      'account_exists (sign in, then claim) or sso_required (cloud: sign in with Antasphere first)'
+    ),
     410: errorResponses[410]
   }
 });

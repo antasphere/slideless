@@ -641,6 +641,10 @@ export const fr: Record<MessageKey, string> = {
   'collab.createAndClaim': 'Créer le compte et réclamer',
   'collab.errorWrongPassword': 'Mot de passe incorrect pour ce compte.',
   'collab.errorSignInFailed': 'Échec de la connexion.',
+  'collab.ssoIntro': 'Cette instance se connecte via Antasphere. Connectez-vous pour réclamer votre invitation.',
+  'collab.ssoWrongAccount':
+    'Vous êtes connecté en tant que {current}, mais cette invitation est destinée à {email}. Connectez-vous avec le compte invité pour la réclamer.',
+  'collab.finishing': 'Finalisation de votre invitation…',
 
   // ── Audit log ────────────────────────────────────────────────────────
   'audit.title': 'Journal d’audit',
