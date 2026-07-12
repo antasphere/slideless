@@ -364,3 +364,64 @@ describe('with SUPERADMIN_EMAILS unset (default)', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('multi-workspace targeting (ADR 012)', () => {
+  const ROOT3 = { email: 'root@bg3.test', name: 'BG3 Root', password: 'bg3-root-password-123' };
+  let app: TestApp;
+  let rootCookie: string;
+  let w2 = '';
+
+  beforeAll(async () => {
+    app = await createTestApp(await createDatabase(container, 'bg_multi'), {
+      SUPERADMIN_EMAILS: ROOT3.email
+    });
+    await app.app.request('/api/v1/setup', json({ instanceName: 'BG3', owner: ROOT3 }));
+    await app.db.pool.query(`UPDATE "user" SET email_verified = true WHERE email = $1`, [ROOT3.email]);
+    // A second workspace owned by someone else — root has NO standing in it.
+    const other = await app.auth.api.signUpEmail({
+      body: { email: 'other@bg3.test', password: 'bg3-other-password-12', name: 'BG3 Other' }
+    });
+    w2 = (await app.registry.workspaces.create('BG3 Second', other.user.id)).workspaceId;
+    rootCookie = await signIn(app, ROOT3.email, ROOT3.password);
+  }, 60_000);
+
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('refuses to guess: several workspaces and no workspaceId → 400 workspace_required', async () => {
+    const res = await app.app.request(
+      '/api/v1/admin/break-glass/claim-ownership',
+      json({}, { cookie: rootCookie })
+    );
+    expect(res.status).toBe(400);
+    expect((await readJson(res)).error.code).toBe('workspace_required');
+  });
+
+  it('claims ownership in the EXPLICIT workspace', async () => {
+    const res = await app.app.request(
+      '/api/v1/admin/break-glass/claim-ownership',
+      json({ workspaceId: w2 }, { cookie: rootCookie })
+    );
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    expect(body.workspaceId).toBe(w2);
+    expect(body.role).toBe('owner');
+    expect(body.created).toBe(true);
+    const { rows } = await app.db.pool.query(
+      `SELECT role, is_active FROM workspace_members wm
+       JOIN "user" u ON u.id = wm.user_id
+       WHERE u.email = $1 AND wm.workspace_id = $2`,
+      [ROOT3.email, w2]
+    );
+    expect(rows).toEqual([{ role: 'owner', is_active: true }]);
+  });
+
+  it('404s a workspace that does not exist', async () => {
+    const res = await app.app.request(
+      '/api/v1/admin/break-glass/claim-ownership',
+      json({ workspaceId: '00000000-0000-4000-8000-000000000000' }, { cookie: rootCookie })
+    );
+    expect(res.status).toBe(404);
+  });
+});
