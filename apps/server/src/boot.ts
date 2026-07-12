@@ -38,6 +38,7 @@ import { EventBus } from './platform/events.js';
 import { LocalIdentityProvider } from './platform/local-identity.js';
 import { createRegistry, type PlatformRegistry } from './platform/registry.js';
 import { NoopUsageSink } from './platform/usage.js';
+import { WorkspaceService } from './platform/workspaces.js';
 import { resolveAuthSecret } from './secret.js';
 import { ShareTokenService } from './sharing/service.js';
 import { PresentationService } from './presentations/service.js';
@@ -272,7 +273,8 @@ export async function boot(
       apiRequestsBurstPerSecond: env.API_RATE_LIMIT_BURST
     }),
     usage: new PgBossUsageSink(jobs.boss, logger),
-    events
+    events,
+    workspaces: new WorkspaceService(db.db)
   });
 
   // API-key pepper registry (ADR 008): version 1 is the AUTH_SECRET-derived

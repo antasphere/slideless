@@ -279,8 +279,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       }
     }
 
-    // Claim the singleton and create workspace + owner membership in ONE
-    // transaction: either the instance is fully set up or nothing persisted.
+    // Claim the singleton and create the FIRST workspace + owner membership
+    // in ONE transaction: either the instance is fully set up or nothing
+    // persisted. The workspace goes through the registry's WorkspaceService
+    // (ADR 012) — the same path product flows use for every LATER workspace.
     const instanceId = ulid();
     let workspaceId: string;
     try {
@@ -292,17 +294,8 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           .returning({ id: instanceSettings.id });
         if (claimed.length === 0) throw new SetupAlreadyDone();
 
-        const [workspace] = await tx
-          .insert(workspaces)
-          .values({ name: body.instanceName })
-          .returning({ id: workspaces.id });
-        if (!workspace) throw new Error('workspace insert returned no row');
-        await tx.insert(workspaceMembers).values({
-          workspaceId: workspace.id,
-          userId: ownerUserId,
-          role: 'owner'
-        });
-        return workspace.id;
+        const created = await registry.workspaces.create(body.instanceName, ownerUserId, tx);
+        return created.workspaceId;
       });
     } catch (cause) {
       if (cause instanceof SetupAlreadyDone) {
