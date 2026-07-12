@@ -256,28 +256,42 @@ export class HubSsoService {
    * some local user A still carries because A's projection is stale — B's
    * first login then finds no account row, matches A by email, and the D9
    * trusted link merges B onto A's local user (and A's decks). Detect the
-   * second `antasphere` accountId, DELETE the just-linked row (restoring
-   * the pre-login state), and fail the login. The conflict clears when A
-   * next logs in (their email re-syncs away) or an operator intervenes.
+   * second `antasphere` accountId, DELETE the NEWEST link row, and fail the
+   * login. The conflict clears when A next logs in (their email re-syncs
+   * away) or an operator intervenes.
+   *
+   * The undo keys on RECENCY, not on the current login's `sub`. On the
+   * normal conflict they are the same row (the trusted link just inserted
+   * it). They differ only in residue states where TWO rows pre-exist — a
+   * crash between better-auth's link and this hook, or a second identity
+   * linked via the explicit /oauth2/link flow (which mints no session, so
+   * this guard never saw it). Deleting the current-sub row there would let
+   * the ESTABLISHED identity's own login destroy itself (and two
+   * concurrent conflicting logins destroy BOTH rows, stranding the user);
+   * the newest row is always the intruding link, never the long-standing
+   * identity, so the user self-heals on retry.
    */
   private async guardSingleHubIdentity(localUserId: string, sub: string): Promise<void> {
     const rows = await this.opts.db
-      .select({ accountId: account.accountId })
+      .select({ accountId: account.accountId, createdAt: account.createdAt })
       .from(account)
       .where(and(eq(account.userId, localUserId), eq(account.providerId, HUB_SSO_PROVIDER_ID)));
     if (!rows.some((r) => r.accountId !== sub)) return;
+    const newest = [...rows].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.accountId.localeCompare(a.accountId)
+    )[0]!;
     await this.opts.db
       .delete(account)
       .where(
         and(
           eq(account.userId, localUserId),
           eq(account.providerId, HUB_SSO_PROVIDER_ID),
-          eq(account.accountId, sub)
+          eq(account.accountId, newest.accountId)
         )
       );
     throw new HubSsoLoginError(
       'sso_identity_conflict',
-      `hub subject ${sub} email-matched a local user already linked to a different hub subject — link undone`
+      `hub subject ${sub} maps to a local user already linked to a different hub subject — newest link undone`
     );
   }
 

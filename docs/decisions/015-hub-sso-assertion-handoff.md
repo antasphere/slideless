@@ -67,8 +67,16 @@ its hub-asserted projection never exists.
    `antasphere` account row. The dangerous path: hub user B's (hub-verified)
    email matches a STALE address on local user A's row — better-auth's
    trusted-provider link (D9) would merge B onto A's user and decks. The
-   hook detects a second distinct `accountId`, deletes the just-linked row
-   (restoring the pre-login state), and fails with `sso_identity_conflict`.
+   hook detects a second distinct `accountId`, deletes the **newest** link
+   row, and fails with `sso_identity_conflict`. Keying the undo on recency
+   (not on the current login's `sub`) matters only in residue states where
+   two rows pre-exist — a crash between better-auth's link and this hook,
+   or a second identity linked via the explicit `/oauth2/link` flow (which
+   mints no session, so the guard never saw it). There, deleting the
+   current-sub row would let the established identity's own login destroy
+   itself (and two concurrent conflicting logins destroy BOTH rows,
+   stranding the user with no hub link); the newest row is always the
+   intruding link, so the legitimate identity self-heals on retry.
 2. **Email re-sync (D10).** The local email follows the hub's verified
    assertion. If another local user holds the asserted address, the login
    fails with `sso_email_conflict` — never corrupting either account; the
@@ -96,7 +104,10 @@ its hub-asserted projection never exists.
   corrupting).
 - The explicit `/oauth2/link` flow (linking a provider to a logged-in
   session) mints no session, so the hook skips it; the next SSO login
-  projects. Harmless: without a projection the linked user simply has no
-  new workspace yet.
+  projects. Without a projection the linked user simply has no new
+  workspace yet. The flow CAN link a second hub identity onto the session's
+  user (better-auth offers no per-provider link gate; same-email
+  constrained) — the single-hub-identity guard undoes exactly that newest
+  link at the next SSO login.
 - The scope wrap costs one empty object per auth request on cloud and does
   not exist on oss (`hubSso` is never constructed there).

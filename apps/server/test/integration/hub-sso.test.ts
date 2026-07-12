@@ -471,6 +471,40 @@ describe('cloud edition: the SSO entrance', () => {
     ]);
     expect(rows).toEqual([{ email_verified: false }]);
   });
+
+  it('a residue second hub link is undone in favor of the OLDER identity (guard keys on recency)', async () => {
+    const frank: HubUserFixture = {
+      sub: 'hub-u10',
+      email: 'frank@residue.test',
+      workspaceId: ORG_BETA,
+      role: 'member',
+      workspaceName: 'Beta LLC'
+    };
+    await ssoLogin(app, frank);
+    const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
+      'frank@residue.test'
+    ]);
+    // Simulate the residue a crash between better-auth's link and the
+    // after-hook (or an explicit /oauth2/link) leaves behind: a SECOND,
+    // newer antasphere row on the same user that no guard ever saw.
+    await app.db.pool.query(
+      `INSERT INTO account (id, account_id, provider_id, user_id, created_at, updated_at)
+       VALUES ('residue-acct-1', 'hub-ghost', 'antasphere', $1, now() + interval '1 second', now())`,
+      [users[0].id]
+    );
+    // Frank's own (older, legitimate) identity logs in: the guard must
+    // delete the GHOST row, not frank's — deleting the current-sub row here
+    // would destroy the established identity and strand the user.
+    const res = await ssoDance(app, frank);
+    await expectFailedLogin(app, res, 'error=sso_identity_conflict');
+    const { rows: accounts } = await app.db.pool.query(
+      `SELECT account_id FROM account WHERE user_id = $1 AND provider_id = 'antasphere'`,
+      [users[0].id]
+    );
+    expect(accounts).toEqual([{ account_id: 'hub-u10' }]); // ghost gone, frank intact
+    // Self-healed: the retry logs straight in.
+    await ssoLogin(app, frank);
+  });
 });
 
 describe('oss edition: zero SSO surface', () => {
