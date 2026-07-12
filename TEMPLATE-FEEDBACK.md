@@ -365,6 +365,35 @@ Slideless tree — the first product to port it rather than inherit it.
     `workspaces.central_account_id IS NOT NULL`) from the start, so
     editions configure instead of redefining plpgsql.
 
+## 12. Edition split & federation seams (cloud-binding Phase 2)
+
+Found while building the EDITION=cloud scaffolding (env contract, boot-time
+seam binding, hub dev harness) on the ported multi-workspace runtime.
+
+49. **Setup mints the operator `emailVerified=false` — a bootstrap brick for
+    any hub-federating edition.** The template's `/setup` creates the owner
+    via `signUpEmail` and never stamps `emailVerified`; the hub had to add
+    the stamp ad hoc (`db.update(user).set({ emailVerified: true })`, its
+    ADR 013 rationale: the operator drove the wizard, there may not even be
+    an email driver yet). Any product that later delegates login to a
+    central IdP with `accountLinking.trustedProviders` +
+    `requireLocalEmailVerified` (the safe posture) finds its operator locked
+    out of their own fresh instance: the trusted-link is their only entrance
+    and Better Auth refuses it onto an unverified local email. Slideless had
+    to replicate the hub's fix (cloud-binding Phase 2, decision D9). Fix:
+    stamp the operator verified in the TEMPLATE's setup — it is correct for
+    every edition, not a cloud nicety.
+50. **`auth.methods` ships as a CLOSED `z.enum` although ADR 003 promises an
+    open one.** The ADR's reserved seam says "`auth.methods` is an open
+    enum — an `oidc` entry is additive for the SPA and CLIs", but
+    `schemas/instance.ts` pins `z.enum([...])` and `seams.ts` a closed
+    union — the FIRST added method makes every older SDK/CLI that validates
+    responses fail parsing `GET /instance`. Slideless had to widen it
+    (known-vocabulary enum `.or(z.string())` in the contract schema,
+    `KnownAuthMethod | (string & {})` in the seam type) before advertising
+    the hub SSO entrance. (Phase 2.) Fix: ship the open shape in the
+    template so ADR 003's promise is true in code.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
