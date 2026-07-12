@@ -135,31 +135,49 @@ export async function boot(
   // the instance's edition; a boot whose env EDITION differs refuses to start
   // unless the operator explicitly acknowledges with EDITION_CHANGE_ALLOWED=true
   // (which re-stamps and proceeds). A fresh database (no instance row yet)
-  // boots under any edition — cloud instances start from a fresh DB. Skipped
-  // while migrations are pending: the app refuses readiness anyway and the
-  // stamp column may not exist yet.
-  if (!migrationsPending) {
+  // boots under any edition — cloud instances start from a fresh DB. The
+  // stamp is compared whenever it is READABLE — including while migrations
+  // are pending (readiness is red then, but the API still serves, so a
+  // skipped guard would be one whole mis-bound boot). Only a schema that
+  // predates the stamp column (migration 0020, AUTO_MIGRATE=false) has no
+  // stamp to compare; the first migrated boot enforces the guard.
+  let stampedEdition: string | undefined;
+  try {
     const [instanceRow] = await db.db
       .select({ edition: instanceSettings.edition })
       .from(instanceSettings)
       .limit(1);
-    if (instanceRow && instanceRow.edition !== env.EDITION) {
-      if (!env.EDITION_CHANGE_ALLOWED) {
-        const message =
-          `refusing to boot: EDITION=${env.EDITION} but this instance was set up as ` +
-          `'${instanceRow.edition}'. An edition flip on a populated instance changes identity ` +
-          `semantics for existing users and workspaces. If this is intentional, set ` +
-          `EDITION_CHANGE_ALLOWED=true for ONE boot to re-stamp it (docs/federation.md).`;
-        logger.error({ stamped: instanceRow.edition, env: env.EDITION }, message);
-        await db.pool.end(); // clean refusal — no leaked pool for the caller
-        throw new Error(message);
-      }
-      await db.db.update(instanceSettings).set({ edition: env.EDITION });
-      logger.warn(
-        { from: instanceRow.edition, to: env.EDITION },
-        'edition re-stamped (EDITION_CHANGE_ALLOWED=true) — unset the flag again after this boot'
-      );
+    stampedEdition = instanceRow?.edition;
+  } catch (cause) {
+    if (!migrationsPending) throw cause;
+    // Pending migrations + unreadable stamp: the edition column (or the
+    // table) is not migrated in yet on this database — nothing to compare.
+  }
+  if (stampedEdition !== undefined && stampedEdition !== env.EDITION) {
+    if (!env.EDITION_CHANGE_ALLOWED) {
+      const message =
+        `refusing to boot: EDITION=${env.EDITION} but this instance was set up as ` +
+        `'${stampedEdition}'. An edition flip on a populated instance changes identity ` +
+        `semantics for existing users and workspaces. If this is intentional, set ` +
+        `EDITION_CHANGE_ALLOWED=true for ONE boot to re-stamp it (docs/federation.md).`;
+      logger.error({ stamped: stampedEdition, env: env.EDITION }, message);
+      await db.pool.end(); // clean refusal — no leaked pool for the caller
+      throw new Error(message);
     }
+    await db.db.update(instanceSettings).set({ edition: env.EDITION });
+    logger.warn(
+      { from: stampedEdition, to: env.EDITION },
+      'edition re-stamped (EDITION_CHANGE_ALLOWED=true) — unset the flag again after this boot'
+    );
+  } else if (env.EDITION_CHANGE_ALLOWED) {
+    // A leftover acknowledgement must never rot silently: while the flag
+    // stays set, the guard above is disarmed — any future EDITION change
+    // would re-stamp without refusing. Say so on every boot.
+    logger.warn(
+      'EDITION_CHANGE_ALLOWED=true but no edition change is pending — unset it: while it stays ' +
+        'set, the R7 edition-flip guard is disarmed and a future EDITION change re-stamps ' +
+        'without refusal (docs/federation.md)'
+    );
   }
 
   // Email first: whether it delivers decides whether email-OTP login,

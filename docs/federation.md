@@ -63,8 +63,14 @@ and where workspace ownership is asserted. Cloud instances start from a
 fresh database.
 
 If a flip is truly intended, set `EDITION_CHANGE_ALLOWED=true` for **one
-boot** — it re-stamps the new edition and proceeds; unset it again after. A
-fresh database (pre-setup) boots under any edition with nothing to guard.
+boot** — it re-stamps the new edition and proceeds; unset it again after.
+Leaving it set disarms the guard (a future `EDITION` change would re-stamp
+without refusing), so the boot logs a warning on every start where the flag
+is set but no flip is pending. A fresh database (pre-setup) boots under any
+edition with nothing to guard. The stamp is enforced whenever it is readable
+— including while migrations are pending behind `AUTO_MIGRATE=false`; only a
+database that predates the stamp column has nothing to compare until its
+first migrated boot.
 
 ### D9 — the operator bootstrap
 
