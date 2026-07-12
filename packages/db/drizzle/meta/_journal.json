@@ -148,6 +148,13 @@
       "when": 1783854441180,
       "tag": "0020_instance_edition",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783859815658,
+      "tag": "0021_central_account_unique",
+      "breakpoints": true
     }
   ]
 }

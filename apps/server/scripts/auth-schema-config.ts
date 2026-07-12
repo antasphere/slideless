@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { jwt, twoFactor } from 'better-auth/plugins';
+import { genericOAuth, jwt, twoFactor } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 
 /**
@@ -28,6 +28,20 @@ export const auth = betterAuth({
       loginPage: '/login',
       consentPage: '/oauth/consent'
     }),
-    twoFactor()
+    twoFactor(),
+    // Cloud edition only at runtime (conditional on EDITION=cloud); declared
+    // here unconditionally to pin the assumption that genericOAuth adds NO
+    // tables (it rides the existing account/verification rows) — if a Better
+    // Auth bump ever changes that, this drift guard catches it before an
+    // unmigrated cloud boot does.
+    genericOAuth({
+      config: [
+        {
+          providerId: 'antasphere',
+          clientId: 'schema-generation-only',
+          discoveryUrl: 'http://hub.invalid/.well-known/openid-configuration'
+        }
+      ]
+    })
   ]
 });

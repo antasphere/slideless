@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "workspaces_central_account_uniq" ON "workspaces" USING btree ("central_account_id") WHERE "workspaces"."central_account_id" IS NOT NULL;

@@ -6,6 +6,7 @@ import type {
   RequestContext,
   UsageSink
 } from '@slideless/contract';
+import { HUB_SSO_PROVIDER_ID } from '../identity/hub-sso.js';
 import type { HubConfig } from '../env.js';
 import type { Logger } from '../logger.js';
 
@@ -18,28 +19,31 @@ import type { Logger } from '../logger.js';
  */
 
 /**
- * The hub SSO method name the cloud edition advertises in discovery — and
- * the better-auth `genericOAuth` providerId Phase 3 registers (its callback
- * lands on /api/v1/auth/oauth2/callback/antasphere, the redirect URI in the
- * hub's TOOL_REGISTRY entry).
+ * The hub SSO method name the cloud edition advertises in discovery — the
+ * better-auth `genericOAuth` providerId registered by identity/hub-sso.ts
+ * (its callback lands on /api/v1/auth/oauth2/callback/antasphere, the
+ * redirect URI in the hub's TOOL_REGISTRY entry).
  */
-export const HUB_SSO_METHOD = 'antasphere';
+export const HUB_SSO_METHOD = HUB_SSO_PROVIDER_ID;
 
 /**
- * Phase 2 stub for the cloud identity binding: request resolution stays
- * exactly the local provider's (sessions + live membership re-check) —
- * discovery additionally advertises the hub SSO method so SPAs/CLIs can
- * start rendering the entrance the moment it exists.
+ * The cloud identity binding (Phase 3). Request RESOLUTION stays exactly the
+ * local provider's — after the SSO callback mints an ordinary session, every
+ * request is sessions + live membership re-check, hub out of the path.
+ * What changes is the ADVERTISED entrance (D1, hub-only human login):
  *
- * TODO(P3): replace with the real SSO binding — genericOAuth relying party
- * against HUB_ISSUER_URL, HubJwtVerifier (remote JWKS, iss/aud pinned), JIT
- * provisioning + lazy org projection (workspaces.centralAccountId), role
- * from the verified hub assertion re-synced at every login (D11), and the
- * D1 hub-only posture (hide password/OTP from `methods`; break-glass CLI
- * stays the operator door). Until then the local methods stay advertised
- * because they ARE still the working entrance.
+ *  - `antasphere` replaces password/email-otp/google — the login page
+ *    renders ONLY "Sign in with Antasphere". The local password machinery
+ *    stays WIRED (hidden, not blocked): the break-glass CLI remains the
+ *    operator door, and blocking /sign-in/email would dead-end it.
+ *  - `passwordReset`/`emailChange` are off: credentials and email are the
+ *    HUB's to manage (D10 re-syncs email at every login); a local reset
+ *    surface would fight the sync.
+ *  - `twoFactor` is off: the second factor guards local password/OTP
+ *    sign-ins, which the cloud page no longer offers — MFA is the hub's
+ *    concern at its own login.
  */
-class CloudIdentityStub implements IdentityProvider {
+class HubSsoIdentityProvider implements IdentityProvider {
   constructor(private readonly local: IdentityProvider) {}
 
   resolve(ctx: RequestContext): Promise<Principal | null> {
@@ -47,8 +51,15 @@ class CloudIdentityStub implements IdentityProvider {
   }
 
   describe(): InstanceAuthDescriptor {
-    const local = this.local.describe();
-    return { ...local, methods: [...local.methods, HUB_SSO_METHOD] };
+    return {
+      // Machine entrances are edition-independent; the human entrance is
+      // hub-only. 'oauth' stays: every instance is its own OAuth 2.1 AS for
+      // /mcp — the hub never appears in the MCP dance.
+      methods: [HUB_SSO_METHOD, 'api-key', 'oauth'],
+      passwordReset: false,
+      emailChange: false,
+      twoFactor: false
+    };
   }
 }
 
@@ -68,15 +79,16 @@ export interface EditionSeams {
 export function bindEditionSeams(hub: HubConfig | null, local: EditionSeams, logger: Logger): EditionSeams {
   if (!hub) return local;
 
-  logger.warn(
+  logger.info(
     { hubIssuer: hub.issuerUrl },
-    'EDITION=cloud: hub seams are Phase 2 stubs — identity resolution and entitlements still ' +
-      'run locally. SSO login lands in Phase 3, hub entitlements in Phase 4 (docs/federation.md).'
+    'EDITION=cloud: hub SSO is the human entrance (identity resolution stays local sessions); ' +
+      'entitlements still run locally until Phase 4 (docs/federation.md).'
   );
   return {
-    // TODO(P3): HubSsoIdentityProvider — SSO entrance + JIT + lazy projection
-    // (slideless-cloud-binding-plan §4.1); resolution itself stays local.
-    identity: new CloudIdentityStub(local.identity),
+    // P3: hub-only entrance advertised; the SSO machinery itself (relying
+    // party, JIT projection, re-sync) lives in identity/hub-sso.ts and is
+    // wired through createAuth — resolution stays local by design.
+    identity: new HubSsoIdentityProvider(local.identity),
     // TODO(P4): HubEntitlementService — hub account-status gate keyed on
     // workspaces.centralAccountId, cached 60s / stale-while-error 15min,
     // suspended => deny with reason (plan §4.2, D5).

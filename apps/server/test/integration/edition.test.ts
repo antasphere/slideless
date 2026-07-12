@@ -118,16 +118,26 @@ describe('cloud edition on a fresh database', () => {
     expect(rows).toEqual([{ email_verified: true }]);
   });
 
-  it('advertises the hub SSO method — alongside the local entrance, which still works in P2', async () => {
+  it('advertises the hub-only human entrance (D1): antasphere + machine methods, no password/OTP', async () => {
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.auth.methods).toContain('antasphere');
-    // The D1 hub-only posture (hide password/OTP) lands with the REAL SSO
-    // binding in Phase 3; until then the local entrance stays advertised
-    // because it is still the only working one.
-    expect(info.auth.methods).toContain('password');
+    // Hub-only posture (Phase 3): the login page renders ONLY the SSO
+    // button; password/OTP/google are hidden (the machinery stays wired for
+    // the break-glass CLI, verified in the next test). Machine entrances
+    // are edition-independent.
+    expect(info.auth.methods).not.toContain('password');
+    expect(info.auth.methods).not.toContain('email-otp');
+    expect(info.auth.methods).not.toContain('google');
+    expect(info.auth.methods).toContain('api-key');
+    expect(info.auth.methods).toContain('oauth');
+    // Credentials and email are the hub's to manage; local 2FA guards
+    // sign-in surfaces the cloud page no longer offers.
+    expect(info.auth.passwordReset).toBe(false);
+    expect(info.auth.emailChange).toBe(false);
+    expect(info.auth.twoFactor).toBe(false);
   });
 
-  it('identity resolution is unchanged by the cloud stub (local sessions work)', async () => {
+  it('local password sign-in stays WIRED though hidden (the break-glass door, D1)', async () => {
     const signIn = await app.app.request(
       '/api/v1/auth/sign-in/email',
       json({ email: OWNER.email, password: OWNER.password })

@@ -24,6 +24,7 @@ import {
   type RateLimiters
 } from '../middleware/rate-limit.js';
 import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
+import type { HubSsoService } from '../identity/hub-sso.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerOauthRoutes } from './oauth.js';
@@ -67,6 +68,13 @@ export interface ApiDeps {
   sharing: ShareTokenService;
   /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
   collaborators: CollaboratorService;
+  /**
+   * Cloud edition only (docs/federation.md): the hub SSO binding. Its sole
+   * job here is wrapping the auth mount in the request-scoped login scope
+   * that carries the verified hub assertion from the callback's token
+   * verification to its after-hook (ADR 015).
+   */
+  hubSso?: HubSsoService | undefined;
 }
 
 /** Control-flow marker: the singleton claim lost (instance already set up). */
@@ -189,8 +197,14 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   api.use('/cli/auth/complete', rateLimit(limiters.login, clientIp, emailKeyOf));
 
   // Better Auth owns /api/v1/auth/* (mounted before the credential middleware
-  // — it IS the credential machinery).
-  api.on(['GET', 'POST'], '/auth/*', (c) => auth.handler(c.req.raw));
+  // — it IS the credential machinery). On cloud the whole mount runs inside
+  // the hub-SSO login scope: an AsyncLocalStorage span carrying the verified
+  // hub assertion from the SSO callback's getUserInfo to its after-hook —
+  // request-scoped, so concurrent logins can never cross-wire (ADR 015).
+  const { hubSso } = deps;
+  api.on(['GET', 'POST'], '/auth/*', (c) =>
+    hubSso ? hubSso.runWithLoginScope(() => auth.handler(c.req.raw)) : auth.handler(c.req.raw)
+  );
 
   api.use(
     '*',

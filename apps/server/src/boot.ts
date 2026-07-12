@@ -20,7 +20,8 @@ import {
   buildVerifyEmailEmail
 } from './email/templates.js';
 import { hubConfig, parseEnv, type Env } from './env.js';
-import { createAuth, type AccountEvent, type Auth } from './identity/better-auth.js';
+import { createAuth, mcpResourceUrl, type AccountEvent, type Auth } from './identity/better-auth.js';
+import { HubSsoService } from './identity/hub-sso.js';
 import { OauthJwtVerifier } from './identity/oauth-jwt.js';
 import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
@@ -226,11 +227,31 @@ export async function boot(
   // call sites.
   const events = new EventBus(logger);
 
+  // The cloud edition's hub SSO binding (docs/federation.md): constructed
+  // iff EDITION=cloud — hubConfig() is the single switch, so an oss boot
+  // provably instantiates no SSO surface. Everything hub-SSO hangs off this
+  // one object: the genericOAuth provider inside createAuth, the per-login
+  // projection after-hook, and the login-scope wrap around the auth mount.
+  const hub = hubConfig(env);
+  const hubSso = hub
+    ? new HubSsoService({
+        db: db.db,
+        logger,
+        issuerUrl: hub.issuerUrl,
+        clientId: hub.clientId,
+        clientSecret: hub.clientSecret,
+        // Own resource URL — always derived from PUBLIC_BASE_URL, never configured.
+        resourceUrl: mcpResourceUrl(env.PUBLIC_BASE_URL),
+        publicBaseUrl: env.PUBLIC_BASE_URL
+      })
+    : undefined;
+
   // Identity + seams: local defaults, swappable at this one point.
   const auth = createAuth({
     db: db.db,
     env,
     authSecret,
+    hubSso,
     onAccountEvent: auditAccountEvent,
     onUserCreated: (user) => events.emit('user.created', { userId: user.id, email: user.email }),
     beforeUserDelete: async (userId) => {
@@ -315,7 +336,7 @@ export async function boot(
   // rebinds identity/entitlements as the federation phases land.
   const registry = createRegistry({
     ...bindEditionSeams(
-      hubConfig(env),
+      hub,
       {
         identity: new LocalIdentityProvider(
           auth,
@@ -394,7 +415,8 @@ export async function boot(
     authSecret,
     accountDeletion,
     sharing,
-    collaborators: collaboratorService
+    collaborators: collaboratorService,
+    hubSso
   });
 
   // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in

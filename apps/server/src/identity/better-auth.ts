@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { createAuthMiddleware } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { emailOTP, jwt, twoFactor } from 'better-auth/plugins';
+import { emailOTP, genericOAuth, jwt, twoFactor } from 'better-auth/plugins';
 import { deleteSessionCookie } from 'better-auth/cookies';
 import { generateRandomString } from 'better-auth/crypto';
 import { oauthProvider } from '@better-auth/oauth-provider';
@@ -22,6 +22,7 @@ import {
   type Db
 } from '@slideless/db';
 import type { Env } from '../env.js';
+import { HUB_SSO_PROVIDER_ID, HubSsoLoginError, type HubSsoService } from './hub-sso.js';
 
 /**
  * The only file that touches better-auth's constructor. Everything else goes
@@ -98,6 +99,14 @@ export interface CreateAuthOptions {
   beforeUserDelete?: (userId: string) => Promise<void>;
   /** Completion hook, run AFTER the cascade (the audit row's system actor). */
   afterUserDelete?: (user: { id: string; email: string }) => Promise<void>;
+  /**
+   * The cloud edition's hub SSO binding (docs/federation.md, ADR 015).
+   * Present ONLY when the instance boots EDITION=cloud: registers the
+   * `antasphere` genericOAuth relying party, the D9 trusted-link config,
+   * and the per-login callback after-hook (JIT projection + re-sync). An
+   * oss boot passes nothing and carries zero SSO surface at runtime.
+   */
+  hubSso?: HubSsoService | undefined;
 }
 
 export const AUTH_BASE_PATH = '/api/v1/auth';
@@ -167,7 +176,8 @@ export function createAuth({
   onAccountEvent,
   onUserCreated,
   beforeUserDelete,
-  afterUserDelete
+  afterUserDelete,
+  hubSso
 }: CreateAuthOptions) {
   const isHttps = env.PUBLIC_BASE_URL.startsWith('https://');
   const resource = mcpResourceUrl(env.PUBLIC_BASE_URL);
@@ -293,6 +303,14 @@ export function createAuth({
 
   return betterAuth({
     plugins: [
+      // Cloud edition only (hubSso is constructed iff EDITION=cloud): the
+      // "Sign in with Antasphere" relying party. `disableSignUp` is
+      // DELIBERATELY unset on this provider — hub SSO is the sanctioned
+      // account entrance on cloud, the conscious FOURTH switch next to the
+      // three closed-signup switches (docs/federation.md). Discovery, token
+      // exchange (with RFC 8707 `resource`), and token verification all
+      // live in the provider config hub-sso.ts builds.
+      ...(hubSso ? [genericOAuth({ config: [hubSso.providerConfig()] })] : []),
       ...(sendOtp
         ? [
             emailOTP({
@@ -347,8 +365,7 @@ export function createAuth({
         // latency == remaining lifetime. Refresh tokens rotate (reuse detected).
         accessTokenExpiresIn: 900, // 15 min
         refreshTokenExpiresIn: 60 * 60 * 24 * 365, // 365 days (sliding; see the session note)
-        customAccessTokenClaims: async ({ user, referenceId }) =>
-          membershipAccessClaims(user, referenceId),
+        customAccessTokenClaims: async ({ user, referenceId }) => membershipAccessClaims(user, referenceId),
         // Workspace binding rides the plugin's consent referenceId seam
         // (ADR 014). The consent page itself hosts the picker, so
         // shouldRedirect never fires — `page` is required by the type and
@@ -374,6 +391,23 @@ export function createAuth({
             }
           }
         : {},
+    // D9 (cloud only): the hub is a TRUSTED provider — its verified email
+    // assertion may link onto an existing local account of the same address
+    // (the setup operator's entrance under hub-only login). Keeping
+    // requireLocalEmailVerified true (stated, not defaulted) means a parked
+    // UNVERIFIED local account can never be taken over via SSO; the cloud
+    // setup flow mints the operator emailVerified=true for exactly this
+    // reason (docs/federation.md, pinned by edition tests).
+    ...(hubSso
+      ? {
+          account: {
+            accountLinking: {
+              trustedProviders: [HUB_SSO_PROVIDER_ID],
+              requireLocalEmailVerified: true
+            }
+          }
+        }
+      : {}),
     baseURL: env.PUBLIC_BASE_URL,
     basePath: AUTH_BASE_PATH,
     secret: authSecret,
@@ -558,6 +592,42 @@ export function createAuth({
       // onPasswordReset above; the email-change LANDING (the verify-email
       // consumption) via afterEmailVerification.
       after: createAuthMiddleware(async (ctx) => {
+        // Hub SSO per-login work (cloud only) — the callback after-hook.
+        // Fires for JIT AND returning users; `ctx.context.newSession` is the
+        // success discriminator (set by setSessionCookie before the redirect
+        // throw, never on the plugin's error exits — S1(b)). The verified
+        // assertion crosses from getUserInfo via the request-scoped login
+        // scope (ADR 015); everything here FAILS CLOSED: no assertion or a
+        // failed projection revokes the just-minted session — a cloud login
+        // without its hub-asserted workspace projection must not exist.
+        if (hubSso && ctx.path === '/oauth2/callback/:providerId') {
+          const providerId = (ctx as { params?: Record<string, string> }).params?.providerId;
+          if (providerId === HUB_SSO_PROVIDER_ID) {
+            const data = ctx.context.newSession;
+            if (!data?.user) return; // error exits mint no session — nothing to assert
+            const assertion = hubSso.takeAssertion();
+            try {
+              if (!assertion) {
+                throw new HubSsoLoginError(
+                  'sso_assertion_missing',
+                  'callback succeeded but no verified hub assertion reached the after-hook'
+                );
+              }
+              await hubSso.assertLogin(data.user.id, assertion);
+            } catch (err) {
+              hubSso.logLoginFailure(err, data.user.id);
+              // Same undo dance as the 2FA interstitial below: drop the
+              // session row, expire the cookie, clear newSession, then
+              // replace the success redirect with the error redirect.
+              await ctx.context.internalAdapter.deleteSession(data.session.token);
+              deleteSessionCookie(ctx, true);
+              ctx.context.setNewSession(null);
+              const code = err instanceof HubSsoLoginError ? err.code : 'sso_login_failed';
+              throw ctx.redirect(hubSso.loginErrorUrl(code));
+            }
+            return;
+          }
+        }
         if (ctx.path === '/change-password') {
           const userId = ctx.context.session?.user?.id;
           if (userId) await onAccountEvent?.('password_change', userId);

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
@@ -48,13 +49,26 @@ export const instanceSettings = pgTable('instance_settings', {
  * the one named by the presented credential. Every domain table carries a
  * workspace_id and every read/write filters on the principal's.
  */
-export const workspaces = pgTable('workspaces', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  // Central-rail seam: many workspaces to one central account, later.
-  centralAccountId: text('central_account_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
-});
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    // Central-rail seam: a projected workspace names the ONE hub org it
+    // mirrors (cloud edition SSO, docs/federation.md); NULL = locally owned.
+    centralAccountId: text('central_account_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // A hub org projects into AT MOST ONE workspace (migration 0021): two
+    // concurrent first-logins into a fresh org race their inserts, and the
+    // loser must land on the winner's row (ON CONFLICT + re-select in the
+    // SSO projection) — never on a second projection of the same org.
+    uniqueIndex('workspaces_central_account_uniq')
+      .on(t.centralAccountId)
+      .where(sql`${t.centralAccountId} IS NOT NULL`)
+  ]
+);
 
 export const workspaceRoles = ['owner', 'admin', 'member'] as const;
 export type WorkspaceRole = (typeof workspaceRoles)[number];
