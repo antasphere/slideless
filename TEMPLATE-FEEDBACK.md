@@ -393,6 +393,35 @@ seam binding, hub dev harness) on the ported multi-workspace runtime.
     `KnownAuthMethod | (string & {})` in the seam type) before advertising
     the hub SSO entrance. (Phase 2.) Fix: ship the open shape in the
     template so ADR 003's promise is true in code.
+51. **The better-auth mount is not wrappable — the SSO edition had to edit
+    `api/index.ts`.** The Phase 3 SSO binding needs an AsyncLocalStorage
+    scope spanning each auth request (the verified-assertion handoff from
+    `getUserInfo` to the callback after-hook, Slideless ADR 015), and the
+    only way in was patching the `api.on(['GET','POST'], '/auth/*', …)`
+    mount to conditionally wrap `auth.handler`. (Phase 3.) Fix: give
+    `createApiApp` a first-class optional `wrapAuthHandler?: (run: () =>
+Promise<Response>) => Promise<Response>` seam so editions/products
+    compose around the auth mount without touching the file.
+52. **`WorkspaceService.create` cannot express projections, so ADR 012/014's
+    "the cloud edition creates workspaces through the registry" did not
+    hold.** The lazy org projection needs INSERT … ON CONFLICT on an
+    alternate unique key (`central_account_id`), a NON-owner role from an
+    external assertion, and `origin='hub'` on the membership;
+    `WorkspaceService.create` hardcodes owner/local and has no conflict
+    semantics, so the projection ships its own SQL in `identity/hub-sso.ts`
+    (Phase 3). Fix: when the template inherits the cloud-edition module,
+    either grow the service an `ensureProjected(centralAccountId, name)`
+    upsert or soften the ADR's one-creation-path claim.
+53. **jose's remote JWKS throttles kid-miss refetches — verifiers must own a
+    forced-refresh retry.** `createRemoteJWKSet` refetches on an unknown
+    `kid` only outside its `cooldownDuration` (30 s default): a token signed
+    by a freshly rotated IdP key within 30 s of the last fetch fails
+    `JWKSNoMatchingKey` without any network attempt (hit by the Phase 3
+    rotation test on first run). The template's future federation module
+    must retry once against a rebuilt key set on BOTH
+    `JWKSNoMatchingKey` and `JWSSignatureVerificationFailed` (see Slideless
+    `identity/hub-jwt.ts`), mirroring what its local `oauth-jwt.ts` already
+    does for the signature case.
 
 ## Confirmed-good template properties (keep these)
 

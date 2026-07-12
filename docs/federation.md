@@ -20,12 +20,11 @@ called once from `boot.ts` where the platform registry is assembled: `oss`
 binds the local defaults untouched; `cloud` rebinds the identity and
 entitlement seams.
 
-> **Phase status.** Phase 2 (this doc's scaffolding) is built: env contract,
-> edition binding seam, discovery, dev harness, R7 guard. The actual SSO
-> entrance is **Phase 3**; hub entitlements are **Phase 4**; the CLI
-> cross-tool exchange is **Phase 5**. Until Phase 3 lands, a cloud instance
-> boots with the local identity binding (a logged warning says so) and local
-> login keeps working.
+> **Phase status.** Phase 2 (env contract, edition binding seam, discovery,
+> dev harness, R7 guard) and **Phase 3 (the SSO entrance: "Sign in with
+> Antasphere", JIT provisioning, lazy org projection — this doc + ADR 015)**
+> are built. Hub entitlements are **Phase 4**; the CLI cross-tool exchange
+> is **Phase 5**.
 
 ## Environment contract
 
@@ -90,10 +89,77 @@ clients must ignore entries they do not recognize):
 
 - `oss`: today's methods, unchanged (`password`, `api-key`, `oauth`, plus
   `email-otp`/`google` when configured).
-- `cloud`: additionally `antasphere` — the hub SSO entrance. In Phase 2 the
-  local methods stay advertised because they are still the working entrance;
-  Phase 3 applies the D1 hub-only posture (password/OTP hidden; the
-  break-glass CLI remains the operator door).
+- `cloud`: **hub-only human login (D1)** — `antasphere` + the machine
+  methods (`api-key`, `oauth`); `password`/`email-otp`/`google` are absent,
+  and `passwordReset`/`emailChange`/`twoFactor` report `false` (credentials,
+  email, and MFA are the hub's to manage — D10 re-syncs email at every
+  login). The login page therefore renders ONLY "Sign in with Antasphere".
+  The local password machinery stays **wired but hidden**: the break-glass
+  CLI remains the operator door, and blocking `/sign-in/email` would
+  dead-end it (pinned by an edition integration test).
+
+## The SSO entrance (Phase 3): flow, JIT, projection
+
+One codepath, owned by `apps/server/src/identity/hub-sso.ts` (plus
+`hub-jwt.ts` for token verification) and registered by
+`identity/better-auth.ts` **only when `hubConfig()` is non-null** — an oss
+boot instantiates none of it (`POST /sign-in/oauth2` is a 404 there).
+
+```
+Browser → /login → "Sign in with Antasphere"
+  → POST /api/v1/auth/sign-in/oauth2 {providerId: antasphere}
+  → hub /authorize (confidential client, PKCE, scope=openid profile email)
+  → hub login (or live hub session) → hub CONSENT with org picker
+    (the hub asserts exactly ONE org per login)
+  → code → /api/v1/auth/oauth2/callback/antasphere
+  → token exchange WITH resource=<PUBLIC_BASE_URL>/mcp (RFC 8707 — the
+    switch that makes the hub mint the org-claim JWT; refresh re-mints drop
+    it and go opaque, so org claims are read from the callback ONLY)
+  → HubJwtVerifier: access token (iss=HUB_ISSUER_URL, aud=own resource URL,
+    RS256, remote JWKS) + id_token (aud=HUB_CLIENT_ID), subjects cross-pinned
+  → JIT: user created (emailVerified from the hub's verified claim) or
+    linked (D9); org projected; membership asserted
+  → ordinary local session cookie. The hub is out of the request path
+    until the next login.
+```
+
+Per-login semantics (every SSO login, returning users included — ADR 015
+has the full design, including the assertion handoff and its race analysis):
+
+- **Lazy projection**: the asserted hub org becomes a workspace on first
+  use — `workspaces.centralAccountId` = the hub org id, name from the H1
+  `workspace_name` claim (or a self-healing placeholder when an older hub
+  omits it). A **unique partial index** (migration 0021) + `ON CONFLICT`
+  make concurrent first-logins land on one row.
+- **Membership re-assertion (D11)**: role = the hub org role **verbatim**
+  (owner/admin/member map 1:1; an unknown role refuses the login — local
+  roles are never invented), `origin='hub'`, reactivated if deactivated.
+  Hub role changes land at the next login; Phase 4's H2 re-assertion
+  tightens propagation.
+- **Email sync (D10)**: the local email follows the hub's verified email; a
+  collision with another local user fails the login cleanly
+  (`/login?error=sso_email_conflict`) instead of corrupting either account.
+- **Fail closed**: any bad token (foreign iss/aud, expired, opaque,
+  malformed claims) or failed per-login step means NO session — a cloud
+  login without its projection never exists.
+
+**The fourth signup switch.** The repo invariant "closed sign-up needs
+three switches" gains a deliberate fourth on cloud: the `antasphere`
+provider's `disableSignUp` stays **unset**, because hub SSO IS the
+sanctioned account entrance (JIT). Local HTTP sign-up remains closed by the
+original three switches; setting `disableSignUp` on this provider would
+brick every first login.
+
+### D9 — account linking
+
+`accountLinking: { trustedProviders: ['antasphere'], requireLocalEmailVerified: true }`.
+The hub's verified email assertion may link onto an EXISTING local account
+with the same (verified) address — this is how the setup operator enters
+under hub-only login, without duplicating. `requireLocalEmailVerified`
+stays on so a parked unverified local account can never be taken over via
+SSO. A guard in the after-hook additionally refuses to merge two DIFFERENT
+hub identities onto one local user via a stale local email
+(`/login?error=sso_identity_conflict`, link undone — ADR 015).
 
 ## The hub registry entry (what the HUB operator configures)
 
@@ -164,13 +230,13 @@ docker compose -f docker-compose.federation.yml down -v
 - The hub builds from a sibling checkout
   (`FEDERATION_HUB_DIR`, default `../../../../platform/hub`).
 
-## What Phase 3+ plugs into this
+## What the later phases plug into this
 
-| Phase               | Builds on this scaffolding                                                                                                                                                                                                                                                                                 |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P3 — SSO entrance   | `genericOAuth` registration in `identity/better-auth.ts`, conditional on `hubConfig()` (the same pattern as the emailOTP/Google blocks); `HubSsoIdentityProvider` replacing the stub in `edition.ts`; JIT + lazy projection onto `workspaces.centralAccountId`; D1 hub-only login posture; D10 email sync. |
-| P4 — entitlements   | `HubEntitlementService` using `HUB_SERVICE_KEY` against `GET {hub}/accounts/{id}/status`; H2 membership re-assertion.                                                                                                                                                                                      |
-| P5 — CLI cross-tool | `POST /api/v1/sso/cli-connect` verifying hub-minted 120s JWTs; hub H3 `/sso/tool-token`.                                                                                                                                                                                                                   |
+| Phase               | Builds on this scaffolding                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P3 — SSO entrance   | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021. |
+| P4 — entitlements   | `HubEntitlementService` using `HUB_SERVICE_KEY` against `GET {hub}/accounts/{id}/status`; H2 membership re-assertion, keyed to `origin='hub'` rows (syncs role + active).    |
+| P5 — CLI cross-tool | `POST /api/v1/sso/cli-connect` verifying hub-minted 120s JWTs; hub H3 `/sso/tool-token`.                                                                                     |
 
 ## Related decisions
 
@@ -180,6 +246,9 @@ docker compose -f docker-compose.federation.yml down -v
 - [ADR 014 — workspace-scoped principal](decisions/014-workspace-scoped-principal.md):
   the multi-workspace runtime the org projection lands on
   (`workspaces.centralAccountId`, membership `origin` discriminator).
+- [ADR 015 — hub SSO assertion handoff](decisions/015-hub-sso-assertion-handoff.md):
+  how the verified org assertion crosses from token verification to the
+  per-login projection hook, and why it is request-scoped (race analysis).
 - The program-level design lives in the Codika workspace:
   `workspace/knowledge/initiatives/agent-tools-platform/slideless-cloud-binding-plan.md`
   (Slideless-specific) and `cloud-edition-binding-patterns.md` (the

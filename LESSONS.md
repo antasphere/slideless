@@ -573,3 +573,34 @@ allow-downloads`, never `allow-same-origin` — on every viewer response
   handshake, and `enableJsonResponse` returns plain JSON — so tools can be
   integration-tested via `app.request` without a listening server (the
   oauth-mcp suite still proves the real SDK-client + listener path).
+
+## Cloud-binding Phase 3 (hub SSO entrance, 2026-07-12)
+
+- **Never enable `transaction: true` on the drizzle adapter.** The
+  better-auth transaction runner executes queued `create.after` database
+  hooks EVEN when the transaction rolled back (pinned 1.6.15,
+  `@better-auth/core` `transaction.mjs`) — `user.created` would fire for a
+  user row that no longer exists and the collaborator grant sweep would flip
+  grants for a ghost. Today's passthrough default (no `transaction` key,
+  adapter default false) is load-bearing: hooks always see committed rows on
+  the outer pool (spike S1(d)).
+- **Org claims exist ONLY in the callback exchange's access token.** The hub
+  mints the workspace-claim JWT iff the TOKEN request carries RFC 8707
+  `resource` (genericOAuth `tokenUrlParams`); the plugin's refresh shim
+  drops it, so stored/refreshed hub tokens are opaque and claimless. Never
+  read org context from `account.accessToken` after login.
+- **jose `createRemoteJWKSet` throttles kid-miss refetches** (30 s
+  cooldown): a rotation-fresh token can fail `JWKSNoMatchingKey` with no
+  network attempt. `hub-jwt.ts` retries once against a rebuilt key set on
+  both `JWKSNoMatchingKey` and `JWSSignatureVerificationFailed`; keep both
+  arms on any Better Auth / jose bump.
+- **better-auth's OAuth state is a double-submit pair**: the DB-stored state
+  PLUS a signed `state` cookie set at `/sign-in/oauth2`; a callback without
+  the cookie fails `state_mismatch`. Integration tests must carry the
+  sign-in response's cookie into the callback request (browsers do it for
+  free).
+- **`hooks.after` CAN fail a completed OAuth login cleanly**: delete the
+  session row, `deleteSessionCookie(ctx, true)`, `setNewSession(null)`, then
+  `throw ctx.redirect(...)` — the dispatch pipeline catches the APIError and
+  replaces the success redirect (same undo dance as the email-OTP 2FA
+  interstitial). Used by the SSO after-hook's fail-closed path (ADR 015).

@@ -37,6 +37,10 @@ deploys) + `dev` (day-to-day work).
   unreachable to machines until consciously opened.
 - **Closed sign-up needs three switches**: the `/sign-up` hook, `disableSignUp` on the emailOTP
   plugin, and `disableSignUp` on each social provider. Removing any one reopens sign-up.
+  **Cloud edition, the deliberate fourth switch**: the `antasphere` genericOAuth provider's
+  `disableSignUp` stays UNSET — hub SSO IS the sanctioned account entrance there (JIT,
+  docs/federation.md). Setting it bricks every first cloud login; it exists only on
+  `EDITION=cloud` boots, so oss stays a three-switch closure.
 - **Migrations run under a session-scoped `pg_advisory_lock` on a dedicated client** — multi-replica
   safe. Never switch to a transaction-scoped lock.
 - **Auth schema drift guard**: any Better Auth config change that alters the schema must regenerate
