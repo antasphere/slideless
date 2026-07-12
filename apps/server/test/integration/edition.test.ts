@@ -106,6 +106,18 @@ describe('cloud edition on a fresh database', () => {
     expect(info.edition).toBe('cloud');
   });
 
+  it('setup minted the operator emailVerified=true (D9 — the trusted-link bootstrap)', async () => {
+    // Under hub-only login (D1, Phase 3) the operator can only enter via the
+    // hub trusted-link, which Better Auth refuses onto an unverified local
+    // email. An unverified operator = a bricked cloud instance. Pinned here
+    // so no auth refactor can silently reopen the trap.
+    const { rows } = await app.db.pool.query<{ email_verified: boolean }>(
+      `SELECT email_verified FROM "user" WHERE email = $1`,
+      [OWNER.email]
+    );
+    expect(rows).toEqual([{ email_verified: true }]);
+  });
+
   it('advertises the hub SSO method — alongside the local entrance, which still works in P2', async () => {
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.auth.methods).toContain('antasphere');

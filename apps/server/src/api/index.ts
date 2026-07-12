@@ -3,7 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { ulid } from 'ulid';
 import { and, asc, eq } from 'drizzle-orm';
 import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
-import { instanceSettings, workspaceMembers, workspaces, type Db } from '@slideless/db';
+import { instanceSettings, user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
@@ -279,6 +279,15 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         return c.json(err('owner_creation_failed', 'Could not create the owner user'), 400);
       }
     }
+
+    // The operator drove the wizard (holding the setup token when one is
+    // set) — their address needs no mailbox dance, and on the cloud edition
+    // it MUST be verified (D9, docs/federation.md): under hub-only login the
+    // operator's only entrance is the hub trusted-link, and Better Auth
+    // refuses to link a trusted provider onto an UNVERIFIED local email
+    // (requireLocalEmailVerified stays on). An unverified operator bricks a
+    // cloud instance at bootstrap. The hub's own setup does the same.
+    await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, ownerUserId));
 
     // Claim the singleton and create the FIRST workspace + owner membership
     // in ONE transaction: either the instance is fully set up or nothing

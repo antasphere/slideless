@@ -121,6 +121,10 @@ describe('with a delivering email driver (recording)', () => {
   });
 
   it('unverified user (the common case): single leg — ONE mail to the NEW address', async () => {
+    // Setup now mints the operator verified (D9 — the cloud trusted-link
+    // bootstrap); an unverified user WITH a session is a manufactured state
+    // here, standing in for the pre-D9 common case.
+    await app.db.pool.query(`UPDATE "user" SET email_verified = false WHERE email = $1`, [OWNER.email]);
     mailer.sent.length = 0;
 
     const res = await app.app.request(
