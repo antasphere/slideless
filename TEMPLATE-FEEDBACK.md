@@ -422,6 +422,25 @@ Promise<Response>) => Promise<Response>` seam so editions/products
     `JWKSNoMatchingKey` and `JWSSignatureVerificationFailed` (see Slideless
     `identity/hub-jwt.ts`), mirroring what its local `oauth-jwt.ts` already
     does for the signature case.
+54. **The dashboard login page DROPS the oauth-provider's signed authorize
+    query — a signed-out user's OAuth dance dead-ends at the dashboard.**
+    When `/oauth2/authorize` finds no session it redirects to `loginPage`
+    with the full SIGNED authorize query (`response_type…&sig=`), expecting
+    the page to send the user back to the authorize endpoint after sign-in.
+    The template's login page only honors `next` (`afterSignIn → goto(
+    safeNext(next))`), so the authorize context is silently discarded and
+    the user lands on the dashboard root — the relying party never gets its
+    code. Hit LIVE in the Slideless-cloud M1 dance against the hub (Phase
+    3): a signed-out hub user who authenticates mid-flow is stranded; the
+    dance only completes when the hub session already exists (or the user
+    retries from the tool). Affects EVERY instance's own `/mcp` OAuth flow
+    for signed-out users too (claude.ai → tool), on hub and Slideless alike
+    — pre-existing template behavior, not a P3 regression. Fix: on the
+    login page, when the URL carries the signed authorize query
+    (`response_type` + `sig`), after sign-in redirect to
+    `{basePath}/oauth2/authorize?<query verbatim>` instead of `next` (the
+    consent page already round-trips it verbatim; the login page must do
+    the same).
 
 ## Confirmed-good template properties (keep these)
 
