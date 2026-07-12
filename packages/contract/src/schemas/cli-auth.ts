@@ -34,7 +34,7 @@ export const cliAuthCompleteSchema = z.object({
   /** TTL at mint; the server computes the absolute expiry. Omit = never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),
   /**
-   * Workspace the key binds (ADR 012) — the account must hold an ACTIVE
+   * Workspace the key binds (ADR 014) — the account must hold an ACTIVE
    * membership of it. Omit = the deterministic default (oldest active
    * membership), which is the only membership for most accounts.
    */

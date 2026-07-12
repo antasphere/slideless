@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * POST /api/v1/oauth/consent-workspace — parks the workspace an upcoming
- * OAuth consent should bind (ADR 012). Session-only: the consent page calls
+ * OAuth consent should bind (ADR 014). Session-only: the consent page calls
  * it right before POST /oauth2/consent when the user picked a workspace;
  * single-membership users never need it (the default already names their
  * workspace). The selection lives ~10 minutes, scoped to the calling

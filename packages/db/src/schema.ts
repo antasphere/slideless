@@ -34,9 +34,11 @@ export const instanceSettings = pgTable('instance_settings', {
 });
 
 /**
- * Multi-workspace schema, single-workspace runtime: the template pins exactly
- * one workspace (created at setup), but every domain table carries a
- * workspace_id so products/cloud editions can widen without a schema rewrite.
+ * Multi-workspace schema AND runtime (ADR 014): setup creates the FIRST
+ * workspace, the cloud edition creates later ones through the registry's
+ * WorkspaceService, and every request is scoped to exactly ONE workspace —
+ * the one named by the presented credential. Every domain table carries a
+ * workspace_id and every read/write filters on the principal's.
  */
 export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -218,7 +220,7 @@ export const auditLog = pgTable(
   'audit_log',
   {
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-    // NULL = INSTANCE-attributed: the event belongs to no workspace (ADR 012)
+    // NULL = INSTANCE-attributed: the event belongs to no workspace (ADR 014)
     // — e.g. the orphan-user purge, whose subjects have no workspace home.
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),

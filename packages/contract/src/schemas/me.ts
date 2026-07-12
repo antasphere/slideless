@@ -23,7 +23,7 @@ export const meResponseSchema = z.object({
   /** Expiry of the presented API key; null for sessions/OAuth or non-expiring keys. */
   apiKeyExpiresAt: z.string().nullable(),
   /**
-   * The workspaces this credential can name (ADR 012). Sessions list ALL of
+   * The workspaces this credential can name (ADR 014). Sessions list ALL of
    * the user's active memberships (oldest first — index 0 is the
    * no-header default); machine credentials list ONLY the workspace they
    * are bound to (a workspace-scoped key/token must not enumerate the

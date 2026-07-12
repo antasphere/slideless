@@ -139,7 +139,7 @@ export async function boot(
   /**
    * Best-effort audit for a Better-Auth credential event. Credential events
    * are USER-level, so the row lands in every workspace the user is an
-   * ACTIVE member of (ADR 012) — each workspace's trail records its own
+   * ACTIVE member of (ADR 014) — each workspace's trail records its own
    * members' password/2FA changes, and a workspace the user was deactivated
    * from records nothing; a single-workspace instance gets exactly one row,
    * as before.

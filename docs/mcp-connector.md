@@ -22,6 +22,12 @@ token with a rotating refresh token. Deactivating the member kills the
 connector instantly (tokens are re-checked against the live membership on
 every call).
 
+The consent screen names the workspace being granted, and the grant is
+bound to exactly that workspace for its whole life — refreshes included
+(ADR 014). Members of several workspaces pick one at consent; connecting
+the same client to another workspace is a second consent (send
+`prompt=consent` to force the picker past an existing grant).
+
 ## Claude Code / CLIs (API key)
 
 `/mcp` also accepts the instance's API keys directly — no OAuth dance:

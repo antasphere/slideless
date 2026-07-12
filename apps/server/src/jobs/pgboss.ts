@@ -275,7 +275,7 @@ export async function createJobs(
         if (progressed === 0) break; // every candidate failed/was skipped — no hot loop
       }
       if (total > 0) {
-        // INSTANCE-attributed system row (workspace_id NULL, ADR 012):
+        // INSTANCE-attributed system row (workspace_id NULL, ADR 014):
         // orphans belong to no workspace, so no workspace's audit trail is
         // the honest home — the row is an operator-level record.
         await audit.write({

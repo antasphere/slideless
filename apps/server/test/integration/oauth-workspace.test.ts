@@ -16,7 +16,7 @@ import {
 } from './helpers.js';
 
 /**
- * OAuth workspace binding (ADR 012): the grant carries the workspace chosen
+ * OAuth workspace binding (ADR 014): the grant carries the workspace chosen
  * at consent through the plugin's referenceId seam — into the access-token
  * claim, onto the refresh-token row, and back out of every refresh re-mint.
  * Plus the fail-closed legacy rules (grants/tokens minted before binding

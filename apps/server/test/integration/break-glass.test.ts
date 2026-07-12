@@ -365,7 +365,7 @@ describe('with SUPERADMIN_EMAILS unset (default)', () => {
   });
 });
 
-describe('multi-workspace targeting (ADR 012)', () => {
+describe('multi-workspace targeting (ADR 014)', () => {
   const ROOT3 = { email: 'root@bg3.test', name: 'BG3 Root', password: 'bg3-root-password-123' };
   let app: TestApp;
   let rootCookie: string;

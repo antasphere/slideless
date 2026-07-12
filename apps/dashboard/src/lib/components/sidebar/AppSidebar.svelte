@@ -18,7 +18,7 @@
     instanceName: string;
     role: WorkspaceRole;
     user: { name: string; email: string };
-    /** All the user's workspaces + the one this session targets (ADR 012). */
+    /** All the user's workspaces + the one this session targets (ADR 014). */
     workspaces?: MeResponse['workspaces'];
     activeWorkspaceId?: string;
   }

@@ -1,7 +1,7 @@
 import { PlatformClient, PlatformApiError } from '@slideless/sdk';
 import { t } from '$lib/i18n';
 
-/** localStorage key for the persisted active-workspace choice (ADR 012). */
+/** localStorage key for the persisted active-workspace choice (ADR 014). */
 export const WORKSPACE_STORAGE_KEY = 'platform.workspaceId';
 
 /**

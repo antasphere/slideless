@@ -69,7 +69,7 @@ export class OauthJwtVerifier {
    * verification or the membership row is missing/inactive — the same
    * fail-closed semantics as the session and API-key paths.
    *
-   * Workspace scoping (ADR 012): the `workspace_id` claim names the ONE
+   * Workspace scoping (ADR 014): the `workspace_id` claim names the ONE
    * workspace this token was consent-bound to — the membership re-check is
    * filtered to it, so the token reaches exactly that workspace's data and
    * nothing else, whatever other memberships the user holds. A token

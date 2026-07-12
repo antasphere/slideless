@@ -14,7 +14,7 @@ import {
 } from './helpers.js';
 
 /**
- * The Slideless-specific workspace-scoping surface (ADR 012 × ADR 013):
+ * The Slideless-specific workspace-scoping surface (ADR 014 × ADR 013):
  *
  *  - X-Workspace-Id switches DECK listings, not just platform data;
  *  - a collaborator claimed into TWO different customer workspaces holds two

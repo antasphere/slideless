@@ -13,7 +13,7 @@ import type { Logger } from '../logger.js';
  * uploader's personal data — they survive the delete with `created_by`
  * nulled by the FK (migration 0008, ADR 006). Blobs are never touched here.
  *
- * Multi-workspace (ADR 012): a user owning N workspaces has N last-owner
+ * Multi-workspace (ADR 014): a user owning N workspaces has N last-owner
  * obligations — the guard runs for EVERY workspace where they are an
  * active owner, with the per-workspace locks acquired in deterministic
  * order (sorted workspace id) so two concurrent deletes of co-owners can
@@ -133,7 +133,7 @@ export class AccountDeletionService {
 
   /**
    * Throws LastOwnerError when the user is the last ACTIVE owner of ANY of
-   * their non-projected workspaces (ADR 012: N owned workspaces = N
+   * their non-projected workspaces (ADR 014: N owned workspaces = N
    * obligations; projected ones are exempt, D11). Unlocked fast-path check —
    * the race-free enforcement is withLastOwnerGuard + the 0009/0019 trigger.
    */
@@ -231,7 +231,7 @@ export class AccountDeletionService {
       return;
     }
     // One row per workspace the user belonged to: every workspace's audit
-    // trail records that its member's account was erased (ADR 012).
+    // trail records that its member's account was erased (ADR 014).
     for (const workspaceId of stashed.workspaceIds) {
       await this.audit.write({
         workspaceId,

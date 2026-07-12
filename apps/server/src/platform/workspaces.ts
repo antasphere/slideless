@@ -1,7 +1,7 @@
 import { workspaceMembers, workspaces, type DbConn } from '@slideless/db';
 
 /**
- * Workspace lifecycle — the template's one creation path (ADR 012). Setup
+ * Workspace lifecycle — the template's one creation path (ADR 014). Setup
  * creates the FIRST workspace through it; products that open their own
  * workspace-creation flow (a hub's sign-up, a cloud edition's lazy org
  * projection) call it via the platform registry instead of hand-rolling

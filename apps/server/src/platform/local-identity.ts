@@ -18,7 +18,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * cookie — is the authorization decision, so deactivating a member locks
  * them out instantly regardless of cookie age.
  *
- * Workspace scoping (ADR 012): a session resolves to exactly ONE workspace
+ * Workspace scoping (ADR 014): a session resolves to exactly ONE workspace
  * per request. The client MAY name it with the X-Workspace-Id header — an
  * ACTIVE membership of that workspace is required, else the request
  * resolves to null (fail closed: an unknown workspace and a workspace the

@@ -199,7 +199,7 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     if (target.role === 'owner' && principal.role !== 'owner') {
       return c.json(err('forbidden', 'Only an owner can delete an owner'), 403);
     }
-    // ADR 012: deleting the ACCOUNT erases the user from EVERY workspace, and
+    // ADR 014: deleting the ACCOUNT erases the user from EVERY workspace, and
     // an admin's authority ends at their own — refuse when the target belongs
     // to any other workspace (deactivate the membership instead; the account
     // holder can erase themselves). Single-workspace instances never hit this.

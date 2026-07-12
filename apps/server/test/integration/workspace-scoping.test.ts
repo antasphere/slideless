@@ -13,7 +13,7 @@ import {
 } from './helpers.js';
 
 /**
- * The workspace-scoped principal (ADR 012): one user in TWO workspaces, one
+ * The workspace-scoped principal (ADR 014): one user in TWO workspaces, one
  * workspace per request. Covers the X-Workspace-Id session mechanism
  * (default, switch, fail-closed), /me's additive fields, cross-workspace
  * data/key/invitation isolation, the machine-credential mismatch guard, the

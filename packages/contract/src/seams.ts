@@ -20,7 +20,7 @@ export interface RequestContext {
 }
 
 /**
- * Active-workspace selection header for SESSION principals (ADR 012). A
+ * Active-workspace selection header for SESSION principals (ADR 014). A
  * session client MAY send it to name which of the user's workspaces this
  * request targets; the identity layer verifies an ACTIVE membership of that
  * workspace and resolves to null otherwise (fail closed — no oracle about
@@ -34,7 +34,7 @@ export const ACTIVE_WORKSPACE_HEADER = 'x-workspace-id';
 
 /**
  * The resolved caller of ONE request. A Principal is scoped to exactly ONE
- * workspace per request (ADR 012): `workspaceId` is the workspace named by
+ * workspace per request (ADR 014): `workspaceId` is the workspace named by
  * the presented credential — machine credentials bind it at mint/consent
  * time, human sessions choose it via {@link ACTIVE_WORKSPACE_HEADER}. A
  * user's OTHER memberships are deliberately not represented here; a request

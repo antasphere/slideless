@@ -17,7 +17,7 @@ export interface OauthRouteDeps {
 }
 
 /**
- * OAuth consent workspace selection (ADR 012). The consent page POSTs the
+ * OAuth consent workspace selection (ADR 014). The consent page POSTs the
  * user's chosen workspace here right before POST /oauth2/consent; the
  * oauth-provider plugin's consentReferenceId seam (identity/better-auth.ts)
  * consumes it and binds the consent — and therefore every token the grant

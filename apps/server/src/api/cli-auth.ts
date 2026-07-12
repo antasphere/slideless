@@ -162,7 +162,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
     // Same live-membership discipline as every credential path: no active
     // membership, no key (e.g. a deactivated member's account still signs in
     // at the Better Auth layer but has no standing on this instance). The
-    // key binds ONE workspace (ADR 012): the explicitly requested one, or
+    // key binds ONE workspace (ADR 014): the explicitly requested one, or
     // the deterministic default — the oldest active membership (created_at,
     // then id), the same rule sessions use. A requested workspace the
     // account is not an active member of answers the SAME uniform 403 as

@@ -14,7 +14,7 @@ export interface PlatformRegistry {
   usage: UsageSink;
   events: EventBus;
   /**
-   * Workspace lifecycle (ADR 012). Setup creates the FIRST workspace through
+   * Workspace lifecycle (ADR 014). Setup creates the FIRST workspace through
    * it; product flows that open workspace creation (the cloud edition's lazy
    * org projection) call it here instead of inserting rows themselves.
    */

@@ -14,10 +14,19 @@ and CI; the manual drills below are reproducible with the scripts named.
   dance): migrator idempotency, setup + 410, live-membership revocation on
   all three credential paths, API keys, invitations, audit, files (local +
   MinIO), metrics, request-id correlation, usage pipeline, and the full
-  OAuth dance driven by the official MCP SDK client.
+  OAuth dance driven by the official MCP SDK client. Workspace scoping
+  (ADR 014): header default/switch/fail-closed, cross-workspace key + data
+  isolation, consent-time OAuth binding with refresh persistence and the
+  legacy fail-closed rules, the multi-owned-workspace deletion guard,
+  break-glass explicit targeting, and the deck-specific surface — listings
+  per active workspace, the two-workspace collaborator switcher path, and
+  the ADR 013 privacy invariant under scoped principals
+  (`workspace-scoping`, `oauth-workspace`, `workspace-decks`,
+  `break-glass` suites).
 - **Dashboard e2e** (`@slideless/dashboard test:e2e`): builds the real image,
   boots an isolated compose stack, walks setup → key → invite → accept →
-  audit → deep-link → re-login → consent error state.
+  audit → deep-link → re-login → consent error state, and asserts the
+  workspace switcher is ABSENT for a single-membership user (ADR 014).
 - **CI** (`.github/workflows/ci.yml`): lint, typecheck, unit, build, format,
   drift check, and the integration suite.
 - **Release gates** (`.github/workflows/release.yml`): an image e2e smoke

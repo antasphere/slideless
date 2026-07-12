@@ -359,7 +359,7 @@ export const invitationAcceptRoute = createRoute({
   }
 });
 
-// ── OAuth consent workspace (ADR 012) ───────────────────────────────────────
+// ── OAuth consent workspace (ADR 014) ───────────────────────────────────────
 // Session-only by construction: deliberately UNLISTED in the machine scope
 // allowlist (middleware/scopes.ts) so keys/tokens 403 fail-closed, and the
 // handler additionally refuses non-session principals. Uniform 403 whether

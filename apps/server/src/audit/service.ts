@@ -27,7 +27,7 @@ export interface AuditActor {
 }
 
 export interface AuditWrite {
-  /** null = INSTANCE-attributed: the event belongs to no workspace (ADR 012). */
+  /** null = INSTANCE-attributed: the event belongs to no workspace (ADR 014). */
   workspaceId: string | null;
   principal: AuditActor | null;
   action: string;

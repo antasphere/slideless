@@ -118,7 +118,7 @@ export function authContext({
       });
     }
 
-    // Machine credentials bind ONE workspace at mint/consent time (ADR 012):
+    // Machine credentials bind ONE workspace at mint/consent time (ADR 014):
     // an X-Workspace-Id header naming a DIFFERENT workspace is a client bug
     // or a confused-deputy attempt — reject it loudly instead of silently
     // serving the credential's workspace. Sessions never reach this: the

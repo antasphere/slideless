@@ -283,7 +283,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     // Claim the singleton and create the FIRST workspace + owner membership
     // in ONE transaction: either the instance is fully set up or nothing
     // persisted. The workspace goes through the registry's WorkspaceService
-    // (ADR 012) — the same path product flows use for every LATER workspace.
+    // (ADR 014) — the same path product flows use for every LATER workspace.
     const instanceId = ulid();
     let workspaceId: string;
     try {
@@ -331,7 +331,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     if (!principal) {
       return c.json(err('unauthenticated', 'Authentication required'), 401);
     }
-    // Workspaces this credential can name (ADR 012): a session lists ALL of
+    // Workspaces this credential can name (ADR 014): a session lists ALL of
     // the user's active memberships (oldest first — index 0 is the no-header
     // default); a machine credential lists ONLY the workspace it is bound to,
     // so a workspace-scoped key/token never enumerates the user's others.
@@ -379,7 +379,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // CLI email-OTP → API-key mint: PUBLIC pre-auth routes (listed in
   // PUBLIC_API_PATHS) riding the emailOTP plugin; rate-limited above.
   registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger });
-  // OAuth consent workspace selection (ADR 012): session-only, feeds the
+  // OAuth consent workspace selection (ADR 014): session-only, feeds the
   // consentReferenceId seam that binds grants to one workspace.
   registerOauthRoutes(api, { db, auth });
   registerMemberRoutes(api, {

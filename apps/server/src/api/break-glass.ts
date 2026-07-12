@@ -17,7 +17,7 @@ import { parseSuperadminEmails } from '../accounts/superadmin.js';
  *    reactivating and promoting when present. It ADDS an owner and never
  *    removes one, so the migration-0009 last-owner trigger is satisfied by
  *    construction. The target workspace is explicit (`workspaceId`) once the
- *    instance runs several (ADR 012); a single-workspace instance keeps the
+ *    instance runs several (ADR 014); a single-workspace instance keeps the
  *    old no-argument call.
  *  - reset-2fa: clear a locked-out user's second factor (the recovery ADR 009
  *    deferred to manual DB surgery). User-level — needs no workspace; its
@@ -93,7 +93,7 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
   };
 
   /**
-   * The workspace an owner-claim targets (ADR 012). Explicit `workspaceId`
+   * The workspace an owner-claim targets (ADR 014). Explicit `workspaceId`
    * wins; omitted, it resolves ONLY while the instance runs a single
    * workspace — with several, recovery must name its target (400
    * workspace_required), never guess one.
@@ -266,7 +266,7 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
       },
       'BREAK-GLASS: two-factor reset'
     );
-    // INSTANCE-attributed (workspace_id NULL, ADR 012): a second factor is a
+    // INSTANCE-attributed (workspace_id NULL, ADR 014): a second factor is a
     // user property, not any workspace's — the row needs no workspace home.
     await audit.write({
       workspaceId: null,

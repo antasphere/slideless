@@ -9,7 +9,7 @@
   import type { MeResponse } from '@slideless/contract';
 
   /**
-   * Sidebar workspace switcher (ADR 012). Rendered ONLY for users with more
+   * Sidebar workspace switcher (ADR 014). Rendered ONLY for users with more
    * than one active membership — single-membership users (every self-host)
    * keep the plain instance-name header, byte-identical to before.
    * Switching persists the choice (localStorage) and reloads, so every

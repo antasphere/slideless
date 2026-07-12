@@ -30,7 +30,7 @@
   /**
    * Export via the SDK, not a plain <a href>: an anchor cannot carry the
    * X-Workspace-Id header, so on a multi-workspace account it would export
-   * the DEFAULT workspace instead of the active one (ADR 012). Trade-off:
+   * the DEFAULT workspace instead of the active one (ADR 014). Trade-off:
    * the zip is buffered as a Blob before the save dialog — fine for
    * deck-scale exports; multi-GB exports should move to a server-tokenized
    * download URL.

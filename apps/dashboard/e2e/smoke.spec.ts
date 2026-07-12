@@ -93,7 +93,7 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     await expect(page.getByRole('cell', { name: INVITEE.email })).toBeVisible();
   });
 
-  await test.step('no workspace switcher for a single-membership user (ADR 012)', async () => {
+  await test.step('no workspace switcher for a single-membership user (ADR 014)', async () => {
     // Self-host UX invariant: the sidebar keeps the plain instance-name
     // header; the switcher only exists with several active memberships.
     await expect(page.getByTestId('workspace-switcher')).toHaveCount(0);

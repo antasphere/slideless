@@ -19,7 +19,7 @@
    * only validator of the signature. The checks here only pick the right UI
    * state early.
    *
-   * Workspace binding (ADR 012): the grant is scoped to ONE workspace. The
+   * Workspace binding (ADR 014): the grant is scoped to ONE workspace. The
    * page always NAMES it; users with several memberships get a picker
    * (default = this session's active workspace) whose choice is parked via
    * POST /api/v1/oauth/consent-workspace right before approval — the choice
@@ -232,7 +232,7 @@
           </div>
         {/if}
 
-        <!-- The grant is scoped to ONE workspace (ADR 012) — always name it;
+        <!-- The grant is scoped to ONE workspace (ADR 014) — always name it;
              a picker only exists for users with several memberships. -->
         <div>
           <p class="mb-2 text-sm font-medium">{t('consent.workspaceLabel')}</p>

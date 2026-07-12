@@ -47,6 +47,23 @@ enableJsonResponse: true })` per request** — no session ids, POST responses
   `@hono/node-server` (pick a free port first: PUBLIC_BASE_URL must equal the
   real origin because it is issuer, discovery root, and `/mcp` aud at once).
   `app.request()` stays fine for everything that isn't the SDK client.
+- **The oauth-provider plugin's per-grant value seam is `postLogin.consentReferenceId`**
+  (1.6.15, ADR 014): the callback (`{ user, session, scopes }` — no request
+  body, no headers) runs on every authorize AND on the consent POST; its
+  return value is stored on the consent row (consents are keyed
+  client+user+referenceId), embedded in the authorization-code verification
+  value, persisted on the refresh-token row, and handed to
+  `customAccessTokenClaims({ referenceId })` on BOTH grants — refresh
+  re-mints receive the STORED value with no extra plumbing. The generated
+  auth schema already has the `reference_id` columns (plugin-static), so no
+  drift. `postLogin` requires `page` + `shouldRedirect` too; a constant
+  `() => false` keeps the picker on the consent page itself. Because the
+  callback sees only the session, a user CHOICE must be parked
+  session-visibly first (we use a verification-table row keyed to the
+  session id, written by `POST /oauth/consent-workspace`). Throwing an
+  APIError inside the callback fails the authorize with a 403 RFC-error
+  body (not a redirect) — the fail-closed path for stale selections.
+  Re-verify all of this on ANY Better Auth bump.
 - **The drift guard absorbed the plugin tables cleanly**: adding jwt +
   oauthProvider to `scripts/auth-schema-config.ts` makes the pinned CLI emit
   `jwks` + 4 `oauth_*` tables (snake_case tables, camelCase index names);

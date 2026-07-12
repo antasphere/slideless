@@ -131,7 +131,7 @@ export function mcpResourceUrl(publicBaseUrl: string): string {
 /**
  * Verification-table identifier parking a session's OAuth workspace choice
  * between the consent page's selection POST and the consent itself
- * (ADR 012). Written by POST /api/v1/oauth/consent-workspace, read by the
+ * (ADR 014). Written by POST /api/v1/oauth/consent-workspace, read by the
  * oauth-provider plugin's consentReferenceId seam.
  */
 export function oauthWorkspaceSelectionIdentifier(sessionId: string): string {
@@ -183,7 +183,7 @@ export function createAuth({
    * opaque token fails the bearer gate's looksLikeJwt outright), so whatever
    * a refresh mints is rejected at every resource. Verified live (M9).
    *
-   * Workspace binding (ADR 012): `referenceId` is the workspace chosen at
+   * Workspace binding (ADR 014): `referenceId` is the workspace chosen at
    * consent — the oauth-provider plugin persists it on the consent row,
    * threads it through the authorization code, and STORES it on the refresh
    * token row, so refresh re-mints receive the SAME value forever. Present,
@@ -235,7 +235,7 @@ export function createAuth({
   }
 
   /**
-   * The workspace a consent binds (ADR 012) — the oauth-provider plugin's
+   * The workspace a consent binds (ADR 014) — the oauth-provider plugin's
    * `postLogin.consentReferenceId` seam, called on every authorize AND on
    * the consent POST. Resolution order:
    *
@@ -350,7 +350,7 @@ export function createAuth({
         customAccessTokenClaims: async ({ user, referenceId }) =>
           membershipAccessClaims(user, referenceId),
         // Workspace binding rides the plugin's consent referenceId seam
-        // (ADR 012). The consent page itself hosts the picker, so
+        // (ADR 014). The consent page itself hosts the picker, so
         // shouldRedirect never fires — `page` is required by the type and
         // points at the same consent page it would land on anyway.
         postLogin: {

@@ -79,7 +79,7 @@ export interface ClientOptions {
   /** API key (`<prefix>_<keyid>_<secret>`) for machine callers. */
   apiKey?: string;
   /**
-   * Active workspace for SESSION callers (sent as X-Workspace-Id, ADR 012).
+   * Active workspace for SESSION callers (sent as X-Workspace-Id, ADR 014).
    * Only meaningful with the session cookie: a user in several workspaces
    * names which one their requests target. API keys and OAuth tokens are
    * workspace-bound at mint and need none (a mismatching value is rejected
@@ -356,7 +356,7 @@ export class PlatformClient {
   // ── OAuth consent ─────────────────────────────────────────────────────────
 
   /**
-   * Park the workspace the upcoming OAuth consent should bind (ADR 012).
+   * Park the workspace the upcoming OAuth consent should bind (ADR 014).
    * Sessions only; the consent page calls it right before approving when
    * the user picked a non-default workspace.
    */
