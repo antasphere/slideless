@@ -387,6 +387,16 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
       });
       registry.events.emit('member.joined', { workspaceId: grant.workspaceId, userId, role: 'member' });
     } else if (!membership.isActive) {
+      // Reactivation is the PENDING path's privilege only: a fresh grant is
+      // the workspace side's explicit re-invite (the invitation-accept
+      // semantics). The G1 fallback resolves a grant claimed LONG AGO — if
+      // the membership since went inactive, an admin deactivated this person
+      // (members PATCH), and honoring the old claim token here would let
+      // them undo that cutoff themselves. Same 404 as a dead token: to a
+      // locked-out caller the invite IS no longer valid.
+      if (sweptOwnerId) {
+        return c.json(err('not_found', 'Invite not found or no longer valid'), 404);
+      }
       await db.update(workspaceMembers).set({ isActive: true }).where(eq(workspaceMembers.id, membership.id));
     }
 

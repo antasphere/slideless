@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq } from 'drizzle-orm';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { workspaceMembers } from '@slideless/db';
+import { OauthJwtVerifier } from '../../src/identity/oauth-jwt.js';
+import type { Auth } from '../../src/identity/better-auth.js';
 import {
   createDatabase,
   createTestApp,
@@ -56,6 +59,8 @@ let ownerCookie: string;
 let guestCookie: string;
 let guestKey: string;
 let guestUserId: string;
+/** The guest's original claim token — kept to prove replaying it grants nothing new. */
+let guestClaimToken: string;
 /** The deck the guest is invited to. */
 let grantedDeck: string;
 /** A sibling deck in the same workspace the guest has NO grant on. */
@@ -113,10 +118,10 @@ beforeAll(async () => {
       json({ email: GUEST.email }, { cookie: ownerCookie })
     )
   );
-  const token = invited.claimUrl.split('/collab/')[1] as string;
+  guestClaimToken = invited.claimUrl.split('/collab/')[1] as string;
   const claimed = await app.app.request(
     '/api/v1/collaborators/claim',
-    json({ token, name: GUEST.name, password: GUEST.password })
+    json({ token: guestClaimToken, name: GUEST.name, password: GUEST.password })
   );
   expect(claimed.status).toBe(200);
   guestUserId = (await readJson(claimed)).userId;
@@ -301,6 +306,86 @@ describe('the guest role-lock (origin is a capability axis nothing upgrades)', (
       (await app.app.request(`/api/v1/presentations/${grantedDeck}`, { headers: { cookie: guestCookie } }))
         .status
     ).toBe(200);
+  });
+
+  it('a deactivated guest cannot self-reactivate by replaying their claim token (G1 fallback stays a mint, not a switch)', async () => {
+    // The admin cutoff…
+    const off = await app.app.request(`/api/v1/members/${guestMembershipId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: ownerCookie },
+      body: JSON.stringify({ isActive: false })
+    });
+    expect(off.status).toBe(200);
+
+    // …must not be undone by the guest re-POSTing the (active, owned) grant
+    // token: the fallback resolves it, but an inactive membership answers
+    // the same 404 a dead token gets — only a FRESH invite (pending grant)
+    // reactivates.
+    const replay = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token: guestClaimToken }, { cookie: guestCookie })
+    );
+    expect(replay.status).toBe(404);
+
+    const [row] = await app.db.db
+      .select({ isActive: workspaceMembers.isActive })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.id, guestMembershipId));
+    expect(row!.isActive).toBe(false);
+
+    // Restore for the suites below (the admin act still works).
+    const on = await app.app.request(`/api/v1/members/${guestMembershipId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: ownerCookie },
+      body: JSON.stringify({ isActive: true })
+    });
+    expect(on.status).toBe(200);
+  });
+});
+
+describe('the OAuth-bearer leg (the third credential kind — MCP rides this)', () => {
+  it('a bearer JWT resolving the guest membership carries origin=guest from the LIVE row', async () => {
+    // Verifier-direct, the oauth-workspace.test.ts pattern (the full
+    // authorize/consent/token dance is exercised there): sign a JWT for the
+    // guest bound to the host workspace against a fake JWKS and resolve it
+    // through the REAL OauthJwtVerifier. The load-bearing link this pins is
+    // that the oauth resolver reads origin from the membership row — the
+    // token itself carries NO origin claim to spoof. requireNonGuest judges
+    // the resolved principal identically for all three credential kinds
+    // (proven above with sessions and API keys), so origin='guest' here is
+    // exactly the 403 guest_forbidden wall for OAuth bearers and MCP.
+    const [guestRow] = await app.db.db
+      .select({ workspaceId: workspaceMembers.workspaceId })
+      .from(workspaceMembers)
+      .where(and(eq(workspaceMembers.userId, guestUserId), eq(workspaceMembers.origin, 'guest')));
+    const hostWorkspaceId = guestRow!.workspaceId;
+
+    const base = 'http://guest-caps.test';
+    const { publicKey, privateKey } = await generateKeyPair('RS256');
+    const jwk = { ...(await exportJWK(publicKey)), alg: 'RS256', kid: 'guest-caps' };
+    const fakeAuth = { api: { getJwks: async () => ({ keys: [jwk] }) } } as unknown as Auth;
+    const verifier = new OauthJwtVerifier(fakeAuth, app.db.db, base);
+
+    const token = await new SignJWT({
+      scope: 'presentations:read presentations:write',
+      workspace_id: hostWorkspaceId
+    })
+      .setProtectedHeader({ alg: 'RS256', kid: 'guest-caps' })
+      .setIssuer(base)
+      .setAudience(`${base}/mcp`)
+      .setSubject(guestUserId)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(privateKey);
+
+    const principal = await verifier.resolve(token);
+    expect(principal).toMatchObject({
+      userId: guestUserId,
+      workspaceId: hostWorkspaceId,
+      role: 'member',
+      origin: 'guest',
+      via: 'oauth'
+    });
   });
 });
 
