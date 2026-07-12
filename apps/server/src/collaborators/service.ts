@@ -147,6 +147,17 @@ export class CollaboratorService {
   /**
    * Find a live (pending, unrevoked, unexpired) grant by raw claim token —
    * either the copyable-link token or the emailed one — and report which.
+   *
+   * PENDING-ONLY by design, which bounds what the G1 idempotent `claim()`
+   * covers: the claim endpoint survives the user.created sweep only when
+   * the sweep fires INSIDE that same request (its lookup ran while the
+   * grant was still pending). A grant swept to active in an EARLIER request
+   * (sibling grant at signup; the cloud edition's SSO-first claim page,
+   * where JIT login sweeps before the claim POST — binding plan §5) is
+   * invisible here, so that claim answers 404 and mints no membership.
+   * Phase 6 must extend the CLAIM path (not the public lookup, which would
+   * leak deck metadata for used tokens) to resolve active grants owned by
+   * the calling session's user.
    */
   async findLiveByClaimToken(token: string): Promise<CollaboratorClaimMatch | null> {
     const hash = hashToken(token);
