@@ -193,6 +193,9 @@ exposed to users):
      -H 'content-type: application/json' -b '<session cookie>' -d '{}'
    # or recover a specific existing user instead:
    #   -d '{"userId":"<better-auth user id>"}'
+   # on an instance running SEVERAL workspaces (ADR 012), the target is
+   # explicit — the no-argument call answers 400 workspace_required:
+   #   -d '{"workspaceId":"<workspace uuid>"}'
    ```
 
    The call creates/reactivates/promotes the membership to an ACTIVE OWNER

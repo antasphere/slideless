@@ -15,10 +15,21 @@ declare module 'hono' {
   }
 }
 
+/**
+ * The attributed actor of an audit row — the subset of Principal the log
+ * records. A full Principal satisfies it structurally; surfaces whose actor
+ * holds no workspace-scoped principal (break-glass) build it directly.
+ */
+export interface AuditActor {
+  userId: string;
+  via: Principal['via'];
+  apiKeyId?: string | undefined;
+}
+
 export interface AuditWrite {
   /** null = INSTANCE-attributed: the event belongs to no workspace (ADR 012). */
   workspaceId: string | null;
-  principal: Principal | null;
+  principal: AuditActor | null;
   action: string;
   resourceType: string;
   resourceId?: string | undefined;

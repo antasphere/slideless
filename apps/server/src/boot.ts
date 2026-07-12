@@ -150,15 +150,7 @@ export async function boot(
     for (const row of rows) {
       await audit.write({
         workspaceId: row.workspaceId,
-        principal: {
-          userId,
-          email: '',
-          name: '',
-          workspaceId: row.workspaceId,
-          role: 'member',
-          via: 'session',
-          scopes: null
-        },
+        principal: { userId, via: 'session' },
         action: `user.${event}`,
         resourceType: 'user',
         resourceId: userId

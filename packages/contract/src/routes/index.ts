@@ -450,13 +450,16 @@ export const breakGlassClaimOwnershipRoute = createRoute({
   path: '/admin/break-glass/claim-ownership',
   tags: ['admin'],
   summary:
-    'Break-glass: make the calling superadmin (or a named existing user) an ACTIVE OWNER of the workspace (superadmin sessions only; adds an owner, never removes one)',
+    'Break-glass: make the calling superadmin (or a named existing user) an ACTIVE OWNER of a workspace (superadmin sessions only; adds an owner, never removes one; workspaceId required once the instance has several)',
   request: {
-    body: jsonRequestBody(breakGlassClaimOwnershipRequestSchema, 'Optional target user (default: the caller)')
+    body: jsonRequestBody(
+      breakGlassClaimOwnershipRequestSchema,
+      'Optional target user (default: the caller) and target workspace (required with several workspaces)'
+    )
   },
   responses: {
     200: jsonBody(breakGlassClaimOwnershipSchema, 'The recovered owner membership'),
-    400: errorResponses[400],
+    400: jsonBody(apiErrorSchema, 'Validation error, or several workspaces and none named (workspace_required)'),
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
@@ -479,7 +482,6 @@ export const breakGlassResetTwoFactorRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Instance not set up yet (not_setup)'),
     429: errorResponses[429]
   }
 });

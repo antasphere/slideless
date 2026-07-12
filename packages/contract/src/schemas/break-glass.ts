@@ -7,9 +7,16 @@ import { workspaceRoleSchema } from './common.js';
  * scope allowlist, so API keys and OAuth tokens 403 fail-closed.
  */
 
-/** Optional target: a named existing user; omitted = the calling superadmin. */
+/**
+ * Optional target user (omitted = the calling superadmin) and target
+ * workspace. `workspaceId` may be omitted ONLY while the instance runs a
+ * single workspace (every pre-ADR-012 deployment); a multi-workspace
+ * instance answers 400 workspace_required — recovery must name its target
+ * explicitly, never guess one.
+ */
 export const breakGlassClaimOwnershipRequestSchema = z.object({
-  userId: z.string().min(1).optional()
+  userId: z.string().min(1).optional(),
+  workspaceId: z.uuid().optional()
 });
 export type BreakGlassClaimOwnershipRequest = z.infer<typeof breakGlassClaimOwnershipRequestSchema>;
 
@@ -17,6 +24,8 @@ export const breakGlassClaimOwnershipSchema = z.object({
   memberId: z.string(),
   userId: z.string(),
   email: z.string(),
+  /** The workspace the ownership was claimed in. */
+  workspaceId: z.string(),
   role: workspaceRoleSchema,
   isActive: z.boolean(),
   /** true when the membership was created; false when an existing row was promoted/reactivated. */

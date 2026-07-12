@@ -192,15 +192,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
     // cannot attribute it — write the row directly, like /setup does.
     await audit.write({
       workspaceId: membership.workspaceId,
-      principal: {
-        userId: user.id,
-        email: user.email,
-        name: user.name,
-        workspaceId: membership.workspaceId,
-        role: 'member',
-        via: 'session',
-        scopes: null
-      },
+      principal: { userId: user.id, via: 'session' },
       action: 'apikey.create',
       resourceType: 'api_key',
       resourceId: minted.id,

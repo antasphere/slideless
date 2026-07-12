@@ -13,11 +13,15 @@ import { parseSuperadminEmails } from '../accounts/superadmin.js';
  * surface for the per-tenant hosting model. Two capabilities only:
  *
  *  - claim-ownership: make the calling superadmin (or a named existing user)
- *    an ACTIVE OWNER — creating the membership when absent, reactivating and
- *    promoting when present. It ADDS an owner and never removes one, so the
- *    migration-0009 last-owner trigger is satisfied by construction.
+ *    an ACTIVE OWNER of a workspace — creating the membership when absent,
+ *    reactivating and promoting when present. It ADDS an owner and never
+ *    removes one, so the migration-0009 last-owner trigger is satisfied by
+ *    construction. The target workspace is explicit (`workspaceId`) once the
+ *    instance runs several (ADR 012); a single-workspace instance keeps the
+ *    old no-argument call.
  *  - reset-2fa: clear a locked-out user's second factor (the recovery ADR 009
- *    deferred to manual DB surgery).
+ *    deferred to manual DB surgery). User-level — needs no workspace; its
+ *    audit row is instance-attributed.
  *
  * SAFETY MODEL (a bug here = full instance compromise — keep all of it):
  *
@@ -88,10 +92,33 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
     return { kind: 'ok', caller: { userId: u.id, email: u.email, name: u.name } };
   };
 
-  /** The single workspace this instance runs (created by setup). */
-  const singletonWorkspace = async (): Promise<{ id: string } | null> => {
-    const [ws] = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
-    return ws ?? null;
+  /**
+   * The workspace an owner-claim targets (ADR 012). Explicit `workspaceId`
+   * wins; omitted, it resolves ONLY while the instance runs a single
+   * workspace — with several, recovery must name its target (400
+   * workspace_required), never guess one.
+   */
+  const resolveTargetWorkspace = async (
+    explicit: string | undefined
+  ): Promise<
+    | { kind: 'ok'; id: string }
+    | { kind: 'not_found' }
+    | { kind: 'not_setup' }
+    | { kind: 'ambiguous' }
+  > => {
+    if (explicit) {
+      const [ws] = await db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(eq(workspaces.id, explicit))
+        .limit(1);
+      return ws ? { kind: 'ok', id: ws.id } : { kind: 'not_found' };
+    }
+    const rows = await db.select({ id: workspaces.id }).from(workspaces).limit(2);
+    const [only] = rows;
+    if (!only) return { kind: 'not_setup' };
+    if (rows.length > 1) return { kind: 'ambiguous' };
+    return { kind: 'ok', id: only.id };
   };
 
   api.openapi(breakGlassClaimOwnershipRoute, async (c) => {
@@ -105,8 +132,20 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
     const caller = resolved.caller;
     const body = c.req.valid('json');
 
-    const ws = await singletonWorkspace();
-    if (!ws) return c.json(err('not_setup', 'This instance has not completed setup'), 409);
+    const targetWs = await resolveTargetWorkspace(body.workspaceId);
+    if (targetWs.kind === 'not_setup') {
+      return c.json(err('not_setup', 'This instance has not completed setup'), 409);
+    }
+    if (targetWs.kind === 'not_found') {
+      return c.json(err('not_found', 'Target workspace not found'), 404);
+    }
+    if (targetWs.kind === 'ambiguous') {
+      return c.json(
+        err('workspace_required', 'This instance has several workspaces — pass workspaceId explicitly'),
+        400
+      );
+    }
+    const ws = { id: targetWs.id };
 
     // Target: a named existing user, or the calling superadmin.
     let target = { userId: caller.userId, email: caller.email };
@@ -156,15 +195,7 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
     );
     await audit.write({
       workspaceId: ws.id,
-      principal: {
-        userId: caller.userId,
-        email: caller.email,
-        name: caller.name,
-        workspaceId: ws.id,
-        role: 'owner',
-        via: 'session',
-        scopes: null
-      },
+      principal: { userId: caller.userId, via: 'session' },
       action: 'break_glass.claim_ownership',
       resourceType: 'member',
       resourceId: after.id,
@@ -185,6 +216,7 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
         memberId: after.id,
         userId: target.userId,
         email: target.email,
+        workspaceId: ws.id,
         role: 'owner' as const,
         isActive: true,
         created: !before
@@ -203,9 +235,6 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
     }
     const caller = resolved.caller;
     const { userId } = c.req.valid('json');
-
-    const ws = await singletonWorkspace();
-    if (!ws) return c.json(err('not_setup', 'This instance has not completed setup'), 409);
 
     const [target] = await db
       .select({
@@ -237,17 +266,11 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
       },
       'BREAK-GLASS: two-factor reset'
     );
+    // INSTANCE-attributed (workspace_id NULL, ADR 012): a second factor is a
+    // user property, not any workspace's — the row needs no workspace home.
     await audit.write({
-      workspaceId: ws.id,
-      principal: {
-        userId: caller.userId,
-        email: caller.email,
-        name: caller.name,
-        workspaceId: ws.id,
-        role: 'owner',
-        via: 'session',
-        scopes: null
-      },
+      workspaceId: null,
+      principal: { userId: caller.userId, via: 'session' },
       action: 'break_glass.reset_two_factor',
       resourceType: 'user',
       resourceId: target.id,
