@@ -325,6 +325,46 @@ z.object({ sha256, file: z.any() }) } }` renders valid OpenAPI 3.1 but
     `dependencies: ['smoke']`. (Phase 8.) Fix: ship that shape from the
     start.
 
+## 11. Multi-workspace runtime adaptation (cloud-binding Phase 1)
+
+Found while adapting the template's multi-workspace runtime package
+(`b9e2307..01bd1c6`, ADR 012 upstream / ADR 014 here) onto the divergent
+Slideless tree — the first product to port it rather than inherit it.
+
+46. **`databaseHooks.user.create.after` silently breaks endpoint-local
+    claim flows (the G1 class).** Upstream `561ef6f` moved `user.created`
+    into the DB hook; any product endpoint that (a) creates the account via
+    `signUpEmail` and (b) then redeems the very token a hook subscriber
+    sweeps by email now loses the race by construction — the sweep's UPDATE
+    dispatches inside `signUpEmail` while the endpoint still has round-trips
+    left, so a pending-only redeem reliably comes back null and the
+    endpoint's post-redeem block (Slideless: the membership insert that
+    makes the deck reachable) never runs. Slideless had to make
+    `CollaboratorService.claim()` idempotent for the SAME user. (Phase 1 of
+    the cloud binding; predicted as G1 in the binding plan's adversarial
+    review.) Fix: the hook's doc comment should warn that subscribers with
+    claim-at-signup semantics RACE the creating endpoint's continuation, and
+    that any token redeem running after `signUpEmail` must treat
+    already-redeemed-by-the-same-user as success.
+47. **The runtime package assumes the product never minted its own
+    migrations.** Its schema change ships as template migration
+    `0013_melodic_chamber`; Slideless's 0013–0017 are product migrations, so
+    the file can never be copied (journal idx/tag collision now, silent
+    skip once the product's own later timestamps exist). The working rule —
+    merge the schema source, `drizzle-kit generate` a fresh migration in the
+    product's own sequence — is documented nowhere upstream. (Phase 1.)
+    Fix: state the schema-merge+regenerate rule in the template's upgrade
+    notes for EVERY template schema delta, or namespace template migrations
+    away from product ones at instantiation.
+48. **The 0009 last-owner trigger hard-codes its invariant for every
+    workspace.** A cloud edition needs projected (hub-origin) workspaces
+    exempt (ownership asserted upstream; local rows re-sync at SSO login),
+    which forced a CREATE OR REPLACE of a security-critical function in a
+    custom migration (Slideless 0019). (Phase 1, D11.) Fix candidate: ship
+    the trigger reading an exemption predicate (e.g.
+    `workspaces.central_account_id IS NOT NULL`) from the start, so
+    editions configure instead of redefining plpgsql.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
