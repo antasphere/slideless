@@ -353,6 +353,10 @@ export class PlatformClient {
   }
 
   /** Public: accepts an invitation (creates the account when needed). */
+  acceptInvitation(req: InvitationAccept): Promise<InvitationAccepted> {
+    return this.request('POST', '/invitations/accept', req);
+  }
+
   // ── OAuth consent ─────────────────────────────────────────────────────────
 
   /**
@@ -362,10 +366,6 @@ export class PlatformClient {
    */
   oauthConsentWorkspace(workspaceId: string): Promise<OauthConsentWorkspace> {
     return this.request('POST', '/oauth/consent-workspace', { workspaceId });
-  }
-
-  acceptInvitation(req: InvitationAccept): Promise<InvitationAccepted> {
-    return this.request('POST', '/invitations/accept', req);
   }
 
   // ── Audit ─────────────────────────────────────────────────────────────────
