@@ -441,6 +441,36 @@ Promise<Response>) => Promise<Response>` seam so editions/products
     `{basePath}/oauth2/authorize?<query verbatim>` instead of `next` (the
     consent page already round-trips it verbatim; the login page must do
     the same).
+55. **genericOAuth's explicit `/oauth2/link` is ungated per provider — SSO
+    identity invariants must be enforced (and undone) in after-hooks, and
+    the undo must key on RECENCY, never on the current login's subject.**
+    The link endpoint links ANY configured provider onto the live session
+    (same-email constrained), and its callback mints no session, so a
+    newSession-gated per-login guard never sees it: a second hub identity
+    can land on one local user despite a single-identity invariant. The
+    guard therefore has to undo conflicts at the NEXT login — and deleting
+    the current login's account row there is wrong in residue states (a
+    crash between better-auth's link and the hook, or the explicit link):
+    the established identity's own login would delete itself, and two
+    concurrent conflicting logins delete BOTH rows, stranding the user.
+    Deleting the NEWEST provider row is identical on the mainline and
+    correct in every residue state. (Phase 3 double-check.) Fix: when the
+    template grows its federation module, either upstream a per-provider
+    link-gate seam or ship the recency-undo guard pattern (Slideless
+    `identity/hub-sso.ts` `guardSingleHubIdentity`, ADR 015).
+56. **`user.emailVerified` is load-bearing for break-glass — a federated
+    email re-sync must never write it DOWNWARD for an unchanged address.**
+    The template's break-glass sign-in refuses unverified users
+    (`api/break-glass.ts`), so an SSO per-login sync that mirrors the IdP's
+    `email_verified` verbatim can flip a verified operator to unverified
+    and close the operator door — on a hub-only-login cloud edition, the
+    only door. Verification must be treated as a latch for an unchanged
+    address (`local || asserted`), following the assertion honestly only
+    when the address itself changes (that is exactly better-auth's own
+    `overrideUserInfo` semantics). (Phase 3 double-check; see Slideless
+    `identity/hub-sso.ts` `syncEmail`.) Fix: bake the latch into the
+    template's future federation module and document the
+    break-glass/emailVerified coupling next to the break-glass code.
 
 ## Confirmed-good template properties (keep these)
 
