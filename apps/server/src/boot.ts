@@ -1,6 +1,6 @@
 import { createDb, type DbHandle } from '@slideless/db';
 import { migrationStatus, runMigrations } from '@slideless/db/migrate';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -138,15 +138,17 @@ export async function boot(
 
   /**
    * Best-effort audit for a Better-Auth credential event. Credential events
-   * are USER-level, so the row lands in EVERY workspace the user belongs to
-   * (ADR 012) — each workspace's trail records its member's password/2FA
-   * changes; a single-workspace instance gets exactly one row, as before.
+   * are USER-level, so the row lands in every workspace the user is an
+   * ACTIVE member of (ADR 012) — each workspace's trail records its own
+   * members' password/2FA changes, and a workspace the user was deactivated
+   * from records nothing; a single-workspace instance gets exactly one row,
+   * as before.
    */
   const auditAccountEvent = async (event: AccountEvent, userId: string) => {
     const rows = await db.db
       .select({ workspaceId: workspaceMembers.workspaceId })
       .from(workspaceMembers)
-      .where(eq(workspaceMembers.userId, userId));
+      .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.isActive, true)));
     for (const row of rows) {
       await audit.write({
         workspaceId: row.workspaceId,
