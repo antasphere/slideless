@@ -518,6 +518,125 @@ describe('G1 regression — the user.created hook races the claim endpoint (idem
   });
 });
 
+describe('G1 CROSS-REQUEST regression — a grant swept active in an EARLIER request still claims (Phase 6)', () => {
+  it('a sibling grant in ANOTHER workspace, swept at signup, is claimable later and mints the membership', async () => {
+    // The residual bounded at findLiveByClaimToken (commit a9f98f1): the
+    // sweep flips grants but never mints memberships, so a grant swept in
+    // an earlier request left the invitee with an active grant and an
+    // unreachable deck — the claim link 404ed at the pending-only lookup.
+    const email = 'g1-cross-request@collab.test';
+    const password = 'g1-cross-req-pass-1';
+
+    // A SECOND workspace with its own owner and deck: only there does the
+    // swept sibling lack the membership that makes the deck reachable.
+    const o2 = await app.auth.api.signUpEmail({
+      body: { email: 'owner-two@collab.test', name: 'Owner Two', password: 'owner-two-pass-123' }
+    });
+    const { workspaceId: w2 } = await app.registry.workspaces.create('Second WS', o2.user.id);
+    const o2Cookie = extractCookie(
+      await app.app.request(
+        '/api/v1/auth/sign-in/email',
+        json({ email: 'owner-two@collab.test', password: 'owner-two-pass-123' })
+      )
+    );
+    // O2's sole membership is W2 — asset + deck land there by default.
+    await uploadAsset(HTML_V1, o2Cookie);
+    const reserve = await readJson(
+      await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: { cookie: o2Cookie } })
+    );
+    const commit = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        { title: 'W2 Deck', entryPath: 'index.html', manifest: [entryOf('index.html', HTML_V1)] },
+        { cookie: o2Cookie }
+      )
+    );
+    expect(commit.status).toBe(201);
+    const w2Deck = reserve.uploadSession.presentationId as string;
+
+    // Both workspaces invite the same address.
+    const w1Deck = await createDeck('G1 W1 Deck');
+    const w1Invite = await readJson(await invite(w1Deck, email));
+    const w2Invite = await readJson(await invite(w2Deck, email, o2Cookie));
+    const w1Token = w1Invite.claimUrl.split('/collab/')[1] as string;
+    const w2Token = w2Invite.claimUrl.split('/collab/')[1] as string;
+
+    // Claiming W1's grant creates the account; the endpoint's sibling sweep
+    // (and the user.created hook) flips W2's grant in the SAME request —
+    // an earlier request from the W2 token's point of view.
+    const first = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token: w1Token, name: 'G1 Cross', password })
+    );
+    expect(first.status).toBe(200);
+    const { userId } = await readJson(first);
+
+    const [w2Grant] = await app.db.db
+      .select({ status: collaborators.status, userId: collaborators.userId })
+      .from(collaborators)
+      .where(eq(collaborators.id, w2Invite.collaborator.id));
+    expect(w2Grant).toMatchObject({ status: 'active', userId });
+
+    // No W2 membership yet — the W2 deck is unreachable (the bug's symptom).
+    const cookie = extractCookie(
+      await app.app.request('/api/v1/auth/sign-in/email', json({ email, password }))
+    );
+    const before = await app.app.request(`/api/v1/presentations/${w2Deck}`, {
+      headers: { cookie, 'x-workspace-id': w2 }
+    });
+    expect(before.status).toBe(401); // no membership → no principal in W2
+
+    // The public lookup stays pending-only: the swept token resolves nothing
+    // there (no deck metadata for used tokens)…
+    expect((await getFresh(`/api/v1/collaborators/lookup?token=${w2Token}`)).status).toBe(404);
+
+    // …and an anonymous claim, or another user's claim, stays 404 too.
+    expect((await app.app.request('/api/v1/collaborators/claim', json({ token: w2Token }))).status).toBe(404);
+    const strangerClaim = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token: w2Token }, { cookie: ownerCookie })
+    );
+    expect(strangerClaim.status).toBe(404);
+
+    // The owning user's claim reads as SUCCESS and mints the membership.
+    const second = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token: w2Token }, { cookie })
+    );
+    expect(second.status).toBe(200);
+    const body = await readJson(second);
+    expect(body.workspaceId).toBe(w2);
+    expect(body.collaborator.status).toBe('active');
+
+    const [w2Membership] = await app.db.db
+      .select({
+        role: workspaceMembers.role,
+        origin: workspaceMembers.origin,
+        isActive: workspaceMembers.isActive
+      })
+      .from(workspaceMembers)
+      .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, w2)));
+    expect(w2Membership).toMatchObject({ role: 'member', origin: 'guest', isActive: true });
+
+    // The deck is reachable now.
+    const after = await app.app.request(`/api/v1/presentations/${w2Deck}`, {
+      headers: { cookie, 'x-workspace-id': w2 }
+    });
+    expect(after.status).toBe(200);
+
+    // A REVOKED swept grant does not resurrect through this path.
+    await app.app.request(`/api/v1/presentations/${w2Deck}/collaborators/${w2Invite.collaborator.id}`, {
+      method: 'DELETE',
+      headers: { cookie: o2Cookie }
+    });
+    const revokedClaim = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token: w2Token }, { cookie })
+    );
+    expect(revokedClaim.status).toBe(404);
+  });
+});
+
 describe('claim by an EXISTING account (template invitation semantics: explicit claim, never auto-activate)', () => {
   it('unauthenticated claim for an existing email → 409 account_exists; signed-in claim succeeds (no verified flip on the copyable token)', async () => {
     const secondDeck = await createDeck('Second Deck');

@@ -16,7 +16,12 @@ import type { PlatformRegistry } from '../platform/registry.js';
 import type { AuditService } from '../audit/service.js';
 import { buildCollaboratorInviteEmail } from '../email/templates.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
-import { CollaboratorError, collaboratorToWire, type CollaboratorService } from '../collaborators/service.js';
+import {
+  CollaboratorError,
+  collaboratorToWire,
+  type CollaboratorClaimMatch,
+  type CollaboratorService
+} from '../collaborators/service.js';
 
 /**
  * Per-deck collaborators (Phase 5): the deck-scoped management routes
@@ -224,57 +229,99 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
 
   api.openapi(collaboratorClaimRoute, async (c) => {
     const body = c.req.valid('json');
+
+    // Resolve the grant. Primary: the live PENDING lookup (what the public
+    // lookup answers too). Fallback — the G1 cross-request residual (Phase
+    // 6): a grant the user.created sweep flipped to ACTIVE in an EARLIER
+    // request (signup through a workspace invitation with a sibling grant
+    // elsewhere; the cloud SSO-first claim flow, where JIT login sweeps
+    // before this POST arrives) is invisible to the pending-only lookup.
+    // It resolves here ONLY for a session of the very user the sweep
+    // claimed it for — everyone else keeps the exact 404 an invalid token
+    // gets, so used tokens leak nothing. The fallback must run the SAME
+    // membership block below: the sweep flips grants but never mints
+    // memberships, and without one the deck is unreachable (the reason
+    // this claim reads as success, not replay).
+    let grant: CollaboratorClaimMatch['grant'];
+    let viaEmailToken: boolean;
+    /** Set iff the fallback resolved: the session user who owns the grant. */
+    let sweptOwnerId: string | null = null;
     const match = await collaborators.findLiveByClaimToken(body.token);
-    if (!match) return c.json(err('not_found', 'Invite not found or no longer valid'), 404);
-    const { grant, viaEmailToken } = match;
+    if (match) {
+      ({ grant, viaEmailToken } = match);
+    } else {
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      const owned = session?.user
+        ? await collaborators.findActiveByClaimTokenFor(body.token, session.user.id)
+        : null;
+      if (!owned) return c.json(err('not_found', 'Invite not found or no longer valid'), 404);
+      ({ grant, viaEmailToken } = owned);
+      sweptOwnerId = session!.user.id;
+    }
+
     // A grant to a deleted deck is dead: never mint accounts/memberships for it.
     const deck = await presentations.get(grant.workspaceId, grant.presentationId);
     if (!deck) return c.json(err('not_found', 'Invite not found or no longer valid'), 404);
 
-    const [account] = await db
-      .select({ id: userTable.id, emailVerified: userTable.emailVerified })
-      .from(userTable)
-      .where(eq(userTable.email, grant.email))
-      .limit(1);
-
     let userId: string;
     let alreadyVerified = false;
-    if (account) {
-      // Existing account: the caller must BE that account (signed in).
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      if (!session?.user || session.user.email !== grant.email) {
-        return c.json(
-          err('account_exists', 'An account with this email exists — sign in with it, then claim again'),
-          409
-        );
-      }
-      userId = session.user.id;
-      alreadyVerified = account.emailVerified;
+    if (sweptOwnerId) {
+      // Cross-request G1 path: the account provably exists (it owns the
+      // grant) and the caller IS it — no account creation, no email gate.
+      userId = sweptOwnerId;
+      const [self] = await db
+        .select({ emailVerified: userTable.emailVerified })
+        .from(userTable)
+        .where(eq(userTable.id, userId))
+        .limit(1);
+      alreadyVerified = self?.emailVerified ?? false;
     } else {
-      if (!body.name || !body.password) {
-        return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
-      }
-      try {
-        // `user.created` is emitted by the identity layer's database hook
-        // (identity/better-auth.ts) — never from call sites like this one.
-        // That hook's boot sweep may activate THIS grant before our own
-        // claim() below runs; claim() is idempotent for the same user.
-        const created = await auth.api.signUpEmail({
-          body: { email: grant.email, password: body.password, name: body.name }
-        });
-        userId = created.user.id;
-      } catch (e) {
-        // Two concurrent claims of one invite can both pass the account
-        // lookup above and race signUpEmail; the DB's unique email makes
-        // exactly ONE account — map the loser to the same clean 409 the
-        // account-exists branch answers instead of an uncaught 500.
-        if (isDuplicateAccountError(e)) {
+      const [account] = await db
+        .select({ id: userTable.id, emailVerified: userTable.emailVerified })
+        .from(userTable)
+        .where(eq(userTable.email, grant.email))
+        .limit(1);
+
+      if (account) {
+        // Existing account: the caller must BE that account (signed in).
+        const session = await auth.api.getSession({ headers: c.req.raw.headers });
+        if (!session?.user || session.user.email !== grant.email) {
           return c.json(
             err('account_exists', 'An account with this email exists — sign in with it, then claim again'),
             409
           );
         }
-        throw e;
+        userId = session.user.id;
+        alreadyVerified = account.emailVerified;
+      } else {
+        if (!body.name || !body.password) {
+          return c.json(
+            err('credentials_required', 'Provide name and password to create your account'),
+            400
+          );
+        }
+        try {
+          // `user.created` is emitted by the identity layer's database hook
+          // (identity/better-auth.ts) — never from call sites like this one.
+          // That hook's boot sweep may activate THIS grant before our own
+          // claim() below runs; claim() is idempotent for the same user.
+          const created = await auth.api.signUpEmail({
+            body: { email: grant.email, password: body.password, name: body.name }
+          });
+          userId = created.user.id;
+        } catch (e) {
+          // Two concurrent claims of one invite can both pass the account
+          // lookup above and race signUpEmail; the DB's unique email makes
+          // exactly ONE account — map the loser to the same clean 409 the
+          // account-exists branch answers instead of an uncaught 500.
+          if (isDuplicateAccountError(e)) {
+            return c.json(
+              err('account_exists', 'An account with this email exists — sign in with it, then claim again'),
+              409
+            );
+          }
+          throw e;
+        }
       }
     }
 

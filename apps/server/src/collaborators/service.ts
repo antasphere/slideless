@@ -148,16 +148,15 @@ export class CollaboratorService {
    * Find a live (pending, unrevoked, unexpired) grant by raw claim token —
    * either the copyable-link token or the emailed one — and report which.
    *
-   * PENDING-ONLY by design, which bounds what the G1 idempotent `claim()`
-   * covers: the claim endpoint survives the user.created sweep only when
-   * the sweep fires INSIDE that same request (its lookup ran while the
-   * grant was still pending). A grant swept to active in an EARLIER request
-   * (sibling grant at signup; the cloud edition's SSO-first claim page,
-   * where JIT login sweeps before the claim POST — binding plan §5) is
-   * invisible here, so that claim answers 404 and mints no membership.
-   * Phase 6 must extend the CLAIM path (not the public lookup, which would
-   * leak deck metadata for used tokens) to resolve active grants owned by
-   * the calling session's user.
+   * PENDING-ONLY by design: this feeds the PUBLIC lookup (the claim page's
+   * pre-auth resolve), and widening it to active grants would leak deck
+   * metadata (title, invitee email) to anyone replaying an already-used
+   * token. The cross-request G1 residual — a grant swept to active in an
+   * EARLIER request (sibling grant at signup; the cloud SSO-first claim
+   * page, where JIT login sweeps before the claim POST — binding plan §5)
+   * — is resolved on the CLAIM path only, via
+   * {@link findActiveByClaimTokenFor}, which is keyed to the owning user's
+   * session and therefore leaks nothing.
    */
   async findLiveByClaimToken(token: string): Promise<CollaboratorClaimMatch | null> {
     const hash = hashToken(token);
@@ -174,6 +173,39 @@ export class CollaboratorService {
       .limit(1);
     if (!row) return null;
     if (!row.claimExpiresAt || row.claimExpiresAt.getTime() <= Date.now()) return null;
+    return { grant: row, viaEmailToken: row.claimEmailTokenHash === hash };
+  }
+
+  /**
+   * CLAIM-PATH companion to {@link findLiveByClaimToken} (the G1
+   * cross-request fix, Phase 6): resolve an ACTIVE, unrevoked grant by raw
+   * claim token, but ONLY when the grant is already owned by `userId`. A
+   * grant the user.created sweep flipped in an EARLIER request (signup via
+   * a workspace invitation with a sibling grant elsewhere; the cloud
+   * SSO-first claim flow, where JIT login sweeps before the claim POST)
+   * is invisible to the pending-only lookup — without this, that claim
+   * answered 404 and the membership that makes the deck reachable was
+   * never minted. Keying on the presented session's user id is what makes
+   * this safe to expose on the claim endpoint: to anyone but the sweep's
+   * own beneficiary the token stays indistinguishable from an invalid one.
+   * No expiry check — claimExpiresAt bounds PENDING grants only; an active
+   * grant lives until revoked (invariant of the claim/revoke lifecycle).
+   */
+  async findActiveByClaimTokenFor(token: string, userId: string): Promise<CollaboratorClaimMatch | null> {
+    const hash = hashToken(token);
+    const [row] = await this.db
+      .select()
+      .from(collaborators)
+      .where(
+        and(
+          or(eq(collaborators.claimTokenHash, hash), eq(collaborators.claimEmailTokenHash, hash)),
+          eq(collaborators.status, 'active'),
+          isNull(collaborators.revokedAt),
+          eq(collaborators.userId, userId)
+        )
+      )
+      .limit(1);
+    if (!row) return null;
     return { grant: row, viaEmailToken: row.claimEmailTokenHash === hash };
   }
 
