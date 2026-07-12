@@ -2,6 +2,7 @@
   "name": "@antasphere/slideless",
   "version": "0.2.0",
   "description": "The Slideless CLI — push, share, pull, and preview decks on a Slideless instance",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
