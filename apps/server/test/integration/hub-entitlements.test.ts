@@ -178,6 +178,7 @@ describe('org suspension gate (D5)', () => {
       name: 'Sam',
       workspaceId: 'w',
       role: 'owner' as const,
+      origin: 'hub' as const,
       via: 'session' as const,
       scopes: null,
       accountRef: ORG_GONE

@@ -13,7 +13,7 @@ import { FileTooLargeError } from '../files/service.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
 import { isUuid } from '../pagination.js';
-import { requireAuth } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
@@ -49,6 +49,18 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
 
   api.use('/files', requireAuth());
   api.use('/files/*', requireAuth());
+  // Guest capability limit (D2, both editions): the generic files surface is
+  // WORKSPACE data end-to-end (ADR 006 — list/read/delete span every blob in
+  // the workspace, deck assets included, with no per-deck authorization).
+  // For ordinary members that posture is a deliberate ADR 013 divergence;
+  // for an external guest it would be a whole-tenant read/write channel that
+  // bypasses the per-deck grant model — reads included: GET /files/{id}/content
+  // serves ANY workspace blob, so leaving reads open would hand a guest the
+  // content of decks they were never invited to. Guests push and pull deck
+  // bytes through the ADR 013-gated presentation routes instead
+  // (/presentations/assets, /presentations/{id}/assets/{sha256}).
+  api.use('/files', requireNonGuest());
+  api.use('/files/*', requireNonGuest());
 
   api.openapi(filesListRoute, async (c) => {
     const principal = c.get('principal')!;

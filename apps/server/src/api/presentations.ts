@@ -47,7 +47,7 @@ import {
 } from '../sharing/service.js';
 import { hashViewerPassword } from '../sharing/password.js';
 import { annotationToWire, type AnnotationService } from '../annotations/service.js';
-import { requireAuth } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
 
 /**
  * Presentation domain routes (ADR 011). Phase 3: the upload + versioning
@@ -114,6 +114,16 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   api.use('/presentations', requireAuth());
   api.use('/presentations/*', requireAuth());
   api.use('/annotations', requireAuth());
+  // Guest capability limit (D2, both editions): deck CREATION is a
+  // workspace-level act — a guest invited to review one deck must not mint
+  // decks in the host workspace. The gate covers the whole create pipeline
+  // (session reserve + commit); everything a guest's grant legitimizes —
+  // asset upload/precheck for pushes, version commits, share tokens,
+  // annotations — stays per-deck-gated by ADR 013's canWrite and is
+  // untouched. Deck creation in a guest's OWN workspace is unaffected: the
+  // principal there resolves from a non-guest membership.
+  api.use('/presentations/uploads', requireNonGuest());
+  api.use('/presentations/uploads/*', requireNonGuest());
 
   // ── Upload (push protocol) ─────────────────────────────────────────────────
   // Literal-segment siblings of /presentations/{id} first (see LESSONS.md on

@@ -19,7 +19,7 @@ import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { AuditService } from '../audit/service.js';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
-import { requireAuth, requireRole } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
 import { rateLimit, type ClientIpFn, type RateLimiters } from '../middleware/rate-limit.js';
 
 /**
@@ -90,6 +90,12 @@ export function registerExportRoutes(api: OpenAPIHono, deps: ExportRouteDeps): v
     })
   );
   api.use('/workspace/export', requireAuth());
+  // Guest capability limit (D2): the whole-workspace export is the named
+  // workspace-scope surface guests must never reach. Defense in depth in
+  // front of the admin gate — a guest is minted role 'member' and the role
+  // is locked (api/members.ts), but export is exactly the surface where a
+  // second, origin-keyed wall is cheap and the failure catastrophic.
+  api.use('/workspace/export', requireNonGuest());
   api.use('/workspace/export', requireRole('admin'));
 
   api.openapi(workspaceExportRoute, async (c) => {

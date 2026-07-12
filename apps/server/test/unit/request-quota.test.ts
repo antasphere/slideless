@@ -20,6 +20,7 @@ function principal(overrides: Partial<Principal> = {}): Principal {
     name: 'U',
     workspaceId: 'ws-1',
     role: 'member',
+    origin: 'local',
     via: 'session',
     scopes: null,
     ...overrides

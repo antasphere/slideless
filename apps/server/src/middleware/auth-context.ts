@@ -223,6 +223,37 @@ export function requireAuth(): MiddlewareHandler {
   };
 }
 
+/**
+ * Route guard (D2, docs/federation.md P6): an `origin='guest'` membership
+ * belongs to an EXTERNAL per-deck collaborator — it exists so the platform
+ * can resolve them to a principal at all, not to make them a workspace
+ * actor. Guests keep every ADR 013 per-deck surface their grant opens
+ * (read, version push, share tokens, annotations on THAT deck) but are
+ * refused deck creation and workspace-level surfaces on BOTH editions.
+ * Judges the resolved principal, so sessions, API keys, and OAuth bearers
+ * all pass the same gate. 403 — the surfaces this guards are flat,
+ * documented workspace surfaces, not probeable per-deck resources, so the
+ * ADR 013 hide-existence 404 posture does not apply here (same stance as
+ * requireRole).
+ */
+export function requireNonGuest(): MiddlewareHandler {
+  return async (c, next) => {
+    const principal = c.get('principal');
+    if (!principal) {
+      return apiError(c, 401, 'unauthenticated', 'Authentication required');
+    }
+    if (principal.origin === 'guest') {
+      return apiError(
+        c,
+        403,
+        'guest_forbidden',
+        'Guest access is limited to the decks you were invited to'
+      );
+    }
+    return next();
+  };
+}
+
 const ROLE_RANK = { member: 0, admin: 1, owner: 2 } as const;
 
 /** Route guard: 403 below the required role. */

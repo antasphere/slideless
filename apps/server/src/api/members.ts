@@ -13,7 +13,7 @@ import { workspaceMembers, user as userTable, type Db } from '@slideless/db';
 import type { Auth } from '../identity/better-auth.js';
 import { isLastOwnerDbError, LastOwnerError, type AccountDeletionService } from '../accounts/deletion.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
-import { requireAuth, requireRole } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
 
 export interface MemberRouteDeps {
   db: Db;
@@ -47,6 +47,11 @@ const toWire = (m: {
 export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): void {
   const { db, auth, publicBaseUrl, accountDeletion } = deps;
   api.use('/members', requireAuth());
+  // Guest capability limit (D2, both editions): the member roster (names +
+  // emails of the whole team) is a workspace-level surface. A guest is an
+  // external party invited to ONE deck — the host tenant's directory is not
+  // theirs to read. Per-deck surfaces their grant opens are untouched.
+  api.use('/members', requireNonGuest());
   api.openapi(membersListRoute, async (c) => {
     const principal = c.get('principal')!;
     const { cursor, limit } = c.req.valid('query');
@@ -98,6 +103,7 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
         id: workspaceMembers.id,
         userId: workspaceMembers.userId,
         role: workspaceMembers.role,
+        origin: workspaceMembers.origin,
         isActive: workspaceMembers.isActive
       })
       .from(workspaceMembers)
@@ -107,6 +113,20 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
 
     if (target.userId === principal.userId && patch.isActive === false) {
       return c.json(err('cannot_deactivate_self', 'You cannot deactivate yourself'), 400);
+    }
+    // Guest role-lock (D2): a guest row is 'member' by construction and the
+    // guest capability limits key on origin, which no surface upgrades —
+    // promoting one would mint a workspace admin the guest gates still
+    // refuse deck creation to (an incoherent half-state), and on cloud an
+    // administrator the hub knows nothing about. To empower the person,
+    // invite them as a real member; the claim path preserves that row's
+    // origin. Deactivate/reactivate stays available — cutting a guest off
+    // entirely is a legitimate admin act.
+    if (target.origin === 'guest' && patch.role && patch.role !== target.role) {
+      return c.json(
+        err('guest_role_locked', 'A guest membership cannot change role — invite them as a member instead'),
+        403
+      );
     }
     // Only owners touch owners (grant or revoke).
     if ((target.role === 'owner' || patch.role === 'owner') && principal.role !== 'owner') {

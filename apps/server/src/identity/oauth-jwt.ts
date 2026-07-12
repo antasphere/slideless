@@ -95,6 +95,9 @@ export class OauthJwtVerifier {
     const rows = await this.db
       .select({
         role: workspaceMembers.role,
+        // Guest capability limits (D2) bind OAuth bearers too — the origin
+        // of the live membership, never a token claim.
+        origin: workspaceMembers.origin,
         workspaceId: workspaceMembers.workspaceId,
         accountRef: workspaces.centralAccountId,
         email: userTable.email,
@@ -122,6 +125,7 @@ export class OauthJwtVerifier {
       name: row.name,
       workspaceId: row.workspaceId,
       role: row.role,
+      origin: row.origin,
       via: 'oauth',
       scopes: new Set(
         String(typeof payload.scope === 'string' ? payload.scope : '')

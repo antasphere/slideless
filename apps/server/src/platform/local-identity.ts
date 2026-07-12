@@ -52,6 +52,7 @@ export class LocalIdentityProvider implements IdentityProvider {
     const [row] = await this.db
       .select({
         memberRole: workspaceMembers.role,
+        memberOrigin: workspaceMembers.origin,
         workspaceId: workspaceMembers.workspaceId,
         accountRef: workspaces.centralAccountId
       })
@@ -76,6 +77,7 @@ export class LocalIdentityProvider implements IdentityProvider {
       name: session.user.name,
       workspaceId: row.workspaceId,
       role: row.memberRole,
+      origin: row.memberOrigin,
       via: 'session',
       scopes: null,
       ...(row.accountRef ? { accountRef: row.accountRef } : {})

@@ -125,6 +125,10 @@ export class ApiKeyService {
     const [member] = await this.db
       .select({
         role: workspaceMembers.role,
+        // Guest capability limits (D2) bind machine credentials too: a key
+        // minted by a guest carries the guest origin of the membership that
+        // backs it — requireNonGuest judges keys and sessions alike.
+        origin: workspaceMembers.origin,
         email: userTable.email,
         name: userTable.name,
         // Central account id when the workspace is a hub projection — the
@@ -158,6 +162,7 @@ export class ApiKeyService {
       name: member.name,
       workspaceId: row.workspaceId,
       role: member.role,
+      origin: member.origin,
       via: 'api_key',
       scopes: new Set(row.scopes),
       apiKeyId: row.id,

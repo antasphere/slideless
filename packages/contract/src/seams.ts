@@ -46,6 +46,18 @@ export interface Principal {
   name: string;
   workspaceId: string;
   role: 'owner' | 'admin' | 'member';
+  /**
+   * How the resolved membership came to exist (D2, docs/federation.md §P6):
+   * 'local' = ordinary membership (setup, workspace invitation), 'hub' = a
+   * hub-org projection (cloud SSO), 'guest' = an external per-deck
+   * collaborator minted by the claim path. Origin is a CAPABILITY axis, not
+   * a role: a guest resolves like any member but is refused deck creation
+   * and workspace-level surfaces (requireNonGuest) on BOTH editions — their
+   * access is the per-deck grant (ADR 013), which stays untouched. Every
+   * credential path (session, API key, OAuth bearer) reads it live from the
+   * membership row backing the request's workspace.
+   */
+  origin: 'local' | 'hub' | 'guest';
   via: 'session' | 'api_key' | 'oauth';
   /** Scope allowlist for machine principals; null = full role-based (session). */
   scopes: ReadonlySet<string> | null;
