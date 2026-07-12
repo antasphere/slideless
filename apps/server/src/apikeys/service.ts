@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { apiKeys, workspaceMembers, user as userTable, type Db } from '@slideless/db';
+import { apiKeys, workspaceMembers, workspaces, user as userTable, type Db } from '@slideless/db';
 import type { Principal } from '@slideless/contract';
 import type { PepperRegistry } from './peppers.js';
 
@@ -126,10 +126,15 @@ export class ApiKeyService {
       .select({
         role: workspaceMembers.role,
         email: userTable.email,
-        name: userTable.name
+        name: userTable.name,
+        // Central account id when the workspace is a hub projection — the
+        // Principal.accountRef every credential path carries uniformly, and
+        // what the cloud edition's hub gates key on (docs/federation.md P4).
+        accountRef: workspaces.centralAccountId
       })
       .from(workspaceMembers)
       .innerJoin(userTable, eq(workspaceMembers.userId, userTable.id))
+      .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
       .where(
         and(
           eq(workspaceMembers.userId, row.createdBy),
@@ -156,7 +161,8 @@ export class ApiKeyService {
       via: 'api_key',
       scopes: new Set(row.scopes),
       apiKeyId: row.id,
-      ...(row.expiresAt ? { apiKeyExpiresAt: row.expiresAt.toISOString() } : {})
+      ...(row.expiresAt ? { apiKeyExpiresAt: row.expiresAt.toISOString() } : {}),
+      ...(member.accountRef ? { accountRef: member.accountRef } : {})
     };
   }
 }

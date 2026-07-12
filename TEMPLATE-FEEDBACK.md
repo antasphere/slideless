@@ -472,6 +472,43 @@ Promise<Response>) => Promise<Response>` seam so editions/products
     template's future federation module and document the
     break-glass/emailVerified coupling next to the break-glass code.
 
+## 13. Hub gates: entitlements + membership re-assertion (cloud-binding Phase 4)
+
+Found while binding the org-suspension gate and the H2 membership
+re-assertion (Slideless `identity/hub-status.ts` + `hub-gate.ts`, ADR 016).
+
+57. **`authContext` has no post-resolution seam — an edition cannot veto an
+    otherwise-valid principal.** The template's registry seams cover WHO the
+    caller is (IdentityProvider) and WHAT they may consume
+    (EntitlementService), but nothing covers "this principal resolved fine
+    and must still be refused / re-scoped on THIS request" — exactly what a
+    federated suspension gate or membership re-assertion needs, for all
+    three credential kinds at once (sessions resolve via the identity seam,
+    but API keys and OAuth bearers resolve in `authContext` directly, so an
+    identity-seam-only gate silently misses machine credentials). Slideless
+    added an optional `principalGate?: (principal) => {ok} | {ok:false,
+    status, code, message}` hook to `authContext` (run after quota, before
+    the scope gate; `{ok:true, role}` re-scopes the live request's role).
+    Fix: upstream the hook as a first-class chassis seam — it is tiny,
+    oss-inert, and every cloud binding will need it.
+58. **`Principal.accountRef` was populated inconsistently across credential
+    paths.** The session provider and the OAuth-JWT resolver joined
+    `workspaces.centralAccountId` onto the principal; the API-key resolver
+    did not — so any edition feature keyed on `accountRef` (the entire
+    Phase 4 gate family) silently skips API-key principals until someone
+    notices. Slideless added the missing join. Fix: populate `accountRef`
+    in ALL three resolvers in the template, or centralize principal
+    enrichment so a new field cannot fork per path.
+59. **`createMetrics` runs late in boot, so edition seams cannot register
+    their counters at construction.** The Prometheus `Registry` is created
+    after the registry seams are bound; Slideless works around it by
+    constructing hub-gate counters with `registers: []` and calling
+    `registry.registerMetric(...)` post-hoc in boot. Workable, but the
+    pattern is easy to miss and unregistered counters fail silently (they
+    count into nothing visible). Fix: either build the metrics registry
+    before the seam binding or have `bindEditionSeams` return metrics for
+    boot to attach (document the contract).
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

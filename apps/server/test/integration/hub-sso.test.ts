@@ -1,14 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import {
-  createDatabase,
-  createTestApp,
-  extractCookie,
-  readJson,
-  startPostgres,
-  type TestApp
-} from './helpers.js';
+import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
 import { FakeHub, type HubTokenOverrides, type HubUserFixture } from '../fake-hub.js';
+import * as sso from './sso-helpers.js';
 
 /**
  * "Sign in with Antasphere" — Phase 3 (docs/federation.md, ADR 015),
@@ -60,57 +54,12 @@ function cloudEnv() {
   };
 }
 
-/**
- * Initiate the sign-in leg: returns the `state` plus the signed state
- * cookie the callback must present (better-auth's double-submit check —
- * a browser carries it automatically).
- */
-let ipCounter = 0;
-/** Unique per-dance client IP — the login limiter (10/15min per IP) must never gate the suite. */
-const nextIp = () => `10.99.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
-
-async function ssoInitiate(app: TestApp): Promise<{ state: string; stateCookie: string }> {
-  const init = json({ providerId: 'antasphere', callbackURL: '/' });
-  const signIn = await app.app.request('/api/v1/auth/sign-in/oauth2', {
-    ...init,
-    headers: { ...init.headers, 'x-forwarded-for': nextIp() }
-  });
-  expect(signIn.status).toBe(200);
-  const { url } = await readJson(signIn);
-  const state = new URL(url).searchParams.get('state')!;
-  expect(state).toBeTruthy();
-  return { state, stateCookie: extractCookie(signIn) };
-}
-
-/** Initiate the SSO dance and drive the callback with a hub-minted code. */
-async function ssoDance(app: TestApp, fixture: HubUserFixture): Promise<Response> {
-  const { state, stateCookie } = await ssoInitiate(app);
-  const code = hub.mintCode(fixture);
-  return app.app.request(
-    `/api/v1/auth/oauth2/callback/antasphere?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-    { headers: { cookie: stateCookie } }
-  );
-}
-
-/** A successful dance: 302 to the callbackURL with a live session cookie. */
-async function ssoLogin(app: TestApp, fixture: HubUserFixture): Promise<string> {
-  const res = await ssoDance(app, fixture);
-  expect(res.status).toBe(302);
-  expect(res.headers.get('location')).toBe('/');
-  return extractCookie(res);
-}
-
-/** Assert a callback response is a session-less redirect carrying an error code. */
-async function expectFailedLogin(app: TestApp, res: Response, errorContains: string): Promise<void> {
-  expect(res.status).toBe(302);
-  expect(res.headers.get('location')).toContain(errorContains);
-  const setCookie = res.headers.get('set-cookie');
-  if (setCookie) {
-    // Whatever cookies the failure path left behind must not resolve a session.
-    const me = await app.app.request('/api/v1/me', { headers: { cookie: extractCookie(res) } });
-    expect(me.status).toBe(401);
-  }
-}
+// The dance itself lives in sso-helpers.ts (shared with the P4
+// hub-entitlements suite); these wrappers just bind this suite's hub.
+const ssoInitiate = (app: TestApp) => sso.ssoInitiate(app);
+const ssoDance = (app: TestApp, fixture: HubUserFixture) => sso.ssoDance(app, hub, fixture);
+const ssoLogin = (app: TestApp, fixture: HubUserFixture) => sso.ssoLogin(app, hub, fixture);
+const expectFailedLogin = sso.expectFailedLogin;
 
 describe('cloud edition: the SSO entrance', () => {
   let app: TestApp;

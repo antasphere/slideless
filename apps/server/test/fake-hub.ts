@@ -56,6 +56,26 @@ export class FakeHub {
   /** Body of the most recent token request — pins the `resource` passthrough. */
   lastTokenRequest: URLSearchParams | null = null;
 
+  // ── Phase 4: the accounts:status machine surface ─────────────────────
+  /**
+   * Org status per hub workspace id. Unset = 'active' (a hub knows the orgs
+   * its own users SSO from), so login-focused suites need no fixtures;
+   * 'missing' answers 404 (org deleted / unknown — a definitive deny).
+   */
+  readonly orgStatuses = new Map<string, 'active' | 'suspended' | 'missing'>();
+  /**
+   * H2 member status per `${workspaceId}:${sub}`. Unset = `{active:true}`
+   * with NO role (the tool keeps its local role), so login-focused suites
+   * are undisturbed; the real H2 answers `{active:false}` for unknown pairs.
+   */
+  readonly members = new Map<string, { active: boolean; role?: string }>();
+  /** Failure injection for BOTH status endpoints. */
+  statusMode: 'ok' | 'http500' | 'network' = 'ok';
+  /** false = the member-status route 404s wholesale (an older hub without H2). */
+  h2 = true;
+  /** Every status-surface request: path + presented Authorization header. */
+  readonly statusRequests: Array<{ path: string; auth: string | null }> = [];
+
   private constructor(
     private readonly server: Server,
     readonly issuer: string,
@@ -109,6 +129,31 @@ export class FakeHub {
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/auth/jwks') {
       return sendJson(res, 200, { keys: this.keys.map((k) => ({ ...k.publicJwk, kid: k.kid })) });
+    }
+    // ── Phase 4: GET /accounts/{ws}/status and /accounts/{ws}/members/{sub}/status
+    const orgStatus = /^\/api\/v1\/accounts\/([^/]+)\/status$/.exec(url.pathname);
+    const memberStatus = /^\/api\/v1\/accounts\/([^/]+)\/members\/([^/]+)\/status$/.exec(url.pathname);
+    if (req.method === 'GET' && (orgStatus || memberStatus)) {
+      this.statusRequests.push({ path: url.pathname, auth: req.headers.authorization ?? null });
+      if (this.statusMode === 'network') {
+        req.destroy(); // mid-request connection failure, no HTTP answer
+        return;
+      }
+      if (this.statusMode === 'http500') return sendJson(res, 500, { error: { code: 'internal' } });
+      if (orgStatus) {
+        const status = this.orgStatuses.get(decodeURIComponent(orgStatus[1]!)) ?? 'active';
+        if (status === 'missing') return sendJson(res, 404, { error: { code: 'not_found' } });
+        return sendJson(res, 200, { status, kind: 'organization' });
+      }
+      if (!this.h2) return sendJson(res, 404, { error: { code: 'not_found' } });
+      const key = `${decodeURIComponent(memberStatus![1]!)}:${decodeURIComponent(memberStatus![2]!)}`;
+      const member = this.members.get(key) ?? { active: true };
+      // Contract shape (hub delta H2): role present ONLY while active.
+      return sendJson(
+        res,
+        200,
+        member.active ? { active: true, ...(member.role ? { role: member.role } : {}) } : { active: false }
+      );
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/auth/oauth2/token') {
       const body = new URLSearchParams(await readBody(req));

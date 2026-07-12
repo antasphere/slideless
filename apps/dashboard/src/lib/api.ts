@@ -59,6 +59,11 @@ export { PlatformApiError };
 export function errorMessage(e: unknown, fallback = t('common.genericError')): string {
   if (e instanceof PlatformApiError) {
     if (e.status === 429) return t('common.tooManyAttempts');
+    // Hub-gate refusals (cloud edition): localized, they can hit any call
+    // mid-session when the org gets suspended or removed on the hub.
+    if (e.code === 'account_suspended') return t('common.accountSuspended');
+    if (e.code === 'hub_unavailable') return t('common.hubUnavailable');
+    if (e.code === 'membership_revoked') return t('common.membershipRevoked');
     return e.message || fallback;
   }
   if (e instanceof Error) return e.message;

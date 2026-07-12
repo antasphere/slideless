@@ -31,9 +31,10 @@
 #      http://slideless.localhost:3310. It boots EDITION=cloud (Phase 2
 #      stub: local login still works; discovery already advertises the
 #      'antasphere' method).
-#   3. (Phase 4+) Mint a hub service key with the accounts:status scope and
-#      replace HUB_SERVICE_KEY below — the Phase 2/3 placeholder is never
-#      called.
+#   3. (Phase 4) Mint a hub service key with the accounts:status scope
+#      (POST /api/v1/api-keys as any hub member) and restart the app with
+#      FEDERATION_HUB_SERVICE_KEY=<ant_…> — the hub gates read it on every
+#      projected-workspace request (cached, docs/federation.md).
 #
 # The hub's TOOL_REGISTRY below seeds the OAuth client `tool-slideless-cloud`
 # at hub boot (look for "tool registry: client seeded" in `docker compose -f
@@ -126,9 +127,11 @@ services:
       - HUB_ISSUER_URL=http://hub.localhost:3300
       - HUB_CLIENT_ID=tool-slideless-cloud
       - HUB_CLIENT_SECRET=federation-dev-client-secret-0001
-      # Placeholder until Phase 4 (the EntitlementService is the only reader);
-      # mint a real accounts:status key on the hub and replace it then.
-      - HUB_SERVICE_KEY=ant_federation_dev_placeholder
+      # The hub-gate credential (Phase 4, docs/federation.md): mint a key on
+      # the local hub (POST /api/v1/api-keys, scopes ["accounts:status"]) and
+      # pass it as FEDERATION_HUB_SERVICE_KEY. With the placeholder, hub-gate
+      # checks fail closed for projected workspaces after the stale window.
+      - HUB_SERVICE_KEY=${FEDERATION_HUB_SERVICE_KEY:-ant_federation_dev_placeholder}
       - EMAIL_DRIVER=smtp
       - SMTP_URL=smtp://mailpit:1025
       - EMAIL_FROM=Slideless Federation Dev <dev@slideless.local>

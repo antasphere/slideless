@@ -35,6 +35,7 @@ import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-l
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from './observability/otel.js';
 import { bindEditionSeams } from './platform/edition.js';
+import type { HubStatusDials } from './identity/hub-status.js';
 import { AllowAllEntitlements } from './platform/entitlements.js';
 import { EventBus } from './platform/events.js';
 import { LocalIdentityProvider } from './platform/local-identity.js';
@@ -59,6 +60,12 @@ export interface BootOverrides {
    * recording the outbound mail.
    */
   email?: EmailDriver;
+  /**
+   * Shrinks the hub-gate cache dials (docs/federation.md P4) so integration
+   * tests can watch suspension/removal propagate in milliseconds. Production
+   * always runs the fixed D5/D3 values.
+   */
+  hubDials?: Partial<HubStatusDials>;
 }
 
 export interface BootResult {
@@ -333,28 +340,33 @@ export async function boot(
   // The edition split (docs/federation.md): the local defaults below are the
   // oss binding, passed through bindEditionSeams — the ONE place EDITION
   // decides what the registry gets. oss returns them untouched; cloud
-  // rebinds identity/entitlements as the federation phases land.
+  // rebinds identity/entitlements (plus the P4 principal gate + hub metrics,
+  // wired below where each belongs).
+  const seams = bindEditionSeams(
+    hub,
+    {
+      identity: new LocalIdentityProvider(
+        auth,
+        db.db,
+        Boolean(env.GOOGLE_CLIENT_ID),
+        email.delivers,
+        email.delivers, // self-serve password reset needs a delivering email driver
+        email.delivers // self-serve email change needs one too
+      ),
+      entitlements: new AllowAllEntitlements({
+        maxFileSizeMb: env.MAX_FILE_SIZE_MB,
+        apiRequestsPerMinute: env.API_RATE_LIMIT_PER_MINUTE,
+        apiRequestsBurstPerSecond: env.API_RATE_LIMIT_BURST
+      }),
+      usage: new PgBossUsageSink(jobs.boss, logger)
+    },
+    logger,
+    { db: db.db, audit, hubDials: overrides.hubDials }
+  );
   const registry = createRegistry({
-    ...bindEditionSeams(
-      hub,
-      {
-        identity: new LocalIdentityProvider(
-          auth,
-          db.db,
-          Boolean(env.GOOGLE_CLIENT_ID),
-          email.delivers,
-          email.delivers, // self-serve password reset needs a delivering email driver
-          email.delivers // self-serve email change needs one too
-        ),
-        entitlements: new AllowAllEntitlements({
-          maxFileSizeMb: env.MAX_FILE_SIZE_MB,
-          apiRequestsPerMinute: env.API_RATE_LIMIT_PER_MINUTE,
-          apiRequestsBurstPerSecond: env.API_RATE_LIMIT_BURST
-        }),
-        usage: new PgBossUsageSink(jobs.boss, logger)
-      },
-      logger
-    ),
+    identity: seams.identity,
+    entitlements: seams.entitlements,
+    usage: seams.usage,
     events,
     workspaces: new WorkspaceService(db.db)
   });
@@ -416,7 +428,11 @@ export async function boot(
     accountDeletion,
     sharing,
     collaborators: collaboratorService,
-    hubSso
+    hubSso,
+    // Cloud only (docs/federation.md P4): the post-resolution hub gate —
+    // org suspension + membership re-assertion — run by authContext on
+    // every authenticated request. undefined on oss.
+    principalGate: seams.principalGate
   });
 
   // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in
@@ -436,6 +452,9 @@ export async function boot(
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.
   const otel = await createOtel(env, logger);
   const metrics = createMetrics(db.db, jobs.boss);
+  // Cloud only: the hub-gate counters (fetch outcomes, stale/fail-closed
+  // serves) join the app registry so a degraded hub is visible on /metrics.
+  for (const metric of seams.hubMetrics ?? []) metrics.registry.registerMetric(metric);
 
   // MCP tools call the instance's own API in-process, forwarding the caller's
   // bearer — MCP is just another API client. The root app does not exist yet

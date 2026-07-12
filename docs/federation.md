@@ -21,9 +21,10 @@ binds the local defaults untouched; `cloud` rebinds the identity and
 entitlement seams.
 
 > **Phase status.** Phase 2 (env contract, edition binding seam, discovery,
-> dev harness, R7 guard) and **Phase 3 (the SSO entrance: "Sign in with
-> Antasphere", JIT provisioning, lazy org projection — this doc + ADR 015)**
-> are built. Hub entitlements are **Phase 4**; the CLI cross-tool exchange
+> dev harness, R7 guard), **Phase 3 (the SSO entrance: "Sign in with
+> Antasphere", JIT provisioning, lazy org projection — ADR 015)**, and
+> **Phase 4 (the hub gates: org suspension + membership re-assertion —
+> "The hub gates" below + ADR 016)** are built. The CLI cross-tool exchange
 > is **Phase 5**.
 
 ## Environment contract
@@ -161,6 +162,84 @@ SSO. A guard in the after-hook additionally refuses to merge two DIFFERENT
 hub identities onto one local user via a stale local email
 (`/login?error=sso_identity_conflict`, link undone — ADR 015).
 
+## The hub gates (Phase 4): suspension + membership re-assertion
+
+The SSO entrance asserts hub truth **at login** — but tool sessions live 365
+days and API keys/OAuth grants longer, so two things must hold *between*
+logins: a hub org that gets **suspended** must stop working here quickly,
+and a user **removed** from a hub org (or whose role changed) must lose/gain
+the corresponding access without waiting for their next login. Phase 4 adds
+two cached gates, both consuming the hub's `accounts:status` machine surface
+with `HUB_SERVICE_KEY` (`identity/hub-status.ts`), both keyed strictly off
+the workspace's `centralAccountId` — a workspace with **no projection** (the
+operator's setup workspace, local/guest ones) never talks to the hub at all.
+
+**Where they run.** `authContext` — the single credential resolver every
+`/api/v1` request passes through — runs an optional post-resolution
+`principalGate` (ADR 016). The cloud binding supplies it
+(`identity/hub-gate.ts`, wired by `bindEditionSeams`); oss wires nothing.
+Because the hook sits in the resolver rather than inside any one identity
+path, sessions, API keys, and OAuth bearers all pass the same gate — MCP
+tool calls included (they re-enter `/api/v1` in-process). The same
+suspension check also backs the `EntitlementService` seam
+(`HubEntitlementService` wraps the local caps), so metered actions carry the
+denial reason as defense in depth.
+
+### Gate 1 — org suspension (decision D5)
+
+`GET {hub}/api/v1/accounts/{centralAccountId}/status` → `{status, kind}`,
+cached **per org, 60 s TTL**. Answers and postures:
+
+| Hub answer | Verdict |
+| --- | --- |
+| `status: "active"` | allow (cached 60 s) |
+| `status: "suspended"` | **403 `account_suspended`** with the reason, enforced as soon as fetched |
+| `404` (org deleted/unknown) | **403 `account_suspended`** — same definitive deny |
+| network / timeout / 5xx / 401 / 403 | serve the **last known value stale up to 15 min** (from the last success), then **fail closed**: 403 `hub_unavailable` |
+
+The hot path never blocks on the hub once a value is cached: an expired
+entry is served stale while a single-flight refresh runs (enforcement bound
+≈ TTL + one round-trip), and during an outage re-probes are throttled
+(~15 s), so a down hub costs at most one timeout per org per window. A cold
+cache with an unreachable hub fails closed immediately. Counters
+(`hub_status_fetches_total`, `hub_status_degraded_total`) surface degraded
+serving on `/metrics`; the dashboard maps both denial codes to a localized
+(en/fr) full-page notice at `/suspended` and to toast copy mid-session.
+
+### Gate 2 — membership re-assertion (decisions D3/D11, hub delta H2)
+
+`GET {hub}/api/v1/accounts/{centralAccountId}/members/{hubUserId}/status` →
+`{active, role?}` (`hubUserId` = the SSO `sub` from the user's `antasphere`
+account link), re-asserted on a **per-(user, workspace) cache, ~5 min TTL**,
+for **`origin='hub'` membership rows ONLY** — `local`/`guest` rows are the
+tool's own business and are never re-asserted nor touched.
+
+- **`200 {active:false}` is the ONLY deactivation signal** (it covers
+  removed members, deactivated members, and deleted orgs alike). The gate
+  deactivates the local row (update keyed to `origin='hub'`), audits it
+  (`member.deactivate`, reason `hub_reassertion`, actor `system`), and
+  answers **401 `membership_revoked`**. The existing live-membership
+  re-check then locks the user out of sessions, API keys, and OAuth bearers
+  everywhere, instantly. Reactivation happens only at the next successful
+  SSO login (the projection upsert) — which the hub grants only to live
+  members.
+- **`200 {active:true, role}`**: a role delta syncs onto the local row and
+  applies to the very request that observed it (a demoted hub admin loses
+  admin surfaces on that request; a promoted member gains them).
+- **Everything else is inconclusive, fail open**: 401/403 (broken or
+  rotated service key — logged loudly, never a deactivation), 404 (a hub
+  without H2), 5xx, timeouts, malformed bodies. The row is kept and the
+  check retries at the next cache expiry.
+
+**Propagation bounds**: suspension ≤ ~60 s; removal/role change ≤ ~5 min —
+per replica (the caches are in-process; each replica converges within its
+own window).
+
+**Known bounds, on purpose**: anonymous share-link viewing (`/v/{secret}`)
+is not gated — it is not an authenticated workspace surface; revoke share
+tokens to cut it. The MCP transport handshake itself is not gated either;
+every MCP tool call is, since it re-enters `/api/v1`.
+
 ## The hub registry entry (what the HUB operator configures)
 
 The hub seeds first-party tool clients from its `TOOL_REGISTRY` env var
@@ -224,9 +303,12 @@ docker compose -f docker-compose.federation.yml down -v
   `http://hub.localhost:3300`, Slideless at
   `http://slideless.localhost:3310`). The hub logs
   `tool registry: client seeded` for `tool-slideless-cloud` at boot.
-- **Secrets are dev-only literals** in the compose file; the Slideless
-  `HUB_SERVICE_KEY` is a placeholder until Phase 4 (its only reader) — mint
-  a real `accounts:status` key on the local hub then.
+- **Secrets are dev-only literals** in the compose file. The Slideless
+  `HUB_SERVICE_KEY` (the hub-gate credential, Phase 4) defaults to a
+  placeholder: mint a real key on the local hub (`POST /api/v1/api-keys`
+  with `scopes: ["accounts:status"]` as any hub member) and restart the app
+  with `FEDERATION_HUB_SERVICE_KEY=<ant_…>`; until then the gates fail
+  closed for projected workspaces after the stale window.
 - The hub builds from a sibling checkout
   (`FEDERATION_HUB_DIR`, default `../../../../platform/hub`).
 
@@ -235,7 +317,7 @@ docker compose -f docker-compose.federation.yml down -v
 | Phase               | Builds on this scaffolding                                                                                                                                                   |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P3 — SSO entrance   | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021. |
-| P4 — entitlements   | `HubEntitlementService` using `HUB_SERVICE_KEY` against `GET {hub}/accounts/{id}/status`; H2 membership re-assertion, keyed to `origin='hub'` rows (syncs role + active).    |
+| P4 — hub gates      | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice. |
 | P5 — CLI cross-tool | `POST /api/v1/sso/cli-connect` verifying hub-minted 120s JWTs; hub H3 `/sso/tool-token`.                                                                                     |
 
 ## Related decisions
@@ -249,6 +331,11 @@ docker compose -f docker-compose.federation.yml down -v
 - [ADR 015 — hub SSO assertion handoff](decisions/015-hub-sso-assertion-handoff.md):
   how the verified org assertion crosses from token verification to the
   per-login projection hook, and why it is request-scoped (race analysis).
+- [ADR 016 — hub gates placement + postures](decisions/016-hub-gates-placement-and-postures.md):
+  why the suspension gate + membership re-assertion run as a post-resolution
+  hook in `authContext` (all three credential kinds, one seam), and the
+  deliberately asymmetric failure postures (fail-closed-after-grace for org
+  status, definitive-answer-only for deactivation).
 - The program-level design lives in the Codika workspace:
   `workspace/knowledge/initiatives/agent-tools-platform/slideless-cloud-binding-plan.md`
   (Slideless-specific) and `cloud-edition-binding-patterns.md` (the

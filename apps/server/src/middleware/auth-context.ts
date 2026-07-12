@@ -32,6 +32,19 @@ export function isPublicApiPath(path: string): boolean {
   return PUBLIC_API_PATHS.has(path) || path.startsWith('/api/v1/auth/');
 }
 
+/**
+ * An edition's post-resolution verdict on an otherwise-valid principal.
+ * `ok` with a `role` means "the caller's authoritative role just changed —
+ * run THIS request under it"; a refusal carries the exact wire error. The
+ * seam exists for the cloud edition's hub gates (org suspension + hub
+ * membership re-assertion, docs/federation.md P4); oss never wires one.
+ */
+export type PrincipalGateResult =
+  | { ok: true; role?: Principal['role'] }
+  | { ok: false; status: 401 | 403; code: string; message: string };
+
+export type PrincipalGate = (principal: Principal) => Promise<PrincipalGateResult>;
+
 export interface AuthContextDeps {
   registry: PlatformRegistry;
   /** Resolves `Bearer <prefix>_...` API keys. Wired in M2; absent = keys rejected. */
@@ -46,6 +59,13 @@ export interface AuthContextDeps {
   clientIp: ClientIpFn;
   /** General per-principal request quota (I3). Absent = no general limit. */
   requestQuota?: RequestQuotaService;
+  /**
+   * Post-resolution principal veto (cloud edition only). Runs here — in the
+   * single credential resolver — rather than inside any one identity path,
+   * so sessions, API keys, AND OAuth bearers all pass the same gate
+   * (docs/decisions/016). Absent (oss) = zero overhead, zero hub surface.
+   */
+  principalGate?: PrincipalGate | undefined;
 }
 
 /**
@@ -69,7 +89,8 @@ export function authContext({
   isApiKeyToken,
   keyFailureLimiter,
   clientIp,
-  requestQuota
+  requestQuota,
+  principalGate
 }: AuthContextDeps): MiddlewareHandler {
   return async (c, next) => {
     c.set('principal', null);
@@ -143,6 +164,23 @@ export function authContext({
         for (const [name, value] of quotaHeaderEntries(quota)) c.header(name, value);
         c.header('Retry-After', String(quota.retryAfterSeconds ?? Math.max(1, quota.resetSeconds)));
         return apiError(c, 429, 'rate_limited', 'API request quota exceeded, slow down');
+      }
+    }
+
+    // Edition principal gate (cloud: hub org-status + membership
+    // re-assertion, docs/federation.md P4). AFTER the quota — hammering a
+    // suspended org stays rate-bounded — and BEFORE the scope gate, so a
+    // definitive hub refusal wins over any per-endpoint outcome. Cache-first
+    // inside; the hub is never a hard round-trip in the hot path.
+    if (principal && principalGate) {
+      const verdict = await principalGate(principal);
+      if (!verdict.ok) {
+        return apiError(c, verdict.status, verdict.code, verdict.message);
+      }
+      // A freshly synced hub role applies to THIS request (D11): a demoted
+      // admin loses admin surfaces now, a promoted member gains them now.
+      if (verdict.role !== undefined && verdict.role !== principal.role) {
+        principal = { ...principal, role: verdict.role };
       }
     }
 

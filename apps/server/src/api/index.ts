@@ -13,7 +13,7 @@ import type { EmailDriver } from '../email/driver.js';
 import { isApiKeyToken } from '../apikeys/service.js';
 import { auditMiddleware, type AuditService } from '../audit/service.js';
 import { constantTimeEquals } from '../constant-time.js';
-import { authContext, requireAuth } from '../middleware/auth-context.js';
+import { authContext, requireAuth, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
 import { oauthPublicEndpoints } from '../middleware/oauth-public.js';
 import {
@@ -75,6 +75,12 @@ export interface ApiDeps {
    * verification to its after-hook (ADR 015).
    */
   hubSso?: HubSsoService | undefined;
+  /**
+   * Cloud edition only (P4): the post-resolution hub gate authContext runs —
+   * org suspension (cached, D5) + hub-membership re-assertion (cached, D3).
+   * Absent on oss: the middleware carries zero hub surface.
+   */
+  principalGate?: PrincipalGate | undefined;
 }
 
 /** Control-flow marker: the singleton claim lost (instance already set up). */
@@ -225,7 +231,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         entitlements: registry.entitlements,
         make: limiters.make,
         logger
-      })
+      }),
+      // Cloud edition's post-resolution veto (docs/federation.md P4);
+      // undefined on oss.
+      principalGate: deps.principalGate
     })
   );
 

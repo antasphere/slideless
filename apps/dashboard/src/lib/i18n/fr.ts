@@ -44,6 +44,17 @@ export const fr: Record<MessageKey, string> = {
   // ── Error page ───────────────────────────────────────────────────────
   'error.generic': 'Une erreur est survenue.',
 
+  // ── Notice « organisation suspendue » (édition cloud) ────────────────
+  'suspended.title': 'Organisation suspendue',
+  'suspended.body':
+    'Cette organisation est suspendue sur Antasphere, son espace de travail est donc indisponible ici. Contactez le propriétaire de votre organisation ou le support Antasphere pour rétablir l’accès.',
+  'suspended.unavailableTitle': 'Temporairement indisponible',
+  'suspended.unavailableBody':
+    'Le service de comptes Antasphere est injoignable depuis un certain temps, cet espace de travail est donc mis en pause par précaution. L’accès reprendra automatiquement dès son rétablissement.',
+  'common.accountSuspended': 'Cette organisation est suspendue sur Antasphere.',
+  'common.hubUnavailable': 'Le service de comptes Antasphere est injoignable — réessayez dans un instant.',
+  'common.membershipRevoked': 'Votre accès à cette organisation a été retiré sur Antasphere.',
+
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',
   'nav.platform': 'Plateforme',

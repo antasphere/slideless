@@ -39,6 +39,17 @@ export const en = {
   // ── Error page ───────────────────────────────────────────────────────
   'error.generic': 'Something went wrong.',
 
+  // ── Hub-gate notice (cloud edition, docs/federation.md P4) ───────────
+  'suspended.title': 'Organization suspended',
+  'suspended.body':
+    'This organization is suspended on Antasphere, so its workspace is unavailable here. Contact your organization owner or Antasphere support to restore access.',
+  'suspended.unavailableTitle': 'Temporarily unavailable',
+  'suspended.unavailableBody':
+    'The Antasphere account service has been unreachable for a while, so this workspace is paused as a precaution. Access resumes automatically once it recovers.',
+  'common.accountSuspended': 'This organization is suspended on Antasphere.',
+  'common.hubUnavailable': 'The Antasphere account service is unreachable — try again shortly.',
+  'common.membershipRevoked': 'Your access to this organization was removed on Antasphere.',
+
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',
   'nav.platform': 'Platform',
