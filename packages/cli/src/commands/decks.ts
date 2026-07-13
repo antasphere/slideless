@@ -13,7 +13,7 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
     .option('--all', 'follow nextCursor until every page is fetched', false)
     .action(async (opts: { cursor?: string; limit?: number; all: boolean }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const params: ListParams = {};
       if (opts.cursor) params.cursor = opts.cursor;
       if (opts.limit !== undefined) params.limit = opts.limit;
@@ -44,7 +44,7 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
     .description('Show one presentation (metadata + latest version)')
     .action(async (id: string, _opts, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const deck = await ctx.client.presentation(id);
       if (ctx.json) return printJson(io, deck);
       io.out.write(
@@ -64,7 +64,7 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
     .description('Delete a presentation (soft delete; versions and share links stop resolving)')
     .action(async (id: string, _opts, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const deck = await ctx.client.deletePresentation(id);
       if (ctx.json) return printJson(io, deck);
       io.out.write(`Deleted "${deck.title}" (${deck.id}).\n`);

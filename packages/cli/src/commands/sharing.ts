@@ -44,7 +44,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
-        requireApiKey(ctx);
+        await requireApiKey(ctx);
         const created = await ctx.client.createShareToken(id, shareOptionsOf(opts));
         if (ctx.json) return printJson(io, created);
         io.out.write(
@@ -64,7 +64,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--token <tokenId>', 'revoke only this token')
     .action(async (id: string, opts: { token?: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       if (opts.token) {
         const revoked = await ctx.client.revokeShareToken(id, opts.token);
         if (ctx.json) return printJson(io, revoked);
@@ -114,7 +114,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
-        requireApiKey(ctx);
+        await requireApiKey(ctx);
         const results: Array<{ email: string; tokenId: string; emailSent: boolean }> = [];
         for (const email of opts.to) {
           const created = await ctx.client.createShareToken(id, shareOptionsOf({ ...opts, name: email }));
@@ -139,7 +139,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .action(
       async (id: string, tokenId: string, opts: { toVersion?: number; latest: boolean }, cmd: Command) => {
         const ctx = resolveContext(cmd, io);
-        requireApiKey(ctx);
+        await requireApiKey(ctx);
         if (opts.latest === (opts.toVersion !== undefined)) {
           throw new CliUsageError('Pass exactly one of --to-version <n> or --latest.');
         }
@@ -163,7 +163,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .requiredOption('--email <email>', 'invitee email')
     .action(async (id: string, opts: { email: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const invited = await ctx.client.inviteCollaborator(id, { email: opts.email });
       if (ctx.json) return printJson(io, invited);
       io.out.write(
@@ -178,7 +178,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .description('Revoke a collaborator grant (pending or active)')
     .action(async (id: string, collaboratorId: string, _opts, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const revoked = await ctx.client.removeCollaborator(id, collaboratorId);
       if (ctx.json) return printJson(io, revoked);
       io.out.write(`Revoked collaborator grant ${revoked.id} (${revoked.email}).\n`);

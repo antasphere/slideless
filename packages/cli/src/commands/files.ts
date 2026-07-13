@@ -40,7 +40,7 @@ export function registerFileCommands(program: Command, io: CliIo): void {
     .option('-o, --out <path>', 'write to this path (defaults to export-<date>.zip)')
     .action(async (opts: { out?: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const res = await ctx.client.downloadExport();
       if (!res.body) {
         throw new Error('The export response carried no body');
@@ -63,7 +63,7 @@ export function registerFileCommands(program: Command, io: CliIo): void {
     .option('--all', 'follow nextCursor until every page is fetched', false)
     .action(async (opts: { cursor?: string; limit?: number; all: boolean }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const params: ListParams = {};
       if (opts.cursor) params.cursor = opts.cursor;
       if (opts.limit !== undefined) params.limit = opts.limit;
@@ -99,7 +99,7 @@ export function registerFileCommands(program: Command, io: CliIo): void {
     .option('--content-type <type>', 'content type', 'application/octet-stream')
     .action(async (path: string, opts: { name?: string; contentType: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const bytes = await readFile(path);
       const name = opts.name ?? basename(path);
       const result = await ctx.client.uploadFile(name, new Uint8Array(bytes), opts.contentType);
@@ -116,7 +116,7 @@ export function registerFileCommands(program: Command, io: CliIo): void {
     .option('--out <path>', 'write to this path (defaults to the stored name)')
     .action(async (id: string, opts: { out?: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      const apiKey = requireApiKey(ctx);
+      const apiKey = await requireApiKey(ctx);
       const meta = await ctx.client.file(id);
       const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
       const res = await fetchImpl(ctx.client.fileContentUrl(id), {
@@ -136,7 +136,7 @@ export function registerFileCommands(program: Command, io: CliIo): void {
     .description('Delete a file by id')
     .action(async (id: string, _opts, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       await ctx.client.deleteFile(id);
       if (ctx.json) return printJson(io, { deleted: id });
       io.out.write(`Deleted ${id}\n`);

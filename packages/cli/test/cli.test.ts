@@ -142,11 +142,14 @@ describe('slideless CLI', () => {
     expect(h.out()).toContain(out);
   });
 
-  it('requires an API key for authenticated commands (exit 1, no request)', async () => {
-    const h = harness();
+  it('requires an API key for authenticated commands (exit 1, one discovery probe only)', async () => {
+    // With no key at all, the runner asks discovery whether this is a cloud
+    // instance (connect-on-demand seam); a non-cloud answer keeps the
+    // classic error and no other request is made.
+    const h = harness([{ body: INSTANCE }]);
     const code = await run(['whoami', '--url', 'http://x'], h.io);
     expect(code).toBe(1);
-    expect(h.calls).toHaveLength(0);
+    expect(h.calls).toEqual([{ method: 'GET', path: '/api/v1/instance' }]);
     expect(h.err()).toContain('API key is required');
   });
 

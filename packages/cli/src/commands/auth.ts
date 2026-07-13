@@ -1,7 +1,15 @@
 import type { Command } from 'commander';
-import { CliAuthClient } from '@antasphere/cli-core';
+import { CliAuthClient, CliAuthError, resolveTargetWorkspace } from '@antasphere/cli-core';
 import { PlatformClient } from '@slideless/sdk';
-import { clearConfig, configPath, loadConfig, redactKey, saveConfig, type CliConfig } from '../config.js';
+import {
+  clearConfig,
+  configPath,
+  loadConfig,
+  redactKey,
+  removeWorkspaceKey,
+  saveConfig,
+  type CliConfig
+} from '../config.js';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
 
 /**
@@ -143,14 +151,62 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
 
   program
     .command('logout')
-    .description('Forget the stored API key of the active (or named) profile')
+    .description(
+      'Forget the stored API key of the active (or named) profile; --org logs one connected hub org out instead'
+    )
     .action(async (_opts, cmd: Command) => {
-      const globals = cmd.optsWithGlobals() as AuthGlobals;
+      const globals = cmd.optsWithGlobals() as AuthGlobals & { org?: string };
       const config = loadConfig(io.env);
       const profileName = globals.profile ?? config.activeProfile;
       const profile = profileName ? config.profiles[profileName] : undefined;
       if (!profileName || !profile) {
         throw new CliUsageError('No profile to log out of.');
+      }
+      // Per-org logout (the cross-tool connect counterpart): revoke the
+      // exchange-minted slk_ key server-side, then evict it from the cache.
+      // Taken on an explicit --org, or when the profile holds ONLY
+      // hub-connected keys; a classic single-key profile keeps today's path.
+      const hubKeys = profile.workspaceKeys ?? {};
+      const perOrg = globals.org !== undefined || (!profile.apiKey && Object.keys(hubKeys).length > 0);
+      if (perOrg) {
+        const org = globals.org ?? resolveTargetWorkspace(io.env, {});
+        if (!org) {
+          throw new CliUsageError(
+            'Pass --org <id> to say which hub org to log out of (or set one with `antasphere org use`).'
+          );
+        }
+        const entry = hubKeys[org];
+        if (!entry) {
+          const cached = Object.keys(hubKeys).join(', ') || '(none)';
+          throw new CliUsageError(
+            `No connected key for hub org ${org} on profile "${profileName}". Connected orgs: ${cached}.`
+          );
+        }
+        const rawUrl = globals.apiUrl ?? globals.url ?? io.env.SLIDELESS_URL ?? profile.baseUrl;
+        let revoked = false;
+        if (rawUrl) {
+          const baseUrl = rawUrl.replace(/\/+$/, '');
+          try {
+            const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
+            await client.revoke(entry.apiKey);
+            revoked = true;
+          } catch (e) {
+            // A dead/expired key cannot revoke itself — still evict it.
+            if (e instanceof CliAuthError && (e.status === 401 || e.status === 403)) {
+              io.err.write('The cached key was already unusable — evicting it anyway.\n');
+            } else {
+              throw e;
+            }
+          }
+        } else {
+          io.err.write('No instance URL known for this profile — evicting the cached key locally only.\n');
+        }
+        removeWorkspaceKey(io.env, profileName, org);
+        if (globals.json) return printJson(io, { profile: profileName, org, revoked, evicted: true });
+        io.out.write(
+          `Logged out of hub org ${org} on profile "${profileName}"${revoked ? ' (key revoked server-side)' : ''}.\n`
+        );
+        return;
       }
       delete profile.apiKey;
       if (!profile.baseUrl) delete config.profiles[profileName];
@@ -166,7 +222,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
     .description('Show the identity behind the resolved API key')
     .action(async (_opts, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const me = await ctx.client.me();
       if (ctx.json) return printJson(io, me);
       io.out.write(
@@ -184,7 +240,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
     .description('Check that the resolved instance + key work (exit 0 = ok)')
     .action(async (_opts, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
       const me = await ctx.client.me();
       if (ctx.json) return printJson(io, { ok: true, baseUrl: ctx.baseUrl, user: me.user });
       io.out.write(`ok — ${me.user.email} (${me.role}) @ ${ctx.baseUrl}\n`);
@@ -218,7 +274,14 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
           profiles: Object.fromEntries(
             names.map((n) => {
               const p = config.profiles[n]!;
-              return [n, { baseUrl: p.baseUrl ?? null, apiKey: p.apiKey ? redactKey(p.apiKey) : null }];
+              return [
+                n,
+                {
+                  baseUrl: p.baseUrl ?? null,
+                  apiKey: p.apiKey ? redactKey(p.apiKey) : null,
+                  hubOrgs: Object.keys(p.workspaceKeys ?? {})
+                }
+              ];
             })
           )
         });
@@ -233,11 +296,16 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
         table(
           names.map((n) => {
             const p = config.profiles[n]!;
+            const hubOrgs = Object.keys(p.workspaceKeys ?? {});
             return [
               config.activeProfile === n ? '*' : ' ',
               n,
               p.baseUrl ?? '(no url)',
-              p.apiKey ? redactKey(p.apiKey) : '(no key)'
+              p.apiKey
+                ? redactKey(p.apiKey)
+                : hubOrgs.length > 0
+                  ? `(hub: ${hubOrgs.join(', ')})`
+                  : '(no key)'
             ];
           })
         )
@@ -259,7 +327,14 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
         profiles: Object.fromEntries(
           Object.entries(cfg.profiles).map(([n, p]) => [
             n,
-            { baseUrl: p.baseUrl ?? null, apiKey: p.apiKey ? redactKey(p.apiKey) : null }
+            {
+              baseUrl: p.baseUrl ?? null,
+              apiKey: p.apiKey ? redactKey(p.apiKey) : null,
+              // Hub-connected orgs: cached exchange keys, redacted like the rest.
+              workspaceKeys: Object.fromEntries(
+                Object.entries(p.workspaceKeys ?? {}).map(([org, entry]) => [org, redactKey(entry.apiKey)])
+              )
+            }
           ])
         )
       };

@@ -24,6 +24,8 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  * Resolution order (documented in docs/cli.md):
  *   base URL: --api-url (alias --url) → SLIDELESS_URL → profile baseUrl → error
  *   API key:  --api-key → SLIDELESS_API_KEY → profile apiKey
+ *             → cached hub key for the --org/active org (cloud instances)
+ *             → connect-on-demand: `antasphere login` exchanged for an slk_ key
  */
 
 const VERSION = '0.2.1';
@@ -37,6 +39,10 @@ function buildProgram(io: CliIo): Command {
     .option('--api-url <url>', 'instance base URL (or SLIDELESS_URL / profile baseUrl)')
     .option('--url <url>', 'alias of --api-url')
     .option('--api-key <key>', 'API key (or SLIDELESS_API_KEY / profile apiKey)')
+    .option(
+      '--org <id>',
+      'hub org to connect as on a cloud instance (default: `antasphere org use`; ignored when a direct API key resolves)'
+    )
     .option('--profile <name>', 'use this saved profile instead of the active one')
     .option('--json', 'machine-readable JSON output', false);
 

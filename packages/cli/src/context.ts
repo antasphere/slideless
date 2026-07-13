@@ -1,14 +1,22 @@
 import { PlatformClient } from '@slideless/sdk';
 import type { Command } from 'commander';
 import {
+  CliConnectClient,
+  CliConnectError,
   CliUsageError,
+  DEFAULT_PROFILE,
+  HUB_TOOL,
+  loadConfig as loadCoreConfig,
+  lookupWorkspaceKey,
   resolveApiKey,
   resolveBaseUrl,
   resolveProfile as coreResolveProfile,
+  resolveTargetWorkspace,
+  type CliConnectResult,
   type CliIo,
   type ResolvedProfile
 } from '@antasphere/cli-core';
-import { loadConfig, type CliConfig, type CliProfile } from './config.js';
+import { loadConfig, saveConfig, storeWorkspaceKey, type CliConfig, type CliProfile } from './config.js';
 
 // The injectable I/O seam, the usage-error class, and the resolution
 // helpers live in @antasphere/cli-core (extracted from this CLI); re-exported
@@ -20,6 +28,10 @@ export interface CliContext {
   client: PlatformClient;
   baseUrl: string;
   apiKey: string | undefined;
+  /** The hub org a cross-tool exchange would target (--org → `antasphere
+   *  org use` → the hub key's bound org). Only resolved when no direct
+   *  key was found; undefined otherwise (or when not hub-logged-in). */
+  org: string | undefined;
   json: boolean;
   io: CliIo;
   /** The profile the context resolved against (undefined = flags/env only). */
@@ -31,6 +43,7 @@ interface GlobalOpts {
   apiUrl?: string;
   url?: string;
   apiKey?: string;
+  org?: string;
   profile?: string;
   json?: boolean;
 }
@@ -51,10 +64,16 @@ export function resolveProfile(
  *
  *   base URL:  --api-url (or --url) → SLIDELESS_URL → profile baseUrl → error
  *   API key:   --api-key            → SLIDELESS_API_KEY → profile apiKey
+ *              → cached hub-exchange key for the target org (cloud instances)
  *
  * There is deliberately NO hard-coded default URL: a self-hosted CLI must
  * name its instance explicitly (flag, env, or a saved profile) rather than
  * silently talking to the wrong host.
+ *
+ * The last credential step is the cross-tool connect cache (cli-core
+ * binding patterns §7): purely additive — it is consulted only when every
+ * direct source came up empty, so oss / single-key flows resolve exactly
+ * as before and never read the hub profile.
  */
 export function resolveContext(cmd: Command, io: CliIo): CliContext {
   const opts = cmd.optsWithGlobals() as GlobalOpts;
@@ -70,12 +89,26 @@ export function resolveContext(cmd: Command, io: CliIo): CliContext {
       'No instance configured. Pass --api-url <url>, set SLIDELESS_URL, or sign in once with ' +
       '`slideless auth login-request --api-url <url> --email <you>` to save a profile.'
   });
-  const apiKey = resolveApiKey({ flag: opts.apiKey, env: io.env, envVar: 'SLIDELESS_API_KEY', profile });
+  let apiKey = resolveApiKey({ flag: opts.apiKey, env: io.env, envVar: 'SLIDELESS_API_KEY', profile });
+  let org: string | undefined;
+  if (!apiKey) {
+    // No direct key: which hub org would a cross-tool exchange target
+    // (--org → `antasphere org use` → the hub key's bound org)? A cached
+    // exchange-minted key is only replayed against the instance it was
+    // minted on — the profile's baseUrl scopes the cache, so a key minted
+    // for the cloud can never be sent to some other instance named by
+    // --api-url / SLIDELESS_URL.
+    org = resolveTargetWorkspace(io.env, opts.org ? { override: opts.org } : {});
+    if (org && profile?.baseUrl?.replace(/\/+$/, '') === baseUrl) {
+      apiKey = lookupWorkspaceKey(profile, org);
+    }
+  }
   const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
   return {
     client: new PlatformClient({ baseUrl, ...(apiKey ? { apiKey } : {}), fetch: fetchImpl }),
     baseUrl,
     apiKey,
+    org,
     json: Boolean(opts.json),
     io,
     profileName,
@@ -83,15 +116,120 @@ export function resolveContext(cmd: Command, io: CliIo): CliContext {
   };
 }
 
-/** Requires an API key; throws a friendly message the runner turns into exit 1. */
-export function requireApiKey(ctx: CliContext): string {
-  if (!ctx.apiKey) {
+const NO_KEY_MESSAGE =
+  'An API key is required. Sign in (`slideless auth login-request --email <you>`), paste one ' +
+  '(`slideless login`), pass --api-key, or set SLIDELESS_API_KEY.';
+
+/**
+ * Requires an API key; throws a friendly message the runner turns into exit 1.
+ *
+ * When nothing resolved, this is the connect-on-demand seam (binding
+ * patterns §7, gcloud model): if — and only if — discovery says the
+ * instance is an Antasphere-cloud one, the stored `antasphere login`
+ * credential is exchanged (hub → tool) for a tool-local `slk_` key, which
+ * is cached per (tool, hub org) and used for this invocation. Self-hosted
+ * instances never take this branch: they get the classic error unchanged.
+ */
+export async function requireApiKey(ctx: CliContext): Promise<string> {
+  if (ctx.apiKey) return ctx.apiKey;
+  const key = await connectViaHub(ctx);
+  if (!key) throw new CliUsageError(NO_KEY_MESSAGE);
+  return key;
+}
+
+/**
+ * The hub → tool exchange fallback. Returns undefined when the instance is
+ * not cloud (or unreachable) — the caller then raises the classic error.
+ * Throws a guided CliUsageError when the instance IS cloud but the hub
+ * login is missing or rejected.
+ */
+async function connectViaHub(ctx: CliContext): Promise<string | undefined> {
+  const { io } = ctx;
+
+  // 1. Only a CLOUD instance can mint keys through the hub — ask discovery
+  //    (unauthenticated GET /instance), never guess. An unreachable or
+  //    foreign instance falls back to the classic error.
+  let cloud = false;
+  try {
+    const info = await ctx.client.instance();
+    cloud = info.auth.methods.includes('antasphere') || info.edition === 'cloud';
+  } catch {
+    return undefined;
+  }
+  if (!cloud) return undefined;
+
+  // 2. The hub credential is what `antasphere login` stored on the hub
+  //    profile (cli-core HUB_TOOL namespace) — one login for the whole
+  //    tool family. The hub URL comes from that same profile, never from
+  //    a hardcoded constant here.
+  const { profile: hubProfile } = coreResolveProfile(loadCoreConfig(io.env, HUB_TOOL), undefined);
+  const hubKey = hubProfile?.apiKey;
+  const hubBaseUrl = hubProfile?.baseUrl;
+  if (!hubKey || !hubBaseUrl) {
     throw new CliUsageError(
-      'An API key is required. Sign in (`slideless auth login-request --email <you>`), paste one ' +
-        '(`slideless login`), pass --api-key, or set SLIDELESS_API_KEY.'
+      'This Slideless instance signs in through the Antasphere hub. Run `antasphere login` once, ' +
+        'then retry — or pass --api-key <slk_…> / set SLIDELESS_API_KEY.'
     );
   }
-  return ctx.apiKey;
+
+  // 3. The exchange resource is THIS instance's registered resource URL —
+  //    its MCP endpoint, derived from the resolved instance origin.
+  const resource = `${ctx.baseUrl}/mcp`;
+  const connect = new CliConnectClient({
+    hubBaseUrl,
+    toolBaseUrl: ctx.baseUrl,
+    ...(io.fetch ? { fetch: io.fetch } : {})
+  });
+  const body = { resource, ...(ctx.org ? { workspaceId: ctx.org } : {}) };
+  let result: CliConnectResult;
+  try {
+    result = await connect.exchange(hubKey, body);
+  } catch (e) {
+    if (e instanceof CliConnectError && e.needsReExchange) {
+      // The 120 s JWT died in transit (expired/replayed) — one fresh
+      // exchange; a second rejection propagates.
+      result = await connect.exchange(hubKey, body);
+    } else if (e instanceof CliConnectError && e.needsHubLogin) {
+      throw new CliUsageError(
+        'The stored Antasphere hub credential was rejected — run `antasphere login` again, then retry.'
+      );
+    } else {
+      throw e;
+    }
+  }
+
+  // 4. Cache the minted key per (tool, hub org) — but only onto a profile
+  //    that names THIS instance (or a fresh one, which gets pinned to it),
+  //    never onto a profile pointing somewhere else.
+  const profileName = ctx.profileName ?? DEFAULT_PROFILE;
+  const existing = ctx.config.profiles[profileName];
+  const cacheable = !existing?.baseUrl || existing.baseUrl.replace(/\/+$/, '') === ctx.baseUrl;
+  if (cacheable) {
+    storeWorkspaceKey(io.env, profileName, result.hubWorkspaceId, {
+      apiKey: result.key,
+      toolWorkspaceId: result.toolWorkspaceId,
+      email: result.user.email,
+      mintedAt: new Date().toISOString()
+    });
+    if (!existing?.baseUrl) {
+      // First contact: pin the profile to this instance so the next
+      // invocation resolves the URL and the cached key with no flags.
+      const cfg = loadConfig(io.env);
+      cfg.profiles[profileName] = { ...cfg.profiles[profileName], baseUrl: ctx.baseUrl };
+      saveConfig(io.env, cfg);
+    }
+  }
+  io.err.write(
+    `Connected to ${ctx.baseUrl} as ${result.user.email} via Antasphere (org ${result.hubWorkspaceId})` +
+      (cacheable ? '' : ` — key NOT cached: profile '${profileName}' points at ${existing?.baseUrl}`) +
+      '.\n'
+  );
+
+  // The minted key becomes this invocation's credential.
+  ctx.apiKey = result.key;
+  const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
+  ctx.client = new PlatformClient({ baseUrl: ctx.baseUrl, apiKey: result.key, fetch: fetchImpl });
+  return result.key;
 }
 
 /** Minimal aligned two-space table for human output. */

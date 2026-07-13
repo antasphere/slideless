@@ -95,7 +95,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
-        requireApiKey(ctx);
+        await requireApiKey(ctx);
         const target = path ?? '.';
         const scan = await scanDeck(target);
         const entryPath = detectEntry(scan, opts.entry);
@@ -183,7 +183,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .option('--at <version>', 'pull this version instead of the latest', (v: string) => parseInt(v, 10))
     .action(async (id: string | undefined, path: string | undefined, opts: { at?: number }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
-      requireApiKey(ctx);
+      await requireApiKey(ctx);
 
       let deckId = id ?? null;
       let dest = path ?? null;
@@ -241,7 +241,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
-        requireApiKey(ctx);
+        await requireApiKey(ctx);
         let deckId = id ?? null;
         if (!deckId) {
           const link = await readLink(resolve('.'));

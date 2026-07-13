@@ -89,17 +89,46 @@ corollary: after `slideless config clear`, a still-present legacy file is
 imported again on the next run; delete `~/.config/slideless/config.json` too
 if you want a truly clean slate.
 
-Every command accepts `--api-url` (alias `--url`), `--api-key`, `--profile`,
-and `--json`. Resolution order:
+Every command accepts `--api-url` (alias `--url`), `--api-key`, `--org`,
+`--profile`, and `--json`. Resolution order:
 
-| Setting  | 1st         | 2nd                 | 3rd               | Otherwise                              |
-| -------- | ----------- | ------------------- | ----------------- | -------------------------------------- |
-| Base URL | `--api-url` | `SLIDELESS_URL`     | profile `baseUrl` | **error**                              |
-| API key  | `--api-key` | `SLIDELESS_API_KEY` | profile `apiKey`  | (public commands work; the rest error) |
+| Setting  | 1st         | 2nd                 | 3rd               | Otherwise                                                                     |
+| -------- | ----------- | ------------------- | ----------------- | ----------------------------------------------------------------------------- |
+| Base URL | `--api-url` | `SLIDELESS_URL`     | profile `baseUrl` | **error**                                                                     |
+| API key  | `--api-key` | `SLIDELESS_API_KEY` | profile `apiKey`  | hub connect (cloud, below) — else the public commands work and the rest error |
 
 There is deliberately **no default URL**: a self-hosted CLI must name its
 instance explicitly (flag, env, or saved profile) rather than silently talking
 to the wrong host.
+
+### Cloud instances: connect through `antasphere login`
+
+On an **Antasphere-cloud** instance you never run a Slideless-specific login.
+When no direct key resolves, the CLI asks discovery (`GET /api/v1/instance`)
+whether the instance signs in through the hub (`auth.methods` contains
+`antasphere`); if so, it exchanges the stored `antasphere login` credential
+for a tool-local `slk_` key (hub → tool, docs/federation.md P5) and caches it
+in the profile **per hub organization** (`workspaceKeys`):
+
+```bash
+antasphere login                       # once, for the whole tool family
+slideless list --api-url https://app.slideless.ai   # exchanges + caches on first use
+slideless list                                      # served from the cache
+```
+
+- The target org is `--org <id>` → `antasphere org use` → the org the hub
+  key was bound to at login. Each org gets its own cached `slk_` key.
+- The hub key is sent to the **hub only**; the instance sees a short-lived
+  single-org JWT and answers with an ordinary local key.
+- A cached key is only ever replayed against the instance it was minted on
+  (the profile's `baseUrl` scopes the cache).
+- `slideless logout` on a hub-connected profile (or with an explicit
+  `--org <id>`) revokes that org's cached key server-side and evicts it; a
+  classic single-key profile logs out exactly as before.
+
+Self-hosted (`oss`) instances never take this branch: the flows above
+(`auth login-request`, `login`, `SLIDELESS_API_KEY`, `--api-key`) resolve
+exactly as documented, and the hub is never contacted.
 
 ## Sign in
 
@@ -129,7 +158,8 @@ slideless whoami            # identity behind the resolved key
 slideless verify            # exit 0 iff instance + key work
 slideless profiles          # list profiles (keys redacted)
 slideless use <profile>     # switch the active profile
-slideless logout            # forget the stored key (revoke server-side in the dashboard)
+slideless logout            # forget the stored key (revoke server-side in the dashboard);
+                            # hub-connected profiles: revoke + evict one org's key (--org <id>)
 slideless config show       # config path + redacted contents
 slideless config clear      # delete the config file
 ```

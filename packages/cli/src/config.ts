@@ -3,9 +3,12 @@ import {
   configPath as coreConfigPath,
   loadConfig as coreLoadConfig,
   migrateLegacyConfig,
+  removeWorkspaceKey as coreRemoveWorkspaceKey,
   saveConfig as coreSaveConfig,
+  storeWorkspaceKey as coreStoreWorkspaceKey,
   type CliConfig,
-  type CliEnv
+  type CliEnv,
+  type CliWorkspaceKey
 } from '@antasphere/cli-core';
 
 /**
@@ -25,7 +28,7 @@ import {
  */
 
 export { redactKey } from '@antasphere/cli-core';
-export type { CliConfig, CliEnv, CliProfile } from '@antasphere/cli-core';
+export type { CliConfig, CliEnv, CliProfile, CliWorkspaceKey } from '@antasphere/cli-core';
 
 const TOOL = 'slideless';
 const LEGACY = { tool: TOOL, legacyDir: 'slideless' };
@@ -54,4 +57,23 @@ export function saveConfig(env: CliEnv, config: CliConfig): string {
 /** Delete the config file (config clear). No-op when absent. */
 export function clearConfig(env: CliEnv): void {
   coreClearConfig(env, TOOL);
+}
+
+/**
+ * Cache a hub-exchange-minted `slk_` key under (profile, HUB org) — the
+ * per-(tool, org) cache of the cross-tool connect flow (cli-core config.ts
+ * `workspaceKeys`). Creates the profile on first contact.
+ */
+export function storeWorkspaceKey(
+  env: CliEnv,
+  profileName: string,
+  workspaceId: string,
+  entry: CliWorkspaceKey
+): string {
+  return coreStoreWorkspaceKey(env, TOOL, profileName, workspaceId, entry);
+}
+
+/** Drop one hub org's cached key from a profile (per-org logout). */
+export function removeWorkspaceKey(env: CliEnv, profileName: string, workspaceId: string): boolean {
+  return coreRemoveWorkspaceKey(env, TOOL, profileName, workspaceId);
 }

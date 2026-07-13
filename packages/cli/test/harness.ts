@@ -15,6 +15,20 @@ export interface RecordedCall {
   body?: unknown;
 }
 
+/**
+ * The full wire view of a call — origin + authorization header included.
+ * Kept in a SEPARATE array (`wire`) so the legacy strict `toEqual` asserts
+ * on `calls` keep their exact shape; the connect tests use this to prove
+ * which credential went to which host.
+ */
+export interface WireCall {
+  method: string;
+  origin: string;
+  path: string;
+  auth: string | undefined;
+  body?: unknown;
+}
+
 export interface Route {
   method: string;
   path: RegExp;
@@ -27,6 +41,7 @@ export interface Route {
 
 export function routedHarness(routes: Route[], env: Record<string, string | undefined> = {}) {
   const calls: RecordedCall[] = [];
+  const wire: WireCall[] = [];
   const out: string[] = [];
   const err: string[] = [];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -46,6 +61,8 @@ export function routedHarness(routes: Route[], env: Record<string, string | unde
       body = { sha256: form.get('sha256') };
     }
     calls.push({ method, path, ...(body !== undefined ? { body } : {}) });
+    const auth = new Headers(init?.headers).get('authorization') ?? undefined;
+    wire.push({ method, origin: url.origin, path, auth, ...(body !== undefined ? { body } : {}) });
     const route = routes.find((r) => r.method === method && r.path.test(url.pathname));
     if (!route) {
       return new Response(
@@ -70,7 +87,7 @@ export function routedHarness(routes: Route[], env: Record<string, string | unde
     err: { write: (s) => err.push(s) },
     fetch
   };
-  return { io, calls, out: () => out.join(''), err: () => err.join('') };
+  return { io, calls, wire, out: () => out.join(''), err: () => err.join('') };
 }
 
 /** A temp HOME-like config root, isolated per test. */
