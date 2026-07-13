@@ -621,10 +621,24 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     `disableLocalCredentialRecovery`-style switch that covers only reset is
     therefore the wrong shape: the chassis seam a hub-only edition wants is
     "local credential MINTING off" — reset routes + OTP sign-in routes +
-    the CLI OTP mint pair in ONE chassis-tested enumeration, leaving
-    `/sign-in/email` (break-glass), the SSO provider, and the self-revoke
-    open. Until then every hub-only tool re-audits three separate route
-    lists on each Better Auth bump.
+    the CLI OTP mint pair + the social providers (see below) in ONE
+    chassis-tested enumeration, leaving `/sign-in/email` (break-glass), the
+    SSO provider, and the self-revoke open. Until then every hub-only tool
+    re-audits several separate surfaces on each Better Auth bump.
+
+    **Update 2 (same day, the Google-social close):** the seam must also
+    cover `socialProviders`. `socialProviders.google` was NOT edition-gated
+    — a cloud instance with `GOOGLE_CLIENT_ID`/`SECRET` set left
+    `/sign-in/social` (+ `/oauth2/callback/google`) live as a fourth non-SSO
+    SESSION entrance, defeating the same audit-completeness posture. Fixed by
+    registering the provider only when `!hubSso` (mirroring how the
+    `antasphere` SSO provider is cloud-only), so cloud mints nothing there by
+    construction (404 `PROVIDER_NOT_FOUND`) regardless of the env. The
+    chassis "credential-MINTING off" switch should own social-provider
+    registration too — a hub-only edition wants NO non-SSO session entrance
+    except the deliberate `/sign-in/email` break-glass door, and today each
+    provider (Google now, GitHub/others later) is a separate un-gated
+    `socialProviders` key a product owner must remember to leave unset.
 
 ## 17. The local gate misses the CI formatting gate (P8 review)
 

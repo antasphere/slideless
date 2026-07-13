@@ -130,7 +130,18 @@ clients must ignore entries they do not recognize):
   (revocation narrows access) and is machine-allowed under
   `presentations:write` in the scope allowlist. Both closures were
   hub-gated per request by the P4 re-assertion already — posture, not a
-  hole. On `oss` the OTP login and CLI mint are unchanged.
+  hole.
+
+  The **Google social provider** is the third non-SSO session entrance and
+  closes the same way: `socialProviders.google` is registered ONLY when NOT
+  cloud (`!hubSso` in `identity/better-auth.ts`), so a cloud instance with
+  `GOOGLE_CLIENT_ID`/`SECRET` set leaves `/sign-in/social` (+
+  `/oauth2/callback/google`) unregistered — 404 `PROVIDER_NOT_FOUND`,
+  minting nothing. Gating on the edition rather than "operator didn't set
+  the var" makes the audit guarantee hold by construction (defense in depth
+  against misconfiguration). The rule: **no non-SSO session entrance on
+  cloud except the deliberate break-glass `/sign-in/email`.** On `oss` the
+  OTP login, the CLI mint, AND Google social are unchanged.
 
   The password RESET surface is likewise **closed outright on cloud**
   (the P8 close, ADR 017): `/request-password-reset`, `/reset-password`

@@ -493,14 +493,27 @@ export function createAuth({
         silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true }
       })
     ],
+    // Google social sign-in is a SELF-HOST option only. On EDITION=cloud
+    // (hubSso present) the provider is NOT registered at all — even with
+    // GOOGLE_CLIENT_ID/SECRET set — so /sign-in/social and
+    // /oauth2/callback/google mint nothing there. Under the D1 hub-only
+    // posture the sole sanctioned human entrance is "Sign in with
+    // Antasphere" (the `antasphere` genericOAuth provider), with
+    // /sign-in/email kept as the deliberate break-glass door; a live Google
+    // provider would be a NON-hub session entrance that defeats the
+    // audit-completeness guarantee (every cloud login must trace through the
+    // hub). Gating on !hubSso — not on "operator didn't set the env var" —
+    // makes the guarantee hold by construction (defense in depth against
+    // misconfiguration), mirroring the OTP closures. oss is unchanged: with
+    // the credentials set, Google signs in accounts that already exist
+    // (disableSignUp — the callback never creates), one of the three
+    // closed-signup switches.
     socialProviders:
-      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+      !hubSso && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
         ? {
             google: {
               clientId: env.GOOGLE_CLIENT_ID,
               clientSecret: env.GOOGLE_CLIENT_SECRET,
-              // Same closure: Google signs in accounts that already exist
-              // (created via setup/invitations); the callback never creates.
               disableSignUp: true
             }
           }

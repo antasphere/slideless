@@ -82,7 +82,13 @@ deploys) + `dev` (day-to-day work).
   OPEN on both editions and is the one deliberate `/cli/auth` opening in the machine scope
   allowlist (`presentations:write`, method-keyed) — never close it, and never widen it to a
   named-key revoke. `/sso/cli-connect` (the sanctioned cloud CLI mint) and `/sign-in/email`
-  are untouched; oss keeps OTP login + CLI mint unchanged.
+  are untouched; oss keeps OTP login + CLI mint unchanged. **The Google social provider is the
+  third non-SSO session entrance and is closed the same way**: `socialProviders.google` is
+  registered only when NOT cloud (`!hubSso` in `identity/better-auth.ts`), so a cloud instance
+  with `GOOGLE_CLIENT_ID`/`SECRET` set still leaves `/sign-in/social` unregistered (404
+  `PROVIDER_NOT_FOUND`) — by construction, not by leaving the env unset. Rule: no non-SSO
+  session entrance on cloud except the break-glass `/sign-in/email`; oss keeps Google social
+  when configured.
 - **Hub-origin workspaces are hub-managed (P7, docs/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

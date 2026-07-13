@@ -336,9 +336,14 @@ describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () 
 
   beforeAll(async () => {
     email = new RecordingEmailDriver();
-    // A DELIVERING mailer: the exact configuration that used to keep these
-    // entrances wired-but-hidden (the known-open pair) — they must refuse.
-    app = await createTestApp(await createDatabase(container, 'edition_cloud_otp'), HUB_ENV, { email });
+    // A DELIVERING mailer AND Google credentials set: the strongest
+    // misconfiguration — on oss both would open OTP login and Google social
+    // sign-in; on cloud every one of them must be closed by construction.
+    app = await createTestApp(
+      await createDatabase(container, 'edition_cloud_otp'),
+      { ...HUB_ENV, GOOGLE_CLIENT_ID: 'cloud-google-id', GOOGLE_CLIENT_SECRET: 'cloud-google-secret' },
+      { email }
+    );
     const res = await app.app.request('/api/v1/setup', jsonIp({ instanceName: 'EdOtp', owner: OWNER }));
     expect(res.status).toBe(201);
   });
@@ -368,6 +373,22 @@ describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () 
     );
     expect((await readJson(refusal)).code).toBe('otp_signin_disabled');
     expect(email.sent).toHaveLength(0);
+  });
+
+  it('does NOT register the Google social provider despite GOOGLE_CLIENT_ID/SECRET set', async () => {
+    // Google social is a self-host option only: on cloud the provider is
+    // not registered at all, so /sign-in/social mints no session even with
+    // the credentials configured (defense in depth — the audit-completeness
+    // guarantee holds by construction, not by "operator didn't set the env
+    // var"). 1.6.15 answers PROVIDER_NOT_FOUND (404) for an unregistered
+    // provider, and no session cookie is set.
+    const social = await app.app.request('/api/v1/auth/sign-in/social', jsonIp({ provider: 'google' }));
+    expect(social.status).toBe(404);
+    expect(social.headers.get('set-cookie')).toBeNull();
+    // Discovery never advertises google on cloud either (the hub-only
+    // descriptor), the credentials notwithstanding.
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    expect(info.auth.methods).not.toContain('google');
   });
 
   it('refuses the CLI OTP mint pair (cli_otp_disabled → `antasphere login`)', async () => {
@@ -433,6 +454,31 @@ describe('oss edition discovery (unchanged)', () => {
     expect(info.edition).toBe('oss');
     expect(info.auth.methods).not.toContain('antasphere');
     expect(info.auth.methods).toContain('password');
+    await app.stop();
+  });
+
+  it('keeps Google social sign-in when configured (the cloud gate is cloud-only)', async () => {
+    // The mirror of the cloud closure above: on oss the same GOOGLE_CLIENT_ID/
+    // SECRET REGISTER the provider — /sign-in/social builds a real Google
+    // authorization URL (200 + url, never PROVIDER_NOT_FOUND) and discovery
+    // lists 'google'. Proves the gate touches cloud alone.
+    const app = await createTestApp(await createDatabase(container, 'edition_oss_google'), {
+      GOOGLE_CLIENT_ID: 'oss-google-id',
+      GOOGLE_CLIENT_SECRET: 'oss-google-secret'
+    });
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    expect(info.edition).toBe('oss');
+    expect(info.auth.methods).toContain('google');
+
+    const social = await app.app.request('/api/v1/auth/sign-in/social', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'google' })
+    });
+    expect(social.status).toBe(200);
+    const body = await readJson(social);
+    expect(typeof body.url).toBe('string');
+    expect(body.url).toContain('accounts.google.com');
     await app.stop();
   });
 });

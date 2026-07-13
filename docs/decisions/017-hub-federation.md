@@ -168,7 +168,16 @@ plain local API-key path, hub out of the loop.
   logout SELF-revoke `DELETE /cli/auth/key` (a presenting key killing
   exactly itself) was added and machine-allowed under `presentations:write`
   — the one deliberate `/cli/auth` opening in the fail-closed allowlist, on
-  both editions. oss keeps OTP login and the CLI mint unchanged; see
+  both editions. The **Google social provider** is the third non-SSO
+  session entrance and is closed the same way: `socialProviders.google` is
+  registered only when NOT cloud (`!hubSso` in `identity/better-auth.ts`),
+  so a cloud instance with `GOOGLE_CLIENT_ID`/`SECRET` set still leaves
+  `/sign-in/social` (+ `/oauth2/callback/google`) unregistered — 404
+  `PROVIDER_NOT_FOUND`, minting nothing. The guarantee holds by
+  construction (defense in depth against a misconfigured env), not by
+  "remember not to set the var." Romain's rule: no non-SSO session entrance
+  on cloud except the deliberate break-glass `/sign-in/email`. oss keeps
+  OTP login, the CLI mint, AND Google social unchanged; see
   docs/federation.md "Discovery".
 
 ### 8. The P8 hardening closes (this program's exit gate)
