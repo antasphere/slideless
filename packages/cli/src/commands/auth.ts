@@ -182,7 +182,12 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
             `No connected key for hub org ${org} on profile "${profileName}". Connected orgs: ${cached}.`
           );
         }
-        const rawUrl = globals.apiUrl ?? globals.url ?? io.env.SLIDELESS_URL ?? profile.baseUrl;
+        // The revoke targets the instance the key was minted on — the
+        // profile's baseUrl, which scopes the cache. Never a flag/env URL:
+        // a cached key must not travel to a different instance, not even
+        // to die (a foreign host would see the key AND the real one would
+        // survive while we report it gone).
+        const rawUrl = profile.baseUrl;
         let revoked = false;
         if (rawUrl) {
           const baseUrl = rawUrl.replace(/\/+$/, '');
@@ -191,9 +196,18 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
             await client.revoke(entry.apiKey);
             revoked = true;
           } catch (e) {
-            // A dead/expired key cannot revoke itself — still evict it.
-            if (e instanceof CliAuthError && (e.status === 401 || e.status === 403)) {
+            // A dead/expired key cannot revoke itself (401) — still evict it.
+            // A 403 is different: the key WORKS but the instance refuses the
+            // self-revoke (e.g. a fail-closed machine allowlist without
+            // /cli/auth/key). Never report that as "already unusable" — the
+            // key stays valid server-side and only the dashboard can kill it.
+            if (e instanceof CliAuthError && e.status === 401) {
               io.err.write('The cached key was already unusable — evicting it anyway.\n');
+            } else if (e instanceof CliAuthError && e.status === 403) {
+              io.err.write(
+                `This instance refused the self-revoke (${e.code}) — the key STAYS VALID server-side; ` +
+                  'revoke it from the dashboard. Evicting the cached copy.\n'
+              );
             } else {
               throw e;
             }

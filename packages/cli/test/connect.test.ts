@@ -325,6 +325,58 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
     expect(cfg.profiles.default?.baseUrl).toBe('http://tool');
   });
 
+  it('a 403-refused self-revoke is reported as such — never as "already unusable"', async () => {
+    const env = await tempConfigEnv();
+    seedHubLogin(env, 'org1');
+    saveConfig(env, {
+      activeProfile: 'default',
+      profiles: { default: { baseUrl: 'http://tool', workspaceKeys: { org1: { apiKey: 'slk_one_key' } } } }
+    });
+    // The live cloud instance today: /cli/auth/key is not on the machine
+    // allowlist, so the (perfectly valid) key gets a fail-closed 403.
+    const h = routedHarness(
+      [
+        {
+          method: 'DELETE',
+          path: /\/api\/v1\/cli\/auth\/key$/,
+          reply: () => ({
+            status: 403,
+            body: { error: { code: 'endpoint_not_allowed', message: 'not available' } }
+          })
+        }
+      ],
+      env
+    );
+    expect(await run(['logout', '--json'], h.io)).toBe(0);
+    expect(h.err()).toContain('STAYS VALID');
+    expect(h.err()).toContain('endpoint_not_allowed');
+    expect(h.err()).not.toContain('already unusable');
+    expect(JSON.parse(h.out())).toMatchObject({ org: 'org1', revoked: false, evicted: true });
+    expect(loadConfig(env).profiles.default?.workspaceKeys).toBeUndefined();
+  });
+
+  it('per-org logout revokes against the profile instance, never a flag/env URL', async () => {
+    const env = await tempConfigEnv();
+    seedHubLogin(env, 'org1');
+    saveConfig(env, {
+      activeProfile: 'default',
+      profiles: { default: { baseUrl: 'http://tool', workspaceKeys: { org1: { apiKey: 'slk_one_key' } } } }
+    });
+    const revokeRoute: Route = {
+      method: 'DELETE',
+      path: /\/api\/v1\/cli\/auth\/key$/,
+      reply: () => ({ body: { revoked: true, id: 'k1' } })
+    };
+    // A stray SLIDELESS_URL (or --api-url) pointing somewhere else must not
+    // receive the cached key — the self-revoke belongs to the minting host.
+    const h = routedHarness([revokeRoute], { ...env, SLIDELESS_URL: 'http://other' });
+    expect(await run(['logout', '--org', 'org1', '--api-url', 'http://elsewhere'], h.io)).toBe(0);
+    expect(h.wire).toEqual([
+      { method: 'DELETE', origin: 'http://tool', path: '/api/v1/cli/auth/key', auth: 'Bearer slk_one_key' }
+    ]);
+    expect(loadConfig(env).profiles.default?.workspaceKeys).toBeUndefined();
+  });
+
   it('classic logout is untouched when the profile holds its own key (hub cache preserved)', async () => {
     const env = await tempConfigEnv();
     saveConfig(env, {

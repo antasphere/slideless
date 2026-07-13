@@ -123,8 +123,10 @@ slideless list                                      # served from the cache
 - A cached key is only ever replayed against the instance it was minted on
   (the profile's `baseUrl` scopes the cache).
 - `slideless logout` on a hub-connected profile (or with an explicit
-  `--org <id>`) revokes that org's cached key server-side and evicts it; a
-  classic single-key profile logs out exactly as before.
+  `--org <id>`) attempts a server-side self-revoke of that org's cached key,
+  then evicts it. An instance whose machine allowlist refuses the self-revoke
+  (403) keeps the key **valid server-side** — the CLI says so; revoke it from
+  the dashboard. A classic single-key profile logs out exactly as before.
 
 Self-hosted (`oss`) instances never take this branch: the flows above
 (`auth login-request`, `login`, `SLIDELESS_API_KEY`, `--api-key`) resolve
