@@ -49,13 +49,14 @@ export interface InvitationRouteDeps {
   hubManaged?: { manageUrl: string } | undefined;
 }
 
-/** Method-exact public-segment check shared by the admin and P7 gates:
- * GET lookup and POST accept are the only public shapes — a DELETE
- * /invitations/lookup must still hit the gates. */
-const isPublicInvitationShape = (path: string, method: string): boolean => {
-  const seg = path.split('/').pop();
-  return (seg === 'lookup' && method === 'GET') || (seg === 'accept' && method === 'POST');
-};
+/** Method-exact public-shape check shared by the admin and P7 gates:
+ * GET /invitations/lookup and POST /invitations/accept are the only public
+ * shapes — a DELETE /invitations/lookup must still hit the gates, and a
+ * deeper future path that merely ENDS in a public-looking segment
+ * (e.g. /invitations/:id/accept) must too, hence the full-suffix match. */
+const isPublicInvitationShape = (path: string, method: string): boolean =>
+  (method === 'GET' && path.endsWith('/invitations/lookup')) ||
+  (method === 'POST' && path.endsWith('/invitations/accept'));
 
 export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRouteDeps): void {
   const { db, env, auth, email, audit, registry, logger, hubManaged } = deps;
@@ -64,13 +65,15 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
   // P7 (cloud only): a hub-origin workspace takes its membership from the
   // hub, so LOCAL invitation mutations there answer the `hub_managed`
   // pointer. Method-keyed, so GET /invitations (list) stays a real read.
-  // The public accept/lookup segments are skipped here — their target
-  // workspace is the INVITATION's, not the caller's, so the accept handler
-  // runs its own hub-origin check on the invitation's workspace below.
+  // ONE wildcard mount covers the whole subtree (root create, :id revoke,
+  // and any FUTURE mutation under /invitations) — fail-closed by
+  // construction. The public accept/lookup shapes are skipped — their
+  // target workspace is the INVITATION's, not the caller's, so the accept
+  // handler runs its own hub-origin check on the invitation's workspace
+  // below.
   if (hubManaged) {
     const gate = hubManagedMembershipGate(hubManaged.manageUrl);
-    api.use('/invitations', gate);
-    api.use('/invitations/:id', async (c, next) => {
+    api.use('/invitations/*', async (c, next) => {
       if (isPublicInvitationShape(c.req.path, c.req.method)) return next();
       return gate(c, next);
     });

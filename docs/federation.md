@@ -365,8 +365,9 @@ re-assertion fights. Phase 7 closes that:
 - **The gate keys on `principal.accountRef`** — populated by every
   credential resolver from a live join on the request workspace's
   `centralAccountId` (the same signal as the Phase 4 gates) — and is
-  method-keyed (non-GET/HEAD under the gated paths), so future mutations
-  under those paths are covered by default. The public invitation
+  method-keyed, mounted once on the whole `/members` and `/invitations`
+  subtrees (collection roots included), so any future mutation under those
+  surfaces is refused by default. The public invitation
   accept/lookup segments are principal-less; the accept handler checks the
   INVITATION's workspace instead (defense in depth — the create gate means
   no such invitation can exist through the API).

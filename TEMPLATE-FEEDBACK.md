@@ -568,6 +568,20 @@ hub-origin workspaces and enriching `/me` for dashboard adaptation.
     `hubManageUrl` pointer (P7). Fix: when the federation seams upstream,
     carry these three `/me` additions with them; they are the difference
     between the dashboard adapting off data vs edition-sniffing.
+64. **The template's per-exact-path gate idiom silently under-covers
+    subtree-wide policies.** The chassis registers its route guards one
+    exact Hono pattern at a time (`use('/members/:id', …)` + separate
+    3-segment registrations, with a comment reminding future authors to
+    re-register) because Hono's `use('/x', mw)` matches ONLY that exact
+    shape. Any policy meant to hold for a WHOLE surface (P7's hub-managed
+    gate; plausibly future ones like org-freeze or read-only mode) is
+    quietly wrong under that idiom: the collection root and every future
+    sibling path start OUTSIDE the gate. Hono's `use('/x/*', mw)` matches
+    the root AND all depths (verified against the pinned version), so one
+    wildcard mount makes such gates fail-closed by construction. Fix:
+    document the wildcard idiom next to the per-path role gates in the
+    chassis (or ship a `gateSubtree(api, '/x', mw)` helper) so
+    subtree-wide policies never get the per-path treatment.
 
 ## Confirmed-good template properties (keep these)
 

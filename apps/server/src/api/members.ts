@@ -59,13 +59,12 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
   // authenticated caller gets the truthful refusal (an anonymous caller
   // passes through — no principal — and still 401s at requireRole below).
   // GET /members is untouched: the gate is method-keyed and the projected
-  // roster is real. The 3-segment paths need their own registrations, same
-  // as the explicit requireRole gates below.
+  // roster is real. ONE wildcard mount covers the whole subtree — the
+  // collection root, `/members/:id`, the 3-segment link paths, and any
+  // FUTURE mutation registered under /members — so fail-closed holds by
+  // construction, never by remembering a per-path registration.
   if (hubManaged) {
-    const gate = hubManagedMembershipGate(hubManaged.manageUrl);
-    api.use('/members/:id', gate);
-    api.use('/members/:id/reset-link', gate);
-    api.use('/members/:id/change-email-link', gate);
+    api.use('/members/*', hubManagedMembershipGate(hubManaged.manageUrl));
   }
   api.use('/members', requireAuth());
   // Guest capability limit (D2, both editions): the member roster (names +

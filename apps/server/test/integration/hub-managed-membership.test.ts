@@ -240,6 +240,33 @@ describe('mutations on the HUB-ORIGIN workspace → 403 hub_managed + pointer', 
     );
   });
 
+  it('the gate covers the WHOLE subtree: unrouted mutation shapes under /members + /invitations are refused before any 404 (fail-closed for future routes)', async () => {
+    // None of these paths has a handler today — a future mutation added
+    // here must be refused by default, never opened. The refusal must win
+    // over the JSON 404 terminator.
+    await expectHubManaged(
+      await app.app.request('/api/v1/members', json({ anything: true }, asHubAdmin()))
+    );
+    await expectHubManaged(
+      await app.app.request(`/api/v1/members/${hubMemberRowId}/some-future-mutation`, {
+        method: 'POST',
+        headers: asHubAdmin({ 'x-forwarded-for': nextIp() })
+      })
+    );
+    await expectHubManaged(
+      await app.app.request('/api/v1/invitations/99999999-9999-4999-8999-999999999999/resend', {
+        method: 'POST',
+        headers: asHubAdmin({ 'x-forwarded-for': nextIp() })
+      })
+    );
+    // The same unrouted shapes OFF the projection stay plain 404s — the
+    // subtree mount changes nothing for cloud-LOCAL workspaces.
+    const local = await app.app.request('/api/v1/members', {
+      ...json({ anything: true }, { cookie: operatorCookie })
+    });
+    expect(local.status).toBe(404);
+  });
+
   it('invitation ACCEPT against a projected workspace is refused even for a pre-existing row (defense in depth)', async () => {
     // No API path can create this row (the gate above) — seed it through the
     // service directly, the way legacy/seeded data would exist.

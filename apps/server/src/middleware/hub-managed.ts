@@ -26,8 +26,11 @@ import { apiError } from '../api/errors.js';
  *    workspace (ADR 014) — the same signal the P4 hub gates key on
  *    (identity/hub-gate.ts). There is no principal-construction path that
  *    skips the join.
- *  - The gate is method-keyed, not route-enumerated: any FUTURE mutation
- *    registered under a gated path pattern is refused by default.
+ *  - The gate is method-keyed, not route-enumerated, and mounted ONCE per
+ *    subtree wildcard (`/members/*`, `/invitations/*` — in Hono the
+ *    wildcard also matches the collection root): any FUTURE mutation
+ *    registered anywhere under those surfaces is refused by default, with
+ *    no per-path registration to remember.
  *  - It is registered only on EDITION=cloud (the `hubConfig` presence
  *    switch, like every cloud seam) — oss carries zero behavior change, and
  *    on oss `centralAccountId` is never set anyway (double cover).
