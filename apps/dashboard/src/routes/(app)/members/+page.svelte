@@ -16,6 +16,7 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import Copy from '@lucide/svelte/icons/copy';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { copyText } from '$lib/clipboard';
@@ -28,6 +29,10 @@
 
   const me = $derived(data.me);
   const isAdmin = $derived(me.role === 'owner' || me.role === 'admin');
+  // P7: a hub-origin (projected) workspace takes its membership from the
+  // hub — the roster stays a real read, but every management affordance is
+  // hidden and the notice links out (the API refuses them anyway).
+  const hubManaged = $derived(me.workspace.hubOrigin);
 
   const list = createPagedList<Member>(async (p) => {
     const { members, nextCursor } = await api.members(p);
@@ -274,7 +279,7 @@
       cell: ({ row }) => formatDate(row.getValue('createdAt') as string),
       meta: { title: t('members.colJoined'), width: '130px' }
     },
-    ...(isAdmin
+    ...(isAdmin && !hubManaged
       ? [
           {
             id: 'actions',
@@ -290,6 +295,18 @@
 </script>
 
 <PageHeader title={t('members.title')} description={t('members.description')} />
+
+{#if hubManaged}
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+    <p class="text-sm text-muted-foreground">{t('members.hubManagedNotice')}</p>
+    {#if me.hubManageUrl}
+      <Button variant="outline" size="sm" href={me.hubManageUrl} target="_blank" rel="noopener noreferrer">
+        {t('members.hubManagedCta')}
+        <ExternalLink class="ml-2 h-3.5 w-3.5" />
+      </Button>
+    {/if}
+  </div>
+{/if}
 
 {#if list.error && members.length}
   <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>

@@ -21,15 +21,30 @@
     /** All the user's workspaces + the one this session targets (ADR 014). */
     workspaces?: MeResponse['workspaces'];
     activeWorkspaceId?: string;
+    /** The caller's membership origin — guests lose the guest-forbidden surfaces (D2). */
+    origin?: MeResponse['origin'];
+    /** True = the active workspace is a hub projection: membership is managed at the hub (P7). */
+    hubOrigin?: boolean;
   }
 
-  let { instanceName, role, user, workspaces = [], activeWorkspaceId = '' }: Props = $props();
+  let {
+    instanceName,
+    role,
+    user,
+    workspaces = [],
+    activeWorkspaceId = '',
+    origin = 'local',
+    hubOrigin = false
+  }: Props = $props();
 
   // The switcher exists ONLY with several memberships — a single-membership
   // user (every self-host) keeps the plain instance-name header unchanged.
   const showSwitcher = $derived(workspaces.length > 1 && activeWorkspaceId !== '');
 
   const isAdmin = $derived(role === 'owner' || role === 'admin');
+  // A guest is an external per-deck collaborator (D2): the member roster and
+  // the generic files surface answer 403 guest_forbidden — don't offer them.
+  const isGuest = $derived(origin === 'guest');
 
   const navGroups = $derived([
     {
@@ -38,10 +53,13 @@
         { title: t('nav.overview'), href: '/', icon: LayoutDashboard },
         // The product surface first: decks are what this instance is FOR.
         { title: t('nav.decks'), href: '/decks', icon: Presentation },
-        { title: t('nav.members'), href: '/members', icon: Users },
-        ...(isAdmin ? [{ title: t('nav.invitations'), href: '/invitations', icon: Mail }] : []),
+        ...(isGuest ? [] : [{ title: t('nav.members'), href: '/members', icon: Users }]),
+        // Invitations are pure LOCAL membership management — a hub-origin
+        // workspace takes its membership from the hub (P7), so the page
+        // has nothing to offer there (the members page carries the link out).
+        ...(isAdmin && !hubOrigin ? [{ title: t('nav.invitations'), href: '/invitations', icon: Mail }] : []),
         { title: t('nav.apiKeys'), href: '/api-keys', icon: KeyRound },
-        { title: t('nav.files'), href: '/files', icon: Folder }
+        ...(isGuest ? [] : [{ title: t('nav.files'), href: '/files', icon: Folder }])
       ]
     },
     {

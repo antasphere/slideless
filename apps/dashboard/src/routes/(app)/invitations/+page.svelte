@@ -16,6 +16,7 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import Copy from '@lucide/svelte/icons/copy';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { copyText } from '$lib/clipboard';
@@ -25,6 +26,12 @@
   import type { InvitationCreated, InvitationInfo, WorkspaceRole } from '@slideless/contract';
 
   let { data } = $props();
+
+  // P7: on a hub-origin (projected) workspace membership is managed at the
+  // hub — the sidebar hides this page, but a deep link still lands here, so
+  // the management affordances (invite, revoke) go too and the notice links
+  // out. The list stays a real read.
+  const hubManaged = $derived(data.me.workspace.hubOrigin);
 
   const list = createPagedList<InvitationInfo>(async (p) => {
     const { invitations, nextCursor } = await api.invitations(p);
@@ -163,34 +170,56 @@
       cell: ({ row }) => formatDateTime(row.getValue('expiresAt') as string),
       meta: { title: t('invitations.colExpires'), width: '160px' }
     },
-    {
-      id: 'actions',
-      cell: ({ row }) =>
-        statusOf(row.original) === 'open'
-          ? renderComponent(DataTableActions, {
-              actions: [
-                {
-                  label: t('invitations.actionRevoke'),
-                  onclick: () => {
-                    revokeTarget = row.original;
-                    showRevokeDialog = true;
-                  },
-                  variant: 'destructive' as const
-                }
-              ]
-            })
-          : '',
-      meta: { width: '60px' }
-    }
+    ...(hubManaged
+      ? []
+      : [
+          {
+            id: 'actions',
+            cell: ({ row }: { row: { original: InvitationInfo } }) =>
+              statusOf(row.original) === 'open'
+                ? renderComponent(DataTableActions, {
+                    actions: [
+                      {
+                        label: t('invitations.actionRevoke'),
+                        onclick: () => {
+                          revokeTarget = row.original;
+                          showRevokeDialog = true;
+                        },
+                        variant: 'destructive' as const
+                      }
+                    ]
+                  })
+                : '',
+            meta: { width: '60px' }
+          } as ColumnDef<InvitationInfo, unknown>
+        ])
   ]);
 </script>
 
 <PageHeader
   title={t('invitations.title')}
   description={t('invitations.description')}
-  onAdd={openCreateDialog}
+  onAdd={hubManaged ? undefined : openCreateDialog}
   addLabel={t('invitations.invite')}
 />
+
+{#if hubManaged}
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+    <p class="text-sm text-muted-foreground">{t('members.hubManagedNotice')}</p>
+    {#if data.me.hubManageUrl}
+      <Button
+        variant="outline"
+        size="sm"
+        href={data.me.hubManageUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {t('members.hubManagedCta')}
+        <ExternalLink class="ml-2 h-3.5 w-3.5" />
+      </Button>
+    {/if}
+  </div>
+{/if}
 
 {#if list.error && invitations.length}
   <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>

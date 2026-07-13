@@ -328,6 +328,9 @@ export const fr: Record<MessageKey, string> = {
   // ── Members ──────────────────────────────────────────────────────────
   'members.title': 'Membres',
   'members.description': 'Toutes les personnes ayant accès à cet espace de travail.',
+  'members.hubManagedNotice':
+    'Les membres de cet espace de travail sont gérés sur Antasphere : invitations, retraits et rôles se font là-bas.',
+  'members.hubManagedCta': 'Gérer sur Antasphere',
   'members.colEmail': 'E-mail',
   'members.colName': 'Nom',
   'members.colRole': 'Rôle',

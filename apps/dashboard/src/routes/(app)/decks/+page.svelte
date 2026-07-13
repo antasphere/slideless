@@ -17,6 +17,12 @@
   import { t } from '$lib/i18n';
   import type { Presentation } from '@slideless/contract';
 
+  let { data } = $props();
+
+  // Deck creation is guest-forbidden (D2): a per-deck collaborator pushes
+  // to the decks they were invited to, never creates new ones here.
+  const isGuest = $derived(data.me.origin === 'guest');
+
   const list = createPagedList<Presentation>(async (p) => {
     const { presentations, nextCursor } = await api.presentations(p);
     return { items: presentations, nextCursor };
@@ -75,7 +81,7 @@
 <PageHeader
   title={t('decks.title')}
   description={t('decks.description')}
-  onAdd={() => (showPushDialog = true)}
+  onAdd={isGuest ? undefined : () => (showPushDialog = true)}
   addLabel={t('decks.newDeck')}
 />
 
@@ -92,9 +98,11 @@
       <Card.Title class="text-base">{t('decks.emptyTitle')}</Card.Title>
       <Card.Description>{t('decks.emptyBody')}</Card.Description>
     </Card.Header>
-    <Card.Content>
-      <PushInstructions />
-    </Card.Content>
+    {#if !isGuest}
+      <Card.Content>
+        <PushInstructions />
+      </Card.Content>
+    {/if}
   </Card.Root>
 {:else}
   <DataTable

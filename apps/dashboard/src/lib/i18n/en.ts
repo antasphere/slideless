@@ -316,6 +316,9 @@ export const en = {
   // ── Members ──────────────────────────────────────────────────────────
   'members.title': 'Members',
   'members.description': 'Everyone with access to this workspace.',
+  'members.hubManagedNotice':
+    'Membership of this workspace is managed at Antasphere — invite, remove, and change roles there.',
+  'members.hubManagedCta': 'Manage at Antasphere',
   'members.colEmail': 'Email',
   'members.colName': 'Name',
   'members.colRole': 'Role',

@@ -69,7 +69,9 @@
       return;
     }
     loading = false;
-    void loadMembers();
+    // The roster is guest-forbidden (D2, 403 guest_forbidden) — a guest's
+    // ids fall back to their shortened form instead of a doomed fetch.
+    if (me.origin !== 'guest') void loadMembers();
     await Promise.all([versionsList.load(), tokensList.load()]);
     void initPreview();
   }

@@ -9,6 +9,14 @@
 
   let { data } = $props();
 
+  // The roster and the generic files surface are guest-forbidden (D2, 403
+  // guest_forbidden) — skip the doomed fetches and their cards entirely.
+  const isGuest = $derived(data.me.origin === 'guest');
+  // P7: membership of a hub-origin workspace is managed at the hub — the
+  // team card points at the members page (which links out) instead of the
+  // local invitation flow.
+  const hubManaged = $derived(data.me.workspace.hubOrigin);
+
   const decksList = createPagedList<Presentation>(
     async (p) => {
       const { presentations, nextCursor } = await api.presentations(p);
@@ -33,8 +41,10 @@
 
   $effect(() => {
     void decksList.load();
-    void membersList.load();
-    void filesList.load();
+    if (!isGuest) {
+      void membersList.load();
+      void filesList.load();
+    }
   });
 
   // Counts come from one page (limit 100); a trailing "+" keeps them honest
@@ -83,29 +93,31 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root>
-    <Card.Header>
-      <Card.Description>{t('overview.activeMembers')}</Card.Description>
-      <Card.Title class="text-2xl">{memberCount ?? '—'}</Card.Title>
-    </Card.Header>
-    <Card.Content>
-      <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/members">
-        {t('overview.manageMembers')}
-      </a>
-    </Card.Content>
-  </Card.Root>
+  {#if !isGuest}
+    <Card.Root>
+      <Card.Header>
+        <Card.Description>{t('overview.activeMembers')}</Card.Description>
+        <Card.Title class="text-2xl">{memberCount ?? '—'}</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/members">
+          {t('overview.manageMembers')}
+        </a>
+      </Card.Content>
+    </Card.Root>
 
-  <Card.Root>
-    <Card.Header>
-      <Card.Description>{t('overview.filesCard')}</Card.Description>
-      <Card.Title class="text-2xl">{fileCount ?? '—'}</Card.Title>
-    </Card.Header>
-    <Card.Content>
-      <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/files">
-        {t('overview.browseFiles')}
-      </a>
-    </Card.Content>
-  </Card.Root>
+    <Card.Root>
+      <Card.Header>
+        <Card.Description>{t('overview.filesCard')}</Card.Description>
+        <Card.Title class="text-2xl">{fileCount ?? '—'}</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/files">
+          {t('overview.browseFiles')}
+        </a>
+      </Card.Content>
+    </Card.Root>
+  {/if}
 </div>
 
 <div class="mt-8 grid gap-4 md:grid-cols-2">
@@ -131,9 +143,15 @@
     </Card.Header>
     <Card.Content>
       {#if data.me.role === 'owner' || data.me.role === 'admin'}
-        <a class="text-sm underline-offset-4 hover:underline" href="/invitations">
-          {t('overview.inviteMembers')}
-        </a>
+        {#if hubManaged}
+          <a class="text-sm underline-offset-4 hover:underline" href="/members">
+            {t('overview.manageMembers')}
+          </a>
+        {:else}
+          <a class="text-sm underline-offset-4 hover:underline" href="/invitations">
+            {t('overview.inviteMembers')}
+          </a>
+        {/if}
       {:else}
         <p class="text-sm text-muted-foreground">{t('overview.askAdmin')}</p>
       {/if}

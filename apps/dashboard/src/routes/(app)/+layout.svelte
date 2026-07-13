@@ -13,6 +13,8 @@
     user={{ name: data.me.user.name, email: data.me.user.email }}
     workspaces={data.me.workspaces}
     activeWorkspaceId={data.me.activeWorkspaceId}
+    origin={data.me.origin}
+    hubOrigin={data.me.workspace.hubOrigin}
   />
   <Sidebar.Inset>
     <header class="flex h-12 shrink-0 items-center gap-2 px-4">
