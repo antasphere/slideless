@@ -611,6 +611,19 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     Better Auth bump. (The admin reset-link route is chassis code — the seam
     should gate it too, and the dashboard affordance with it.)
 
+## 17. The local gate misses the CI formatting gate (P8 review)
+
+66. **`pnpm turbo lint typecheck test build` — the gate CLAUDE.md calls "the
+    CI gate" — does not include `format:check`, but the template's ci.yml
+    runs it as a separate step.** Result observed in BOTH instantiated repos
+    (hub and Slideless) during the P8 review: several feature commits shipped
+    prettier-dirty files, every local gate stayed green, and the first push
+    would have gone CI-red (hub: 4 files, Slideless: 20 files, cleaned up in
+    dedicated chore commits). Fix in the template: either add a
+    `format:check` turbo task to the documented gate line, or fold prettier
+    into the lint task — one gate, no drift between "what CLAUDE.md says CI
+    is" and what CI runs.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
