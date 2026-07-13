@@ -107,14 +107,32 @@ clients must ignore entries they do not recognize):
   login). The login page therefore renders ONLY "Sign in with Antasphere".
   The local password SIGN-IN stays **wired but hidden**: the break-glass
   CLI remains the operator door, and blocking `/sign-in/email` would
-  dead-end it (pinned by an edition integration test). The email-OTP
-  sign-in (`/sign-in/email-otp`) and the CLI OTP key mint (`/cli/auth/*`)
-  also stay wired-but-hidden whenever a mailer delivers — a KNOWN-OPEN
-  charter decision (ADR 017 §7; initiative
-  `slideless-cloud-binding-DISCUSS-LATER.md` §B2), hub-gated per request by
-  the P4 re-assertion.
+  dead-end it (pinned by an edition integration test).
 
-  The password RESET surface, by contrast, is **closed outright on cloud**
+  The OTP MINTING entrances, once wired-but-hidden, are now **closed
+  outright on cloud** (the charter call ADR 017 §7 had recorded as
+  KNOWN-OPEN — taken 2026-07-13, for audit completeness: every cloud
+  credential, human session AND CLI key, must trace through the hub so its
+  audit log is the complete access record). The emailOTP session surface —
+  `/sign-in/email-otp` (the unconditional session mint),
+  `/email-otp/verify-email` (mints only under
+  `autoSignInAfterVerification`, unset here; closed as config insurance),
+  and `/email-otp/send-verification-otp` (the mail leg — every redemption
+  route is closed, so codes would only be dead letters) — answers 403
+  `otp_signin_disabled` in the same Better Auth before-hook as the reset
+  closure (`isOtpSignInPath`, `identity/better-auth.ts`, enumerated against
+  pinned 1.6.15). The tool's own CLI OTP key mint (`POST
+/cli/auth/request`, `POST /cli/auth/complete`) answers 403
+  `cli_otp_disabled` steering to `antasphere login` (`api/cli-auth.ts`) —
+  cloud CLI keys are minted via the hub exchange (P5, `/sso/cli-connect`,
+  which is UNAFFECTED). `DELETE /cli/auth/key` — the logout SELF-revoke, a
+  key killing exactly itself — deliberately stays open on both editions
+  (revocation narrows access) and is machine-allowed under
+  `presentations:write` in the scope allowlist. Both closures were
+  hub-gated per request by the P4 re-assertion already — posture, not a
+  hole. On `oss` the OTP login and CLI mint are unchanged.
+
+  The password RESET surface is likewise **closed outright on cloud**
   (the P8 close, ADR 017): `/request-password-reset`, `/reset-password`
   (POST and the tokened GET callback), and the emailOTP reset routes
   (`/email-otp/request-password-reset`, `/email-otp/reset-password`, the
@@ -320,7 +338,9 @@ the lazy projection + `origin='hub'` membership upsert — then an ordinary
 "Antasphere CLI <date>", audited like `/cli/auth/complete`, returned once.
 Day-to-day CLI calls are then the ordinary local API-key path — the hub is
 out of the loop until the next exchange; `slideless logout` is the tool's
-own key revocation.
+own key revocation (`DELETE /cli/auth/key` — the presenting key revokes
+exactly ITSELF, machine-allowed under `presentations:write`; the one
+`/cli/auth` route open to machines, and open on both editions).
 
 ## Guests (Phase 6): capability limits + the SSO-first claim
 

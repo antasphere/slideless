@@ -71,6 +71,18 @@ deploys) + `dev` (day-to-day work).
   sidestep SSO. `/sign-in/email` stays WIRED on both editions (the break-glass operator door,
   which never needs a reset); oss keeps the full reset surface unchanged. Re-verify the route
   enumeration (`isPasswordResetPath`) on any Better Auth bump.
+- **Cloud closes the OTP MINTING entrances too (D1 hub-only credentials, ADR 017 §7 charter
+  call taken 2026-07-13)**: on `EDITION=cloud`, the emailOTP session surface —
+  `/sign-in/email-otp`, `/email-otp/verify-email` (config insurance), the send leg — answers
+  403 `otp_signin_disabled` (`isOtpSignInPath`, same before-hook; re-verify on any Better Auth
+  bump), and the tool's own CLI OTP mint (`/cli/auth/request` + `/cli/auth/complete`) answers
+  403 `cli_otp_disabled` steering to `antasphere login`. Every cloud credential — human session
+  AND CLI key — must trace through the hub so its audit log is the complete access record.
+  `DELETE /cli/auth/key` (the logout SELF-revoke: a presenting key kills exactly itself) stays
+  OPEN on both editions and is the one deliberate `/cli/auth` opening in the machine scope
+  allowlist (`presentations:write`, method-keyed) — never close it, and never widen it to a
+  named-key revoke. `/sso/cli-connect` (the sanctioned cloud CLI mint) and `/sign-in/email`
+  are untouched; oss keeps OTP login + CLI mint unchanged.
 - **Hub-origin workspaces are hub-managed (P7, docs/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

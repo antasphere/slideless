@@ -611,6 +611,21 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     Better Auth bump. (The admin reset-link route is chassis code — the seam
     should gate it too, and the dashboard affordance with it.)
 
+    **Update (2026-07-13, the hub-only-entrances close):** the seam is
+    wider still. The charter call closed the two remaining non-SSO MINTING
+    entrances on cloud, and each needed its own hand-enumeration next to
+    the reset predicate: the emailOTP SESSION surface (`/sign-in/email-otp`
+    — the unconditional mint — plus `/email-otp/verify-email`, which mints
+    under `autoSignInAfterVerification`, plus the send leg) and the tool's
+    own CLI OTP key mint (`/cli/auth/request` + `/cli/auth/complete`). A
+    `disableLocalCredentialRecovery`-style switch that covers only reset is
+    therefore the wrong shape: the chassis seam a hub-only edition wants is
+    "local credential MINTING off" — reset routes + OTP sign-in routes +
+    the CLI OTP mint pair in ONE chassis-tested enumeration, leaving
+    `/sign-in/email` (break-glass), the SSO provider, and the self-revoke
+    open. Until then every hub-only tool re-audits three separate route
+    lists on each Better Auth bump.
+
 ## 17. The local gate misses the CI formatting gate (P8 review)
 
 66. **`pnpm turbo lint typecheck test build` — the gate CLAUDE.md calls "the
@@ -623,6 +638,24 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     `format:check` turbo task to the documented gate line, or fold prettier
     into the lint task — one gate, no drift between "what CLAUDE.md says CI
     is" and what CI runs.
+
+## 18. The CLI logout self-revoke is missing from the template (family-wide)
+
+67. **The template ships the CLI OTP key MINT (`/cli/auth/request` +
+    `/cli/auth/complete`) but no logout counterpart — a CLI that minted a
+    key cannot revoke it server-side.** `slideless logout` (and any tool
+    CLI's logout) can only forget the local copy; the key stays live until
+    someone finds it in the dashboard. The fail-closed machine allowlist
+    (correctly) blocks every unlisted route, so this needs a deliberate
+    chassis opening, and every instantiated tool will hit the same gap. The
+    hub grew `DELETE /cli/auth/key` (self-revocation: the PRESENTING key
+    revokes exactly itself — no id parameter, so no foreign key is nameable;
+    sessions refused) machine-allowed under its write scope, and Slideless
+    mirrored it (contract route + handler + one method-keyed allowlist
+    entry + SDK `cliAuthRevoke()`). Fix in the template: ship the
+    self-revoke route, its allowlist entry, and the SDK method as chassis
+    code next to the mint pair, so `logout` works server-side in every
+    product without each repo re-deriving the self-revocation shape.
 
 ## Confirmed-good template properties (keep these)
 

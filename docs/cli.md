@@ -123,10 +123,12 @@ slideless list                                      # served from the cache
 - A cached key is only ever replayed against the instance it was minted on
   (the profile's `baseUrl` scopes the cache).
 - `slideless logout` on a hub-connected profile (or with an explicit
-  `--org <id>`) attempts a server-side self-revoke of that org's cached key,
-  then evicts it. An instance whose machine allowlist refuses the self-revoke
-  (403) keeps the key **valid server-side** — the CLI says so; revoke it from
-  the dashboard. A classic single-key profile logs out exactly as before.
+  `--org <id>`) self-revokes that org's cached key server-side
+  (`DELETE /cli/auth/key` — the presenting key revokes exactly itself),
+  then evicts it. An OLDER instance whose machine allowlist predates the
+  self-revoke refuses (403) and keeps the key **valid server-side** — the
+  CLI says so; revoke it from the dashboard. A classic single-key profile
+  logs out exactly as before.
 
 Self-hosted (`oss`) instances never take this branch: the flows above
 (`auth login-request`, `login`, `SLIDELESS_API_KEY`, `--api-key`) resolve
@@ -134,7 +136,11 @@ exactly as documented, and the hub is never contacted.
 
 ## Sign in
 
-The OTP flow needs the instance to have a delivering email driver
+The OTP flow is the **self-host** entrance. On an Antasphere-cloud instance
+it refuses — the CLI detects cloud via discovery and steers you to
+`antasphere login` (see "Cloud instances" above); server-side the endpoints
+answer `403 cli_otp_disabled` (hub-only login, docs/federation.md D1). The
+flow needs the instance to have a delivering email driver
 (`EMAIL_DRIVER=smtp|resend`); it signs in **existing accounts only** — sign-up
 stays closed (accounts enter via setup, workspace invitations, or
 collaborator claims):
@@ -274,4 +280,10 @@ plugin with `disableSignUp` — an unknown email gets a generic success and no
 mail (no account enumeration, no account creation), codes are attempt-limited
 (3) and both endpoints sit behind the instance's OTP/login rate walls. The
 key is returned exactly once; the flow's throwaway session is deleted
-server-side. Without an email driver both answer `400 otp_unavailable`.
+server-side. Without an email driver both answer `400 otp_unavailable`; on
+the cloud edition both answer `403 cli_otp_disabled` (hub-only login — mint
+through `antasphere login` instead). `DELETE /cli/auth/key` is the logout
+counterpart on both editions: an authenticated route where the presenting
+API key revokes exactly ITSELF (machine-allowed under `presentations:write`
+in the fail-closed scope allowlist; sessions are refused — the dashboard is
+their key surface).

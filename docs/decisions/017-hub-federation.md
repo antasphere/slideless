@@ -151,12 +151,25 @@ plain local API-key path, hub out of the loop.
   closed (the `antasphere` provider's unset `disableSignUp` is the
   deliberate fourth switch that lets JIT in); and since the P8 closes below,
   the local password-reset surface REFUSES on cloud rather than being merely
-  undiscoverable. Two same-class doors are KNOWN-OPEN on cloud pending a
+  undiscoverable. Two same-class doors were KNOWN-OPEN on cloud pending a
   charter call (initiative doc `slideless-cloud-binding-DISCUSS-LATER.md`
   §B2): `/sign-in/email-otp` (human OTP sign-in) and `/cli/auth/*` (the
   tool's own OTP→`slk_` mint), both reachable only with a delivering mailer
   and a hub-synced mailbox, both hub-gated per request by the P4
-  re-assertion — an unwanted entrance, never an escalation.
+  re-assertion — an unwanted entrance, never an escalation. **Charter call
+  taken 2026-07-13: both are now CLOSED on cloud** — for AUDIT completeness
+  (every cloud credential, human session and CLI key alike, must trace
+  through the hub so its audit log is the complete access record). The
+  emailOTP session surface (`/sign-in/email-otp`, plus
+  `/email-otp/verify-email` as config insurance and the send leg) answers
+  403 `otp_signin_disabled` via `isOtpSignInPath` next to the P8 reset
+  predicate; `/cli/auth/request` + `/cli/auth/complete` answer 403
+  `cli_otp_disabled` steering to `antasphere login`. In the same slice the
+  logout SELF-revoke `DELETE /cli/auth/key` (a presenting key killing
+  exactly itself) was added and machine-allowed under `presentations:write`
+  — the one deliberate `/cli/auth` opening in the fail-closed allowlist, on
+  both editions. oss keeps OTP login and the CLI mint unchanged; see
+  docs/federation.md "Discovery".
 
 ### 8. The P8 hardening closes (this program's exit gate)
 
