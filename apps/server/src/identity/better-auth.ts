@@ -232,6 +232,16 @@ function isPasswordResetPath(path: string): boolean {
  *  - POST /email-otp/check-verification-otp verifies WITHOUT consuming and
  *    mints nothing (no createSession in its handler); with the send leg
  *    closed there is nothing to check anyway;
+ *  - POST /email-otp/request-email-change + POST /email-otp/change-email
+ *    (the plugin's two remaining 1.6.15 routes): both run behind
+ *    sensitiveSessionMiddleware — an EXISTING fresh session is their entry
+ *    condition, so neither is a session ENTRANCE (change-email's
+ *    setSessionCookie only re-sets the cookie of the session it already
+ *    required) — and both answer 400 unless the plugin option
+ *    `changeEmail.enabled` is set, which this instance never sets (the
+ *    core tokened /change-email flow is the email-change surface; on cloud
+ *    it is hidden and D10 re-syncs email from the hub anyway). If
+ *    changeEmail is ever enabled, re-rule them here;
  *  - createVerificationOTP / getVerificationOTP are registered PATHLESS in
  *    1.6.15 (routes.mjs — `createAuthEndpoint({...})` with no path arg), so
  *    better-call's router skips them: server-side only, unreachable over
