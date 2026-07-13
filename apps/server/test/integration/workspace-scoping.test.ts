@@ -90,7 +90,7 @@ describe('session resolution (X-Workspace-Id)', () => {
     expect(body.workspace.id).toBe(w1);
     expect(body.workspace.name).toBe('First Workspace');
     expect(body.workspaces.map((w: { id: string }) => w.id)).toEqual([w1, w2]);
-    expect(body.workspaces[1]).toEqual({ id: w2, name: 'Second Workspace', role: 'owner' });
+    expect(body.workspaces[1]).toEqual({ id: w2, name: 'Second Workspace', role: 'owner', hubOrigin: false });
   });
 
   it('the header switches the active workspace', async () => {
@@ -240,7 +240,7 @@ describe('API keys bind the mint-time workspace', () => {
     expect(meKey.activeWorkspaceId).toBe(w2);
     // Even though the key's OWNER belongs to two workspaces, the credential
     // enumerates only the one it is bound to.
-    expect(meKey.workspaces).toEqual([{ id: w2, name: 'Second Workspace', role: 'owner' }]);
+    expect(meKey.workspaces).toEqual([{ id: w2, name: 'Second Workspace', role: 'owner', hubOrigin: false }]);
   });
 
   it('a mismatching X-Workspace-Id on a machine credential is rejected loudly', async () => {

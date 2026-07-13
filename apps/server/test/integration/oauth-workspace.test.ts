@@ -238,7 +238,7 @@ describe('consent-time binding', () => {
       })
     );
     expect(me.activeWorkspaceId).toBe(w1);
-    expect(me.workspaces).toEqual([{ id: w1, name: 'OAuth WS One', role: 'owner' }]);
+    expect(me.workspaces).toEqual([{ id: w1, name: 'OAuth WS One', role: 'owner', hubOrigin: false }]);
   });
 
   it('a parked selection binds the CHOSEN workspace; consents coexist per workspace', async () => {

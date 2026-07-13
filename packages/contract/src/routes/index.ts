@@ -354,6 +354,7 @@ export const invitationAcceptRoute = createRoute({
   responses: {
     200: jsonBody(invitationAcceptedSchema, 'Joined the workspace'),
     400: errorResponses[400],
+    403: jsonBody(apiErrorSchema, 'Workspace membership is hub-managed (hub_managed, cloud edition)'),
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Account exists — sign in to accept'),
     410: errorResponses[410]

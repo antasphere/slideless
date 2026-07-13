@@ -541,6 +541,34 @@ Found while limiting `origin='guest'` memberships to per-deck capability
     it is the surface where "membership = workspace-wide read" does the
     most damage.
 
+## 15. Hub-managed membership surfaces (cloud-binding Phase 7)
+
+Found while cloud-gating the local `/members` + `/invitations` mutations on
+hub-origin workspaces and enriching `/me` for dashboard adaptation.
+
+62. **Module-local `err()` helpers can't carry `details`, and the naive fix
+    breaks zod-openapi typechecking.** Every API module defines
+    `const err = (code, message) => ({ error: { code, message } })` while
+    the shared `apiError()` (and `apiErrorSchema`) support an optional
+    `details`. Extending the local helper with an optional param
+    (`details?: Record<string, unknown>` + conditional spread) makes the
+    returned property type `{...} | undefined`, which fails
+    `RouteConfigToTypedResponse` assignability (`undefined` is not
+    `JSONValue`) on EVERY typed `c.json` in the module — the P7
+    hub-refusal body had to be inlined at its one call site instead. Fix:
+    ship one overloaded helper in the chassis (or re-export `apiError` for
+    handler use) whose no-details call keeps the exact
+    `{ error: { code, message } }` type and whose with-details call types
+    `details` as required — modules stop re-declaring their own.
+63. **`/me` had no per-workspace metadata story.** The moment one credential
+    can name several workspaces (ADR 014) and workspaces differ in KIND
+    (here: hub-projected vs local), clients need per-entry flags on
+    `workspaces[]` and the active `workspace` to adapt — Slideless added
+    `hubOrigin` booleans, the caller's membership `origin`, and a
+    `hubManageUrl` pointer (P7). Fix: when the federation seams upstream,
+    carry these three `/me` additions with them; they are the difference
+    between the dashboard adapting off data vs edition-sniffing.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

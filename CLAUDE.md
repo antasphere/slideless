@@ -63,6 +63,15 @@ deploys) + `dev` (day-to-day work).
   locked (`guest_role_locked`); only the claim path writes guest rows; the hub re-assertion
   never touches them. On cloud, guests get hub identities (the claim page is SSO-first; the
   claim endpoint answers `sso_required` instead of minting local-password accounts).
+- **Hub-origin workspaces are hub-managed (P7, docs/federation.md)**: on `EDITION=cloud`, every
+  local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
+  create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
+  change-email-link — answers 403 `hub_managed` + `details.manageUrl`
+  (`middleware/hub-managed.ts`, keyed on `principal.accountRef`, method-keyed non-GET). READS stay
+  (`GET /members`, invitation list/lookup); the per-deck collaborator surface stays the sanctioned
+  local path; cloud-LOCAL workspaces (operator's, deck-guest hosts) and oss are untouched. The
+  dashboard adapts off `/me`'s `workspace.hubOrigin`/`origin`/`hubManageUrl`, never
+  edition-sniffing.
 
 ## Commands
 

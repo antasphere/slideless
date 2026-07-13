@@ -4,7 +4,7 @@ import { ulid } from 'ulid';
 import { and, asc, eq } from 'drizzle-orm';
 import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
 import { instanceSettings, user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
-import type { Env } from '../env.js';
+import { hubConfig, type Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
 import type { PlatformRegistry } from '../platform/registry.js';
@@ -94,6 +94,14 @@ class SetupAlreadyDone extends Error {}
  */
 export function createApiApp(deps: ApiDeps): OpenAPIHono {
   const { db, env, auth, registry, logger, apiKeys: apiKeyService, audit, email, limiters } = deps;
+
+  // P7 (docs/federation.md): on EDITION=cloud, membership of a hub-origin
+  // (projected) workspace is managed at the hub — this is the pointer the
+  // membership-mutation gates and /me carry. Same single `hubConfig` switch
+  // as every cloud seam: null on oss, so oss wires no gate and /me answers
+  // hubManageUrl null.
+  const hub = hubConfig(env);
+  const hubManaged = hub ? { manageUrl: hub.issuerUrl } : undefined;
 
   const api = new OpenAPIHono({
     // Validation failures use the same wire shape as every other error.
@@ -379,7 +387,12 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     // default); a machine credential lists ONLY the workspace it is bound to,
     // so a workspace-scoped key/token never enumerates the user's others.
     const memberships = await db
-      .select({ id: workspaces.id, name: workspaces.name, role: workspaceMembers.role })
+      .select({
+        id: workspaces.id,
+        name: workspaces.name,
+        role: workspaceMembers.role,
+        centralAccountId: workspaces.centralAccountId
+      })
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
       .where(
@@ -390,19 +403,36 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         )
       )
       .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id));
-    const active = memberships.find((m) => m.id === principal.workspaceId);
+    // hubOrigin is the BOOLEAN projection flag (P7): the raw hub org id
+    // never leaves the instance — map explicitly, never spread the row.
+    const wireWorkspaces = memberships.map((m) => ({
+      id: m.id,
+      name: m.name,
+      role: m.role,
+      hubOrigin: m.centralAccountId !== null
+    }));
+    const active = wireWorkspaces.find((m) => m.id === principal.workspaceId);
     return c.json(
       {
         user: { id: principal.userId, email: principal.email, name: principal.name },
-        workspace: { id: principal.workspaceId, name: active?.name ?? '' },
+        workspace: {
+          id: principal.workspaceId,
+          name: active?.name ?? '',
+          // The ACTIVE workspace's flag comes from the principal itself —
+          // accountRef IS the request workspace's centralAccountId, read
+          // live by every credential resolver.
+          hubOrigin: Boolean(principal.accountRef)
+        },
         role: principal.role,
+        origin: principal.origin,
         via: principal.via,
         scopes: principal.scopes
           ? ([...principal.scopes] as Array<'presentations:read' | 'presentations:write' | 'data:export'>)
           : null,
         apiKeyExpiresAt: principal.apiKeyExpiresAt ?? null,
-        workspaces: memberships,
-        activeWorkspaceId: principal.workspaceId
+        workspaces: wireWorkspaces,
+        activeWorkspaceId: principal.workspaceId,
+        hubManageUrl: hubManaged && principal.accountRef ? hubManaged.manageUrl : null
       },
       200
     );
@@ -436,10 +466,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     db,
     auth,
     publicBaseUrl: env.PUBLIC_BASE_URL,
-    accountDeletion: deps.accountDeletion
+    accountDeletion: deps.accountDeletion,
+    hubManaged
   });
   registerApiKeyRoutes(api, db, apiKeyService);
-  registerInvitationRoutes(api, { db, env, auth, email, audit, registry, logger });
+  registerInvitationRoutes(api, { db, env, auth, email, audit, registry, logger, hubManaged });
   registerAuditRoutes(api, db);
   registerExportRoutes(api, {
     db,

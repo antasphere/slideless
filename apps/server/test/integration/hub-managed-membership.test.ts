@@ -1,0 +1,452 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import { FakeHub, type HubUserFixture } from '../fake-hub.js';
+import { InvitationService } from '../../src/invitations/service.js';
+import * as sso from './sso-helpers.js';
+
+/**
+ * P7 — cloud-gating the local membership surfaces on hub-origin workspaces
+ * (docs/federation.md "Hub-managed membership"; binding plan §7; patterns §6).
+ *
+ * On EDITION=cloud a hub org projects into a workspace whose MEMBERSHIP is
+ * the hub's source of truth. This suite pins:
+ *
+ *  - every local membership MUTATION on the projected workspace answers
+ *    403 `hub_managed` with `details.manageUrl` → the hub (invitation
+ *    create/accept/revoke, member role-change/deactivate/reactivate/delete,
+ *    reset-link, change-email-link) — and mutates NOTHING;
+ *  - READS stay: GET /members serves the projected roster, GET /invitations
+ *    lists;
+ *  - the SAME credential performs the SAME mutations on a cloud-LOCAL
+ *    workspace (centralAccountId NULL) — the operator's own — unhindered:
+ *    the boundary is the workspace's projection, never the edition alone;
+ *  - /me carries the new adaptation signals (workspace.hubOrigin, per-entry
+ *    hubOrigin, membership `origin`, hubManageUrl) without leaking the raw
+ *    hub org id;
+ *  - machine credentials: the fail-closed scope allowlist keeps every
+ *    /members + /invitations shape unreachable to keys (403
+ *    endpoint_not_allowed) — the P7 gate is a second wall behind it;
+ *  - MCP needs zero changes: tools re-enter /api/v1 in-process, so the
+ *    tool surface exposes no membership mutation at all, whoami carries the
+ *    new /me fields, and per-deck reads work on the projected workspace.
+ */
+
+const OPERATOR = { email: 'operator@p7.test', name: 'Operator', password: 'operator-pass-p7-1' };
+const HUB_ADMIN_EMAIL = 'hub-admin@p7.test';
+const HUB_MEMBER_EMAIL = 'hub-member@p7.test';
+const ORG_A = '77777777-aaaa-4bbb-8ccc-000000000001';
+
+let container: StartedPostgreSqlContainer;
+let hub: FakeHub;
+let app: TestApp;
+
+let operatorCookie: string;
+/** The setup workspace — cloud-LOCAL (centralAccountId NULL). */
+let operatorWorkspaceId: string;
+let hubAdminCookie: string;
+/** ORG_A's lazy projection — hub-origin (centralAccountId = ORG_A). */
+let projectedWorkspaceId: string;
+/** The hub member's membership ROW id in the projected workspace. */
+let hubMemberRowId: string;
+/** hubAdmin's API key, bound to the projected workspace at mint. */
+let projectedKey: string;
+
+let ipCounter = 0;
+const nextIp = () => `10.96.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
+
+const json = (body: unknown, headers: Record<string, string> = {}) => ({
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-forwarded-for': nextIp(), ...headers },
+  body: JSON.stringify(body)
+});
+
+const hubAdmin: HubUserFixture = {
+  sub: 'hub-admin-p7',
+  email: HUB_ADMIN_EMAIL,
+  name: 'Hub Admin',
+  workspaceId: ORG_A,
+  role: 'owner',
+  workspaceName: 'Org A'
+};
+
+const hubMember: HubUserFixture = {
+  sub: 'hub-member-p7',
+  email: HUB_MEMBER_EMAIL,
+  name: 'Hub Member',
+  workspaceId: ORG_A,
+  role: 'member',
+  workspaceName: 'Org A'
+};
+
+/** Headers targeting the projected workspace with hubAdmin's session. */
+const asHubAdmin = (extra: Record<string, string> = {}) => ({
+  cookie: hubAdminCookie,
+  'x-workspace-id': projectedWorkspaceId,
+  ...extra
+});
+
+async function expectHubManaged(res: Response): Promise<void> {
+  expect(res.status).toBe(403);
+  const body = await readJson(res);
+  expect(body.error.code).toBe('hub_managed');
+  expect(body.error.details.manageUrl).toBe(hub.issuer);
+}
+
+let rpcId = 0;
+async function mcp(method: string, params: unknown = {}) {
+  const res = await app.app.request('/mcp', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      'x-forwarded-for': nextIp(),
+      authorization: `Bearer ${projectedKey}`
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params })
+  });
+  expect(res.status).toBe(200);
+  const body = await readJson(res);
+  expect(body.error, `JSON-RPC error for ${method}: ${JSON.stringify(body.error)}`).toBeUndefined();
+  return body.result;
+}
+
+beforeAll(async () => {
+  [container, hub] = await Promise.all([startPostgres(), FakeHub.start()]);
+  app = await createTestApp(await createDatabase(container, 'p7_hub_managed'), {
+    EDITION: 'cloud',
+    HUB_ISSUER_URL: hub.issuer,
+    HUB_CLIENT_ID: 'tool-slideless-cloud',
+    HUB_CLIENT_SECRET: 'integration-test-hub-secret-p7',
+    HUB_SERVICE_KEY: 'ant_integration_test_key'
+  });
+
+  // The operator's own cloud-LOCAL workspace (setup; centralAccountId NULL).
+  const setup = await readJson(
+    await app.app.request('/api/v1/setup', json({ instanceName: 'P7 Cloud', owner: OPERATOR }))
+  );
+  operatorWorkspaceId = setup.workspaceId;
+  operatorCookie = extractCookie(
+    await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OPERATOR.email, password: OPERATOR.password })
+    )
+  );
+
+  // Two hub identities SSO into ORG_A: the first login lazily projects the
+  // org into a workspace; the second lands a 'member' row in the SAME one.
+  hubAdminCookie = await sso.ssoLogin(app, hub, hubAdmin);
+  const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie: hubAdminCookie } }));
+  projectedWorkspaceId = me.activeWorkspaceId;
+  const memberCookie = await sso.ssoLogin(app, hub, hubMember);
+  const memberMe = await readJson(
+    await app.app.request('/api/v1/me', { headers: { cookie: memberCookie } })
+  );
+  expect(memberMe.activeWorkspaceId).toBe(projectedWorkspaceId);
+
+  const { rows } = await app.db.pool.query(
+    `SELECT wm.id FROM workspace_members wm JOIN "user" u ON u.id = wm.user_id
+     WHERE wm.workspace_id = $1 AND u.email = $2`,
+    [projectedWorkspaceId, HUB_MEMBER_EMAIL]
+  );
+  hubMemberRowId = rows[0].id;
+
+  // hubAdmin's API key, minted from the session — bound at mint to the
+  // session's ACTIVE workspace, the projected one (ADR 014).
+  const minted = await readJson(
+    await app.app.request(
+      '/api/v1/api-keys',
+      json({ name: 'p7-key', scopes: ['presentations:read', 'presentations:write'] }, asHubAdmin())
+    )
+  );
+  projectedKey = minted.key;
+}, 180_000);
+
+afterAll(async () => {
+  await app?.stop();
+  await Promise.all([container?.stop(), hub?.stop()]);
+});
+
+describe('mutations on the HUB-ORIGIN workspace → 403 hub_managed + pointer', () => {
+  it('invitation create', async () => {
+    await expectHubManaged(
+      await app.app.request(
+        '/api/v1/invitations',
+        json({ email: 'newcomer@p7.test', role: 'member' }, asHubAdmin())
+      )
+    );
+  });
+
+  it('invitation revoke (any local invitation mutation is hub-managed)', async () => {
+    await expectHubManaged(
+      await app.app.request('/api/v1/invitations/99999999-9999-4999-8999-999999999999', {
+        method: 'DELETE',
+        headers: asHubAdmin({ 'x-forwarded-for': nextIp() })
+      })
+    );
+  });
+
+  it('member role-change, deactivate, reactivate — and the row never moves', async () => {
+    await expectHubManaged(
+      await app.app.request(`/api/v1/members/${hubMemberRowId}`, {
+        ...json({ role: 'admin' }, asHubAdmin()),
+        method: 'PATCH'
+      })
+    );
+    await expectHubManaged(
+      await app.app.request(`/api/v1/members/${hubMemberRowId}`, {
+        ...json({ isActive: false }, asHubAdmin()),
+        method: 'PATCH'
+      })
+    );
+    await expectHubManaged(
+      await app.app.request(`/api/v1/members/${hubMemberRowId}`, {
+        ...json({ isActive: true }, asHubAdmin()),
+        method: 'PATCH'
+      })
+    );
+    const { rows } = await app.db.pool.query(
+      `SELECT role, is_active FROM workspace_members WHERE id = $1`,
+      [hubMemberRowId]
+    );
+    expect(rows[0]).toEqual({ role: 'member', is_active: true });
+  });
+
+  it('member delete', async () => {
+    await expectHubManaged(
+      await app.app.request(`/api/v1/members/${hubMemberRowId}`, {
+        method: 'DELETE',
+        headers: asHubAdmin({ 'x-forwarded-for': nextIp() })
+      })
+    );
+    const { rows } = await app.db.pool.query(`SELECT 1 FROM workspace_members WHERE id = $1`, [
+      hubMemberRowId
+    ]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('reset-link and change-email-link (the credential surfaces are the hub’s too)', async () => {
+    await expectHubManaged(
+      await app.app.request(`/api/v1/members/${hubMemberRowId}/reset-link`, {
+        method: 'POST',
+        headers: asHubAdmin({ 'x-forwarded-for': nextIp() })
+      })
+    );
+    await expectHubManaged(
+      await app.app.request(
+        `/api/v1/members/${hubMemberRowId}/change-email-link`,
+        json({ newEmail: 'sideways@p7.test' }, asHubAdmin())
+      )
+    );
+  });
+
+  it('invitation ACCEPT against a projected workspace is refused even for a pre-existing row (defense in depth)', async () => {
+    // No API path can create this row (the gate above) — seed it through the
+    // service directly, the way legacy/seeded data would exist.
+    const service = new InvitationService(app.db.db);
+    const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [OPERATOR.email]);
+    const seeded = await service.create({
+      workspaceId: projectedWorkspaceId,
+      email: 'seeded-invitee@p7.test',
+      role: 'member',
+      invitedBy: rows[0].id
+    });
+    const res = await app.app.request(
+      '/api/v1/invitations/accept',
+      json({ token: seeded.token, name: 'Seeded', password: 'a-perfectly-fine-password' })
+    );
+    await expectHubManaged(res);
+    // Nothing was minted for the invitee.
+    const { rows: users } = await app.db.pool.query(`SELECT 1 FROM "user" WHERE email = $1`, [
+      'seeded-invitee@p7.test'
+    ]);
+    expect(users).toHaveLength(0);
+  });
+});
+
+describe('reads on the HUB-ORIGIN workspace stay open', () => {
+  it('GET /members serves the projected roster', async () => {
+    const res = await app.app.request('/api/v1/members', { headers: asHubAdmin() });
+    expect(res.status).toBe(200);
+    const { members } = await readJson(res);
+    const emails = members.map((m: { email: string }) => m.email).sort();
+    expect(emails).toEqual([HUB_ADMIN_EMAIL, HUB_MEMBER_EMAIL]);
+  });
+
+  it('GET /invitations lists', async () => {
+    const res = await app.app.request('/api/v1/invitations', { headers: asHubAdmin() });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('the SAME mutations on a cloud-LOCAL workspace still work (the boundary is projection, not edition)', () => {
+  let acceptToken: string;
+
+  it('operator invites hubAdmin into the operator workspace — 201', async () => {
+    const res = await app.app.request(
+      '/api/v1/invitations',
+      json({ email: HUB_ADMIN_EMAIL, role: 'admin' }, { cookie: operatorCookie })
+    );
+    expect(res.status).toBe(201);
+    const body = await readJson(res);
+    acceptToken = body.acceptUrl.split('/invite/')[1] as string;
+  });
+
+  it('hubAdmin ACCEPTS it (public accept works on cloud for local workspaces)', async () => {
+    const res = await app.app.request(
+      '/api/v1/invitations/accept',
+      json({ token: acceptToken }, { cookie: hubAdminCookie })
+    );
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    expect(body.workspaceId).toBe(operatorWorkspaceId);
+  });
+
+  it('the ONE credential sees both sides: refused on the projection, free on the local workspace', async () => {
+    // Same session, local workspace selected: invitation create + revoke work.
+    const created = await app.app.request(
+      '/api/v1/invitations',
+      json(
+        { email: 'local-colleague@p7.test', role: 'member' },
+        { cookie: hubAdminCookie, 'x-workspace-id': operatorWorkspaceId }
+      )
+    );
+    expect(created.status).toBe(201);
+    const { invitation } = await readJson(created);
+    const revoked = await app.app.request(`/api/v1/invitations/${invitation.id}`, {
+      method: 'DELETE',
+      headers: {
+        cookie: hubAdminCookie,
+        'x-workspace-id': operatorWorkspaceId,
+        'x-forwarded-for': nextIp()
+      }
+    });
+    expect(revoked.status).toBe(200);
+    // Same session, projected workspace selected: refused (pinned above,
+    // re-checked here to make the single-credential contrast explicit).
+    await expectHubManaged(
+      await app.app.request(
+        '/api/v1/invitations',
+        json({ email: 'local-colleague-2@p7.test', role: 'member' }, asHubAdmin())
+      )
+    );
+  });
+
+  it('member mutations on the local workspace work: reset-link + role change', async () => {
+    const { rows } = await app.db.pool.query(
+      `SELECT wm.id FROM workspace_members wm JOIN "user" u ON u.id = wm.user_id
+       WHERE wm.workspace_id = $1 AND u.email = $2`,
+      [operatorWorkspaceId, HUB_ADMIN_EMAIL]
+    );
+    const localRowId = rows[0].id;
+    const reset = await app.app.request(`/api/v1/members/${localRowId}/reset-link`, {
+      method: 'POST',
+      headers: { cookie: operatorCookie, 'x-forwarded-for': nextIp() }
+    });
+    expect(reset.status).toBe(200);
+    const rerole = await app.app.request(`/api/v1/members/${localRowId}`, {
+      ...json({ role: 'member' }, { cookie: operatorCookie }),
+      method: 'PATCH'
+    });
+    expect(rerole.status).toBe(200);
+    expect((await readJson(rerole)).role).toBe('member');
+  });
+});
+
+describe('/me carries the adaptation signals (and never the raw hub org id)', () => {
+  it('projected workspace: hubOrigin true, origin hub, hubManageUrl → the hub', async () => {
+    const res = await app.app.request('/api/v1/me', { headers: asHubAdmin() });
+    expect(res.status).toBe(200);
+    const me = await readJson(res);
+    expect(me.workspace.hubOrigin).toBe(true);
+    expect(me.origin).toBe('hub');
+    expect(me.hubManageUrl).toBe(hub.issuer);
+    // Per-entry flags across BOTH memberships of the one session.
+    const byId = Object.fromEntries(
+      me.workspaces.map((w: { id: string; hubOrigin: boolean }) => [w.id, w.hubOrigin])
+    );
+    expect(byId[projectedWorkspaceId]).toBe(true);
+    expect(byId[operatorWorkspaceId]).toBe(false);
+    // The raw hub org id never crosses the wire.
+    expect(JSON.stringify(me)).not.toContain(ORG_A);
+  });
+
+  it('local workspace, same session: hubOrigin false, origin local, hubManageUrl null', async () => {
+    const res = await app.app.request('/api/v1/me', {
+      headers: { cookie: hubAdminCookie, 'x-workspace-id': operatorWorkspaceId }
+    });
+    const me = await readJson(res);
+    expect(me.workspace.hubOrigin).toBe(false);
+    expect(me.origin).toBe('local');
+    expect(me.hubManageUrl).toBeNull();
+  });
+
+  it('the API key bound to the projected workspace reports the same signals (via api_key)', async () => {
+    const res = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${projectedKey}` }
+    });
+    expect(res.status).toBe(200);
+    const me = await readJson(res);
+    expect(me.via).toBe('api_key');
+    expect(me.workspace.hubOrigin).toBe(true);
+    expect(me.origin).toBe('hub');
+    expect(me.hubManageUrl).toBe(hub.issuer);
+    // Machine credentials list ONLY their bound workspace (ADR 014).
+    expect(me.workspaces).toHaveLength(1);
+    expect(me.workspaces[0].hubOrigin).toBe(true);
+  });
+});
+
+describe('machine credentials: the fail-closed scope map is the first wall', () => {
+  it('every /members + /invitations shape 403s endpoint_not_allowed for a key — reads included', async () => {
+    const key = { authorization: `Bearer ${projectedKey}` };
+    for (const [path, init] of [
+      ['/api/v1/members', { headers: { ...key, 'x-forwarded-for': nextIp() } }],
+      [`/api/v1/members/${hubMemberRowId}`, { ...json({ role: 'admin' }, key), method: 'PATCH' }],
+      [`/api/v1/members/${hubMemberRowId}`, { method: 'DELETE', headers: { ...key, 'x-forwarded-for': nextIp() } }],
+      ['/api/v1/invitations', { headers: { ...key, 'x-forwarded-for': nextIp() } }],
+      ['/api/v1/invitations', json({ email: 'x@p7.test', role: 'member' }, key)]
+    ] as const) {
+      const res = await app.app.request(path, init as RequestInit);
+      expect(res.status, `${path} should be scope-refused`).toBe(403);
+      expect((await readJson(res)).error.code).toBe('endpoint_not_allowed');
+    }
+  });
+});
+
+describe('MCP is unaffected (zero MCP code changes)', () => {
+  it('the tool surface exposes NO workspace-membership tool — only the sanctioned per-deck collaborator pair', async () => {
+    const result = await mcp('tools/list');
+    const names = result.tools.map((t: { name: string }) => t.name);
+    expect(names.length).toBeGreaterThan(0);
+    // The per-deck collaborator surface (ADR 013) is the sanctioned local
+    // path and STAYS; nothing touches /members or /invitations.
+    expect(names.filter((n: string) => /member|invit/i.test(n)).sort()).toEqual([
+      'slideless_invite_collaborator',
+      'slideless_uninvite_collaborator'
+    ]);
+  });
+
+  it('whoami re-enters /api/v1 in-process and carries the new /me signals', async () => {
+    const result = await mcp('tools/call', { name: 'slideless_whoami', arguments: {} });
+    const me = JSON.parse(result.content[0].text);
+    expect(me.workspace.hubOrigin).toBe(true);
+    expect(me.origin).toBe('hub');
+    expect(me.hubManageUrl).toBe(hub.issuer);
+  });
+
+  it('per-deck write + read on the projected workspace work through MCP', async () => {
+    const uploaded = await mcp('tools/call', {
+      name: 'slideless_upload_html_presentation',
+      arguments: { title: 'P7 Deck', html: '<!doctype html><html><body><h1>p7</h1></body></html>' }
+    });
+    const deck = JSON.parse(uploaded.content[0].text);
+    expect(deck.presentation.id).toBeTruthy();
+    const fetched = await mcp('tools/call', {
+      name: 'slideless_get_presentation',
+      arguments: { presentationId: deck.presentation.id }
+    });
+    const body = JSON.parse(fetched.content[0].text);
+    expect(body.title).toBe('P7 Deck');
+  });
+});

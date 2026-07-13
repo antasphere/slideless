@@ -22,10 +22,13 @@ entitlement seams.
 
 > **Phase status.** Phase 2 (env contract, edition binding seam, discovery,
 > dev harness, R7 guard), **Phase 3 (the SSO entrance: "Sign in with
-> Antasphere", JIT provisioning, lazy org projection — ADR 015)**, and
+> Antasphere", JIT provisioning, lazy org projection — ADR 015)**,
 > **Phase 4 (the hub gates: org suspension + membership re-assertion —
-> "The hub gates" below + ADR 016)** are built. The CLI cross-tool exchange
-> is **Phase 5**.
+> "The hub gates" below + ADR 016)**, **Phase 5 (the CLI cross-tool
+> exchange)**, **Phase 6 (guest capability limits + the SSO-first claim)**,
+> and **Phase 7 (hub-managed membership: the local membership-mutation
+> gate + the `/me` adaptation signals — "Hub-managed membership" below)**
+> are built.
 
 ## Environment contract
 
@@ -340,6 +343,67 @@ used token stays indistinguishable from an invalid one; the dashboard
 claim page retries the claim once when a "dead" lookup meets a live
 session before showing the dead screen.
 
+## Hub-managed membership (Phase 7): local mutation surfaces on projected workspaces
+
+A hub-origin workspace (`workspaces.centralAccountId IS NOT NULL`) takes its
+membership from the hub: invites, roles, and removals happen at
+`account.antasphere.com` and flow in via SSO login (Phase 3) and the H2
+re-assertion (Phase 4). Slideless still ships the self-host era's full local
+`/members` + `/invitations` management — on cloud, a local mutation of a
+PROJECTED org's membership would create divergence the next login or
+re-assertion fights. Phase 7 closes that:
+
+- **Every local membership MUTATION on a hub-origin workspace answers
+  `403 hub_managed`** with `details.manageUrl` → the hub (the `HUB_ISSUER_URL`
+  origin): invitation create/accept/revoke, member role-change /
+  deactivate / reactivate / delete, reset-link, change-email-link. 403, not
+  410: the member rows demonstrably exist (reads serve them) — what is
+  denied is the operation's LOCAL authority, for every caller, regardless
+  of role (`middleware/hub-managed.ts` has the full rationale).
+- **Reads stay**: `GET /members` serves the projected roster (it is real
+  and useful), `GET /invitations` lists.
+- **The gate keys on `principal.accountRef`** — populated by every
+  credential resolver from a live join on the request workspace's
+  `centralAccountId` (the same signal as the Phase 4 gates) — and is
+  method-keyed (non-GET/HEAD under the gated paths), so future mutations
+  under those paths are covered by default. The public invitation
+  accept/lookup segments are principal-less; the accept handler checks the
+  INVITATION's workspace instead (defense in depth — the create gate means
+  no such invitation can exist through the API).
+- **Cloud-LOCAL workspaces are untouched**: the operator's own setup
+  workspace and every deck workspace holding guests have
+  `centralAccountId NULL` — local management (and the public invitation
+  accept) works there exactly as on oss. The boundary is the workspace's
+  projection, never the edition alone. **oss is byte-identical**: the gate
+  is wired only behind the `hubConfig` presence switch.
+- **Guests on a projected workspace**: the membership PATCH surface being
+  hub-managed includes guest rows — cutting a guest there goes through the
+  sanctioned per-deck collaborator surface (uninvite/revoke, ADR 013),
+  which cuts content access immediately and stays open on ALL workspaces.
+- **Machine credentials** never reached these surfaces anyway: `/members`
+  and `/invitations` are deliberately unlisted in the fail-closed scope
+  allowlist (`middleware/scopes.ts`) — keys/tokens get
+  `403 endpoint_not_allowed` before this gate is even consulted.
+- **The dashboard adapts off `/me`, never edition-sniffing**: `GET /me` now
+  carries `workspace.hubOrigin` (+ a per-entry `hubOrigin` on
+  `workspaces[]`, booleans — the raw hub org id is never exposed), the
+  caller's membership `origin` (`local|hub|guest`), and `hubManageUrl` (the
+  link-out target; null on oss and on local workspaces). On hub-origin
+  workspaces the member/invitation management affordances disappear behind
+  a "Manage at Antasphere" link (the roster stays read-only visible);
+  guests additionally lose the guest-forbidden affordances (members/files
+  nav, deck creation) and the deck page skips its roster fetch.
+- **MCP needs no changes**: the instance stays its own OAuth 2.1 AS for
+  `/mcp`, tokens are minted and verified locally, and every tool call
+  re-enters `/api/v1` in-process — the scope allowlist, the guest gate, and
+  this gate all apply unchanged. No MCP tool touches `/members` or
+  `/invitations`; the per-deck collaborator tools are the sanctioned pair.
+
+The last-owner guard never fights this: projected workspaces are exempt
+(D11) — ownership is asserted hub-side, local membership mutation is
+disabled here, and the projection re-asserts on next login, so no ownerless
+limbo exists.
+
 ## The hub registry entry (what the HUB operator configures)
 
 The hub seeds first-party tool clients from its `TOOL_REGISTRY` env var
@@ -419,6 +483,8 @@ docker compose -f docker-compose.federation.yml down -v
 | P3 — SSO entrance   | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021. |
 | P4 — hub gates      | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice. |
 | P5 — CLI cross-tool | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side. |
+| P6 — guests         | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock. |
+| P7 — hub-managed membership | **Built** — "Hub-managed membership" above: `middleware/hub-managed.ts` gate on `/members` + `/invitations` mutations, `/me` adaptation fields (`hubOrigin`, `origin`, `hubManageUrl`), dashboard link-out. No migration; MCP unchanged. |
 
 ## Related decisions
 

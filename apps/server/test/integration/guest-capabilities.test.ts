@@ -262,6 +262,27 @@ describe('what the guest is REFUSED (403 guest_forbidden — D2, capability of o
   });
 });
 
+describe('/me tells clients how to adapt (P7 additions, oss values)', () => {
+  it("the guest's /me carries origin='guest' so the dashboard hides the guest-forbidden surfaces", async () => {
+    const res = await app.app.request('/api/v1/me', { headers: { cookie: guestCookie } });
+    expect(res.status).toBe(200);
+    const me = await readJson(res);
+    expect(me.origin).toBe('guest');
+    // oss: nothing is a hub projection and there is no hub to link out to.
+    expect(me.workspace.hubOrigin).toBe(false);
+    expect(me.workspaces.every((w: { hubOrigin: boolean }) => w.hubOrigin === false)).toBe(true);
+    expect(me.hubManageUrl).toBeNull();
+  });
+
+  it("a regular member's /me stays origin='local'", async () => {
+    const res = await app.app.request('/api/v1/me', { headers: { cookie: ownerCookie } });
+    const me = await readJson(res);
+    expect(me.origin).toBe('local');
+    expect(me.workspace.hubOrigin).toBe(false);
+    expect(me.hubManageUrl).toBeNull();
+  });
+});
+
 describe('the guest role-lock (origin is a capability axis nothing upgrades)', () => {
   let guestMembershipId: string;
 

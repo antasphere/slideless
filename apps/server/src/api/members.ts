@@ -14,12 +14,19 @@ import type { Auth } from '../identity/better-auth.js';
 import { isLastOwnerDbError, LastOwnerError, type AccountDeletionService } from '../accounts/deletion.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
+import { hubManagedMembershipGate } from '../middleware/hub-managed.js';
 
 export interface MemberRouteDeps {
   db: Db;
   auth: Auth;
   publicBaseUrl: string;
   accountDeletion: AccountDeletionService;
+  /**
+   * Cloud edition only (P7, docs/federation.md): when set, every membership
+   * MUTATION on a hub-origin workspace answers 403 `hub_managed` with this
+   * pointer. undefined on oss — zero behavior change there.
+   */
+  hubManaged?: { manageUrl: string } | undefined;
 }
 
 const err = (code: string, message: string) => ({ error: { code, message } });
@@ -45,7 +52,21 @@ const toWire = (m: {
 });
 
 export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): void {
-  const { db, auth, publicBaseUrl, accountDeletion } = deps;
+  const { db, auth, publicBaseUrl, accountDeletion, hubManaged } = deps;
+  // P7 (cloud only): membership of a hub-origin workspace is the HUB's to
+  // manage — every local mutation shape under /members answers the
+  // `hub_managed` pointer. Registered BEFORE the role gates so any
+  // authenticated caller gets the truthful refusal (an anonymous caller
+  // passes through — no principal — and still 401s at requireRole below).
+  // GET /members is untouched: the gate is method-keyed and the projected
+  // roster is real. The 3-segment paths need their own registrations, same
+  // as the explicit requireRole gates below.
+  if (hubManaged) {
+    const gate = hubManagedMembershipGate(hubManaged.manageUrl);
+    api.use('/members/:id', gate);
+    api.use('/members/:id/reset-link', gate);
+    api.use('/members/:id/change-email-link', gate);
+  }
   api.use('/members', requireAuth());
   // Guest capability limit (D2, both editions): the member roster (names +
   // emails of the whole team) is a workspace-level surface. A guest is an

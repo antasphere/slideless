@@ -18,6 +18,7 @@ import { buildInviteEmail } from '../email/templates.js';
 import { InvitationError, InvitationService } from '../invitations/service.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import { requireRole } from '../middleware/auth-context.js';
+import { hubManagedMembershipGate } from '../middleware/hub-managed.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
@@ -40,11 +41,40 @@ export interface InvitationRouteDeps {
   audit: AuditService;
   registry: PlatformRegistry;
   logger: Logger;
+  /**
+   * Cloud edition only (P7, docs/federation.md): when set, invitation
+   * MUTATIONS targeting a hub-origin workspace answer 403 `hub_managed`
+   * with this pointer. undefined on oss — zero behavior change there.
+   */
+  hubManaged?: { manageUrl: string } | undefined;
 }
 
+/** Method-exact public-segment check shared by the admin and P7 gates:
+ * GET lookup and POST accept are the only public shapes — a DELETE
+ * /invitations/lookup must still hit the gates. */
+const isPublicInvitationShape = (path: string, method: string): boolean => {
+  const seg = path.split('/').pop();
+  return (seg === 'lookup' && method === 'GET') || (seg === 'accept' && method === 'POST');
+};
+
 export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRouteDeps): void {
-  const { db, env, auth, email, audit, registry, logger } = deps;
+  const { db, env, auth, email, audit, registry, logger, hubManaged } = deps;
   const service = new InvitationService(db);
+
+  // P7 (cloud only): a hub-origin workspace takes its membership from the
+  // hub, so LOCAL invitation mutations there answer the `hub_managed`
+  // pointer. Method-keyed, so GET /invitations (list) stays a real read.
+  // The public accept/lookup segments are skipped here — their target
+  // workspace is the INVITATION's, not the caller's, so the accept handler
+  // runs its own hub-origin check on the invitation's workspace below.
+  if (hubManaged) {
+    const gate = hubManagedMembershipGate(hubManaged.manageUrl);
+    api.use('/invitations', gate);
+    api.use('/invitations/:id', async (c, next) => {
+      if (isPublicInvitationShape(c.req.path, c.req.method)) return next();
+      return gate(c, next);
+    });
+  }
 
   api.use('/invitations', requireRole('admin'));
   // /invitations/lookup and /invitations/accept are public by design (the
@@ -53,12 +83,7 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
   // admin gate skips exactly those two segments.
   const adminGate = requireRole('admin');
   api.use('/invitations/:id', async (c, next) => {
-    const seg = c.req.path.split('/').pop();
-    // Method-exact skip: GET lookup and POST accept are the only public
-    // shapes; a DELETE /invitations/lookup must still hit the admin gate.
-    if ((seg === 'lookup' && c.req.method === 'GET') || (seg === 'accept' && c.req.method === 'POST')) {
-      return next();
-    }
+    if (isPublicInvitationShape(c.req.path, c.req.method)) return next();
     return adminGate(c, next);
   });
 
@@ -204,6 +229,33 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
     const match = await service.findLiveByToken(body.token);
     if (!match) return c.json(err('not_found', 'Invitation not found or no longer valid'), 404);
     const { invitation, viaEmailToken } = match;
+
+    // P7 defense in depth (cloud only): the path gate above already refuses
+    // CREATING invitations on hub-origin workspaces, so a live one here
+    // means seeded/legacy rows — still refuse BEFORE any account or session
+    // work: accepting would mint a local membership the next SSO login /
+    // hub re-assertion fights. Keyed on the INVITATION's workspace (this is
+    // a public endpoint — the caller's own workspace is irrelevant here).
+    if (hubManaged) {
+      const [ws] = await db
+        .select({ centralAccountId: workspaces.centralAccountId })
+        .from(workspaces)
+        .where(eq(workspaces.id, invitation.workspaceId))
+        .limit(1);
+      if (ws?.centralAccountId) {
+        return c.json(
+          {
+            error: {
+              code: 'hub_managed',
+              message:
+                'Membership of this workspace is managed at the Antasphere hub — ask for an invitation there',
+              details: { manageUrl: hubManaged.manageUrl }
+            }
+          },
+          403
+        );
+      }
+    }
 
     const [account] = await db
       .select({ id: userTable.id, emailVerified: userTable.emailVerified })
