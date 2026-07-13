@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-line VPS installer:
-#   curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/main/install.sh | \
+#   curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/prod/install.sh | \
 #     sudo bash -s -- --domain slideless.example.com
 #
 # Steps: prereqs (git, docker) → clone/update → setup.sh → UFW (22, 80, 443,

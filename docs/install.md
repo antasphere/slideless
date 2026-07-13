@@ -5,7 +5,7 @@ Two supported paths. Both end with the first-boot wizard in the browser.
 ## One-liner (fresh VPS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/main/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/prod/install.sh | \
   sudo bash -s -- --domain slides.example.com
 ```
 
