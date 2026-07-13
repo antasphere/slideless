@@ -428,7 +428,7 @@ Promise<Response>) => Promise<Response>` seam so editions/products
     with the full SIGNED authorize query (`response_type…&sig=`), expecting
     the page to send the user back to the authorize endpoint after sign-in.
     The template's login page only honors `next` (`afterSignIn → goto(
-    safeNext(next))`), so the authorize context is silently discarded and
+safeNext(next))`), so the authorize context is silently discarded and
     the user lands on the dashboard root — the relying party never gets its
     code. Hit LIVE in the Slideless-cloud M1 dance against the hub (Phase
     3): a signed-out hub user who authenticates mid-flow is stranded; the
@@ -487,7 +487,7 @@ re-assertion (Slideless `identity/hub-status.ts` + `hub-gate.ts`, ADR 016).
     but API keys and OAuth bearers resolve in `authContext` directly, so an
     identity-seam-only gate silently misses machine credentials). Slideless
     added an optional `principalGate?: (principal) => {ok} | {ok:false,
-    status, code, message}` hook to `authContext` (run after quota, before
+status, code, message}` hook to `authContext` (run after quota, before
     the scope gate; `{ok:true, role}` re-scopes the live request's role).
     Fix: upstream the hook as a first-class chassis seam — it is tiny,
     oss-inert, and every cloud binding will need it.

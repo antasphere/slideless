@@ -331,10 +331,7 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
           );
         }
         if (!body.name || !body.password) {
-          return c.json(
-            err('credentials_required', 'Provide name and password to create your account'),
-            400
-          );
+          return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
         }
         try {
           // `user.created` is emitted by the identity layer's database hook

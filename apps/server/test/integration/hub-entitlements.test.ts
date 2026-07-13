@@ -363,7 +363,8 @@ describe('membership re-assertion (D3/D11, hub delta H2)', () => {
 
     // All three credential paths live.
     expect((await me(cookie)).status).toBe(200);
-    const keyReq = () => app.app.request('/api/v1/presentations', { headers: { authorization: `Bearer ${key}` } });
+    const keyReq = () =>
+      app.app.request('/api/v1/presentations', { headers: { authorization: `Bearer ${key}` } });
     const bearerReq = () =>
       app.app.request('/api/v1/presentations', { headers: { authorization: `Bearer ${bearer}` } });
     expect((await keyReq()).status).toBe(200);
@@ -606,9 +607,9 @@ describe('oss: the local seams, untouched', () => {
         json({ email: OWNER.email, password: OWNER.password })
       );
       const before = hub.statusRequests.length;
-      expect((await oss.app.request('/api/v1/me', { headers: { cookie: extractCookie(signIn) } })).status).toBe(
-        200
-      );
+      expect(
+        (await oss.app.request('/api/v1/me', { headers: { cookie: extractCookie(signIn) } })).status
+      ).toBe(200);
       // Nothing on oss knows any hub exists.
       expect(hub.statusRequests.length).toBe(before);
     } finally {

@@ -489,7 +489,10 @@ export const breakGlassClaimOwnershipRoute = createRoute({
   },
   responses: {
     200: jsonBody(breakGlassClaimOwnershipSchema, 'The recovered owner membership'),
-    400: jsonBody(apiErrorSchema, 'Validation error, or several workspaces and none named (workspace_required)'),
+    400: jsonBody(
+      apiErrorSchema,
+      'Validation error, or several workspaces and none named (workspace_required)'
+    ),
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
@@ -972,7 +975,8 @@ export const collaboratorClaimRoute = createRoute({
   method: 'post',
   path: '/collaborators/claim',
   tags: ['collaborators'],
-  summary: 'Claim a collaborator grant (public; oss creates the account inline, cloud signs in via hub SSO first)',
+  summary:
+    'Claim a collaborator grant (public; oss creates the account inline, cloud signs in via hub SSO first)',
   request: {
     body: jsonRequestBody(collaboratorClaimSchema, 'Token + credentials for new accounts (oss only)')
   },

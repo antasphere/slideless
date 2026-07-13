@@ -101,10 +101,7 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
   const resolveTargetWorkspace = async (
     explicit: string | undefined
   ): Promise<
-    | { kind: 'ok'; id: string }
-    | { kind: 'not_found' }
-    | { kind: 'not_setup' }
-    | { kind: 'ambiguous' }
+    { kind: 'ok'; id: string } | { kind: 'not_found' } | { kind: 'not_setup' } | { kind: 'ambiguous' }
   > => {
     if (explicit) {
       const [ws] = await db

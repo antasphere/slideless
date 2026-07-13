@@ -143,9 +143,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       `SELECT workspace_id, scopes FROM api_keys WHERE created_by = $1`,
       [users[0].id]
     );
-    expect(keys).toEqual([
-      { workspace_id: ws[0].id, scopes: ['presentations:read', 'presentations:write'] }
-    ]);
+    expect(keys).toEqual([{ workspace_id: ws[0].id, scopes: ['presentations:read', 'presentations:write'] }]);
 
     // The audit row landed (principal-less route writes it directly).
     const { rows: audits } = await app.db.pool.query(
@@ -191,15 +189,13 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       `SELECT id FROM "user" WHERE email = 'alice@connect.test'`
     );
     expect(users).toHaveLength(1);
-    const { rows: accounts } = await app.db.pool.query(
-      `SELECT account_id FROM account WHERE user_id = $1`,
-      [users[0].id]
-    );
+    const { rows: accounts } = await app.db.pool.query(`SELECT account_id FROM account WHERE user_id = $1`, [
+      users[0].id
+    ]);
     expect(accounts).toHaveLength(1);
-    const { rows: keys } = await app.db.pool.query(
-      `SELECT id FROM api_keys WHERE created_by = $1`,
-      [users[0].id]
-    );
+    const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
+      users[0].id
+    ]);
     expect(keys).toHaveLength(2); // first test's key + this one
   });
 
@@ -224,19 +220,16 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     expect(me.user.email).toBe('bob@connect.test');
     expect(me.activeWorkspaceId).toBe(body.workspaceId);
 
-    const { rows: users } = await app.db.pool.query(
-      `SELECT id FROM "user" WHERE email = 'bob@connect.test'`
-    );
+    const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = 'bob@connect.test'`);
     expect(users).toHaveLength(1);
     const { rows: accounts } = await app.db.pool.query(
       `SELECT account_id FROM account WHERE user_id = $1 AND provider_id = 'antasphere'`,
       [users[0].id]
     );
     expect(accounts).toHaveLength(1);
-    const { rows: ws } = await app.db.pool.query(
-      `SELECT id FROM workspaces WHERE central_account_id = $1`,
-      [ORG_BETA]
-    );
+    const { rows: ws } = await app.db.pool.query(`SELECT id FROM workspaces WHERE central_account_id = $1`, [
+      ORG_BETA
+    ]);
     expect(ws).toHaveLength(1);
     const { rows: members } = await app.db.pool.query(
       `SELECT role, origin, is_active FROM workspace_members WHERE user_id = $1`,
@@ -258,10 +251,9 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     const { rows: users } = await app.db.pool.query(
       `SELECT id FROM "user" WHERE email = 'alice@connect.test'`
     );
-    const { rows: keys } = await app.db.pool.query(
-      `SELECT id FROM api_keys WHERE created_by = $1`,
-      [users[0].id]
-    );
+    const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
+      users[0].id
+    ]);
     expect(keys).toHaveLength(3); // the two earlier suite keys + first, NOT replay
   });
 
@@ -280,10 +272,9 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       `SELECT id FROM "user" WHERE email = 'carol@connect.test'`
     );
     expect(users).toHaveLength(1);
-    const { rows: keys } = await app.db.pool.query(
-      `SELECT id FROM api_keys WHERE created_by = $1`,
-      [users[0].id]
-    );
+    const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
+      users[0].id
+    ]);
     expect(keys).toHaveLength(1);
   });
 
@@ -299,9 +290,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       const res = await connect(app, token);
       expect(res.status).toBe(401);
       expect((await readJson(res)).error.code).toBe('invalid_token');
-      const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
-        mallory.email
-      ]);
+      const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [mallory.email]);
       expect(rows).toHaveLength(0); // nothing provisioned, ever
     }
 
@@ -374,9 +363,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     // Park an unverified local account (a workspace invitation acceptance
     // path would create one); the connect must refuse rather than take it
     // over — the pre-registration-takeover posture, same as browser SSO.
-    const { rows: owner } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
-      OWNER.email
-    ]);
+    const { rows: owner } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [OWNER.email]);
     await app.db.pool.query(
       `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
        VALUES ('parked-user-1', 'Parked', 'parked@connect.test', false, now(), now())`
@@ -404,9 +391,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     );
     const res = await connect(app, token);
     expect(res.status).toBe(201);
-    const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
-      OWNER.email
-    ]);
+    const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [OWNER.email]);
     expect(users).toHaveLength(1); // still one local user
     const { rows: accounts } = await app.db.pool.query(
       `SELECT account_id FROM account WHERE user_id = $1 AND provider_id = 'antasphere'`,

@@ -67,9 +67,7 @@ export type HubOrgStatus = 'active' | 'suspended' | 'not_found' | 'unavailable';
  * caller keeps the local role.
  */
 export type HubMemberStatus =
-  | { kind: 'active'; role: WorkspaceRole | null }
-  | { kind: 'inactive' }
-  | { kind: 'inconclusive' };
+  { kind: 'active'; role: WorkspaceRole | null } | { kind: 'inactive' } | { kind: 'inconclusive' };
 
 interface OrgEntry {
   /** Last successfully fetched value; null = no success yet (failures only). */
@@ -174,7 +172,10 @@ export class HubStatusClient {
       );
     } catch (err) {
       this.fetches.inc({ endpoint: 'member_status', outcome: 'error' });
-      this.opts.logger.warn({ err, centralAccountId }, 'hub member-status fetch failed — keeping the local membership');
+      this.opts.logger.warn(
+        { err, centralAccountId },
+        'hub member-status fetch failed — keeping the local membership'
+      );
       return { kind: 'inconclusive' };
     }
     if (res.status === 401 || res.status === 403) {
@@ -210,7 +211,10 @@ export class HubStatusClient {
       body = await res.json();
     } catch {
       this.fetches.inc({ endpoint: 'member_status', outcome: 'error' });
-      this.opts.logger.warn({ centralAccountId }, 'hub member-status body unparseable — keeping the local membership');
+      this.opts.logger.warn(
+        { centralAccountId },
+        'hub member-status body unparseable — keeping the local membership'
+      );
       return { kind: 'inconclusive' };
     }
     const active = (body as { active?: unknown } | null)?.active;
@@ -227,16 +231,24 @@ export class HubStatusClient {
       // Active without a parseable role: trust the liveness, keep the local
       // role (D11 syncs only from a well-formed hub answer).
       if (rawRole !== undefined) {
-        this.opts.logger.warn({ centralAccountId }, 'hub member-status carried an unknown role — keeping the local role');
+        this.opts.logger.warn(
+          { centralAccountId },
+          'hub member-status carried an unknown role — keeping the local role'
+        );
       }
       return { kind: 'active', role: null };
     }
     this.fetches.inc({ endpoint: 'member_status', outcome: 'error' });
-    this.opts.logger.warn({ centralAccountId }, 'hub member-status body malformed — keeping the local membership');
+    this.opts.logger.warn(
+      { centralAccountId },
+      'hub member-status body malformed — keeping the local membership'
+    );
     return { kind: 'inconclusive' };
   }
 
-  private async fetchOrgStatus(centralAccountId: string): Promise<'active' | 'suspended' | 'not_found' | null> {
+  private async fetchOrgStatus(
+    centralAccountId: string
+  ): Promise<'active' | 'suspended' | 'not_found' | null> {
     try {
       const res = await this.get(`/api/v1/accounts/${encodeURIComponent(centralAccountId)}/status`);
       if (res.status === 404) {

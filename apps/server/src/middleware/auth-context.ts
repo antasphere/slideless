@@ -46,8 +46,7 @@ export function isPublicApiPath(path: string): boolean {
  * membership re-assertion, docs/federation.md P4); oss never wires one.
  */
 export type PrincipalGateResult =
-  | { ok: true; role?: Principal['role'] }
-  | { ok: false; status: 401 | 403; code: string; message: string };
+  { ok: true; role?: Principal['role'] } | { ok: false; status: 401 | 403; code: string; message: string };
 
 export type PrincipalGate = (principal: Principal) => Promise<PrincipalGateResult>;
 
@@ -243,12 +242,7 @@ export function requireNonGuest(): MiddlewareHandler {
       return apiError(c, 401, 'unauthenticated', 'Authentication required');
     }
     if (principal.origin === 'guest') {
-      return apiError(
-        c,
-        403,
-        'guest_forbidden',
-        'Guest access is limited to the decks you were invited to'
-      );
+      return apiError(c, 403, 'guest_forbidden', 'Guest access is limited to the decks you were invited to');
     }
     return next();
   };

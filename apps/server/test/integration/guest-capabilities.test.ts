@@ -105,7 +105,10 @@ beforeAll(async () => {
   app = await createTestApp(await createDatabase(container, 'guest_caps'), {}, { email: mail });
   await app.app.request('/api/v1/setup', json({ instanceName: 'GuestCaps', owner: OWNER }));
   ownerCookie = extractCookie(
-    await app.app.request('/api/v1/auth/sign-in/email', json({ email: OWNER.email, password: OWNER.password }))
+    await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    )
   );
   await uploadAsset(HTML_V1, { cookie: ownerCookie });
   grantedDeck = await createDeck('Granted Deck', { cookie: ownerCookie });
@@ -127,12 +130,18 @@ beforeAll(async () => {
   guestUserId = (await readJson(claimed)).userId;
 
   guestCookie = extractCookie(
-    await app.app.request('/api/v1/auth/sign-in/email', json({ email: GUEST.email, password: GUEST.password }))
+    await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: GUEST.email, password: GUEST.password })
+    )
   );
   const minted = await readJson(
     await app.app.request(
       '/api/v1/api-keys',
-      json({ name: 'guest-key', scopes: ['presentations:read', 'presentations:write'] }, { cookie: guestCookie })
+      json(
+        { name: 'guest-key', scopes: ['presentations:read', 'presentations:write'] },
+        { cookie: guestCookie }
+      )
     )
   );
   guestKey = minted.key;
@@ -221,7 +230,10 @@ describe('what the guest is REFUSED (403 guest_forbidden — D2, capability of o
     await expectGuestForbidden(
       await app.app.request(
         `/api/v1/presentations/uploads/00000000-0000-4000-8000-000000000000/commit`,
-        json({ title: 'X', entryPath: 'index.html', manifest: [entryOf('index.html', HTML_V1)] }, { cookie: guestCookie })
+        json(
+          { title: 'X', entryPath: 'index.html', manifest: [entryOf('index.html', HTML_V1)] },
+          { cookie: guestCookie }
+        )
       )
     );
   });
@@ -253,7 +265,9 @@ describe('what the guest is REFUSED (403 guest_forbidden — D2, capability of o
   });
 
   it('cannot read the member roster or the workspace export', async () => {
-    await expectGuestForbidden(await app.app.request('/api/v1/members', { headers: { cookie: guestCookie } }));
+    await expectGuestForbidden(
+      await app.app.request('/api/v1/members', { headers: { cookie: guestCookie } })
+    );
     await expectGuestForbidden(
       await app.app.request('/api/v1/workspace/export', {
         headers: { cookie: guestCookie, 'x-forwarded-for': nextIp() }

@@ -97,11 +97,7 @@ export interface ConnectAuthSeam {
         user: { email: string; name: string; emailVerified: boolean },
         account: { providerId: string; accountId: string }
       ) => Promise<{ user: { id: string } }>;
-      linkAccount: (account: {
-        providerId: string;
-        accountId: string;
-        userId: string;
-      }) => Promise<unknown>;
+      linkAccount: (account: { providerId: string; accountId: string; userId: string }) => Promise<unknown>;
     };
   }>;
 }

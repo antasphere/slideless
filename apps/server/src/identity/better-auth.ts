@@ -580,7 +580,8 @@ export function createAuth({
         // (hubSso exists only on EDITION=cloud boots).
         if (hubSso && isPasswordResetPath(ctx.path)) {
           throw new APIError('FORBIDDEN', {
-            message: 'Password reset is disabled on this edition — credentials are managed at the Antasphere hub'
+            message:
+              'Password reset is disabled on this edition — credentials are managed at the Antasphere hub'
           });
         }
         // Login-CSRF (session fixation) hardening: Better Auth's own origin

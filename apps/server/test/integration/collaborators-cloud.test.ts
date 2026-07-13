@@ -195,16 +195,14 @@ describe('the SSO-first claim journey (new invitee, cloud)', () => {
     guestUserId = users[0].id;
 
     // Hub identity only — NO local-password (credential) account exists.
-    const { rows: accounts } = await app.db.pool.query(
-      `SELECT provider_id FROM account WHERE user_id = $1`,
-      [guestUserId]
-    );
+    const { rows: accounts } = await app.db.pool.query(`SELECT provider_id FROM account WHERE user_id = $1`, [
+      guestUserId
+    ]);
     expect(accounts.map((a: { provider_id: string }) => a.provider_id)).toEqual(['antasphere']);
 
-    const { rows: ws } = await app.db.pool.query(
-      `SELECT id FROM workspaces WHERE central_account_id = $1`,
-      [ORG_GUEST]
-    );
+    const { rows: ws } = await app.db.pool.query(`SELECT id FROM workspaces WHERE central_account_id = $1`, [
+      ORG_GUEST
+    ]);
     expect(ws).toHaveLength(1);
     projectedWorkspaceId = ws[0].id;
   });
@@ -253,10 +251,9 @@ describe('the SSO-first claim journey (new invitee, cloud)', () => {
     });
 
     // Still no local-password account after the claim.
-    const { rows: accounts } = await app.db.pool.query(
-      `SELECT provider_id FROM account WHERE user_id = $1`,
-      [guestUserId]
-    );
+    const { rows: accounts } = await app.db.pool.query(`SELECT provider_id FROM account WHERE user_id = $1`, [
+      guestUserId
+    ]);
     expect(accounts.map((a: { provider_id: string }) => a.provider_id)).toEqual(['antasphere']);
   });
 

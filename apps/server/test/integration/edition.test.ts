@@ -209,11 +209,17 @@ describe('cloud edition closes the local password-reset surface (P8, ADR 017)', 
 
   it('refuses every reset-shaped route (core + emailOTP) despite the delivering mailer', async () => {
     const attempts: Array<[string, Record<string, unknown>]> = [
-      ['/api/v1/auth/request-password-reset', { email: OWNER.email, redirectTo: 'http://localhost:3000/reset-password' }],
+      [
+        '/api/v1/auth/request-password-reset',
+        { email: OWNER.email, redirectTo: 'http://localhost:3000/reset-password' }
+      ],
       ['/api/v1/auth/reset-password', { newPassword: 'sso-bypass-password-99', token: 'whatever' }],
       ['/api/v1/auth/email-otp/request-password-reset', { email: OWNER.email }],
       ['/api/v1/auth/forget-password/email-otp', { email: OWNER.email }],
-      ['/api/v1/auth/email-otp/reset-password', { email: OWNER.email, otp: '123456', password: 'sso-bypass-password-99' }]
+      [
+        '/api/v1/auth/email-otp/reset-password',
+        { email: OWNER.email, otp: '123456', password: 'sso-bypass-password-99' }
+      ]
     ];
     for (const [path, body] of attempts) {
       const res = await app.app.request(path, jsonIp(body));
@@ -267,9 +273,7 @@ describe('cloud edition closes the local password-reset surface (P8, ADR 017)', 
     );
     expect(signIn.status).toBe(200);
     const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
-    const { members } = await readJson(
-      await app.app.request('/api/v1/members', { headers: { cookie } })
-    );
+    const { members } = await readJson(await app.app.request('/api/v1/members', { headers: { cookie } }));
     const minted = await app.app.request(`/api/v1/members/${members[0].id}/reset-link`, {
       method: 'POST',
       headers: { cookie }

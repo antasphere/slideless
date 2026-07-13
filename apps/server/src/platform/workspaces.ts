@@ -19,11 +19,7 @@ export class WorkspaceService {
    * (setup does), or omit it to run the two inserts on this service's
    * connection inside their own transaction when it supports one.
    */
-  async create(
-    name: string,
-    ownerUserId: string,
-    conn: DbConn = this.db
-  ): Promise<{ workspaceId: string }> {
+  async create(name: string, ownerUserId: string, conn: DbConn = this.db): Promise<{ workspaceId: string }> {
     const run = async (tx: DbConn) => {
       const [workspace] = await tx.insert(workspaces).values({ name }).returning({ id: workspaces.id });
       if (!workspace) throw new Error('workspace insert returned no row');

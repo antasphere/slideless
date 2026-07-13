@@ -144,9 +144,7 @@ describe('X-Workspace-Id switches deck listings', () => {
   it('an admin of two workspaces pages each workspace’s decks per header', async () => {
     // OWNER1 joins W2 as an ADMIN (workspace-wide read under ADR 013).
     const me1 = await readJson(await app.app.request('/api/v1/me', { headers: { cookie: owner1Cookie } }));
-    await app.db.db
-      .insert(workspaceMembers)
-      .values({ workspaceId: w2, userId: me1.user.id, role: 'admin' });
+    await app.db.db.insert(workspaceMembers).values({ workspaceId: w2, userId: me1.user.id, role: 'admin' });
 
     // No header: the OLDEST membership (W1) — deck A only.
     const listW1 = await readJson(
@@ -309,10 +307,10 @@ describe('ADR-013 deck privacy is UNCHANGED under workspace-scoped principals', 
     );
     const grant = roster.collaborators.find((c: { email: string }) => c.email === GUEST.email);
     expect(grant).toBeTruthy();
-    const revoke = await app.app.request(
-      `/api/v1/presentations/${deckB}/collaborators/${grant.id}`,
-      { method: 'DELETE', headers: { cookie: owner2Cookie } }
-    );
+    const revoke = await app.app.request(`/api/v1/presentations/${deckB}/collaborators/${grant.id}`, {
+      method: 'DELETE',
+      headers: { cookie: owner2Cookie }
+    });
     expect(revoke.status).toBe(200);
 
     // The guest's W2 membership row is untouched…

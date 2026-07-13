@@ -193,7 +193,7 @@ hub identities onto one local user via a stale local email
 ## The hub gates (Phase 4): suspension + membership re-assertion
 
 The SSO entrance asserts hub truth **at login** — but tool sessions live 365
-days and API keys/OAuth grants longer, so two things must hold *between*
+days and API keys/OAuth grants longer, so two things must hold _between_
 logins: a hub org that gets **suspended** must stop working here quickly,
 and a user **removed** from a hub org (or whose role changed) must lose/gain
 the corresponding access without waiting for their next login. Phase 4 adds
@@ -218,11 +218,11 @@ denial reason as defense in depth.
 `GET {hub}/api/v1/accounts/{centralAccountId}/status` → `{status, kind}`,
 cached **per org, 60 s TTL**. Answers and postures:
 
-| Hub answer | Verdict |
-| --- | --- |
-| `status: "active"` | allow (cached 60 s) |
-| `status: "suspended"` | **403 `account_suspended`** with the reason, enforced as soon as fetched |
-| `404` (org deleted/unknown) | **403 `account_suspended`** — same definitive deny |
+| Hub answer                          | Verdict                                                                                                                |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `status: "active"`                  | allow (cached 60 s)                                                                                                    |
+| `status: "suspended"`               | **403 `account_suspended`** with the reason, enforced as soon as fetched                                               |
+| `404` (org deleted/unknown)         | **403 `account_suspended`** — same definitive deny                                                                     |
 | network / timeout / 5xx / 401 / 403 | serve the **last known value stale up to 15 min** (from the last success), then **fail closed**: 403 `hub_unavailable` |
 
 The hot path never blocks on the hub once a value is cached: an expired
@@ -504,12 +504,12 @@ docker compose -f docker-compose.federation.yml down -v
 
 ## What the later phases plug into this
 
-| Phase               | Builds on this scaffolding                                                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P3 — SSO entrance   | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021. |
-| P4 — hub gates      | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice. |
-| P5 — CLI cross-tool | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side. |
-| P6 — guests         | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock. |
+| Phase                       | Builds on this scaffolding                                                                                                                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P3 — SSO entrance           | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021.                                                             |
+| P4 — hub gates              | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice.                                                      |
+| P5 — CLI cross-tool         | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side.                 |
+| P6 — guests                 | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock.                                                                                                               |
 | P7 — hub-managed membership | **Built** — "Hub-managed membership" above: `middleware/hub-managed.ts` gate on `/members` + `/invitations` mutations, `/me` adaptation fields (`hubOrigin`, `origin`, `hubManageUrl`), dashboard link-out. No migration; MCP unchanged. |
 
 ## Related decisions

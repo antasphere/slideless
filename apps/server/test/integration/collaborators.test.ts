@@ -542,7 +542,10 @@ describe('G1 CROSS-REQUEST regression — a grant swept active in an EARLIER req
     // O2's sole membership is W2 — asset + deck land there by default.
     await uploadAsset(HTML_V1, o2Cookie);
     const reserve = await readJson(
-      await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: { cookie: o2Cookie } })
+      await app.app.request('/api/v1/presentations/uploads', {
+        method: 'POST',
+        headers: { cookie: o2Cookie }
+      })
     );
     const commit = await app.app.request(
       `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
@@ -599,10 +602,7 @@ describe('G1 CROSS-REQUEST regression — a grant swept active in an EARLIER req
     expect(strangerClaim.status).toBe(404);
 
     // The owning user's claim reads as SUCCESS and mints the membership.
-    const second = await app.app.request(
-      '/api/v1/collaborators/claim',
-      json({ token: w2Token }, { cookie })
-    );
+    const second = await app.app.request('/api/v1/collaborators/claim', json({ token: w2Token }, { cookie }));
     expect(second.status).toBe(200);
     const body = await readJson(second);
     expect(body.workspaceId).toBe(w2);

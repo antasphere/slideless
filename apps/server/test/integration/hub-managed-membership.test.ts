@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import {
+  createDatabase,
+  createTestApp,
+  extractCookie,
+  readJson,
+  startPostgres,
+  type TestApp
+} from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import { InvitationService } from '../../src/invitations/service.js';
 import * as sso from './sso-helpers.js';
@@ -139,9 +146,7 @@ beforeAll(async () => {
   const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie: hubAdminCookie } }));
   projectedWorkspaceId = me.activeWorkspaceId;
   const memberCookie = await sso.ssoLogin(app, hub, hubMember);
-  const memberMe = await readJson(
-    await app.app.request('/api/v1/me', { headers: { cookie: memberCookie } })
-  );
+  const memberMe = await readJson(await app.app.request('/api/v1/me', { headers: { cookie: memberCookie } }));
   expect(memberMe.activeWorkspaceId).toBe(projectedWorkspaceId);
 
   const { rows } = await app.db.pool.query(
@@ -205,10 +210,9 @@ describe('mutations on the HUB-ORIGIN workspace → 403 hub_managed + pointer', 
         method: 'PATCH'
       })
     );
-    const { rows } = await app.db.pool.query(
-      `SELECT role, is_active FROM workspace_members WHERE id = $1`,
-      [hubMemberRowId]
-    );
+    const { rows } = await app.db.pool.query(`SELECT role, is_active FROM workspace_members WHERE id = $1`, [
+      hubMemberRowId
+    ]);
     expect(rows[0]).toEqual({ role: 'member', is_active: true });
   });
 
@@ -244,9 +248,7 @@ describe('mutations on the HUB-ORIGIN workspace → 403 hub_managed + pointer', 
     // None of these paths has a handler today — a future mutation added
     // here must be refused by default, never opened. The refusal must win
     // over the JSON 404 terminator.
-    await expectHubManaged(
-      await app.app.request('/api/v1/members', json({ anything: true }, asHubAdmin()))
-    );
+    await expectHubManaged(await app.app.request('/api/v1/members', json({ anything: true }, asHubAdmin())));
     await expectHubManaged(
       await app.app.request(`/api/v1/members/${hubMemberRowId}/some-future-mutation`, {
         method: 'POST',
@@ -436,7 +438,10 @@ describe('machine credentials: the fail-closed scope map is the first wall', () 
     for (const [path, init] of [
       ['/api/v1/members', { headers: { ...key, 'x-forwarded-for': nextIp() } }],
       [`/api/v1/members/${hubMemberRowId}`, { ...json({ role: 'admin' }, key), method: 'PATCH' }],
-      [`/api/v1/members/${hubMemberRowId}`, { method: 'DELETE', headers: { ...key, 'x-forwarded-for': nextIp() } }],
+      [
+        `/api/v1/members/${hubMemberRowId}`,
+        { method: 'DELETE', headers: { ...key, 'x-forwarded-for': nextIp() } }
+      ],
       ['/api/v1/invitations', { headers: { ...key, 'x-forwarded-for': nextIp() } }],
       ['/api/v1/invitations', json({ email: 'x@p7.test', role: 'member' }, key)]
     ] as const) {
