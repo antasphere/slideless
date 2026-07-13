@@ -37,9 +37,56 @@ const MINTED = {
 
 const meRoute: Route = { method: 'GET', path: /\/api\/v1\/me$/, reply: () => ({ body: ME }) };
 
+/** Discovery payloads for the cloud probe (D1: cloud refuses the OTP pair). */
+const instanceInfo = (edition: string, methods: string[]) => ({
+  name: 'Inst',
+  instanceId: 'i1',
+  edition,
+  version: '1.0.0',
+  apiVersion: 'v1',
+  setupRequired: false,
+  auth: { methods, passwordReset: true, emailChange: true, twoFactor: true },
+  features: { mcp: true, oauth: true, files: true }
+});
+const ossInstanceRoute: Route = {
+  method: 'GET',
+  path: /\/api\/v1\/instance$/,
+  reply: () => ({ body: instanceInfo('oss', ['password', 'email-otp', 'api-key', 'oauth']) })
+};
+const cloudInstanceRoute: Route = {
+  method: 'GET',
+  path: /\/api\/v1\/instance$/,
+  reply: () => ({ body: instanceInfo('cloud', ['antasphere', 'api-key', 'oauth']) })
+};
+
 describe('auth login flow', () => {
-  it('login-request POSTs /cli/auth/request with the email', async () => {
+  it('login-request POSTs /cli/auth/request with the email (oss: the probe waves it through)', async () => {
     const env = await tempConfigEnv();
+    const h = routedHarness(
+      [
+        ossInstanceRoute,
+        { method: 'POST', path: /\/api\/v1\/cli\/auth\/request$/, reply: () => ({ body: { sent: true } }) }
+      ],
+      env
+    );
+    const code = await run(
+      ['auth', 'login-request', '--email', 'ada@x.co', '--api-url', 'http://inst'],
+      h.io
+    );
+    expect(h.err()).toBe('');
+    expect(code).toBe(0);
+    // calls[0] is the advisory GET /instance cloud probe.
+    expect(h.calls[1]).toMatchObject({
+      method: 'POST',
+      path: '/api/v1/cli/auth/request',
+      body: { email: 'ada@x.co' }
+    });
+    expect(h.out()).toContain('login-complete');
+  });
+
+  it('login-request proceeds when discovery is unavailable (older/unreachable instance)', async () => {
+    const env = await tempConfigEnv();
+    // No /instance route: the probe 404s and MUST fall through, unchanged.
     const h = routedHarness(
       [{ method: 'POST', path: /\/api\/v1\/cli\/auth\/request$/, reply: () => ({ body: { sent: true } }) }],
       env
@@ -50,12 +97,31 @@ describe('auth login flow', () => {
     );
     expect(h.err()).toBe('');
     expect(code).toBe(0);
-    expect(h.calls[0]).toMatchObject({
-      method: 'POST',
-      path: '/api/v1/cli/auth/request',
-      body: { email: 'ada@x.co' }
-    });
-    expect(h.out()).toContain('login-complete');
+    expect(h.calls.map((c) => c.path)).toEqual(['/api/v1/instance', '/api/v1/cli/auth/request']);
+  });
+
+  it('refuses the OTP pair against a CLOUD instance with `antasphere login` guidance', async () => {
+    const env = await tempConfigEnv();
+    // Discovery says cloud: refuse BEFORE touching the (closed) endpoints —
+    // no dead OTP mail is requested, no raw server 403 is printed.
+    const h = routedHarness([cloudInstanceRoute], env);
+    const code = await run(
+      ['auth', 'login-request', '--email', 'ada@x.co', '--api-url', 'http://cloud'],
+      h.io
+    );
+    expect(code).toBe(1);
+    expect(h.err()).toContain('antasphere login');
+    expect(h.err()).toContain('connects automatically');
+    expect(h.calls.map((c) => c.path)).toEqual(['/api/v1/instance']); // probe only
+
+    const h2 = routedHarness([cloudInstanceRoute], env);
+    const code2 = await run(
+      ['auth', 'login-complete', '--email', 'ada@x.co', '--code', '123456', '--api-url', 'http://cloud'],
+      h2.io
+    );
+    expect(code2).toBe(1);
+    expect(h2.err()).toContain('antasphere login');
+    expect(h2.calls.map((c) => c.path)).toEqual(['/api/v1/instance']);
   });
 
   it('login-complete stores the minted key as the active profile (0600 config)', async () => {

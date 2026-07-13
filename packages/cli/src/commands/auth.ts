@@ -59,6 +59,34 @@ async function readLineFromStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8').split('\n')[0]?.trim() ?? '';
 }
 
+/**
+ * Cloud instances are hub-only (D1): the tool's own OTP entrances refuse
+ * there (403 cli_otp_disabled), so ask discovery FIRST — the same
+ * unauthenticated GET /instance probe (and the same cloud test) as the
+ * connect-on-demand seam in context.ts — and steer to `antasphere login`
+ * instead of mailing a dead code or printing the server's raw refusal.
+ * Discovery failing (unreachable host, older instance) falls through: the
+ * classic flow then reports its own, real error. Self-host instances are
+ * untouched beyond the probe.
+ */
+async function refuseOtpLoginOnCloud(baseUrl: string, io: CliIo): Promise<void> {
+  let cloud = false;
+  try {
+    const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
+    const info = await new PlatformClient({ baseUrl, fetch: fetchImpl }).instance();
+    cloud = info.auth.methods.includes('antasphere') || info.edition === 'cloud';
+  } catch {
+    return; // discovery is advisory — never block the classic flow on it
+  }
+  if (cloud) {
+    throw new CliUsageError(
+      `${baseUrl} is an Antasphere-cloud instance — it signs in at the hub, not with its own ` +
+        'email codes. Run `antasphere login` once; `slideless` then connects automatically ' +
+        '(or pass --api-key <slk_…> / set SLIDELESS_API_KEY).'
+    );
+  }
+}
+
 export function registerAuthCommands(program: Command, io: CliIo): void {
   const auth = program.command('auth').description('Sign in over email OTP (mints an API key)');
 
@@ -68,6 +96,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
     .requiredOption('--email <email>', 'account email on the instance')
     .action(async (opts: { email: string }, cmd: Command) => {
       const baseUrl = resolveAuthUrl(cmd, io);
+      await refuseOtpLoginOnCloud(baseUrl, io);
       // The OTP pair rides cli-core's instance auth client — the same
       // plumbing every Antasphere tool CLI signs in with.
       const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
@@ -96,6 +125,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       ) => {
         const globals = cmd.optsWithGlobals() as AuthGlobals;
         const baseUrl = resolveAuthUrl(cmd, io);
+        await refuseOtpLoginOnCloud(baseUrl, io);
         const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
         const result = await client.complete({
           email: opts.email,
@@ -198,9 +228,10 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
           } catch (e) {
             // A dead/expired key cannot revoke itself (401) — still evict it.
             // A 403 is different: the key WORKS but the instance refuses the
-            // self-revoke (e.g. a fail-closed machine allowlist without
-            // /cli/auth/key). Never report that as "already unusable" — the
-            // key stays valid server-side and only the dashboard can kill it.
+            // self-revoke (an OLDER instance whose fail-closed machine
+            // allowlist predates DELETE /cli/auth/key — current instances
+            // open it). Never report that as "already unusable" — the key
+            // stays valid server-side and only the dashboard can kill it.
             if (e instanceof CliAuthError && e.status === 401) {
               io.err.write('The cached key was already unusable — evicting it anyway.\n');
             } else if (e instanceof CliAuthError && e.status === 403) {

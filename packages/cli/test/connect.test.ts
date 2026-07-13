@@ -332,8 +332,9 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
       activeProfile: 'default',
       profiles: { default: { baseUrl: 'http://tool', workspaceKeys: { org1: { apiKey: 'slk_one_key' } } } }
     });
-    // The live cloud instance today: /cli/auth/key is not on the machine
-    // allowlist, so the (perfectly valid) key gets a fail-closed 403.
+    // An OLDER instance whose fail-closed machine allowlist predates
+    // DELETE /cli/auth/key (current instances open the self-revoke): the
+    // (perfectly valid) key gets a 403 there — pin the honest reporting.
     const h = routedHarness(
       [
         {
