@@ -43,6 +43,13 @@ block:
 | `HUB_CLIENT_SECRET` | The matching client secret (confidential client; PKCE stays on regardless).                                                                                                    |
 | `HUB_SERVICE_KEY`   | A hub API key (`ant_…`) holding the `accounts:status` scope — the EntitlementService credential (Phase 4; unread before then).                                                 |
 
+> ⚠️ **`HUB_SERVICE_KEY` must belong to a dedicated, stable SERVICE ACCOUNT — never a person.**
+> The hub re-checks live membership on every use of the key, so if the key's owning user is ever
+> deactivated/removed at the hub, the key stops working and this instance's org gate degrades to
+> `hub_unavailable` (fail-closed, safe) for EVERY projected workspace at once. Correct behavior,
+> but an operational foot-gun: mint the key as a purpose-made service identity that no admin flow
+> can remove. (Surfaced by the P8 exit-gate campaign.)
+
 Rules the boot enforces:
 
 - **Fail-loud completeness**: `EDITION=cloud` with ANY of the four hub vars
