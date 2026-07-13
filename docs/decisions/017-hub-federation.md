@@ -151,7 +151,12 @@ plain local API-key path, hub out of the loop.
   closed (the `antasphere` provider's unset `disableSignUp` is the
   deliberate fourth switch that lets JIT in); and since the P8 closes below,
   the local password-reset surface REFUSES on cloud rather than being merely
-  undiscoverable.
+  undiscoverable. Two same-class doors are KNOWN-OPEN on cloud pending a
+  charter call (initiative doc `slideless-cloud-binding-DISCUSS-LATER.md`
+  §B2): `/sign-in/email-otp` (human OTP sign-in) and `/cli/auth/*` (the
+  tool's own OTP→`slk_` mint), both reachable only with a delivering mailer
+  and a hub-synced mailbox, both hub-gated per request by the P4
+  re-assertion — an unwanted entrance, never an escalation.
 
 ### 8. The P8 hardening closes (this program's exit gate)
 

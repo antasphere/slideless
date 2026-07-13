@@ -100,7 +100,12 @@ clients must ignore entries they do not recognize):
   login). The login page therefore renders ONLY "Sign in with Antasphere".
   The local password SIGN-IN stays **wired but hidden**: the break-glass
   CLI remains the operator door, and blocking `/sign-in/email` would
-  dead-end it (pinned by an edition integration test).
+  dead-end it (pinned by an edition integration test). The email-OTP
+  sign-in (`/sign-in/email-otp`) and the CLI OTP key mint (`/cli/auth/*`)
+  also stay wired-but-hidden whenever a mailer delivers — a KNOWN-OPEN
+  charter decision (ADR 017 §7; initiative
+  `slideless-cloud-binding-DISCUSS-LATER.md` §B2), hub-gated per request by
+  the P4 re-assertion.
 
   The password RESET surface, by contrast, is **closed outright on cloud**
   (the P8 close, ADR 017): `/request-password-reset`, `/reset-password`
