@@ -320,6 +320,23 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
   // above does NOT cover this 3-segment path, so gate it explicitly.
   api.use('/members/:id/reset-link', requireRole('admin'));
   api.openapi(memberResetLinkRoute, async (c) => {
+    // Cloud edition (`hubManaged` is present iff EDITION=cloud): the token a
+    // mint would produce lands on POST /reset-password, which the D1 hub-only
+    // posture refuses there (identity/better-auth.ts isPasswordResetPath) —
+    // so minting would hand admins a dead link. Refuse at the source instead.
+    // Hub-origin workspaces already died at the subtree gate above with
+    // `hub_managed`; this covers cloud-LOCAL workspaces (the operator's,
+    // deck-guest hosts). Recovery for local accounts there: hub SSO for
+    // humans, break-glass for the operator. oss is untouched.
+    if (hubManaged) {
+      return c.json(
+        err(
+          'password_reset_disabled',
+          'Local password reset is disabled on this edition — credentials are managed at the Antasphere hub'
+        ),
+        403
+      );
+    }
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
 

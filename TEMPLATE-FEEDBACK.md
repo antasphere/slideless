@@ -583,6 +583,34 @@ hub-origin workspaces and enriching `/me` for dashboard adaptation.
     chassis (or ship a `gateSubtree(api, '/x', mw)` helper) so
     subtree-wide policies never get the per-path treatment.
 
+## 16. Closing the local password-reset surface (cloud-binding Phase 8)
+
+Found while closing the P3 residual: on a hub-only-login edition,
+`/request-password-reset` + `/reset-password` stayed functional (merely
+hidden) — an SSO-JIT user with no credential account could mail themselves a
+reset, SET a local password, and sign in past the per-login SSO re-sync.
+
+65. **There is no single "disable local credential recovery" switch — the
+    reset surface must be enumerated by route pattern, and it is wider than
+    it looks.** Better Auth's reset machinery is not one route pair: beyond
+    `/request-password-reset` + `/reset-password` (+ the tokened GET
+    callback), the emailOTP plugin — which auto-enables with ANY delivering
+    mailer for OTP login — silently carries its own password-reset trio
+    (`/email-otp/request-password-reset`, `/email-otp/reset-password`, the
+    deprecated `/forget-password/email-otp`). Unsetting `sendResetPassword`
+    closes only the core request route (400) and does NOT stop
+    `/reset-password` from consuming an admin-minted token. Slideless closed
+    the class with a before-hook path predicate (`isPasswordResetPath`,
+    enumerated against pinned 1.6.15 — a version-bump re-verify burden) plus
+    not wiring `sendResetPassword` on cloud, plus refusing the admin
+    `/members/{id}/reset-link` mint (its links would dead-end). Fix for the
+    cloud-edition module: ship this as one documented seam (e.g.
+    `disableLocalCredentialRecovery` on the auth factory) that owns the
+    route enumeration in ONE chassis-tested place, so every hub-only tool
+    doesn't hand-enumerate plugin reset aliases and re-audit them on each
+    Better Auth bump. (The admin reset-link route is chassis code — the seam
+    should gate it too, and the dashboard affordance with it.)
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

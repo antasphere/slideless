@@ -359,18 +359,24 @@ describe('the SAME mutations on a cloud-LOCAL workspace still work (the boundary
     );
   });
 
-  it('member mutations on the local workspace work: reset-link + role change', async () => {
+  it('member mutations on the local workspace work: role change — but reset-link refuses EDITION-wide (P8)', async () => {
     const { rows } = await app.db.pool.query(
       `SELECT wm.id FROM workspace_members wm JOIN "user" u ON u.id = wm.user_id
        WHERE wm.workspace_id = $1 AND u.email = $2`,
       [operatorWorkspaceId, HUB_ADMIN_EMAIL]
     );
     const localRowId = rows[0].id;
+    // The reset-link mint is the ONE local-workspace exception to "the
+    // boundary is projection, not edition": since the P8 close (ADR 017)
+    // the whole password-reset surface refuses on cloud — a minted link
+    // would dead-end on the refused POST /reset-password. Distinct code
+    // from the projection gate: password_reset_disabled, not hub_managed.
     const reset = await app.app.request(`/api/v1/members/${localRowId}/reset-link`, {
       method: 'POST',
       headers: { cookie: operatorCookie, 'x-forwarded-for': nextIp() }
     });
-    expect(reset.status).toBe(200);
+    expect(reset.status).toBe(403);
+    expect((await readJson(reset)).error.code).toBe('password_reset_disabled');
     const rerole = await app.app.request(`/api/v1/members/${localRowId}`, {
       ...json({ role: 'member' }, { cookie: operatorCookie }),
       method: 'PATCH'

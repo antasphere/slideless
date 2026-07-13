@@ -98,9 +98,29 @@ clients must ignore entries they do not recognize):
   and `passwordReset`/`emailChange`/`twoFactor` report `false` (credentials,
   email, and MFA are the hub's to manage — D10 re-syncs email at every
   login). The login page therefore renders ONLY "Sign in with Antasphere".
-  The local password machinery stays **wired but hidden**: the break-glass
+  The local password SIGN-IN stays **wired but hidden**: the break-glass
   CLI remains the operator door, and blocking `/sign-in/email` would
   dead-end it (pinned by an edition integration test).
+
+  The password RESET surface, by contrast, is **closed outright on cloud**
+  (the P8 close, ADR 017): `/request-password-reset`, `/reset-password`
+  (POST and the tokened GET callback), and the emailOTP reset routes
+  (`/email-otp/request-password-reset`, `/email-otp/reset-password`, the
+  deprecated `/forget-password/email-otp`) all answer 403 — refused in the
+  Better Auth before-hook (`identity/better-auth.ts`), with
+  `sendResetPassword` never wired on cloud as defense in depth. Rationale:
+  a hub-JIT user has no credential account; an open reset surface would let
+  mailbox control SET a local password and mint `/sign-in/email` sessions
+  that skip the per-login SSO re-sync (P4's re-assertion still gates every
+  such session — this is posture, not an open hole). The admin
+  `/members/{id}/reset-link` mint refuses too (403
+  `password_reset_disabled` on cloud-LOCAL workspaces; hub-origin ones
+  already die at the P7 gate) — otherwise it would mint links that dead-end
+  on the refused `/reset-password`. Break-glass is unaffected: it needs
+  `/sign-in/email` + the setup password, never a reset. An operator who
+  forgets the setup password recovers via hub SSO (D9 links the verified
+  hub identity) or, with the hub gone too, DB surgery — the accepted D1
+  trade. On `oss` the entire reset surface is unchanged.
 
 ## The SSO entrance (Phase 3): flow, JIT, projection
 

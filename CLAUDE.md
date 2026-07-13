@@ -63,6 +63,14 @@ deploys) + `dev` (day-to-day work).
   locked (`guest_role_locked`); only the claim path writes guest rows; the hub re-assertion
   never touches them. On cloud, guests get hub identities (the claim page is SSO-first; the
   claim endpoint answers `sso_required` instead of minting local-password accounts).
+- **Cloud closes the local password-reset surface (P8, ADR 017)**: on `EDITION=cloud`, every
+  reset-shaped route — `/request-password-reset`, `/reset-password` (POST + tokened GET), the
+  emailOTP reset trio — answers 403 (before-hook in `identity/better-auth.ts`;
+  `sendResetPassword` never wired there), and the admin `/members/{id}/reset-link` mint refuses
+  `password_reset_disabled`. A hub-JIT user must never be able to SET a local password and
+  sidestep SSO. `/sign-in/email` stays WIRED on both editions (the break-glass operator door,
+  which never needs a reset); oss keeps the full reset surface unchanged. Re-verify the route
+  enumeration (`isPasswordResetPath`) on any Better Auth bump.
 - **Hub-origin workspaces are hub-managed (P7, docs/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

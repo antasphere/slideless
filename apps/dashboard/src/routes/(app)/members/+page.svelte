@@ -33,6 +33,12 @@
   // hub — the roster stays a real read, but every management affordance is
   // hidden and the notice links out (the API refuses them anyway).
   const hubManaged = $derived(me.workspace.hubOrigin);
+  // The reset-link mint only makes sense where password sign-in is an
+  // advertised human entrance (discovery `auth.methods`). On the cloud
+  // edition it is absent and the API refuses the mint
+  // (password_reset_disabled — credentials live at the hub), so hide the
+  // affordance instead of offering an action that can only toast an error.
+  const hasPasswordLogin = $derived(data.instance.auth.methods.includes('password'));
 
   const list = createPagedList<Member>(async (p) => {
     const { members, nextCursor } = await api.members(p);
@@ -208,7 +214,9 @@
     const actions: Array<{ label: string; onclick: () => void; variant?: 'default' | 'destructive' }> = [
       { label: t('members.actionChangeRole'), onclick: () => openRoleDialog(member) },
       { label: t('members.actionChangeEmail'), onclick: () => openChangeEmailDialog(member) },
-      { label: t('members.actionResetLink'), onclick: () => void generateResetLink(member) }
+      ...(hasPasswordLogin
+        ? [{ label: t('members.actionResetLink'), onclick: () => void generateResetLink(member) }]
+        : [])
     ];
     if (member.userId !== me.user.id) {
       actions.push({

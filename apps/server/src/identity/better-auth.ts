@@ -58,6 +58,8 @@ export interface CreateAuthOptions {
    * When provided (an email driver delivers), self-serve password reset
    * auto-enables — POST /request-password-reset mails a link. Without it that
    * endpoint stays closed (400) and only the admin-generated reset link works.
+   * On EDITION=cloud it is IGNORED: the whole reset surface refuses there
+   * (D1 hub-only posture — see isPasswordResetPath and the before-hook).
    */
   sendResetPassword?: (params: { email: string; url: string; token: string }) => Promise<void>;
   /**
@@ -154,6 +156,38 @@ export type Auth = ReturnType<typeof createAuth>;
 
 /** Metadata URI fields a registering client may present to users (RFC 7591). */
 const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy_uri'] as const;
+
+/**
+ * Every Better Auth route that can SET or RESET a local password with no
+ * current-password proof, enumerated against the pinned 1.6.15 surface
+ * (re-verify on ANY Better Auth bump):
+ *
+ *  - core emailAndPassword: POST /request-password-reset,
+ *    POST /reset-password, GET /reset-password/:token (the mailed callback);
+ *  - emailOTP plugin (active whenever a mailer delivers):
+ *    POST /email-otp/request-password-reset, POST /email-otp/reset-password,
+ *    and the deprecated POST /forget-password/email-otp alias.
+ *
+ * On EDITION=cloud these are the SSO-bypass entrance the D1 hub-only posture
+ * closes (docs/federation.md, ADR 017): a hub-JIT user (no credential
+ * account) could otherwise mail themselves a reset, SET a local password,
+ * and mint sessions via /sign-in/email that skip the per-login hub re-sync.
+ * P4's re-assertion still gates every such session, so this is posture, not
+ * an attacker hole — but the entrance must not exist. /sign-in/email itself
+ * stays wired (the break-glass operator door); /change-password too (it
+ * proves the CURRENT password, which a hub-JIT user does not have).
+ * `ctx.path` here is the ROUTE PATTERN (e.g. '/reset-password/:token'), so
+ * prefix matching covers the tokened callback.
+ */
+function isPasswordResetPath(path: string): boolean {
+  return (
+    path.startsWith('/request-password-reset') ||
+    path.startsWith('/reset-password') ||
+    path.startsWith('/forget-password') ||
+    path.startsWith('/email-otp/request-password-reset') ||
+    path.startsWith('/email-otp/reset-password')
+  );
+}
 
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== 'string') return false;
@@ -508,7 +542,9 @@ export function createAuth({
       },
       // Self-serve reset exists only with a delivering email driver; without
       // it, /request-password-reset returns 400 (no user-enumeration oracle).
-      ...(sendResetPassword
+      // Cloud never wires it (defense in depth under the before-hook refusal
+      // above): no reset mail can even be BUILT on that edition.
+      ...(sendResetPassword && !hubSso
         ? {
             resetPasswordTokenExpiresIn: 3600,
             sendResetPassword: async ({
@@ -534,6 +570,17 @@ export function createAuth({
         if (ctx.path.startsWith('/sign-up') && ctx.request) {
           throw new APIError('FORBIDDEN', {
             message: 'Sign-up is closed on this instance — ask an admin for an invitation'
+          });
+        }
+        // Cloud edition (D1, hub-only login): the ENTIRE local password-reset
+        // surface refuses — see isPasswordResetPath for the enumerated routes
+        // and why. Unconditional (no ctx.request escape hatch like sign-up's):
+        // nothing server-side consumes these paths, so a server-side caller
+        // appearing would itself be a posture regression. oss is untouched
+        // (hubSso exists only on EDITION=cloud boots).
+        if (hubSso && isPasswordResetPath(ctx.path)) {
+          throw new APIError('FORBIDDEN', {
+            message: 'Password reset is disabled on this edition — credentials are managed at the Antasphere hub'
           });
         }
         // Login-CSRF (session fixation) hardening: Better Auth's own origin

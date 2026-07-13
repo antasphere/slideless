@@ -44,7 +44,10 @@ export const HUB_SSO_METHOD = HUB_SSO_PROVIDER_ID;
  *    operator door, and blocking /sign-in/email would dead-end it.
  *  - `passwordReset`/`emailChange` are off: credentials and email are the
  *    HUB's to manage (D10 re-syncs email at every login); a local reset
- *    surface would fight the sync.
+ *    surface would fight the sync. Since the P8 close (ADR 017) the reset
+ *    routes don't just report false — they REFUSE on cloud (403; the
+ *    before-hook in identity/better-auth.ts + the members reset-link mint),
+ *    so a hub-JIT user can never SET a local password and sidestep SSO.
  *  - `twoFactor` is off: the second factor guards local password/OTP
  *    sign-ins, which the cloud page no longer offers — MFA is the hub's
  *    concern at its own login.
