@@ -671,6 +671,20 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     code next to the mint pair, so `logout` works server-side in every
     product without each repo re-deriving the self-revocation shape.
 
+## 19. The release smoke never survived the ADR 005 metrics hardening
+
+68. **release.yml's e2e-smoke scrapes `/metrics` unauthenticated, but metrics
+    are token-gated by default (ADR 005)** — the curl gets the 401 "metrics
+    disabled: set METRICS_TOKEN" and the smoke (hence every image publish)
+    fails. Latent in both instantiated repos and only surfaced at the FIRST
+    real `v*` tag, because the shipped `branches: [main]` trigger (the
+    hub's feedback item on workflow triggers) had kept the job from ever
+    running post-instantiation. Fixed in-repo 2026-07-13: the smoke seeds a
+    `METRICS_TOKEN` into its .env and presents it as the Bearer on the
+    scrape. Fix in the template: the same two lines in release.yml — and
+    note the compounding: a dead branch trigger hides a broken gate until
+    the first release is on the critical path.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

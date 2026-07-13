@@ -29,7 +29,11 @@ jobs:
         run: |
           set -euo pipefail
           export APP_IMAGE=slideless-smoke:test
-          echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > .env
+          METRICS_TOKEN="$(openssl rand -hex 16)"
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "METRICS_TOKEN=$METRICS_TOKEN"
+          } > .env
           docker compose up -d --no-build --wait --wait-timeout 120
 
           BASE=http://localhost:3000
@@ -51,8 +55,9 @@ jobs:
           curl -sf -H "authorization: Bearer $KEY" "$BASE/api/v1/me" | jq -e '.via == "api_key"' >/dev/null
           curl -sf -b /tmp/smoke.txt "$BASE/api/v1/audit?limit=20" | jq -e '[.entries[].actorVia] | index("api_key") != null' >/dev/null
 
-          # metrics scrapeable
-          curl -sf "$BASE/metrics" | grep -q http_request_duration_seconds_bucket
+          # metrics scrapeable (token-gated by default: unset METRICS_TOKEN
+          # means 401 — the smoke seeds one into .env and presents it here)
+          curl -sf -H "authorization: Bearer $METRICS_TOKEN" "$BASE/metrics" | grep -q http_request_duration_seconds_bucket
 
           # restart persistence: data survives, readiness flips back
           docker compose restart app
