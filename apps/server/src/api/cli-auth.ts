@@ -1,8 +1,9 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { and, asc, eq } from 'drizzle-orm';
-import { cliAuthCompleteRoute, cliAuthRequestRoute } from '@slideless/contract/routes';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { cliAuthCompleteRoute, cliAuthRequestRoute, cliAuthRevokeRoute } from '@slideless/contract/routes';
 import { apiKeys as apiKeysTable, workspaceMembers, type Db } from '@slideless/db';
 import type { Auth } from '../identity/better-auth.js';
+import type { HubSsoService } from '../identity/hub-sso.js';
 import type { ApiKeyService } from '../apikeys/service.js';
 import type { AuditService } from '../audit/service.js';
 import type { EmailDriver } from '../email/driver.js';
@@ -45,6 +46,20 @@ const err = (code: string, message: string) => ({ error: { code, message } });
  * otp_unavailable (the emailOTP plugin is not even registered then) —
  * self-hosters without SMTP paste a dashboard-minted key (`slideless login`).
  *
+ * On EDITION=cloud (hubSso present) BOTH mint endpoints refuse outright —
+ * 403 cli_otp_disabled, checked BEFORE the mailer/plugin checks so a
+ * mailerless cloud instance steers to `antasphere login` too. This is the
+ * CLI half of the D1 hub-only entrance closure (the human half is the
+ * emailOTP sign-in refusal in identity/better-auth.ts): every cloud
+ * credential — human session AND machine key — must trace through the hub
+ * so its audit log is the complete access record. Cloud CLI keys are minted
+ * by `antasphere login` + /sso/cli-connect (api/sso-connect.ts) instead.
+ * oss keeps this flow unchanged.
+ *
+ * DELETE /cli/auth/key (`slideless logout`) stays OPEN on both editions: it
+ * revokes exactly the PRESENTING key — revocation narrows access and is the
+ * cleanup path every mint above needs.
+ *
  * Rate limits (api/index.ts): request rides the OTP wall (per IP + email),
  * complete rides the login wall (per IP + email).
  */
@@ -59,6 +74,13 @@ export interface CliAuthRouteDeps {
   apiKeys: ApiKeyService;
   audit: AuditService;
   logger: Logger;
+  /**
+   * Cloud presence switch (docs/federation.md, D1 hub-only login): when set
+   * (EDITION=cloud boots only), the OTP mint pair refuses 403
+   * cli_otp_disabled. Only the boolean presence is consulted — the service
+   * itself is never called from this module. The self-revoke is unaffected.
+   */
+  hubSso?: HubSsoService | undefined;
 }
 
 /** The emailOTP endpoints, present iff the plugin registered (email delivers). */
@@ -80,10 +102,19 @@ function betterAuthErrorCode(e: unknown): string | null {
 }
 
 export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps): void {
-  const { db, auth, email, apiKeys, audit, logger } = deps;
+  const { db, auth, email, apiKeys, audit, logger, hubSso } = deps;
   const otpApi = auth.api as unknown as EmailOtpApi;
 
+  /** The D1 cloud refusal — identical on both mint routes, checked FIRST. */
+  const cloudRefusal = () =>
+    err(
+      'cli_otp_disabled',
+      'This instance signs in through the Antasphere hub — run `antasphere login` once; ' +
+        'the Slideless CLI then connects automatically'
+    );
+
   api.openapi(cliAuthRequestRoute, async (c) => {
+    if (hubSso) return c.json(cloudRefusal(), 403);
     if (!email.delivers || !otpApi.sendVerificationOTP) {
       return c.json(
         err(
@@ -107,6 +138,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
   });
 
   api.openapi(cliAuthCompleteRoute, async (c) => {
+    if (hubSso) return c.json(cloudRefusal(), 403);
     if (!email.delivers || !otpApi.signInEmailOTP) {
       return c.json(
         err(
@@ -236,5 +268,40 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
       },
       201
     );
+  });
+
+  // CLI logout: revoke exactly the PRESENTING key — possession is the
+  // authority to kill itself. The ONE /cli/auth route open to machine
+  // principals (scope allowlist, presentations:write — every CLI-minted key
+  // carries it); there is no id parameter, so no OTHER key is nameable, and
+  // the handler acts only on principal.apiKeyId, which the credential
+  // resolver derived from the presented secret. Sessions are refused — the
+  // dashboard (DELETE /api-keys/{id}) is their key-management surface — and
+  // so are OAuth bearers (no apiKeyId). Deliberately edition-independent:
+  // on cloud, `slideless logout --org` must be able to kill the
+  // /sso/cli-connect-minted key server-side (revocation narrows access; the
+  // D1 closure is about MINTING).
+  api.openapi(cliAuthRevokeRoute, async (c) => {
+    const principal = c.get('principal');
+    if (!principal) return c.json(err('unauthenticated', 'Authentication required'), 401);
+    if (principal.via !== 'api_key' || !principal.apiKeyId) {
+      return c.json(
+        err('forbidden', 'Only an API key can revoke itself — use the dashboard for key management'),
+        403
+      );
+    }
+    await db
+      .update(apiKeysTable)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(apiKeysTable.id, principal.apiKeyId), isNull(apiKeysTable.revokedAt)));
+    // The generic audit middleware writes the row (machine mutation) — hand
+    // it the semantics instead of double-writing.
+    c.set('audit', {
+      action: 'apikey.revoke',
+      resourceType: 'api_key',
+      resourceId: principal.apiKeyId,
+      metadata: { via: 'cli_logout' }
+    });
+    return c.json({ revoked: true as const, id: principal.apiKeyId }, 200);
   });
 }

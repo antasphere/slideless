@@ -208,6 +208,57 @@ function isPasswordResetPath(path: string): boolean {
   );
 }
 
+/**
+ * Every emailOTP route that can MINT A SESSION from an emailed code — or
+ * mail such a code — enumerated against the pinned 1.6.15 surface
+ * (plugins/email-otp/routes.mjs; re-verify on ANY Better Auth bump):
+ *
+ *  - POST /sign-in/email-otp: the sign-in mint — verifies the code, then
+ *    UNCONDITIONALLY createSession + setSessionCookie;
+ *  - POST /email-otp/verify-email: flips emailVerified, and mints a session
+ *    ONLY under emailVerification.autoSignInAfterVerification — UNSET on
+ *    this instance, so it mints nothing today. Guarded as config insurance
+ *    (the same stance as /set-password in isPasswordResetPath): a future
+ *    config change must not silently open an SSO-bypassing session mint,
+ *    and no client of this instance calls the route (the email-change
+ *    landing is the core tokened GET /verify-email, untouched);
+ *  - POST /email-otp/send-verification-otp: the mail leg. With this close,
+ *    EVERY redemption route for every OTP type refuses on cloud (sign-in +
+ *    verify-email here, the reset trio in isPasswordResetPath), so a sent
+ *    code could only ever be a dead letter — refuse the send rather than
+ *    mail codes that cannot work.
+ *
+ * Ruled OUT on purpose, against the same 1.6.15 surface:
+ *  - POST /email-otp/check-verification-otp verifies WITHOUT consuming and
+ *    mints nothing (no createSession in its handler); with the send leg
+ *    closed there is nothing to check anyway;
+ *  - createVerificationOTP / getVerificationOTP are registered PATHLESS in
+ *    1.6.15 (routes.mjs — `createAuthEndpoint({...})` with no path arg), so
+ *    better-call's router skips them: server-side only, unreachable over
+ *    HTTP (same accident /set-password documents — do not rely on it);
+ *  - /sign-in/email-otp is the plugin's ONLY /sign-in/* route; the twoFactor
+ *    plugin mints only from a pending first factor, magic-link/phone are not
+ *    registered here.
+ *
+ * On EDITION=cloud this pair is the last non-SSO HUMAN session entrance
+ * under the D1 hub-only posture (the reset surface closed at P8; ADR 017 §7
+ * recorded the OTP sign-in KNOWN-OPEN pending a charter call — now taken):
+ * every cloud credential must trace through "Sign in with Antasphere" so
+ * the hub's audit log is the complete access record. P4's re-assertion
+ * already gated every OTP session, so this is posture, not an attacker
+ * hole. The CLI counterpart (/cli/auth/*) closes in api/cli-auth.ts;
+ * /sign-in/email stays wired (the break-glass operator door, which the
+ * string '/sign-in/email-otp' does not prefix-match); oss keeps the full
+ * OTP login unchanged.
+ */
+function isOtpSignInPath(path: string): boolean {
+  return (
+    path.startsWith('/sign-in/email-otp') ||
+    path.startsWith('/email-otp/verify-email') ||
+    path.startsWith('/email-otp/send-verification-otp')
+  );
+}
+
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   try {
@@ -601,6 +652,20 @@ export function createAuth({
           throw new APIError('FORBIDDEN', {
             message:
               'Password reset is disabled on this edition — credentials are managed at the Antasphere hub'
+          });
+        }
+        // Cloud edition (D1, hub-only login): the emailOTP SIGN-IN surface
+        // refuses too — see isOtpSignInPath for the enumerated routes and
+        // why. Same unconditional stance as the reset closure (no
+        // ctx.request escape hatch): the one server-side consumer of these
+        // paths, /cli/auth/request's sendVerificationOTP delegate, refuses
+        // at its own route first on cloud (cli_otp_disabled), so a
+        // server-side caller reaching this would itself be a posture
+        // regression. oss is untouched (hubSso exists only on cloud boots).
+        if (hubSso && isOtpSignInPath(ctx.path)) {
+          throw new APIError('FORBIDDEN', {
+            code: 'otp_signin_disabled',
+            message: 'Email-code sign-in is disabled on this edition — use "Sign in with Antasphere"'
           });
         }
         // Login-CSRF (session fixation) hardening: Better Auth's own origin

@@ -31,7 +31,8 @@ import {
   cliAuthCompletedSchema,
   cliAuthCompleteSchema,
   cliAuthRequestedSchema,
-  cliAuthRequestSchema
+  cliAuthRequestSchema,
+  cliAuthRevokedSchema
 } from '../schemas/cli-auth.js';
 import { ssoCliConnectSchema } from '../schemas/sso-connect.js';
 import {
@@ -385,14 +386,20 @@ export const oauthConsentWorkspaceRoute = createRoute({
 });
 
 // ── CLI auth (browserless email-OTP → API key) ──────────────────────────────
-// PUBLIC pre-auth endpoints like /setup: listed in PUBLIC_API_PATHS
+// The MINT pair is PUBLIC pre-auth like /setup: listed in PUBLIC_API_PATHS
 // (middleware/auth-context.ts) and deliberately UNLISTED in the machine
-// scope allowlist — a key/token presented here is pointless anyway (the flow
+// scope allowlist — a key/token presented there is pointless anyway (the flow
 // EXISTS to obtain a key) and 403s fail-closed. Sign-up stays closed: the
 // flow rides the emailOTP plugin's disableSignUp, so codes only sign in
 // EXISTING accounts. Both endpoints are rate-limited (request: the OTP wall
 // per IP + email; complete: the login wall per IP + email) and OTP
-// verification is better-auth's atomic, attempt-limited (3) check.
+// verification is better-auth's atomic, attempt-limited (3) check. On the
+// CLOUD edition both refuse outright (403 cli_otp_disabled) — hub-only login
+// (D1): CLI keys are minted via `antasphere login` + /sso/cli-connect there.
+// DELETE /cli/auth/key is the logout counterpart: an AUTHENTICATED route that
+// revokes exactly the PRESENTING key (self-revocation — possession is the
+// authority to kill itself), machine-allowed under presentations:write in the
+// scope allowlist, and open on BOTH editions (revocation narrows access).
 
 export const cliAuthRequestRoute = createRoute({
   method: 'post',
@@ -403,6 +410,7 @@ export const cliAuthRequestRoute = createRoute({
   responses: {
     200: jsonBody(cliAuthRequestedSchema, 'Code sent if the account exists'),
     400: jsonBody(apiErrorSchema, 'Validation error, or no email driver (otp_unavailable)'),
+    403: jsonBody(apiErrorSchema, 'cli_otp_disabled: cloud edition — sign in with `antasphere login`'),
     429: errorResponses[429],
     500: errorResponses[500]
   }
@@ -418,9 +426,24 @@ export const cliAuthCompleteRoute = createRoute({
     201: jsonBody(cliAuthCompletedSchema, 'Key minted; the full key appears only here'),
     400: jsonBody(apiErrorSchema, 'Validation error, or no email driver (otp_unavailable)'),
     401: jsonBody(apiErrorSchema, 'invalid_otp: wrong/expired code or no such account'),
-    403: jsonBody(apiErrorSchema, 'two_factor_required or no active workspace membership'),
+    403: jsonBody(
+      apiErrorSchema,
+      'two_factor_required, no active workspace membership, or cli_otp_disabled (cloud edition)'
+    ),
     429: jsonBody(apiErrorSchema, 'Too many attempts'),
     500: errorResponses[500]
+  }
+});
+
+export const cliAuthRevokeRoute = createRoute({
+  method: 'delete',
+  path: '/cli/auth/key',
+  tags: ['cli-auth'],
+  summary: 'Revoke the PRESENTING API key (CLI logout; self-revocation only)',
+  responses: {
+    200: jsonBody(cliAuthRevokedSchema, 'The presenting key is revoked'),
+    401: errorResponses[401],
+    403: jsonBody(apiErrorSchema, 'The credential is not an API key (sessions manage keys in the dashboard)')
   }
 });
 

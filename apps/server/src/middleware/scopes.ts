@@ -25,6 +25,17 @@ export function requiredScopeFor(path: string, method: string): Scope | null {
   if (path === '/api/v1/files' || path.startsWith('/api/v1/files/')) {
     return isRead ? 'presentations:read' : 'presentations:write';
   }
+  // CLI logout self-revoke (api/cli-auth.ts): the ONE /cli/auth route open
+  // to machines — DELETE revokes exactly the PRESENTING key. Safe to open
+  // because the route names no key (no id parameter): the handler acts only
+  // on principal.apiKeyId, resolved from the presented secret, and refuses
+  // every non-key principal — so the widest possible effect is a credential
+  // revoking ITSELF. presentations:write because revocation is a mutation
+  // and every CLI-minted key carries it (mirrors the hub's account:write
+  // entry). Exact path + method match: any OTHER method on the path, and
+  // the PUBLIC mint routes (/cli/auth/request, /cli/auth/complete — which
+  // never reach this gate anyway), stay fail-closed.
+  if (path === '/api/v1/cli/auth/key' && method === 'DELETE') return 'presentations:write';
   // Full-workspace export: a dedicated opt-in scope, NEVER presentations:read — any
   // admin read key would otherwise be a whole-tenant exfiltration tool.
   // (Account deletion, DELETE /members/{id}, stays deliberately UNLISTED:

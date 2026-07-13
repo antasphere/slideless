@@ -312,6 +312,120 @@ describe('cloud edition closes the local password-reset surface (P8, ADR 017)', 
   });
 });
 
+describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () => {
+  // The ADR 017 §7 charter call, now taken: beyond the P8 reset closure,
+  // the two remaining non-SSO credential-MINTING entrances refuse on cloud
+  // so every human session AND CLI key traces through the hub (its audit
+  // log is the complete access record). Both were hub-gated per request by
+  // the P4 re-assertion already — posture, not a hole. The self-revoke
+  // (DELETE /cli/auth/key) is the deliberate exception: revocation narrows
+  // access, and `slideless logout --org` needs it.
+  let app: TestApp;
+  let email: RecordingEmailDriver;
+
+  let ipCounter = 0;
+  const jsonIp = (body: unknown, headers: Record<string, string> = {}) => ({
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-forwarded-for': `198.51.101.${++ipCounter % 250}`,
+      ...headers
+    },
+    body: JSON.stringify(body)
+  });
+
+  beforeAll(async () => {
+    email = new RecordingEmailDriver();
+    // A DELIVERING mailer: the exact configuration that used to keep these
+    // entrances wired-but-hidden (the known-open pair) — they must refuse.
+    app = await createTestApp(await createDatabase(container, 'edition_cloud_otp'), HUB_ENV, { email });
+    const res = await app.app.request('/api/v1/setup', jsonIp({ instanceName: 'EdOtp', owner: OWNER }));
+    expect(res.status).toBe(201);
+  });
+
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('refuses the emailOTP session surface (send / sign-in / verify-email) despite the mailer', async () => {
+    // The enumerated 1.6.15 session-minting surface (isOtpSignInPath): the
+    // sign-in mint, the verify-email conditional mint (config insurance),
+    // and the send leg (no dead codes get mailed).
+    const attempts: Array<[string, Record<string, unknown>]> = [
+      ['/api/v1/auth/email-otp/send-verification-otp', { email: OWNER.email, type: 'sign-in' }],
+      ['/api/v1/auth/sign-in/email-otp', { email: OWNER.email, otp: '123456' }],
+      ['/api/v1/auth/email-otp/verify-email', { email: OWNER.email, otp: '123456' }]
+    ];
+    for (const [path, body] of attempts) {
+      const res = await app.app.request(path, jsonIp(body));
+      expect(res.status, path).toBe(403);
+      expect(res.headers.get('set-cookie'), path).toBeNull(); // no session minted
+    }
+    // The refusal carries the steering code, and nothing was mailed.
+    const refusal = await app.app.request(
+      '/api/v1/auth/sign-in/email-otp',
+      jsonIp({ email: OWNER.email, otp: '123456' })
+    );
+    expect((await readJson(refusal)).code).toBe('otp_signin_disabled');
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('refuses the CLI OTP mint pair (cli_otp_disabled → `antasphere login`)', async () => {
+    const request = await app.app.request('/api/v1/cli/auth/request', jsonIp({ email: OWNER.email }));
+    expect(request.status).toBe(403);
+    const requestBody = await readJson(request);
+    expect(requestBody.error.code).toBe('cli_otp_disabled');
+    expect(requestBody.error.message).toContain('antasphere login');
+
+    const complete = await app.app.request(
+      '/api/v1/cli/auth/complete',
+      jsonIp({ email: OWNER.email, otp: '123456' })
+    );
+    expect(complete.status).toBe(403);
+    expect((await readJson(complete)).error.code).toBe('cli_otp_disabled');
+    expect(email.sent).toHaveLength(0); // still nothing mailed
+  });
+
+  it('the self-revoke stays open: a key kills exactly ITSELF; the operator door survives', async () => {
+    // /sign-in/email still works AFTER the OTP close (the break-glass door).
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      jsonIp({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
+
+    const mint = async (name: string) => {
+      const res = await app.app.request('/api/v1/api-keys', {
+        ...jsonIp({ name, scopes: ['presentations:read', 'presentations:write'] }),
+        headers: { 'content-type': 'application/json', cookie }
+      });
+      expect(res.status).toBe(201);
+      return readJson(res);
+    };
+    const keyA = await mint('cloud-cli-a');
+    const keyB = await mint('cloud-cli-b');
+
+    const revoke = await app.app.request('/api/v1/cli/auth/key', {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${keyA.key}` }
+    });
+    expect(revoke.status).toBe(200);
+    expect(await readJson(revoke)).toEqual({ revoked: true, id: keyA.apiKey.id });
+
+    // The presenting key is dead; the OTHER key is untouched — the route
+    // names no key, so nothing else was revocable.
+    const deadMe = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${keyA.key}` }
+    });
+    expect(deadMe.status).toBe(401);
+    const liveMe = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${keyB.key}` }
+    });
+    expect(liveMe.status).toBe(200);
+  });
+});
+
 describe('oss edition discovery (unchanged)', () => {
   it('never advertises the hub SSO method', async () => {
     const app = await createTestApp(await createDatabase(container, 'edition_oss_disc'));

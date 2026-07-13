@@ -305,3 +305,137 @@ describe('CLI auth without an email driver', () => {
     expect((await readJson(complete)).error.code).toBe('otp_unavailable');
   });
 });
+
+describe('DELETE /cli/auth/key — the logout self-revoke', () => {
+  // The `slideless logout` counterpart of the mint above: a presenting key
+  // revokes exactly ITSELF. The route names no key, so the machine-allowlist
+  // opening (presentations:write, method-keyed to DELETE) can never touch a
+  // foreign credential; sessions keep the dashboard as their key surface.
+  // Fresh app: the shared suite's owner ends up 2FA-enrolled, which would
+  // park the password sign-in this suite needs behind the TOTP step.
+  let revokeApp: TestApp;
+  let revokeMailer: RecordingEmailDriver;
+  let cookie: string;
+
+  const jsonR = (body: unknown, extra: Record<string, string> = {}) => ({
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': nextIp(), ...extra },
+    body: JSON.stringify(body)
+  });
+
+  const otpFor = (email: string): string => {
+    const mail = [...revokeMailer.sent].reverse().find((m) => m.to === email);
+    expect(mail, `an OTP mail to ${email}`).toBeTruthy();
+    return /^(\d{6}) /.exec(mail!.subject)![1]!;
+  };
+
+  beforeAll(async () => {
+    const dbUrl = await createDatabase(container, 'cliauth_revoke');
+    revokeMailer = new RecordingEmailDriver();
+    revokeApp = await createTestApp(dbUrl, {}, { email: revokeMailer });
+    const setup = await revokeApp.app.request(
+      '/api/v1/setup',
+      jsonR({ instanceName: 'Revoke Instance', owner: OWNER })
+    );
+    expect(setup.status).toBe(201);
+    const signIn = await revokeApp.app.request(
+      '/api/v1/auth/sign-in/email',
+      jsonR({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    cookie = extractCookie(signIn);
+  }, 240_000);
+
+  afterAll(async () => {
+    await revokeApp?.stop();
+  });
+
+  const revokeWith = (key: string) =>
+    revokeApp.app.request('/api/v1/cli/auth/key', {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${key}`, 'x-forwarded-for': nextIp() }
+    });
+
+  it('a CLI-minted key revokes ITSELF (audited via cli_logout) — and nothing else', async () => {
+    // Two keys through the real OTP mint; only the presenting one may die.
+    const mintViaOtp = async (keyName: string) => {
+      const req = await revokeApp.app.request('/api/v1/cli/auth/request', jsonR({ email: OWNER.email }));
+      expect(req.status).toBe(200);
+      const res = await revokeApp.app.request(
+        '/api/v1/cli/auth/complete',
+        jsonR({ email: OWNER.email, otp: otpFor(OWNER.email), keyName })
+      );
+      expect(res.status).toBe(201);
+      return readJson(res);
+    };
+    const keyA = await mintViaOtp('logout-a');
+    const keyB = await mintViaOtp('logout-b');
+
+    const revoked = await revokeWith(keyA.key);
+    expect(revoked.status).toBe(200);
+    expect(await readJson(revoked)).toEqual({ revoked: true, id: keyA.apiKey.id });
+
+    // Presenting key: dead (fail-closed 401 at resolution). Foreign key: alive.
+    const deadMe = await revokeApp.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${keyA.key}` }
+    });
+    expect(deadMe.status).toBe(401);
+    const liveMe = await revokeApp.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${keyB.key}` }
+    });
+    expect(liveMe.status).toBe(200);
+
+    // A dead key cannot even reach the route again (no zombie self-revokes).
+    const again = await revokeWith(keyA.key);
+    expect(again.status).toBe(401);
+
+    // The audit trail: the middleware attributed the machine mutation.
+    const audits = await revokeApp.db.db
+      .select({ action: auditLog.action, metadata: auditLog.metadata })
+      .from(auditLog)
+      .where(eq(auditLog.resourceId, keyA.apiKey.id));
+    const actions = audits.map((a) => a.action).sort();
+    expect(actions).toEqual(['apikey.create', 'apikey.revoke']);
+    const revokeRow = audits.find((a) => a.action === 'apikey.revoke')!;
+    expect((revokeRow.metadata as { via?: string }).via).toBe('cli_logout');
+  });
+
+  it('a session is refused — the dashboard (DELETE /api-keys/{id}) owns session key management', async () => {
+    const res = await revokeApp.app.request('/api/v1/cli/auth/key', {
+      method: 'DELETE',
+      headers: { cookie, 'x-forwarded-for': nextIp() }
+    });
+    expect(res.status).toBe(403);
+    expect((await readJson(res)).error.code).toBe('forbidden');
+  });
+
+  it('the allowlist opened exactly DELETE under presentations:write — nothing wider', async () => {
+    const mintScoped = async (scopes: string[]) => {
+      const res = await revokeApp.app.request('/api/v1/api-keys', {
+        ...jsonR({ name: `scoped-${scopes.join('+')}`, scopes }),
+        headers: { 'content-type': 'application/json', cookie }
+      });
+      expect(res.status).toBe(201);
+      return readJson(res);
+    };
+    // A read-only key lacks the write scope: 403 insufficient_scope.
+    const readOnly = await mintScoped(['presentations:read']);
+    const refused = await revokeWith(readOnly.key);
+    expect(refused.status).toBe(403);
+    expect((await readJson(refused)).error.code).toBe('insufficient_scope');
+
+    // Any OTHER method on the path stays fail-closed (method-keyed entry).
+    const writable = await mintScoped(['presentations:read', 'presentations:write']);
+    const wrongMethod = await revokeApp.app.request('/api/v1/cli/auth/key', {
+      headers: { authorization: `Bearer ${writable.key}`, 'x-forwarded-for': nextIp() }
+    });
+    expect(wrongMethod.status).toBe(403);
+    expect((await readJson(wrongMethod)).error.code).toBe('endpoint_not_allowed');
+
+    // The read-only key survived its refused attempt — refusal never revokes.
+    const stillLive = await revokeApp.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${readOnly.key}` }
+    });
+    expect(stillLive.status).toBe(200);
+  });
+});

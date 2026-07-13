@@ -12,7 +12,12 @@ import { apiKeySchema } from './api-keys.js';
  * `disableSignUp: true`, so a code only ever signs in an EXISTING account
  * (created via setup, a workspace invitation, or a collaborator claim).
  * `request` answers a generic success for unknown emails (no enumeration);
- * `complete` for an unknown email fails exactly like a wrong code.
+ * `complete` for an unknown email fails exactly like a wrong code. On the
+ * CLOUD edition both refuse (403 cli_otp_disabled) — hub-only login (D1).
+ *
+ * DELETE /cli/auth/key is the logout counterpart: it revokes exactly the
+ * PRESENTING API key (self-revocation — possession is the authority to kill
+ * itself), machine-allowed under presentations:write in the scope allowlist.
  */
 
 export const cliAuthRequestSchema = z.object({
@@ -55,3 +60,10 @@ export const cliAuthCompletedSchema = z.object({
   workspaceId: z.string()
 });
 export type CliAuthCompleted = z.infer<typeof cliAuthCompletedSchema>;
+
+/** DELETE /cli/auth/key — the presenting key was revoked (CLI logout). */
+export const cliAuthRevokedSchema = z.object({
+  revoked: z.literal(true),
+  id: z.string()
+});
+export type CliAuthRevoked = z.infer<typeof cliAuthRevokedSchema>;

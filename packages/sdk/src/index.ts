@@ -17,6 +17,7 @@ import type {
   CliAuthCompleted,
   CliAuthRequest,
   CliAuthRequested,
+  CliAuthRevoked,
   Collaborator,
   CollaboratorClaim,
   CollaboratorClaimed,
@@ -249,6 +250,16 @@ export class PlatformClient {
    */
   cliAuthComplete(req: CliAuthComplete): Promise<CliAuthCompleted> {
     return this.request('POST', '/cli/auth/complete', req);
+  }
+
+  /**
+   * Revoke the PRESENTING API key (CLI logout). Self-revocation only: the
+   * route names no key, so the credential can kill exactly itself. Requires
+   * an API-key credential with presentations:write (sessions and OAuth
+   * bearers are refused — the dashboard is their key-management surface).
+   */
+  cliAuthRevoke(): Promise<CliAuthRevoked> {
+    return this.request('DELETE', '/cli/auth/key');
   }
 
   /**

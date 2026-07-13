@@ -450,8 +450,12 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     superadminEmails: env.SUPERADMIN_EMAILS
   });
   // CLI email-OTP → API-key mint: PUBLIC pre-auth routes (listed in
-  // PUBLIC_API_PATHS) riding the emailOTP plugin; rate-limited above.
-  registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger });
+  // PUBLIC_API_PATHS) riding the emailOTP plugin; rate-limited above. Also
+  // registers DELETE /cli/auth/key — the authenticated self-revoke (CLI
+  // logout), NOT public, open to machines under presentations:write. On
+  // cloud (hubSso present) the mint pair refuses 403 cli_otp_disabled — the
+  // D1 hub-only entrance closure; the self-revoke stays open.
+  registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger, hubSso });
   // CLI cross-tool connect (docs/federation.md P5): PUBLIC exchange of a
   // hub-minted 120 s JWT for an `slk_` key. Registered ONLY on cloud —
   // an oss boot leaves the path to the JSON 404 terminator below, so the
