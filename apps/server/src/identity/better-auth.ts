@@ -166,7 +166,26 @@ const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy
  *    POST /reset-password, GET /reset-password/:token (the mailed callback);
  *  - emailOTP plugin (active whenever a mailer delivers):
  *    POST /email-otp/request-password-reset, POST /email-otp/reset-password,
- *    and the deprecated POST /forget-password/email-otp alias.
+ *    and the deprecated POST /forget-password/email-otp alias;
+ *  - core /set-password (the passwordless-ADD route): included as bump
+ *    insurance. In 1.6.15 its endpoint is registered PATHLESS
+ *    (update-user.mjs — `createAuthEndpoint({ method, body, use })` with no
+ *    path arg), so better-call's router SKIPS it (`!endpoint.path` →
+ *    `continue`, router.mjs) and it is unreachable over HTTP today — the one
+ *    route that could otherwise let a passwordless hub-JIT user ADD a
+ *    credential and then /sign-in/email. A future bump could give it a path;
+ *    a security allowlist must not depend on that accident, so guard it now
+ *    (denying an unreachable path is a no-op until it isn't).
+ *
+ * Ruled OUT of this predicate on purpose, against the same 1.6.15 surface:
+ *  - /change-password proves the CURRENT password AND requires an existing
+ *    credential account (CREDENTIAL_ACCOUNT_NOT_FOUND otherwise), so a
+ *    hub-JIT user — who has neither — cannot set a password through it;
+ *  - admin /admin/set-user-password and the phoneNumber reset routes live in
+ *    the admin / phoneNumber plugins, neither of which this instance
+ *    registers (only genericOAuth, emailOTP, twoFactor, jwt, oauthProvider),
+ *    so they are never mounted;
+ *  - /sign-up/email is closed by the sign-up switches + the before-hook.
  *
  * On EDITION=cloud these are the SSO-bypass entrance the D1 hub-only posture
  * closes (docs/federation.md, ADR 017): a hub-JIT user (no credential
@@ -174,8 +193,7 @@ const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy
  * and mint sessions via /sign-in/email that skip the per-login hub re-sync.
  * P4's re-assertion still gates every such session, so this is posture, not
  * an attacker hole — but the entrance must not exist. /sign-in/email itself
- * stays wired (the break-glass operator door); /change-password too (it
- * proves the CURRENT password, which a hub-JIT user does not have).
+ * stays wired (the break-glass operator door).
  * `ctx.path` here is the ROUTE PATTERN (e.g. '/reset-password/:token'), so
  * prefix matching covers the tokened callback.
  */
@@ -185,7 +203,8 @@ function isPasswordResetPath(path: string): boolean {
     path.startsWith('/reset-password') ||
     path.startsWith('/forget-password') ||
     path.startsWith('/email-otp/request-password-reset') ||
-    path.startsWith('/email-otp/reset-password')
+    path.startsWith('/email-otp/reset-password') ||
+    path.startsWith('/set-password')
   );
 }
 
