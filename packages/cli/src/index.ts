@@ -28,7 +28,7 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  *             → connect-on-demand: `antasphere login` exchanged for an slk_ key
  */
 
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 
 function buildProgram(io: CliIo): Command {
   const program = new Command();
