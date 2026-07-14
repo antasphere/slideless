@@ -71,6 +71,17 @@
         {#each workspaces as workspace (workspace.id)}
           <DropdownMenu.Item onclick={() => pick(workspace.id)}>
             <span class="truncate">{workspace.name}</span>
+            {#if workspace.hubOrigin}
+              <!-- P7/ADR 018: a hub-org projection, managed at Antasphere.
+                   Keyed off /me's hubOrigin flag — never edition-sniffing.
+                   Local workspaces are implicitly distinguished: no badge. -->
+              <span
+                class="shrink-0 rounded border border-border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                title={t('workspace.hubBadgeTitle')}
+              >
+                {t('workspace.hubBadge')}
+              </span>
+            {/if}
             {#if workspace.id === activeWorkspaceId}
               <Check class="ml-auto h-4 w-4 shrink-0" />
             {/if}

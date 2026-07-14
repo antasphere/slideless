@@ -189,10 +189,13 @@ export const en = {
   // ── Workspace switcher ───────────────────────────────────────────────
   'workspace.menuLabel': 'Workspaces',
   'workspace.switch': 'Switch workspace',
+  'workspace.hubBadge': 'Antasphere',
+  'workspace.hubBadgeTitle': 'Managed on Antasphere',
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Overview',
   'overview.description': 'Your self-hosted instance at a glance.',
+  'overview.descriptionCloud': 'Your workspace at a glance.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Active members',
   'overview.filesCard': 'Files',

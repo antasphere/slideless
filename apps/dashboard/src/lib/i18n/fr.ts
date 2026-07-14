@@ -196,10 +196,13 @@ export const fr: Record<MessageKey, string> = {
   // ── Workspace switcher ───────────────────────────────────────────────
   'workspace.menuLabel': 'Espaces de travail',
   'workspace.switch': 'Changer d’espace de travail',
+  'workspace.hubBadge': 'Antasphere',
+  'workspace.hubBadgeTitle': 'Géré sur Antasphere',
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Vue d’ensemble',
   'overview.description': 'Votre instance auto-hébergée en un coup d’œil.',
+  'overview.descriptionCloud': 'Votre espace de travail en un coup d’œil.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Membres actifs',
   'overview.filesCard': 'Fichiers',
