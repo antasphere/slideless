@@ -3,9 +3,10 @@ import { workspaceRoles, type WorkspaceRole } from '@slideless/db';
 import type { Logger } from '../logger.js';
 
 /**
- * The cloud edition's cached hub-status client (docs/federation.md, Phase 4):
- * the ONE component that talks to the hub's `accounts:status` machine surface
- * with HUB_SERVICE_KEY. Two endpoints, two consumers:
+ * The cloud edition's cached hub-status client (docs/federation.md, Phase 4
+ * + the H4 reconciliation): the ONE component that talks to the hub's
+ * `accounts:status` machine surface with HUB_SERVICE_KEY. Three endpoints,
+ * three consumers:
  *
  *  - `GET /accounts/{centralAccountId}/status` → `{ status, kind }` — the
  *    org suspension gate (HubEntitlementService + HubPrincipalGate), cached
@@ -14,7 +15,11 @@ import type { Logger } from '../logger.js';
  *    (hub delta H2) — the membership re-assertion (D3/D11), UNCACHED here:
  *    the per-(user, org) cache lives in HubPrincipalGate because its key is
  *    the local pair, and the DB lookup that maps it to hub ids is part of
- *    the cache-miss cost.
+ *    the cache-miss cost;
+ *  - `GET /accounts/users/{hubUserId}/memberships` → `{ memberships }` (hub
+ *    delta H4) — the user's full org list, consumed by HubOrgReconciler
+ *    (ADR 018), UNCACHED here for the same reason: the per-USER cache lives
+ *    in the reconciler, keyed by the local user id.
  *
  * Failure posture (D5): a DEFINITIVE hub answer (active / suspended / 404)
  * is cached and enforced; fetch errors (network, timeout, 5xx, and 401/403
@@ -41,6 +46,14 @@ export interface HubStatusDials {
   memberTtlMs: number;
   /** Per-request hub fetch timeout. */
   timeoutMs: number;
+  /** H4 user-org-list cache TTL (ADR 018: 15 s) — consumed by HubOrgReconciler. */
+  userOrgsTtlMs: number;
+  /**
+   * H4 fetch timeout (ADR 018: 1.5 s) — tighter than `timeoutMs` because the
+   * reconciler AWAITS its fetch on the `/me` path: a hub brown-out must cost
+   * a reload at most this much, once per user per retry window.
+   */
+  userOrgsTimeoutMs: number;
 }
 
 export const DEFAULT_HUB_DIALS: HubStatusDials = {
@@ -48,7 +61,9 @@ export const DEFAULT_HUB_DIALS: HubStatusDials = {
   orgStaleMaxMs: 15 * 60_000,
   retryMs: 15_000,
   memberTtlMs: 5 * 60_000,
-  timeoutMs: 5_000
+  timeoutMs: 5_000,
+  userOrgsTtlMs: 15_000,
+  userOrgsTimeoutMs: 1_500
 };
 
 /**
@@ -68,6 +83,35 @@ export type HubOrgStatus = 'active' | 'suspended' | 'not_found' | 'unavailable';
  */
 export type HubMemberStatus =
   { kind: 'active'; role: WorkspaceRole | null } | { kind: 'inactive' } | { kind: 'inconclusive' };
+
+/**
+ * One validated entry of the H4 org list. `role: null` = the hub sent a role
+ * this tool does not know — the reconciler keeps the membership alive but
+ * skips projection/role-sync for it (an unknown role must never read as
+ * absence). `status` mirrors the org's hub state: suspended orgs stay LISTED
+ * (visible but blocked — the D5 org gate is what refuses their requests).
+ */
+export interface HubUserMembership {
+  /** The hub org id (uuid) — what `workspaces.centralAccountId` projects. */
+  workspaceId: string;
+  /** Org display name (H1 semantics); null when absent/blank. */
+  name: string | null;
+  role: WorkspaceRole | null;
+  status: 'active' | 'suspended';
+}
+
+/**
+ * The H4 answer (ADR 018). There is deliberately NO 'absent' state: H4 is a
+ * REQUIRED hub surface (hub ≥ v0.2.0 deploys before this code), so EVERY
+ * non-200 — 401/403 (broken key OR a stale hub's scope allowlist), 404 (a
+ * stale hub), 5xx, timeouts, malformed bodies — is one loud, fail-open
+ * transient error. ONLY a definitive 200 list may drive reconciliation.
+ */
+export type HubUserMembershipsResult =
+  { kind: 'ok'; memberships: HubUserMembership[] } | { kind: 'inconclusive' };
+
+/** Strict UUID shape — a malformed hub entry must never reach Postgres' uuid cast. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface OrgEntry {
   /** Last successfully fetched value; null = no success yet (failures only). */
@@ -246,6 +290,116 @@ export class HubStatusClient {
     return { kind: 'inconclusive' };
   }
 
+  /**
+   * One H4 read (ADR 018): the caller (HubOrgReconciler) owns the per-user
+   * ~15 s cache. Per-entry validation is tolerant-but-loud: a UUID-invalid
+   * `workspaceId` drops THAT entry (never the list), an unknown `role` maps
+   * to null (keep-alive), an unknown `status` maps to 'active', and unknown
+   * fields (`kind`) are ignored — the hub may grow the shape non-breakingly.
+   */
+  async userMemberships(hubUserId: string): Promise<HubUserMembershipsResult> {
+    let res: Response;
+    try {
+      res = await this.get(
+        `/api/v1/accounts/users/${encodeURIComponent(hubUserId)}/memberships`,
+        this.dials.userOrgsTimeoutMs
+      );
+    } catch (err) {
+      this.fetches.inc({ endpoint: 'user_memberships', outcome: 'error' });
+      this.opts.logger.warn(
+        { err },
+        'hub user-memberships fetch failed — org reconciliation is failing open (local state served)'
+      );
+      return { kind: 'inconclusive' };
+    }
+    if (res.status === 401 || res.status === 403) {
+      // A credential problem (or a stale hub whose scope allowlist predates
+      // H4), NEVER a membership answer: reconciling on it could deactivate
+      // every projection of every user at once.
+      this.fetches.inc({ endpoint: 'user_memberships', outcome: 'credential_error' });
+      this.opts.logger.error(
+        { status: res.status },
+        'hub rejected HUB_SERVICE_KEY on user-memberships — org reconciliation is failing open; ' +
+          'fix the key (or deploy a hub with H4, hub >= v0.2.0)'
+      );
+      return { kind: 'inconclusive' };
+    }
+    if (res.status === 404) {
+      // No 'absent' mapping on purpose: H4 is REQUIRED (no legacy dual-mode)
+      // — a 404 means a stale hub, which is an operational emergency, not a
+      // supported configuration.
+      this.fetches.inc({ endpoint: 'user_memberships', outcome: 'error' });
+      this.opts.logger.error(
+        'hub user-memberships answered 404 — this Slideless REQUIRES a hub with H4 (>= v0.2.0); ' +
+          'org reconciliation is failing open until the hub is upgraded'
+      );
+      return { kind: 'inconclusive' };
+    }
+    if (!res.ok) {
+      this.fetches.inc({ endpoint: 'user_memberships', outcome: 'error' });
+      this.opts.logger.warn(
+        { status: res.status },
+        'hub user-memberships fetch failed — org reconciliation is failing open (local state served)'
+      );
+      return { kind: 'inconclusive' };
+    }
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      this.fetches.inc({ endpoint: 'user_memberships', outcome: 'error' });
+      this.opts.logger.warn('hub user-memberships body unparseable — org reconciliation is failing open');
+      return { kind: 'inconclusive' };
+    }
+    const rawList = (body as { memberships?: unknown } | null)?.memberships;
+    if (!Array.isArray(rawList)) {
+      this.fetches.inc({ endpoint: 'user_memberships', outcome: 'error' });
+      this.opts.logger.warn('hub user-memberships body malformed — org reconciliation is failing open');
+      return { kind: 'inconclusive' };
+    }
+    const memberships: HubUserMembership[] = [];
+    for (const raw of rawList) {
+      const entry = (raw ?? {}) as {
+        workspaceId?: unknown;
+        name?: unknown;
+        role?: unknown;
+        status?: unknown;
+      };
+      const workspaceId = entry.workspaceId;
+      if (typeof workspaceId !== 'string' || !UUID_RE.test(workspaceId)) {
+        // One bad entry never poisons the list — but its org can neither be
+        // projected NOR protected by the keep-set, so say so loudly.
+        this.opts.logger.error(
+          'hub user-memberships carried an entry without a valid workspaceId — entry dropped'
+        );
+        continue;
+      }
+      const rawRole = entry.role;
+      const role =
+        typeof rawRole === 'string' && (workspaceRoles as readonly string[]).includes(rawRole)
+          ? (rawRole as WorkspaceRole)
+          : null;
+      if (role === null) {
+        this.opts.logger.warn(
+          { hubOrgId: workspaceId },
+          'hub user-memberships carried an unknown role — keeping the membership alive, skipping its sync'
+        );
+      }
+      const rawName = entry.name;
+      memberships.push({
+        workspaceId,
+        name: typeof rawName === 'string' && rawName.trim() ? rawName : null,
+        role,
+        // Unknown status reads as 'active': status only ever WIDENS local
+        // access here (suspended orgs stay projected too) — the org gate is
+        // the enforcement point, fed by its own definitive fetch.
+        status: entry.status === 'suspended' ? 'suspended' : 'active'
+      });
+    }
+    this.fetches.inc({ endpoint: 'user_memberships', outcome: 'ok' });
+    return { kind: 'ok', memberships };
+  }
+
   private async fetchOrgStatus(
     centralAccountId: string
   ): Promise<'active' | 'suspended' | 'not_found' | null> {
@@ -285,10 +439,10 @@ export class HubStatusClient {
     this.orgCache.set(centralAccountId, { value, fetchedAt: now, lastAttemptAt: now });
   }
 
-  private get(path: string): Promise<Response> {
+  private get(path: string, timeoutMs = this.dials.timeoutMs): Promise<Response> {
     return this.fetchImpl(`${this.base}${path}`, {
       headers: { authorization: `Bearer ${this.opts.serviceKey}`, accept: 'application/json' },
-      signal: AbortSignal.timeout(this.dials.timeoutMs)
+      signal: AbortSignal.timeout(timeoutMs)
     });
   }
 }

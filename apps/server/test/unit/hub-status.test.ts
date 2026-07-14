@@ -17,7 +17,9 @@ const DIALS: HubStatusDials = {
   orgStaleMaxMs: 10_000,
   retryMs: 500,
   memberTtlMs: 5_000,
-  timeoutMs: 1_000
+  timeoutMs: 1_000,
+  userOrgsTtlMs: 1_000,
+  userOrgsTimeoutMs: 500
 };
 
 const ORG = '11111111-aaaa-4bbb-8ccc-00000000cafe';
@@ -154,10 +156,12 @@ describe('orgStatus cache discipline (D5)', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('ships the production dials from D5/D3', () => {
+  it('ships the production dials from D5/D3/ADR-018', () => {
     expect(DEFAULT_HUB_DIALS.orgTtlMs).toBe(60_000);
     expect(DEFAULT_HUB_DIALS.orgStaleMaxMs).toBe(900_000);
     expect(DEFAULT_HUB_DIALS.memberTtlMs).toBe(300_000);
+    expect(DEFAULT_HUB_DIALS.userOrgsTtlMs).toBe(15_000);
+    expect(DEFAULT_HUB_DIALS.userOrgsTimeoutMs).toBe(1_500);
   });
 });
 
@@ -211,6 +215,104 @@ describe('memberStatus response mapping (H2 contract)', () => {
     const { client, calls } = makeClient([() => jsonRes(200, { active: true, role: 'member' })]);
     await client.memberStatus(ORG, SUB);
     await client.memberStatus(ORG, SUB);
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe('userMemberships response mapping (H4 contract, ADR 018)', () => {
+  const SUB = 'hub-user-123';
+  const ORG2 = '22222222-aaaa-4bbb-8ccc-00000000beef';
+  const path = `https://hub.test/api/v1/accounts/users/${SUB}/memberships`;
+
+  it('200 → ok with validated entries; the service key is presented; `kind` is ignored', async () => {
+    const { client, calls } = makeClient([
+      () =>
+        jsonRes(200, {
+          memberships: [
+            { workspaceId: ORG, name: 'Acme Corp', role: 'admin', status: 'active', kind: 'organization' },
+            { workspaceId: ORG2, name: 'Beta LLC', role: 'member', status: 'suspended', kind: 'personal' }
+          ]
+        })
+    ]);
+    expect(await client.userMemberships(SUB)).toEqual({
+      kind: 'ok',
+      memberships: [
+        { workspaceId: ORG, name: 'Acme Corp', role: 'admin', status: 'active' },
+        { workspaceId: ORG2, name: 'Beta LLC', role: 'member', status: 'suspended' }
+      ]
+    });
+    expect(calls[0]!.url).toBe(path);
+    expect(calls[0]!.auth).toBe('Bearer ant_unit_test_key');
+  });
+
+  it('an empty list is a definitive ok (the reconciler deactivates on it)', async () => {
+    const { client } = makeClient([() => jsonRes(200, { memberships: [] })]);
+    expect(await client.userMemberships(SUB)).toEqual({ kind: 'ok', memberships: [] });
+  });
+
+  it('an unknown role maps to role:null (keep-alive), never to a dropped entry', async () => {
+    const { client } = makeClient([
+      () =>
+        jsonRes(200, { memberships: [{ workspaceId: ORG, name: 'X', role: 'emperor', status: 'active' }] })
+    ]);
+    expect(await client.userMemberships(SUB)).toEqual({
+      kind: 'ok',
+      memberships: [{ workspaceId: ORG, name: 'X', role: null, status: 'active' }]
+    });
+  });
+
+  it('a UUID-invalid workspaceId drops THAT entry only; blank/missing names map to null', async () => {
+    const { client } = makeClient([
+      () =>
+        jsonRes(200, {
+          memberships: [
+            { workspaceId: 'not-a-uuid', name: 'Evil', role: 'member', status: 'active' },
+            { workspaceId: ORG, name: '   ', role: 'member', status: 'active' },
+            { workspaceId: ORG2, role: 'owner', status: 'active' }
+          ]
+        })
+    ]);
+    expect(await client.userMemberships(SUB)).toEqual({
+      kind: 'ok',
+      memberships: [
+        { workspaceId: ORG, name: null, role: 'member', status: 'active' },
+        { workspaceId: ORG2, name: null, role: 'owner', status: 'active' }
+      ]
+    });
+  });
+
+  it('an unknown status reads as active (status only ever widens; the org gate enforces)', async () => {
+    const { client } = makeClient([
+      () => jsonRes(200, { memberships: [{ workspaceId: ORG, name: 'X', role: 'member', status: 'weird' }] })
+    ]);
+    expect(await client.userMemberships(SUB)).toEqual({
+      kind: 'ok',
+      memberships: [{ workspaceId: ORG, name: 'X', role: 'member', status: 'active' }]
+    });
+  });
+
+  it('EVERY non-200 is inconclusive — no absent state, H4 is required (401/403/404/5xx)', async () => {
+    for (const status of [401, 403, 404, 500, 502]) {
+      const { client } = makeClient([() => jsonRes(status, { error: { code: 'nope' } })]);
+      expect(await client.userMemberships(SUB)).toEqual({ kind: 'inconclusive' });
+    }
+  });
+
+  it('network errors, unparseable and malformed bodies are inconclusive', async () => {
+    const net = makeClient([() => new Error('socket hang up')]);
+    expect(await net.client.userMemberships(SUB)).toEqual({ kind: 'inconclusive' });
+    const unparseable = makeClient([() => new Response('not json', { status: 200 })]);
+    expect(await unparseable.client.userMemberships(SUB)).toEqual({ kind: 'inconclusive' });
+    const noList = makeClient([() => jsonRes(200, { anything: true })]);
+    expect(await noList.client.userMemberships(SUB)).toEqual({ kind: 'inconclusive' });
+    const wrongType = makeClient([() => jsonRes(200, { memberships: 'all-of-them' })]);
+    expect(await wrongType.client.userMemberships(SUB)).toEqual({ kind: 'inconclusive' });
+  });
+
+  it('is uncached here: every call fetches (the reconciler owns the ~15 s cache)', async () => {
+    const { client, calls } = makeClient([() => jsonRes(200, { memberships: [] })]);
+    await client.userMemberships(SUB);
+    await client.userMemberships(SUB);
     expect(calls).toHaveLength(2);
   });
 });
