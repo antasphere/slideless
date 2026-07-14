@@ -685,6 +685,73 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     note the compounding: a dead branch trigger hides a broken gate until
     the first release is on the critical path.
 
+## 20. User-scoped credentials: the org-as-parameter model (re-architecture Phase 1)
+
+Found while moving Slideless off ADR 012/014's per-workspace credential
+binding onto the user-scoped model (a credential identifies a USER; the
+workspace is a per-request parameter authorized against the caller's own
+live memberships). The template still ships the mint-time binding — when it
+adopts the model, these are the exact seams.
+
+69. **The three credential resolvers each hand-rolled the same
+    membership-selection SELECT — extract ONE shared helper.** Sessions
+    (`platform/local-identity.ts`), API keys (`apikeys/service.ts`), and
+    OAuth bearers (`identity/oauth-jwt.ts`) all need "resolve (userId,
+    requested?) → one live membership", and three private copies is how the
+    selection rule forks per path (the accountRef lesson, #58, as a query).
+    Slideless extracted `identity/resolve-membership.ts` — UUID guard,
+    fail-closed explicit selector, `is_default DESC, created_at, id`
+    default ordering — and all three delegate. Ship the helper as chassis
+    code from the start.
+70. **`resolveApiKey`/`resolveOauthJwt` need the request's workspace
+    selector threaded in, and the API-key path needs a distinct
+    mismatch signal.** Under org-as-parameter the machine resolvers take
+    `(token, requested)`; a PINNED key presented with a mismatching
+    X-Workspace-Id must answer the loud 403 (never the silent pin, never
+    the invalid-credential 401) — Slideless throws a typed
+    `WorkspaceMismatchError` that authContext maps, so the failure
+    rate-limiter is not charged for a VALID credential. The old
+    middleware-level mismatch block (which compared against the resolved
+    principal) deletes.
+71. **`api_keys.workspace_id` should be an optional PIN from day one, and
+    the widening migration must grandfather loudly.** NULL = user-scoped
+    key (the mint default), value = pinned (least privilege). The
+    migration dropping NOT NULL is a SEMANTIC change dressed as an ALTER:
+    an OSS upgrade must never silently widen already-issued keys, so every
+    existing row keeps its pin and only new mints default to NULL —
+    Slideless migration 0023 carries the warning block verbatim; keep that
+    shape. Key listing/revoke re-key on `created_by` (keys are user
+    credentials, not workspace inventory).
+72. **The oauth-provider consent can be user-scoped with a one-line
+    no-binding wiring** — `postLogin.consentReferenceId: async () =>
+undefined` (the plugin type REQUIRES the key whenever `postLogin`
+    exists, so "delete the binding" is an explicit undefined, not a
+    removed property). Access-token claims then mint from a
+    user-active-membership gate (`{ email }` only); the whole
+    parked-selection machinery (verification-table rows, the
+    consent-workspace endpoint, the dashboard picker) deletes. Wipe
+    `oauth_consent` + `oauth_refresh_token` at the flip: an org-bound
+    consent must never short-circuit into an org-free grant.
+73. **`/me` needs explicit per-entry `default` + `suspended` booleans the
+    moment credentials are user-scoped.** Every credential kind lists ALL
+    the user's memberships, so "index 0 is the default" dies as a client
+    contract — the wire must say which entry is the selector-less default
+    (and which orgs are suspended-but-visible). Clients read the flags,
+    never the order.
+74. **The `principalGate` seam (#57) should pass the request (path/method)
+    alongside the principal.** A suspension policy needs to exempt
+    specific surfaces (GET /me stays readable — visible-but-blocked);
+    widening the signature later is a chassis touch every product repeats.
+    Implementations that don't care simply ignore the second argument
+    (arity-contravariance keeps them compiling untouched).
+75. **MCP tools want ONE per-call workspace seam, not N header hacks.**
+    Slideless added the optional `workspace` argument to every
+    workspace-scoped tool and mapped it to X-Workspace-Id at the
+    in-process re-entry (`mcp/tool-kit.ts`: `forWorkspace(ctx, workspace)`
+    - the shared header builder), so a tool argument is authorized by the
+      API's own resolvers and can never out-privilege the credential. The
+      chassis' tool-kit should ship the seam.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
