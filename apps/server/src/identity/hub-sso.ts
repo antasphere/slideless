@@ -1,18 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { JWTPayload } from 'jose';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import type { GenericOAuthConfig } from 'better-auth/plugins';
-import {
-  account,
-  user as userTable,
-  workspaceMembers,
-  workspaceRoles,
-  workspaces,
-  type Db,
-  type WorkspaceRole
-} from '@slideless/db';
+import { account, user as userTable, workspaceRoles, type Db, type WorkspaceRole } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { HubJwtVerifier } from './hub-jwt.js';
+import { projectOrgMembership } from './hub-projection.js';
 
 /**
  * "Sign in with Antasphere" — the cloud edition's SSO entrance
@@ -541,61 +534,19 @@ export class HubSsoService {
    * first use (`centralAccountId` = the hub org id), then a membership
    * upsert re-asserts (role, origin='hub', active) at EVERY login —
    * reactivating a deactivated row and following hub role changes (D11).
-   * Deliberately NOT WorkspaceService.create: the projection needs
-   * ON CONFLICT semantics on the 0021 unique partial index, the hub's role
-   * (not owner), and origin='hub'.
+   * The mechanics live in `projectOrgMembership` (hub-projection.ts) —
+   * shared verbatim with the H4 reconciler so both writers produce
+   * byte-identical rows; this wrapper owns the login path's fail-closed
+   * error mapping only.
    */
   private async project(localUserId: string, assertion: HubSsoAssertion): Promise<{ workspaceId: string }> {
-    const db = this.opts.db;
     try {
-      let [ws] = await db
-        .select({ id: workspaces.id, name: workspaces.name })
-        .from(workspaces)
-        .where(eq(workspaces.centralAccountId, assertion.hubWorkspaceId))
-        .limit(1);
-      if (!ws) {
-        // H1 fallback: without workspace_name (older hub), project under a
-        // recognizable placeholder — self-healing, the re-sync below renames
-        // it at the first login whose token carries the claim.
-        const name =
-          assertion.hubWorkspaceName ?? `Antasphere workspace ${assertion.hubWorkspaceId.slice(0, 8)}`;
-        const inserted = await db
-          .insert(workspaces)
-          .values({ name, centralAccountId: assertion.hubWorkspaceId })
-          .onConflictDoNothing({
-            target: workspaces.centralAccountId,
-            where: sql`${workspaces.centralAccountId} IS NOT NULL`
-          })
-          .returning({ id: workspaces.id, name: workspaces.name });
-        // Conflict = a concurrent first-login won the insert; land on its row.
-        ws =
-          inserted[0] ??
-          (
-            await db
-              .select({ id: workspaces.id, name: workspaces.name })
-              .from(workspaces)
-              .where(eq(workspaces.centralAccountId, assertion.hubWorkspaceId))
-              .limit(1)
-          )[0];
-        if (!ws) throw new Error('projection insert and re-select both returned nothing');
-      }
-      if (assertion.hubWorkspaceName && ws.name !== assertion.hubWorkspaceName) {
-        await db.update(workspaces).set({ name: assertion.hubWorkspaceName }).where(eq(workspaces.id, ws.id));
-      }
-      await db
-        .insert(workspaceMembers)
-        .values({
-          workspaceId: ws.id,
-          userId: localUserId,
-          role: assertion.role,
-          origin: 'hub',
-          isActive: true
-        })
-        .onConflictDoUpdate({
-          target: [workspaceMembers.workspaceId, workspaceMembers.userId],
-          set: { role: assertion.role, origin: 'hub', isActive: true }
-        });
-      return { workspaceId: ws.id };
+      return await projectOrgMembership(this.opts.db, {
+        localUserId,
+        hubWorkspaceId: assertion.hubWorkspaceId,
+        hubWorkspaceName: assertion.hubWorkspaceName,
+        role: assertion.role
+      });
     } catch (err) {
       if (err instanceof HubSsoLoginError) throw err;
       this.opts.logger.error({ err }, 'hub SSO: org projection failed');
