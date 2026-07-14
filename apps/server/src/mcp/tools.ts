@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } from './errors.js';
-import { callApi, checkScope, fetchApiRaw, pageQuery, type McpToolContext } from './tool-kit.js';
+import {
+  callApi,
+  checkScope,
+  fetchApiRaw,
+  forWorkspace,
+  pageQuery,
+  type McpToolContext
+} from './tool-kit.js';
 
 /**
  * The slideless_ tool set: the product surface (decks, versions, sharing,
@@ -201,7 +208,7 @@ interface PushOptions {
 }
 
 async function pushInlineDeck(
-  ctx: McpToolContext,
+  c: McpToolContext,
   files: DecodedFile[],
   opts: PushOptions
 ): Promise<ToolTextResult> {
@@ -217,7 +224,7 @@ async function pushInlineDeck(
   }));
 
   // Step 1 — precheck: which blobs does the workspace still miss?
-  const { missing } = (await callApi(ctx, '/api/v1/presentations/precheck', {
+  const { missing } = (await callApi(c, '/api/v1/presentations/precheck', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ sha256: [...new Set(files.map((f) => f.sha256))] })
@@ -237,17 +244,17 @@ async function pushInlineDeck(
         type: file.contentType
       })
     );
-    await fetchApiRaw(ctx, '/api/v1/presentations/assets', { method: 'POST', body: form });
+    await fetchApiRaw(c, '/api/v1/presentations/assets', { method: 'POST', body: form });
   }
 
   // Step 3 — commit: a new version on an existing deck, or session + deck.
   let committed: unknown;
   if (opts.presentationId) {
     const deck = (await callApi(
-      ctx,
+      c,
       `/api/v1/presentations/${encodeURIComponent(opts.presentationId)}`
     )) as PresentationWire;
-    committed = await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(deck.id)}/versions`, {
+    committed = await callApi(c, `/api/v1/presentations/${encodeURIComponent(deck.id)}/versions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -265,11 +272,11 @@ async function pushInlineDeck(
         ? titleFromHtml(entryFile.bytes.toString('utf8'))
         : null) ??
       'Untitled presentation';
-    const { uploadSession } = (await callApi(ctx, '/api/v1/presentations/uploads', { method: 'POST' })) as {
+    const { uploadSession } = (await callApi(c, '/api/v1/presentations/uploads', { method: 'POST' })) as {
       uploadSession: { id: string };
     };
     committed = await callApi(
-      ctx,
+      c,
       `/api/v1/presentations/uploads/${encodeURIComponent(uploadSession.id)}/commit`,
       {
         method: 'POST',
@@ -296,17 +303,28 @@ async function pushInlineDeck(
 // ── Registration ─────────────────────────────────────────────────────────────
 
 export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): void {
-  const read = (fn: () => Promise<ToolTextResult>): Promise<ToolTextResult> | ToolTextResult => {
+  // Every tool threads its optional `workspace` argument through these
+  // wrappers into forWorkspace, so the selection rides the ONE header the
+  // whole platform authorizes (the in-process re-entry, tool-kit.ts) — a
+  // tool argument can never reach a workspace the caller's own memberships
+  // do not grant.
+  const read = (
+    workspace: string | undefined,
+    fn: (c: McpToolContext) => Promise<ToolTextResult>
+  ): Promise<ToolTextResult> | ToolTextResult => {
     const denied = checkScope(ctx.principal, 'presentations:read');
     if (denied) return denied;
-    return wrapToolErrors(fn);
+    return wrapToolErrors(() => fn(forWorkspace(ctx, workspace)));
   };
-  const write = (fn: () => Promise<ToolTextResult>): Promise<ToolTextResult> | ToolTextResult => {
+  const write = (
+    workspace: string | undefined,
+    fn: (c: McpToolContext) => Promise<ToolTextResult>
+  ): Promise<ToolTextResult> | ToolTextResult => {
     const denied = checkScope(ctx.principal, 'presentations:write');
     if (denied) return denied;
     return wrapToolErrors(async () => {
       try {
-        return await fn();
+        return await fn(forWorkspace(ctx, workspace));
       } catch (e) {
         if (e instanceof InlineUploadError) return deny(e.message);
         throw e;
@@ -315,6 +333,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
   };
 
   const deckIdInput = z.uuid().describe('Presentation (deck) id.');
+  const workspaceInput = z
+    .uuid()
+    .optional()
+    .describe('Target organization (workspace id). Omit to use your default org — see slideless_whoami.');
   const cursorInput = z.string().optional().describe('nextCursor from a previous page.');
   const limitInput = z
     .number()
@@ -330,13 +352,16 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     'slideless_whoami',
     {
       description:
-        'Who is connected: the user this MCP connection acts as, with workspace, role, credential ' +
-        'type and granted scopes. Returns { user: { id, email, name }, workspace, role, via, scopes }. ' +
-        'Everything done through these tools happens as this user.',
-      inputSchema: {},
+        'Who is connected: the user this MCP connection acts as, plus ALL their organizations ' +
+        '(workspaces) with per-entry role/default/suspended flags. Returns { user: { id, email, ' +
+        'name }, workspace, role, via, scopes, workspaces: [...], activeWorkspaceId }. The ' +
+        'credential is the USER; the organization is a PER-CALL parameter: every tool accepts an ' +
+        'optional `workspace` (an id from `workspaces[]`) — omitted, the entry flagged `default: ' +
+        'true` is used (else the oldest membership). Call this first to discover the ids.',
+      inputSchema: { workspace: workspaceInput },
       annotations: { readOnlyHint: true }
     },
-    async () => read(async () => jsonText(await callApi(ctx, '/api/v1/me')))
+    async ({ workspace }) => read(workspace, async (c) => jsonText(await callApi(c, '/api/v1/me')))
   );
 
   // ── Decks: reads ───────────────────────────────────────────────────────────
@@ -349,11 +374,13 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'private: owners and workspace admins see the workspace, others see owned decks plus active ' +
         'collaborations. Returns { presentations: [...], nextCursor }; when nextCursor is non-null, ' +
         'call again with cursor set to it.',
-      inputSchema: { cursor: cursorInput, limit: limitInput },
+      inputSchema: { workspace: workspaceInput, cursor: cursorInput, limit: limitInput },
       annotations: { readOnlyHint: true }
     },
-    async ({ cursor, limit }) =>
-      read(async () => jsonText(await callApi(ctx, pageQuery('/api/v1/presentations', { cursor, limit }))))
+    async ({ workspace, cursor, limit }) =>
+      read(workspace, async (c) =>
+        jsonText(await callApi(c, pageQuery('/api/v1/presentations', { cursor, limit })))
+      )
   );
 
   server.registerTool(
@@ -362,12 +389,12 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       description:
         'One presentation by id: title, kind, currentVersion, entryPath, owner, timestamps. ' +
         'Answers not_found for decks this credential cannot read.',
-      inputSchema: { presentationId: deckIdInput },
+      inputSchema: { workspace: workspaceInput, presentationId: deckIdInput },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId }) =>
-      read(async () =>
-        jsonText(await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`))
+    async ({ workspace, presentationId }) =>
+      read(workspace, async (c) =>
+        jsonText(await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}`))
       )
   );
 
@@ -377,14 +404,19 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       description:
         "A deck's immutable version history, newest first (metadata only — file lists come from " +
         'slideless_get_version). Returns { versions: [...], nextCursor }.',
-      inputSchema: { presentationId: deckIdInput, cursor: cursorInput, limit: limitInput },
+      inputSchema: {
+        workspace: workspaceInput,
+        presentationId: deckIdInput,
+        cursor: cursorInput,
+        limit: limitInput
+      },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId, cursor, limit }) =>
-      read(async () =>
+    async ({ workspace, presentationId, cursor, limit }) =>
+      read(workspace, async (c) =>
         jsonText(
           await callApi(
-            ctx,
+            c,
             pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/versions`, {
               cursor,
               limit
@@ -401,16 +433,17 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'One deck version INCLUDING its full manifest (path, sha256, sizeBytes, contentType per ' +
         'file). Omit version for the latest. Use slideless_download_version to also get file contents.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         version: z.number().int().min(1).optional().describe('Version number; omitted = the latest version.')
       },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId, version }) =>
-      read(async () => {
-        const v = version ?? (await currentVersionOf(ctx, presentationId));
+    async ({ workspace, presentationId, version }) =>
+      read(workspace, async (c) => {
+        const v = version ?? (await currentVersionOf(c, presentationId));
         return jsonText(
-          await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}/versions/${v}`)
+          await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}/versions/${v}`)
         );
       })
   );
@@ -424,16 +457,17 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'come back as metadata with a note — pull those with the CLI (`slideless pull <deckId>`). ' +
         'Omit version for the latest.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         version: z.number().int().min(1).optional().describe('Version number; omitted = the latest version.')
       },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId, version }) =>
-      read(async () => {
+    async ({ workspace, presentationId, version }) =>
+      read(workspace, async (c) => {
         const id = encodeURIComponent(presentationId);
-        const v = version ?? (await currentVersionOf(ctx, presentationId));
-        const detail = (await callApi(ctx, `/api/v1/presentations/${id}/versions/${v}`)) as VersionDetailWire;
+        const v = version ?? (await currentVersionOf(c, presentationId));
+        const detail = (await callApi(c, `/api/v1/presentations/${id}/versions/${v}`)) as VersionDetailWire;
         let budget = INLINE_DOWNLOAD_TOTAL_MAX;
         const files: Array<Record<string, unknown>> = [];
         for (const entry of detail.manifest) {
@@ -459,7 +493,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
             files.push({ ...base, inlined: false, note: `total inline budget exhausted — ${CLI_HINT}` });
             continue;
           }
-          const res = await fetchApiRaw(ctx, `/api/v1/presentations/${id}/assets/${entry.sha256}`);
+          const res = await fetchApiRaw(c, `/api/v1/presentations/${id}/assets/${entry.sha256}`);
           const content = await res.text();
           budget -= entry.sizeBytes;
           files.push({ ...base, inlined: true, content });
@@ -484,6 +518,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         `uploads are capped at ${Math.floor(INLINE_UPLOAD_TOTAL_MAX / 1024)} KiB; ${CLI_HINT}. ` +
         'Always confirm with the user before calling.',
       inputSchema: {
+        workspace: workspaceInput,
         html: z.string().min(1).describe('The complete HTML document.'),
         title: z
           .string()
@@ -498,12 +533,12 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         interactive: z.boolean().optional().describe('Mark the deck as embedding interactive content.')
       }
     },
-    async ({ html, title, kind, interactive }) =>
-      write(async () => {
+    async ({ workspace, html, title, kind, interactive }) =>
+      write(workspace, async (c) => {
         const files = decodeInlineFiles([
           { path: 'index.html', contentText: html, contentType: 'text/html' }
         ]);
-        return pushInlineDeck(ctx, files, { title, kind, interactive });
+        return pushInlineDeck(c, files, { title, kind, interactive });
       })
   );
 
@@ -517,6 +552,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         `contain). Inline uploads are capped at ${Math.floor(INLINE_UPLOAD_TOTAL_MAX / 1024)} KiB total; ` +
         `${CLI_HINT}. Returns { presentation, version }. Always confirm with the user before calling.`,
       inputSchema: {
+        workspace: workspaceInput,
         files: z
           .array(
             z.object({
@@ -559,9 +595,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           .describe('Existing deck id — commit these files as its next version instead of creating a deck.')
       }
     },
-    async ({ files, title, entryPath, kind, interactive, presentationId }) =>
-      write(async () =>
-        pushInlineDeck(ctx, decodeInlineFiles(files), { title, entryPath, kind, interactive, presentationId })
+    async ({ workspace, files, title, entryPath, kind, interactive, presentationId }) =>
+      write(workspace, async (c) =>
+        pushInlineDeck(c, decodeInlineFiles(files), { title, entryPath, kind, interactive, presentationId })
       )
   );
 
@@ -572,13 +608,13 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'DELETE a presentation: the deck, its versions and its share links stop resolving ' +
         '(soft delete — not undoable through the API). Only the deck owner or a workspace admin ' +
         'may delete. Always confirm with the user before calling.',
-      inputSchema: { presentationId: deckIdInput },
+      inputSchema: { workspace: workspaceInput, presentationId: deckIdInput },
       annotations: { destructiveHint: true }
     },
-    async ({ presentationId }) =>
-      write(async () =>
+    async ({ workspace, presentationId }) =>
+      write(workspace, async (c) =>
         jsonText(
-          await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}`, {
+          await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}`, {
             method: 'DELETE'
           })
         )
@@ -596,6 +632,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'Supports a per-recipient name label, pinning to a version (default: follow the latest), ' +
         'reviewer annotations, expiry, and a viewer password. Always confirm with the user before calling.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         name: z
           .string()
@@ -613,10 +650,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         password: z.string().min(4).max(256).optional().describe('Viewer password gate (optional).')
       }
     },
-    async ({ presentationId, name, pinnedVersion, canAnnotate, expiresAt, password }) =>
-      write(async () =>
+    async ({ workspace, presentationId, name, pinnedVersion, canAnnotate, expiresAt, password }) =>
+      write(workspace, async (c) =>
         jsonText(
-          await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens`, {
+          await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
@@ -639,14 +676,19 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         "A deck's share tokens with access stats (name, versionMode, pinnedVersion, expiry, " +
         'hasPassword, revokedAt, accessCount). Secrets are never retrievable — only creation returns ' +
         'them. Returns { shareTokens: [...], nextCursor }.',
-      inputSchema: { presentationId: deckIdInput, cursor: cursorInput, limit: limitInput },
+      inputSchema: {
+        workspace: workspaceInput,
+        presentationId: deckIdInput,
+        cursor: cursorInput,
+        limit: limitInput
+      },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId, cursor, limit }) =>
-      read(async () =>
+    async ({ workspace, presentationId, cursor, limit }) =>
+      read(workspace, async (c) =>
         jsonText(
           await callApi(
-            ctx,
+            c,
             pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens`, { cursor, limit })
           )
         )
@@ -660,6 +702,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         "Switch a share token between following the deck's latest version and being pinned to one " +
         "('pinned' requires pinnedVersion). Always confirm with the user before calling.",
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         tokenId: z.uuid().describe('Share token id (from creation or slideless_list_share_tokens).'),
         mode: z.enum(['latest', 'pinned']).describe("'latest' follows the deck; 'pinned' freezes a version."),
@@ -671,14 +714,14 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           .describe("The version to pin (required for 'pinned').")
       }
     },
-    async ({ presentationId, tokenId, mode, pinnedVersion }) =>
-      write(async () => {
+    async ({ workspace, presentationId, tokenId, mode, pinnedVersion }) =>
+      write(workspace, async (c) => {
         if (mode === 'pinned' && pinnedVersion === undefined) {
           return deny("pinnedVersion is required when mode is 'pinned'.");
         }
         return jsonText(
           await callApi(
-            ctx,
+            c,
             `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens/${encodeURIComponent(tokenId)}`,
             {
               method: 'PATCH',
@@ -700,17 +743,18 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'active share token of the deck. Revoked links stop resolving immediately and cannot be ' +
         're-enabled (mint new ones instead). Always confirm with the user before calling.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         tokenId: z.uuid().optional().describe('One token to revoke; omitted = revoke ALL active tokens.')
       },
       annotations: { destructiveHint: true }
     },
-    async ({ presentationId, tokenId }) =>
-      write(async () => {
+    async ({ workspace, presentationId, tokenId }) =>
+      write(workspace, async (c) => {
         const id = encodeURIComponent(presentationId);
         if (tokenId) {
           return jsonText(
-            await callApi(ctx, `/api/v1/presentations/${id}/tokens/${encodeURIComponent(tokenId)}`, {
+            await callApi(c, `/api/v1/presentations/${id}/tokens/${encodeURIComponent(tokenId)}`, {
               method: 'DELETE'
             })
           );
@@ -719,7 +763,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         let cursor: string | undefined;
         do {
           const page = (await callApi(
-            ctx,
+            c,
             pageQuery(`/api/v1/presentations/${id}/tokens`, { cursor, limit: 100 })
           )) as {
             shareTokens: ShareTokenWire[];
@@ -727,7 +771,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           };
           for (const token of page.shareTokens) {
             if (token.revokedAt !== null) continue;
-            await callApi(ctx, `/api/v1/presentations/${id}/tokens/${encodeURIComponent(token.id)}`, {
+            await callApi(c, `/api/v1/presentations/${id}/tokens/${encodeURIComponent(token.id)}`, {
               method: 'DELETE'
             });
             revoked.push({ id: token.id, name: token.name });
@@ -747,17 +791,18 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'instance has no email driver, nothing is sent and emailSent is false — hand over the ' +
         'create-time url instead. Always confirm with the user before calling.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         tokenId: z.uuid().describe('The share token to send.'),
         email: z.email().describe('Recipient email address.'),
         message: z.string().max(2000).optional().describe('Personal note included in the email.')
       }
     },
-    async ({ presentationId, tokenId, email, message }) =>
-      write(async () =>
+    async ({ workspace, presentationId, tokenId, email, message }) =>
+      write(workspace, async (c) =>
         jsonText(
           await callApi(
-            ctx,
+            c,
             `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens/${encodeURIComponent(tokenId)}/send`,
             {
               method: 'POST',
@@ -778,14 +823,19 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         "A deck's collaborator grants (email, status pending/active/revoked, claimedAt). Visible " +
         'to the deck owner, workspace admins, and active collaborators. Returns ' +
         '{ collaborators: [...], nextCursor }.',
-      inputSchema: { presentationId: deckIdInput, cursor: cursorInput, limit: limitInput },
+      inputSchema: {
+        workspace: workspaceInput,
+        presentationId: deckIdInput,
+        cursor: cursorInput,
+        limit: limitInput
+      },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId, cursor, limit }) =>
-      read(async () =>
+    async ({ workspace, presentationId, cursor, limit }) =>
+      read(workspace, async (c) =>
         jsonText(
           await callApi(
-            ctx,
+            c,
             pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/collaborators`, {
               cursor,
               limit
@@ -804,14 +854,15 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'claimUrl is always returned; hand it to the invitee when emailSent is false. Only the deck ' +
         'owner or a workspace admin can invite. Always confirm with the user before calling.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         email: z.email().describe("The invitee's email address.")
       }
     },
-    async ({ presentationId, email }) =>
-      write(async () =>
+    async ({ workspace, presentationId, email }) =>
+      write(workspace, async (c) =>
         jsonText(
-          await callApi(ctx, `/api/v1/presentations/${encodeURIComponent(presentationId)}/collaborators`, {
+          await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}/collaborators`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ email })
@@ -828,16 +879,17 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'immediately (pending invites die too). Not undoable; re-invite to restore access. Always ' +
         'confirm with the user before calling.',
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: deckIdInput,
         collaboratorId: z.uuid().describe('Collaborator grant id (from slideless_list_collaborators).')
       },
       annotations: { destructiveHint: true }
     },
-    async ({ presentationId, collaboratorId }) =>
-      write(async () =>
+    async ({ workspace, presentationId, collaboratorId }) =>
+      write(workspace, async (c) =>
         jsonText(
           await callApi(
-            ctx,
+            c,
             `/api/v1/presentations/${encodeURIComponent(presentationId)}/collaborators/${encodeURIComponent(collaboratorId)}`,
             { method: 'DELETE' }
           )
@@ -855,6 +907,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'workspace-wide inbox of every deck this credential can read. Filter by version and/or ' +
         "status ('open' | 'resolved'). Returns { annotations: [...], nextCursor }.",
       inputSchema: {
+        workspace: workspaceInput,
         presentationId: z.uuid().optional().describe('One deck; omitted = the cross-deck inbox.'),
         version: z.number().int().min(1).optional().describe('Only notes anchored to this deck version.'),
         status: z.enum(['open', 'resolved']).optional().describe('Only notes with this status.'),
@@ -863,8 +916,8 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       },
       annotations: { readOnlyHint: true }
     },
-    async ({ presentationId, version, status, cursor, limit }) =>
-      read(async () => {
+    async ({ workspace, presentationId, version, status, cursor, limit }) =>
+      read(workspace, async (c) => {
         const base = presentationId
           ? `/api/v1/presentations/${encodeURIComponent(presentationId)}/annotations`
           : '/api/v1/annotations';
@@ -874,15 +927,15 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         if (version !== undefined) query.set('version', String(version));
         if (status) query.set('status', status);
         const qs = query.toString();
-        return jsonText(await callApi(ctx, qs ? `${base}?${qs}` : base));
+        return jsonText(await callApi(c, qs ? `${base}?${qs}` : base));
       })
   );
 }
 
 /** currentVersion of a deck (for the "omitted = latest" version params). */
-async function currentVersionOf(ctx: McpToolContext, presentationId: string): Promise<number> {
+async function currentVersionOf(c: McpToolContext, presentationId: string): Promise<number> {
   const deck = (await callApi(
-    ctx,
+    c,
     `/api/v1/presentations/${encodeURIComponent(presentationId)}`
   )) as PresentationWire;
   if (deck.currentVersion < 1) {

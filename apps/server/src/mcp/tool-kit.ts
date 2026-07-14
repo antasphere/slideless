@@ -1,4 +1,4 @@
-import type { Principal } from '@slideless/contract';
+import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@slideless/contract';
 import { ApiToolError, deny, type ToolTextResult } from './errors.js';
 
 /**
@@ -14,6 +14,32 @@ export interface McpToolContext {
   principal: Principal;
   /** Forwarded verbatim on every in-process API call. */
   authorizationHeader: string;
+  /**
+   * Target workspace of THIS tool call (user-scoped credential model): set
+   * from the tool's optional `workspace` argument via {@link forWorkspace},
+   * it rides the in-process re-entry as the X-Workspace-Id header, where
+   * the API's own resolvers authorize it against the caller's live
+   * memberships — a tool argument can never grant what the credential's
+   * user does not hold. Absent = the caller's default workspace.
+   */
+  workspaceId?: string | undefined;
+}
+
+/**
+ * The per-call workspace seam: every workspace-scoped tool passes its
+ * optional `workspace` argument through here so the selection travels on
+ * the ONE header the whole platform authorizes.
+ */
+export function forWorkspace(ctx: McpToolContext, workspace: string | undefined): McpToolContext {
+  return workspace ? { ...ctx, workspaceId: workspace } : ctx;
+}
+
+/** The re-entry headers: caller's bearer + the per-call workspace selector. */
+function apiHeaders(ctx: McpToolContext): Record<string, string> {
+  return {
+    authorization: ctx.authorizationHeader,
+    ...(ctx.workspaceId ? { [ACTIVE_WORKSPACE_HEADER]: ctx.workspaceId } : {})
+  };
 }
 
 /**
@@ -49,7 +75,7 @@ export async function fetchApiRaw(
 ): Promise<Response> {
   const res = await ctx.fetchApi(path, {
     ...init,
-    headers: { ...(init.headers ?? {}), authorization: ctx.authorizationHeader }
+    headers: { ...(init.headers ?? {}), ...apiHeaders(ctx) }
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as {
@@ -68,7 +94,7 @@ export async function fetchApiRaw(
 export async function callApi(ctx: McpToolContext, path: string, init: RequestInit = {}): Promise<unknown> {
   const res = await ctx.fetchApi(path, {
     ...init,
-    headers: { ...(init.headers ?? {}), authorization: ctx.authorizationHeader }
+    headers: { ...(init.headers ?? {}), ...apiHeaders(ctx) }
   });
   const body = (await res.json().catch(() => null)) as {
     error?: { code?: string; message?: string };

@@ -191,10 +191,16 @@ describe('discovery + auth gate', () => {
     interface ToolInfo {
       name: string;
       description: string;
+      inputSchema?: { properties?: Record<string, unknown> };
       annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
     }
     const result = await rpc(ownerKey, 'tools/list');
     const tools = result.tools as ToolInfo[];
+    // Org as a parameter (user-scoped credential model): EVERY tool accepts
+    // the optional `workspace` argument — chassis examples included.
+    for (const tool of tools) {
+      expect(tool.inputSchema?.properties?.workspace, `${tool.name} lacks the workspace arg`).toBeDefined();
+    }
     const byName = new Map(tools.map((t) => [t.name, t]));
     const toolOf = (name: string): ToolInfo => {
       const tool = byName.get(name);
@@ -248,6 +254,11 @@ describe('discovery + auth gate', () => {
     expect(me.data.user.email).toBe(OWNER.email);
     expect(me.data.via).toBe('api_key');
     expect(me.data.scopes).toContain('presentations:read');
+    // The org-discovery contract: whoami lists every organization with the
+    // explicit default/suspended flags the workspace argument keys off.
+    expect(Array.isArray(me.data.workspaces)).toBe(true);
+    expect(me.data.workspaces[0]).toMatchObject({ suspended: false, default: false });
+    expect(me.data.activeWorkspaceId).toBeTruthy();
   });
 
   it('a read-only key gets the actionable scope denial on a write tool', async () => {
@@ -603,5 +614,48 @@ describe('sharing, collaborators, annotations, delete', () => {
 
     const list = await callTool(ownerKey, 'slideless_list_presentations');
     expect(list.data.presentations.map((p: { id: string }) => p.id)).not.toContain(deckId);
+  });
+});
+
+describe('org as a parameter: the workspace argument targets one of the holder’s orgs', () => {
+  let w2 = '';
+  let w2DeckId = '';
+
+  beforeAll(async () => {
+    const me = await callTool(ownerKey, 'slideless_whoami');
+    w2 = (await app.registry.workspaces.create('MCP Second Org', me.data.user.id)).workspaceId;
+  });
+
+  it('a write into the named org lands THERE, not in the default one', async () => {
+    const created = await callTool(ownerKey, 'slideless_upload_html_presentation', {
+      workspace: w2,
+      html: '<!doctype html><title>Org Two Deck</title><h1>org-two-body</h1>'
+    });
+    expect(created.isError, created.text).toBe(false);
+    w2DeckId = created.data.presentation.id;
+
+    // Named org: visible. Default org: absent. One credential, two orgs.
+    const inW2 = await callTool(ownerKey, 'slideless_list_presentations', { workspace: w2 });
+    expect(inW2.data.presentations.map((p: { id: string }) => p.id)).toContain(w2DeckId);
+    const inDefault = await callTool(ownerKey, 'slideless_list_presentations');
+    expect(inDefault.data.presentations.map((p: { id: string }) => p.id)).not.toContain(w2DeckId);
+
+    // whoami reflects the selection.
+    const asW2 = await callTool(ownerKey, 'slideless_whoami', { workspace: w2 });
+    expect(asW2.data.activeWorkspaceId).toBe(w2);
+    expect(asW2.data.workspaces.map((w: { id: string }) => w.id)).toContain(w2);
+  });
+
+  it('an org the holder does not belong to fails closed (same as nonexistent)', async () => {
+    const foreign = await callTool(ownerKey, 'slideless_list_presentations', {
+      workspace: '00000000-0000-4000-8000-000000000000'
+    });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.text).toContain('HTTP 401');
+    // The member's key cannot borrow the owner's org either: the argument
+    // is authorized against the CALLER's memberships, never trusted.
+    const borrowed = await callTool(memberKey, 'slideless_list_presentations', { workspace: w2 });
+    expect(borrowed.isError).toBe(true);
+    expect(borrowed.text).toContain('HTTP 401');
   });
 });

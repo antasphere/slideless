@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { jsonText, wrapToolErrors } from './errors.js';
-import { callApi, checkScope, pageQuery, type McpToolContext } from './tool-kit.js';
+import { callApi, checkScope, forWorkspace, pageQuery, type McpToolContext } from './tool-kit.js';
 import { registerSlidelessTools } from './tools.js';
 
 /**
@@ -35,27 +35,35 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
     {
       instructions:
         `MCP endpoint of the "${info.instanceName}" instance. Every tool acts as the connected ` +
-        'user, with the scopes granted on the consent screen (or on the API key). Start with ' +
-        'slideless_whoami to see who is connected; decks live behind the slideless_ tools ' +
-        '(list/get/upload/download/share/collaborators/annotations).'
+        'user, with the scopes granted on the consent screen (or on the API key). The credential ' +
+        'is the USER; the organization (workspace) is a per-call parameter — every tool accepts ' +
+        'an optional `workspace` id, defaulting to your default org. Start with slideless_whoami ' +
+        'to see who is connected and which organizations you can name; decks live behind the ' +
+        'slideless_ tools (list/get/upload/download/share/collaborators/annotations).'
     }
   );
+
+  const workspaceInput = z
+    .uuid()
+    .optional()
+    .describe('Target organization (workspace id). Omit to use your default org — see slideless_whoami.');
 
   // ── Pattern 1: READ tool — the end-to-end whoami proof ────────────────────
   server.registerTool(
     'get_me',
     {
       description:
-        'Who is connected: the user this MCP connection acts as. Returns ' +
-        '{ user: { id, email, name }, workspace, role, via, scopes }. Everything done through ' +
-        'this server happens as this user. (Alias of slideless_whoami.)',
-      inputSchema: {},
+        'Who is connected: the user this MCP connection acts as, with all their organizations. ' +
+        'Returns { user: { id, email, name }, workspace, role, via, scopes, workspaces }. ' +
+        'Everything done through this server happens as this user. (Alias of slideless_whoami.)',
+      inputSchema: { workspace: workspaceInput },
       annotations: { readOnlyHint: true }
     },
-    async () => {
+    async ({ workspace }) => {
       const denied = checkScope(ctx.principal, 'presentations:read');
       if (denied) return denied;
-      return wrapToolErrors(async () => jsonText(await callApi(ctx, '/api/v1/me')));
+      const c = forWorkspace(ctx, workspace);
+      return wrapToolErrors(async () => jsonText(await callApi(c, '/api/v1/me')));
     }
   );
 
@@ -64,11 +72,12 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
     'list_files',
     {
       description:
-        "List the workspace's files, newest first. Returns { files: [{ id, sha256, sizeBytes, " +
+        "List a workspace's files, newest first. Returns { files: [{ id, sha256, sizeBytes, " +
         'contentType, originalName, createdBy, createdAt }], nextCursor }. When nextCursor is ' +
         'non-null, call again with cursor set to it for the next page. Download or upload happen ' +
         'through the API, not through tools.',
       inputSchema: {
+        workspace: workspaceInput,
         limit: z
           .number()
           .int()
@@ -80,11 +89,12 @@ export function buildMcpServer(ctx: McpToolContext, info: McpServerInfo): McpSer
       },
       annotations: { readOnlyHint: true }
     },
-    async ({ limit, cursor }) => {
+    async ({ workspace, limit, cursor }) => {
       const denied = checkScope(ctx.principal, 'presentations:read');
       if (denied) return denied;
+      const c = forWorkspace(ctx, workspace);
       return wrapToolErrors(async () =>
-        jsonText(await callApi(ctx, pageQuery('/api/v1/files', { cursor, limit })))
+        jsonText(await callApi(c, pageQuery('/api/v1/files', { cursor, limit })))
       );
     }
   );
