@@ -6,7 +6,7 @@ import { emailOTP, genericOAuth, jwt, twoFactor } from 'better-auth/plugins';
 import { deleteSessionCookie } from 'better-auth/cookies';
 import { generateRandomString } from 'better-auth/crypto';
 import { oauthProvider } from '@better-auth/oauth-provider';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   account,
   jwks,
@@ -138,19 +138,6 @@ export const OAUTH_SCOPES = [
 export function mcpResourceUrl(publicBaseUrl: string): string {
   return publicBaseUrl.replace(/\/+$/, '') + '/mcp';
 }
-
-/**
- * Verification-table identifier parking a session's OAuth workspace choice
- * between the consent page's selection POST and the consent itself
- * (ADR 014). Written by POST /api/v1/oauth/consent-workspace, read by the
- * oauth-provider plugin's consentReferenceId seam.
- */
-export function oauthWorkspaceSelectionIdentifier(sessionId: string): string {
-  return `oauth-workspace:${sessionId}`;
-}
-
-/** Selection lifetime — one consent flow, same order as the signed query's 10 min. */
-export const OAUTH_WORKSPACE_SELECTION_TTL_MS = 10 * 60 * 1000;
 
 export type Auth = ReturnType<typeof createAuth>;
 
@@ -297,122 +284,41 @@ export function createAuth({
   const resource = mcpResourceUrl(env.PUBLIC_BASE_URL);
 
   /**
-   * The JWT issuance gate: ONLY users holding a LIVE active workspace
-   * membership get claims minted. Runs on the authorization_code AND
-   * refresh_token grants; throwing aborts issuance with an RFC 6749 error
-   * body. It is NOT what revokes a deactivated member's access, though: a
-   * refresh without the RFC 8707 `resource` param still mints an OPAQUE
-   * token that never passes through here. The real enforcement is
-   * resource-side — every request re-checks the live membership (and an
-   * opaque token fails the bearer gate's looksLikeJwt outright), so whatever
-   * a refresh mints is rejected at every resource. Verified live (M9).
+   * The JWT issuance gate (user-scoped credential model): a grant is the
+   * USER — "consent to act as you" — so issuance requires only that the
+   * user holds AT LEAST ONE live active membership on this instance, and
+   * the minted claims carry NO workspace. The request-time workspace comes
+   * from the X-Workspace-Id selector against the user's live memberships
+   * (identity/oauth-jwt.ts); a claim could only ever go stale against that.
    *
-   * Workspace binding (ADR 014): `referenceId` is the workspace chosen at
-   * consent — the oauth-provider plugin persists it on the consent row,
-   * threads it through the authorization code, and STORES it on the refresh
-   * token row, so refresh re-mints receive the SAME value forever. Present,
-   * it is the only workspace this grant may mint (a live active membership
-   * of it is still required at every issuance). Absent (grants from before
-   * workspace binding existed), the sole active membership is the honest
-   * fallback; a multi-workspace user's legacy grant FAILS CLOSED — a fresh
-   * authorize records a workspace-bound consent and unblocks them.
+   * Runs on the authorization_code AND refresh_token grants; throwing
+   * aborts issuance with an RFC 6749 error body. It is NOT what revokes a
+   * deactivated member's access, though: a refresh without the RFC 8707
+   * `resource` param still mints an OPAQUE token that never passes through
+   * here. The real enforcement is resource-side — every request re-checks
+   * the live membership (and an opaque token fails the bearer gate's
+   * looksLikeJwt outright), so whatever a refresh mints is rejected at
+   * every resource. Verified live (M9).
    */
-  async function membershipAccessClaims(
-    user: { id: string; email: string } | null | undefined,
-    referenceId: string | undefined
-  ) {
+  async function userAccessClaims(user: { id: string; email: string } | null | undefined) {
     if (!user?.id) {
       throw new APIError('FORBIDDEN', {
         error: 'access_denied',
         error_description: 'Token issuance requires a user-bound grant'
       });
     }
-    const rows = await db
-      .select({ role: workspaceMembers.role, workspaceId: workspaceMembers.workspaceId })
+    const [row] = await db
+      .select({ id: workspaceMembers.id })
       .from(workspaceMembers)
-      .where(
-        and(
-          eq(workspaceMembers.userId, user.id),
-          eq(workspaceMembers.isActive, true),
-          ...(referenceId ? [eq(workspaceMembers.workspaceId, referenceId)] : [])
-        )
-      )
-      .limit(2);
-    const [row] = rows;
+      .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)))
+      .limit(1);
     if (!row) {
       throw new APIError('FORBIDDEN', {
         error: 'access_denied',
-        error_description: referenceId
-          ? 'This account has no active membership of the granted workspace'
-          : 'This account has no active membership on this instance'
+        error_description: 'This account has no active membership on this instance'
       });
     }
-    if (!referenceId && rows.length > 1) {
-      // Legacy unbound grant + several workspaces: never guess. Fail closed;
-      // re-authorization binds the grant to an explicit workspace.
-      throw new APIError('FORBIDDEN', {
-        error: 'access_denied',
-        error_description: 'This grant is not bound to a workspace — re-authorize to choose one'
-      });
-    }
-    return { role: row.role, workspace_id: row.workspaceId, email: user.email };
-  }
-
-  /**
-   * The workspace a consent binds (ADR 014) — the oauth-provider plugin's
-   * `postLogin.consentReferenceId` seam, called on every authorize AND on
-   * the consent POST. Resolution order:
-   *
-   *  1. A live selection parked by POST /api/v1/oauth/consent-workspace
-   *     (verification-table row keyed to THIS session — the same handoff
-   *     pattern as the admin reset link and the 2FA pending sign-in). The
-   *     selection was membership-checked when written and is re-checked
-   *     here; a stale/foreign one FAILS the flow rather than silently
-   *     binding a different workspace.
-   *  2. Otherwise the deterministic default: the OLDEST active membership
-   *     (created_at, then id) — the same rule the session header default
-   *     uses, so what the user sees in the dashboard is what a pickerless
-   *     consent grants. Sole-membership users always land here unchanged.
-   *  3. A membershipless user gets `undefined`: the consent may record, but
-   *     token issuance rejects at membershipAccessClaims exactly as before.
-   *
-   * Consents are stored PER (client, user, referenceId), so one user can
-   * hold parallel consents for the same client across workspaces.
-   */
-  async function consentWorkspaceId(session: { id: string }, user: { id: string }) {
-    const [selection] = await db
-      .select({ value: verification.value, expiresAt: verification.expiresAt })
-      .from(verification)
-      .where(eq(verification.identifier, oauthWorkspaceSelectionIdentifier(session.id)))
-      .orderBy(desc(verification.createdAt))
-      .limit(1);
-    if (selection && selection.expiresAt.getTime() > Date.now()) {
-      const [member] = await db
-        .select({ id: workspaceMembers.id })
-        .from(workspaceMembers)
-        .where(
-          and(
-            eq(workspaceMembers.userId, user.id),
-            eq(workspaceMembers.workspaceId, selection.value),
-            eq(workspaceMembers.isActive, true)
-          )
-        )
-        .limit(1);
-      if (!member) {
-        throw new APIError('FORBIDDEN', {
-          error: 'access_denied',
-          error_description: 'The selected workspace is not available to this account'
-        });
-      }
-      return selection.value;
-    }
-    const [fallback] = await db
-      .select({ workspaceId: workspaceMembers.workspaceId })
-      .from(workspaceMembers)
-      .where(and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)))
-      .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id))
-      .limit(1);
-    return fallback?.workspaceId; // undefined = no membership; issuance rejects
+    return { email: user.email };
   }
 
   return betterAuth({
@@ -479,15 +385,16 @@ export function createAuth({
         // latency == remaining lifetime. Refresh tokens rotate (reuse detected).
         accessTokenExpiresIn: 900, // 15 min
         refreshTokenExpiresIn: 60 * 60 * 24 * 365, // 365 days (sliding; see the session note)
-        customAccessTokenClaims: async ({ user, referenceId }) => membershipAccessClaims(user, referenceId),
-        // Workspace binding rides the plugin's consent referenceId seam
-        // (ADR 014). The consent page itself hosts the picker, so
-        // shouldRedirect never fires — `page` is required by the type and
-        // points at the same consent page it would land on anyway.
+        customAccessTokenClaims: async ({ user }) => userAccessClaims(user),
+        // Grants are user-scoped ("act as you"): consents bind NOTHING —
+        // the explicit `undefined` referenceId is the no-binding wiring
+        // (the plugin type requires the key whenever postLogin exists).
+        // `page` + `shouldRedirect` are required by the type too; the
+        // constant false keeps the flow on the consent page itself.
         postLogin: {
           page: '/oauth/consent',
           shouldRedirect: () => false,
-          consentReferenceId: async ({ user, session }) => consentWorkspaceId(session, user)
+          consentReferenceId: async () => undefined
         },
         // Root discovery documents are re-served by routes/wellknown.ts.
         silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true }

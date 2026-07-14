@@ -37,7 +37,6 @@ import type {
   MemberResetLink,
   MemberUpdate,
   MeResponse,
-  OauthConsentWorkspace,
   Presentation,
   PresentationVersion,
   PresentationVersionDetail,
@@ -81,11 +80,12 @@ export interface ClientOptions {
   /** API key (`<prefix>_<keyid>_<secret>`) for machine callers. */
   apiKey?: string;
   /**
-   * Active workspace for SESSION callers (sent as X-Workspace-Id, ADR 014).
-   * Only meaningful with the session cookie: a user in several workspaces
-   * names which one their requests target. API keys and OAuth tokens are
-   * workspace-bound at mint and need none (a mismatching value is rejected
-   * server-side). Mutable later via setWorkspace().
+   * Active workspace for EVERY credential kind (sent as X-Workspace-Id —
+   * the user-scoped credential model): a caller in several workspaces names
+   * which one their requests target; absent, the user's default membership
+   * applies. Meaningful with the session cookie AND with user-scoped API
+   * keys/OAuth tokens; a PINNED key rejects a mismatching value server-side
+   * (403 workspace_mismatch). Mutable later via setWorkspace().
    */
   workspaceId?: string;
   fetch?: typeof globalThis.fetch;
@@ -377,17 +377,6 @@ export class PlatformClient {
   /** Public: accepts an invitation (creates the account when needed). */
   acceptInvitation(req: InvitationAccept): Promise<InvitationAccepted> {
     return this.request('POST', '/invitations/accept', req);
-  }
-
-  // ── OAuth consent ─────────────────────────────────────────────────────────
-
-  /**
-   * Park the workspace the upcoming OAuth consent should bind (ADR 014).
-   * Sessions only; the consent page calls it right before approving when
-   * the user picked a non-default workspace.
-   */
-  oauthConsentWorkspace(workspaceId: string): Promise<OauthConsentWorkspace> {
-    return this.request('POST', '/oauth/consent-workspace', { workspaceId });
   }
 
   // ── Audit ─────────────────────────────────────────────────────────────────

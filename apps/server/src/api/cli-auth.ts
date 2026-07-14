@@ -1,8 +1,9 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { cliAuthCompleteRoute, cliAuthRequestRoute, cliAuthRevokeRoute } from '@slideless/contract/routes';
-import { apiKeys as apiKeysTable, workspaceMembers, type Db } from '@slideless/db';
+import { apiKeys as apiKeysTable, type Db } from '@slideless/db';
 import type { Auth } from '../identity/better-auth.js';
+import { resolveMembership } from '../identity/resolve-membership.js';
 import type { HubSsoService } from '../identity/hub-sso.js';
 import type { ApiKeyService } from '../apikeys/service.js';
 import type { AuditService } from '../audit/service.js';
@@ -194,32 +195,22 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
     // Same live-membership discipline as every credential path: no active
     // membership, no key (e.g. a deactivated member's account still signs in
     // at the Better Auth layer but has no standing on this instance). The
-    // key binds ONE workspace (ADR 014): the explicitly requested one, or
-    // the deterministic default — the oldest active membership (created_at,
-    // then id), the same rule sessions use. A requested workspace the
-    // account is not an active member of answers the SAME uniform 403 as
-    // having none at all (no oracle about other workspaces).
-    const [membership] = await db
-      .select({ workspaceId: workspaceMembers.workspaceId })
-      .from(workspaceMembers)
-      .where(
-        and(
-          eq(workspaceMembers.userId, user.id),
-          eq(workspaceMembers.isActive, true),
-          ...(body.workspaceId ? [eq(workspaceMembers.workspaceId, body.workspaceId)] : [])
-        )
-      )
-      .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id))
-      .limit(1);
+    // key is USER-SCOPED by default (user-scoped credential model): it acts
+    // as its holder and the target workspace is a per-request parameter.
+    // `workspaceId` in the body is an optional PIN — a requested workspace
+    // the account is not an active member of answers the SAME uniform 403
+    // as having none at all (no oracle about other workspaces).
+    const membership = await resolveMembership(db, user.id, body.workspaceId ?? null);
     if (!membership) {
       await dropSession();
       return c.json(err('no_membership', 'This account has no active membership on this instance'), 403);
     }
+    const pinnedWorkspaceId = body.workspaceId ?? null;
 
     const name = body.keyName ?? `CLI login ${new Date().toISOString().slice(0, 10)}`;
     const expiresAt = body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86_400_000) : null;
     const minted = await apiKeys.mint({
-      workspaceId: membership.workspaceId,
+      workspaceId: pinnedWorkspaceId,
       createdBy: user.id,
       name,
       scopes: [...CLI_KEY_SCOPES],
@@ -233,9 +224,12 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
     }
 
     // This path is principal-less (public route), so the audit middleware
-    // cannot attribute it — write the row directly, like /setup does.
+    // cannot attribute it — write the row directly, like /setup does. An
+    // unpinned mint is a USER-credential event with no one workspace home:
+    // the row is instance-attributed (workspaceId null, like the orphan
+    // purge); a pinned mint lands in the pinned workspace's trail.
     await audit.write({
-      workspaceId: membership.workspaceId,
+      workspaceId: pinnedWorkspaceId,
       principal: { userId: user.id, via: 'session' },
       action: 'apikey.create',
       resourceType: 'api_key',
@@ -245,6 +239,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
         name,
         scopes: [...CLI_KEY_SCOPES],
         via: 'cli_otp',
+        workspaceId: pinnedWorkspaceId,
         expiresAt: expiresAt?.toISOString() ?? null
       }
     });
@@ -257,6 +252,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
           name: row.name,
           keyId: row.keyId,
           scopes: row.scopes as Array<'presentations:read' | 'presentations:write' | 'data:export'>,
+          workspaceId: row.workspaceId,
           createdBy: row.createdBy,
           createdAt: row.createdAt.toISOString(),
           lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
@@ -264,7 +260,7 @@ export function registerCliAuthRoutes(api: OpenAPIHono, deps: CliAuthRouteDeps):
           expiresAt: row.expiresAt?.toISOString() ?? null
         },
         user: { id: user.id, email: user.email, name: user.name },
-        workspaceId: membership.workspaceId
+        workspaceId: pinnedWorkspaceId
       },
       201
     );

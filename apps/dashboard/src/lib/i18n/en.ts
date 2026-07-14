@@ -182,9 +182,6 @@ export const en = {
   'consent.approve': 'Approve',
   'consent.errorUnexpectedResponse': 'The authorization server returned an unexpected response.',
   'consent.errorConnection': 'Something went wrong — check your connection and try again.',
-  'consent.workspaceLabel': 'Workspace',
-  'consent.workspaceNotice': 'Access is limited to this workspace.',
-  'consent.errorWorkspaceSelection': 'The workspace selection was not accepted — try again.',
 
   // ── Workspace switcher ───────────────────────────────────────────────
   'workspace.menuLabel': 'Workspaces',

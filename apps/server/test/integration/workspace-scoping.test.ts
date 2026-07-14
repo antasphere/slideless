@@ -13,12 +13,15 @@ import {
 } from './helpers.js';
 
 /**
- * The workspace-scoped principal (ADR 014): one user in TWO workspaces, one
- * workspace per request. Covers the X-Workspace-Id session mechanism
- * (default, switch, fail-closed), /me's additive fields, cross-workspace
- * data/key/invitation isolation, the machine-credential mismatch guard, the
- * CLI-auth workspace binding, the multi-owned-workspace deletion guard, and
- * the admin cross-workspace delete refusal.
+ * The user-scoped credential model (ADR 014 as amended): one user in TWO
+ * workspaces, one workspace per request, selected by X-Workspace-Id for
+ * EVERY credential kind. Covers the session mechanism (default, switch,
+ * fail-closed), /me's all-workspaces shape with explicit default/suspended
+ * flags, cross-workspace data/key/invitation isolation, user-scoped vs
+ * PINNED API keys (pin resolution + the mismatch 403 pinned keys keep), the
+ * CLI-auth unpinned-by-default mint, the is_default inertness invariant,
+ * the multi-owned-workspace deletion guard, and the admin cross-workspace
+ * delete refusal.
  */
 const OWNER = {
   email: 'multi-owner@ws.test',
@@ -82,7 +85,7 @@ afterAll(async () => {
 });
 
 describe('session resolution (X-Workspace-Id)', () => {
-  it('defaults to the OLDEST active membership and lists all workspaces', async () => {
+  it('defaults to the OLDEST active membership (no default set) and lists all workspaces', async () => {
     const res = await me(ownerCookie);
     expect(res.status).toBe(200);
     const body = await readJson(res);
@@ -90,7 +93,14 @@ describe('session resolution (X-Workspace-Id)', () => {
     expect(body.workspace.id).toBe(w1);
     expect(body.workspace.name).toBe('First Workspace');
     expect(body.workspaces.map((w: { id: string }) => w.id)).toEqual([w1, w2]);
-    expect(body.workspaces[1]).toEqual({ id: w2, name: 'Second Workspace', role: 'owner', hubOrigin: false });
+    expect(body.workspaces[1]).toEqual({
+      id: w2,
+      name: 'Second Workspace',
+      role: 'owner',
+      hubOrigin: false,
+      suspended: false,
+      default: false
+    });
   });
 
   it('the header switches the active workspace', async () => {
@@ -193,71 +203,116 @@ describe('data + invitation isolation across workspaces', () => {
   });
 });
 
-describe('API keys bind the mint-time workspace', () => {
-  let keyW1 = '';
-  let keyW2 = '';
+describe('API keys are user credentials with an optional pin', () => {
+  let userKey = ''; // unpinned (the mint default) — user-scoped
+  let pinnedKey = ''; // pinned to w2 at mint
 
-  it('mints into the ACTIVE workspace; lists are workspace-scoped', async () => {
-    const mint1 = await app.app.request('/api/v1/api-keys', {
+  it('mints UNPINNED by default: the header selects the workspace per request', async () => {
+    const mint = await app.app.request('/api/v1/api-keys', {
       method: 'POST',
       headers: { cookie: ownerCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'k-w1', scopes: ['presentations:read'] })
+      body: JSON.stringify({ name: 'k-user', scopes: ['presentations:read'] })
     });
-    expect(mint1.status).toBe(201);
-    keyW1 = (await readJson(mint1)).key;
+    expect(mint.status).toBe(201);
+    const minted = await readJson(mint);
+    expect(minted.apiKey.workspaceId).toBeNull();
+    userKey = minted.key;
 
-    const mint2 = await app.app.request('/api/v1/api-keys', {
-      method: 'POST',
-      headers: { cookie: ownerCookie, 'content-type': 'application/json', [WS_HEADER]: w2 },
-      body: JSON.stringify({ name: 'k-w2', scopes: ['presentations:read', 'presentations:write'] })
-    });
-    expect(mint2.status).toBe(201);
-    keyW2 = (await readJson(mint2)).key;
-
-    const listW1 = await readJson(
-      await app.app.request('/api/v1/api-keys', { headers: { cookie: ownerCookie } })
-    );
-    expect(listW1.apiKeys.map((k: { name: string }) => k.name)).toEqual(['k-w1']);
-    const listW2 = await readJson(
-      await app.app.request('/api/v1/api-keys', { headers: { cookie: ownerCookie, [WS_HEADER]: w2 } })
-    );
-    expect(listW2.apiKeys.map((k: { name: string }) => k.name)).toEqual(['k-w2']);
-  });
-
-  it('a key reads ONLY its workspace; /me shows only the bound workspace', async () => {
+    // No selector → the same default rule as sessions (oldest membership).
     const files1 = await readJson(
-      await app.app.request('/api/v1/files', { headers: { authorization: `Bearer ${keyW1}` } })
+      await app.app.request('/api/v1/files', { headers: { authorization: `Bearer ${userKey}` } })
     );
     expect(files1.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w1.txt']);
+    // The header is honored by the machine credential — org as a parameter.
     const files2 = await readJson(
-      await app.app.request('/api/v1/files', { headers: { authorization: `Bearer ${keyW2}` } })
+      await app.app.request('/api/v1/files', {
+        headers: { authorization: `Bearer ${userKey}`, [WS_HEADER]: w2 }
+      })
     );
     expect(files2.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w2.txt']);
-
-    const meKey = await readJson(
-      await app.app.request('/api/v1/me', { headers: { authorization: `Bearer ${keyW2}` } })
-    );
-    expect(meKey.activeWorkspaceId).toBe(w2);
-    // Even though the key's OWNER belongs to two workspaces, the credential
-    // enumerates only the one it is bound to.
-    expect(meKey.workspaces).toEqual([{ id: w2, name: 'Second Workspace', role: 'owner', hubOrigin: false }]);
+    // A workspace the creator does not belong to fails closed — same 401 as
+    // one that does not exist (no oracle).
+    const foreign = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${userKey}`, [WS_HEADER]: '00000000-0000-4000-8000-000000000000' }
+    });
+    expect(foreign.status).toBe(401);
   });
 
-  it('a mismatching X-Workspace-Id on a machine credential is rejected loudly', async () => {
+  it('/me lists ALL the holder’s workspaces for a machine credential, flags explicit', async () => {
+    const meKey = await readJson(
+      await app.app.request('/api/v1/me', {
+        headers: { authorization: `Bearer ${userKey}`, [WS_HEADER]: w2 }
+      })
+    );
+    expect(meKey.activeWorkspaceId).toBe(w2);
+    expect(meKey.workspaces.map((w: { id: string }) => w.id)).toEqual([w1, w2]);
+    expect(
+      meKey.workspaces.every((w: { suspended: boolean; default: boolean }) => !w.suspended && !w.default)
+    ).toBe(true);
+  });
+
+  it('an explicit pin keeps the old binding: pin resolved, mismatching header → 403', async () => {
+    const mint = await app.app.request('/api/v1/api-keys', {
+      method: 'POST',
+      headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'k-pinned', scopes: ['presentations:read'], workspaceId: w2 })
+    });
+    expect(mint.status).toBe(201);
+    const minted = await readJson(mint);
+    expect(minted.apiKey.workspaceId).toBe(w2);
+    pinnedKey = minted.key;
+
+    // The pin resolves — NOT the user's default (w1): pinned keys behave
+    // exactly as keys did before the model change.
+    const files = await readJson(
+      await app.app.request('/api/v1/files', { headers: { authorization: `Bearer ${pinnedKey}` } })
+    );
+    expect(files.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w2.txt']);
+    // A MATCHING header is fine (idempotent restatement of the pin)...
+    const match = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${pinnedKey}`, [WS_HEADER]: w2 }
+    });
+    expect(match.status).toBe(200);
+    // ...a MISMATCHING one is rejected loudly, never silently served the pin.
     const mismatch = await app.app.request('/api/v1/me', {
-      headers: { authorization: `Bearer ${keyW1}`, [WS_HEADER]: w2 }
+      headers: { authorization: `Bearer ${pinnedKey}`, [WS_HEADER]: w1 }
     });
     expect(mismatch.status).toBe(403);
     expect((await readJson(mismatch)).error.code).toBe('workspace_mismatch');
-    // A MATCHING header is fine (idempotent restatement of the binding).
-    const match = await app.app.request('/api/v1/me', {
-      headers: { authorization: `Bearer ${keyW1}`, [WS_HEADER]: w1 }
+  });
+
+  it('pinning requires an ACTIVE membership of the pin (uniform 403, no oracle)', async () => {
+    const res = await app.app.request('/api/v1/api-keys', {
+      method: 'POST',
+      headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'k-evil',
+        scopes: ['presentations:read'],
+        workspaceId: '00000000-0000-4000-8000-000000000000'
+      })
     });
-    expect(match.status).toBe(200);
+    expect(res.status).toBe(403);
+    expect((await readJson(res)).error.code).toBe('no_membership');
+  });
+
+  it('the listing is creator-scoped (all the caller’s keys, any workspace context)', async () => {
+    const names = (
+      await readJson(await app.app.request('/api/v1/api-keys', { headers: { cookie: ownerCookie } }))
+    ).apiKeys.map((k: { name: string }) => k.name);
+    expect(names).toContain('k-user');
+    expect(names).toContain('k-pinned');
+    // The active-workspace header does not re-scope the listing — keys are
+    // the USER's credentials, not workspace inventory.
+    const namesW2 = (
+      await readJson(
+        await app.app.request('/api/v1/api-keys', { headers: { cookie: ownerCookie, [WS_HEADER]: w2 } })
+      )
+    ).apiKeys.map((k: { name: string }) => k.name);
+    expect(namesW2).toEqual(names);
   });
 });
 
-describe('CLI auth binds one workspace (ADR 011 + 012)', () => {
+describe('CLI auth mints user-scoped keys (optional pin)', () => {
   async function completeCli(extra: Record<string, unknown> = {}) {
     email.sent.length = 0;
     const req = await app.app.request('/api/v1/cli/auth/request', {
@@ -276,28 +331,82 @@ describe('CLI auth binds one workspace (ADR 011 + 012)', () => {
     });
   }
 
-  it('defaults to the oldest active membership', async () => {
+  it('mints UNBOUND by default: the key follows the per-request selector', async () => {
     const res = await completeCli();
     expect(res.status).toBe(201);
-    expect((await readJson(res)).workspaceId).toBe(w1);
+    const body = await readJson(res);
+    expect(body.workspaceId).toBeNull();
+    expect(body.apiKey.workspaceId).toBeNull();
+    // No selector → the default rule (oldest membership) …
+    const files1 = await readJson(
+      await app.app.request('/api/v1/files', { headers: { authorization: `Bearer ${body.key}` } })
+    );
+    expect(files1.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w1.txt']);
+    // … and the header reaches the other workspace with the SAME key.
+    const files2 = await readJson(
+      await app.app.request('/api/v1/files', {
+        headers: { authorization: `Bearer ${body.key}`, [WS_HEADER]: w2 }
+      })
+    );
+    expect(files2.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w2.txt']);
   });
 
-  it('honors an explicit workspaceId the account belongs to', async () => {
+  it('honors an explicit workspaceId as a PIN', async () => {
     const res = await completeCli({ workspaceId: w2 });
     expect(res.status).toBe(201);
     const body = await readJson(res);
     expect(body.workspaceId).toBe(w2);
-    // The minted key really is W2-scoped.
+    expect(body.apiKey.workspaceId).toBe(w2);
+    // The minted key really is pinned to W2 …
     const files = await readJson(
       await app.app.request('/api/v1/files', { headers: { authorization: `Bearer ${body.key}` } })
     );
     expect(files.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w2.txt']);
+    // … and keeps the pinned mismatch refusal.
+    const mismatch = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${body.key}`, [WS_HEADER]: w1 }
+    });
+    expect(mismatch.status).toBe(403);
+    expect((await readJson(mismatch)).error.code).toBe('workspace_mismatch');
   });
 
-  it('rejects a workspace the account is not an active member of (uniform 403)', async () => {
+  it('rejects a pin the account is not an active member of (uniform 403)', async () => {
     const res = await completeCli({ workspaceId: '00000000-0000-4000-8000-000000000000' });
     expect(res.status).toBe(403);
     expect((await readJson(res)).error.code).toBe('no_membership');
+  });
+});
+
+describe('is_default is INERT this phase — but the ordering already honors it', () => {
+  it('no flow above ever set a default membership (nothing writes it yet)', async () => {
+    const { rows } = await app.db.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM workspace_members WHERE is_default`
+    );
+    expect(rows[0]!.n).toBe(0);
+  });
+
+  it('a manually-set default flips selector-less resolution (the reconcile contract)', async () => {
+    const meBody = await readJson(await me(ownerCookie));
+    const ownerId = meBody.user.id as string;
+    expect(meBody.activeWorkspaceId).toBe(w1); // ordering no-op while all false
+    await app.db.pool.query(
+      `UPDATE workspace_members SET is_default = true WHERE user_id = $1 AND workspace_id = $2`,
+      [ownerId, w2]
+    );
+    try {
+      const flipped = await readJson(await me(ownerCookie));
+      expect(flipped.activeWorkspaceId).toBe(w2);
+      expect(
+        flipped.workspaces.find((w: { id: string }) => w.id === w2)?.default,
+        'the wire carries the default flag explicitly'
+      ).toBe(true);
+    } finally {
+      await app.db.pool.query(`UPDATE workspace_members SET is_default = false WHERE user_id = $1`, [
+        ownerId
+      ]);
+    }
+    // Back to the deterministic oldest once no default exists.
+    expect((await readJson(await me(ownerCookie))).activeWorkspaceId).toBe(w1);
   });
 });
 

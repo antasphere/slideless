@@ -207,6 +207,9 @@ export function registerExportRoutes(api: OpenAPIHono, deps: ExportRouteDeps): v
         .orderBy(asc(invitations.createdAt), asc(invitations.id));
       zip.addBuffer(jsonBuffer(invitationRows), 'invitations.json');
 
+      // PINNED keys only (workspace_id = this workspace): keys are USER
+      // credentials under the user-scoped model — an unpinned key belongs
+      // to its holder, not to any one workspace's export.
       const apiKeyRows = await db
         .select({
           id: apiKeys.id,

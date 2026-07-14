@@ -1,7 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { apiKeys, workspaceMembers, workspaces, user as userTable, type Db } from '@slideless/db';
+import { apiKeys, type Db } from '@slideless/db';
 import type { Principal } from '@slideless/contract';
+import { resolveMembership } from '../identity/resolve-membership.js';
 import type { PepperRegistry } from './peppers.js';
 
 /**
@@ -15,6 +16,14 @@ import type { PepperRegistry } from './peppers.js';
  * (peppers.ts, ADR 008): each row records the pepper version that hashed it,
  * mint uses the registry's current version, and resolution uses the stored
  * version's pepper or fails closed. Keys are minted by sessions only.
+ *
+ * A key is a USER credential (user-scoped credential model): it acts as its
+ * creator, and the target workspace resolves per request through the shared
+ * resolveMembership rule — the X-Workspace-Id header, else the creator's
+ * default membership. `workspace_id` on the row is an OPTIONAL PIN (least
+ * privilege, and the grandfathered binding of pre-model-change keys): a
+ * pinned key resolves ONLY its pinned workspace, and a request naming a
+ * DIFFERENT one is rejected loudly (WorkspaceMismatchError → 403).
  */
 export const API_KEY_PREFIX = 'slk';
 
@@ -25,6 +34,19 @@ const KEY_RE = new RegExp(`^${API_KEY_PREFIX}_([A-Za-z0-9_-]{8})_([A-Za-z0-9_-]{
 
 export function isApiKeyToken(token: string): boolean {
   return KEY_RE.test(token);
+}
+
+/**
+ * A VALID pinned key presented with an X-Workspace-Id naming a different
+ * workspace — a client bug or a confused-deputy attempt. Distinct from a
+ * plain resolution miss (null → 401) so the middleware can answer the loud
+ * 403 the pinned model always answered.
+ */
+export class WorkspaceMismatchError extends Error {
+  constructor() {
+    super('This credential is pinned to a different workspace');
+    this.name = 'WorkspaceMismatchError';
+  }
 }
 
 function hashSecret(secret: string, pepper: string): string {
@@ -47,7 +69,8 @@ export class ApiKeyService {
   ) {}
 
   async mint(opts: {
-    workspaceId: string;
+    /** Optional workspace PIN — omitted/null mints a user-scoped key. */
+    workspaceId?: string | null;
     createdBy: string;
     name: string;
     scopes: string[];
@@ -63,7 +86,7 @@ export class ApiKeyService {
     const [row] = await this.db
       .insert(apiKeys)
       .values({
-        workspaceId: opts.workspaceId,
+        workspaceId: opts.workspaceId ?? null,
         keyId,
         secretHash: hashSecret(secret, pepper),
         pepperVersion,
@@ -79,10 +102,16 @@ export class ApiKeyService {
 
   /**
    * Resolve a presented key to a live principal, or null. The key dies with
-   * its creator: the creator's membership must still be active (same live
-   * re-check discipline as sessions).
+   * its creator: a live active membership is required (same re-check
+   * discipline as sessions).
+   *
+   * `requested` is the request's X-Workspace-Id (or null). An UNPINNED key
+   * selects with it exactly like a session (fail closed on non-membership);
+   * a PINNED key always resolves its pin and THROWS WorkspaceMismatchError
+   * when `requested` names a different workspace — never silently serves
+   * the pinned one.
    */
-  async resolve(token: string): Promise<Principal | null> {
+  async resolve(token: string, requested: string | null): Promise<Principal | null> {
     const match = KEY_RE.exec(token);
     if (!match) return null;
     const [, keyId, secret] = match;
@@ -122,32 +151,20 @@ export class ApiKeyService {
     const stored = Buffer.from(row.secretHash, 'hex');
     if (presented.length !== stored.length || !timingSafeEqual(presented, stored)) return null;
 
-    const [member] = await this.db
-      .select({
-        role: workspaceMembers.role,
-        // Guest capability limits (D2) bind machine credentials too: a key
-        // minted by a guest carries the guest origin of the membership that
-        // backs it — requireNonGuest judges keys and sessions alike.
-        origin: workspaceMembers.origin,
-        email: userTable.email,
-        name: userTable.name,
-        // Central account id when the workspace is a hub projection — the
-        // Principal.accountRef every credential path carries uniformly, and
-        // what the cloud edition's hub gates key on (docs/federation.md P4).
-        accountRef: workspaces.centralAccountId
-      })
-      .from(workspaceMembers)
-      .innerJoin(userTable, eq(workspaceMembers.userId, userTable.id))
-      .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
-      .where(
-        and(
-          eq(workspaceMembers.userId, row.createdBy),
-          eq(workspaceMembers.workspaceId, row.workspaceId),
-          eq(workspaceMembers.isActive, true)
-        )
-      )
-      .limit(1);
+    // Live membership through the shared selection rule. A pinned key's pin
+    // IS the selector (fail-closed on the live membership, as always); an
+    // unpinned key selects like a session. Guest capability limits (D2) bind
+    // machine credentials too — the origin of the LIVE membership rides the
+    // principal, and accountRef carries the projection id the cloud gates
+    // key on (docs/federation.md P4).
+    const member = await resolveMembership(this.db, row.createdBy, row.workspaceId ?? requested);
     if (!member) return null;
+    // A valid PINNED key + a header naming another workspace: reject loudly
+    // (the pre-model-change contract). Checked after the membership resolves
+    // so a dead key/membership stays the uniform 401, exactly as before.
+    if (row.workspaceId && requested && requested.toLowerCase() !== row.workspaceId.toLowerCase()) {
+      throw new WorkspaceMismatchError();
+    }
 
     // Advisory only — never correctness-load-bearing (statelessness invariant).
     void this.db
@@ -160,7 +177,7 @@ export class ApiKeyService {
       userId: row.createdBy,
       email: member.email,
       name: member.name,
-      workspaceId: row.workspaceId,
+      workspaceId: member.workspaceId,
       role: member.role,
       origin: member.origin,
       via: 'api_key',

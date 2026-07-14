@@ -20,25 +20,27 @@ export interface RequestContext {
 }
 
 /**
- * Active-workspace selection header for SESSION principals (ADR 014). A
- * session client MAY send it to name which of the user's workspaces this
- * request targets; the identity layer verifies an ACTIVE membership of that
- * workspace and resolves to null otherwise (fail closed — no oracle about
- * the workspace's existence). Absent, the user's sole active membership is
- * used, or the deterministic default (oldest active membership) when they
- * hold several. Machine credentials (API keys, OAuth tokens) IGNORE this
- * selection semantically — they bind one workspace at mint time — and a
- * mismatching header on a machine request is rejected outright.
+ * The universal per-request workspace selector (user-scoped credential
+ * model). EVERY credential kind — session, API key, OAuth bearer — MAY send
+ * it to name which of the caller's workspaces this request targets; the
+ * resolvers verify an ACTIVE membership of that workspace and resolve to
+ * null otherwise (fail closed — no oracle about the workspace's existence).
+ * Absent, the user's DEFAULT membership is used, else the deterministic
+ * fallback (oldest active membership). The one exception is a PINNED API
+ * key (an optional least-privilege pin, and the grandfathered binding of
+ * keys minted under the old per-workspace model): it always resolves its
+ * pinned workspace, and a header naming a DIFFERENT one is rejected
+ * outright (403 workspace_mismatch).
  */
 export const ACTIVE_WORKSPACE_HEADER = 'x-workspace-id';
 
 /**
- * The resolved caller of ONE request. A Principal is scoped to exactly ONE
- * workspace per request (ADR 014): `workspaceId` is the workspace named by
- * the presented credential — machine credentials bind it at mint/consent
- * time, human sessions choose it via {@link ACTIVE_WORKSPACE_HEADER}. A
- * user's OTHER memberships are deliberately not represented here; a request
- * never spans workspaces.
+ * The resolved caller of ONE request. A credential identifies a USER; the
+ * Principal is still scoped to exactly ONE workspace per request (ADR 014):
+ * `workspaceId` is the workspace this request SELECTED via
+ * {@link ACTIVE_WORKSPACE_HEADER} (or the user's default), authorized
+ * against the caller's own live memberships. A user's OTHER memberships are
+ * deliberately not represented here; a request never spans workspaces.
  */
 export interface Principal {
   userId: string;

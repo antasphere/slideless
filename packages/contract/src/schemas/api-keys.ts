@@ -6,6 +6,13 @@ export const apiKeySchema = z.object({
   name: z.string(),
   keyId: z.string(),
   scopes: z.array(scopeSchema),
+  /**
+   * The key's optional workspace PIN (user-scoped credential model). null =
+   * user-scoped: the key acts as its creator and the target workspace is a
+   * per-request parameter (X-Workspace-Id / the user's default). A value =
+   * the key reaches ONLY that workspace, forever.
+   */
+  workspaceId: z.string().nullable(),
   createdBy: z.string(),
   createdAt: z.string(),
   lastUsedAt: z.string().nullable(),
@@ -23,7 +30,14 @@ export const apiKeyCreateSchema = z.object({
   name: z.string().min(1).max(120),
   scopes: z.array(scopeSchema).min(1),
   /** TTL at mint; the server computes the absolute expiry. Omit = never expires. */
-  expiresInDays: z.number().int().min(1).max(3650).optional()
+  expiresInDays: z.number().int().min(1).max(3650).optional(),
+  /**
+   * Optional workspace PIN (least privilege): the key then reaches ONLY this
+   * workspace — an ACTIVE membership of it is required at mint. Omit for a
+   * user-scoped key (the default): it acts as you in whichever of your
+   * workspaces each request names.
+   */
+  workspaceId: z.uuid().optional()
 });
 export type ApiKeyCreate = z.infer<typeof apiKeyCreateSchema>;
 

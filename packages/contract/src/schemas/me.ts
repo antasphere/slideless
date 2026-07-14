@@ -39,11 +39,12 @@ export const meResponseSchema = z.object({
   /** Expiry of the presented API key; null for sessions/OAuth or non-expiring keys. */
   apiKeyExpiresAt: z.string().nullable(),
   /**
-   * The workspaces this credential can name (ADR 014). Sessions list ALL of
-   * the user's active memberships (oldest first — index 0 is the
-   * no-header default); machine credentials list ONLY the workspace they
-   * are bound to (a workspace-scoped key/token must not enumerate the
-   * user's other workspaces).
+   * The workspaces this credential can name (user-scoped credential model):
+   * EVERY credential kind — session, API key, OAuth bearer — lists ALL of
+   * the user's active memberships; the target workspace is a per-request
+   * parameter (X-Workspace-Id), never baked into the credential. Clients
+   * MUST read the `default` flag to find the selector-less default — never
+   * assume index 0.
    */
   workspaces: z.array(
     z.object({
@@ -51,7 +52,19 @@ export const meResponseSchema = z.object({
       name: z.string(),
       role: workspaceRoleSchema,
       /** Same semantics as `workspace.hubOrigin`, per listed workspace. */
-      hubOrigin: z.boolean()
+      hubOrigin: z.boolean(),
+      /**
+       * The hub asserted this org suspended (cloud edition): it stays
+       * VISIBLE here but requests into it are refused. Always false on oss
+       * and on local workspaces.
+       */
+      suspended: z.boolean(),
+      /**
+       * The user's default workspace — what a request naming no workspace
+       * resolves to. At most one entry carries it; when none does, the
+       * deterministic fallback (oldest active membership) applies.
+       */
+      default: z.boolean()
     })
   ),
   /** The workspace THIS request resolved to — what X-Workspace-Id selects. */

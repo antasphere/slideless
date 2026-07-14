@@ -189,9 +189,6 @@ export const fr: Record<MessageKey, string> = {
   'consent.approve': 'Autoriser',
   'consent.errorUnexpectedResponse': 'Le serveur d’autorisation a renvoyé une réponse inattendue.',
   'consent.errorConnection': 'Une erreur est survenue. Vérifiez votre connexion puis réessayez.',
-  'consent.workspaceLabel': 'Espace de travail',
-  'consent.workspaceNotice': 'L’accès est limité à cet espace de travail.',
-  'consent.errorWorkspaceSelection': 'La sélection de l’espace de travail n’a pas été acceptée. Réessayez.',
 
   // ── Workspace switcher ───────────────────────────────────────────────
   'workspace.menuLabel': 'Espaces de travail',

@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, desc, eq } from 'drizzle-orm';
 import { apiKeyCreateRoute, apiKeyRevokeRoute, apiKeysListRoute } from '@slideless/contract/routes';
-import { apiKeys, type ApiKey, type Db } from '@slideless/db';
+import { apiKeys, workspaceMembers, type ApiKey, type Db } from '@slideless/db';
 import { sql } from 'drizzle-orm';
 import type { ApiKeyService } from '../apikeys/service.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
@@ -14,6 +14,7 @@ const toWire = (k: ApiKey) => ({
   name: k.name,
   keyId: k.keyId,
   scopes: k.scopes as Array<'presentations:read' | 'presentations:write' | 'data:export'>,
+  workspaceId: k.workspaceId,
   createdBy: k.createdBy,
   createdAt: k.createdAt.toISOString(),
   lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
@@ -21,6 +22,14 @@ const toWire = (k: ApiKey) => ({
   expiresAt: k.expiresAt?.toISOString() ?? null
 });
 
+/**
+ * API keys are USER credentials (user-scoped credential model): the listing
+ * and the revoke are keyed on the CREATOR, not on any workspace — a key acts
+ * as its holder wherever their memberships reach, so "my keys" is the only
+ * honest scope. Mint stays sessions-only and accepts an optional workspace
+ * PIN (least privilege); revocation is creator-only (a workspace admin has
+ * no standing over another user's credential).
+ */
 export function registerApiKeyRoutes(api: OpenAPIHono, db: Db, service: ApiKeyService): void {
   api.use('/api-keys', requireAuth());
   api.use('/api-keys/*', requireAuth());
@@ -28,26 +37,25 @@ export function registerApiKeyRoutes(api: OpenAPIHono, db: Db, service: ApiKeySe
   api.openapi(apiKeysListRoute, async (c) => {
     const principal = c.get('principal')!;
     const { cursor, limit } = c.req.valid('query');
-    const mine = principal.role === 'member';
     const cursorId = cursorRowId(cursor);
-    // The member sees-own-keys filter lives inside the same and(...) as the
-    // keyset predicate so the scoping holds on every page, not just the first.
     const rows = await db
       .select()
       .from(apiKeys)
       .where(
         and(
-          eq(apiKeys.workspaceId, principal.workspaceId),
-          ...(mine ? [eq(apiKeys.createdBy, principal.userId)] : []),
+          eq(apiKeys.createdBy, principal.userId),
           ...(cursorId
             ? [
                 keysetBefore({
                   table: apiKeys,
                   id: apiKeys.id,
                   createdAt: apiKeys.createdAt,
-                  workspaceId: apiKeys.workspaceId,
+                  // The keyset scope column (see pagination.ts): the listing
+                  // is creator-scoped, so a foreign user's cursor can never
+                  // position inside this user's ordering.
+                  workspaceId: apiKeys.createdBy,
                   cursorId,
-                  workspace: principal.workspaceId
+                  workspace: principal.userId
                 })
               ]
             : [])
@@ -66,10 +74,29 @@ export function registerApiKeyRoutes(api: OpenAPIHono, db: Db, service: ApiKeySe
       return c.json(err('sessions_only', 'API keys can only be created from a browser session'), 403);
     }
     const body = c.req.valid('json');
+    // Optional PIN: an ACTIVE membership of the pinned workspace is required
+    // — one uniform 403 whether the workspace does not exist or the caller
+    // is not a member (no oracle about other workspaces).
+    if (body.workspaceId) {
+      const [member] = await db
+        .select({ id: workspaceMembers.id })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.userId, principal.userId),
+            eq(workspaceMembers.workspaceId, body.workspaceId),
+            eq(workspaceMembers.isActive, true)
+          )
+        )
+        .limit(1);
+      if (!member) {
+        return c.json(err('no_membership', 'This workspace is not available to this account'), 403);
+      }
+    }
     // The client sends a TTL in days; the server owns the absolute expiry.
     const expiresAt = body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86_400_000) : null;
     const minted = await service.mint({
-      workspaceId: principal.workspaceId,
+      workspaceId: body.workspaceId ?? null,
       createdBy: principal.userId,
       name: body.name,
       scopes: body.scopes,
@@ -80,7 +107,12 @@ export function registerApiKeyRoutes(api: OpenAPIHono, db: Db, service: ApiKeySe
       action: 'apikey.create',
       resourceType: 'api_key',
       resourceId: minted.id,
-      metadata: { name: body.name, scopes: body.scopes, expiresAt: expiresAt?.toISOString() ?? null }
+      metadata: {
+        name: body.name,
+        scopes: body.scopes,
+        workspaceId: body.workspaceId ?? null,
+        expiresAt: expiresAt?.toISOString() ?? null
+      }
     });
     return c.json({ apiKey: toWire(row!), key: minted.key }, 201);
   });
@@ -88,16 +120,14 @@ export function registerApiKeyRoutes(api: OpenAPIHono, db: Db, service: ApiKeySe
   api.openapi(apiKeyRevokeRoute, async (c) => {
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
+    // Creator-only: a key is its creator's credential. A foreign key answers
+    // the same 404 as a nonexistent one (existence is not probeable).
     const [key] = await db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.id, id), eq(apiKeys.workspaceId, principal.workspaceId)))
+      .where(and(eq(apiKeys.id, id), eq(apiKeys.createdBy, principal.userId)))
       .limit(1);
     if (!key) return c.json(err('not_found', 'API key not found'), 404);
-    const isOwn = key.createdBy === principal.userId;
-    if (!isOwn && principal.role === 'member') {
-      return c.json(err('forbidden', 'Only the key creator or an admin can revoke it'), 403);
-    }
     if (!key.revokedAt) {
       await db
         .update(apiKeys)

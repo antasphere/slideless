@@ -297,6 +297,11 @@ describe('the full dance', () => {
     expect(grant.token_type?.toLowerCase()).toBe('bearer');
     expect(grant.access_token.split('.')).toHaveLength(3); // an RS256 JWT, not opaque
     expect(grant.refresh_token).toBeTruthy();
+    // User-scoped grant ("act as you"): the token identifies the USER and
+    // carries no workspace authority — the org is a per-request parameter.
+    const payload = JSON.parse(Buffer.from(grant.access_token.split('.')[1]!, 'base64url').toString());
+    expect(payload.workspace_id).toBeUndefined();
+    expect(payload.email).toBe(OWNER.email);
     accessToken = grant.access_token;
     refreshToken = grant.refresh_token;
   });

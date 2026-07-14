@@ -146,6 +146,7 @@ export function registerSsoConnectRoutes(api: OpenAPIHono, deps: SsoConnectRoute
           name: row.name,
           keyId: row.keyId,
           scopes: row.scopes as Array<'presentations:read' | 'presentations:write' | 'data:export'>,
+          workspaceId: row.workspaceId,
           createdBy: row.createdBy,
           createdAt: row.createdAt.toISOString(),
           lastUsedAt: row.lastUsedAt?.toISOString() ?? null,

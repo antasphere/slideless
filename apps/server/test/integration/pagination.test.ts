@@ -288,7 +288,7 @@ describe('api-key scoping holds on every page', () => {
   const memberKeyIds: string[] = [];
   const ownerKeyIds: string[] = [];
 
-  it('member sees exactly their own keys across a limit=1 walk; the owner sees all', async () => {
+  it('each user sees exactly THEIR OWN keys across a walk (keys are user credentials)', async () => {
     // Bring in a real member via the invitation-accept flow.
     const invite = await app.app.request('/api/v1/invitations', {
       ...json({ email: MEMBER.email, role: 'member' }),
@@ -331,8 +331,10 @@ describe('api-key scoping holds on every page', () => {
     expectExactly(memberRows, memberKeyIds);
     expectStrictDesc(memberRows);
 
+    // The owner's walk is creator-scoped too (user-scoped credential model):
+    // no role sees anyone else's keys through this listing.
     const ownerRows = await walk('api-keys', 'apiKeys', 2);
-    expectExactly(ownerRows, [...memberKeyIds, ...ownerKeyIds]);
+    expectExactly(ownerRows, ownerKeyIds);
     expectStrictDesc(ownerRows);
   });
 });

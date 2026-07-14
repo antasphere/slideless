@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@slideless/contract';
 import type { PlatformRegistry } from '../platform/registry.js';
+import { WorkspaceMismatchError } from '../apikeys/service.js';
 import { apiError } from '../api/errors.js';
 import {
   quotaHeaderEntries,
@@ -44,18 +45,29 @@ export function isPublicApiPath(path: string): boolean {
  * run THIS request under it"; a refusal carries the exact wire error. The
  * seam exists for the cloud edition's hub gates (org suspension + hub
  * membership re-assertion, docs/federation.md P4); oss never wires one.
+ * The gate also sees WHAT is being asked (`request`), so a policy can exempt
+ * specific surfaces (e.g. suspension keeping GET /me readable — the
+ * visible-but-blocked posture); implementations may ignore it.
  */
 export type PrincipalGateResult =
   { ok: true; role?: Principal['role'] } | { ok: false; status: 401 | 403; code: string; message: string };
 
-export type PrincipalGate = (principal: Principal) => Promise<PrincipalGateResult>;
+export type PrincipalGate = (
+  principal: Principal,
+  request: { path: string; method: string }
+) => Promise<PrincipalGateResult>;
 
 export interface AuthContextDeps {
   registry: PlatformRegistry;
-  /** Resolves `Bearer <prefix>_...` API keys. Wired in M2; absent = keys rejected. */
-  resolveApiKey?: (token: string) => Promise<Principal | null>;
-  /** Resolves OAuth Bearer JWTs (local JWKS verify + live membership). Wired in M6. */
-  resolveOauthJwt?: (token: string) => Promise<Principal | null>;
+  /**
+   * Resolves `Bearer <prefix>_...` API keys under the user-scoped selection
+   * rule — `requested` is the request's X-Workspace-Id (or null). May throw
+   * WorkspaceMismatchError for a valid PINNED key whose pin differs from the
+   * header. Absent = keys rejected.
+   */
+  resolveApiKey?: (token: string, requested: string | null) => Promise<Principal | null>;
+  /** Resolves OAuth Bearer JWTs (local JWKS verify + live membership selection). */
+  resolveOauthJwt?: (token: string, requested: string | null) => Promise<Principal | null>;
   /** Distinguishes an API-key credential from other bearers. */
   isApiKeyToken: (token: string) => boolean;
   /** Failed key verifications consume from this bucket (per IP) — brute-force wall. */
@@ -107,13 +119,22 @@ export function authContext({
     const authHeader = c.req.header('authorization')?.trim() ?? '';
     const bearer = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1]?.trim() ?? null;
 
+    // The universal per-request workspace selector (user-scoped credential
+    // model): EVERY credential kind resolves it through the shared
+    // resolveMembership rule — sessions inside the identity provider,
+    // machine credentials via the threaded `requested` below. A PINNED API
+    // key is the one exception: it always resolves its pin, and a header
+    // naming a different workspace is rejected loudly (403 below) instead of
+    // being silently served the pinned one.
+    const requested = c.req.header(ACTIVE_WORKSPACE_HEADER)?.trim() || null;
+
     let principal: Principal | null = null;
 
     if (bearer && looksLikeJwt(bearer)) {
       if (!resolveOauthJwt) {
         return apiError(c, 401, 'oauth_not_enabled', 'OAuth bearer tokens are not enabled on this instance');
       }
-      principal = await resolveOauthJwt(bearer);
+      principal = await resolveOauthJwt(bearer, requested);
       if (!principal) {
         return apiError(c, 401, 'invalid_token', 'OAuth bearer token is invalid, expired, or revoked');
       }
@@ -128,7 +149,17 @@ export function authContext({
           return apiError(c, 429, 'rate_limited', 'Too many failed API key attempts');
         }
       }
-      principal = await resolveApiKey(bearer);
+      try {
+        principal = await resolveApiKey(bearer, requested);
+      } catch (cause) {
+        // A VALID pinned key + a mismatching selector: a client bug or a
+        // confused-deputy attempt — loud 403, and no failure-limiter charge
+        // (the credential itself verified fine).
+        if (cause instanceof WorkspaceMismatchError) {
+          return apiError(c, 403, 'workspace_mismatch', 'This credential is pinned to a different workspace');
+        }
+        throw cause;
+      }
       if (!principal) {
         if (keyFailureLimiter) await keyFailureLimiter.consume(ip).catch(() => {});
         return apiError(c, 401, 'invalid_api_key', 'API key not recognized');
@@ -142,18 +173,6 @@ export function authContext({
         method: c.req.method,
         requestId: c.get('requestId')
       });
-    }
-
-    // Machine credentials bind ONE workspace at mint/consent time (ADR 014):
-    // an X-Workspace-Id header naming a DIFFERENT workspace is a client bug
-    // or a confused-deputy attempt — reject it loudly instead of silently
-    // serving the credential's workspace. Sessions never reach this: the
-    // identity provider already resolved the header (or null, fail closed).
-    if (principal && principal.via !== 'session') {
-      const requested = c.req.header(ACTIVE_WORKSPACE_HEADER)?.trim();
-      if (requested && requested.toLowerCase() !== principal.workspaceId.toLowerCase()) {
-        return apiError(c, 403, 'workspace_mismatch', 'This credential is bound to a different workspace');
-      }
     }
 
     // General per-principal request quota (I3), consumed BEFORE the scope
@@ -178,7 +197,7 @@ export function authContext({
     // definitive hub refusal wins over any per-endpoint outcome. Cache-first
     // inside; the hub is never a hard round-trip in the hot path.
     if (principal && principalGate) {
-      const verdict = await principalGate(principal);
+      const verdict = await principalGate(principal, { path: c.req.path, method: c.req.method });
       if (!verdict.ok) {
         return apiError(c, verdict.status, verdict.code, verdict.message);
       }

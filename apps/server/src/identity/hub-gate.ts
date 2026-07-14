@@ -89,6 +89,10 @@ export class HubPrincipalGate {
    * re-assertion. A `{ ok: true, role }` result carries a freshly synced
    * role that differs from the resolved principal's — the caller applies
    * it so a demotion/promotion takes effect on THIS request, not the next.
+   *
+   * The widened PrincipalGate seam also passes the request (path/method);
+   * this gate deliberately ignores it — its verdicts are request-agnostic,
+   * exactly as before the seam widened.
    */
   readonly assert: PrincipalGate = async (principal) => {
     if (!principal.accountRef) return { ok: true };

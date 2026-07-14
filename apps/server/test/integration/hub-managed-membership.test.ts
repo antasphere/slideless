@@ -156,12 +156,20 @@ beforeAll(async () => {
   );
   hubMemberRowId = rows[0].id;
 
-  // hubAdmin's API key, minted from the session — bound at mint to the
-  // session's ACTIVE workspace, the projected one (ADR 014).
+  // hubAdmin's API key, minted from the session and PINNED to the projected
+  // workspace (the optional least-privilege pin of the user-scoped model) —
+  // so every request it makes lands on the projection, as this suite pins.
   const minted = await readJson(
     await app.app.request(
       '/api/v1/api-keys',
-      json({ name: 'p7-key', scopes: ['presentations:read', 'presentations:write'] }, asHubAdmin())
+      json(
+        {
+          name: 'p7-key',
+          scopes: ['presentations:read', 'presentations:write'],
+          workspaceId: projectedWorkspaceId
+        },
+        asHubAdmin()
+      )
     )
   );
   projectedKey = minted.key;
@@ -416,7 +424,7 @@ describe('/me carries the adaptation signals (and never the raw hub org id)', ()
     expect(me.hubManageUrl).toBeNull();
   });
 
-  it('the API key bound to the projected workspace reports the same signals (via api_key)', async () => {
+  it('the API key pinned to the projected workspace reports the same signals (via api_key)', async () => {
     const res = await app.app.request('/api/v1/me', {
       headers: { authorization: `Bearer ${projectedKey}` }
     });
@@ -426,9 +434,14 @@ describe('/me carries the adaptation signals (and never the raw hub org id)', ()
     expect(me.workspace.hubOrigin).toBe(true);
     expect(me.origin).toBe('hub');
     expect(me.hubManageUrl).toBe(hub.issuer);
-    // Machine credentials list ONLY their bound workspace (ADR 014).
-    expect(me.workspaces).toHaveLength(1);
-    expect(me.workspaces[0].hubOrigin).toBe(true);
+    // The ACTIVE workspace is the pin; /me enumerates ALL the holder's
+    // memberships (user-scoped model — the pin restricts reach, not what
+    // the holder may see about themselves), each with its own flag.
+    expect(me.activeWorkspaceId).toBe(projectedWorkspaceId);
+    const flags = Object.fromEntries(
+      me.workspaces.map((w: { id: string; hubOrigin: boolean }) => [w.id, w.hubOrigin])
+    );
+    expect(flags[projectedWorkspaceId]).toBe(true);
   });
 });
 

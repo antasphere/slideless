@@ -469,8 +469,12 @@ export async function boot(
       if (!rootApp.current) throw new Error('mcp fetchApi called before app assembly');
       return rootApp.current.request(path, init);
     },
-    resolveOauthJwt: (token) => oauthJwt.resolve(token),
-    resolveApiKey: (token) => apiKeys.resolve(token),
+    // The /mcp transport gate resolves the credential with NO workspace
+    // selector (default-org perspective): the per-tool-call `workspace`
+    // argument is mapped to the header at the in-process /api/v1 re-entry,
+    // where the real per-request selection happens.
+    resolveOauthJwt: (token) => oauthJwt.resolve(token, null),
+    resolveApiKey: (token) => apiKeys.resolve(token, null),
     isApiKeyToken,
     limiter: rateLimit(limiters.mcp, makeClientIp(env.TRUST_PROXY)),
     instanceName: async () => {

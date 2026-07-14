@@ -402,8 +402,7 @@ describe('the OAuth-bearer leg (the third credential kind — MCP rides this)', 
     const verifier = new OauthJwtVerifier(fakeAuth, app.db.db, base);
 
     const token = await new SignJWT({
-      scope: 'presentations:read presentations:write',
-      workspace_id: hostWorkspaceId
+      scope: 'presentations:read presentations:write'
     })
       .setProtectedHeader({ alg: 'RS256', kid: 'guest-caps' })
       .setIssuer(base)
@@ -413,7 +412,9 @@ describe('the OAuth-bearer leg (the third credential kind — MCP rides this)', 
       .setExpirationTime('5m')
       .sign(privateKey);
 
-    const principal = await verifier.resolve(token);
+    // The workspace is a per-request SELECTOR now (user-scoped model), never
+    // a token claim — the guest origin must ride the live membership either way.
+    const principal = await verifier.resolve(token, hostWorkspaceId);
     expect(principal).toMatchObject({
       userId: guestUserId,
       workspaceId: hostWorkspaceId,

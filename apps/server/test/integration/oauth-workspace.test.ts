@@ -16,11 +16,12 @@ import {
 } from './helpers.js';
 
 /**
- * OAuth workspace binding (ADR 014): the grant carries the workspace chosen
- * at consent through the plugin's referenceId seam — into the access-token
- * claim, onto the refresh-token row, and back out of every refresh re-mint.
- * Plus the fail-closed legacy rules (grants/tokens minted before binding
- * existed) and the claimless-JWT resolution fallback.
+ * OAuth grants under the user-scoped credential model: consent is "act as
+ * you" — issuance requires only a live user with ≥1 active membership, the
+ * minted JWT carries NO workspace claim, and the workspace each request
+ * targets is a per-request parameter (X-Workspace-Id) authorized against the
+ * user's own live memberships. The consent-workspace parking endpoint is
+ * gone, and a legacy workspace_id claim is never an authorization input.
  */
 const OWNER = {
   email: 'oauth-multi@ws.test',
@@ -42,6 +43,8 @@ let w1 = '';
 let w2 = '';
 let w3 = ''; // Bob's sole workspace
 let clientId = '';
+
+const WS_HEADER = 'x-workspace-id';
 
 function b64url(buf: Buffer): string {
   return buf.toString('base64url');
@@ -143,19 +146,8 @@ async function refresh(refreshToken: string): Promise<Response> {
   });
 }
 
-/** Full dance for a cookie, optionally parking a workspace selection first. */
-async function dance(
-  cookie: string,
-  selectWorkspace?: string
-): Promise<{ accessToken: string; refreshToken: string }> {
-  if (selectWorkspace) {
-    const sel = await fetch(`${base}/api/v1/oauth/consent-workspace`, {
-      method: 'POST',
-      headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ workspaceId: selectWorkspace })
-    });
-    expect(sel.status).toBe(200);
-  }
+/** Full dance for a cookie: authorize (+consent when asked) → code → tokens. */
+async function dance(cookie: string): Promise<{ accessToken: string; refreshToken: string }> {
   const { location, verifier } = await authorize(cookie);
   let codeUrl: URL;
   if (location.includes('/oauth/consent?')) {
@@ -217,6 +209,19 @@ beforeAll(async () => {
   });
   expect([200, 201]).toContain(register.status);
   clientId = (await readJson(register)).client_id;
+
+  // The workspaces need distinguishable data for the org-as-parameter tests.
+  for (const [ws, name] of [
+    [w1, 'w1-oauth.txt'],
+    [w2, 'w2-oauth.txt']
+  ] as const) {
+    const up = await fetch(`${base}/api/v1/files?name=${name}`, {
+      method: 'POST',
+      headers: { cookie: ownerCookie, 'content-type': 'text/plain', [WS_HEADER]: ws },
+      body: `${name} bytes`
+    });
+    expect(up.status).toBe(201);
+  }
 }, 240_000);
 
 afterAll(async () => {
@@ -225,171 +230,115 @@ afterAll(async () => {
   await container?.stop();
 });
 
-describe('consent-time binding', () => {
-  let w1Tokens: { accessToken: string; refreshToken: string };
-  let w2Tokens: { accessToken: string; refreshToken: string };
+describe('claimless issuance ("act as you")', () => {
+  let ownerTokens: { accessToken: string; refreshToken: string };
 
-  it('a pickerless consent binds the deterministic default (oldest membership)', async () => {
-    w1Tokens = await dance(ownerCookie);
-    expect(jwtPayload(w1Tokens.accessToken).workspace_id).toBe(w1);
-    const me = await readJson(
-      await fetch(`${base}/api/v1/me`, {
-        headers: { authorization: `Bearer ${w1Tokens.accessToken}` }
-      })
-    );
-    expect(me.activeWorkspaceId).toBe(w1);
-    expect(me.workspaces).toEqual([{ id: w1, name: 'OAuth WS One', role: 'owner', hubOrigin: false }]);
+  it('a multi-workspace user gets ONE grant with NO workspace claim', async () => {
+    ownerTokens = await dance(ownerCookie);
+    const payload = jwtPayload(ownerTokens.accessToken);
+    expect(payload.workspace_id).toBeUndefined();
+    expect(payload.role).toBeUndefined();
+    expect(payload.email).toBe(OWNER.email);
+    expect(payload.sub).toBe(ownerId);
   });
 
-  it('a parked selection binds the CHOSEN workspace; consents coexist per workspace', async () => {
-    w2Tokens = await dance(ownerCookie, w2);
-    expect(jwtPayload(w2Tokens.accessToken).workspace_id).toBe(w2);
-
-    // Resource access is scoped to the granted workspace.
-    const up = await fetch(`${base}/api/v1/files?name=w2-oauth.txt`, {
-      method: 'POST',
-      headers: { cookie: ownerCookie, 'content-type': 'text/plain', 'x-workspace-id': w2 },
-      body: 'w2 bytes'
-    });
-    expect(up.status).toBe(201);
-    const viaW2 = await readJson(
-      await fetch(`${base}/api/v1/files`, {
-        headers: { authorization: `Bearer ${w2Tokens.accessToken}` }
-      })
-    );
-    expect(viaW2.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w2-oauth.txt']);
-    const viaW1 = await readJson(
-      await fetch(`${base}/api/v1/files`, {
-        headers: { authorization: `Bearer ${w1Tokens.accessToken}` }
-      })
-    );
-    expect(viaW1.files).toEqual([]);
-  });
-
-  it('refresh re-mints keep the STORED workspace (the selection is long gone)', async () => {
-    // The parked selection was consumed by the consent flow; the refresh
-    // grant must read the workspace from the refresh-token ROW.
-    const res = await refresh(w2Tokens.refreshToken);
+  it('refresh re-mints stay claimless (and rotate)', async () => {
+    const res = await refresh(ownerTokens.refreshToken);
     expect(res.status).toBe(200);
     const grant = await readJson(res);
-    expect(jwtPayload(grant.access_token).workspace_id).toBe(w2);
-    // And the rotated refresh token keeps it too.
-    const again = await refresh(grant.refresh_token);
-    expect(again.status).toBe(200);
-    expect(jwtPayload((await readJson(again)).access_token).workspace_id).toBe(w2);
+    expect(grant.refresh_token).not.toBe(ownerTokens.refreshToken);
+    const payload = jwtPayload(grant.access_token);
+    expect(payload.workspace_id).toBeUndefined();
+    expect(payload.email).toBe(OWNER.email);
+    ownerTokens = { accessToken: grant.access_token, refreshToken: grant.refresh_token };
   });
 
-  it('a legacy unbound grant fails closed for a multi-workspace user', async () => {
-    // Simulate a pre-ADR-012 grant: strip the stored binding.
-    const fresh = await dance(ownerCookie, w2);
-    await app.db.pool.query(`UPDATE oauth_refresh_token SET reference_id = NULL WHERE user_id = $1`, [
-      ownerId
-    ]);
-    const res = await refresh(fresh.refreshToken);
-    expect(res.ok).toBe(false);
-    const body = await readJson(res).catch(() => ({}));
-    expect(JSON.stringify(body)).toContain('access_denied');
-  });
+  it('org as a parameter: the ONE token reaches each workspace via X-Workspace-Id', async () => {
+    const auth = { authorization: `Bearer ${ownerTokens.accessToken}` };
+    // No selector → the default rule (oldest membership, w1).
+    const meDefault = await readJson(await fetch(`${base}/api/v1/me`, { headers: auth }));
+    expect(meDefault.activeWorkspaceId).toBe(w1);
+    // Every credential kind lists ALL memberships with explicit flags.
+    expect(meDefault.workspaces.map((w: { id: string }) => w.id)).toEqual([w1, w2]);
+    expect(meDefault.workspaces.every((w: { default: boolean }) => w.default === false)).toBe(true);
 
-  it('a legacy unbound grant falls back to the SOLE membership', async () => {
-    const bobTokens = await dance(bobCookie);
-    expect(jwtPayload(bobTokens.accessToken).workspace_id).toBe(w3);
-    await app.db.pool.query(`UPDATE oauth_refresh_token SET reference_id = NULL WHERE user_id = $1`, [bobId]);
-    const res = await refresh(bobTokens.refreshToken);
-    expect(res.status).toBe(200);
-    expect(jwtPayload((await readJson(res)).access_token).workspace_id).toBe(w3);
-  });
-});
+    const filesW1 = await readJson(await fetch(`${base}/api/v1/files`, { headers: auth }));
+    expect(filesW1.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w1-oauth.txt']);
+    const filesW2 = await readJson(
+      await fetch(`${base}/api/v1/files`, { headers: { ...auth, [WS_HEADER]: w2 } })
+    );
+    expect(filesW2.files.map((f: { originalName: string }) => f.originalName)).toEqual(['w2-oauth.txt']);
 
-describe('the consent-workspace endpoint fails closed', () => {
-  it('rejects a workspace the caller does not belong to (uniform 403)', async () => {
-    for (const target of [w1, '00000000-0000-4000-8000-000000000000']) {
-      const res = await fetch(`${base}/api/v1/oauth/consent-workspace`, {
-        method: 'POST',
-        headers: { cookie: bobCookie, 'content-type': 'application/json' },
-        body: JSON.stringify({ workspaceId: target })
-      });
-      expect(res.status).toBe(403);
-      expect((await readJson(res)).error.code).toBe('forbidden');
+    // A workspace the user does NOT belong to fails closed — same 401 as a
+    // nonexistent one (no oracle), and same for a malformed selector.
+    for (const target of [w3, '00000000-0000-4000-8000-000000000000', 'not-a-uuid']) {
+      const res = await fetch(`${base}/api/v1/me`, { headers: { ...auth, [WS_HEADER]: target } });
+      expect(res.status, target).toBe(401);
     }
   });
 
-  it('is unreachable with a machine credential (fail-closed scope gate)', async () => {
-    const mint = await fetch(`${base}/api/v1/api-keys`, {
-      method: 'POST',
-      headers: { cookie: ownerCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'ws-probe', scopes: ['presentations:read', 'presentations:write'] })
-    });
-    expect(mint.status).toBe(201);
-    const key = (await readJson(mint)).key;
-    const res = await fetch(`${base}/api/v1/oauth/consent-workspace`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ workspaceId: w1 })
-    });
-    expect(res.status).toBe(403);
-    expect((await readJson(res)).error.code).toBe('endpoint_not_allowed');
-  });
-
-  it('a selection whose membership was revoked kills the consent, never rebinds silently', async () => {
-    // Bob temporarily joins W2 as a plain member (deactivating a MEMBER row
-    // never trips the 0009 last-owner trigger), parks a W2 selection, and
-    // loses the membership before authorize re-computes the binding.
+  it('issuance fails closed for a user with NO active membership left', async () => {
+    const bobTokens = await dance(bobCookie);
+    // The 0009 last-owner trigger forbids deactivating the sole owner — seed
+    // a sibling owner first; this test is about the issuance gate.
+    const siblingId = `sibling-${bobId}`;
     await app.db.pool.query(
-      `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'member')`,
-      [w2, bobId]
+      `INSERT INTO "user" (id, name, email, email_verified) VALUES ($1, 'Sibling Owner', $2, true)`,
+      [siblingId, `sibling-${Date.now()}@oauthws.test`]
+    );
+    await app.db.pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, is_active) VALUES ($1, $2, 'owner', true)`,
+      [w3, siblingId]
+    );
+    await app.db.pool.query(
+      `UPDATE workspace_members SET is_active = false WHERE user_id = $1 AND workspace_id = $2`,
+      [bobId, w3]
     );
     try {
-      const sel = await fetch(`${base}/api/v1/oauth/consent-workspace`, {
-        method: 'POST',
-        headers: { cookie: bobCookie, 'content-type': 'application/json' },
-        body: JSON.stringify({ workspaceId: w2 })
-      });
-      expect(sel.status).toBe(200);
-      await app.db.pool.query(
-        `UPDATE workspace_members SET is_active = false WHERE user_id = $1 AND workspace_id = $2`,
-        [bobId, w2]
-      );
-      // The authorize itself re-computes the referenceId and must refuse
-      // outright (403 access_denied) — never silently fall back to another
-      // workspace.
-      const params = new URLSearchParams({
-        response_type: 'code',
-        client_id: clientId,
-        redirect_uri: REDIRECT_URI,
-        scope: 'openid presentations:read',
-        code_challenge: b64url(
-          createHash('sha256')
-            .update(b64url(randomBytes(48)))
-            .digest()
-        ),
-        code_challenge_method: 'S256',
-        resource: `${base}/mcp`
-      });
-      const res = await fetch(`${base}/api/v1/auth/oauth2/authorize?${params}`, {
-        headers: { cookie: bobCookie },
-        redirect: 'manual'
-      });
-      expect(res.status).toBe(403);
+      // The refresh grant re-runs the issuance gate and refuses…
+      const res = await refresh(bobTokens.refreshToken);
+      expect(res.ok).toBe(false);
       expect(JSON.stringify(await readJson(res).catch(() => ({})))).toContain('access_denied');
+      // …and the still-unexpired access token dies at the live re-check.
+      const me = await fetch(`${base}/api/v1/me`, {
+        headers: { authorization: `Bearer ${bobTokens.accessToken}` }
+      });
+      expect(me.status).toBe(401);
     } finally {
-      await app.db.pool.query(`DELETE FROM workspace_members WHERE user_id = $1 AND workspace_id = $2`, [
-        bobId,
-        w2
-      ]);
+      await app.db.pool.query(
+        `UPDATE workspace_members SET is_active = true WHERE user_id = $1 AND workspace_id = $2`,
+        [bobId, w3]
+      );
+      await app.db.pool.query(`DELETE FROM workspace_members WHERE user_id = $1`, [siblingId]);
+      await app.db.pool.query(`DELETE FROM "user" WHERE id = $1`, [siblingId]);
     }
   });
 });
 
-describe('claimless-JWT resolution fallback (OauthJwtVerifier)', () => {
-  it('resolves by claim, falls back to the sole membership, fails closed on several', async () => {
+describe('the consent-workspace machinery is gone', () => {
+  it('POST /oauth/consent-workspace no longer exists (JSON 404, both credential kinds)', async () => {
+    const asSession = await fetch(`${base}/api/v1/oauth/consent-workspace`, {
+      method: 'POST',
+      headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ workspaceId: w1 })
+    });
+    expect(asSession.status).toBe(404);
+    expect((await readJson(asSession)).error.code).toBe('not_found');
+  });
+});
+
+describe('claimless-JWT resolution (OauthJwtVerifier)', () => {
+  it('resolves by SELECTOR, defaults deterministically, and ignores workspace claims', async () => {
     const { publicKey, privateKey } = await generateKeyPair('RS256');
     const jwk = { ...(await exportJWK(publicKey)), alg: 'RS256', kid: 'ws-test' };
     const fakeAuth = { api: { getJwks: async () => ({ keys: [jwk] }) } } as unknown as Auth;
     const verifier = new OauthJwtVerifier(fakeAuth, app.db.db, base);
 
-    const sign = (sub: string, workspaceId?: string) =>
-      new SignJWT({ scope: 'presentations:read', ...(workspaceId ? { workspace_id: workspaceId } : {}) })
+    const sign = (sub: string, workspaceClaim?: string) =>
+      new SignJWT({
+        scope: 'presentations:read',
+        ...(workspaceClaim ? { workspace_id: workspaceClaim } : {})
+      })
         .setProtectedHeader({ alg: 'RS256', kid: 'ws-test' })
         .setIssuer(base)
         .setAudience(`${base}/mcp`)
@@ -398,17 +347,23 @@ describe('claimless-JWT resolution fallback (OauthJwtVerifier)', () => {
         .setExpirationTime('5m')
         .sign(privateKey);
 
-    // Claimed workspace pins the membership re-check.
-    const claimed = await verifier.resolve(await sign(ownerId, w2));
-    expect(claimed?.workspaceId).toBe(w2);
-    // Legacy claimless token: several memberships → null (fail closed).
-    expect(await verifier.resolve(await sign(ownerId))).toBeNull();
-    // Legacy claimless token: sole membership → resolves to it.
-    const sole = await verifier.resolve(await sign(bobId));
-    expect(sole?.workspaceId).toBe(w3);
-    // A claim naming a workspace the subject does not belong to → null.
-    expect(await verifier.resolve(await sign(bobId, w1))).toBeNull();
-    // A malformed claim never reaches the uuid cast → null, not a 500.
-    expect(await verifier.resolve(await sign(ownerId, 'not-a-uuid'))).toBeNull();
+    // The selector picks the membership…
+    const selected = await verifier.resolve(await sign(ownerId), w2);
+    expect(selected?.workspaceId).toBe(w2);
+    // …absent, the multi-workspace user resolves to the deterministic
+    // default (the old claimless fail-closed rule died with claims)…
+    const defaulted = await verifier.resolve(await sign(ownerId), null);
+    expect(defaulted?.workspaceId).toBe(w1);
+    // …and a legacy workspace_id CLAIM is never an authorization input: it
+    // neither selects (default still wins) nor grants (a foreign claim
+    // cannot reach the workspace).
+    const claimIgnored = await verifier.resolve(await sign(ownerId, w2), null);
+    expect(claimIgnored?.workspaceId).toBe(w1);
+    const foreignClaim = await verifier.resolve(await sign(bobId, w1), null);
+    expect(foreignClaim?.workspaceId).toBe(w3);
+    // A selector naming a workspace the subject does not belong to → null.
+    expect(await verifier.resolve(await sign(bobId), w1)).toBeNull();
+    // A malformed selector never reaches the uuid cast → null, not a 500.
+    expect(await verifier.resolve(await sign(ownerId), 'not-a-uuid')).toBeNull();
   });
 });

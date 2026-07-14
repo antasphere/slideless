@@ -39,9 +39,10 @@ export const cliAuthCompleteSchema = z.object({
   /** TTL at mint; the server computes the absolute expiry. Omit = never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),
   /**
-   * Workspace the key binds (ADR 014) — the account must hold an ACTIVE
-   * membership of it. Omit = the deterministic default (oldest active
-   * membership), which is the only membership for most accounts.
+   * Optional workspace PIN (least privilege) — the account must hold an
+   * ACTIVE membership of it. Omit for a user-scoped key (the default): it
+   * acts as you in whichever of your workspaces each request names
+   * (X-Workspace-Id / your default membership).
    */
   workspaceId: z.uuid().optional()
 });
@@ -57,7 +58,8 @@ export const cliAuthCompletedSchema = z.object({
     email: z.string(),
     name: z.string()
   }),
-  workspaceId: z.string()
+  /** The workspace the key is PINNED to; null = user-scoped (unpinned). */
+  workspaceId: z.string().nullable()
 });
 export type CliAuthCompleted = z.infer<typeof cliAuthCompletedSchema>;
 

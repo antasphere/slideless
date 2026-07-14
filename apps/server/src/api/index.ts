@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { ulid } from 'ulid';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
 import { instanceSettings, user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
 import { hubConfig, type Env } from '../env.js';
@@ -28,7 +28,6 @@ import type { HubSsoService } from '../identity/hub-sso.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerSsoConnectRoutes } from './sso-connect.js';
-import { registerOauthRoutes } from './oauth.js';
 import { registerMemberRoutes } from './members.js';
 import { registerApiKeyRoutes } from './apikeys.js';
 import { registerInvitationRoutes } from './invitations.js';
@@ -233,8 +232,8 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     authContext({
       registry,
       isApiKeyToken,
-      resolveApiKey: (token) => apiKeyService.resolve(token),
-      resolveOauthJwt: (token) => deps.oauthJwt.resolve(token),
+      resolveApiKey: (token, requested) => apiKeyService.resolve(token, requested),
+      resolveOauthJwt: (token, requested) => deps.oauthJwt.resolve(token, requested),
       keyFailureLimiter: limiters.apiKeyFailures,
       clientIp,
       // General per-principal quota (I3): runs inside authContext, after the
@@ -382,34 +381,36 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     if (!principal) {
       return c.json(err('unauthenticated', 'Authentication required'), 401);
     }
-    // Workspaces this credential can name (ADR 014): a session lists ALL of
-    // the user's active memberships (oldest first — index 0 is the no-header
-    // default); a machine credential lists ONLY the workspace it is bound to,
-    // so a workspace-scoped key/token never enumerates the user's others.
+    // Workspaces this credential can name (user-scoped credential model):
+    // EVERY credential kind lists ALL of the user's active memberships — a
+    // credential is the user, and the org is a per-request parameter. The
+    // order mirrors the selection rule (default first, then oldest), but
+    // clients must read the `default` flag explicitly, never infer it from
+    // the index. (A PINNED key still lists everything: the pin restricts
+    // which workspace the key can REACH, not what its holder may see —
+    // /me answers about the user behind the credential.)
     const memberships = await db
       .select({
         id: workspaces.id,
         name: workspaces.name,
         role: workspaceMembers.role,
-        centralAccountId: workspaces.centralAccountId
+        centralAccountId: workspaces.centralAccountId,
+        hubStatus: workspaces.hubStatus,
+        isDefault: workspaceMembers.isDefault
       })
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
-      .where(
-        and(
-          eq(workspaceMembers.userId, principal.userId),
-          eq(workspaceMembers.isActive, true),
-          ...(principal.via === 'session' ? [] : [eq(workspaceMembers.workspaceId, principal.workspaceId)])
-        )
-      )
-      .orderBy(asc(workspaceMembers.createdAt), asc(workspaceMembers.id));
+      .where(and(eq(workspaceMembers.userId, principal.userId), eq(workspaceMembers.isActive, true)))
+      .orderBy(desc(workspaceMembers.isDefault), asc(workspaceMembers.createdAt), asc(workspaceMembers.id));
     // hubOrigin is the BOOLEAN projection flag (P7): the raw hub org id
     // never leaves the instance — map explicitly, never spread the row.
     const wireWorkspaces = memberships.map((m) => ({
       id: m.id,
       name: m.name,
       role: m.role,
-      hubOrigin: m.centralAccountId !== null
+      hubOrigin: m.centralAccountId !== null,
+      suspended: m.hubStatus === 'suspended',
+      default: m.isDefault
     }));
     const active = wireWorkspaces.find((m) => m.id === principal.workspaceId);
     return c.json(
@@ -463,9 +464,6 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   if (hubSso) {
     registerSsoConnectRoutes(api, { db, auth, hubSso, apiKeys: apiKeyService, audit, logger });
   }
-  // OAuth consent workspace selection (ADR 014): session-only, feeds the
-  // consentReferenceId seam that binds grants to one workspace.
-  registerOauthRoutes(api, { db, auth });
   registerMemberRoutes(api, {
     db,
     auth,

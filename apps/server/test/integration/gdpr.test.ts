@@ -127,8 +127,11 @@ async function upload(cookie: string, name: string, text: string): Promise<strin
 }
 
 async function mintKey(cookie: string, name: string, scopes: string[]): Promise<{ key: string; id: string }> {
+  // PINNED to the workspace: the export's api-keys.json section is
+  // workspace data, so it lists pinned keys only — a user-scoped (unpinned)
+  // key belongs to its holder, not to any one workspace's export.
   const res = await app.app.request('/api/v1/api-keys', {
-    ...json({ name, scopes }),
+    ...json({ name, scopes, workspaceId }),
     headers: { 'content-type': 'application/json', cookie }
   });
   expect(res.status).toBe(201);
