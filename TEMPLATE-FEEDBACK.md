@@ -685,6 +685,26 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     note the compounding: a dead branch trigger hides a broken gate until
     the first release is on the critical path.
 
+## 20. A read-through reconciler is a chassis seam candidate (H4, ADR 018)
+
+69. **Every hub-federated tool will need the same "central truth at reload
+    time" machinery Slideless built by hand**: a per-user TTL cache +
+    single-flight + failure-throttled reconciler that reads the central
+    account service's user-org list (H4), projects/renames/role-syncs
+    local workspaces, and deactivates only central-origin membership rows
+    on a definitive answer (fail open on every error — freshness, not
+    security). The seams it needed were all hand-cut here: a login-path
+    hook AFTER the fail-closed projection (`OrgLoginReconciler` on the SSO
+    options), a `/me` read-through hook (`MeReconciler` on ApiDeps), a
+    shared status-client injection into the edition binding
+    (`EditionBindingDeps.status`), and a named-workspace-miss retry in the
+    identity provider (`deepLinkRetry`). The projection primitive also had
+    to be extracted (`identity/hub-projection.ts`) so the login and the
+    reconciler write byte-identical rows. Candidate for the template's
+    cloud-binding module: ship the reconciler + these four seams as
+    chassis code so the next tool binds H4 by configuration, not by
+    re-derivation.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

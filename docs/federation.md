@@ -26,9 +26,10 @@ entitlement seams.
 > **Phase 4 (the hub gates: org suspension + membership re-assertion —
 > "The hub gates" below + ADR 016)**, **Phase 5 (the CLI cross-tool
 > exchange)**, **Phase 6 (guest capability limits + the SSO-first claim)**,
-> and **Phase 7 (hub-managed membership: the local membership-mutation
-> gate + the `/me` adaptation signals — "Hub-managed membership" below)**
-> are built.
+> **Phase 7 (hub-managed membership: the local membership-mutation
+> gate + the `/me` adaptation signals — "Hub-managed membership" below)**,
+> and **live org reconciliation (H4 — "Live org reconciliation" below +
+> ADR 018)** are built.
 
 ## Environment contract
 
@@ -207,6 +208,12 @@ has the full design, including the assertion handoff and its race analysis):
 - **Fail closed**: any bad token (foreign iss/aud, expired, opaque,
   malformed claims) or failed per-login step means NO session — a cloud
   login without its projection never exists.
+- **Then fail-open step 4 — the H4 force-reconcile** ("Live org
+  reconciliation" below, ADR 018): after the fail-closed projection, the
+  login awaits one reconciliation pass so it materializes ALL the user's
+  hub orgs, not just the asserted one. The pass never throws and the
+  asserted org rides its keep-set, so a hub list outage can neither fail
+  the login nor undo the projection the login just wrote.
 
 **The fourth signup switch.** The repo invariant "closed sign-up needs
 three switches" gains a deliberate fourth on cloud: the `antasphere`
@@ -303,6 +310,48 @@ own window).
 is not gated — it is not an authenticated workspace surface; revoke share
 tokens to cut it. The MCP transport handshake itself is not gated either;
 every MCP tool call is, since it re-enters `/api/v1`.
+
+## Live org reconciliation (H4): the read-through org list
+
+The gates above re-assert orgs Slideless ALREADY projected. What they
+cannot do is make a NEW hub org appear: projection was login-lazy and
+single-org-per-login, so an org created at the hub after a user's first
+login never surfaced here. **H4** closes that (ADR 018 has the full
+decision): the hub exposes
+`GET {hub}/api/v1/accounts/users/{hubUserId}/memberships` →
+`{ memberships: [{ workspaceId, name, role, status, kind }] }` (ACTIVE
+memberships, suspended orgs included with `status: 'suspended'`) on the
+same `accounts:status` service key, and Slideless reconciles against it
+read-through (`identity/hub-reconcile.ts`):
+
+- **Every session `/me`** (every dashboard load) runs a **cached**
+  reconciliation pass — per-user **15 s TTL**, single-flight, 1.5 s fetch
+  timeout, failure re-probes throttled. Create an org at the hub, reload
+  the page, it is there; rename/role changes follow; removal deactivates.
+- **Every SSO login** runs a TTL-bypassing force pass as `assertLogin`
+  step 4 — one login materializes ALL the user's orgs. `/sso/cli-connect`
+  inherits it; the minted key still binds only the asserted org.
+- **A named-workspace session miss retries once**: a deep link into a
+  workspace the user was granted at the hub since the last pass triggers
+  one cached reconcile + one local re-resolve — no re-login needed.
+
+One pass: fetch the list → on a **definitive 200 ONLY**, deactivate the
+user's `origin='hub'` rows in projected workspaces the list no longer
+asserts (audited `member.deactivate`, actor `system`, reason
+**`hub_reconcile`** — distinct from the H2 gate's `hub_reassertion`), then
+project/upsert every listed org through the same primitive the login uses
+(`identity/hub-projection.ts`). Suspended orgs stay projected — **visible
+but blocked** by the org gate. Guest/local rows and non-projected
+workspaces are structurally out of the sweep's reach.
+
+**Failure posture — the mirror image of the gates**: reconciliation is
+freshness, not security, so EVERY hub error (401/403, 404, 5xx, timeout,
+malformed) fails **open** with a loud log: local state serves, nothing
+deactivates, the pass retries next window. There is **no legacy mode**: H4
+is a REQUIRED hub surface (hub ≥ v0.2.0 deploys first); a hub without it
+reads as a persistent loud transient error, not a supported configuration.
+Counters: `hub_reconcile_passes_total{outcome}`,
+`hub_status_fetches_total{endpoint="user_memberships"}`.
 
 ## CLI cross-tool connect (Phase 5): `POST /api/v1/sso/cli-connect`
 
@@ -538,17 +587,18 @@ docker compose -f docker-compose.federation.yml down -v
   with `FEDERATION_HUB_SERVICE_KEY=<ant_…>`; until then the gates fail
   closed for projected workspaces after the stale window.
 - The hub builds from a sibling checkout
-  (`FEDERATION_HUB_DIR`, default `../../../../platform/hub`).
+  (`FEDERATION_HUB_DIR`, default `../../../platform/hub`).
 
 ## What the later phases plug into this
 
-| Phase                       | Builds on this scaffolding                                                                                                                                                                                                               |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P3 — SSO entrance           | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021.                                                             |
-| P4 — hub gates              | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice.                                                      |
-| P5 — CLI cross-tool         | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side.                 |
-| P6 — guests                 | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock.                                                                                                               |
-| P7 — hub-managed membership | **Built** — "Hub-managed membership" above: `middleware/hub-managed.ts` gate on `/members` + `/invitations` mutations, `/me` adaptation fields (`hubOrigin`, `origin`, `hubManageUrl`), dashboard link-out. No migration; MCP unchanged. |
+| Phase                        | Builds on this scaffolding                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P3 — SSO entrance            | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021.                                                                                                                    |
+| P4 — hub gates               | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice.                                                                                                             |
+| P5 — CLI cross-tool          | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side.                                                                        |
+| P6 — guests                  | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock.                                                                                                                                                                      |
+| P7 — hub-managed membership  | **Built** — "Hub-managed membership" above: `middleware/hub-managed.ts` gate on `/members` + `/invitations` mutations, `/me` adaptation fields (`hubOrigin`, `origin`, `hubManageUrl`), dashboard link-out. No migration; MCP unchanged.                                                        |
+| H4 — live org reconciliation | **Built** — "Live org reconciliation" above + ADR 018: `identity/hub-reconcile.ts` + `hub-projection.ts`, `HubStatusClient.userMemberships()`, assertLogin step 4, the `/me` read-through, the deep-link retry, the workspace-switcher "Antasphere" badge. No migration; requires hub ≥ v0.2.0. |
 
 ## Related decisions
 
@@ -566,6 +616,11 @@ docker compose -f docker-compose.federation.yml down -v
   hook in `authContext` (all three credential kinds, one seam), and the
   deliberately asymmetric failure postures (fail-closed-after-grace for org
   status, definitive-answer-only for deactivation).
+- [ADR 018 — live hub-org reconciliation](decisions/018-hub-org-reconciliation.md):
+  the H4 read-through (login + `/me`), the fail-open-freshness vs
+  fail-closed-security split, the login ordering + keep-set, the audit
+  reason namespacing, and the rejected alternatives (webhooks, background
+  sync, token org-array claim, per-login chooser).
 - The program-level design lives in the Codika workspace:
   `workspace/knowledge/initiatives/agent-tools-platform/slideless-cloud-binding-plan.md`
   (Slideless-specific) and `cloud-edition-binding-patterns.md` (the

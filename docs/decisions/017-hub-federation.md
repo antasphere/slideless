@@ -62,7 +62,12 @@ local emails only), D10 email re-sync, lazy workspace projection
 membership upsert with `origin='hub'` + the hub-asserted role. Any failure
 revokes the just-minted session — a cloud login without its projection does
 not exist. After login the session is an ordinary local cookie; the hub is
-out of the request path.
+out of the request path. Since
+[ADR 018](./018-hub-org-reconciliation.md) (hub delta H4) the login
+additionally force-reconciles the user's FULL hub org list (fail-open,
+after the fail-closed projection), and every session `/me` runs the same
+reconciliation cached — hub org creation/removal/rename is visible at
+page-reload time, not just at the next login.
 
 ### 3. The continuous gates: suspension + re-assertion (P4, ADR 016)
 

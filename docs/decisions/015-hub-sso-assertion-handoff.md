@@ -93,14 +93,25 @@ its hub-asserted projection never exists.
    first-logins land on one row. The membership is UPSERTED every login:
    `role` = the hub org role verbatim (never invented locally, unknown
    roles refuse the login), `origin='hub'`, `isActive=true` (reactivating a
-   deactivated row — the hub asserted this membership NOW).
+   deactivated row — the hub asserted this membership NOW). The mechanics
+   live in `identity/hub-projection.ts` (`projectOrgMembership`, extracted
+   verbatim from this step) so the H4 reconciler writes byte-identical
+   rows; `project()` here keeps only the fail-closed error mapping.
+4. **H4 force-reconcile (ADR 018) — deliberately AFTER the fail-closed
+   steps, and fail-OPEN itself.** The login awaits one reconciliation pass
+   against the hub's full org list, so a login materializes ALL the user's
+   orgs, not just the asserted one. `forceReconcile` never throws, and the
+   asserted org id is unioned into the pass's keep-set — a hub list outage
+   (or a list transiently omitting the just-asserted org) can neither fail
+   the login nor undo the row step 3 just wrote.
 
 ## Consequences
 
 - The hub is out of the request path after the callback: sessions resolve
   locally (LocalIdentityProvider semantics unchanged); hub outage gates
   logins only. Role/name/email changes on the hub propagate at the next
-  login (Phase 4's H2 re-assertion tightens this to ~5 minutes).
+  login (Phase 4's H2 re-assertion tightens this to ~5 minutes; the H4
+  `/me` read-through, ADR 018, tightens org membership to reload time).
 - Two parallel first logins of one BRAND-NEW user race the JIT insert; the
   loser fails cleanly on user-email uniqueness and a retry succeeds. This
   is better-auth's create path, accepted as-is (rare, self-healing, never

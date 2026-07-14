@@ -22,7 +22,16 @@ and CI; the manual drills below are reproducible with the scripts named.
   per active workspace, the two-workspace collaborator switcher path, and
   the ADR 013 privacy invariant under scoped principals
   (`workspace-scoping`, `oauth-workspace`, `workspace-decks`,
-  `break-glass` suites).
+  `break-glass` suites). H4 org reconciliation (ADR 018,
+  `hub-reconcile` suite against the in-process FakeHub): reload-time
+  projection/rename/role-sync, removal with exactly ONE audited
+  deactivation, suspended orgs visible-but-blocked, the fail-open error
+  matrix (5xx/403/timeout — nothing deactivated, retry throttled), the
+  sweep's blast radius (guest/local/non-projected rows untouched under an
+  empty list), login force-refresh, cli-connect single-org key binding,
+  the deep-link retry, single-flight/cache/machine-skip counts, and
+  counter registration; `hub-sso` additionally pins that one login
+  materializes ALL of a user's hub orgs.
 - **Dashboard e2e** (`@slideless/dashboard test:e2e`): builds the real image,
   boots an isolated compose stack, walks setup → key → invite → accept →
   audit → deep-link → re-login → consent error state, and asserts the
@@ -66,6 +75,19 @@ logged `shutdown: draining`, let the in-flight transfer finish, and the
 downloaded bytes were identical to the source (52,428,800 bytes, curl exit
 0); shutdown completed cleanly after the transfer. `stop_grace_period` in
 compose is set above the in-app grace window so the orchestrator waits.
+
+### Hub org reconciliation drill (federation harness)
+
+Against `docker-compose.federation.yml` (hub built from
+`../../../platform/hub` with H4; mint `FEDERATION_HUB_SERVICE_KEY` on the
+local hub): SSO into org1 → create org2 at the hub + reload the dashboard
+⇒ org2 appears in the switcher with the "Antasphere" badge → rename it at
+the hub ⇒ the name follows on reload → remove yourself from org1 at the
+hub ⇒ it drops on reload → suspend an org ⇒ its requests answer the
+`/suspended` notice while it stays listed → `docker stop` the hub ⇒ the
+dashboard keeps serving local state (fail open; `/metrics` shows
+`hub_reconcile_passes_total{outcome="inconclusive"}` climbing) → restart
+the hub ⇒ the next reload reconciles again.
 
 ### MCP connector dance — exit criterion 13 (`apps/server/scripts/verify-mcp-dance.mts`)
 

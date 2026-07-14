@@ -97,7 +97,11 @@ deploys) + `dev` (day-to-day work).
   (`GET /members`, invitation list/lookup); the per-deck collaborator surface stays the sanctioned
   local path; cloud-LOCAL workspaces (operator's, deck-guest hosts) and oss are untouched. The
   dashboard adapts off `/me`'s `workspace.hubOrigin`/`origin`/`hubManageUrl`, never
-  edition-sniffing.
+  edition-sniffing. Freshness is the H4 reconciler's job (ADR 018, `identity/hub-reconcile.ts`):
+  every SSO login and every session `/me` reconciles against the hub's definitive org list —
+  projecting/renaming/role-syncing, and deactivating ONLY `origin='hub'` rows in projected
+  workspaces on a definitive 200 (audit reason `hub_reconcile`); EVERY hub error fails open and
+  must never deactivate anything.
 
 ## Commands
 
