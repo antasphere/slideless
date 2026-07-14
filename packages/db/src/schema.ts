@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -49,6 +50,9 @@ export const instanceSettings = pgTable('instance_settings', {
  * the one named by the presented credential. Every domain table carries a
  * workspace_id and every read/write filters on the principal's.
  */
+export const workspaceHubStatuses = ['active', 'suspended'] as const;
+export type WorkspaceHubStatus = (typeof workspaceHubStatuses)[number];
+
 export const workspaces = pgTable(
   'workspaces',
   {
@@ -57,6 +61,13 @@ export const workspaces = pgTable(
     // Central-rail seam: a projected workspace names the ONE hub org it
     // mirrors (cloud edition SSO, docs/federation.md); NULL = locally owned.
     centralAccountId: text('central_account_id'),
+    /**
+     * The hub-asserted org status, materialized locally so suspension is
+     * readable inside the resolvers (visible-but-blocked). Written ONLY by
+     * the cloud edition's hub reconcile; local workspaces and every oss row
+     * stay 'active' forever.
+     */
+    hubStatus: text('hub_status', { enum: workspaceHubStatuses }).notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [
@@ -66,7 +77,8 @@ export const workspaces = pgTable(
     // SSO projection) — never on a second projection of the same org.
     uniqueIndex('workspaces_central_account_uniq')
       .on(t.centralAccountId)
-      .where(sql`${t.centralAccountId} IS NOT NULL`)
+      .where(sql`${t.centralAccountId} IS NOT NULL`),
+    check('workspaces_hub_status_check', sql`${t.hubStatus} IN ('active', 'suspended')`)
   ]
 );
 
@@ -105,6 +117,16 @@ export const workspaceMembers = pgTable(
     role: text('role', { enum: workspaceRoles }).notNull().default('member'),
     origin: text('origin', { enum: workspaceMemberOrigins }).notNull().default('local'),
     isActive: boolean('is_active').notNull().default(true),
+    /**
+     * The user's DEFAULT workspace marker (user-scoped credential model): a
+     * request that names no workspace resolves here first, then falls back
+     * to the deterministic oldest-active ordering. At most one row per user
+     * (partial unique index). Nothing sets it locally yet — on cloud the hub
+     * reconcile materializes the hub-level per-user default org into it; on
+     * oss it stays false, so resolution is byte-identical to the pre-column
+     * behavior.
+     */
+    isDefault: boolean('is_default').notNull().default(false),
     invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
@@ -113,7 +135,11 @@ export const workspaceMembers = pgTable(
     uniqueIndex('workspace_members_workspace_user_uniq').on(t.workspaceId, t.userId),
     index('workspace_members_user_idx').on(t.userId),
     // Serves the admin API's keyset pagination (workspace_id, created_at DESC, id DESC).
-    index('workspace_members_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id)
+    index('workspace_members_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id),
+    // ONE default workspace per user, enforced by the database.
+    uniqueIndex('workspace_members_user_default_uniq')
+      .on(t.userId)
+      .where(sql`${t.isDefault}`)
   ]
 );
 
@@ -162,14 +188,21 @@ export const invitations = pgTable(
  * API keys: `<prefix>_<keyId8>_<secret>`. keyId gives O(1) indexed lookup;
  * the secret is stored as sha256(secret + server pepper) and compared in
  * constant time. Minted by sessions only — a key never mints a key.
+ *
+ * A key is a USER credential (user-scoped credential model): it acts as its
+ * creator, and the target workspace is chosen per request (X-Workspace-Id /
+ * the user's default) against the creator's LIVE memberships. `workspace_id`
+ * is an OPTIONAL PIN, not the identity: NULL (the mint default) = the key
+ * reaches any workspace its creator is an active member of; a value pins the
+ * key to that ONE workspace forever (least privilege — and the grandfathered
+ * behavior of every key minted before the model change, which stays exactly
+ * as issued).
  */
 export const apiKeys = pgTable(
   'api_keys',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    workspaceId: uuid('workspace_id')
-      .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     keyId: text('key_id').notNull(),
     secretHash: text('secret_hash').notNull(),
     // Which pepper version hashed this key's secret (apps/server
@@ -194,7 +227,10 @@ export const apiKeys = pgTable(
   (t) => [
     uniqueIndex('api_keys_key_id_uniq').on(t.keyId),
     // Serves the admin API's keyset pagination (workspace_id, created_at DESC, id DESC).
-    index('api_keys_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id)
+    index('api_keys_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id),
+    // Serves the own-keys listing (keys are user credentials: created_by,
+    // created_at DESC, id DESC).
+    index('api_keys_created_by_created_id_idx').on(t.createdBy, t.createdAt, t.id)
   ]
 );
 

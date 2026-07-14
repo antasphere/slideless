@@ -1,0 +1,2 @@
+ALTER TABLE "workspace_members" ADD COLUMN "is_default" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_members_user_default_uniq" ON "workspace_members" USING btree ("user_id") WHERE "workspace_members"."is_default";

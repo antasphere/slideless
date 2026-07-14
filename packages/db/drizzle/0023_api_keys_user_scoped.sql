@@ -1,0 +1,25 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ⚠️  SEMANTIC MODEL CHANGE — READ BEFORE ASSUMING THIS IS A PLAIN ALTER  ⚠️
+--
+-- API keys become USER-SCOPED credentials: a key acts as its creator, and the
+-- target workspace is chosen PER REQUEST (X-Workspace-Id header, else the
+-- user's default membership) and authorized against the creator's LIVE
+-- memberships. `workspace_id` turns from the key's identity into an OPTIONAL
+-- PIN:
+--
+--   * workspace_id IS NULL  → user-scoped key (the default for NEW mints):
+--     it reaches any workspace its creator is an active member of.
+--   * workspace_id NOT NULL → pinned key: it resolves ONLY that workspace,
+--     fail-closed on the live membership, and a mismatching X-Workspace-Id
+--     answers 403 workspace_mismatch — exactly the pre-change behavior.
+--
+-- THIS MIGRATION MUST NEVER WIDEN ISSUED KEYS. Every existing row keeps its
+-- workspace_id, so every key minted before this upgrade stays pinned to the
+-- one workspace it was issued for and behaves exactly as it did. Only keys
+-- minted AFTER the upgrade (without an explicit pin) are user-scoped. An
+-- operator upgrading a self-hosted instance therefore hands out NO new
+-- authority by applying this file. Do not "clean up" the column, do not
+-- backfill NULLs, do not drop the pin resolution path.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE "api_keys" ALTER COLUMN "workspace_id" DROP NOT NULL;--> statement-breakpoint
+CREATE INDEX "api_keys_created_by_created_id_idx" ON "api_keys" USING btree ("created_by","created_at","id");
