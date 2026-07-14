@@ -223,6 +223,12 @@ describe('login-time reconciliation (assertLogin step 4)', () => {
       expect(blocked.status).toBe(403);
       expect((await readJson(blocked)).error.code).toBe('account_suspended');
       hub.orgStatuses.set(ORG_TWO, 'active');
+      // Drain the org gate's stale 'suspended' (stale-while-revalidate
+      // serves the old verdict once) so later ORG_TWO requests start clean.
+      for (let i = 0; i < 50 && (await me(rickCookie, wsTwo)).status !== 200; i += 1) {
+        await sleep(50);
+      }
+      expect((await me(rickCookie, wsTwo)).status).toBe(200);
     });
 
     it('an unknown-role entry keeps the membership ALIVE but is never projected/synced', async () => {
@@ -452,6 +458,51 @@ describe('cli-connect: reconciliation joins, key binding does not widen', () => 
     );
     expect(keyMe.activeWorkspaceId).toBe(body.workspaceId);
     expect(keyMe.workspaces).toHaveLength(1);
+  });
+});
+
+describe('the deep-link retry: a named-workspace miss reconciles once and re-resolves', () => {
+  const ORG_DANA = '33333333-aaaa-4bbb-8ccc-00000000000a';
+
+  it('“invited at the hub, clicks a deep link” resolves without a re-login', async () => {
+    const dana: HubUserFixture = {
+      sub: 'hub-dana',
+      email: 'dana@reconcile.test',
+      workspaceId: ORG_DANA,
+      role: 'owner',
+      workspaceName: 'Dana Org'
+    };
+    const cookie = await sso.ssoLogin(app, hub, dana);
+    // Granted membership of rick's ORG_TWO at the hub AFTER her login; its
+    // workspace already exists locally (rick's projection) — the deep-link
+    // URL names it, but dana holds no local membership row yet.
+    hub.setUserOrg('hub-dana', ORG_TWO, { name: 'Second Org', role: 'member' });
+    const wsTwo = await workspaceIdOf(ORG_TWO);
+    await expireTtl(); // the retry rides the CACHED reconcile — let it expire
+    const res = await me(cookie, wsTwo);
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    expect(body.activeWorkspaceId).toBe(wsTwo);
+    expect(body.role).toBe('member');
+    expect(await membershipRow(ORG_TWO, dana.email)).toEqual([
+      { role: 'member', origin: 'hub', is_active: true }
+    ]);
+  });
+
+  it('a workspace the hub does not grant stays a fail-closed 401 (one retry, no oracle)', async () => {
+    const cookie = await sso.ssoLogin(app, hub, {
+      sub: 'hub-dana',
+      email: 'dana@reconcile.test',
+      workspaceId: ORG_DANA,
+      role: 'owner',
+      workspaceName: 'Dana Org'
+    });
+    await expireTtl();
+    // A real workspace she has no grant for, and a phantom id: same answer.
+    const solo = await me(cookie, await workspaceIdOf(ORG_SOLO));
+    expect(solo.status).toBe(401);
+    const phantom = await me(cookie, '99999999-9999-4999-8999-999999999999');
+    expect(phantom.status).toBe(401);
   });
 });
 

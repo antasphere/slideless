@@ -1,12 +1,14 @@
 import type { Counter } from 'prom-client';
 import type { Db } from '@slideless/db';
-import type {
-  EntitlementService,
-  IdentityProvider,
-  InstanceAuthDescriptor,
-  Principal,
-  RequestContext,
-  UsageSink
+import {
+  ACTIVE_WORKSPACE_HEADER,
+  type EntitlementService,
+  type HeaderReader,
+  type IdentityProvider,
+  type InstanceAuthDescriptor,
+  type Principal,
+  type RequestContext,
+  type UsageSink
 } from '@slideless/contract';
 import { HUB_SSO_PROVIDER_ID } from '../identity/hub-sso.js';
 import { HubEntitlementService, HubPrincipalGate } from '../identity/hub-gate.js';
@@ -32,6 +34,23 @@ import type { Logger } from '../logger.js';
  */
 export const HUB_SSO_METHOD = HUB_SSO_PROVIDER_ID;
 
+/** Strict UUID shape — mirrors LocalIdentityProvider's header validation. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The deep-link retry's dependencies (H4, ADR 018): a session naming a
+ * workspace the local join cannot see MAY be a hub org granted since the
+ * last reconcile pass — "invited at the hub, clicks a deep link". The
+ * retry runs ONE reconcile through the reconciler's own cache (TTL +
+ * single-flight + failure throttle, so a garbage header can never hammer
+ * the hub) and ONE local re-resolve, no recursion.
+ */
+export interface HubDeepLinkRetry {
+  reconcile(localUserId: string): Promise<void>;
+  /** Resolve the session's user id from raw headers (boot wires auth.api.getSession). */
+  sessionUserId(headers: HeaderReader): Promise<string | null>;
+}
+
 /**
  * The cloud identity binding (Phase 3). Request RESOLUTION stays exactly the
  * local provider's — after the SSO callback mints an ordinary session, every
@@ -53,9 +72,24 @@ export const HUB_SSO_METHOD = HUB_SSO_PROVIDER_ID;
  *    concern at its own login.
  */
 class HubSsoIdentityProvider implements IdentityProvider {
-  constructor(private readonly local: IdentityProvider) {}
+  constructor(
+    private readonly local: IdentityProvider,
+    private readonly deepLinkRetry?: HubDeepLinkRetry | undefined
+  ) {}
 
-  resolve(ctx: RequestContext): Promise<Principal | null> {
+  async resolve(ctx: RequestContext): Promise<Principal | null> {
+    const principal = await this.local.resolve(ctx);
+    if (principal || !this.deepLinkRetry) return principal;
+    // X-Workspace-Id miss (H4, ADR 018): the named workspace may be a hub
+    // org this user was granted since the last pass. One cached reconcile,
+    // one LOCAL re-resolve (never this.resolve — no recursion). Only a
+    // plausibly-reconcilable miss retries: a real session naming a
+    // well-formed workspace id.
+    const requested = ctx.headers.get(ACTIVE_WORKSPACE_HEADER)?.trim();
+    if (!requested || !UUID_RE.test(requested)) return null;
+    const userId = await this.deepLinkRetry.sessionUserId(ctx.headers);
+    if (!userId) return null;
+    await this.deepLinkRetry.reconcile(userId);
     return this.local.resolve(ctx);
   }
 
@@ -92,6 +126,8 @@ export interface EditionBindingDeps {
    * its own from `hubDials`.
    */
   status?: HubStatusClient | undefined;
+  /** H4 deep-link retry seam (ADR 018) — wired by boot on cloud. */
+  deepLinkRetry?: HubDeepLinkRetry | undefined;
 }
 
 /**
@@ -142,8 +178,9 @@ export function bindEditionSeams(
   return {
     // P3: hub-only entrance advertised; the SSO machinery itself (relying
     // party, JIT projection, re-sync) lives in identity/hub-sso.ts and is
-    // wired through createAuth — resolution stays local by design.
-    identity: new HubSsoIdentityProvider(local.identity),
+    // wired through createAuth — resolution stays local by design (plus the
+    // H4 deep-link retry on a named-workspace miss).
+    identity: new HubSsoIdentityProvider(local.identity, deps.deepLinkRetry),
     // P4: the hub org gate wraps the local caps — metered actions in a
     // suspended org deny with a reason even if a caller reaches a handler.
     entitlements: new HubEntitlementService(local.entitlements, status),

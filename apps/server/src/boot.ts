@@ -381,7 +381,24 @@ export async function boot(
       usage: new PgBossUsageSink(jobs.boss, logger)
     },
     logger,
-    { db: db.db, audit, hubDials: overrides.hubDials, status: hubStatus }
+    {
+      db: db.db,
+      audit,
+      hubDials: overrides.hubDials,
+      status: hubStatus,
+      // H4 deep-link retry (ADR 018): a session naming a workspace the
+      // local join cannot see runs one CACHED reconcile + one re-resolve —
+      // "invited at the hub, clicks a deep link" works without re-login.
+      deepLinkRetry: hubReconciler
+        ? {
+            reconcile: (userId) => hubReconciler.reconcile(userId),
+            sessionUserId: async (headers) => {
+              const session = await auth.api.getSession({ headers: headers as Headers });
+              return session?.user.id ?? null;
+            }
+          }
+        : undefined
+    }
   );
   const registry = createRegistry({
     identity: seams.identity,
