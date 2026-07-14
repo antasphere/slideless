@@ -42,7 +42,18 @@ const ORG_QUIET = '22222222-aaaa-4bbb-8ccc-000000000006';
 const ORG_RACE = '22222222-aaaa-4bbb-8ccc-000000000007';
 const ORG_RACE_ROLE = '22222222-aaaa-4bbb-8ccc-000000000008';
 
-const DIALS = { orgTtlMs: 150, orgStaleMaxMs: 600, retryMs: 40, memberTtlMs: 150, timeoutMs: 2000 };
+// userOrgsTtlMs is pinned HIGH on purpose: this suite pins the P4 gates in
+// isolation, so the H4 reconciler (its own suite: hub-reconcile.test.ts)
+// must stay cache-fresh from each login's force-pass and never interleave
+// its own deactivations (reason 'hub_reconcile') with the H2 pins here.
+const DIALS = {
+  orgTtlMs: 150,
+  orgStaleMaxMs: 600,
+  retryMs: 40,
+  memberTtlMs: 150,
+  timeoutMs: 2000,
+  userOrgsTtlMs: 600_000
+};
 
 const REDIRECT_URI = 'http://127.0.0.1:19999/callback';
 

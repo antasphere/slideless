@@ -82,6 +82,19 @@ export interface ApiDeps {
    * Absent on oss: the middleware carries zero hub surface.
    */
   principalGate?: PrincipalGate | undefined;
+  /**
+   * Cloud edition only (H4, ADR 018): the read-through org reconciler `/me`
+   * runs for SESSION principals — a dashboard reload makes the local
+   * projections match the hub's org list (project/rename/role-sync/
+   * deactivate). Cached ~15 s per user, single-flight, never throws (fail
+   * open). Absent on oss: `/me` carries zero hub surface.
+   */
+  hubReconciler?: MeReconciler | undefined;
+}
+
+/** The `/me` face of the H4 reconciler (structural — HubOrgReconciler satisfies it). */
+export interface MeReconciler {
+  reconcile(localUserId: string): Promise<void>;
 }
 
 /** Control-flow marker: the singleton claim lost (instance already set up). */
@@ -381,6 +394,14 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     const principal = c.get('principal');
     if (!principal) {
       return c.json(err('unauthenticated', 'Authentication required'), 401);
+    }
+    // H4 read-through (cloud only, ADR 018): every dashboard load lands
+    // here first, so an awaited cached reconcile makes hub org changes
+    // visible at page-reload time. SESSION principals only — machine
+    // credentials are bound to ONE workspace and must not fan out a user's
+    // whole org list. Never throws; a hub outage serves local state.
+    if (deps.hubReconciler && principal.via === 'session') {
+      await deps.hubReconciler.reconcile(principal.userId);
     }
     // Workspaces this credential can name (ADR 014): a session lists ALL of
     // the user's active memberships (oldest first — index 0 is the no-header

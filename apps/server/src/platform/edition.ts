@@ -85,6 +85,13 @@ export interface EditionBindingDeps {
   audit: AuditService;
   /** Test seam only: cache-dial overrides (D5/D3 values are fixed in production). */
   hubDials?: Partial<HubStatusDials> | undefined;
+  /**
+   * The ONE cached hub-status client, constructed in boot and shared with
+   * the H4 org reconciler (ADR 018) — one credential, one dial set, one
+   * metrics family. Absent (unit-shaped callers), the binding constructs
+   * its own from `hubDials`.
+   */
+  status?: HubStatusClient | undefined;
 }
 
 /**
@@ -118,16 +125,19 @@ export function bindEditionSeams(
       'entitlements + membership re-assertion gate on the hub accounts:status surface ' +
       '(docs/federation.md).'
   );
-  // P4: one cached status client feeds both gates. Org suspension: 60 s TTL,
-  // stale-while-error 15 min, then fail closed (D5). Membership
-  // re-assertion: ~5 min per-(user, org), origin='hub' rows only, and ONLY a
-  // definitive hub `active:false` deactivates (D3/D11).
-  const status = new HubStatusClient({
-    issuerUrl: hub.issuerUrl,
-    serviceKey: hub.serviceKey,
-    logger,
-    dials: { ...DEFAULT_HUB_DIALS, ...deps.hubDials }
-  });
+  // P4: one cached status client feeds both gates (and, via boot, the H4
+  // reconciler). Org suspension: 60 s TTL, stale-while-error 15 min, then
+  // fail closed (D5). Membership re-assertion: ~5 min per-(user, org),
+  // origin='hub' rows only, and ONLY a definitive hub `active:false`
+  // deactivates (D3/D11).
+  const status =
+    deps.status ??
+    new HubStatusClient({
+      issuerUrl: hub.issuerUrl,
+      serviceKey: hub.serviceKey,
+      logger,
+      dials: { ...DEFAULT_HUB_DIALS, ...deps.hubDials }
+    });
   const gate = new HubPrincipalGate({ db: deps.db, status, audit: deps.audit, logger });
   return {
     // P3: hub-only entrance advertised; the SSO machinery itself (relying

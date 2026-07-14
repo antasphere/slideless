@@ -135,6 +135,18 @@ interface LoginScope {
 
 const loginScope = new AsyncLocalStorage<LoginScope>();
 
+/**
+ * The login-time face of the H4 org reconciler (hub-reconcile.ts, ADR 018):
+ * assertLogin's step 4. Structural so hub-sso.ts stays free of a module
+ * cycle with hub-reconcile.ts (which imports HUB_SSO_PROVIDER_ID from here).
+ * The contract the login path relies on: NEVER throws (a hub list outage
+ * must never fail a login), and `assertedOrgId` is unioned into the pass's
+ * keep-set (the list can never undo the projection the login just wrote).
+ */
+export interface OrgLoginReconciler {
+  forceReconcile(localUserId: string, hubUserId: string, assertedOrgId?: string): Promise<void>;
+}
+
 export interface HubSsoOptions {
   db: Db;
   logger: Logger;
@@ -150,6 +162,8 @@ export interface HubSsoOptions {
   resourceUrl: string;
   /** Dashboard origin for the failure redirects (PUBLIC_BASE_URL). */
   publicBaseUrl: string;
+  /** H4 reconciler (ADR 018) — boot wires it on cloud; step 4 of assertLogin. */
+  orgReconciler?: OrgLoginReconciler | undefined;
 }
 
 export class HubSsoService {
@@ -269,7 +283,12 @@ export class HubSsoService {
    *  2. email re-sync (D10) with the explicit duplicate-email collision
    *     path (fail the login, corrupt nothing);
    *  3. lazy projection + membership upsert with the hub-asserted role
-   *     (D11) — the unique partial index resolves concurrent first-logins.
+   *     (D11) — the unique partial index resolves concurrent first-logins;
+   *  4. awaited H4 force-reconcile (ADR 018) — a login materializes ALL of
+   *     the user's hub orgs, not just the asserted one. Deliberately AFTER
+   *     the fail-closed step 3 and fail-OPEN itself (forceReconcile never
+   *     throws; the asserted org rides the keep-set): a hub list outage can
+   *     neither fail the login nor undo the row step 3 just wrote.
    *
    * Throws HubSsoLoginError; the caller revokes the just-minted session and
    * redirects. Any other throw is mapped to the generic failure code there.
@@ -279,7 +298,11 @@ export class HubSsoService {
   async assertLogin(localUserId: string, assertion: HubSsoAssertion): Promise<{ workspaceId: string }> {
     await this.guardSingleHubIdentity(localUserId, assertion.sub);
     await this.syncEmail(localUserId, assertion);
-    return await this.project(localUserId, assertion);
+    const projected = await this.project(localUserId, assertion);
+    if (this.opts.orgReconciler) {
+      await this.opts.orgReconciler.forceReconcile(localUserId, assertion.sub, assertion.hubWorkspaceId);
+    }
+    return projected;
   }
 
   /**

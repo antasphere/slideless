@@ -12,6 +12,8 @@ import * as sso from './sso-helpers.js';
  * a browser against the real hub in the federation harness):
  *
  *  - JIT provisioning + lazy org projection + membership assertion;
+ *  - the H4 step-4 force-reconcile: a login materializes ALL the user's
+ *    hub orgs (the deep pins live in hub-reconcile.test.ts);
  *  - per-login re-sync of role (D11), workspace name (H1), email (D10);
  *  - D9 operator trusted-link; concurrent-first-login race; the fail-closed
  *    negative space (foreign aud/iss, expiry, opaque tokens, claim shape,
@@ -26,6 +28,8 @@ const ORG_BETA = '11111111-aaaa-4bbb-8ccc-000000000002';
 const ORG_RACE = '11111111-aaaa-4bbb-8ccc-000000000003';
 const ORG_LEFT = '11111111-aaaa-4bbb-8ccc-000000000004';
 const ORG_RIGHT = '11111111-aaaa-4bbb-8ccc-000000000005';
+const ORG_SIDE = '11111111-aaaa-4bbb-8ccc-000000000006';
+const ORG_HANK = '11111111-aaaa-4bbb-8ccc-000000000007';
 
 const json = (body: unknown) => ({
   method: 'POST',
@@ -115,6 +119,28 @@ describe('cloud edition: the SSO entrance', () => {
       [ws[0].id, users[0].id]
     );
     expect(members).toEqual([{ role: 'member', origin: 'hub', is_active: true }]);
+  });
+
+  it('a login materializes ALL of the user’s hub orgs, not just the asserted one (H4, ADR 018)', async () => {
+    // The hub holds hank in TWO orgs; his login asserts only ORG_HANK — the
+    // step-4 force-reconcile projects the sibling in the same login.
+    hub.setUserOrg('hub-hank', ORG_SIDE, { name: 'Side Org', role: 'admin' });
+    const cookie = await ssoLogin(app, {
+      sub: 'hub-hank',
+      email: 'hank@acme.test',
+      workspaceId: ORG_HANK,
+      role: 'member',
+      workspaceName: 'Hank Org'
+    });
+    const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie } }));
+    const byName = Object.fromEntries(
+      me.workspaces.map((w: { name: string; role: string; hubOrigin: boolean }) => [w.name, w])
+    );
+    expect(byName['Hank Org']).toMatchObject({ role: 'member', hubOrigin: true });
+    expect(byName['Side Org']).toMatchObject({ role: 'admin', hubOrigin: true });
+    // The asserted org stays the active one — reconciliation widens the
+    // projection set, never the login's workspace binding.
+    expect(me.workspace.name).toBe('Hank Org');
   });
 
   it('passed RFC 8707 resource on the TOKEN request (the claim-minting switch)', () => {
@@ -295,9 +321,11 @@ describe('cloud edition: the SSO entrance', () => {
       expect(res.status).toBe(302);
       expect(res.headers.get('location')).toBe('/');
     }
-    // Both orgs projected, each with the role ITS OWN login asserted — a
+    // Both orgs projected, each with the role its own login asserted — a
     // shared (non-request-scoped) handoff would have let one login project
-    // the other's org/role.
+    // the other's org/role. (In the H4 world each login's force-reconcile
+    // also converges both rows onto the hub's list, so this pin now guards
+    // the handoff AND the reconciler agreeing on the same truth.)
     const { rows } = await app.db.pool.query(
       `SELECT w.central_account_id, m.role FROM workspace_members m
        JOIN workspaces w ON w.id = m.workspace_id

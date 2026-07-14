@@ -35,7 +35,8 @@ import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-l
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from './observability/otel.js';
 import { bindEditionSeams } from './platform/edition.js';
-import type { HubStatusDials } from './identity/hub-status.js';
+import { DEFAULT_HUB_DIALS, HubStatusClient, type HubStatusDials } from './identity/hub-status.js';
+import { HubOrgReconciler } from './identity/hub-reconcile.js';
 import { AllowAllEntitlements } from './platform/entitlements.js';
 import { EventBus } from './platform/events.js';
 import { LocalIdentityProvider } from './platform/local-identity.js';
@@ -240,6 +241,24 @@ export async function boot(
   // one object: the genericOAuth provider inside createAuth, the per-login
   // projection after-hook, and the login-scope wrap around the auth mount.
   const hub = hubConfig(env);
+  // ONE cached hub-status client feeds every accounts:status consumer: the
+  // P4 gates (via bindEditionSeams below) AND the H4 org reconciler — one
+  // credential, one dial set, one metrics family.
+  const hubStatus = hub
+    ? new HubStatusClient({
+        issuerUrl: hub.issuerUrl,
+        serviceKey: hub.serviceKey,
+        logger,
+        dials: { ...DEFAULT_HUB_DIALS, ...overrides.hubDials }
+      })
+    : undefined;
+  // H4 read-through org reconciliation (ADR 018): every SSO login (step 4
+  // of assertLogin) and every session /me makes local projections match the
+  // hub's definitive org list. Fail-open freshness — never in the way of a
+  // login or a request.
+  const hubReconciler = hubStatus
+    ? new HubOrgReconciler({ db: db.db, status: hubStatus, audit, logger })
+    : undefined;
   const hubSso = hub
     ? new HubSsoService({
         db: db.db,
@@ -249,7 +268,8 @@ export async function boot(
         clientSecret: hub.clientSecret,
         // Own resource URL — always derived from PUBLIC_BASE_URL, never configured.
         resourceUrl: mcpResourceUrl(env.PUBLIC_BASE_URL),
-        publicBaseUrl: env.PUBLIC_BASE_URL
+        publicBaseUrl: env.PUBLIC_BASE_URL,
+        orgReconciler: hubReconciler
       })
     : undefined;
 
@@ -361,7 +381,7 @@ export async function boot(
       usage: new PgBossUsageSink(jobs.boss, logger)
     },
     logger,
-    { db: db.db, audit, hubDials: overrides.hubDials }
+    { db: db.db, audit, hubDials: overrides.hubDials, status: hubStatus }
   );
   const registry = createRegistry({
     identity: seams.identity,
@@ -432,7 +452,9 @@ export async function boot(
     // Cloud only (docs/federation.md P4): the post-resolution hub gate —
     // org suspension + membership re-assertion — run by authContext on
     // every authenticated request. undefined on oss.
-    principalGate: seams.principalGate
+    principalGate: seams.principalGate,
+    // Cloud only (ADR 018): the /me read-through org reconciliation.
+    hubReconciler
   });
 
   // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in
@@ -453,8 +475,10 @@ export async function boot(
   const otel = await createOtel(env, logger);
   const metrics = createMetrics(db.db, jobs.boss);
   // Cloud only: the hub-gate counters (fetch outcomes, stale/fail-closed
-  // serves) join the app registry so a degraded hub is visible on /metrics.
+  // serves) and the H4 reconciler passes join the app registry so a
+  // degraded hub is visible on /metrics.
   for (const metric of seams.hubMetrics ?? []) metrics.registry.registerMetric(metric);
+  for (const metric of hubReconciler?.promMetrics ?? []) metrics.registry.registerMetric(metric);
 
   // MCP tools call the instance's own API in-process, forwarding the caller's
   // bearer — MCP is just another API client. The root app does not exist yet
