@@ -1,12 +1,12 @@
 import type { Command } from 'commander';
-import { CliAuthClient, CliAuthError, resolveTargetWorkspace } from '@antasphere/cli-core';
+import { CliAuthClient, CliAuthError } from '@antasphere/cli-core';
 import { PlatformClient } from '@slideless/sdk';
 import {
   clearConfig,
   configPath,
   loadConfig,
   redactKey,
-  removeWorkspaceKey,
+  removeConnectKey,
   saveConfig,
   type CliConfig
 } from '../config.js';
@@ -182,74 +182,74 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
   program
     .command('logout')
     .description(
-      'Forget the stored API key of the active (or named) profile; --org logs one connected hub org out instead'
+      'Forget the stored API key of the active (or named) profile; a hub-connected profile ' +
+        'disconnects from Antasphere (revokes + evicts the cached user-scoped key)'
     )
     .action(async (_opts, cmd: Command) => {
-      const globals = cmd.optsWithGlobals() as AuthGlobals & { org?: string };
+      const globals = cmd.optsWithGlobals() as AuthGlobals;
       const config = loadConfig(io.env);
       const profileName = globals.profile ?? config.activeProfile;
       const profile = profileName ? config.profiles[profileName] : undefined;
       if (!profileName || !profile) {
         throw new CliUsageError('No profile to log out of.');
       }
-      // Per-org logout (the cross-tool connect counterpart): revoke the
-      // exchange-minted slk_ key server-side, then evict it from the cache.
-      // Taken on an explicit --org, or when the profile holds ONLY
+      // Hub-connect logout (the cross-tool connect counterpart): revoke the
+      // exchange-minted USER-scoped slk_ key(s) server-side, then evict them
+      // from the cache. The key is one per hub profile and serves every org
+      // (there is no per-org key to pick). Taken when the profile holds ONLY
       // hub-connected keys; a classic single-key profile keeps today's path.
-      const hubKeys = profile.workspaceKeys ?? {};
-      const perOrg = globals.org !== undefined || (!profile.apiKey && Object.keys(hubKeys).length > 0);
-      if (perOrg) {
-        const org = globals.org ?? resolveTargetWorkspace(io.env, {});
-        if (!org) {
-          throw new CliUsageError(
-            'Pass --org <id> to say which hub org to log out of (or set one with `antasphere org use`).'
-          );
-        }
-        const entry = hubKeys[org];
-        if (!entry) {
-          const cached = Object.keys(hubKeys).join(', ') || '(none)';
-          throw new CliUsageError(
-            `No connected key for hub org ${org} on profile "${profileName}". Connected orgs: ${cached}.`
-          );
-        }
+      const connectKeys = profile.connectKeys ?? {};
+      const slots = Object.entries(connectKeys);
+      if (!profile.apiKey && slots.length > 0) {
         // The revoke targets the instance the key was minted on — the
         // profile's baseUrl, which scopes the cache. Never a flag/env URL:
         // a cached key must not travel to a different instance, not even
         // to die (a foreign host would see the key AND the real one would
         // survive while we report it gone).
         const rawUrl = profile.baseUrl;
-        let revoked = false;
-        if (rawUrl) {
-          const baseUrl = rawUrl.replace(/\/+$/, '');
-          try {
-            const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
-            await client.revoke(entry.apiKey);
-            revoked = true;
-          } catch (e) {
-            // A dead/expired key cannot revoke itself (401) — still evict it.
-            // A 403 is different: the key WORKS but the instance refuses the
-            // self-revoke (an OLDER instance whose fail-closed machine
-            // allowlist predates DELETE /cli/auth/key — current instances
-            // open it). Never report that as "already unusable" — the key
-            // stays valid server-side and only the dashboard can kill it.
-            if (e instanceof CliAuthError && e.status === 401) {
-              io.err.write('The cached key was already unusable — evicting it anyway.\n');
-            } else if (e instanceof CliAuthError && e.status === 403) {
-              io.err.write(
-                `This instance refused the self-revoke (${e.code}) — the key STAYS VALID server-side; ` +
-                  'revoke it from the dashboard. Evicting the cached copy.\n'
-              );
-            } else {
-              throw e;
+        let revoked = true;
+        for (const [slot, entry] of slots) {
+          if (rawUrl) {
+            const baseUrl = rawUrl.replace(/\/+$/, '');
+            try {
+              const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
+              await client.revoke(entry.apiKey);
+            } catch (e) {
+              revoked = false;
+              // A dead/expired key cannot revoke itself (401) — still evict
+              // it. A 403 is different: the key WORKS but the instance
+              // refuses the self-revoke (an OLDER instance whose fail-closed
+              // machine allowlist predates DELETE /cli/auth/key — current
+              // instances open it). Never report that as "already unusable"
+              // — the key stays valid server-side and only the dashboard can
+              // kill it.
+              if (e instanceof CliAuthError && e.status === 401) {
+                io.err.write('The cached key was already unusable — evicting it anyway.\n');
+              } else if (e instanceof CliAuthError && e.status === 403) {
+                io.err.write(
+                  `This instance refused the self-revoke (${e.code}) — the key STAYS VALID server-side; ` +
+                    'revoke it from the dashboard. Evicting the cached copy.\n'
+                );
+              } else {
+                throw e;
+              }
             }
+          } else {
+            revoked = false;
+            io.err.write('No instance URL known for this profile — evicting the cached key locally only.\n');
           }
-        } else {
-          io.err.write('No instance URL known for this profile — evicting the cached key locally only.\n');
+          removeConnectKey(io.env, profileName, slot);
         }
-        removeWorkspaceKey(io.env, profileName, org);
-        if (globals.json) return printJson(io, { profile: profileName, org, revoked, evicted: true });
+        if (globals.json) {
+          return printJson(io, {
+            profile: profileName,
+            hubProfiles: slots.map(([slot]) => slot),
+            revoked,
+            evicted: true
+          });
+        }
         io.out.write(
-          `Logged out of hub org ${org} on profile "${profileName}"${revoked ? ' (key revoked server-side)' : ''}.\n`
+          `Disconnected from Antasphere on profile "${profileName}"${revoked ? ' (key revoked server-side)' : ''}.\n`
         );
         return;
       }
@@ -327,7 +327,9 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
                 {
                   baseUrl: p.baseUrl ?? null,
                   apiKey: p.apiKey ? redactKey(p.apiKey) : null,
-                  hubOrgs: Object.keys(p.workspaceKeys ?? {})
+                  // Hub profiles this tool profile is connected through
+                  // (one user-scoped key each, valid for every org).
+                  hubProfiles: Object.keys(p.connectKeys ?? {})
                 }
               ];
             })
@@ -344,15 +346,15 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
         table(
           names.map((n) => {
             const p = config.profiles[n]!;
-            const hubOrgs = Object.keys(p.workspaceKeys ?? {});
+            const hubProfiles = Object.keys(p.connectKeys ?? {});
             return [
               config.activeProfile === n ? '*' : ' ',
               n,
               p.baseUrl ?? '(no url)',
               p.apiKey
                 ? redactKey(p.apiKey)
-                : hubOrgs.length > 0
-                  ? `(hub: ${hubOrgs.join(', ')})`
+                : hubProfiles.length > 0
+                  ? `(hub: ${hubProfiles.join(', ')})`
                   : '(no key)'
             ];
           })
@@ -378,9 +380,9 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
             {
               baseUrl: p.baseUrl ?? null,
               apiKey: p.apiKey ? redactKey(p.apiKey) : null,
-              // Hub-connected orgs: cached exchange keys, redacted like the rest.
-              workspaceKeys: Object.fromEntries(
-                Object.entries(p.workspaceKeys ?? {}).map(([org, entry]) => [org, redactKey(entry.apiKey)])
+              // Hub-connected keys (one per hub profile), redacted like the rest.
+              connectKeys: Object.fromEntries(
+                Object.entries(p.connectKeys ?? {}).map(([slot, entry]) => [slot, redactKey(entry.apiKey)])
               )
             }
           ])

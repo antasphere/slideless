@@ -381,16 +381,24 @@ row carries `dismissed_at`.
 
 ```bash
 slideless list --api-url http://localhost:3310
-# stderr: Connected to http://localhost:3310 as u1@drill.test via Antasphere (org <hub org id>).
+# stderr: Connected to http://localhost:3310 as u1@drill.test via Antasphere.
 slideless list --api-url http://localhost:3310   # second run: silent — the cached slk_ key serves
 ```
 
 Expected: first run probes `/api/v1/instance`, exchanges
-`/sso/tool-token` → `/sso/cli-connect`, prints the connect notice on
-stderr (stdout stays machine-clean), caches per (tool, hub org); the
-second run makes no hub call. (Automated twin:
-`packages/cli/test/connect.test.ts` — pinned unchanged across the cli-core
-0.3.0 extraction.)
+`/sso/tool-token` → `/sso/cli-connect` (the request carries the relayed
+`hubRefreshToken` — a fresh headless user must NOT be refused
+`hub_grant_missing`), prints the connect notice on stderr (stdout stays
+machine-clean), caches the USER-scoped key per (tool, hub profile) in
+`~/.config/antasphere/tools/slideless.json` (`connectKeys`, slot = the hub
+profile name — never an org id); the second run makes ZERO hub calls and
+mints NO new key — verify in the slideless dashboard/DB that the api_keys
+count did not grow between the two runs (the 2026-07-15 drill caught a
+fresh `slk_` minted on EVERY invocation because the cache keyed on a
+`workspaceId` the hub had stopped sending). (Automated twin:
+`packages/cli/test/connect.test.ts` — mocks aligned to the REAL hub
+contract, `{token, expiresAt, hubRefreshToken}` with no workspaceId, as of
+cli-core 0.3.1 / CLI 0.2.4.)
 
 **H9 — Anchor renewal (decision 6): a tool re-derivation slides the hub
 session.** Force the tool session to its fixed expiry and pre-age the hub

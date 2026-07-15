@@ -89,8 +89,8 @@ corollary: after `slideless config clear`, a still-present legacy file is
 imported again on the next run; delete `~/.config/slideless/config.json` too
 if you want a truly clean slate.
 
-Every command accepts `--api-url` (alias `--url`), `--api-key`, `--org`,
-`--profile`, and `--json`. Resolution order:
+Every command accepts `--api-url` (alias `--url`), `--api-key`, `--profile`,
+and `--json`. Resolution order:
 
 | Setting  | 1st         | 2nd                 | 3rd               | Otherwise                                                                     |
 | -------- | ----------- | ------------------- | ----------------- | ----------------------------------------------------------------------------- |
@@ -107,28 +107,31 @@ On an **Antasphere-cloud** instance you never run a Slideless-specific login.
 When no direct key resolves, the CLI asks discovery (`GET /api/v1/instance`)
 whether the instance signs in through the hub (`auth.methods` contains
 `antasphere`); if so, it exchanges the stored `antasphere login` credential
-for a tool-local `slk_` key (hub → tool, docs/federation.md P5) and caches it
-in the profile **per hub organization** (`workspaceKeys`):
+for a **user-scoped** tool-local `slk_` key (hub → tool, docs/federation.md
+P5) and caches it in the profile **per hub profile** (`connectKeys` — ONE
+key per hub account, valid for every org; the org is a per-request
+selection, never part of the credential):
 
 ```bash
 antasphere login                       # once, for the whole tool family
 slideless list --api-url https://app.slideless.ai   # exchanges + caches on first use
-slideless list                                      # served from the cache
+slideless list                                      # served from the cache — no hub call, no new key
 ```
 
-- The target org is `--org <id>` → `antasphere org use` → the org the hub
-  key was bound to at login. Each org gets its own cached `slk_` key.
+- The exchange names **no organization** (the hub credential identifies the
+  USER — hub ADR 014); a single cached key serves whatever org context is
+  active. Second and later runs make zero hub calls and mint nothing.
 - The hub key is sent to the **hub only**; the instance sees a short-lived
-  single-org JWT and answers with an ordinary local key.
+  user-scoped JWT (plus its own one-time offline grant, relayed once and
+  never stored by the CLI) and answers with an ordinary local key.
 - A cached key is only ever replayed against the instance it was minted on
   (the profile's `baseUrl` scopes the cache).
-- `slideless logout` on a hub-connected profile (or with an explicit
-  `--org <id>`) self-revokes that org's cached key server-side
-  (`DELETE /cli/auth/key` — the presenting key revokes exactly itself),
-  then evicts it. An OLDER instance whose machine allowlist predates the
-  self-revoke refuses (403) and keeps the key **valid server-side** — the
-  CLI says so; revoke it from the dashboard. A classic single-key profile
-  logs out exactly as before.
+- `slideless logout` on a hub-connected profile self-revokes the cached
+  key(s) server-side (`DELETE /cli/auth/key` — the presenting key revokes
+  exactly itself), then evicts them. An OLDER instance whose machine
+  allowlist predates the self-revoke refuses (403) and keeps the key
+  **valid server-side** — the CLI says so; revoke it from the dashboard. A
+  classic single-key profile logs out exactly as before.
 
 Self-hosted (`oss`) instances never take this branch: the flows above
 (`auth login-request`, `login`, `SLIDELESS_API_KEY`, `--api-key`) resolve
@@ -167,7 +170,7 @@ slideless verify            # exit 0 iff instance + key work
 slideless profiles          # list profiles (keys redacted)
 slideless use <profile>     # switch the active profile
 slideless logout            # forget the stored key (revoke server-side in the dashboard);
-                            # hub-connected profiles: revoke + evict one org's key (--org <id>)
+                            # hub-connected profiles: revoke + evict the cached user-scoped key
 slideless config show       # config path + redacted contents
 slideless config clear      # delete the config file
 ```
