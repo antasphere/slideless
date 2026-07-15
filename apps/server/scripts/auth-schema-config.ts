@@ -19,6 +19,10 @@ export const auth = betterAuth({
   secret: 'schema-generation-only-not-a-real-secret',
   database: drizzleAdapter({} as never, { provider: 'pg' }),
   emailAndPassword: { enabled: true },
+  // Mirrors the runtime config (src/identity/better-auth.ts): pins the
+  // assumption that token encryption at rest is CONFIG-ONLY — if a Better
+  // Auth bump ever grows schema for it, the drift guard catches it here.
+  account: { encryptOAuthTokens: true },
   plugins: [
     jwt({
       disableSettingJwtHeader: true,

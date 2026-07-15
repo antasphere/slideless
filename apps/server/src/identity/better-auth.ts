@@ -425,23 +425,34 @@ export function createAuth({
             }
           }
         : {},
-    // D9 (cloud only): the hub is a TRUSTED provider — its verified email
-    // assertion may link onto an existing local account of the same address
-    // (the setup operator's entrance under hub-only login). Keeping
-    // requireLocalEmailVerified true (stated, not defaulted) means a parked
-    // UNVERIFIED local account can never be taken over via SSO; the cloud
-    // setup flow mints the operator emailVerified=true for exactly this
-    // reason (docs/federation.md, pinned by edition tests).
-    ...(hubSso
-      ? {
-          account: {
+    account: {
+      // OAuth provider tokens on the `account` row are encrypted at rest —
+      // on cloud that row IS the user's hub grant (offline_access refresh
+      // token, identity/hub-grant.ts), which must never sit plaintext in a
+      // dump. Enabled on BOTH editions (oss: Google tokens, when
+      // configured). CONFIG-ONLY: no schema change (drift:check proves),
+      // and retroactively safe — 1.6.15's decrypt passes legacy PLAINTEXT
+      // values through untouched (dist/oauth2/utils.mjs isLikelyEncrypted;
+      // hub-grant.ts mirrors the same rule). The key is the auth context's
+      // secretConfig (= this instance's AUTH_SECRET under our string-secret
+      // config). Re-verify both facts on any Better Auth bump.
+      encryptOAuthTokens: true,
+      // D9 (cloud only): the hub is a TRUSTED provider — its verified email
+      // assertion may link onto an existing local account of the same
+      // address (the setup operator's entrance under hub-only login).
+      // Keeping requireLocalEmailVerified true (stated, not defaulted)
+      // means a parked UNVERIFIED local account can never be taken over via
+      // SSO; the cloud setup flow mints the operator emailVerified=true for
+      // exactly this reason (docs/federation.md, pinned by edition tests).
+      ...(hubSso
+        ? {
             accountLinking: {
               trustedProviders: [HUB_SSO_PROVIDER_ID],
               requireLocalEmailVerified: true
             }
           }
-        }
-      : {}),
+        : {})
+    },
     baseURL: env.PUBLIC_BASE_URL,
     basePath: AUTH_BASE_PATH,
     secret: authSecret,
