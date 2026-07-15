@@ -309,11 +309,13 @@ describe('cloud edition: the SSO entrance', () => {
       [users[0].id]
     );
     expect(accounts).toEqual([{ account_id: 'hub-operator' }]);
-    // …with BOTH memberships: the local setup workspace and the projection.
+    // …with exactly the projection: cloud setup mints NO workspace
+    // (user-scoped federation), so the operator's only membership is the
+    // hub org their SSO login reconciled in.
     const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie } }));
     const names = me.workspaces.map((w: { name: string }) => w.name).sort();
     expect(names).toContain('Acme Corp GmbH');
-    expect(me.workspaces.length).toBe(2);
+    expect(me.workspaces.length).toBe(1);
     const { rows: memberships } = await app.db.pool.query(
       `SELECT origin, role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
        WHERE m.user_id = $1 AND w.central_account_id = $2`,

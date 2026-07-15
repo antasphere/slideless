@@ -13,7 +13,7 @@ import type { EmailDriver } from '../email/driver.js';
 import { isApiKeyToken } from '../apikeys/service.js';
 import { auditMiddleware, type AuditService } from '../audit/service.js';
 import { constantTimeEquals } from '../constant-time.js';
-import { authContext, requireAuth, type PrincipalGate } from '../middleware/auth-context.js';
+import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
 import { oauthPublicEndpoints } from '../middleware/oauth-public.js';
 import {
@@ -327,12 +327,18 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     // cloud instance at bootstrap. The hub's own setup does the same.
     await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, ownerUserId));
 
-    // Claim the singleton and create the FIRST workspace + owner membership
-    // in ONE transaction: either the instance is fully set up or nothing
-    // persisted. The workspace goes through the registry's WorkspaceService
-    // (ADR 014) — the same path product flows use for every LATER workspace.
+    // Claim the singleton and — on the OSS edition — create the FIRST
+    // workspace + owner membership in ONE transaction: either the instance
+    // is fully set up or nothing persisted. The workspace goes through the
+    // registry's WorkspaceService (ADR 014) — the same path product flows
+    // use for every LATER workspace. On CLOUD (`hub` set — the same single
+    // switch as every cloud seam) setup creates NO workspace: every cloud
+    // workspace is a hub-org projection (user-scoped federation), so the
+    // operator bootstrap mints a verified, break-glass capable USER only —
+    // the singleton claim, the edition stamp, and the D9 emailVerified
+    // force above all stay.
     const instanceId = ulid();
-    let workspaceId: string;
+    let workspaceId: string | null;
     try {
       workspaceId = await db.transaction(async (tx) => {
         const claimed = await tx
@@ -345,6 +351,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           .returning({ id: instanceSettings.id });
         if (claimed.length === 0) throw new SetupAlreadyDone();
 
+        if (hub) return null;
         const created = await registry.workspaces.create(body.instanceName, ownerUserId, tx);
         return created.workspaceId;
       });
@@ -375,11 +382,41 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   });
 
   // ── GET /me — whoami across all credential paths ─────────────────────────
-  api.use('/me', requireAuth());
+  // No blanket requireAuth: the ZERO-MEMBERSHIP session state is route-local
+  // (user-scoped federation). A LIVE session whose user holds no active
+  // membership — the cloud operator before break-glass, a hub user whose
+  // last org was removed — resolves to a null principal (principal
+  // resolution requires a membership) but must NOT read as "signed out":
+  // /me answers 200 with `workspaces: [], workspace: null` so the dashboard
+  // renders the no-organization zero state instead of a login bounce.
+  // Machine credentials keep their 401: an invalid/zero-membership key or
+  // bearer dies inside authContext before this handler ever runs, so the
+  // session lookup below can only ever fire for cookie-authenticated
+  // requests.
   api.openapi(meRoute, async (c) => {
     const principal = c.get('principal');
     if (!principal) {
-      return c.json(err('unauthenticated', 'Authentication required'), 401);
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (!session?.user) {
+        return c.json(err('unauthenticated', 'Authentication required'), 401);
+      }
+      return c.json(
+        {
+          user: { id: session.user.id, email: session.user.email, name: session.user.name },
+          workspace: null,
+          role: null,
+          origin: null,
+          via: 'session' as const,
+          scopes: null,
+          apiKeyExpiresAt: null,
+          workspaces: [],
+          activeWorkspaceId: null,
+          // The zero state's CTA target on cloud: organizations are created
+          // at the hub, never locally (docs/federation.md).
+          hubManageUrl: hubManaged?.manageUrl ?? null
+        },
+        200
+      );
     }
     // Workspaces this credential can name (user-scoped credential model):
     // EVERY credential kind lists ALL of the user's active memberships — a

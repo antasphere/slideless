@@ -273,8 +273,11 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       io.out.write(
         `${me.user.name} <${me.user.email}>\n` +
           `  instance:  ${ctx.baseUrl}\n` +
-          `  workspace: ${me.workspace.name}\n` +
-          `  role:      ${me.role} (via ${me.via})\n` +
+          // A key is a USER credential: with zero memberships /me can carry
+          // no active workspace (the CLI only ever sees this for sessions,
+          // but the wire shape is honest about it).
+          `  workspace: ${me.workspace?.name ?? '(none)'}\n` +
+          `  role:      ${me.role ?? '(none)'} (via ${me.via})\n` +
           `  scopes:    ${me.scopes ? me.scopes.join(', ') : 'full (session)'}\n` +
           (me.via === 'api_key' ? `  key expires: ${me.apiKeyExpiresAt ?? 'never'}\n` : '')
       );

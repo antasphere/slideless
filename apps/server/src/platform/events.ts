@@ -24,7 +24,8 @@ export type PlatformEvents = {
   'file.uploaded': { workspaceId: string; fileId: string; sizeBytes: number };
   'presentation.created': { workspaceId: string; presentationId: string };
   'presentation.version_committed': { workspaceId: string; presentationId: string; version: number };
-  'setup.completed': { workspaceId: string; instanceId: string };
+  /** workspaceId is null on the cloud edition — setup creates no workspace there. */
+  'setup.completed': { workspaceId: string | null; instanceId: string };
 };
 
 type Handler<E extends keyof PlatformEvents> = (payload: PlatformEvents[E]) => void | Promise<void>;

@@ -127,11 +127,13 @@ beforeAll(async () => {
     HUB_CLIENT_SECRET: 'integration-test-hub-secret-p7'
   });
 
-  // The operator's own cloud-LOCAL workspace (setup; centralAccountId NULL).
-  const setup = await readJson(
-    await app.app.request('/api/v1/setup', json({ instanceName: 'P7 Cloud', owner: OPERATOR }))
-  );
-  operatorWorkspaceId = setup.workspaceId;
+  // The operator's own cloud-LOCAL workspace (centralAccountId NULL). Cloud
+  // setup mints NO workspace (user-scoped federation), so the fixture seeds
+  // it directly — the P7 contrast under test is the workspace's PROJECTION,
+  // not how it came to exist.
+  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'P7 Cloud', owner: OPERATOR }));
+  expect(setup.status).toBe(201);
+  operatorWorkspaceId = await sso.seedLocalWorkspace(app, 'P7 Cloud', OPERATOR.email);
   operatorCookie = extractCookie(
     await app.app.request(
       '/api/v1/auth/sign-in/email',

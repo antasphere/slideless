@@ -54,6 +54,16 @@ export const fr: Record<MessageKey, string> = {
   'common.accountSuspended': 'Cette organisation est suspendue sur Antasphere.',
   'common.hubUnavailable': 'Le service de comptes Antasphere est injoignable — réessayez dans un instant.',
   'common.membershipRevoked': 'Votre accès à cette organisation a été retiré sur Antasphere.',
+  'common.hubGrantExpired':
+    'Votre connexion Antasphere sur cette instance a expiré — reconnectez-vous avec Antasphere.',
+
+  // ── État vide « aucune organisation » (fédération user-scoped) ──────
+  'noOrg.title': 'Aucune organisation pour l’instant',
+  'noOrg.body':
+    'Votre compte est connecté mais n’appartient à aucune organisation ici. Créez-en une sur Antasphere (ou demandez une invitation), puis revenez — elle apparaîtra automatiquement.',
+  'noOrg.bodyLocal':
+    'Votre compte est connecté mais n’appartient à aucun espace de travail sur cette instance. Demandez une invitation à un administrateur.',
+  'noOrg.cta': 'Créer une organisation sur Antasphere',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',

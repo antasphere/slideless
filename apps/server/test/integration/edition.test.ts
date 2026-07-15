@@ -3,6 +3,7 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import {
   createDatabase,
   createTestApp,
+  extractCookie,
   readJson,
   RecordingEmailDriver,
   startPostgres,
@@ -103,8 +104,51 @@ describe('cloud edition on a fresh database', () => {
   it('boots (fresh DB — nothing to guard) and setup stamps edition=cloud', async () => {
     const res = await app.app.request('/api/v1/setup', json({ instanceName: 'EdCloud', owner: OWNER }));
     expect(res.status).toBe(201);
+    const body = await readJson(res);
+    // Cloud setup creates NO workspace (user-scoped federation): every
+    // cloud workspace is a hub-org projection — the operator bootstrap
+    // mints a verified USER only, and the response says so honestly.
+    expect(body.workspaceId).toBeNull();
+    expect(body.ownerUserId).toBeTruthy();
+    const workspaces = await app.db.pool.query(`SELECT id FROM workspaces`);
+    expect(workspaces.rows).toHaveLength(0);
+    const memberships = await app.db.pool.query(`SELECT id FROM workspace_members`);
+    expect(memberships.rows).toHaveLength(0);
     const { rows } = await app.db.pool.query<{ edition: string }>(`SELECT edition FROM instance_settings`);
     expect(rows).toEqual([{ edition: 'cloud' }]);
+  });
+
+  it('the zero-membership operator session gets the /me zero state (200), not a login bounce', async () => {
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    const cookie = extractCookie(signIn);
+    const me = await app.app.request('/api/v1/me', { headers: { cookie } });
+    expect(me.status).toBe(200);
+    const body = await readJson(me);
+    expect(body.user.email).toBe(OWNER.email);
+    expect(body.workspaces).toEqual([]);
+    expect(body.workspace).toBeNull();
+    expect(body.activeWorkspaceId).toBeNull();
+    expect(body.role).toBeNull();
+    expect(body.origin).toBeNull();
+    expect(body.via).toBe('session');
+    // The zero state's CTA target: orgs are created at the hub.
+    expect(body.hubManageUrl).toBe(HUB_ENV.HUB_ISSUER_URL);
+  });
+
+  it('unauthenticated and machine callers keep their 401 on /me (zero state is session-only)', async () => {
+    const anon = await app.app.request('/api/v1/me');
+    expect(anon.status).toBe(401);
+    // A syntactically valid but unknown API key still dies inside
+    // authContext — the route-local session path never runs for bearers.
+    const fakeKey = 'slk_AAAAAAAA_' + 'a'.repeat(43);
+    const withKey = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${fakeKey}`, 'x-forwarded-for': '10.77.0.1' }
+    });
+    expect(withKey.status).toBe(401);
   });
 
   it('reports edition=cloud in discovery', async () => {

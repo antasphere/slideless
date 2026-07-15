@@ -49,6 +49,15 @@ export const en = {
   'common.accountSuspended': 'This organization is suspended on Antasphere.',
   'common.hubUnavailable': 'The Antasphere account service is unreachable — try again shortly.',
   'common.membershipRevoked': 'Your access to this organization was removed on Antasphere.',
+  'common.hubGrantExpired': 'Your Antasphere sign-in on this instance has expired — sign in with Antasphere again.',
+
+  // ── No-organization zero state (user-scoped federation) ─────────────
+  'noOrg.title': 'No organization yet',
+  'noOrg.body':
+    'Your account is signed in but belongs to no organization here. Create one on Antasphere (or ask for an invitation), then come back — it appears automatically.',
+  'noOrg.bodyLocal':
+    'Your account is signed in but belongs to no workspace on this instance. Ask an administrator to invite you.',
+  'noOrg.cta': 'Create an organization at Antasphere',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',

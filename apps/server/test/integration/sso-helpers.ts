@@ -19,6 +19,27 @@ let ipCounter = 0;
 export const nextIp = () => `10.99.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
 /**
+ * Seed a cloud-LOCAL workspace (`central_account_id NULL`) owned by the
+ * given user, straight into the database. Cloud setup mints NO workspace
+ * (user-scoped federation), so fixtures that need one — deck-guest host
+ * workspaces, the P7 local-vs-projected contrast — seed it here; the state
+ * is exactly what a pre-flip instance (or break-glass recovery) leaves
+ * behind.
+ */
+export async function seedLocalWorkspace(app: TestApp, name: string, ownerEmail: string): Promise<string> {
+  const user = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [ownerEmail]);
+  expect(user.rows).toHaveLength(1);
+  const ws = await app.db.pool.query(`INSERT INTO workspaces (name) VALUES ($1) RETURNING id`, [name]);
+  const workspaceId = ws.rows[0].id as string;
+  await app.db.pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role, origin, is_active)
+     VALUES ($1, $2, 'owner', 'local', true)`,
+    [workspaceId, user.rows[0].id]
+  );
+  return workspaceId;
+}
+
+/**
  * Initiate the sign-in leg: returns the `state` plus the signed state
  * cookie the callback must present (better-auth's double-submit check —
  * a browser carries it automatically).

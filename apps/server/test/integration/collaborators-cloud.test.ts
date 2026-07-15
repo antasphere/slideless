@@ -122,10 +122,12 @@ beforeAll(async () => {
     HUB_CLIENT_ID: 'tool-slideless-cloud',
     HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
   });
-  const setup = await readJson(
-    await app.app.request('/api/v1/setup', json({ instanceName: 'CloudCollab', owner: OWNER }))
-  );
-  hostWorkspaceId = setup.workspaceId;
+  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'CloudCollab', owner: OWNER }));
+  expect(setup.status).toBe(201);
+  // Cloud setup mints NO workspace (user-scoped federation) — the deck-guest
+  // HOST workspace fixture is seeded directly (a cloud-LOCAL workspace,
+  // central_account_id NULL, exactly what the guest flow keys on).
+  hostWorkspaceId = await sso.seedLocalWorkspace(app, 'CloudCollab', OWNER.email);
   // D1 hides the password entrance but keeps it WIRED (break-glass posture,
   // platform/edition.ts) — the operator session for the fixture rides it.
   ownerCookie = extractCookie(
