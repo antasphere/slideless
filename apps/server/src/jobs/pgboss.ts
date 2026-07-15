@@ -7,6 +7,7 @@ import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
 import type { AuditService } from '../audit/service.js';
+import { parseSuperadminEmails } from '../accounts/superadmin.js';
 
 /**
  * pg-boss job runtime. Queue creation and worker registration follow
@@ -85,7 +86,10 @@ export interface Jobs {
 }
 
 export async function createJobs(
-  env: Pick<Env, 'DATABASE_URL' | 'SERVICE_ROLE' | 'AUDIT_RETENTION_DAYS' | 'ORPHAN_USER_RETENTION_HOURS'>,
+  env: Pick<
+    Env,
+    'DATABASE_URL' | 'SERVICE_ROLE' | 'AUDIT_RETENTION_DAYS' | 'ORPHAN_USER_RETENTION_HOURS' | 'SUPERADMIN_EMAILS'
+  >,
   db: Db,
   logger: Logger,
   downstreamUsage: UsageSink,
@@ -212,26 +216,62 @@ export async function createJobs(
       logger.info({ deleted }, 'upload session purge ran');
     });
 
-    // Orphaned-user GC: setup-race losers (and any other path) leave Better
-    // Auth `user` rows with NO workspace_members row — they can sign in but
-    // 401 everywhere, and they accumulate forever. SAFETY INVARIANT: a user
-    // with ANY membership row — even a deactivated one — is a real member and
-    // is NEVER touched; only zero-membership users older than the grace
-    // period qualify. Deletion goes through Better Auth's own
-    // internalAdapter.deleteUser (the exact path both GDPR delete surfaces
-    // use), so sessions/accounts/keys cascade FK-safe.
+    // Orphaned-user GC: setup-race losers, fail-closed SSO login strands
+    // (cloud), and any other path leave Better Auth `user` rows with NO
+    // workspace_members row — they can sign in but 401 everywhere, and they
+    // accumulate forever. Cloud makes some of them CREDENTIAL-BEARING: a
+    // fail-closed hub login strands a user + `antasphere` account row
+    // HOLDING a live encrypted offline grant (Better Auth writes tokens
+    // before the after-hook revokes the session), minted at an
+    // unauthenticated-reachable rate during a hub outage — so a hub link
+    // must NEVER protect a row from collection (that would accumulate
+    // dormant refresh families without bound).
+    //
+    // What distinguishes the LEGIT zero-membership user (the cloud operator
+    // pre-break-glass, a hub user whose last org was removed — both real
+    // dashboard users of the /me zero state) from the strand is the LIVE
+    // SESSION: the strand's was revoked by the fail-closed login; the legit
+    // user holds one. So the sweep collects zero-membership users with NO
+    // unexpired session, REGARDLESS of any provider link, plus two explicit
+    // exclusions: a live pending invitation (mid-onboarding) and the
+    // SUPERADMIN_EMAILS allowlist (the break-glass operator must survive
+    // even after their session lapses — ADR 010's "arm the allowlist"
+    // guidance, now enforced instead of advised).
+    //
+    // SAFETY INVARIANTS:
+    //  - a user with ANY membership row — even a deactivated one — is a
+    //    real member and is NEVER touched;
+    //  - ── HARD CONSTRAINT (user-scoped federation) ──────────────────────
+    //    the purge must NEVER delete an `antasphere` account row while
+    //    leaving an `origin='hub'` membership row behind: that would make
+    //    the reconciler's `no_link` branch — today unreachable for
+    //    hub-origin principals, and the one unconditional fail-open —
+    //    REACHABLE, i.e. a fail-open authorization hole. Held by
+    //    construction: the only deletion here is the WHOLE user through
+    //    Better Auth's internalAdapter.deleteUser (the exact path both GDPR
+    //    delete surfaces use), whose FK cascade removes account rows AND
+    //    membership rows together, and only ever for users the immediately
+    //    preceding re-check proved to have ZERO membership rows. Never
+    //    replace this with a partial cleanup (account rows, tokens) — whole
+    //    user or nothing.
     await boss.work(ORPHAN_USER_PURGE_QUEUE, async () => {
       if (orphanRetentionHours <= 0) return; // 0 = disabled (schedule is off too)
       const authCtx = await auth.$context;
+      // As ONE json parameter (never a JS array param — driver array
+      // serialization is not worth trusting in a deletion query).
+      const superadmins = JSON.stringify([...parseSuperadminEmails(env.SUPERADMIN_EMAILS)]);
       const BATCH = 50;
       let total = 0;
       const sample: string[] = [];
       for (let i = 0; i < 200; i++) {
-        // Candidates: zero memberships, past the grace period, and no LIVE
-        // pending invitation for their email — an orphan someone just
-        // re-invited is mid-onboarding, not garbage (the invitation row
-        // exists before its accept URL does, so this closes the
-        // scan-then-accept race for the invited case).
+        // Candidates: zero memberships, past the grace period, NO live
+        // (unexpired) session, no LIVE pending invitation for their email —
+        // an orphan someone just re-invited is mid-onboarding, not garbage
+        // (the invitation row exists before its accept URL does, so this
+        // closes the scan-then-accept race for the invited case) — and not
+        // a superadmin-allowlisted address. The exclusions live in the
+        // query (not a JS skip): a skipped candidate would otherwise fill
+        // the batch forever and starve the real orphans behind it.
         const res = await db.execute(sql`
           SELECT u.id, u.email FROM "user" u
           WHERE NOT EXISTS (
@@ -239,11 +279,18 @@ export async function createJobs(
             )
             AND u.created_at < now() - make_interval(hours => ${orphanRetentionHours})
             AND NOT EXISTS (
+              SELECT 1 FROM session s WHERE s.user_id = u.id AND s.expires_at > now()
+            )
+            AND NOT EXISTS (
               SELECT 1 FROM invitations inv
               WHERE lower(inv.email) = lower(u.email)
                 AND inv.accepted_at IS NULL
                 AND inv.revoked_at IS NULL
                 AND inv.expires_at > now()
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(${superadmins}::jsonb) AS sa(email)
+              WHERE sa.email = lower(u.email)
             )
           LIMIT ${BATCH}
         `);
@@ -251,10 +298,14 @@ export async function createJobs(
         if (rows.length === 0) break;
         let progressed = 0;
         for (const row of rows) {
-          // Final membership re-check immediately before the delete: a
-          // membership can appear between the candidate scan and here.
+          // Final re-check immediately before the delete: a membership OR a
+          // live session (the user signing in mid-sweep) can appear between
+          // the candidate scan and here — either one disqualifies.
           const still = await db.execute(sql`
-            SELECT 1 FROM workspace_members WHERE user_id = ${row.id} LIMIT 1
+            SELECT 1 FROM workspace_members WHERE user_id = ${row.id}
+            UNION ALL
+            SELECT 1 FROM session WHERE user_id = ${row.id} AND expires_at > now()
+            LIMIT 1
           `);
           if ((still.rows?.length ?? 0) > 0) continue;
           try {
