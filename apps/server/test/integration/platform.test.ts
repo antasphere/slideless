@@ -166,8 +166,19 @@ describe('authentication + /me', () => {
         .set({ isActive: false })
         .where(eq(workspaceMembers.userId, body.user.id));
 
+      // The live re-check kills WORKSPACE access instantly: a real
+      // workspace endpoint 401s (no active membership resolves).
+      const denied = await app.app.request('/api/v1/presentations', { headers: { cookie } });
+      expect(denied.status).toBe(401);
+      // /me itself now answers the zero-membership zero state (200, empty
+      // list) rather than a 401 — the user is signed in but belongs to no
+      // workspace (user-scoped credential model); the dashboard renders the
+      // no-organization page instead of bouncing to login.
       const after = await app.app.request('/api/v1/me', { headers: { cookie } });
-      expect(after.status).toBe(401);
+      expect(after.status).toBe(200);
+      const afterBody = await readJson(after);
+      expect(afterBody.workspaces).toEqual([]);
+      expect(afterBody.activeWorkspaceId).toBeNull();
     } finally {
       // restore even when the assertion fails — later suites need the owner
       await app.db.db

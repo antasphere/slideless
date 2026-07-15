@@ -245,7 +245,9 @@ describe('with SUPERADMIN_EMAILS set', () => {
 
   it('claim-ownership CREATES the membership for a membership-less superadmin session', async () => {
     // SECOND joins, then loses their membership row entirely (the orphaned
-    // state a lost setup race produces): can sign in, 401s everywhere.
+    // state a lost setup race produces): can sign in, but reaches no
+    // workspace — /me is the zero-membership zero state (200, empty list),
+    // real workspace endpoints 401. Break-glass rescues exactly this.
     await inviteAndAccept(app, rootCookie, SECOND);
     await app.db.pool.query(
       `DELETE FROM workspace_members WHERE user_id = (SELECT id FROM "user" WHERE email = $1)`,
@@ -256,7 +258,12 @@ describe('with SUPERADMIN_EMAILS set', () => {
     const orphaned = await app.app.request('/api/v1/me', {
       headers: { cookie: secondCookie, 'x-forwarded-for': nextIp() }
     });
-    expect(orphaned.status).toBe(401);
+    expect(orphaned.status).toBe(200);
+    expect((await readJson(orphaned)).workspaces).toEqual([]);
+    const noAccess = await app.app.request('/api/v1/presentations', {
+      headers: { cookie: secondCookie, 'x-forwarded-for': nextIp() }
+    });
+    expect(noAccess.status).toBe(401);
 
     const res = await app.app.request(
       '/api/v1/admin/break-glass/claim-ownership',
