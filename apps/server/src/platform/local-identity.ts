@@ -7,7 +7,11 @@ import {
   type RequestContext
 } from '@slideless/contract';
 import type { Auth } from '../identity/better-auth.js';
-import { resolveMembership } from '../identity/resolve-membership.js';
+import {
+  isWorkspaceSelector,
+  resolveMembership,
+  type OnWorkspaceMiss
+} from '../identity/resolve-membership.js';
 
 /**
  * The template's default IdentityProvider: Better Auth sessions + a LIVE
@@ -35,7 +39,9 @@ export class LocalIdentityProvider implements IdentityProvider {
     private readonly hasGoogle: boolean,
     private readonly hasOtp: boolean = false,
     private readonly hasPasswordReset: boolean = false,
-    private readonly hasEmailChange: boolean = false
+    private readonly hasEmailChange: boolean = false,
+    /** Cloud only: one cached reconcile on a well-formed selector miss. */
+    private readonly onWorkspaceMiss?: OnWorkspaceMiss | undefined
   ) {}
 
   async resolve(ctx: RequestContext): Promise<Principal | null> {
@@ -45,7 +51,14 @@ export class LocalIdentityProvider implements IdentityProvider {
     if (!session?.user) return null;
 
     const requested = ctx.headers.get(ACTIVE_WORKSPACE_HEADER)?.trim() || null;
-    const row = await resolveMembership(this.db, session.user.id, requested);
+    let row = await resolveMembership(this.db, session.user.id, requested);
+    if (!row && requested && this.onWorkspaceMiss && isWorkspaceSelector(requested)) {
+      // Unknown-workspace deep-link retry (cloud): the named workspace may
+      // be a hub org granted since the last pass. One cached reconcile, one
+      // re-run of the SAME lookup — no recursion.
+      await this.onWorkspaceMiss(session.user.id, requested);
+      row = await resolveMembership(this.db, session.user.id, requested);
+    }
     if (!row) return null;
 
     return {

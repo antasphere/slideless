@@ -23,9 +23,9 @@ import { apiError } from '../api/errors.js';
  *    credential resolver (session: platform/local-identity.ts; API key:
  *    apikeys/service.ts; OAuth bearer: identity/oauth-jwt.ts) populates from
  *    a LIVE join on `workspaces.central_account_id` for the request's ONE
- *    workspace (ADR 014) — the same signal the P4 hub gates key on
- *    (identity/hub-gate.ts). There is no principal-construction path that
- *    skips the join.
+ *    workspace (ADR 014) — the same signal the live hub gate keys on
+ *    (identity/hub-live-gate.ts). There is no principal-construction path
+ *    that skips the join.
  *  - The gate is method-keyed, not route-enumerated, and mounted ONCE per
  *    subtree wildcard (`/members/*`, `/invitations/*` — in Hono the
  *    wildcard also matches the collection root): any FUTURE mutation

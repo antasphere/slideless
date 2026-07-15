@@ -1,40 +1,46 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { JWTPayload } from 'jose';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import type { GenericOAuthConfig } from 'better-auth/plugins';
 import {
   account,
   user as userTable,
-  workspaceMembers,
   workspaceRoles,
-  workspaces,
   type Db,
   type WorkspaceRole
 } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { HubJwtVerifier } from './hub-jwt.js';
+import { projectOrgMembership } from './hub-projection.js';
+import type { ReconcilePassOutcome } from './hub-reconcile.js';
+import type { LoginAccessToken } from './hub-user-client.js';
 
 /**
  * "Sign in with Antasphere" — the cloud edition's SSO entrance
- * (docs/federation.md, ADR 015). This module owns everything hub-SSO:
+ * (docs/federation.md, user-scoped federation). This module owns everything
+ * hub-SSO:
  *
  *  - the relying-party provider config for better-auth's `genericOAuth`
  *    plugin (registered by identity/better-auth.ts ONLY when the instance
  *    boots EDITION=cloud — an oss boot never constructs this class);
- *  - `HubJwtVerifier`: remote-JWKS verification of the hub-minted tokens,
- *    mirroring oauth-jwt.ts's discipline (hard iss/aud pinning, RS256
- *    allowlist, cached keys + one forced refresh on unknown signature);
+ *  - `HubJwtVerifier`: remote-JWKS verification of hub-minted JWTs (hard
+ *    iss/aud pinning, RS256 allowlist, cached keys + one forced refresh);
  *  - the per-login ASSERTION handoff (an AsyncLocalStorage scope spanning
  *    the callback request — see `runWithLoginScope`);
- *  - the JIT side effects better-auth does not know about: lazy org
- *    projection onto `workspaces.centralAccountId` and the per-login
- *    membership/role/email re-sync (D10/D11).
+ *  - the per-login work better-auth does not know about: identity guard,
+ *    D10 email re-sync, and the FAIL-CLOSED login reconcile (the org
+ *    projection) — a cloud login whose reconcile pass fails must not exist.
  *
- * The hub asserts exactly ONE org per login (its consent org picker). The
- * org context rides the ACCESS token — minted by the hub iff the TOKEN
- * request carries RFC 8707 `resource` (hence `tokenUrlParams`); refresh
- * re-mints drop `resource` and go opaque, so org claims are read from the
- * callback exchange ONLY, never from stored/refreshed tokens.
+ * Identity comes from the ID TOKEN ONLY (aud = HUB_CLIENT_ID). The access
+ * token is never claim-bearing for Slideless: the SSO code exchange sends
+ * RFC 8707 `resource = <hub>/mcp` (the `tokenResource` seam constant shared
+ * with hub-grant.ts), so the callback access token is HUB-audienced — a
+ * bearer for the hub's own `/api/v1`, which the login-time reconcile uses
+ * to read the user's org list AS THE USER. Org claims are gone from the
+ * login path entirely; the hub's caller-scoped `GET /orgs` is the ONE
+ * source of org/membership truth. Refresh + between-logins reads live in
+ * hub-grant.ts / hub-user-client.ts; SSO scopes carry `offline_access
+ * account:read` so the grant persists on the account row.
  */
 
 /**
@@ -49,11 +55,9 @@ export const HUB_SSO_PROVIDER_ID = 'antasphere';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * What one hub login asserts, extracted from the VERIFIED callback tokens:
- * the org claims (`workspace_id`, `role`, `workspace_name`, `email`) from
- * the access token (the hub's `membershipAccessClaims`), the user claims
- * (`email_verified`, `name`) from the id_token. `role` is the hub org role
- * verbatim — local roles are DERIVED from it, never invented (D11).
+ * What one hub login asserts about the USER, extracted from the VERIFIED
+ * id_token (aud = our client id). No org half: org truth is read live from
+ * the hub, never from token claims.
  */
 export interface HubSsoAssertion {
   /** Hub user id (`sub`) — matched against `account.accountId`, never a local user id. */
@@ -61,20 +65,23 @@ export interface HubSsoAssertion {
   email: string;
   emailVerified: boolean;
   name: string;
-  /** The ONE hub org this login asserted (consent org picker). */
-  hubWorkspaceId: string;
-  /** Hub org role, mapped 1:1 onto the local membership at every login. */
-  role: WorkspaceRole;
-  /** Display name for the projection (hub delta H1); absent on older hubs. */
-  hubWorkspaceName: string | null;
 }
 
 /**
  * What one VERIFIED hub exchange JWT asserts (`POST /sso/cli-connect`,
- * docs/federation.md P5) — the same org assertion an SSO login carries,
- * plus the token's one-time-use handle.
+ * docs/federation.md P5). TRANSITIONAL: the H3 exchange token still carries
+ * ONE org's claims (the hub keeps them through the compat window), and the
+ * connect path projects that org directly — a connect user may hold no
+ * stored grant to reconcile with until the Stage F `acquireFromConnect`
+ * channel ships. The browser login path reads no org claims anywhere.
  */
 export interface HubConnectAssertion extends HubSsoAssertion {
+  /** The ONE hub org this exchange token asserts. */
+  hubWorkspaceId: string;
+  /** Hub org role, verbatim (D11) — validated, never invented. */
+  role: WorkspaceRole;
+  /** Display name for the projection; absent on older hubs. */
+  hubWorkspaceName: string | null;
   /** Unique per-token id — consumed one-time-use by the replay ledger. */
   jti: string;
   /** The token's own `exp` — how long the consumed jti must stay claimed. */
@@ -103,6 +110,16 @@ export interface ConnectAuthSeam {
 }
 
 /**
+ * The login-time face of the org reconciler (hub-reconcile.ts) — bound by
+ * boot AFTER construction (the reconciler needs the auth context's secret,
+ * which needs createAuth, which needs this service). Structural to avoid a
+ * hard cycle.
+ */
+export interface LoginReconciler {
+  forceReconcile(localUserId: string, login?: LoginAccessToken): Promise<ReconcilePassOutcome>;
+}
+
+/**
  * A login failure the after-hook converts into a clean, session-less
  * redirect back to /login?error=<code>. Codes are stable (the dashboard
  * maps them to copy); anything unexpected becomes `sso_login_failed`.
@@ -127,17 +144,23 @@ export class HubSsoLoginError extends Error {
 }
 
 /**
- * The assertion handoff (ADR 015). The verified org context exists in
- * `getUserInfo` (raw tokens, PRE user-create); the projection must run in
- * the callback's after-hook (POST create, fires for JIT and returning users
- * alike). An AsyncLocalStorage scope established around the whole auth
- * request (api/index.ts wraps `auth.handler`) carries it across: getUserInfo
- * writes, the after-hook takes. Being request-scoped, two concurrent logins
- * can NEVER read each other's assertion — unlike any shared map keyed by
- * user/sub/token, where a same-user concurrent login could cross-wire orgs.
+ * The assertion handoff (ADR 015, reshaped): the verified USER identity —
+ * plus the raw hub-audienced access token the login reconcile presents —
+ * exists in `getUserInfo` (PRE user-create); the per-login work runs in the
+ * callback's after-hook (POST create). An AsyncLocalStorage scope
+ * established around the whole auth request (api/index.ts wraps
+ * `auth.handler`) carries it across: getUserInfo writes, the after-hook
+ * takes. Being request-scoped, two concurrent logins can NEVER read each
+ * other's assertion or token.
  */
+export interface LoginScopeAssertion extends HubSsoAssertion {
+  /** The callback access token (hub-audienced) — the login reconcile's bearer. */
+  accessToken: string;
+  accessTokenExpiresAt: Date | null;
+}
+
 interface LoginScope {
-  assertion?: HubSsoAssertion;
+  assertion?: LoginScopeAssertion;
 }
 
 const loginScope = new AsyncLocalStorage<LoginScope>();
@@ -151,19 +174,33 @@ export interface HubSsoOptions {
   clientSecret: string;
   /**
    * This instance's own OAuth resource identifier (`<PUBLIC_BASE_URL>/mcp`,
-   * always derived, never configured) — sent as RFC 8707 `resource` on the
-   * token request and pinned as the access token's audience.
+   * always derived, never configured) — the aud pin for H3 CONNECT tokens
+   * (which the hub mints FOR this tool). Not used on the login path.
    */
   resourceUrl: string;
+  /**
+   * RFC 8707 `resource` for the SSO CODE EXCHANGE — `<hub>/mcp`
+   * (hubApiResource), THE seam constant shared with hub-grant.ts: the
+   * callback access token and every refreshed token are HUB-audienced and
+   * callable at hub /api/v1. Null = omit the param (flips the whole flow
+   * to opaque tokens in one line if the hub ever accepts them).
+   */
+  tokenResource: string | null;
   /** Dashboard origin for the failure redirects (PUBLIC_BASE_URL). */
   publicBaseUrl: string;
 }
 
 export class HubSsoService {
   private readonly verifier: HubJwtVerifier;
+  private reconciler: LoginReconciler | null = null;
 
   constructor(private readonly opts: HubSsoOptions) {
     this.verifier = new HubJwtVerifier(opts.issuerUrl);
+  }
+
+  /** Boot binds the reconciler once it exists (see LoginReconciler). */
+  bindReconciler(reconciler: LoginReconciler): void {
+    this.reconciler = reconciler;
   }
 
   /**
@@ -177,7 +214,7 @@ export class HubSsoService {
   }
 
   /** One-shot read of the assertion the current request's getUserInfo verified. */
-  takeAssertion(): HubSsoAssertion | undefined {
+  takeAssertion(): LoginScopeAssertion | undefined {
     const scope = loginScope.getStore();
     const assertion = scope?.assertion;
     if (scope) delete scope.assertion;
@@ -200,10 +237,15 @@ export class HubSsoService {
    * The genericOAuth provider entry for the hub. Notes that are POSTURE,
    * not accident:
    *
-   *  - `tokenUrlParams.resource` (RFC 8707) rides the TOKEN request — the
-   *    hub mints the org-claim JWT only then (authorize-only does not).
+   *  - `scopes` carry `offline_access account:read`: the grant IS the
+   *    between-logins credential — better-auth persists the refresh token
+   *    on the account row (encrypted; identity/better-auth.ts), and
+   *    hub-grant.ts keeps it alive.
+   *  - `tokenUrlParams.resource` (RFC 8707) is `tokenResource` — `<hub>/mcp`
+   *    — so the minted access token is a bearer for the HUB's own API (the
+   *    login reconcile + every between-logins read), never for ours.
    *  - `disableSignUp` stays UNSET: SSO IS the sanctioned signup entrance
-   *    on cloud — the deliberate FOURTH signup switch next to the three
+   *    on cloud — the deliberate FOURTH switch next to the three
    *    closed-signup switches (CLAUDE.md invariant, docs/federation.md).
    *  - `getUserInfo` replaces the plugin's default entirely, so IT owns the
    *    emailVerified mapping — set from the hub's verified `email_verified`
@@ -215,39 +257,38 @@ export class HubSsoService {
       discoveryUrl: this.opts.issuerUrl.replace(/\/+$/, '') + '/.well-known/openid-configuration',
       clientId: this.opts.clientId,
       clientSecret: this.opts.clientSecret,
-      scopes: ['openid', 'profile', 'email'],
+      scopes: ['openid', 'profile', 'email', 'offline_access', 'account:read'],
       pkce: true,
-      tokenUrlParams: { resource: this.opts.resourceUrl },
+      ...(this.opts.tokenResource ? { tokenUrlParams: { resource: this.opts.tokenResource } } : {}),
       getUserInfo: (tokens) => this.getUserInfo(tokens)
     };
   }
 
   /**
-   * Verify the callback tokens and extract the assertion. Returning null
-   * makes the plugin fail the login with a clean error redirect — the
+   * Verify the callback id_token and extract the USER assertion. Returning
+   * null makes the plugin fail the login with a clean error redirect — the
    * fail-closed path for every bad token (wrong iss/aud, expired, bad
-   * signature, malformed claims).
+   * signature, malformed claims). The access token is NOT verified here —
+   * it is hub-audienced, never claim-bearing for us; it rides the login
+   * scope as the reconcile's bearer, and the HUB verifies it on use.
    */
   private async getUserInfo(tokens: {
     accessToken?: string | undefined;
     idToken?: string | undefined;
+    accessTokenExpiresAt?: Date | undefined;
   }): Promise<{ id: string; email: string; name: string; emailVerified: boolean } | null> {
     try {
-      if (!tokens.accessToken) throw new Error('token response carried no access token');
       if (!tokens.idToken) throw new Error('token response carried no id_token (openid is always scoped)');
-      // The org claims live in the ACCESS token (aud = our own resource URL);
-      // the user claims (email_verified, name) live in the ID token (aud =
-      // our client id). Verify BOTH against the hub JWKS and cross-pin the
-      // subject so the pair provably describes one hub user.
-      const accessClaims = await this.verifier.verify(tokens.accessToken, this.opts.resourceUrl);
+      if (!tokens.accessToken) throw new Error('token response carried no access token');
       const idClaims = await this.verifier.verify(tokens.idToken, this.opts.clientId);
-      if (accessClaims.sub !== idClaims.sub) {
-        throw new Error('access/id token subject mismatch');
-      }
-      const assertion = buildAssertion(accessClaims, idClaims);
+      const assertion = buildUserAssertion(idClaims);
       const scope = loginScope.getStore();
       if (scope) {
-        scope.assertion = assertion;
+        scope.assertion = {
+          ...assertion,
+          accessToken: tokens.accessToken,
+          accessTokenExpiresAt: tokens.accessTokenExpiresAt ?? null
+        };
       } else {
         // No scope means the auth mount was not wrapped — the after-hook
         // will fail this login closed (sso_assertion_missing). Say why.
@@ -275,18 +316,30 @@ export class HubSsoService {
    *     merge two hub subjects into one local user;
    *  2. email re-sync (D10) with the explicit duplicate-email collision
    *     path (fail the login, corrupt nothing);
-   *  3. lazy projection + membership upsert with the hub-asserted role
-   *     (D11) — the unique partial index resolves concurrent first-logins.
+   *  3. the FAIL-CLOSED login reconcile: one forced pass reading the user's
+   *     org list from the hub with the callback access token — reconcile IS
+   *     the projection now. A pass that does not definitively succeed
+   *     throws `sso_projection_failed` (session revoked, error redirect):
+   *     a cloud login without its projection must not exist.
    *
    * Throws HubSsoLoginError; the caller revokes the just-minted session and
    * redirects. Any other throw is mapped to the generic failure code there.
-   * Returns the LOCAL id of the projected workspace — the SSO after-hook
-   * ignores it; `/sso/cli-connect` binds its minted key to it.
    */
-  async assertLogin(localUserId: string, assertion: HubSsoAssertion): Promise<{ workspaceId: string }> {
+  async assertLogin(localUserId: string, assertion: LoginScopeAssertion): Promise<void> {
     await this.guardSingleHubIdentity(localUserId, assertion.sub);
     await this.syncEmail(localUserId, assertion);
-    return await this.project(localUserId, assertion);
+    if (!this.reconciler) {
+      // Boot always binds on cloud; a missing binding is a wiring bug and
+      // must fail the login closed, never mint an unprojected session.
+      throw new HubSsoLoginError('sso_projection_failed', 'no login reconciler bound (boot wiring bug)');
+    }
+    const outcome = await this.reconciler.forceReconcile(localUserId, {
+      accessToken: assertion.accessToken,
+      expiresAt: assertion.accessTokenExpiresAt
+    });
+    if (outcome !== 'ok') {
+      throw new HubSsoLoginError('sso_projection_failed', `login reconcile pass failed (${outcome})`);
+    }
   }
 
   /**
@@ -301,10 +354,11 @@ export class HubSsoService {
    *  2. `exp` REQUIRED — jose only validates expiry when the claim exists,
    *     and the replay ledger needs a bound; a token without one is a
    *     contract break, refused.
-   *  3. `purpose === 'sso-connect'` REQUIRED — a flow-(a) hub access token
-   *     carries no purpose claim and dies here even though iss/aud match.
+   *  3. `purpose === 'sso-connect'` REQUIRED — a hub ACCESS token carries
+   *     no purpose claim and dies here even if iss/aud ever matched.
    *  4. `jti` REQUIRED (bounded) — the caller consumes it one-time-use.
-   *  5. The org claims pass the same shape validation as an SSO login's.
+   *  5. The org claims pass strict shape validation (transitional — see
+   *     HubConnectAssertion).
    *
    * Throws on any failure; the route maps every throw to one uniform 401
    * (no oracle distinguishing replay from expiry from a foreign audience).
@@ -319,7 +373,7 @@ export class HubSsoService {
     if (typeof jti !== 'string' || !jti || jti.length > 256) {
       throw new Error('exchange token carries no usable jti');
     }
-    const org = assertOrgClaims(claims);
+    const org = assertConnectOrgClaims(claims);
     return {
       ...org,
       // The hub mints exchange tokens only for a live, authenticated hub
@@ -337,11 +391,14 @@ export class HubSsoService {
 
   /**
    * JIT-provision for `/sso/cli-connect`: resolve-or-create the local user
-   * for a VERIFIED connect assertion, then run the SAME per-login work as
-   * a browser SSO login (`assertLogin`: identity guard, D10 email sync,
-   * lazy projection + origin='hub' membership upsert) so both entrances
-   * produce identical rows. User resolution mirrors better-auth's own
-   * OAuth linking exactly (oauth2/link-account.mjs on the pinned 1.6.15):
+   * for a VERIFIED connect assertion, then run the connect flavor of the
+   * per-login work — identity guard, D10 email sync, and a DIRECT
+   * projection of the exchange token's ONE asserted org (transitional: no
+   * stored grant exists to reconcile with, and we never act on a credential
+   * its holder did not present — Stage F's `acquireFromConnect` replaces
+   * this with a real grant channel). User resolution mirrors better-auth's
+   * own OAuth linking exactly (oauth2/link-account.mjs on the pinned
+   * 1.6.15):
    *
    *  1. account row (providerId='antasphere', accountId=sub) → that user;
    *  2. else a local user holding the asserted email → TRUSTED LINK (D9),
@@ -351,9 +408,6 @@ export class HubSsoService {
    *     `createOAuthUser` — the genericOAuth JIT call, so the
    *     databaseHooks.user.create.after seam (`user.created` → collaborator
    *     grant sweep) fires exactly as it would for a browser SSO signup.
-   *     Closed-signup stays intact: this is the sanctioned hub entrance
-   *     (the deliberate fourth switch), reached only with a VERIFIED hub
-   *     token — never an anonymous signup surface.
    *
    * Two concurrent first-connects race the create; the loser's unique-email
    * violation is caught and resolved by re-running the lookup (the Phase 5
@@ -361,7 +415,7 @@ export class HubSsoService {
    */
   async provisionConnect(
     auth: ConnectAuthSeam,
-    assertion: HubSsoAssertion
+    assertion: HubConnectAssertion
   ): Promise<{ user: { id: string; email: string; name: string }; workspaceId: string }> {
     let userId = await this.resolveConnectUser(auth, assertion, true);
     if (userId === null) {
@@ -372,9 +426,22 @@ export class HubSsoService {
         throw new HubSsoLoginError('sso_login_failed', 'user provisioning raced and re-lookup failed');
       }
     }
-    const { workspaceId } = await this.assertLogin(userId, assertion);
-    // Re-read AFTER assertLogin: the D10 sync may have just rewritten the
-    // email; the response must carry what the database now holds.
+    await this.guardSingleHubIdentity(userId, assertion.sub);
+    await this.syncEmail(userId, assertion);
+    let workspaceId: string;
+    try {
+      ({ workspaceId } = await projectOrgMembership(this.opts.db, {
+        localUserId: userId,
+        hubWorkspaceId: assertion.hubWorkspaceId,
+        hubWorkspaceName: assertion.hubWorkspaceName,
+        role: assertion.role
+      }));
+    } catch (err) {
+      this.opts.logger.error({ err }, 'sso cli-connect: org projection failed');
+      throw new HubSsoLoginError('sso_projection_failed', 'org projection failed');
+    }
+    // Re-read AFTER the D10 sync may have just rewritten the email; the
+    // response must carry what the database now holds.
     const [row] = await this.opts.db
       .select({ id: userTable.id, email: userTable.email, name: userTable.name })
       .from(userTable)
@@ -391,7 +458,7 @@ export class HubSsoService {
    */
   private async resolveConnectUser(
     auth: ConnectAuthSeam,
-    assertion: HubSsoAssertion,
+    assertion: HubConnectAssertion,
     mayCreate: boolean
   ): Promise<string | null> {
     const db = this.opts.db;
@@ -535,99 +602,32 @@ export class HubSsoService {
       throw new HubSsoLoginError('sso_email_conflict', 'email sync lost a uniqueness race');
     }
   }
-
-  /**
-   * Lazy projection: the asserted hub org becomes a local workspace on
-   * first use (`centralAccountId` = the hub org id), then a membership
-   * upsert re-asserts (role, origin='hub', active) at EVERY login —
-   * reactivating a deactivated row and following hub role changes (D11).
-   * Deliberately NOT WorkspaceService.create: the projection needs
-   * ON CONFLICT semantics on the 0021 unique partial index, the hub's role
-   * (not owner), and origin='hub'.
-   */
-  private async project(localUserId: string, assertion: HubSsoAssertion): Promise<{ workspaceId: string }> {
-    const db = this.opts.db;
-    try {
-      let [ws] = await db
-        .select({ id: workspaces.id, name: workspaces.name })
-        .from(workspaces)
-        .where(eq(workspaces.centralAccountId, assertion.hubWorkspaceId))
-        .limit(1);
-      if (!ws) {
-        // H1 fallback: without workspace_name (older hub), project under a
-        // recognizable placeholder — self-healing, the re-sync below renames
-        // it at the first login whose token carries the claim.
-        const name =
-          assertion.hubWorkspaceName ?? `Antasphere workspace ${assertion.hubWorkspaceId.slice(0, 8)}`;
-        const inserted = await db
-          .insert(workspaces)
-          .values({ name, centralAccountId: assertion.hubWorkspaceId })
-          .onConflictDoNothing({
-            target: workspaces.centralAccountId,
-            where: sql`${workspaces.centralAccountId} IS NOT NULL`
-          })
-          .returning({ id: workspaces.id, name: workspaces.name });
-        // Conflict = a concurrent first-login won the insert; land on its row.
-        ws =
-          inserted[0] ??
-          (
-            await db
-              .select({ id: workspaces.id, name: workspaces.name })
-              .from(workspaces)
-              .where(eq(workspaces.centralAccountId, assertion.hubWorkspaceId))
-              .limit(1)
-          )[0];
-        if (!ws) throw new Error('projection insert and re-select both returned nothing');
-      }
-      if (assertion.hubWorkspaceName && ws.name !== assertion.hubWorkspaceName) {
-        await db.update(workspaces).set({ name: assertion.hubWorkspaceName }).where(eq(workspaces.id, ws.id));
-      }
-      await db
-        .insert(workspaceMembers)
-        .values({
-          workspaceId: ws.id,
-          userId: localUserId,
-          role: assertion.role,
-          origin: 'hub',
-          isActive: true
-        })
-        .onConflictDoUpdate({
-          target: [workspaceMembers.workspaceId, workspaceMembers.userId],
-          set: { role: assertion.role, origin: 'hub', isActive: true }
-        });
-      return { workspaceId: ws.id };
-    } catch (err) {
-      if (err instanceof HubSsoLoginError) throw err;
-      this.opts.logger.error({ err }, 'hub SSO: org projection failed');
-      throw new HubSsoLoginError('sso_projection_failed', 'org projection failed');
-    }
-  }
 }
 
 /**
- * Claim-shape validation for the ORG half of a hub assertion — shared by the
- * SSO login (access token) and the cli-connect exchange token, which carry
- * the same `membershipAccessClaims` payload. A malformed token must fail the
- * flow, not corrupt state.
+ * Claim-shape validation for the ORG half of an H3 CONNECT token
+ * (transitional — the browser login path reads no org claims; see
+ * HubConnectAssertion). A malformed token must fail the flow, not corrupt
+ * state.
  */
-function assertOrgClaims(
-  accessClaims: JWTPayload
-): Pick<HubSsoAssertion, 'sub' | 'email' | 'hubWorkspaceId' | 'role' | 'hubWorkspaceName'> {
-  const sub = accessClaims.sub;
+function assertConnectOrgClaims(
+  claims: JWTPayload
+): Pick<HubConnectAssertion, 'sub' | 'email' | 'hubWorkspaceId' | 'role' | 'hubWorkspaceName'> {
+  const sub = claims.sub;
   if (typeof sub !== 'string' || !sub) throw new Error('missing sub');
-  const email = accessClaims.email;
+  const email = claims.email;
   if (typeof email !== 'string' || !email.includes('@')) throw new Error('missing/malformed email claim');
-  const hubWorkspaceId = accessClaims.workspace_id;
+  const hubWorkspaceId = claims.workspace_id;
   if (typeof hubWorkspaceId !== 'string' || !UUID_RE.test(hubWorkspaceId)) {
     throw new Error('missing/malformed workspace_id claim');
   }
-  const role = accessClaims.role;
+  const role = claims.role;
   // D11: local roles are DERIVED 1:1 from the hub's — an unknown role is a
   // contract break, refused rather than mapped to anything.
   if (typeof role !== 'string' || !(workspaceRoles as readonly string[]).includes(role)) {
     throw new Error(`unknown hub role claim: ${String(role)}`);
   }
-  const rawWsName = accessClaims.workspace_name;
+  const rawWsName = claims.workspace_name;
   return {
     sub,
     email: email.toLowerCase(),
@@ -637,13 +637,20 @@ function assertOrgClaims(
   };
 }
 
-/** The full SSO-login assertion: org claims (access token) + user claims (id token). */
-function buildAssertion(accessClaims: JWTPayload, idClaims: JWTPayload): HubSsoAssertion {
-  const org = assertOrgClaims(accessClaims);
+/** The SSO-login user assertion, from the VERIFIED id_token ONLY. */
+function buildUserAssertion(idClaims: JWTPayload): HubSsoAssertion {
+  const sub = idClaims.sub;
+  if (typeof sub !== 'string' || !sub) throw new Error('id_token carries no sub');
+  const email = idClaims.email;
+  if (typeof email !== 'string' || !email.includes('@')) {
+    throw new Error('id_token carries no usable email claim');
+  }
+  const normalizedEmail = email.toLowerCase();
   const rawName = idClaims.name;
-  const name = typeof rawName === 'string' && rawName.trim() ? rawName : org.email.split('@')[0]!;
+  const name = typeof rawName === 'string' && rawName.trim() ? rawName : normalizedEmail.split('@')[0]!;
   return {
-    ...org,
+    sub,
+    email: normalizedEmail,
     emailVerified: idClaims.email_verified === true,
     name
   };

@@ -120,8 +120,7 @@ beforeAll(async () => {
     EDITION: 'cloud',
     HUB_ISSUER_URL: hub.issuer,
     HUB_CLIENT_ID: 'tool-slideless-cloud',
-    HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001',
-    HUB_SERVICE_KEY: 'ant_integration_test_key'
+    HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
   });
   const setup = await readJson(
     await app.app.request('/api/v1/setup', json({ instanceName: 'CloudCollab', owner: OWNER }))
@@ -322,12 +321,11 @@ describe('the cloud guest journey (D2 limits hold per-workspace)', () => {
     expect((await readJson(roster)).error.code).toBe('guest_forbidden');
   });
 
-  it('guest rows stay OUT of the hub re-assertion (P4 separation intact): the hub knows nothing of the deck workspace', async () => {
-    // The H2 fixture map is empty for (host workspace, guest sub) — a hub
-    // that answered {active:false} for unknown pairs would lock the guest
-    // out if the sweep consulted it. The guest keeps working because the
-    // re-assertion keys on origin='hub' rows only.
-    hub.members.set(`${ORG_GUEST}:${guest.sub}`, { active: true });
+  it('guest rows stay OUT of the hub enforcement (separation intact): the hub never lists the deck workspace', async () => {
+    // The guest's own hub org list (their /orgs) does NOT contain the deck
+    // workspace's org — a reconcile sweep that touched guest rows would
+    // deactivate this grant. The guest keeps working because the sweep and
+    // the live gate key on origin='hub' rows only.
     const read = await app.app.request(`/api/v1/presentations/${deckId}`, {
       headers: { cookie: guestCookie, 'x-workspace-id': hostWorkspaceId }
     });

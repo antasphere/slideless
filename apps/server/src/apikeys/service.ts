@@ -2,7 +2,11 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { apiKeys, type Db } from '@slideless/db';
 import type { Principal } from '@slideless/contract';
-import { resolveMembership } from '../identity/resolve-membership.js';
+import {
+  isWorkspaceSelector,
+  resolveMembership,
+  type OnWorkspaceMiss
+} from '../identity/resolve-membership.js';
 import type { PepperRegistry } from './peppers.js';
 
 /**
@@ -65,7 +69,9 @@ export interface MintedKey {
 export class ApiKeyService {
   constructor(
     private readonly db: Db,
-    private readonly peppers: PepperRegistry
+    private readonly peppers: PepperRegistry,
+    /** Cloud only: one cached reconcile on a well-formed selector miss. */
+    private readonly onWorkspaceMiss?: OnWorkspaceMiss | undefined
   ) {}
 
   async mint(opts: {
@@ -155,9 +161,18 @@ export class ApiKeyService {
     // IS the selector (fail-closed on the live membership, as always); an
     // unpinned key selects like a session. Guest capability limits (D2) bind
     // machine credentials too — the origin of the LIVE membership rides the
-    // principal, and accountRef carries the projection id the cloud gates
-    // key on (docs/federation.md P4).
-    const member = await resolveMembership(this.db, row.createdBy, row.workspaceId ?? requested);
+    // principal, and accountRef carries the projection id the cloud live
+    // gate keys on (docs/federation.md).
+    const selector = row.workspaceId ?? requested;
+    let member = await resolveMembership(this.db, row.createdBy, selector);
+    if (!member && selector && this.onWorkspaceMiss && isWorkspaceSelector(selector)) {
+      // Unknown-workspace retry (cloud): the KEY verified above — the miss
+      // may be a hub org granted since the last reconcile pass. One cached
+      // reconcile, one re-run of the SAME lookup — no recursion. Covers the
+      // pin too: a pinned key into a freshly granted hub org resolves.
+      await this.onWorkspaceMiss(row.createdBy, selector);
+      member = await resolveMembership(this.db, row.createdBy, selector);
+    }
     if (!member) return null;
     // A valid PINNED key + a header naming another workspace: reject loudly
     // (the pre-model-change contract). Checked after the membership resolves

@@ -124,8 +124,7 @@ beforeAll(async () => {
     EDITION: 'cloud',
     HUB_ISSUER_URL: hub.issuer,
     HUB_CLIENT_ID: 'tool-slideless-cloud',
-    HUB_CLIENT_SECRET: 'integration-test-hub-secret-p7',
-    HUB_SERVICE_KEY: 'ant_integration_test_key'
+    HUB_CLIENT_SECRET: 'integration-test-hub-secret-p7'
   });
 
   // The operator's own cloud-LOCAL workspace (setup; centralAccountId NULL).

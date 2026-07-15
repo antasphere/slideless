@@ -2,7 +2,7 @@ import { createLocalJWKSet, jwtVerify, type JWK, type JWTVerifyOptions } from 'j
 import { type Db } from '@slideless/db';
 import type { Principal } from '@slideless/contract';
 import { mcpResourceUrl, type Auth } from './better-auth.js';
-import { resolveMembership } from './resolve-membership.js';
+import { isWorkspaceSelector, resolveMembership, type OnWorkspaceMiss } from './resolve-membership.js';
 
 /**
  * OAuth Bearer-JWT resolution — the third credential path in auth-context.
@@ -34,7 +34,9 @@ export class OauthJwtVerifier {
   constructor(
     private readonly auth: Auth,
     private readonly db: Db,
-    publicBaseUrl: string
+    publicBaseUrl: string,
+    /** Cloud only: one cached reconcile on a well-formed selector miss. */
+    private readonly onWorkspaceMiss?: OnWorkspaceMiss | undefined
   ) {
     this.issuer = publicBaseUrl;
     this.audience = mcpResourceUrl(publicBaseUrl);
@@ -90,7 +92,14 @@ export class OauthJwtVerifier {
     const sub = typeof payload.sub === 'string' ? payload.sub : null;
     if (!sub) return null;
 
-    const member = await resolveMembership(this.db, sub, requested);
+    let member = await resolveMembership(this.db, sub, requested);
+    if (!member && requested && this.onWorkspaceMiss && isWorkspaceSelector(requested)) {
+      // Unknown-workspace retry (cloud): the JWT verified above — the miss
+      // may be a hub org granted since the last reconcile pass. One cached
+      // reconcile, one re-run of the SAME lookup — no recursion.
+      await this.onWorkspaceMiss(sub, requested);
+      member = await resolveMembership(this.db, sub, requested);
+    }
     if (!member) return null;
 
     return {

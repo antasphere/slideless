@@ -22,7 +22,15 @@ import {
 import { hubConfig, parseEnv, type Env } from './env.js';
 import { createAuth, mcpResourceUrl, type AccountEvent, type Auth } from './identity/better-auth.js';
 import { HubSsoService } from './identity/hub-sso.js';
+import { HubGrantService } from './identity/hub-grant.js';
+import { hubApiResource, HubUserClient } from './identity/hub-user-client.js';
+import {
+  DEFAULT_FEDERATION_DIALS,
+  HubOrgReconciler,
+  type HubFederationDials
+} from './identity/hub-reconcile.js';
 import { OauthJwtVerifier } from './identity/oauth-jwt.js';
+import type { OnWorkspaceMiss } from './identity/resolve-membership.js';
 import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
 import { wellKnownRoutes } from './routes/wellknown.js';
@@ -35,7 +43,6 @@ import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-l
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from './observability/otel.js';
 import { bindEditionSeams } from './platform/edition.js';
-import type { HubStatusDials } from './identity/hub-status.js';
 import { AllowAllEntitlements } from './platform/entitlements.js';
 import { EventBus } from './platform/events.js';
 import { LocalIdentityProvider } from './platform/local-identity.js';
@@ -61,11 +68,12 @@ export interface BootOverrides {
    */
   email?: EmailDriver;
   /**
-   * Shrinks the hub-gate cache dials (docs/federation.md P4) so integration
-   * tests can watch suspension/removal propagate in milliseconds. Production
-   * always runs the fixed D5/D3 values.
+   * Shrinks the live-federation dials (reconcile TTL / stale window /
+   * timeouts, identity/hub-reconcile.ts) so integration tests can watch
+   * suspension/removal/grant-death propagate in milliseconds. Production
+   * always runs the fixed defaults.
    */
-  hubDials?: Partial<HubStatusDials>;
+  hubDials?: Partial<HubFederationDials>;
 }
 
 export interface BootResult {
@@ -240,6 +248,11 @@ export async function boot(
   // one object: the genericOAuth provider inside createAuth, the per-login
   // projection after-hook, and the login-scope wrap around the auth mount.
   const hub = hubConfig(env);
+  // THE seam constant: the RFC 8707 `resource` for BOTH the SSO code
+  // exchange and every refresh — `<hub>/mcp`, so the tokens Slideless holds
+  // are HUB-audienced and callable at hub /api/v1 as the user. Flipping it
+  // to null (if the hub ever accepts opaque tokens) is this one line.
+  const hubTokenResource = hub ? hubApiResource(hub.issuerUrl) : null;
   const hubSso = hub
     ? new HubSsoService({
         db: db.db,
@@ -247,8 +260,11 @@ export async function boot(
         issuerUrl: hub.issuerUrl,
         clientId: hub.clientId,
         clientSecret: hub.clientSecret,
-        // Own resource URL — always derived from PUBLIC_BASE_URL, never configured.
+        // Own resource URL — always derived from PUBLIC_BASE_URL, never
+        // configured. Pins H3 connect tokens only; login tokens are
+        // hub-audienced via tokenResource.
         resourceUrl: mcpResourceUrl(env.PUBLIC_BASE_URL),
+        tokenResource: hubTokenResource,
         publicBaseUrl: env.PUBLIC_BASE_URL
       })
     : undefined;
@@ -326,6 +342,59 @@ export async function boot(
       : {})
   });
 
+  // The live user-scoped federation stack (cloud only, docs/federation.md):
+  // each user's OWN hub grant (offline_access refresh token on the account
+  // row) → as-the-user `GET /orgs` reads → the org reconciler that the
+  // login pass, the live gate, and the unknown-workspace miss hook all
+  // share. Constructed AFTER createAuth because the grant encrypts tokens
+  // with Better Auth's own key material ((await auth.$context).secretConfig
+  // — equal to authSecret under our string-secret config; the fallback
+  // keeps the read total if a future Better Auth reshapes the context).
+  const hubDials: HubFederationDials = { ...DEFAULT_FEDERATION_DIALS, ...overrides.hubDials };
+  const hubGrant = hub
+    ? new HubGrantService({
+        db: db.db,
+        issuerUrl: hub.issuerUrl,
+        clientId: hub.clientId,
+        clientSecret: hub.clientSecret,
+        tokenResource: hubTokenResource,
+        key: async () =>
+          ((await auth.$context) as unknown as { secretConfig?: string }).secretConfig ?? authSecret,
+        connectionString: env.DATABASE_URL,
+        logger,
+        dials: {
+          accessSkewMs: hubDials.accessSkewMs,
+          tokenTimeoutMs: hubDials.tokenTimeoutMs,
+          lockWatchdogMs: hubDials.lockWatchdogMs
+        }
+      })
+    : undefined;
+  const hubReconciler =
+    hub && hubGrant
+      ? new HubOrgReconciler({
+          db: db.db,
+          client: new HubUserClient({
+            grant: hubGrant,
+            issuerUrl: hub.issuerUrl,
+            logger,
+            timeoutMs: hubDials.orgsTimeoutMs
+          }),
+          audit,
+          logger,
+          dials: hubDials
+        })
+      : undefined;
+  // The SSO login's fail-closed step 3 (assertLogin) runs THIS reconciler.
+  if (hubSso && hubReconciler) hubSso.bindReconciler(hubReconciler);
+  // Unknown-workspace retry, ALL THREE credential kinds: one cached
+  // reconcile + one re-lookup. Rides the reconciler's TTL + throttle, so a
+  // garbage selector can never hammer the hub. undefined on oss.
+  const onWorkspaceMiss: OnWorkspaceMiss | undefined = hubReconciler
+    ? async (userId) => {
+        await hubReconciler.reconcile(userId);
+      }
+    : undefined;
+
   // Jobs: pg-boss (durable queue). The registry's UsageSink emits into it;
   // the worker side hands batches to the downstream sink (no-op locally).
   const jobs = await createJobs(
@@ -340,8 +409,8 @@ export async function boot(
   // The edition split (docs/federation.md): the local defaults below are the
   // oss binding, passed through bindEditionSeams — the ONE place EDITION
   // decides what the registry gets. oss returns them untouched; cloud
-  // rebinds identity/entitlements (plus the P4 principal gate + hub metrics,
-  // wired below where each belongs).
+  // rebinds the identity descriptor and wires the live principal gate off
+  // the reconciler built above. Entitlements stay LOCAL on both editions.
   const seams = bindEditionSeams(
     hub,
     {
@@ -351,7 +420,8 @@ export async function boot(
         Boolean(env.GOOGLE_CLIENT_ID),
         email.delivers,
         email.delivers, // self-serve password reset needs a delivering email driver
-        email.delivers // self-serve email change needs one too
+        email.delivers, // self-serve email change needs one too
+        onWorkspaceMiss
       ),
       entitlements: new AllowAllEntitlements({
         maxFileSizeMb: env.MAX_FILE_SIZE_MB,
@@ -361,7 +431,7 @@ export async function boot(
       usage: new PgBossUsageSink(jobs.boss, logger)
     },
     logger,
-    { db: db.db, audit, hubDials: overrides.hubDials }
+    { db: db.db, reconciler: hubReconciler }
   );
   const registry = createRegistry({
     identity: seams.identity,
@@ -381,7 +451,7 @@ export async function boot(
         '(docs/security.md).'
     );
   }
-  const apiKeys = new ApiKeyService(db.db, pepperRegistry);
+  const apiKeys = new ApiKeyService(db.db, pepperRegistry, onWorkspaceMiss);
   // Share-token secrets ride the SAME versioned pepper registry as API keys
   // (ADR 008): sha256(secret + pepper), fail-closed across rotations.
   const sharing = new ShareTokenService(db.db, pepperRegistry);
@@ -409,7 +479,7 @@ export async function boot(
 
   // OAuth-bearer verification: local JWKS (we minted the token) + live
   // membership re-check. One instance, shared by the API and /mcp gates.
-  const oauthJwt = new OauthJwtVerifier(auth, db.db, env.PUBLIC_BASE_URL);
+  const oauthJwt = new OauthJwtVerifier(auth, db.db, env.PUBLIC_BASE_URL, onWorkspaceMiss);
 
   const api = createApiApp({
     db: db.db,
@@ -429,9 +499,9 @@ export async function boot(
     sharing,
     collaborators: collaboratorService,
     hubSso,
-    // Cloud only (docs/federation.md P4): the post-resolution hub gate —
-    // org suspension + membership re-assertion — run by authContext on
-    // every authenticated request. undefined on oss.
+    // Cloud only (docs/federation.md): the post-resolution LIVE hub gate —
+    // reconcile-as-the-user + suspension/revocation/grant-death verdicts —
+    // run by authContext on every authenticated request. undefined on oss.
     principalGate: seams.principalGate
   });
 
@@ -452,9 +522,11 @@ export async function boot(
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.
   const otel = await createOtel(env, logger);
   const metrics = createMetrics(db.db, jobs.boss);
-  // Cloud only: the hub-gate counters (fetch outcomes, stale/fail-closed
-  // serves) join the app registry so a degraded hub is visible on /metrics.
-  for (const metric of seams.hubMetrics ?? []) metrics.registry.registerMetric(metric);
+  // Cloud only: the reconcile-pass and grant-refresh counters join the app
+  // registry so a degraded hub (or dying grants) is visible on /metrics.
+  for (const metric of [...(hubReconciler?.promMetrics ?? []), ...(hubGrant?.promMetrics ?? [])]) {
+    metrics.registry.registerMetric(metric);
+  }
 
   // MCP tools call the instance's own API in-process, forwarding the caller's
   // bearer — MCP is just another API client. The root app does not exist yet

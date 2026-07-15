@@ -55,8 +55,7 @@ function cloudEnv() {
     EDITION: 'cloud',
     HUB_ISSUER_URL: hub.issuer,
     HUB_CLIENT_ID: 'tool-slideless-cloud',
-    HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001',
-    HUB_SERVICE_KEY: 'ant_integration_test_key'
+    HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
   };
 }
 
@@ -157,7 +156,18 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     expect(created).toEqual([{ userId: users[0].id, email: 'alice@connect.test' }]);
     off();
 
-    // The key WORKS as an ordinary machine credential in that workspace…
+    // STAGE E INTERIM (until the acquireFromConnect grant channel): a
+    // connect-JIT user holds NO hub grant — the live gate fails their
+    // requests CLOSED (401 hub_grant_expired), steering to one browser SSO.
+    // A key must never act on a grant its holder does not hold.
+    const beforeHeal = await app.app.request('/api/v1/me', {
+      headers: { authorization: `Bearer ${body.key}` }
+    });
+    expect(beforeHeal.status).toBe(401);
+    expect((await readJson(beforeHeal)).error.code).toBe('hub_grant_expired');
+
+    // One browser SSO login seeds the grant; the key then works.
+    await sso.ssoLogin(app, hub, alice);
     const me = await app.app.request('/api/v1/me', {
       headers: { authorization: `Bearer ${body.key}` }
     });

@@ -28,8 +28,7 @@ const HUB_ENV = {
   EDITION: 'cloud',
   HUB_ISSUER_URL: 'http://hub.localhost:3300',
   HUB_CLIENT_ID: 'tool-slideless-cloud',
-  HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001',
-  HUB_SERVICE_KEY: 'ant_integration_test_key'
+  HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
 };
 
 const json = (body: unknown) => ({
@@ -444,6 +443,69 @@ describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () 
       headers: { authorization: `Bearer ${keyB.key}` }
     });
     expect(liveMe.status).toBe(200);
+  });
+});
+
+describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (fetch-spy)', () => {
+  it('an oss boot with HUB_* vars present makes NO outbound fetch at all', async () => {
+    const fetched: string[] = [];
+    const realFetch = globalThis.fetch;
+    const spy: typeof fetch = (input, init) => {
+      fetched.push(String(input instanceof Request ? input.url : input));
+      return realFetch(input as Parameters<typeof fetch>[0], init);
+    };
+    globalThis.fetch = spy;
+    try {
+      // Positive control first: the spy really intercepts global fetch.
+      await spy('http://127.0.0.1:1/spy-probe').catch(() => {});
+      expect(fetched).toEqual(['http://127.0.0.1:1/spy-probe']);
+      fetched.length = 0;
+
+      // Adversarial config: every HUB_* var set — EDITION=oss must leave
+      // them completely unread (hubConfig() is the single switch).
+      const app = await createTestApp(await createDatabase(container, 'edition_oss_dark'), {
+        HUB_ISSUER_URL: 'http://hub.localhost:3300',
+        HUB_CLIENT_ID: 'tool-slideless-cloud',
+        HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
+      });
+      try {
+        // The request matrix: setup, session login, whoami, key mint, key
+        // use, a domain read — every credential kind exercised.
+        const setup = await app.app.request(
+          '/api/v1/setup',
+          json({ instanceName: 'Dark', owner: OWNER })
+        );
+        expect(setup.status).toBe(201);
+        const signIn = await app.app.request(
+          '/api/v1/auth/sign-in/email',
+          json({ email: OWNER.email, password: OWNER.password })
+        );
+        expect(signIn.status).toBe(200);
+        const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
+        expect((await app.app.request('/api/v1/me', { headers: { cookie } })).status).toBe(200);
+        const mint = await app.app.request('/api/v1/api-keys', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie },
+          body: JSON.stringify({ name: 'dark key', scopes: ['presentations:read'] })
+        });
+        expect(mint.status).toBe(201);
+        const { key } = await readJson(mint);
+        expect(
+          (await app.app.request('/api/v1/me', { headers: { authorization: `Bearer ${key}` } })).status
+        ).toBe(200);
+        expect(
+          (await app.app.request('/api/v1/presentations', { headers: { cookie } })).status
+        ).toBe(200);
+      } finally {
+        await app.stop();
+      }
+      // The whole boot + matrix performed ZERO outbound fetches — no hub
+      // grant, no reconcile, no token endpoint, nothing. Byte-identity is
+      // not "no hub calls", it is "no network surface constructed at all".
+      expect(fetched).toEqual([]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 

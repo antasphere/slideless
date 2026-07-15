@@ -97,8 +97,7 @@ describe('env schema', () => {
     const hubVars = {
       HUB_ISSUER_URL: 'https://account.antasphere.com',
       HUB_CLIENT_ID: 'tool-slideless-cloud',
-      HUB_CLIENT_SECRET: 'a-dev-secret-of-sixteen-chars',
-      HUB_SERVICE_KEY: 'ant_service_key'
+      HUB_CLIENT_SECRET: 'a-dev-secret-of-sixteen-chars'
     };
 
     it('defaults to the oss edition with no hub config read', () => {
@@ -118,7 +117,7 @@ describe('env schema', () => {
       const result = envSchema.safeParse({ ...minimal, EDITION: 'cloud' });
       expect(result.success).toBe(false);
       const paths = result.error!.issues.map((i) => i.path.join('.'));
-      for (const key of ['HUB_ISSUER_URL', 'HUB_CLIENT_ID', 'HUB_CLIENT_SECRET', 'HUB_SERVICE_KEY']) {
+      for (const key of ['HUB_ISSUER_URL', 'HUB_CLIENT_ID', 'HUB_CLIENT_SECRET']) {
         expect(paths, `issue for ${key}`).toContain(key);
       }
     });
@@ -133,15 +132,14 @@ describe('env schema', () => {
       expect(result.success).toBe(false);
       const paths = result.error!.issues.map((i) => i.path.join('.'));
       expect(paths).toContain('HUB_CLIENT_SECRET');
-      expect(paths).toContain('HUB_SERVICE_KEY');
       expect(paths).not.toContain('HUB_ISSUER_URL');
       expect(paths).not.toContain('HUB_CLIENT_ID');
     });
 
     it('a blank hub var (VAR= in compose) counts as missing on cloud', () => {
-      const result = envSchema.safeParse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_SERVICE_KEY: ' ' });
+      const result = envSchema.safeParse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_CLIENT_ID: ' ' });
       expect(result.success).toBe(false);
-      expect(result.error!.issues.map((i) => i.path.join('.'))).toContain('HUB_SERVICE_KEY');
+      expect(result.error!.issues.map((i) => i.path.join('.'))).toContain('HUB_CLIENT_ID');
     });
 
     it('EDITION=cloud with the full hub block parses; hubConfig carries it', () => {
@@ -149,8 +147,7 @@ describe('env schema', () => {
       expect(hubConfig(env)).toEqual({
         issuerUrl: hubVars.HUB_ISSUER_URL,
         clientId: hubVars.HUB_CLIENT_ID,
-        clientSecret: hubVars.HUB_CLIENT_SECRET,
-        serviceKey: hubVars.HUB_SERVICE_KEY
+        clientSecret: hubVars.HUB_CLIENT_SECRET
       });
     });
 

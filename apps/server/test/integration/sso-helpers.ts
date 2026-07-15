@@ -65,3 +65,81 @@ export async function expectFailedLogin(app: TestApp, res: Response, errorContai
     expect(me.status).toBe(401);
   }
 }
+
+/**
+ * The in-process OAuth 2.1 dance against the instance's OWN authorization
+ * server (register once per app + PKCE + consent) — mints a Bearer JWT for
+ * the session's user, so suites can exercise the third credential path.
+ */
+const oauthClientIds = new WeakMap<TestApp, string>();
+export async function oauthBearer(app: TestApp, cookie: string): Promise<string> {
+  const { createHash, randomBytes } = await import('node:crypto');
+  const redirectUri = 'http://127.0.0.1:19999/callback';
+  let clientId = oauthClientIds.get(app);
+  if (!clientId) {
+    const register = await app.app.request(
+      '/api/v1/auth/oauth2/register',
+      json({
+        client_name: 'sso-helper-client',
+        redirect_uris: [redirectUri],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code']
+      })
+    );
+    expect([200, 201]).toContain(register.status);
+    clientId = (await readJson(register)).client_id as string;
+    oauthClientIds.set(app, clientId);
+  }
+  const verifier = randomBytes(48).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest().toString('base64url');
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: 'openid presentations:read',
+    state: 'helper-state',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    resource: 'http://localhost:3000/mcp'
+  });
+  const authorize = await app.app.request(`/api/v1/auth/oauth2/authorize?${params}`, {
+    headers: { cookie }
+  });
+  let location: string;
+  if (authorize.status === 302) {
+    location = authorize.headers.get('location') ?? '';
+  } else {
+    expect(authorize.status).toBe(200);
+    location = (await readJson(authorize)).url;
+  }
+  let codeUrl: URL;
+  if (location.includes('/oauth/consent?')) {
+    const consent = await app.app.request('/api/v1/auth/oauth2/consent', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ accept: true, oauth_query: location.split('?')[1] ?? '' })
+    });
+    expect(consent.status).toBe(200);
+    const body = await readJson(consent);
+    codeUrl = new URL(body.redirect_uri ?? body.url ?? '');
+  } else {
+    codeUrl = new URL(location);
+  }
+  const code = codeUrl.searchParams.get('code');
+  expect(code).toBeTruthy();
+  const token = await app.app.request('/api/v1/auth/oauth2/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code!,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      code_verifier: verifier,
+      resource: 'http://localhost:3000/mcp'
+    })
+  });
+  expect(token.status).toBe(200);
+  return (await readJson(token)).access_token as string;
+}

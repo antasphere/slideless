@@ -25,6 +25,25 @@ import { user as userTable, workspaceMembers, workspaces, type Db } from '@slide
 /** Strict UUID shape — a malformed selector must never reach Postgres' uuid cast. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Well-formed-selector check, shared with the cloud miss-retry hook: only a
+ * plausibly-real workspace id ever triggers a hub reconcile — a garbage
+ * header can never buy a hub round-trip (the reconciler's TTL/throttle
+ * bounds even well-formed ones).
+ */
+export function isWorkspaceSelector(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
+/**
+ * The cloud edition's unknown-workspace retry hook (docs/federation.md):
+ * a verified credential naming a workspace the local join cannot see MAY be
+ * a hub org granted since the last reconcile pass — "invited at the hub,
+ * clicks a deep link". Boot wires ONE cached reconcile; the resolver then
+ * re-runs the SAME lookup once, no recursion. undefined on oss.
+ */
+export type OnWorkspaceMiss = (userId: string, requested: string) => Promise<void>;
+
 export interface ResolvedMembership {
   workspaceId: string;
   role: 'owner' | 'admin' | 'member';

@@ -1,4 +1,3 @@
-import type { Counter } from 'prom-client';
 import type { Db } from '@slideless/db';
 import type {
   EntitlementService,
@@ -9,9 +8,8 @@ import type {
   UsageSink
 } from '@slideless/contract';
 import { HUB_SSO_PROVIDER_ID } from '../identity/hub-sso.js';
-import { HubEntitlementService, HubPrincipalGate } from '../identity/hub-gate.js';
-import { DEFAULT_HUB_DIALS, HubStatusClient, type HubStatusDials } from '../identity/hub-status.js';
-import type { AuditService } from '../audit/service.js';
+import { HubLiveGate } from '../identity/hub-live-gate.js';
+import type { HubOrgReconciler } from '../identity/hub-reconcile.js';
 import type { PrincipalGate } from '../middleware/auth-context.js';
 import type { HubConfig } from '../env.js';
 import type { Logger } from '../logger.js';
@@ -21,7 +19,7 @@ import type { Logger } from '../logger.js';
  * two seam bindings selected purely by instance config. This module is the
  * ONLY place edition decides which implementations the boot-time registry
  * gets — `oss` binds the local defaults byte-identically; `cloud` rebinds
- * the hub-federating variants here as they land phase by phase.
+ * the hub-federating variants here.
  */
 
 /**
@@ -33,10 +31,11 @@ import type { Logger } from '../logger.js';
 export const HUB_SSO_METHOD = HUB_SSO_PROVIDER_ID;
 
 /**
- * The cloud identity binding (Phase 3). Request RESOLUTION stays exactly the
- * local provider's — after the SSO callback mints an ordinary session, every
- * request is sessions + live membership re-check, hub out of the path.
- * What changes is the ADVERTISED entrance (D1, hub-only human login):
+ * The cloud identity binding. Request RESOLUTION stays exactly the local
+ * provider's — after the SSO callback mints an ordinary session, every
+ * request is sessions + live membership re-check (the live hub gate runs
+ * post-resolution in authContext, not here). What changes is the ADVERTISED
+ * entrance (D1, hub-only human login):
  *
  *  - `antasphere` replaces password/email-otp/google — the login page
  *    renders ONLY "Sign in with Antasphere". The local password machinery
@@ -82,20 +81,21 @@ export interface EditionSeams {
 /** What the cloud bindings need beyond the seams themselves. */
 export interface EditionBindingDeps {
   db: Db;
-  audit: AuditService;
-  /** Test seam only: cache-dial overrides (D5/D3 values are fixed in production). */
-  hubDials?: Partial<HubStatusDials> | undefined;
+  /**
+   * The live org reconciler (identity/hub-reconcile.ts), constructed by
+   * boot on cloud — the ONE hub data path, shared by the login pass, the
+   * live gate, and the unknown-workspace miss hook.
+   */
+  reconciler?: HubOrgReconciler | undefined;
 }
 
 /**
- * The bound seams plus the cloud-only extras boot wires alongside them:
- * the post-resolution principal gate (authContext) and the hub-status
- * Prometheus counters (registered into the app registry). Both are absent
- * on oss by construction.
+ * The bound seams plus the cloud-only extra boot wires alongside them: the
+ * post-resolution principal gate (authContext). Absent on oss by
+ * construction.
  */
 export interface BoundEditionSeams extends EditionSeams {
   principalGate?: PrincipalGate;
-  hubMetrics?: Counter[];
 }
 
 /**
@@ -103,6 +103,11 @@ export interface BoundEditionSeams extends EditionSeams {
  * switch: null (EDITION=oss) returns the local defaults UNTOUCHED — the
  * self-host edition carries zero hub surface at runtime; a HubConfig
  * (EDITION=cloud, validated at env parse) selects the cloud bindings.
+ *
+ * Entitlements bind LOCAL on BOTH editions: the live gate refuses a
+ * suspended/revoked/unavailable principal at the door, before any handler
+ * or entitlement check runs — a hub-wrapping entitlement layer would be a
+ * second, redundant enforcement path.
  */
 export function bindEditionSeams(
   hub: HubConfig | null,
@@ -115,32 +120,21 @@ export function bindEditionSeams(
   logger.info(
     { hubIssuer: hub.issuerUrl },
     'EDITION=cloud: hub SSO is the human entrance (identity resolution stays local sessions); ' +
-      'entitlements + membership re-assertion gate on the hub accounts:status surface ' +
+      'org/membership truth is reconciled live AS THE USER via each user’s own hub grant ' +
       '(docs/federation.md).'
   );
-  // P4: one cached status client feeds both gates. Org suspension: 60 s TTL,
-  // stale-while-error 15 min, then fail closed (D5). Membership
-  // re-assertion: ~5 min per-(user, org), origin='hub' rows only, and ONLY a
-  // definitive hub `active:false` deactivates (D3/D11).
-  const status = new HubStatusClient({
-    issuerUrl: hub.issuerUrl,
-    serviceKey: hub.serviceKey,
-    logger,
-    dials: { ...DEFAULT_HUB_DIALS, ...deps.hubDials }
-  });
-  const gate = new HubPrincipalGate({ db: deps.db, status, audit: deps.audit, logger });
+  const gate = deps.reconciler
+    ? new HubLiveGate({ db: deps.db, reconciler: deps.reconciler, logger })
+    : undefined;
   return {
-    // P3: hub-only entrance advertised; the SSO machinery itself (relying
-    // party, JIT projection, re-sync) lives in identity/hub-sso.ts and is
+    // Hub-only entrance advertised; the SSO machinery itself (relying
+    // party, JIT, login reconcile) lives in identity/hub-sso.ts and is
     // wired through createAuth — resolution stays local by design.
     identity: new HubSsoIdentityProvider(local.identity),
-    // P4: the hub org gate wraps the local caps — metered actions in a
-    // suspended org deny with a reason even if a caller reaches a handler.
-    entitlements: new HubEntitlementService(local.entitlements, status),
+    entitlements: local.entitlements,
     // D6: usage stays the local sink with a no-op downstream for v1; hub
     // ingest is a one-class downstream swap when it ships (plan §4.3).
     usage: local.usage,
-    principalGate: gate.assert,
-    hubMetrics: status.promMetrics
+    ...(gate ? { principalGate: gate.assert } : {})
   };
 }

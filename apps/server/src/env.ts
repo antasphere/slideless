@@ -84,10 +84,8 @@ const envObjectSchema = z.object({
   HUB_ISSUER_URL: z.preprocess(blankToUndefined, z.url().optional()),
   /** OAuth client id from this tool's entry in the hub TOOL_REGISTRY (e.g. tool-slideless-cloud). Required when EDITION=cloud. */
   HUB_CLIENT_ID: optionalString(z.string().min(4)),
-  /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Required when EDITION=cloud. */
+  /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Also authenticates the per-user refresh grant — there is NO service key: every hub read between logins presents the USER's own grant (docs/federation.md). Required when EDITION=cloud. */
   HUB_CLIENT_SECRET: optionalString(z.string().min(16)),
-  /** Hub API key (ant_…) holding the accounts:status scope — the EntitlementService credential (Phase 4). Required when EDITION=cloud. */
-  HUB_SERVICE_KEY: optionalString(z.string().min(8)),
   /** R7 escape hatch (docs/federation.md): acknowledge an EDITION change on an already-set-up instance. Without it, boot refuses an EDITION that differs from the one stamped at setup — flipping editions under existing users/workspaces changes identity semantics and must be a conscious operator act. */
   EDITION_CHANGE_ALLOWED: booleanish.default(false),
   /** Build version stamped by CI (Docker ARG); 'dev' locally. */
@@ -146,12 +144,7 @@ const envObjectSchema = z.object({
  * first hub call. On EDITION=oss these stay plain optional strings: unset
  * is fine and nothing reads them.
  */
-const HUB_REQUIRED_VARS = [
-  'HUB_ISSUER_URL',
-  'HUB_CLIENT_ID',
-  'HUB_CLIENT_SECRET',
-  'HUB_SERVICE_KEY'
-] as const;
+const HUB_REQUIRED_VARS = ['HUB_ISSUER_URL', 'HUB_CLIENT_ID', 'HUB_CLIENT_SECRET'] as const;
 
 export const envSchema = envObjectSchema.superRefine((env, ctx) => {
   if (env.EDITION !== 'cloud') return;
@@ -179,7 +172,6 @@ export interface HubConfig {
   issuerUrl: string;
   clientId: string;
   clientSecret: string;
-  serviceKey: string;
 }
 
 export function hubConfig(env: Env): HubConfig | null {
@@ -188,8 +180,7 @@ export function hubConfig(env: Env): HubConfig | null {
   return {
     issuerUrl: env.HUB_ISSUER_URL!,
     clientId: env.HUB_CLIENT_ID!,
-    clientSecret: env.HUB_CLIENT_SECRET!,
-    serviceKey: env.HUB_SERVICE_KEY!
+    clientSecret: env.HUB_CLIENT_SECRET!
   };
 }
 
