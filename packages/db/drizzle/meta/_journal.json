@@ -190,6 +190,20 @@
       "when": 1784067575346,
       "tag": "0026_oauth_grant_wipe",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784129016665,
+      "tag": "0027_flawless_fenris",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784129025150,
+      "tag": "0028_user_onboarding_backfill",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { apiErrorSchema, cursorPageQuerySchema } from '../schemas/common.js';
 import { instanceInfoSchema } from '../schemas/instance.js';
 import { setupRequestSchema, setupResponseSchema } from '../schemas/setup.js';
-import { meResponseSchema } from '../schemas/me.js';
+import { meResponseSchema, onboardingDismissedSchema } from '../schemas/me.js';
 import {
   memberChangeEmailLinkRequestSchema,
   memberChangeEmailLinkSchema,
@@ -166,6 +166,24 @@ export const meRoute = createRoute({
   responses: {
     200: jsonBody(meResponseSchema, 'The caller identity'),
     401: errorResponses[401]
+  }
+});
+
+// ── Onboarding dismiss (cloud edition only) ─────────────────────────────────
+// SESSION-ONLY like /sso/logout: deliberately UNLISTED in the machine scope
+// allowlist (fail-closed 403 for keys/tokens); the handler resolves the
+// session route-locally so zero-membership sessions can dismiss too. The
+// route exists ONLY on EDITION=cloud; oss answers the JSON 404 terminator.
+
+export const onboardingDismissRoute = createRoute({
+  method: 'post',
+  path: '/me/onboarding/dismiss',
+  tags: ['auth'],
+  summary: 'Dismiss the first-run welcome (cloud edition; sessions only; idempotent)',
+  responses: {
+    200: jsonBody(onboardingDismissedSchema, 'Dismissal recorded — firstRunPending is now false'),
+    401: errorResponses[401],
+    403: errorResponses[403]
   }
 });
 

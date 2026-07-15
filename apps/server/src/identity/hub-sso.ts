@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { JWTPayload } from 'jose';
 import { and, eq, ne } from 'drizzle-orm';
 import type { GenericOAuthConfig } from 'better-auth/plugins';
-import { account, user as userTable, type Db } from '@slideless/db';
+import { account, user as userTable, userOnboarding, type Db } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { HubJwtVerifier } from './hub-jwt.js';
 import type { ReconcilePassOutcome } from './hub-reconcile.js';
@@ -346,6 +346,21 @@ export class HubSsoService {
     });
     if (outcome !== 'ok') {
       throw new HubSsoLoginError('sso_projection_failed', `login reconcile pass failed (${outcome})`);
+    }
+    // SL-6: lazily mark the first login for the tool-local onboarding seam.
+    // AFTER the reconcile 'ok' (a revoked login must not leave a row) and
+    // strictly BEST-EFFORT: this write is NEVER a login failure mode — a
+    // failed insert just means the row appears on the NEXT login, and the
+    // banner semantics (`NOT EXISTS dismissed row` = welcome owed) already
+    // show the welcome without any row at all. ON CONFLICT DO NOTHING keeps
+    // returning logins from touching an existing (possibly dismissed) row.
+    try {
+      await this.opts.db.insert(userOnboarding).values({ userId: localUserId }).onConflictDoNothing();
+    } catch (err) {
+      this.opts.logger.warn(
+        { err, localUserId },
+        'onboarding first-login insert failed — retry-safe (the welcome stays owed), login unaffected'
+      );
     }
   }
 

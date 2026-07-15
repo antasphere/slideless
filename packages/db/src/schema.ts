@@ -291,6 +291,31 @@ export const ssoConnectJtis = pgTable('sso_connect_jtis', {
 });
 
 /**
+ * TOOL-LOCAL first-run onboarding state (SL-6; written on the cloud
+ * edition's SSO login path, read by /me). An APP domain table, not a
+ * Better Auth column — no drift-guard involvement. The welcome-banner
+ * decision reads ONLY this table and is RETRY-SAFE BY CONSTRUCTION:
+ * `firstRunPending := NOT EXISTS (row WHERE dismissed_at IS NOT NULL)` —
+ * the absence of a DISMISSAL means the welcome is still owed, so a
+ * transiently-failed first-login insert self-heals on the next login and
+ * only an explicit dismissal ever hides the banner. The hub's advisory
+ * `tool_first_login` id_token claim is deliberately ignored for behavior
+ * (the hub's user_tool_usage table stays the ECOSYSTEM analytics truth;
+ * this table owns the banner). The deploy-time backfill migration inserts
+ * DISMISSED rows for every pre-existing user — nobody gets a retroactive
+ * welcome.
+ */
+export const userOnboarding = pgTable('user_onboarding', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  /** First observed login (informational; the banner keys on dismissed_at). */
+  firstLoginAt: timestamp('first_login_at', { withTimezone: true }).notNull().defaultNow(),
+  /** NULL = welcome still owed; set once by POST /me/onboarding/dismiss (or the backfill). */
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true })
+});
+
+/**
  * Audit log: who did what to which resource, when, with which credential.
  * Append-only; bigint identity keeps inserts cheap on the hot path.
  */

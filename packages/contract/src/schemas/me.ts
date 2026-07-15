@@ -96,6 +96,38 @@ export const meResponseSchema = z.object({
    * Antasphere" CTA target). null on oss and on local (non-projected)
    * workspaces.
    */
-  hubManageUrl: z.string().nullable()
+  hubManageUrl: z.string().nullable(),
+  /**
+   * First-run welcome still owed (SL-6). CLOUD + SESSION callers ONLY —
+   * absent on oss and for every machine credential. TOOL-LOCAL and
+   * retry-safe semantics: true iff NO user_onboarding row with a dismissal
+   * exists (`NOT EXISTS (row WHERE dismissed_at IS NOT NULL)`), so a lost
+   * first-login write still shows the welcome and only an explicit
+   * POST /me/onboarding/dismiss (or the deploy backfill) ever hides it.
+   * The hub's advisory `tool_first_login` claim plays no part.
+   */
+  firstRunPending: z.boolean().optional(),
+  /**
+   * The hint-watch discriminator (SL-4/SL-6). CLOUD + SESSION callers ONLY
+   * — absent on oss and for machine credentials. True iff the user's ONLY
+   * way in is hub SSO: they hold an `antasphere` account row AND no local
+   * credential (password) account row. A break-glass-capable operator has
+   * a credential account and is therefore NEVER ssoOnly — the dashboard's
+   * hint-watch may auto-sign-out ssoOnly users when the hub hint cookie
+   * disappears, and must never sign out an operator.
+   */
+  ssoOnly: z.boolean().optional()
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
+
+/**
+ * POST /api/v1/me/onboarding/dismiss (cloud edition ONLY; sessions only —
+ * machines 403 fail-closed via the scope allowlist, oss answers the JSON
+ * 404 terminator): records the explicit dismissal that flips
+ * `firstRunPending` to false, permanently (upsert; an earlier dismissal
+ * timestamp is preserved). Idempotent — dismissing twice is a no-op.
+ */
+export const onboardingDismissedSchema = z.object({
+  dismissed: z.literal(true)
+});
+export type OnboardingDismissed = z.infer<typeof onboardingDismissedSchema>;

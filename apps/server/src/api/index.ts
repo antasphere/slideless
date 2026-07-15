@@ -4,7 +4,15 @@ import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
 import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
-import { instanceSettings, user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
+import {
+  account,
+  instanceSettings,
+  user as userTable,
+  userOnboarding,
+  workspaceMembers,
+  workspaces,
+  type Db
+} from '@slideless/db';
 import { hubConfig, type Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
@@ -25,11 +33,12 @@ import {
   type RateLimiters
 } from '../middleware/rate-limit.js';
 import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
-import type { HubSsoService } from '../identity/hub-sso.js';
+import { HUB_SSO_PROVIDER_ID, type HubSsoService } from '../identity/hub-sso.js';
 import type { HubGrantService } from '../identity/hub-grant.js';
 import type { HubLogoutService } from '../identity/hub-logout.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
+import { registerOnboardingRoutes } from './onboarding.js';
 import { registerSsoConnectRoutes } from './sso-connect.js';
 import { registerSsoLogoutRoutes } from './sso-logout.js';
 import { registerMemberRoutes } from './members.js';
@@ -405,6 +414,41 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     return c.json({ instanceId, workspaceId, ownerUserId }, 201);
   });
 
+  /**
+   * SL-6 /me extras — CLOUD + SESSION callers only (both spread-gated
+   * below; machine credentials and every oss response never carry the
+   * keys):
+   *
+   *  - `firstRunPending`: tool-local, retry-safe banner truth —
+   *    `NOT EXISTS (user_onboarding row WHERE dismissed_at IS NOT NULL)`.
+   *    A missing row (lost first-login insert) still shows the welcome;
+   *    only an explicit dismissal (or the deploy backfill) hides it.
+   *  - `ssoOnly`: the hint-watch discriminator — the user holds an
+   *    `antasphere` account row AND no local credential (password) row.
+   *    'credential' is better-auth's password-account providerId (pinned
+   *    1.6.15; re-verify on bump). A break-glass-capable operator always
+   *    has a credential row (setup mints it), so they are NEVER ssoOnly
+   *    and the dashboard's hint-watch can never sign them out.
+   */
+  const CREDENTIAL_PROVIDER_ID = 'credential';
+  const cloudSessionExtras = async (
+    userId: string
+  ): Promise<{ firstRunPending: boolean; ssoOnly: boolean }> => {
+    const [onboardingRows, accountRows] = await Promise.all([
+      db
+        .select({ dismissedAt: userOnboarding.dismissedAt })
+        .from(userOnboarding)
+        .where(eq(userOnboarding.userId, userId))
+        .limit(1),
+      db.select({ providerId: account.providerId }).from(account).where(eq(account.userId, userId))
+    ]);
+    const providers = new Set(accountRows.map((r) => r.providerId));
+    return {
+      firstRunPending: onboardingRows[0]?.dismissedAt == null,
+      ssoOnly: providers.has(HUB_SSO_PROVIDER_ID) && !providers.has(CREDENTIAL_PROVIDER_ID)
+    };
+  };
+
   // ── GET /me — whoami across all credential paths ─────────────────────────
   // No blanket requireAuth: the ZERO-MEMBERSHIP session state is route-local
   // (user-scoped federation). A LIVE session whose user holds no active
@@ -447,7 +491,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           activeWorkspaceId: null,
           // The zero state's CTA target on cloud: organizations are created
           // at the hub, never locally (docs/federation.md).
-          hubManageUrl: hubManaged?.manageUrl ?? null
+          hubManageUrl: hubManaged?.manageUrl ?? null,
+          // Cloud + session extras (SL-6): the zero state is session-only
+          // by construction, so only the edition gate applies here.
+          ...(hub ? await cloudSessionExtras(session.user.id) : {})
         },
         200
       );
@@ -504,11 +551,22 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         apiKeyExpiresAt: principal.apiKeyExpiresAt ?? null,
         workspaces: wireWorkspaces,
         activeWorkspaceId: principal.workspaceId,
-        hubManageUrl: hubManaged && principal.accountRef ? hubManaged.manageUrl : null
+        hubManageUrl: hubManaged && principal.accountRef ? hubManaged.manageUrl : null,
+        // Cloud + SESSION only (SL-6): machine credentials never carry the
+        // onboarding/hint-watch keys — the banner and the auto-sign-out are
+        // browser concerns.
+        ...(hub && principal.via === 'session' ? await cloudSessionExtras(principal.userId) : {})
       },
       200
     );
   });
+
+  // First-run onboarding dismiss (SL-6): cloud-only — an oss boot leaves
+  // POST /me/onboarding/dismiss to the JSON 404 terminator. Session-only
+  // (unlisted in the machine scope allowlist; route-local session check).
+  if (hub) {
+    registerOnboardingRoutes(api, { db, auth });
+  }
 
   // ── Platform modules ─────────────────────────────────────────────────────
   // Break-glass first: it self-authenticates (superadmin sessions may carry
