@@ -3,11 +3,14 @@ import {
   SSO_ATTEMPT_TTL_MS,
   SSO_PENDING_NEXT_KEY,
   SSO_PENDING_NEXT_TTL_MS,
+  clearAttemptMarker,
   consumePendingNext,
   evaluateAutoConnect,
   hasCookie,
   isAttemptMarkerFresh,
   isLoginRequiredError,
+  readAttemptMarker,
+  writeAttemptMarker,
   writePendingNext,
   type AutoConnectContext,
   type StorageLike
@@ -154,6 +157,86 @@ describe('evaluateAutoConnect — the four cycle entries stay bounded', () => {
     // First pass attempts; the marker (written before navigating) blocks the second.
     expect(evaluateAutoConnect(ctx()).attempt).toBe(true);
     expect(evaluateAutoConnect(ctx({ attemptMarker: String(NOW) })).attempt).toBe(false);
+  });
+});
+
+describe('gate D without storage (locked-down/private browsers)', () => {
+  // The one cycle that carries NO ?error= param — the (app) guard bouncing
+  // a me=null visitor to a bare /login while the hub hint is live — is
+  // bounded by gate D ALONE. These pins prove the bound survives a
+  // sessionStorage that is blocked or throwing: the in-memory fallback
+  // still caps re-attempts within the page/JS lifetime.
+
+  function throwingStorage(): StorageLike {
+    const blocked = () => {
+      throw new Error('storage blocked');
+    };
+    return { getItem: blocked, setItem: blocked, removeItem: blocked };
+  }
+
+  it('sessionStorage throws on setItem/getItem → a recorded attempt STILL blocks the second evaluation', () => {
+    const storage = throwingStorage();
+    clearAttemptMarker(storage); // reset the module-level fallback between tests
+
+    // First evaluation: no marker anywhere — the silent attempt proceeds…
+    expect(evaluateAutoConnect(ctx({ attemptMarker: readAttemptMarker(storage) })).attempt).toBe(true);
+    // …and the pre-navigation write cannot persist to storage:
+    writeAttemptMarker(NOW, storage);
+    // Second evaluation in the same JS lifetime: gate D holds regardless.
+    const second = evaluateAutoConnect(ctx({ attemptMarker: readAttemptMarker(storage), now: NOW + 1_000 }));
+    expect(second.attempt).toBe(false);
+    expect(second.blockedBy).toBe('recent_attempt');
+  });
+
+  it('storage entirely unavailable (null) → same bound', () => {
+    clearAttemptMarker(null);
+    writeAttemptMarker(NOW, null);
+    expect(evaluateAutoConnect(ctx({ attemptMarker: readAttemptMarker(null), now: NOW + 1 })).blockedBy).toBe(
+      'recent_attempt'
+    );
+  });
+
+  it('classic private mode (getItem works, setItem throws) → same bound', () => {
+    const backing = memoryStorage();
+    const quotaBlocked: StorageLike = {
+      getItem: (k) => backing.getItem(k),
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem: (k) => backing.removeItem(k)
+    };
+    clearAttemptMarker(quotaBlocked);
+    writeAttemptMarker(NOW, quotaBlocked);
+    expect(readAttemptMarker(quotaBlocked)).toBe(String(NOW));
+  });
+
+  it('the TTL semantics hold on the fallback too: past the window the attempt reopens', () => {
+    const storage = throwingStorage();
+    clearAttemptMarker(storage);
+    writeAttemptMarker(NOW, storage);
+    expect(
+      evaluateAutoConnect(
+        ctx({ attemptMarker: readAttemptMarker(storage), now: NOW + SSO_ATTEMPT_TTL_MS + 1 })
+      ).attempt
+    ).toBe(true);
+  });
+
+  it('a successful bootstrap clears the fallback too (clearAttemptMarker)', () => {
+    const storage = throwingStorage();
+    writeAttemptMarker(NOW, storage);
+    clearAttemptMarker(storage);
+    expect(readAttemptMarker(storage)).toBeNull();
+  });
+
+  it('when storage WORKS, the storage-backed per-tab marker still round-trips', () => {
+    const storage = memoryStorage();
+    clearAttemptMarker(storage);
+    writeAttemptMarker(NOW, storage);
+    expect(storage.getItem('sso.attempt')).toBe(String(NOW));
+    expect(readAttemptMarker(storage)).toBe(String(NOW));
+    clearAttemptMarker(storage);
+    expect(storage.data.has('sso.attempt')).toBe(false);
+    expect(readAttemptMarker(storage)).toBeNull();
   });
 });
 

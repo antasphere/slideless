@@ -117,25 +117,45 @@ export function isAttemptMarkerFresh(marker: string | null, now: number): boolea
   return now - ts < SSO_ATTEMPT_TTL_MS;
 }
 
+/**
+ * In-memory fallback marker: gate D is the SOLE bound on the one cycle
+ * that carries no ?error= param — the (app) guard bouncing a me=null
+ * visitor to a bare /login while the hub hint is live keeps gates B/C/E
+ * green, so only this marker stops a re-attempt. In browsers where
+ * sessionStorage is unavailable or throws (private/locked-down modes) the
+ * storage marker never persists; this module-level value keeps that cycle
+ * bounded within the page/JS lifetime regardless. Storage-backed reads
+ * win when present (they survive full navigations); the same ~2min TTL
+ * applies to both via isAttemptMarkerFresh.
+ */
+let memoryAttemptMarker: string | null = null;
+
 export function readAttemptMarker(storage: StorageLike | null = attemptMarkerStorage()): string | null {
+  let persisted: string | null = null;
   try {
-    return storage?.getItem(SSO_ATTEMPT_KEY) ?? null;
+    persisted = storage?.getItem(SSO_ATTEMPT_KEY) ?? null;
   } catch {
-    return null;
+    persisted = null;
   }
+  return persisted ?? memoryAttemptMarker;
 }
 
 /** Written BEFORE navigating to the hub — the order is the loop safety. */
 export function writeAttemptMarker(now: number, storage: StorageLike | null = attemptMarkerStorage()): void {
+  // The in-memory copy goes down unconditionally: gate D must hold even
+  // when the setItem below is swallowed (see memoryAttemptMarker).
+  memoryAttemptMarker = String(now);
   try {
     storage?.setItem(SSO_ATTEMPT_KEY, String(now));
   } catch {
-    // Not persistable: the other gates (?error / ?signed_out / the hint
-    // clear on login_required) still bound every known cycle.
+    // Not persistable — gate D is the only bound for the no-error
+    // bare-/login + live-hint cycle, so the in-memory marker above is
+    // what keeps that cycle bounded here.
   }
 }
 
 export function clearAttemptMarker(storage: StorageLike | null = attemptMarkerStorage()): void {
+  memoryAttemptMarker = null;
   try {
     storage?.removeItem(SSO_ATTEMPT_KEY);
   } catch {
