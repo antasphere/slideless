@@ -147,8 +147,45 @@ describe('env schema', () => {
       expect(hubConfig(env)).toEqual({
         issuerUrl: hubVars.HUB_ISSUER_URL,
         clientId: hubVars.HUB_CLIENT_ID,
-        clientSecret: hubVars.HUB_CLIENT_SECRET
+        clientSecret: hubVars.HUB_CLIENT_SECRET,
+        hintCookieName: 'ant_sso_hint',
+        hintCookieDomain: 'antasphere.com'
       });
+    });
+
+    it('derives the hint-cookie defaults: name ant_sso_hint, domain = issuer host minus its first label', () => {
+      const env = envSchema.parse({
+        ...minimal,
+        EDITION: 'cloud',
+        ...hubVars,
+        HUB_ISSUER_URL: 'https://account.antasphere.com'
+      });
+      const hub = hubConfig(env)!;
+      expect(hub.hintCookieName).toBe('ant_sso_hint');
+      expect(hub.hintCookieDomain).toBe('antasphere.com');
+      // A single-label issuer host has no parent to strip to — fall back to
+      // the host itself rather than an empty cookie domain.
+      const single = hubConfig(
+        envSchema.parse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_ISSUER_URL: 'http://localhost:3300' })
+      )!;
+      expect(single.hintCookieDomain).toBe('localhost');
+    });
+
+    it('HUB_HINT_COOKIE_NAME/DOMAIN override the derived defaults (blank = unset)', () => {
+      const env = envSchema.parse({
+        ...minimal,
+        EDITION: 'cloud',
+        ...hubVars,
+        HUB_HINT_COOKIE_NAME: 'custom_hint',
+        HUB_HINT_COOKIE_DOMAIN: 'example.test'
+      });
+      const hub = hubConfig(env)!;
+      expect(hub.hintCookieName).toBe('custom_hint');
+      expect(hub.hintCookieDomain).toBe('example.test');
+      const blank = hubConfig(
+        envSchema.parse({ ...minimal, EDITION: 'cloud', ...hubVars, HUB_HINT_COOKIE_NAME: ' ' })
+      )!;
+      expect(blank.hintCookieName).toBe('ant_sso_hint');
     });
 
     it('validates hub var FORMATS whenever set (a typo fails the boot, per the env philosophy)', () => {

@@ -456,6 +456,18 @@ export function createAuth({
     baseURL: env.PUBLIC_BASE_URL,
     basePath: AUTH_BASE_PATH,
     secret: authSecret,
+    // Cloud only: OAuth-callback error redirects land on the LOGIN PAGE.
+    // Verified on 1.6.15 (re-verify on ANY bump): the genericOAuth callback
+    // resolves `onAPIError.errorURL || <authBase>/error` and redirects an
+    // AS error (`?error=login_required` from a prompt=none authorize,
+    // `?error=access_denied`, …) there BEFORE parseState runs
+    // (generic-oauth/routes.mjs) — errorCallbackURL never sees these, so
+    // without this the silent-connect bounce would dead-end on better-auth's
+    // own /error page. The dashboard maps the ?error=… code to copy (and the
+    // silent-connect lattice treats the login_required family as a quiet
+    // hint-clear, Stage E). oss stays byte-identical: key absent, the
+    // pre-change default error landing untouched.
+    ...(hubSso ? { onAPIError: { errorURL: env.PUBLIC_BASE_URL.replace(/\/+$/, '') + '/login' } } : {}),
     database: drizzleAdapter(db, {
       provider: 'pg',
       schema: {

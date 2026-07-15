@@ -172,6 +172,28 @@ describe('cloud edition on a fresh database', () => {
     expect(info.edition).toBe('cloud');
   });
 
+  it('exposes the hub SSO hint-cookie contract in discovery (SL-1)', async () => {
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    // Defaults: the cross-repo cookie name; domain = issuer host minus its
+    // first label (hub.localhost → localhost).
+    expect(info.auth.sso).toEqual({ hintCookieName: 'ant_sso_hint', hintCookieDomain: 'localhost' });
+  });
+
+  it('lands OAuth-callback AS errors on /login (cloud onAPIError.errorURL, SL-1)', async () => {
+    // A prompt=none authorize against a hub with no session answers
+    // ?error=login_required at the callback; the genericOAuth callback
+    // redirects AS errors to onAPIError.errorURL BEFORE parseState (1.6.15),
+    // so no state/cookie is needed to pin the landing.
+    const res = await app.app.request(
+      '/api/v1/auth/oauth2/callback/antasphere?error=login_required&error_description=Login%20required'
+    );
+    expect(res.status).toBe(302);
+    const location = res.headers.get('location')!;
+    expect(location.startsWith('http://localhost:3000/login?error=login_required')).toBe(true);
+    // The error exit mints no session.
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
   it('setup minted the operator emailVerified=true (D9 — the trusted-link bootstrap)', async () => {
     // Under hub-only login (D1, Phase 3) the operator can only enter via the
     // hub trusted-link, which Better Auth refuses onto an unverified local
@@ -571,12 +593,24 @@ describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (
 });
 
 describe('oss edition discovery (unchanged)', () => {
-  it('never advertises the hub SSO method', async () => {
+  it('never advertises the hub SSO method, and never carries auth.sso (SL-1 pin)', async () => {
     const app = await createTestApp(await createDatabase(container, 'edition_oss_disc'));
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.edition).toBe('oss');
     expect(info.auth.methods).not.toContain('antasphere');
     expect(info.auth.methods).toContain('password');
+    // The discovery wire shape stays byte-identical on oss: no sso block —
+    // key ABSENT, not null.
+    expect('sso' in info.auth).toBe(false);
+    // And the error surfaces keep their pre-change defaults: the antasphere
+    // callback path does not exist (no genericOAuth plugin registered) and
+    // the better-auth error route renders its own page — no /login redirect
+    // (onAPIError.errorURL is cloud-gated).
+    const cb = await app.app.request('/api/v1/auth/oauth2/callback/antasphere?error=login_required');
+    expect(cb.status).toBe(404);
+    const errRoute = await app.app.request('/api/v1/auth/error?error=probe');
+    expect(errRoute.status).toBe(200);
+    expect(errRoute.headers.get('content-type')).toContain('text/html');
     await app.stop();
   });
 

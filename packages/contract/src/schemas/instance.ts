@@ -20,7 +20,21 @@ export const instanceInfoSchema = z.object({
     methods: z.array(z.enum(KNOWN_AUTH_METHODS).or(z.string())),
     passwordReset: z.boolean(),
     emailChange: z.boolean(),
-    twoFactor: z.boolean()
+    twoFactor: z.boolean(),
+    /**
+     * Hub SSO client hints (cloud edition ONLY — absent on oss, where the
+     * discovery wire shape stays byte-identical). The hint cookie is a
+     * dashboard-side HINT for the silent auto-connect (attempt vs don't),
+     * NEVER a security input: the hub sets it, this tool reads it
+     * client-side and clears it on logout / login_required
+     * (docs/federation.md, cross-repo contract).
+     */
+    sso: z
+      .object({
+        hintCookieName: z.string(),
+        hintCookieDomain: z.string()
+      })
+      .optional()
   }),
   features: z.object({
     mcp: z.boolean(),

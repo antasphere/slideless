@@ -279,7 +279,16 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         version: env.APP_VERSION,
         apiVersion: 'v1' as const,
         setupRequired: !row,
-        auth: registry.identity.describe(),
+        auth: {
+          ...registry.identity.describe(),
+          // Cloud only (SL-1): the hint-cookie contract the dashboard's
+          // silent auto-connect reads — spread-gated on the same single
+          // `hub` switch as every cloud seam, so the oss discovery bytes
+          // never carry the key.
+          ...(hub
+            ? { sso: { hintCookieName: hub.hintCookieName, hintCookieDomain: hub.hintCookieDomain } }
+            : {})
+        },
         features: { mcp: true, oauth: true, files: true }
       },
       200

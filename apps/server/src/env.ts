@@ -86,6 +86,10 @@ const envObjectSchema = z.object({
   HUB_CLIENT_ID: optionalString(z.string().min(4)),
   /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Also authenticates the per-user refresh grant — there is NO service key: every hub read between logins presents the USER's own grant (docs/federation.md). Required when EDITION=cloud. */
   HUB_CLIENT_SECRET: optionalString(z.string().min(16)),
+  /** Name of the hub-set shared SSO hint cookie the dashboard reads client-side (docs/federation.md; NEVER a security input — it only gates whether a silent connect is attempted). Cloud-only; unset = the cross-repo default `ant_sso_hint`. Never read when EDITION=oss. */
+  HUB_HINT_COOKIE_NAME: optionalString(z.string().min(1)),
+  /** Domain the hint cookie lives on (the hub sets it, tools clear it — both sides must agree). Cloud-only; unset = the hub issuer host minus its first label (account.antasphere.com → antasphere.com). Never read when EDITION=oss. */
+  HUB_HINT_COOKIE_DOMAIN: optionalString(z.string().min(1)),
   /** R7 escape hatch (docs/federation.md): acknowledge an EDITION change on an already-set-up instance. Without it, boot refuses an EDITION that differs from the one stamped at setup — flipping editions under existing users/workspaces changes identity semantics and must be a conscious operator act. */
   EDITION_CHANGE_ALLOWED: booleanish.default(false),
   /** Build version stamped by CI (Docker ARG); 'dev' locally. */
@@ -172,6 +176,30 @@ export interface HubConfig {
   issuerUrl: string;
   clientId: string;
   clientSecret: string;
+  /**
+   * The shared SSO hint cookie's name + domain (docs/federation.md,
+   * cross-repo contract with the hub): the HUB sets the cookie on any
+   * response that mints a session; this tool only READS it client-side (a
+   * silent-connect hint, never a security input) and CLEARS it on logout /
+   * login_required. Surfaced in `/instance` discovery so the dashboard
+   * needs no env of its own.
+   */
+  hintCookieName: string;
+  hintCookieDomain: string;
+}
+
+/**
+ * Default hint-cookie domain: the hub issuer host minus its first label —
+ * account.antasphere.com → antasphere.com, the shared parent domain both
+ * the hub and every tool live under. When stripping a label leaves nothing
+ * (a single-label host like `localhost`), the host itself is the honest
+ * fallback; operators on unusual topologies override via
+ * HUB_HINT_COOKIE_DOMAIN.
+ */
+function defaultHintCookieDomain(issuerUrl: string): string {
+  const host = new URL(issuerUrl).hostname;
+  const parent = host.split('.').slice(1).join('.');
+  return parent || host;
 }
 
 export function hubConfig(env: Env): HubConfig | null {
@@ -180,7 +208,9 @@ export function hubConfig(env: Env): HubConfig | null {
   return {
     issuerUrl: env.HUB_ISSUER_URL!,
     clientId: env.HUB_CLIENT_ID!,
-    clientSecret: env.HUB_CLIENT_SECRET!
+    clientSecret: env.HUB_CLIENT_SECRET!,
+    hintCookieName: env.HUB_HINT_COOKIE_NAME ?? 'ant_sso_hint',
+    hintCookieDomain: env.HUB_HINT_COOKIE_DOMAIN ?? defaultHintCookieDomain(env.HUB_ISSUER_URL!)
   };
 }
 

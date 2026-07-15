@@ -149,6 +149,25 @@ interface LoginScope {
 
 const loginScope = new AsyncLocalStorage<LoginScope>();
 
+/**
+ * Strict whitelist for per-call authorize params (the SL-1 silent-connect
+ * seam): the dashboard's silent auto-connect passes
+ * `additionalData: { prompt: 'none' }` on `POST /sign-in/oauth2`, and the
+ * ONLY thing that may ever reach the hub's authorize URL from that
+ * caller-controlled blob is the literal `prompt=none` pair — anything else
+ * (other prompt values, extra keys) is dropped. Verified on better-auth
+ * 1.6.15 (re-verify on ANY bump): `authorizationUrlParams` may be a
+ * FUNCTION of the endpoint ctx (generic-oauth/types.d.mts), the sign-in
+ * body carries `additionalData` (generic-oauth/routes.mjs — also threaded
+ * into the state blob), and the function's return is applied to the
+ * authorization URL via `createAuthorizationURL`'s `additionalParams`.
+ */
+export function ssoAuthorizationUrlParams(body: unknown): Record<string, string> {
+  const additionalData = (body as { additionalData?: unknown } | null | undefined)?.additionalData;
+  const prompt = (additionalData as { prompt?: unknown } | null | undefined)?.prompt;
+  return prompt === 'none' ? { prompt: 'none' } : {};
+}
+
 export interface HubSsoOptions {
   db: Db;
   logger: Logger;
@@ -244,6 +263,10 @@ export class HubSsoService {
       scopes: ['openid', 'profile', 'email', 'offline_access', 'account:read'],
       pkce: true,
       ...(this.opts.tokenResource ? { tokenUrlParams: { resource: this.opts.tokenResource } } : {}),
+      // Per-call prompt=none passthrough for the silent auto-connect — the
+      // strict whitelist above; nothing else from the caller's
+      // additionalData ever reaches the hub authorize URL.
+      authorizationUrlParams: (ctx) => ssoAuthorizationUrlParams(ctx.body),
       getUserInfo: (tokens) => this.getUserInfo(tokens)
     };
   }
