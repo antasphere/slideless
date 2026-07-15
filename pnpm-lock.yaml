@@ -261,8 +261,8 @@ importers:
   packages/cli:
     devDependencies:
       '@antasphere/cli-core':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       '@slideless/contract':
         specifier: workspace:*
         version: link:../contract
@@ -333,8 +333,8 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@antasphere/cli-core@0.3.0':
-    resolution: {integrity: sha512-opEQ24bw/uvCwm3sfnUjoat5M1TxMMKgfp7T/5rWZLrFQEAj/NPhclXuAhHM+k2upBbSLiIhNjCBzFRey+SHGA==}
+  '@antasphere/cli-core@0.4.0':
+    resolution: {integrity: sha512-CP2elSkV8Ss8Sa0/dLseq4UYsLhYPvDmb/+awtaVf7hrg3SontuaYGzDR/80q8EzKS3jPZ+mQ6yKJW+4PlYDvw==}
     engines: {node: '>=22'}
 
   '@asteasolutions/zod-to-openapi@8.5.0':
@@ -4937,7 +4937,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@antasphere/cli-core@0.3.0': {}
+  '@antasphere/cli-core@0.4.0': {}
 
   '@asteasolutions/zod-to-openapi@8.5.0(zod@4.4.3)':
     dependencies:
