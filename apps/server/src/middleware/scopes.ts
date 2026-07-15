@@ -65,5 +65,10 @@ export function requiredScopeFor(path: string, method: string): Scope | null {
   //  - /viewer/* — the public share-token annotation surface (Phase 5): the
   //    share-token secret is the credential there, never a principal; agents
   //    manage annotations through /presentations/{id}/annotations instead.
+  //  - /sso/logout (cloud) — single logout is a BROWSER act: a machine
+  //    credential must never be able to end its user's sessions. Never
+  //    list it.
+  //  - /me/onboarding/dismiss (cloud) — the first-run welcome is a browser
+  //    concern; machines carry no banner to dismiss.
   return null;
 }
