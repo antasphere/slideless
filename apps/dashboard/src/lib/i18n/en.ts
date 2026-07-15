@@ -108,6 +108,16 @@ export const en = {
     'Your Antasphere email is already used by another account on this instance. Contact an administrator.',
   'login.errorSsoIdentityConflict':
     'This Antasphere account could not be linked to an account here. Contact an administrator.',
+  'login.connectingToAntasphere': 'Connecting to your Antasphere account…',
+  'login.connectingHint': 'One moment — no action needed.',
+  'login.signedOutNotice': 'You have been signed out.',
+
+  // ── First-run welcome (SL-6, cloud) ──────────────────────────────────
+  'welcome.title': 'Welcome to {name}',
+  'welcome.body':
+    'Your Antasphere account is connected. Explore your workspace, or push your first deck from the CLI to get started.',
+  'welcome.docs': 'Read the docs',
+  'welcome.dismiss': 'Dismiss',
 
   // ── Setup wizard ─────────────────────────────────────────────────────
   'setup.title': 'Set up your instance',

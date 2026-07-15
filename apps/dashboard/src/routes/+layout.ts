@@ -1,5 +1,6 @@
 import { api, clearWorkspaceSelection, storedWorkspaceId, PlatformApiError } from '$lib/api';
 import { initLocale } from '$lib/i18n';
+import { clearAttemptMarker, setSsoDiscovery } from '$lib/sso';
 import type { MeResponse } from '@slideless/contract';
 import type { LayoutLoad } from './$types';
 
@@ -36,6 +37,9 @@ export const load: LayoutLoad = async () => {
   initLocale();
 
   const instance = await api.instance();
+  // Record the SSO discovery for the edition-adaptive modules (logout,
+  // hint-watch, hint clears). null on oss → they all no-op by construction.
+  setSsoDiscovery(instance.auth.sso ?? null);
 
   let me: MeResponse | null = null;
   let meError: HubGateError | null = null;
@@ -61,6 +65,11 @@ export const load: LayoutLoad = async () => {
       }
     }
   }
+
+  // A successful signed-in bootstrap retires the per-tab silent-attempt
+  // marker (SL-3 gate D): the attempt worked, so the next signed-out visit
+  // in this tab may attempt again.
+  if (me) clearAttemptMarker();
 
   return { instance, me, meError: me ? null : meError };
 };

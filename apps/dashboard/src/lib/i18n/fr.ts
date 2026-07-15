@@ -113,6 +113,16 @@ export const fr: Record<MessageKey, string> = {
     'Votre e-mail Antasphere est déjà utilisé par un autre compte sur cette instance. Contactez un administrateur.',
   'login.errorSsoIdentityConflict':
     'Ce compte Antasphere n’a pas pu être associé à un compte ici. Contactez un administrateur.',
+  'login.connectingToAntasphere': 'Connexion à votre compte Antasphere…',
+  'login.connectingHint': 'Un instant, aucune action requise.',
+  'login.signedOutNotice': 'Vous avez été déconnecté.',
+
+  // ── First-run welcome (SL-6, cloud) ──────────────────────────────────
+  'welcome.title': 'Bienvenue sur {name}',
+  'welcome.body':
+    'Votre compte Antasphere est connecté. Explorez votre espace de travail, ou poussez votre premier deck depuis le CLI pour commencer.',
+  'welcome.docs': 'Lire la documentation',
+  'welcome.dismiss': 'Fermer',
 
   // ── Setup wizard ─────────────────────────────────────────────────────
   'setup.title': 'Configurez votre instance',

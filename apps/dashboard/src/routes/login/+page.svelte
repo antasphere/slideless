@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -8,6 +9,15 @@
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import { authClient, isTwoFactorRedirect } from '$lib/auth-client';
   import { refreshSession } from '$lib/session';
+  import {
+    clearHintCookieClientSide,
+    evaluateAutoConnect,
+    isLoginRequiredError,
+    pendingNextStorage,
+    readAttemptMarker,
+    writeAttemptMarker,
+    writePendingNext
+  } from '$lib/sso';
   import { safeNext } from '$lib/utils';
   import { t } from '$lib/i18n';
 
@@ -22,6 +32,59 @@
   const hasAntasphere = $derived(methods.includes('antasphere'));
   const hasPasswordReset = $derived(data.instance.auth.passwordReset);
 
+  // ── SL-3: the silent auto-connect (cloud only, discovery-gated) ──────────
+  // Decided SYNCHRONOUSLY at component init so the FIRST paint is the
+  // branded connecting state — the login form never flashes on the silent
+  // path. +page.ts already redirected any signed-in visitor (gate E).
+  const sso = data.instance.auth.sso ?? null;
+  const decision = evaluateAutoConnect({
+    sso,
+    methods: data.instance.auth.methods,
+    cookies: typeof document === 'undefined' ? '' : document.cookie,
+    params: page.url.searchParams,
+    attemptMarker: readAttemptMarker(),
+    now: Date.now(),
+    signedIn: false
+  });
+  // The AS answered a silent attempt with the login_required family: the
+  // hint promised a hub session that is not there — retire it so the next
+  // visit renders a quiet login page instead of bouncing again.
+  if (decision.clearStaleHint && sso) clearHintCookieClientSide(sso);
+
+  let connecting = $state(decision.attempt);
+  const signedOutNotice = decision.signedOut;
+
+  onMount(() => {
+    if (connecting) void startSilentConnect();
+  });
+
+  async function startSilentConnect() {
+    const next = safeNext(page.url.searchParams.get('next'));
+    // Gate D: the marker goes down BEFORE any navigation so even an
+    // unforeseen bounce-back is bounded to one attempt per tab per TTL.
+    writeAttemptMarker(Date.now());
+    // Return-to-origin (decision 7): remember the destination across
+    // journeys that outlive the OAuth state row (the signup detour).
+    writePendingNext(pendingNextStorage(), next, Date.now());
+    try {
+      const { error: err } = await authClient.signIn.oauth2({
+        providerId: 'antasphere',
+        callbackURL: next,
+        // AS failures land back on this page as /login?error=<code>.
+        errorCallbackURL: '/login',
+        // Only the literal prompt=none pair passes the server whitelist.
+        additionalData: { prompt: 'none' }
+      });
+      // Success answers { url, redirect } and the client navigates to the
+      // hub — the connecting state stays up until the browser leaves. A
+      // refused sign-in degrades QUIETLY to the form: the user asked for
+      // nothing, and the manual button is right there.
+      if (err) connecting = false;
+    } catch {
+      connecting = false;
+    }
+  }
+
   let mode = $state<'password' | 'otp'>('password');
 
   let email = $state('');
@@ -35,6 +98,9 @@
 
   function ssoErrorMessage(code: string | null): string | null {
     if (!code) return null;
+    // The login_required family is the hub saying "no session" to a silent
+    // prompt=none attempt — an expected outcome, never an error banner.
+    if (isLoginRequiredError(code)) return null;
     if (code === 'sso_email_conflict') return t('login.errorSsoEmailConflict');
     if (code === 'sso_identity_conflict') return t('login.errorSsoIdentityConflict');
     return t('login.errorSsoGeneric');
@@ -154,6 +220,10 @@
   async function signInAntasphere() {
     error = null;
     loading = true;
+    // Return-to-origin (decision 7): every tool→hub redirect — interactive
+    // included — records the destination, so a signup detour that outlives
+    // the OAuth state row still ends on the exact page the user wanted.
+    writePendingNext(pendingNextStorage(), page.url.searchParams.get('next'), Date.now());
     try {
       const { error: err } = await authClient.signIn.oauth2({
         providerId: 'antasphere',
@@ -174,15 +244,50 @@
   }
 </script>
 
-<LanguageSwitcher class="fixed right-4 top-4" />
+{#if connecting}
+  <!-- SL-3 connecting state (decision 5): a real, branded interstitial that
+       OWNS the screen on every visible leg of the silent redirect chain —
+       it stays painted until the browser leaves for the hub, and the
+       app-shell splash (app.html) covers the callback-return leg, so no
+       blank/white frame ever shows between redirects. -->
+  <div
+    class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6"
+    role="status"
+    aria-live="polite"
+  >
+    <div class="flex flex-col items-center gap-8 text-center">
+      <div class="connect-mark" aria-hidden="true">
+        <span class="connect-ring"></span>
+        <span class="connect-arc"></span>
+        <span class="connect-core"></span>
+      </div>
+      <div class="space-y-2">
+        <h1 class="text-2xl font-semibold tracking-tight text-foreground">{data.instance.name}</h1>
+        <p class="text-sm text-muted-foreground">{t('login.connectingToAntasphere')}</p>
+        <p class="text-xs text-muted-foreground/70">{t('login.connectingHint')}</p>
+      </div>
+      <div class="connect-dots" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+{:else}
+  <LanguageSwitcher class="fixed right-4 top-4" />
 
-<div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
-  <Card.Root class="w-full max-w-sm">
-    <Card.Header>
-      <Card.Title class="text-xl">{data.instance.name}</Card.Title>
-      <Card.Description>{t('login.subtitle')}</Card.Description>
-    </Card.Header>
-    <Card.Content class="space-y-4">
+  <div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
+    <Card.Root class="w-full max-w-sm">
+      <Card.Header>
+        <Card.Title class="text-xl">{data.instance.name}</Card.Title>
+        <Card.Description>{t('login.subtitle')}</Card.Description>
+      </Card.Header>
+      <Card.Content class="space-y-4">
+      {#if signedOutNotice && !totpRequired}
+        <!-- Quiet post-logout notice (?signed_out=1) — informational, never
+             an error, and the lattice never auto-reconnects from here. -->
+        <p class="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+          {t('login.signedOutNotice')}
+        </p>
+      {/if}
       {#if totpRequired}
         <form
           class="space-y-4"
@@ -394,6 +499,80 @@
           </Button>
         {/if}
       {/if}
-    </Card.Content>
-  </Card.Root>
-</div>
+      </Card.Content>
+    </Card.Root>
+  </div>
+{/if}
+
+<style>
+  /* The connecting mark: a quiet ring, one revolving arc in the primary
+     tone, a solid core — deliberate and calm, not a throwaway spinner. */
+  .connect-mark {
+    position: relative;
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+  .connect-ring,
+  .connect-arc {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid transparent;
+  }
+  .connect-ring {
+    border-color: hsl(var(--primary) / 0.15);
+  }
+  .connect-arc {
+    border-top-color: hsl(var(--primary) / 0.9);
+    animation: connect-rotate 1.1s cubic-bezier(0.45, 0.15, 0.55, 0.85) infinite;
+  }
+  .connect-core {
+    position: absolute;
+    inset: 1.125rem;
+    border-radius: 9999px;
+    background: hsl(var(--primary) / 0.85);
+    animation: connect-breathe 2.2s ease-in-out infinite;
+  }
+  .connect-dots {
+    display: flex;
+    gap: 0.375rem;
+  }
+  .connect-dots span {
+    width: 0.3125rem;
+    height: 0.3125rem;
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.5);
+    animation: connect-pulse 1.4s ease-in-out infinite;
+  }
+  .connect-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .connect-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+  @keyframes connect-rotate {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes connect-breathe {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.85;
+    }
+    50% {
+      transform: scale(0.82);
+      opacity: 0.6;
+    }
+  }
+  @keyframes connect-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+</style>
