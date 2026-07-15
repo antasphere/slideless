@@ -40,9 +40,6 @@ export const en = {
   'error.generic': 'Something went wrong.',
 
   // ── Hub-gate notice (cloud edition, docs/federation.md P4) ───────────
-  'suspended.title': 'Organization suspended',
-  'suspended.body':
-    'This organization is suspended on Antasphere, so its workspace is unavailable here. Contact your organization owner or Antasphere support to restore access.',
   'suspended.unavailableTitle': 'Temporarily unavailable',
   'suspended.unavailableBody':
     'The Antasphere account service has been unreachable for a while, so this workspace is paused as a precaution. Access resumes automatically once it recovers.',
@@ -195,10 +192,17 @@ export const en = {
   // ── Workspace switcher ───────────────────────────────────────────────
   'workspace.menuLabel': 'Workspaces',
   'workspace.switch': 'Switch workspace',
+  'workspace.hubBadge': 'Antasphere',
+  'workspace.hubBadgeTitle': 'Managed on Antasphere',
+  'workspace.suspendedBadge': 'Suspended',
+  'workspace.defaultBadge': 'Default',
+  'workspace.defaultBadgeTitle': 'Your default organization (used when a request names none)',
+  'workspace.setDefaultHub': 'Change default organization on Antasphere',
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Overview',
   'overview.description': 'Your self-hosted instance at a glance.',
+  'overview.descriptionCloud': 'Your workspace at a glance.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Active members',
   'overview.filesCard': 'Files',

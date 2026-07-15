@@ -15,6 +15,7 @@
     activeWorkspaceId={data.me.activeWorkspaceId}
     origin={data.me.origin}
     hubOrigin={data.me.workspace.hubOrigin}
+    hubManageUrl={data.me.hubManageUrl}
   />
   <Sidebar.Inset>
     <header class="flex h-12 shrink-0 items-center gap-2 px-4">

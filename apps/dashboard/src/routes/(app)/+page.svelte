@@ -16,6 +16,13 @@
   // team card points at the members page (which links out) instead of the
   // local invitation flow.
   const hubManaged = $derived(data.me.workspace.hubOrigin);
+  // "Your self-hosted instance at a glance" is wrong on cloud. Keyed off
+  // the PUBLIC discovery edition (instance.edition, already rendered on the
+  // instance card below) — the P7 never-edition-sniff invariant is scoped
+  // to the membership surfaces, which keep keying off /me's hubOrigin.
+  const overviewDescription = $derived(
+    data.instance.edition === 'cloud' ? t('overview.descriptionCloud') : t('overview.description')
+  );
 
   const decksList = createPagedList<Presentation>(
     async (p) => {
@@ -66,7 +73,7 @@
   );
 </script>
 
-<PageHeader title={t('overview.title')} description={t('overview.description')} />
+<PageHeader title={t('overview.title')} description={overviewDescription} />
 
 <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
   <Card.Root>

@@ -25,6 +25,8 @@
     origin?: MeResponse['origin'];
     /** True = the active workspace is a hub projection: membership is managed at the hub (P7). */
     hubOrigin?: boolean;
+    /** Hub console origin — the switcher's set-default link-out (null on oss). */
+    hubManageUrl?: string | null;
   }
 
   let {
@@ -34,7 +36,8 @@
     workspaces = [],
     activeWorkspaceId = '',
     origin = 'local',
-    hubOrigin = false
+    hubOrigin = false,
+    hubManageUrl = null
   }: Props = $props();
 
   // The switcher exists ONLY with several memberships — a single-membership
@@ -83,7 +86,7 @@
 <Sidebar.Root variant="inset" collapsible="icon">
   <Sidebar.Header>
     {#if showSwitcher}
-      <WorkspaceSwitcher {workspaces} {activeWorkspaceId} />
+      <WorkspaceSwitcher {workspaces} {activeWorkspaceId} {hubManageUrl} />
     {:else}
       <div class="flex items-center gap-2 px-2 py-2">
         <div

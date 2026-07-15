@@ -4,14 +4,18 @@ import type { MeResponse } from '@slideless/contract';
 import type { LayoutLoad } from './$types';
 
 /**
- * Hub-gate refusals (cloud edition, docs/federation.md P4) the shell must
- * surface instead of treating as "signed out": the org is suspended on the
- * hub, or the hub has been unreachable beyond the fail-closed window.
+ * The ONE hub-gate refusal the shell must surface instead of treating as
+ * "signed out": the hub has been unreachable beyond the fail-closed window
+ * (cloud edition). Suspension no longer strands the shell — GET /me is
+ * exempt (visible-but-blocked), so a suspended org renders as a badged,
+ * disabled entry instead of an error page; and a dead hub grant
+ * (hub_grant_expired) deliberately falls through to the login bounce,
+ * where "Sign in with Antasphere" is exactly the re-auth that heals it.
  */
-export type HubGateError = 'account_suspended' | 'hub_unavailable';
+export type HubGateError = 'hub_unavailable';
 
 function hubGateError(e: unknown): HubGateError | null {
-  if (e instanceof PlatformApiError && (e.code === 'account_suspended' || e.code === 'hub_unavailable')) {
+  if (e instanceof PlatformApiError && e.code === 'hub_unavailable') {
     return e.code;
   }
   return null;

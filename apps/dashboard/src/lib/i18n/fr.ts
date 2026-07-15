@@ -45,9 +45,6 @@ export const fr: Record<MessageKey, string> = {
   'error.generic': 'Une erreur est survenue.',
 
   // ── Notice « organisation suspendue » (édition cloud) ────────────────
-  'suspended.title': 'Organisation suspendue',
-  'suspended.body':
-    'Cette organisation est suspendue sur Antasphere, son espace de travail est donc indisponible ici. Contactez le propriétaire de votre organisation ou le support Antasphere pour rétablir l’accès.',
   'suspended.unavailableTitle': 'Temporairement indisponible',
   'suspended.unavailableBody':
     'Le service de comptes Antasphere est injoignable depuis un certain temps, cet espace de travail est donc mis en pause par précaution. L’accès reprendra automatiquement dès son rétablissement.',
@@ -203,10 +200,18 @@ export const fr: Record<MessageKey, string> = {
   // ── Workspace switcher ───────────────────────────────────────────────
   'workspace.menuLabel': 'Espaces de travail',
   'workspace.switch': 'Changer d’espace de travail',
+  'workspace.hubBadge': 'Antasphere',
+  'workspace.hubBadgeTitle': 'Géré sur Antasphere',
+  'workspace.suspendedBadge': 'Suspendue',
+  'workspace.defaultBadge': 'Défaut',
+  'workspace.defaultBadgeTitle':
+    'Votre organisation par défaut (utilisée quand une requête n’en nomme aucune)',
+  'workspace.setDefaultHub': 'Changer l’organisation par défaut sur Antasphere',
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Vue d’ensemble',
   'overview.description': 'Votre instance auto-hébergée en un coup d’œil.',
+  'overview.descriptionCloud': 'Votre espace de travail en un coup d’œil.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Membres actifs',
   'overview.filesCard': 'Fichiers',

@@ -64,6 +64,9 @@ export function errorMessage(e: unknown, fallback = t('common.genericError')): s
     if (e.code === 'account_suspended') return t('common.accountSuspended');
     if (e.code === 'hub_unavailable') return t('common.hubUnavailable');
     if (e.code === 'membership_revoked') return t('common.membershipRevoked');
+    // The user's own hub grant died (revoked/expired at Antasphere): the
+    // fix is one browser re-login — steer there, never a generic error.
+    if (e.code === 'hub_grant_expired') return t('common.hubGrantExpired');
     return e.message || fallback;
   }
   if (e instanceof Error) return e.message;
