@@ -752,6 +752,51 @@ undefined` (the plugin type REQUIRES the key whenever `postLogin`
       API's own resolvers and can never out-privilege the credential. The
       chassis' tool-kit should ship the seam.
 
+## 21. Holding an upstream OAuth grant as a live credential (re-architecture Phases 2–3)
+
+Found while making cloud Slideless a live user-scoped client of the hub:
+the tool keeps each user's own `offline_access` grant (persisted by Better
+Auth on the `account` row) and refreshes it to call the upstream IdP's API
+as the user. Any template product that consumes a relying-party grant
+beyond the login callback hits every one of these.
+
+76. **`account.encryptOAuthTokens: true` should be the template default.**
+    With a stored refresh token the account row IS a long-lived credential;
+    plaintext-at-rest is only defensible while nothing reads tokens back.
+    Verified on 1.6.15: the flip is CONFIG-ONLY (drift:check clean — also
+    mirror it into `scripts/auth-schema-config.ts` to pin that), and
+    retroactively safe — `decryptOAuthToken` passes legacy plaintext
+    through (`isLikelyEncrypted`, dist/oauth2/utils.mjs). Re-verify both on
+    any bump.
+77. **The token-encryption key material is UNTYPED on the auth context.**
+    Better Auth encrypts with `ctx.secretConfig`, which exists at runtime
+    but not in any published type — external code that must write
+    Better-Auth-compatible ciphertext (`symmetricEncrypt` from
+    'better-auth/crypto') needs a structural cast plus a fallback to the
+    configured secret (identical under a plain string-secret config).
+    Slideless wired `key: async () => ((await auth.$context) as {…})
+    .secretConfig ?? authSecret` in boot. A template shim (one typed
+    accessor) would remove the cast from every product.
+78. **A rotating-refresh-token store DEMANDS cross-replica single-flight —
+    ship the advisory-lock pattern as chassis code.** RFC 9700 reuse
+    detection means a double-refresh from two replicas is not a race but a
+    grant-family-killing event. The proven shape (identity/hub-grant.ts):
+    in-process single-flight Map + session-scoped `pg_advisory_lock(<ns>,
+    hashtext(userId))` on a DEDICATED pg client (the migrate.ts/deletion.ts
+    lock discipline) + RE-READ-AFTER-LOCK (consume a sibling's fresh token
+    instead of presenting the rotated-out one) + a watchdog cutting the
+    connection. Also the failure taxonomy: `invalid_grant` = grant dead
+    (null the row's tokens; conditional on the ciphertext presented, so a
+    concurrent re-login is never wiped); `invalid_client` = OUR
+    misconfiguration, loud and transient, never kills grants.
+79. **`getUserInfo` should surface the whole token response to the
+    login-scope seam.** The reshaped login needed the callback access token
+    (and its expiry) beyond the identity claims; the genericOAuth
+    `getUserInfo(tokens)` signature carries them, but only an
+    AsyncLocalStorage login scope (the ADR 015 pattern, already
+    feedback-listed) gets them to the after-hook. Worth shipping the scope
+    with a `tokens` slot from day one.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
