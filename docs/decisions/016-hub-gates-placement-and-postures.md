@@ -1,6 +1,13 @@
 # ADR 016 — Hub gates: post-resolution placement and failure postures
 
-Status: accepted (2026-07-12)
+Status: **superseded by [ADR 019](019-user-scoped-live-federation.md)**
+(2026-07-15). The `HUB_SERVICE_KEY` gates this ADR placed (org-status +
+membership re-assertion via `accounts:status`) are DELETED — between-login
+truth now flows as-the-user through each user's own grant (live reconcile,
+identity/hub-reconcile.ts). What survives from here: the post-resolution
+`principalGate` SEAM itself (the live gate rides it, widened to see the
+request), and the deliberately asymmetric failure-posture thinking the new
+verdicts inherit. Kept for the placement rationale.
 
 ## Context
 

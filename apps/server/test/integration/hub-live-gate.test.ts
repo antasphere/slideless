@@ -125,9 +125,18 @@ describe('hub-side removal → membership_revoked, all three credential kinds', 
     expect(denied.status).toBe(401);
     expect((await readJson(denied)).error.code).toBe('membership_revoked');
 
-    // Instant lockout everywhere: the live-membership re-check now fails
-    // for every credential at RESOLUTION (plain 401s from here on).
-    expect((await me(cookie)).status).toBe(401);
+    // Instant lockout of the ORG everywhere: the live-membership re-check
+    // now fails at RESOLUTION. Max was removed from his SOLE org, so a
+    // selector-less session /me is the zero-membership zero state (200,
+    // empty list — the no-organization shell), while NAMING the swept
+    // workspace, and every machine credential, still fail closed (401).
+    const zero = await me(cookie);
+    expect(zero.status).toBe(200);
+    expect((await readJson(zero)).workspaces).toEqual([]);
+    const wsRemove = (
+      await app.db.pool.query(`SELECT id FROM workspaces WHERE central_account_id = $1`, [ORG_REMOVE])
+    ).rows[0].id as string;
+    expect((await me(cookie, wsRemove)).status).toBe(401);
     expect((await keyReq()).status).toBe(401);
     expect((await bearerReq()).status).toBe(401);
 
@@ -412,7 +421,12 @@ describe('the ACCEPTED BOUND: guest suspension staleness (documented, deliberate
 });
 
 describe('workspaces with no hub projection never touch the hub', () => {
-  it('the operator workspace costs zero hub calls', async () => {
+  it('a cloud-LOCAL workspace costs zero hub calls', async () => {
+    // Cloud setup mints no workspace (user-scoped federation), so seed a
+    // cloud-LOCAL one for the operator — exactly the shape a break-glass
+    // claim leaves. Its requests carry NO accountRef, so the live gate
+    // short-circuits with zero hub surface.
+    const localWs = await sso.seedLocalWorkspace(app, 'Operator Local', OWNER.email);
     const signIn = await app.app.request(
       '/api/v1/auth/sign-in/email',
       sso.json({ email: OWNER.email, password: OWNER.password })
@@ -422,9 +436,15 @@ describe('workspaces with no hub projection never touch the hub', () => {
     const before = hub.orgsRequests.length + hub.refreshRequests.length;
     for (let i = 0; i < 3; i += 1) {
       await sleep(DIALS.reconcileTtlMs + 20);
-      expect((await me(cookie)).status).toBe(200);
+      expect((await me(cookie, localWs)).status).toBe(200);
     }
-    expect((await app.app.request('/api/v1/presentations', { headers: { cookie } })).status).toBe(200);
+    expect(
+      (
+        await app.app.request('/api/v1/presentations', {
+          headers: { cookie, 'x-workspace-id': localWs }
+        })
+      ).status
+    ).toBe(200);
     expect(hub.orgsRequests.length + hub.refreshRequests.length).toBe(before);
   });
 });

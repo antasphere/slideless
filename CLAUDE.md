@@ -60,7 +60,7 @@ deploys) + `dev` (day-to-day work).
   `/files` surface (reads included — it spans every workspace blob with no per-deck authz),
   the member roster, and the workspace export on BOTH editions (`requireNonGuest`, 403
   `guest_forbidden`), across sessions, API keys, and OAuth bearers alike. Guest roles are
-  locked (`guest_role_locked`); only the claim path writes guest rows; the hub re-assertion
+  locked (`guest_role_locked`); only the claim path writes guest rows; the hub reconcile
   never touches them. On cloud, guests get hub identities (the claim page is SSO-first; the
   claim endpoint answers `sso_required` instead of minting local-password accounts).
 - **Cloud closes the local password-reset surface (P8, ADR 017)**: on `EDITION=cloud`, every
@@ -89,6 +89,23 @@ deploys) + `dev` (day-to-day work).
   `PROVIDER_NOT_FOUND`) — by construction, not by leaving the env unset. Rule: no non-SSO
   session entrance on cloud except the break-glass `/sign-in/email`; oss keeps Google social
   when configured.
+- **Cloud federation is USER-scoped and live (ADR 019, docs/federation.md "Live reconcile +
+  grant")**: every hub read between logins is `GET <hub>/orgs` AS THE USER with that user's own
+  stored grant (encrypted on the `account` row) — there is NO service key, no cross-tenant
+  surface, and no target-user parameter anywhere; never reintroduce one (the master-key drill's
+  lesson). A credential identifies a USER: `slk_` keys and OAuth grants are unpinned by default
+  (the org is a per-request `X-Workspace-Id`/tool-argument parameter; a key's `workspace_id` is
+  an optional least-privilege PIN), org claims are never read from any token (login = id_token
+  identity + fail-closed reconcile; connect = the same), and grant refreshes MUST stay
+  single-flighted per user (in-process + `pg_advisory_lock(7432004, hashtext(userId))`,
+  re-read-after-lock) — the hub's RFC 9700 reuse detection makes an unserialized double-refresh
+  a grant-family-killing event. Gate verdicts: dead grant → 401 `hub_grant_expired` (immediate;
+  a browser SSO re-login heals), stale-beyond-15-min + failing hub → 403 `hub_unavailable`,
+  swept membership → 401 `membership_revoked`, `hub_status='suspended'` → 403
+  `account_suspended` (GET /me exempt — visible-but-blocked). **Orphan-purge HARD CONSTRAINT**
+  (`jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
+  membership row — whole-user delete or nothing, else the reconciler's fail-open `no_link`
+  branch becomes reachable for hub-origin principals.
 - **Hub-origin workspaces are hub-managed (P7, docs/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

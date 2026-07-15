@@ -1,6 +1,13 @@
 # ADR 015 — Hub SSO: the assertion handoff and JIT projection semantics
 
-Status: accepted (2026-07-12)
+Status: **superseded by [ADR 019](019-user-scoped-live-federation.md)**
+(2026-07-15). The login path no longer reads ORG claims from any token:
+identity comes from the id_token alone, and the org projection is the
+fail-closed login reconcile (as-the-user `GET /orgs`). What survives from
+here: the AsyncLocalStorage login-scope handoff pattern (it now carries
+the user assertion + the hub-audienced callback access token), the D9/D10
+identity semantics, and the fail-closed no-session-without-projection
+posture. Kept for the race analysis and historical rationale.
 
 ## Context
 

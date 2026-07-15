@@ -22,13 +22,13 @@ entitlement seams.
 
 > **Phase status.** Phase 2 (env contract, edition binding seam, discovery,
 > dev harness, R7 guard), **Phase 3 (the SSO entrance: "Sign in with
-> Antasphere", JIT provisioning, lazy org projection — ADR 015)**,
-> **Phase 4 (the hub gates: org suspension + membership re-assertion —
-> "The hub gates" below + ADR 016)**, **Phase 5 (the CLI cross-tool
-> exchange)**, **Phase 6 (guest capability limits + the SSO-first claim)**,
-> and **Phase 7 (hub-managed membership: the local membership-mutation
-> gate + the `/me` adaptation signals — "Hub-managed membership" below)**
-> are built.
+> Antasphere", JIT provisioning)**, **the LIVE user-scoped federation
+> ("Live reconcile + grant" below — ADR 019, replacing the retired
+> service-key hub gates)**, **Phase 5 (the CLI cross-tool exchange + the
+> H3 grant channel)**, **Phase 6 (guest capability limits + the SSO-first
+> claim)**, and **Phase 7 (hub-managed membership: the local
+> membership-mutation gate + the `/me` adaptation signals — "Hub-managed
+> membership" below)** are built.
 
 ## Environment contract
 
@@ -41,18 +41,16 @@ block:
 | `HUB_ISSUER_URL`    | The hub OIDC issuer, `https://account.antasphere.com` in production. Discovery, JWKS, and the authorize/token endpoints all derive from it.                                    |
 | `HUB_CLIENT_ID`     | This tool's OAuth client id from the hub `TOOL_REGISTRY` entry — `tool-slideless-cloud`.                                                                                       |
 | `HUB_CLIENT_SECRET` | The matching client secret (confidential client; PKCE stays on regardless).                                                                                                    |
-| `HUB_SERVICE_KEY`   | A hub API key (`ant_…`) holding the `accounts:status` scope — the EntitlementService credential (Phase 4; unread before then).                                                 |
 
-> ⚠️ **`HUB_SERVICE_KEY` must belong to a dedicated, stable SERVICE ACCOUNT — never a person.**
-> The hub re-checks live membership on every use of the key, so if the key's owning user is ever
-> deactivated/removed at the hub, the key stops working and this instance's org gate degrades to
-> `hub_unavailable` (fail-closed, safe) for EVERY projected workspace at once. Correct behavior,
-> but an operational foot-gun: mint the key as a purpose-made service identity that no admin flow
-> can remove. (Surfaced by the P8 exit-gate campaign.)
+> There is deliberately **no service key**. Everything Slideless reads from
+> the hub between logins is read AS THE USER with that user's own grant
+> (ADR 019) — the retired `HUB_SERVICE_KEY`/`accounts:status` apparatus was
+> a cross-tenant surface and is gone from the env contract, the compose
+> files, and the code.
 
 Rules the boot enforces:
 
-- **Fail-loud completeness**: `EDITION=cloud` with ANY of the four hub vars
+- **Fail-loud completeness**: `EDITION=cloud` with ANY of the three hub vars
   missing refuses to boot and prints one readable table naming every missing
   variable — never a partial boot that dies at the first hub call.
 - **Derived resource URL**: this instance's own OAuth resource identifier is
@@ -163,7 +161,7 @@ clients must ignore entries they do not recognize):
   hub identity) or, with the hub gone too, DB surgery — the accepted D1
   trade. On `oss` the entire reset surface is unchanged.
 
-## The SSO entrance (Phase 3): flow, JIT, projection
+## The SSO entrance (Phase 3, reshaped by ADR 019): flow, JIT, the grant
 
 One codepath, owned by `apps/server/src/identity/hub-sso.ts` (plus
 `hub-jwt.ts` for token verification) and registered by
@@ -173,40 +171,49 @@ boot instantiates none of it (`POST /sign-in/oauth2` is a 404 there).
 ```
 Browser → /login → "Sign in with Antasphere"
   → POST /api/v1/auth/sign-in/oauth2 {providerId: antasphere}
-  → hub /authorize (confidential client, PKCE, scope=openid profile email)
-  → hub login (or live hub session) → hub CONSENT with org picker
-    (the hub asserts exactly ONE org per login)
+  → hub /authorize (confidential client, PKCE,
+    scope=openid profile email offline_access account:read)
+  → hub login (or live hub session) → hub CONSENT ("act as you" —
+    user-scoped grants carry NO org; there is no org picker)
   → code → /api/v1/auth/oauth2/callback/antasphere
-  → token exchange WITH resource=<PUBLIC_BASE_URL>/mcp (RFC 8707 — the
-    switch that makes the hub mint the org-claim JWT; refresh re-mints drop
-    it and go opaque, so org claims are read from the callback ONLY)
-  → HubJwtVerifier: access token (iss=HUB_ISSUER_URL, aud=own resource URL,
-    RS256, remote JWKS) + id_token (aud=HUB_CLIENT_ID), subjects cross-pinned
+  → token exchange WITH resource=<HUB_ISSUER_URL>/mcp (RFC 8707, the
+    `tokenResource` seam constant): the access token is HUB-audienced — a
+    bearer for the hub's own /api/v1, never claim-bearing for Slideless
+  → identity from the ID TOKEN ONLY (iss=HUB_ISSUER_URL,
+    aud=HUB_CLIENT_ID, RS256, remote JWKS)
   → JIT: user created (emailVerified from the hub's verified claim) or
-    linked (D9); org projected; membership asserted
-  → ordinary local session cookie. The hub is out of the request path
-    until the next login.
+    linked (D9); Better Auth persists the GRANT (access + refresh token,
+    encrypted) on the account row
+  → the FAIL-CLOSED login reconcile: one forced as-the-user
+    `GET <hub>/orgs` with the callback access token projects ALL the
+    user's orgs (reconcile IS the projection — a pass that does not
+    definitively succeed revokes the session:
+    /login?error=sso_projection_failed)
+  → ordinary local session cookie. Between logins the user's own grant
+    keeps org truth live (the reconcile below).
 ```
 
-Per-login semantics (every SSO login, returning users included — ADR 015
-has the full design, including the assertion handoff and its race analysis):
+Per-login semantics (every SSO login, returning users included — ADR 019
+has the full design):
 
-- **Lazy projection**: the asserted hub org becomes a workspace on first
-  use — `workspaces.centralAccountId` = the hub org id, name from the H1
-  `workspace_name` claim (or a self-healing placeholder when an older hub
-  omits it). A **unique partial index** (migration 0021) + `ON CONFLICT`
-  make concurrent first-logins land on one row.
-- **Membership re-assertion (D11)**: role = the hub org role **verbatim**
-  (owner/admin/member map 1:1; an unknown role refuses the login — local
-  roles are never invented), `origin='hub'`, reactivated if deactivated.
-  Hub role changes land at the next login; Phase 4's H2 re-assertion
-  tightens propagation.
+- **Projection via reconcile**: every org on the user's hub list becomes /
+  updates a workspace — `workspaces.centralAccountId` = the hub org id,
+  name synced, a **unique partial index** (migration 0021) + `ON CONFLICT`
+  making concurrent first-logins land on one row. Orgs the hub no longer
+  asserts are swept in the same pass.
+- **Roles verbatim (D11)**: role = the hub org role **verbatim**
+  (owner/admin/member map 1:1; an unknown role is kept-alive but never
+  synced — local roles are never invented), `origin='hub'`, reactivated if
+  the hub asserts it again.
 - **Email sync (D10)**: the local email follows the hub's verified email; a
   collision with another local user fails the login cleanly
   (`/login?error=sso_email_conflict`) instead of corrupting either account.
-- **Fail closed**: any bad token (foreign iss/aud, expired, opaque,
-  malformed claims) or failed per-login step means NO session — a cloud
-  login without its projection never exists.
+- **Fail closed**: any bad id_token (foreign iss/aud, expired, malformed
+  claims) or failed per-login step — the reconcile pass included — means
+  NO session: a cloud login without its projection never exists.
+- **Self-healing grant**: every returning login re-writes the account
+  row's tokens, so one browser SSO heals a dead grant
+  (`hub_grant_expired` recovery).
 
 **The fourth signup switch.** The repo invariant "closed sign-up needs
 three switches" gains a deliberate fourth on cloud: the `antasphere`
@@ -226,83 +233,90 @@ SSO. A guard in the after-hook additionally refuses to merge two DIFFERENT
 hub identities onto one local user via a stale local email
 (`/login?error=sso_identity_conflict`, link undone — ADR 015).
 
-## The hub gates (Phase 4): suspension + membership re-assertion
+## Live reconcile + grant (ADR 019): between-logins truth, as the user
 
-The SSO entrance asserts hub truth **at login** — but tool sessions live 365
-days and API keys/OAuth grants longer, so two things must hold _between_
-logins: a hub org that gets **suspended** must stop working here quickly,
-and a user **removed** from a hub org (or whose role changed) must lose/gain
-the corresponding access without waiting for their next login. Phase 4 adds
-two cached gates, both consuming the hub's `accounts:status` machine surface
-with `HUB_SERVICE_KEY` (`identity/hub-status.ts`), both keyed strictly off
-the workspace's `centralAccountId` — a workspace with **no projection** (the
-operator's setup workspace, local/guest ones) never talks to the hub at all.
+The SSO entrance asserts hub truth **at login** — but tool sessions live
+365 days and API keys/OAuth grants longer, so between logins three things
+must stay true: an org **created/renamed/removed** at the hub is
+reflected here, a user **removed** from a hub org (or whose role changed)
+loses/gains the matching access, and a **suspended** org stops working —
+all without any cross-tenant credential. The mechanism is the user's OWN
+grant:
 
-**Where they run.** `authContext` — the single credential resolver every
-`/api/v1` request passes through — runs an optional post-resolution
-`principalGate` (ADR 016). The cloud binding supplies it
-(`identity/hub-gate.ts`, wired by `bindEditionSeams`); oss wires nothing.
-Because the hook sits in the resolver rather than inside any one identity
-path, sessions, API keys, and OAuth bearers all pass the same gate — MCP
-tool calls included (they re-enter `/api/v1` in-process). The same
-suspension check also backs the `EntitlementService` seam
-(`HubEntitlementService` wraps the local caps), so metered actions carry the
-denial reason as defense in depth.
+- **The grant** (`identity/hub-grant.ts`): the `offline_access
+account:read` refresh token from SSO login, persisted ENCRYPTED on the
+  `account` row (`encryptOAuthTokens: true`). Refreshes present
+  `resource=<hub>/mcp` so the hub mints RS256 JWTs its own `/api/v1`
+  accepts, and are single-flighted in-process AND cross-replica
+  (`pg_advisory_lock(7432004, hashtext(userId))` on a dedicated client,
+  re-read-after-lock, ~10 s watchdog) — the hub rotates refresh tokens
+  with RFC 9700 reuse detection, so an unserialized double-refresh would
+  tear the user's whole grant family down. Failure taxonomy: the token
+  endpoint's `invalid_grant` is the ONLY thing that marks a grant dead
+  (tokens nulled on the row; a browser re-login heals); `invalid_client`
+  (our misconfiguration) and network/5xx are loud transients that never
+  kill grants.
+- **The reader** (`identity/hub-user-client.ts`): `GET <hub>/api/v1/orgs`
+  with the user's token — the hub's caller-scoped list (`status` +
+  `isDefault` included). There is NO target-user parameter anywhere: a
+  cross-tenant read is structurally impossible on this path. A 401/403
+  gets exactly one forced-refresh retry; everything not a definitive 200
+  list is one loud, fail-open `inconclusive`.
+- **The reconciler** (`identity/hub-reconcile.ts`): one pass makes local
+  projections match the list — deactivation sweep FIRST (removal wins
+  within a pass; one audited `member.deactivate` per flip), then
+  project/upsert every entry (names, roles verbatim, org-level
+  `workspaces.hub_status`, the user's `workspace_members.is_default`).
+  Per-user TTL cache (~10 s) + single-flight + failure re-probe throttle;
+  the cache is in-memory PER REPLICA (a replica restarted mid-outage
+  fails closed for its first request per user — deliberate).
 
-### Gate 1 — org suspension (decision D5)
+**Where enforcement runs.** `authContext` — the single credential resolver
+every `/api/v1` request passes through — runs the post-resolution
+`principalGate` (the seam ADR 016 placed; the gate is new). The cloud
+binding supplies `identity/hub-live-gate.ts` (wired by `bindEditionSeams`);
+oss wires nothing. Sessions, API keys, and OAuth bearers all pass the same
+gate — MCP tool calls included (they re-enter `/api/v1` in-process). On
+every request into a PROJECTED workspace by a hub-origin principal the
+gate runs the cached reconcile and judges the freshly reconciled LOCAL
+rows:
 
-`GET {hub}/api/v1/accounts/{centralAccountId}/status` → `{status, kind}`,
-cached **per org, 60 s TTL**. Answers and postures:
+| State                                                            | Verdict                                                                      |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| grant definitively dead                                          | **401 `hub_grant_expired`** immediately (no stale window) — re-auth heals it |
+| no definitive pass in ~15 min AND the hub keeps failing          | **403 `hub_unavailable`** (fail closed after the stale window)               |
+| hub-origin membership row inactive (this pass may have swept it) | **401 `membership_revoked`**                                                 |
+| workspace `hub_status='suspended'`                               | **403 `account_suspended`** — EXCEPT `GET /me` (visible-but-blocked)         |
+| role delta on the reconciled row                                 | applies to THIS request (a demoted hub admin loses admin surfaces now)       |
 
-| Hub answer                          | Verdict                                                                                                                |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `status: "active"`                  | allow (cached 60 s)                                                                                                    |
-| `status: "suspended"`               | **403 `account_suspended`** with the reason, enforced as soon as fetched                                               |
-| `404` (org deleted/unknown)         | **403 `account_suspended`** — same definitive deny                                                                     |
-| network / timeout / 5xx / 401 / 403 | serve the **last known value stale up to 15 min** (from the last success), then **fail closed**: 403 `hub_unavailable` |
+Guest and local-origin rows in a projected workspace skip hub enforcement
+(their rows are the tool's own business) EXCEPT org-level suspension,
+which reads the locally materialized `workspaces.hub_status` column —
+never a hub round-trip on a borrowed grant. **Accepted bound**: a guest's
+own `/orgs` never includes the deck's org, so that column refreshes only
+when a MEMBER's reconcile runs — a guest may keep deck access in a
+hub-suspended org until a member next touches Slideless (ADR 019 has the
+full rationale; suspension still cuts all MEMBERS within seconds).
 
-The hot path never blocks on the hub once a value is cached: an expired
-entry is served stale while a single-flight refresh runs (enforcement bound
-≈ TTL + one round-trip), and during an outage re-probes are throttled
-(~15 s), so a down hub costs at most one timeout per org per window. A cold
-cache with an unreachable hub fails closed immediately. Counters
-(`hub_status_fetches_total`, `hub_status_degraded_total`) surface degraded
-serving on `/metrics`; the dashboard maps both denial codes to a localized
-(en/fr) full-page notice at `/suspended` and to toast copy mid-session.
+**Propagation bounds**: org create/rename/remove, role changes, and
+suspension all land within the reconcile TTL (~10 s) per replica; a
+removal also ends sessions/keys/bearers instantly at the next resolution
+(the live-membership re-check). During a hub outage, last-known state
+serves for up to ~15 min, then requests fail closed until the hub
+recovers — recovery is automatic, nothing is corrupted.
 
-### Gate 2 — membership re-assertion (decisions D3/D11, hub delta H2)
+**Unknown-workspace retry**: a request naming a workspace the local rows
+do not grant runs ONE cached reconcile and one re-lookup (the
+`onWorkspaceMiss` hook, all three credential kinds) — a hub org granted
+seconds ago resolves on first use; a garbage selector stays a fail-closed
+401 and cannot hammer the hub (it rides the reconciler's TTL + throttle).
 
-`GET {hub}/api/v1/accounts/{centralAccountId}/members/{hubUserId}/status` →
-`{active, role?}` (`hubUserId` = the SSO `sub` from the user's `antasphere`
-account link), re-asserted on a **per-(user, workspace) cache, ~5 min TTL**,
-for **`origin='hub'` membership rows ONLY** — `local`/`guest` rows are the
-tool's own business and are never re-asserted nor touched.
-
-- **`200 {active:false}` is the ONLY deactivation signal** (it covers
-  removed members, deactivated members, and deleted orgs alike). The gate
-  deactivates the local row (update keyed to `origin='hub'`), audits it
-  (`member.deactivate`, reason `hub_reassertion`, actor `system`), and
-  answers **401 `membership_revoked`**. The existing live-membership
-  re-check then locks the user out of sessions, API keys, and OAuth bearers
-  everywhere, instantly. Reactivation happens only at the next successful
-  SSO login (the projection upsert) — which the hub grants only to live
-  members.
-- **`200 {active:true, role}`**: a role delta syncs onto the local row and
-  applies to the very request that observed it (a demoted hub admin loses
-  admin surfaces on that request; a promoted member gains them).
-- **Everything else is inconclusive, fail open**: 401/403 (broken or
-  rotated service key — logged loudly, never a deactivation), 404 (a hub
-  without H2), 5xx, timeouts, malformed bodies. The row is kept and the
-  check retries at the next cache expiry.
-
-**Propagation bounds**: suspension ≤ ~60 s; removal/role change ≤ ~5 min —
-per replica (the caches are in-process; each replica converges within its
-own window).
-
-**Known bounds, on purpose**: anonymous share-link viewing (`/v/{secret}`)
-is not gated — it is not an authenticated workspace surface; revoke share
-tokens to cut it. The MCP transport handshake itself is not gated either;
-every MCP tool call is, since it re-enters `/api/v1`.
+Counters `hub_reconcile_passes_total` + `hub_grant_refreshes_total`
+surface pass/refresh outcomes on `/metrics`. Known bounds, on purpose:
+anonymous share-link viewing (`/v/{secret}`) is not gated — it is not an
+authenticated workspace surface; revoke share tokens to cut it. The MCP
+transport handshake itself is not gated either; every MCP tool call is,
+since it re-enters `/api/v1`.
 
 ## CLI cross-tool connect (Phase 5): `POST /api/v1/sso/cli-connect`
 
@@ -316,12 +330,17 @@ answers 404; the path never exists there) — is **public** (tier 2, listed
 in `PUBLIC_API_PATHS`): the hub JWT is the only credential, so verification
 is the entire security story.
 
-**The exchange token (pinned contract with H3)**: a 120 s RS256 JWT signed
+**The exchange pair (pinned contract with H3)**: a 120 s RS256 JWT signed
 by the hub's OIDC key — `iss` = the hub issuer, `aud` = THIS instance's
-resource URL (`<PUBLIC_BASE_URL>/mcp`), `sub` = hub user id, the
-`membershipAccessClaims` org payload (`workspace_id`, `role`, `email`,
-`workspace_name`), a discriminator `purpose: 'sso-connect'`, and a unique
-`jti`.
+resource URL (`<PUBLIC_BASE_URL>/mcp`), `sub` = hub user id, `email`, a
+discriminator `purpose: 'sso-connect'`, and a unique `jti` — PLUS
+`hubRefreshToken`: a raw one-time offline-grant refresh token
+(`offline_access account:read`, 365 d) the H3 response mints alongside.
+The CLI forwards both. The JWT's transitional org claims (kept by the hub
+through its compat window) are deliberately NEVER read — org truth comes
+from the connect-time reconcile. Redeeming `hubRefreshToken` requires the
+TOOL CLIENT's own credentials at the hub token endpoint (confidential
+client), so a leaked body alone buys nothing.
 
 **Verification chain** (`HubSsoService.verifyConnectToken`, every link
 fail-closed, one uniform 401 for every rejection):
@@ -342,16 +361,24 @@ fail-closed, one uniform 401 for every rejection):
 **On success** the user is JIT-provisioned through the SAME
 `HubSsoService` path as a browser SSO login — the internal adapter's
 `createOAuthUser` (the `user.created` hook and collaborator sweep fire),
-the D9 trusted link (verified local emails only), the D10 email sync, and
-the lazy projection + `origin='hub'` membership upsert — then an ordinary
-`slk_` key is minted, bound to the ONE projected workspace, scopes
-`presentations:read presentations:write` (never `data:export`), named
-"Antasphere CLI <date>", audited like `/cli/auth/complete`, returned once.
-Day-to-day CLI calls are then the ordinary local API-key path — the hub is
-out of the loop until the next exchange; `slideless logout` is the tool's
-own key revocation (`DELETE /cli/auth/key` — the presenting key revokes
-exactly ITSELF, machine-allowed under `presentations:write`; the one
-`/cli/auth` route open to machines, and open on both editions).
+the D9 trusted link (verified local emails only), the D10 email sync —
+then the H3 grant is stored ENCRYPTED on the account row
+(`HubGrantService.acquireFromConnect`, the same row a browser login
+writes) and the SAME fail-closed reconcile as a browser login projects
+the user's orgs as-the-user. Only a definitive pass mints: a USER-scoped
+`slk_` key (`workspaceId: null` — the org is a per-request parameter),
+scopes `presentations:read presentations:write` (never `data:export`),
+named "Antasphere CLI <date>", audited, returned once. **Never a
+born-dead key**: no grant carried and none stored → `403
+hub_grant_missing` with steering (re-run `antasphere login` with a
+current CLI, or one browser SSO); a dead grant → the same refusal; zero
+usable memberships after the pass → `403 no_membership`; a transient hub
+failure → 500, re-exchange. Day-to-day CLI calls are then the ordinary
+local API-key path, kept live by the stored grant exactly like a browser
+user's; `slideless logout` is the tool's own key revocation
+(`DELETE /cli/auth/key` — the presenting key revokes exactly ITSELF,
+machine-allowed under `presentations:write`; the one `/cli/auth` route
+open to machines, and open on both editions).
 
 ## Guests (Phase 6): capability limits + the SSO-first claim
 
@@ -500,8 +527,8 @@ The redirect URI is better-auth's `genericOAuth` callback for
 then sets `HUB_CLIENT_ID`/`HUB_CLIENT_SECRET` to the same pair, and
 `HUB_ISSUER_URL=https://account.antasphere.com`. The hub grants tool clients
 its fixed `TOOL_CLIENT_SCOPES` (openid/profile/email/offline_access/
-account:read/account:write) — `data:export` and `accounts:status` are never
-client scopes; `accounts:status` rides the separate `HUB_SERVICE_KEY`.
+account:read/account:write) — `data:export` is never a client scope, and
+there is no service key: every hub read is as-the-user (ADR 019).
 
 ## The federation dev harness
 
@@ -531,41 +558,40 @@ docker compose -f docker-compose.federation.yml down -v
   `http://hub.localhost:3300`, Slideless at
   `http://slideless.localhost:3310`). The hub logs
   `tool registry: client seeded` for `tool-slideless-cloud` at boot.
-- **Secrets are dev-only literals** in the compose file. The Slideless
-  `HUB_SERVICE_KEY` (the hub-gate credential, Phase 4) defaults to a
-  placeholder: mint a real key on the local hub (`POST /api/v1/api-keys`
-  with `scopes: ["accounts:status"]` as any hub member) and restart the app
-  with `FEDERATION_HUB_SERVICE_KEY=<ant_…>`; until then the gates fail
-  closed for projected workspaces after the stale window.
+- **Secrets are dev-only literals** in the compose file. No service key
+  exists to mint or wire: the live federation reads the hub as each
+  signed-in user (their own grant), so the two client credentials are the
+  entire glue.
 - The hub builds from a sibling checkout
   (`FEDERATION_HUB_DIR`, default `../../../../platform/hub`).
 
 ## What the later phases plug into this
 
-| Phase                       | Builds on this scaffolding                                                                                                                                                                                                               |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P3 — SSO entrance           | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021.                                                             |
-| P4 — hub gates              | **Built** — "The hub gates" above: `identity/hub-status.ts` + `hub-gate.ts`, the `principalGate` hook in `authContext` (ADR 016), `HubEntitlementService`, the `/suspended` notice.                                                      |
-| P5 — CLI cross-tool         | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring land hub-side.                 |
-| P6 — guests                 | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock.                                                                                                               |
-| P7 — hub-managed membership | **Built** — "Hub-managed membership" above: `middleware/hub-managed.ts` gate on `/members` + `/invitations` mutations, `/me` adaptation fields (`hubOrigin`, `origin`, `hubManageUrl`), dashboard link-out. No migration; MCP unchanged. |
+| Phase                       | Builds on this scaffolding                                                                                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P3 — SSO entrance           | **Built** — the section above: `identity/hub-sso.ts` + `hub-jwt.ts`, conditional `genericOAuth` registration, `HubSsoIdentityProvider` (D1) in `edition.ts`, migration 0021.                                                               |
+| Live federation (ADR 019)   | **Built** — "Live reconcile + grant" above: `identity/hub-grant.ts` + `hub-user-client.ts` + `hub-reconcile.ts` + `hub-live-gate.ts` on the `principalGate` hook in `authContext`; the retired P4 service-key gates are deleted.           |
+| P5 — CLI cross-tool         | **Built (tool side)** — "CLI cross-tool connect" above: `api/sso-connect.ts` + `HubSsoService.verifyConnectToken/provisionConnect` + `acquireFromConnect`, jti ledger migration 0022; hub H3 `/sso/tool-token` + cli-core wiring hub-side. |
+| P6 — guests                 | **Built** — "Guests" above: `origin='guest'` capability boundary (`requireNonGuest`), SSO-first claim on cloud, role lock.                                                                                                                 |
+| P7 — hub-managed membership | **Built** — "Hub-managed membership" above: `middleware/hub-managed.ts` gate on `/members` + `/invitations` mutations, `/me` adaptation fields (`hubOrigin`, `origin`, `hubManageUrl`), dashboard link-out. No migration; MCP unchanged.   |
 
 ## Related decisions
 
 - [ADR 003 — OIDC client login deferral](decisions/003-oidc-client-deferral.md):
   reserved exactly this seam (delegated login = config-level relying party;
   `auth.methods` open enum; JIT as an explicit opt-in).
+- [ADR 019 — user-scoped credentials & live hub federation](decisions/019-user-scoped-live-federation.md):
+  THE capstone — the as-the-user grant/reconcile model, the failure
+  postures, the accepted bounds, the no_link/purge hard constraint, and
+  the atomicity affirmation mirrored with hub ADR 014.
 - [ADR 014 — workspace-scoped principal](decisions/014-workspace-scoped-principal.md):
-  the multi-workspace runtime the org projection lands on
-  (`workspaces.centralAccountId`, membership `origin` discriminator).
-- [ADR 015 — hub SSO assertion handoff](decisions/015-hub-sso-assertion-handoff.md):
-  how the verified org assertion crosses from token verification to the
-  per-login projection hook, and why it is request-scoped (race analysis).
-- [ADR 016 — hub gates placement + postures](decisions/016-hub-gates-placement-and-postures.md):
-  why the suspension gate + membership re-assertion run as a post-resolution
-  hook in `authContext` (all three credential kinds, one seam), and the
-  deliberately asymmetric failure postures (fail-closed-after-grace for org
-  status, definitive-answer-only for deactivation).
+  the multi-workspace RUNTIME the projections land on
+  (`workspaces.centralAccountId`, membership `origin` discriminator); its
+  mint-time binding half is superseded by ADR 019.
+- [ADR 015 — hub SSO assertion handoff](decisions/015-hub-sso-assertion-handoff.md)
+  and [ADR 016 — hub gates placement + postures](decisions/016-hub-gates-placement-and-postures.md):
+  superseded by ADR 019 — kept for the login-scope handoff pattern, the
+  race analysis, and the principalGate placement rationale.
 - The program-level design lives in the Codika workspace:
   `workspace/knowledge/initiatives/agent-tools-platform/slideless-cloud-binding-plan.md`
   (Slideless-specific) and `cloud-edition-binding-patterns.md` (the

@@ -46,7 +46,8 @@ export const en = {
   'common.accountSuspended': 'This organization is suspended on Antasphere.',
   'common.hubUnavailable': 'The Antasphere account service is unreachable — try again shortly.',
   'common.membershipRevoked': 'Your access to this organization was removed on Antasphere.',
-  'common.hubGrantExpired': 'Your Antasphere sign-in on this instance has expired — sign in with Antasphere again.',
+  'common.hubGrantExpired':
+    'Your Antasphere sign-in on this instance has expired — sign in with Antasphere again.',
 
   // ── No-organization zero state (user-scoped federation) ─────────────
   'noOrg.title': 'No organization yet',

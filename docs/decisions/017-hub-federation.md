@@ -1,6 +1,14 @@
 # ADR 017 — Hub federation: the cloud edition's complete binding to the Antasphere hub
 
-Status: accepted (2026-07-13)
+Status: accepted (2026-07-13); **the federation half is superseded by
+[ADR 019](019-user-scoped-live-federation.md)** (2026-07-15): the P4
+gates/`HUB_SERVICE_KEY`, the org-claim login path, and non-negotiable #2
+("the hub is never a hard round-trip in the tool's request path" — now
+repealed) are replaced by the live as-the-user reconcile. What SURVIVES of
+this ADR: non-negotiable #1 (oss carries zero hub surface, fetch-spy
+pinned), non-negotiable #3 (the template is never modified from here), P7
+hub-managed membership, the auth-surface closures (P8/D1), and the guest
+capability boundary (P6).
 
 ## Context
 

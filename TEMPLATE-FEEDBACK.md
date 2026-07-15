@@ -797,6 +797,56 @@ hashtext(userId))` on a DEDICATED pg client (the migrate.ts/deletion.ts
     feedback-listed) gets them to the after-hook. Worth shipping the scope
     with a `tokens` slot from day one.
 
+## 22. Cloud lifecycle under user-scoped federation (re-architecture Phases 4–6)
+
+Found while making setup, /me, the orphan purge, and the CLI connect flow
+coherent with user-scoped credentials. Any template product whose cloud
+edition delegates orgs to an upstream account service hits these.
+
+80. **Setup needs a no-workspace mode, and `/me` needs the zero-membership
+    session state with it.** When every cloud workspace is an upstream
+    projection, setup must mint the operator USER only (singleton claim +
+    edition stamp + emailVerified force stay; `workspaceId` goes nullable
+    in the contract, the `setup.completed` event, and the audit row) — and
+    the moment zero-membership users are LEGITIMATE, `/me` cannot stay
+    behind a blanket requireAuth: a live session with no membership must
+    answer 200 `{workspaces: [], workspace: null, …}` (route-local
+    getSession fallback) or the dashboard reads "removed from my last org"
+    as "signed out". Two sharp edges the tests pinned: the zero state must
+    be SELECTOR-LESS only (a session that NAMED a workspace and failed its
+    membership check keeps the fail-closed 401 — it is both the no-oracle
+    posture and the dashboard's stale-selection self-heal signal), and
+    machine credentials must keep dying inside authContext so the session
+    fallback is unreachable for them.
+81. **The orphan purge needs a live-session discriminator + an
+    operator-email exclusion, and its deletion must stay whole-user.**
+    Zero-membership users become legitimate (80), yet fail-closed SSO
+    logins strand CREDENTIAL-BEARING zero-membership rows (the account row
+    holds a live encrypted grant, minted at an unauthenticated-reachable
+    rate) — so "exclude provider-linked users" is a trap that accumulates
+    dormant refresh families forever. The discriminator is the LIVE
+    (unexpired) session: collect zero-membership/no-live-session users
+    regardless of link; exclude live pending invitations and the
+    SUPERADMIN_EMAILS allowlist (the dormant break-glass operator — the
+    ADR 010 interaction, enforced instead of advised), with the exclusions
+    in the candidate QUERY (a JS skip would fill the batch and starve real
+    orphans). HARD CONSTRAINT: deletion is the whole user via the
+    adapter's cascade (account + membership rows together), never a
+    partial cleanup — an account row deleted out from under an
+    `origin='hub'`-style membership row makes the reconciler's fail-open
+    no-link branch reachable.
+82. **Cross-tool connect endpoints should carry the upstream grant in-band
+    and refuse born-dead keys.** The hub's exchange response returns a raw
+    one-time offline refresh token next to the 120 s JWT; the tool's
+    connect endpoint stores it (encrypted, same row/primitive as a browser
+    login) and runs the SAME fail-closed reconcile as a login before
+    minting — so a headless CLI user is a first-class live-federation
+    citizen. The refusal set is part of the contract: no grant carried and
+    none stored → steer (never mint a key whose every read answers
+    grant-expired); a dead grant → same; zero usable memberships after the
+    pass → refuse. Claim-first jti burning stays; org claims in the
+    exchange JWT are never read (reconcile is the projection).
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

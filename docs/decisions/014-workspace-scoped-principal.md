@@ -1,6 +1,13 @@
 # ADR 014 — The workspace-scoped principal (multi-workspace runtime)
 
-Status: accepted (2026-07-12)
+Status: accepted (2026-07-12); **the mint-time workspace BINDING half is
+superseded by [ADR 019](019-user-scoped-live-federation.md)** (user-scoped
+credentials: keys carry an optional pin instead of a mandatory binding,
+OAuth consent binds no workspace, `/me` lists all memberships for every
+credential kind). The multi-workspace RUNTIME this ADR built — the
+one-workspace Principal, `X-Workspace-Id` selection, live membership
+re-checks, the `origin` discriminator, the projection machinery, the
+break-glass/deletion unwinding — survives as ADR 019's substrate.
 
 > Adapted from the upstream codika-platform-template's ADR 012 (its
 > multi-workspace runtime pass, commits `b9e2307..01bd1c6`), renumbered:

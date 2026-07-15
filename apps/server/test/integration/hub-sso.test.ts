@@ -533,9 +533,15 @@ describe('cloud edition: the SSO entrance', () => {
       ORG_WEIRD
     ]);
     expect(ws).toHaveLength(0); // nothing projected
-    // The session exists but reaches nothing (no membership resolves).
+    // The session exists but reaches no workspace (the sole org's unknown
+    // role projected nothing) — /me answers the zero-membership zero state
+    // (200, empty list), not a 401: the dashboard renders the
+    // no-organization page, never a login bounce (user-scoped federation).
     const me = await app.app.request('/api/v1/me', { headers: { cookie } });
-    expect(me.status).toBe(401);
+    expect(me.status).toBe(200);
+    const meBody = await readJson(me);
+    expect(meBody.workspaces).toEqual([]);
+    expect(meBody.activeWorkspaceId).toBeNull();
   });
 
   it('fails the login cleanly when the hub-asserted email collides with another local user (D10)', async () => {

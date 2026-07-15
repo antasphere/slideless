@@ -88,7 +88,11 @@ export interface Jobs {
 export async function createJobs(
   env: Pick<
     Env,
-    'DATABASE_URL' | 'SERVICE_ROLE' | 'AUDIT_RETENTION_DAYS' | 'ORPHAN_USER_RETENTION_HOURS' | 'SUPERADMIN_EMAILS'
+    | 'DATABASE_URL'
+    | 'SERVICE_ROLE'
+    | 'AUDIT_RETENTION_DAYS'
+    | 'ORPHAN_USER_RETENTION_HOURS'
+    | 'SUPERADMIN_EMAILS'
   >,
   db: Db,
   logger: Logger,

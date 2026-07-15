@@ -409,9 +409,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       expect(body.error.message).toContain('browser');
       // The user was provisioned (claim-first posture; the orphan purge
       // collects never-returned strands) but NO key exists.
-      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
-        dana.email
-      ]);
+      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [dana.email]);
       expect(users).toHaveLength(1);
       const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
         users[0].id
@@ -430,9 +428,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       const res = await connect(app, token, 'not-a-real-hub-refresh-token-000000000000');
       expect(res.status).toBe(403);
       expect((await readJson(res)).error.code).toBe('hub_grant_missing');
-      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
-        erin.email
-      ]);
+      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [erin.email]);
       expect(users).toHaveLength(1);
       const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
         users[0].id
