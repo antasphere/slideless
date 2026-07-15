@@ -534,6 +534,103 @@ describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () 
   });
 });
 
+describe('session TTL split (SL-5): cloud 30d FIXED, oss 365d sliding', () => {
+  // The one-login-concept mechanics: a cloud tool session is a PROJECTION of
+  // the hub anchor — sliding it would let the anchor die under an active
+  // user, so cloud sessions are fixed-duration (disableSessionRefresh, the
+  // 1.6.15 knob) and re-derive silently from the anchor. oss keeps the
+  // template's sliding sessions byte-identically.
+
+  interface SessionRow {
+    id: string;
+    expires_at: Date;
+    created_at: Date;
+  }
+
+  async function newestSession(app: TestApp, email: string): Promise<SessionRow> {
+    const { rows } = await app.db.pool.query<SessionRow>(
+      `SELECT s.id, s.expires_at, s.created_at FROM session s
+         JOIN "user" u ON u.id = s.user_id WHERE u.email = $1
+        ORDER BY s.created_at DESC LIMIT 1`,
+      [email]
+    );
+    expect(rows).toHaveLength(1);
+    return rows[0]!;
+  }
+
+  /** Backdate a session so the sliding rule (expiresAt − expiresIn + updateAge ≤ now) fires. */
+  async function backdate(app: TestApp, id: string): Promise<Date> {
+    const { rows } = await app.db.pool.query<{ expires_at: Date }>(
+      `UPDATE session SET expires_at = now() + interval '1 hour' WHERE id = $1 RETURNING expires_at`,
+      [id]
+    );
+    return rows[0]!.expires_at;
+  }
+
+  it('cloud: sessions mint at 30 days and expiresAt does NOT advance on use', async () => {
+    const app = await createTestApp(await createDatabase(container, 'session_ttl_cloud'), HUB_ENV);
+    try {
+      expect(
+        (await app.app.request('/api/v1/setup', json({ instanceName: 'Ttl', owner: OWNER }))).status
+      ).toBe(201);
+      const signIn = await app.app.request(
+        '/api/v1/auth/sign-in/email',
+        json({ email: OWNER.email, password: OWNER.password })
+      );
+      expect(signIn.status).toBe(200);
+      const cookie = extractCookie(signIn);
+
+      const minted = await newestSession(app, OWNER.email);
+      const ttlDays = (minted.expires_at.getTime() - minted.created_at.getTime()) / 86_400_000;
+      expect(ttlDays).toBeGreaterThan(29.9);
+      expect(ttlDays).toBeLessThan(30.1);
+
+      // Trip the sliding rule deliberately, then USE the session: with
+      // disableSessionRefresh the row must not move — the hard expiry is
+      // what forces the silent re-derivation from the hub anchor.
+      const backdated = await backdate(app, minted.id);
+      const use = await app.app.request('/api/v1/auth/get-session', { headers: { cookie } });
+      expect(use.status).toBe(200);
+      expect((await readJson(use))?.session).toBeTruthy();
+      const after = await newestSession(app, OWNER.email);
+      expect(after.id).toBe(minted.id);
+      expect(after.expires_at.toISOString()).toBe(backdated.toISOString());
+    } finally {
+      await app.stop();
+    }
+  });
+
+  it('oss: the template sliding behavior is unchanged — the same use DOES advance expiresAt', async () => {
+    const app = await createTestApp(await createDatabase(container, 'session_ttl_oss'));
+    try {
+      expect(
+        (await app.app.request('/api/v1/setup', json({ instanceName: 'TtlOss', owner: OWNER }))).status
+      ).toBe(201);
+      const signIn = await app.app.request(
+        '/api/v1/auth/sign-in/email',
+        json({ email: OWNER.email, password: OWNER.password })
+      );
+      expect(signIn.status).toBe(200);
+      const cookie = extractCookie(signIn);
+
+      const minted = await newestSession(app, OWNER.email);
+      const ttlDays = (minted.expires_at.getTime() - minted.created_at.getTime()) / 86_400_000;
+      expect(ttlDays).toBeGreaterThan(364);
+      expect(ttlDays).toBeLessThan(366);
+
+      const backdated = await backdate(app, minted.id);
+      const use = await app.app.request('/api/v1/auth/get-session', { headers: { cookie } });
+      expect(use.status).toBe(200);
+      const after = await newestSession(app, OWNER.email);
+      expect(after.id).toBe(minted.id);
+      // Slid forward: a fresh ~365d horizon, far past the backdated hour.
+      expect(after.expires_at.getTime()).toBeGreaterThan(backdated.getTime() + 300 * 86_400_000);
+    } finally {
+      await app.stop();
+    }
+  });
+});
+
 describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (fetch-spy)', () => {
   it('an oss boot with HUB_* vars present makes NO outbound fetch at all', async () => {
     const fetched: string[] = [];

@@ -785,12 +785,32 @@ export function createAuth({
         }
       }
     },
-    // Long-lived sliding sessions; safe because the auth-context middleware
-    // re-checks workspace membership on every request (instant revocation).
-    session: {
-      expiresIn: 60 * 60 * 24 * 365,
-      updateAge: 60 * 60 * 24
-    },
+    // Sessions, split by edition (SL-5, "one concept of being logged in"):
+    //
+    //  - oss keeps the template's long-lived SLIDING sessions, byte-identical
+    //    (safe because the auth-context middleware re-checks workspace
+    //    membership on every request — instant revocation).
+    //  - cloud runs 30-day FIXED (non-sliding) sessions: the tool session is
+    //    a PROJECTION of the hub anchor session, and a sliding projection
+    //    would never re-dance — it would let the anchor die under an active
+    //    user. A fixed expiry forces a silent prompt=none re-derivation from
+    //    the anchor at most every 30 days, and each re-derivation's authorize
+    //    touch slides the HUB session forward (the anchor stays alive off
+    //    activity on ANY tool). The knob is `disableSessionRefresh` — pinned
+    //    on 1.6.15 (dist/api/routes/session.mjs is its ONLY reader:
+    //    `needsRefresh` goes false, so expiresAt never advances on use;
+    //    re-verify on ANY bump). `updateAge` is left at its default there —
+    //    it is dead config once refresh is disabled. CONFIG-ONLY: no schema
+    //    change (drift:check proves).
+    session: hubSso
+      ? {
+          expiresIn: 60 * 60 * 24 * 30,
+          disableSessionRefresh: true
+        }
+      : {
+          expiresIn: 60 * 60 * 24 * 365,
+          updateAge: 60 * 60 * 24
+        },
     advanced: {
       useSecureCookies: isHttps
     },
