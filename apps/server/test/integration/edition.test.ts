@@ -579,6 +579,11 @@ describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (
           (await app.app.request('/api/v1/me', { headers: { authorization: `Bearer ${key}` } })).status
         ).toBe(200);
         expect((await app.app.request('/api/v1/presentations', { headers: { cookie } })).status).toBe(200);
+        // The cloud-only sso surface stays a dark 404 on oss — probed INSIDE
+        // the spy window so a regression that mounts it (or makes it phone
+        // the hub) fails the zero-fetch assertion below too.
+        const ssoLogout = await app.app.request('/api/v1/sso/logout', { method: 'POST', headers: { cookie } });
+        expect(ssoLogout.status).toBe(404);
       } finally {
         await app.stop();
       }

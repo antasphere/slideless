@@ -34,6 +34,7 @@ import {
   cliAuthRevokedSchema
 } from '../schemas/cli-auth.js';
 import { ssoCliConnectSchema } from '../schemas/sso-connect.js';
+import { ssoLogoutResponseSchema } from '../schemas/sso-logout.js';
 import {
   breakGlassClaimOwnershipRequestSchema,
   breakGlassClaimOwnershipSchema,
@@ -454,6 +455,33 @@ export const ssoCliConnectRoute = createRoute({
     ),
     429: errorResponses[429],
     500: errorResponses[500]
+  }
+});
+
+// ── SSO logout (cloud edition only) ──────────────────────────────────────────
+// SESSION-ONLY by construction: deliberately UNLISTED in the machine scope
+// allowlist (middleware/scopes.ts), so API keys and OAuth bearers 403
+// fail-closed before the handler runs; the handler resolves the Better Auth
+// session route-locally (the /me zero-state pattern) so ZERO-MEMBERSHIP
+// sessions — the cloud operator pre-break-glass, a hub user whose last org
+// was removed — can still log out. The route exists ONLY on EDITION=cloud;
+// oss answers the JSON 404 terminator. Order inside the handler: resolve
+// session → build the hub end-session URL (any failure → null) → revoke the
+// local session server-side (better-auth's cookie-clearing Set-Cookie is
+// forwarded) → clear the shared hint cookie → respond. The local revoke and
+// hint clear happen even when url is null.
+
+export const ssoLogoutRoute = createRoute({
+  method: 'post',
+  path: '/sso/logout',
+  tags: ['sso'],
+  summary:
+    'Single logout (cloud edition; sessions only): revokes the local session, clears the SSO hint cookie, ' +
+    'and returns the hub end-session URL to visit (null = local signout only)',
+  responses: {
+    200: jsonBody(ssoLogoutResponseSchema, 'Local session revoked; url is the hub logout leg or null'),
+    401: errorResponses[401],
+    403: errorResponses[403]
   }
 });
 

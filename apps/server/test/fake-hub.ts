@@ -42,6 +42,13 @@ export interface HubTokenOverrides {
   forceOpaque?: boolean | undefined;
   /** Give the id_token a different sub (cross-pin tests). */
   idTokenSub?: string | undefined;
+  /**
+   * Put a `sid` claim on the id_token — what the real hub mints once its
+   * tool client carries `enableEndSession` (RP-initiated logout). Absent by
+   * default: the pre-flip token shape, which the tool's logout must degrade
+   * on (sid-less hints hard-fail at the end-session endpoint).
+   */
+  idTokenSid?: string | undefined;
 }
 
 export interface HubUserFixture {
@@ -274,6 +281,10 @@ export class FakeHub {
         token_endpoint: `${this.issuer}/api/v1/auth/oauth2/token`,
         userinfo_endpoint: `${this.issuer}/api/v1/auth/oauth2/userinfo`,
         jwks_uri: `${this.issuer}/api/v1/auth/jwks`,
+        // RP-initiated logout (SL-2): the real hub's oauth-provider plugin
+        // advertises this once end-session ships; the tool discovers it here
+        // and builds ?id_token_hint&post_logout_redirect_uri URLs against it.
+        end_session_endpoint: `${this.issuer}/api/v1/auth/oauth2/end-session`,
         code_challenge_methods_supported: ['S256'],
         id_token_signing_alg_values_supported: ['RS256']
       });
@@ -479,6 +490,7 @@ export class FakeHub {
       name: fixture.name ?? 'Fake Hub User',
       email: fixture.email,
       email_verified: fixture.emailVerified ?? true,
+      ...(o.idTokenSid ? { sid: o.idTokenSid } : {}),
       aud: clientId
     })
       .setProtectedHeader({ alg: 'RS256', kid: key.kid })

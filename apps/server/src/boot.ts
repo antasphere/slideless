@@ -23,6 +23,7 @@ import { hubConfig, parseEnv, type Env } from './env.js';
 import { createAuth, mcpResourceUrl, type AccountEvent, type Auth } from './identity/better-auth.js';
 import { HubSsoService } from './identity/hub-sso.js';
 import { HubGrantService } from './identity/hub-grant.js';
+import { HubLogoutService } from './identity/hub-logout.js';
 import { hubApiResource, HubUserClient } from './identity/hub-user-client.js';
 import {
   DEFAULT_FEDERATION_DIALS,
@@ -369,6 +370,21 @@ export async function boot(
         }
       })
     : undefined;
+  // RP-initiated logout against the hub (SL-2, cloud only): builds the
+  // end-session URL /sso/logout returns. Same key seam as the grant store
+  // (it only decrypts if a future Better Auth starts encrypting id_tokens);
+  // discovery fetches ride the tight orgs timeout dial.
+  const hubLogout = hub
+    ? new HubLogoutService({
+        db: db.db,
+        issuerUrl: hub.issuerUrl,
+        publicBaseUrl: env.PUBLIC_BASE_URL,
+        key: async () =>
+          ((await auth.$context) as unknown as { secretConfig?: string }).secretConfig ?? authSecret,
+        logger,
+        discoveryTimeoutMs: hubDials.orgsTimeoutMs
+      })
+    : undefined;
   const hubReconciler =
     hub && hubGrant
       ? new HubOrgReconciler({
@@ -501,6 +517,8 @@ export async function boot(
     hubSso,
     // Cloud only: /sso/cli-connect stores the H3 offline grant through it.
     hubGrant,
+    // Cloud only: /sso/logout builds the hub end-session leg through it.
+    hubLogout,
     // Cloud only (docs/federation.md): the post-resolution LIVE hub gate —
     // reconcile-as-the-user + suspension/revocation/grant-death verdicts —
     // run by authContext on every authenticated request. undefined on oss.

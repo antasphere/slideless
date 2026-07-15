@@ -27,9 +27,11 @@ import {
 import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
 import type { HubSsoService } from '../identity/hub-sso.js';
 import type { HubGrantService } from '../identity/hub-grant.js';
+import type { HubLogoutService } from '../identity/hub-logout.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerSsoConnectRoutes } from './sso-connect.js';
+import { registerSsoLogoutRoutes } from './sso-logout.js';
 import { registerMemberRoutes } from './members.js';
 import { registerApiKeyRoutes } from './apikeys.js';
 import { registerInvitationRoutes } from './invitations.js';
@@ -82,6 +84,12 @@ export interface ApiDeps {
    * lands the H3 offline grant through its `acquireFromConnect` seam.
    */
   hubGrant?: HubGrantService | undefined;
+  /**
+   * Cloud edition only: RP-initiated hub logout — POST /sso/logout builds
+   * the end-session URL through it (SL-2). Absent on oss: the route is
+   * never registered and the path answers the JSON 404 terminator.
+   */
+  hubLogout?: HubLogoutService | undefined;
   /**
    * Cloud edition only: the post-resolution LIVE hub gate authContext runs
    * (reconcile-as-the-user + suspension/revocation/grant-death verdicts).
@@ -533,6 +541,22 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       grant: deps.hubGrant,
       apiKeys: apiKeyService,
       audit,
+      logger
+    });
+  }
+  // Single logout (SL-2): cloud-only like /sso/cli-connect — an oss boot
+  // leaves POST /sso/logout to the JSON 404 terminator. Deliberately
+  // UNLISTED in the machine scope allowlist: sessions only (incl.
+  // zero-membership — the handler resolves the session route-locally).
+  if (hubSso && deps.hubLogout && hub) {
+    registerSsoLogoutRoutes(api, {
+      auth,
+      logout: deps.hubLogout,
+      hint: {
+        name: hub.hintCookieName,
+        domain: hub.hintCookieDomain,
+        secure: env.PUBLIC_BASE_URL.startsWith('https://')
+      },
       logger
     });
   }

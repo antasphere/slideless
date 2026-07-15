@@ -143,9 +143,10 @@ interface RefreshLock {
  * Mirror of Better Auth 1.6.15's `isLikelyEncrypted` (dist/oauth2/utils.mjs):
  * its decrypt path passes LEGACY PLAINTEXT tokens through untouched, and so
  * must ours — enabling encryption must never brick pre-existing grants.
- * Re-verify on any Better Auth bump.
+ * Exported for hub-logout.ts, whose id_token read mirrors the same
+ * tolerant rule. Re-verify on any Better Auth bump.
  */
-function isLikelyEncrypted(token: string): boolean {
+export function isLikelyEncrypted(token: string): boolean {
   if (token.startsWith('$ba$')) return true;
   return token.length % 2 === 0 && /^[0-9a-f]+$/i.test(token);
 }
