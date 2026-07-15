@@ -1,0 +1,55 @@
+# Seamless-drill overlay for the federation harness (docs/verification.md §H).
+#
+# The base harness runs each app on its own single-label *.localhost name
+# (hub.localhost / slideless.localhost). Those CANNOT share a parent-domain
+# cookie — the browser treats the single label `localhost` as a public
+# suffix — so the ant_sso_hint cookie, the heart of the silent-connect
+# lattice, would be dormant there. This overlay re-homes both apps on
+# MULTI-LABEL localhost names under one registrable parent:
+#
+#   hub.ant.localhost  /  slideless.ant.localhost   →  Domain=.ant.localhost
+#
+# Why not a real domain like lvh.me: better-auth 1.6.15's SafeUrlSchema
+# (@better-auth/core utils/redirect-uri) hard-rejects `http:` redirect URIs
+# unless the host classifies as loopback per RFC 6761 — `*.lvh.me` is
+# `public`, so the authorize query 400s ("Redirect URI must use HTTPS").
+# Multi-label `*.localhost` satisfies BOTH constraints at once: it is
+# loopback-classified (http allowed, no TLS needed) AND `ant.localhost` is
+# an eTLD+1 under the implicit public-suffix rule, so browsers accept and
+# share `Domain=.ant.localhost` cookies between the two apps (verified live
+# in Chromium). Browsers resolve any-depth *.localhost to 127.0.0.1; for
+# host-side curl use `--resolve hub.ant.localhost:3300:127.0.0.1` (macOS's
+# system resolver does not resolve multi-label .localhost) or plain
+# localhost:3300.
+#
+#   docker compose -f docker-compose.federation.yml \
+#                  -f docker-compose.federation.seamless.yml up -d --no-build
+#
+# Runtime env + network aliases ONLY — no image/build changes; it layers on
+# the images the base file names. DEV ONLY, like the base file.
+
+services:
+  hub:
+    networks:
+      default:
+        aliases:
+          - hub.localhost
+          - hub.ant.localhost
+    environment:
+      - PUBLIC_BASE_URL=http://hub.ant.localhost:3300
+      # Activates the shared SSO hint cookie across *.ant.localhost (WI-4).
+      - SSO_HINT_COOKIE_DOMAIN=.ant.localhost
+      # Twin of the base registry entry, extended with the seamless fields:
+      # launchUrl (the /verified "Continue to <tool>" CTA target) and
+      # postLogoutRedirectUris (RP-initiated logout landing).
+      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.ant.localhost:3310/mcp","redirectUris":["http://slideless.ant.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001","launchUrl":"http://slideless.ant.localhost:3310","postLogoutRedirectUris":["http://slideless.ant.localhost:3310/login?signed_out=1"]}]'
+
+  app:
+    networks:
+      default:
+        aliases:
+          - slideless.localhost
+          - slideless.ant.localhost
+    environment:
+      - PUBLIC_BASE_URL=http://slideless.ant.localhost:3310
+      - HUB_ISSUER_URL=http://hub.ant.localhost:3300
