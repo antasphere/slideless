@@ -173,9 +173,10 @@ Browser → /login → "Sign in with Antasphere"
   → POST /api/v1/auth/sign-in/oauth2 {providerId: antasphere}
   → hub /authorize (confidential client, PKCE,
     scope=openid profile email offline_access account:read)
-  → hub login (or live hub session) → hub CONSENT ("act as you" —
-    user-scoped grants carry NO org; there is no org picker)
-  → code → /api/v1/auth/oauth2/callback/antasphere
+  → hub login (or live hub session) → code, CONSENT-FREE for registry
+    (first-party) clients — skipConsent, see "The hub registry entry";
+    DCR/MCP third-party clients still get the full consent page
+  → /api/v1/auth/oauth2/callback/antasphere
   → token exchange WITH resource=<HUB_ISSUER_URL>/mcp (RFC 8707, the
     `tokenResource` seam constant): the access token is HUB-audienced — a
     bearer for the hub's own /api/v1, never claim-bearing for Slideless
@@ -495,15 +496,129 @@ The last-owner guard never fights this: projected workspaces are exempt
 disabled here, and the projection re-asserts on next login, so no ownerless
 limbo exists.
 
+## The seamless session layer (SL-1…SL-6): silent connect, single logout, the hint, onboarding
+
+The "one concept of being logged in" layer on top of ADR 019: a live hub
+session means every tool is already connected; logout anywhere ends the
+whole thing. Tool sessions are invisible, short-lived PROJECTIONS of the
+hub anchor — never a second thing the user manages. Everything below is
+discovery-gated (`instance.auth.sso` presence + the `antasphere` method),
+never edition-sniffed; on oss none of it exists on the wire or in behavior.
+
+### The hint cookie (cross-repo contract; NEVER a security input)
+
+`ant_sso_hint` (value `1`, `Domain=` the shared parent — issuer host minus
+its first label — `Path=/`, `SameSite=Lax`, `Secure` on https, NOT
+HttpOnly, ~365 d). The HUB sets it on every session-minting response and
+re-asserts it on live `GET /get-session` (healing tool-side clears); it is
+cleared on hub sign-out and `/oauth2/end-session`. TOOLS read it
+client-side as a hint and clear it (a) on single logout and (b) when a
+silent attempt answers the login_required family (a stale hint). Discovery
+advertises the tool's view as `instance.auth.sso =
+{hintCookieName, hintCookieDomain}` (`HUB_HINT_COOKIE_NAME` /
+`HUB_HINT_COOKIE_DOMAIN`, cloud-validated in env.ts) — absent on oss.
+Security posture: the hint only decides whether a silent `prompt=none`
+bounce is WORTH ATTEMPTING. Forging it buys one harmless redirect (the hub
+session check is the real gate); deleting it buys a login page. Nothing
+authorizes off it, on either side.
+
+### The silent auto-connect lattice (SL-3, dashboard)
+
+`$lib/sso.ts` (pure, unit-pinned) gates the zero-click connect; the guard
+lives in the LOGIN PAGE only — the (app) guard already funnels
+unauthenticated visitors to `/login?next=…` with the destination intact,
+and /setup, /invite, /collab, /oauth/consent stay untouched by
+construction. Gates, in order: **A** posture (`auth.sso` present AND
+methods include `antasphere`), **B** hint cookie present, **C** no
+`?error=` / `?signed_out=` param, **D** no fresh per-tab attempt marker
+(`sessionStorage["sso.attempt"]`, ~2 min TTL, written BEFORE navigating,
+cleared by a signed-in bootstrap), **E** no live session. When they all
+pass, the page renders the branded connecting interstitial (it owns the
+screen on every visible leg; the app-shell splash covers the callback
+return) and fires `signIn.oauth2({providerId:'antasphere', callbackURL:
+safeNext(next), errorCallbackURL:'/login', additionalData:{prompt:'none'}})`
+— the server whitelist (`identity/hub-sso.ts`) forwards ONLY the literal
+`prompt=none` pair, and the cloud-gated `onAPIError.errorURL` lands AS
+errors on `/login?error=…`. Every known redirect cycle is bounded: an AS
+silent-failure (login_required / interaction_required /
+account_selection_required / consent_required) → gate C + the stale hint
+is CLEARED, no error banner; the after-hook's fail-closed
+`sso_projection_failed` → gate C (banner stays — that one is real); a
+logout landing (`?signed_out=1`, quiet notice) → gate C with no hint left
+anyway; anything unforeseen → gate D's one-attempt-per-tab-per-TTL.
+
+### Return-to-origin (decision 7)
+
+Ordinary logins (interactive AND silent) land on the exact deep link via
+`callbackURL=safeNext(next)` in the OAuth state. Journeys that OUTLIVE the
+~10-min state row — signup → email verification → hub `/verified`
+"Continue to Slideless" CTA → tool ROOT — ride
+`localStorage["sso.pendingNext"]` (~1 h TTL): written on EVERY tool→hub
+redirect (a root write never clobbers a fresh deeper value — the CTA
+re-entry dances again from `/`), consumed EXACTLY ONCE by the root layout
+after a signed-in bootstrap, navigating only from the app root (so an
+/invite or /collab landing is never hijacked). `safeNext` applies on write
+AND on consume; the value is cleared on consume, expiry, and logout.
+
+### Single logout (SL-2 server + SL-4 client) and the hint-watch
+
+`POST /api/v1/sso/logout` (cloud-mounted only; sessions only — unlisted in
+the machine scope allowlist; zero-membership sessions included) responds
+having ALREADY revoked the local session (Set-Cookie forwarded) and
+cleared the hint; its `{url}` is the hub `end-session` leg the browser
+then visits, or null (degrade: straight to `/login?signed_out=1`). The
+client (`session.ts signOutToLogin`) is edition-adaptive off discovery:
+oss is byte-identical to the pre-SSO behavior; cloud does the POST, a
+belt-and-braces client-side hint clear, then `location.assign`. ANY
+failure degrades to local signout + hint clear + the signed-out landing —
+the two never fail together, so the insta-relogin trap is closed twice
+over (`?signed_out=1` is lattice gate C; the cleared hint is gate B).
+Building the hub leg (`identity/hub-logout.ts`) leans on two pinned 1.6.15
+facts — re-verify on ANY bump: the stored id_token is PLAINTEXT on the
+account row (`encryptOAuthTokens` covers access/refresh only; the read is
+encrypted-tolerant anyway), and the hub's end-session HARD-FAILS a
+sid-less `id_token_hint`, so pre-flip tokens degrade to local-only signout
+here instead of bouncing the user through a hub error (rollout caveat: one
+re-login stores a sid-bearing token).
+
+Convergence for OPEN tabs is the hint-watch (`$lib/hint-watch.ts`, wired
+in the root layout): on bootstrap + visibilitychange→visible (throttled
+≥30 s), a signed-in tab signs itself out iff `auth.sso` is present AND
+`me.via === 'session'` AND `me.ssoOnly === true` AND the hint cookie is
+absent. `ssoOnly` (cloud+session-only `/me` field) is true iff the user
+holds an `antasphere` account row and NO credential account — a
+break-glass-capable operator is NEVER ssoOnly, so the watch cannot sign
+out an operator; on oss the field (and the posture gate) make it inert.
+Cloud tool sessions are 30 d FIXED (SL-5) so every tool re-derives from
+the sliding hub anchor; the anchor is what actually expires people.
+
+### First-run onboarding (SL-6): tool-local, retry-safe
+
+`/me` gains cloud+session-only `firstRunPending` — true iff NO
+`user_onboarding` row with a dismissal exists (`NOT EXISTS (dismissed_at
+IS NOT NULL)`), so a transiently-lost first-login insert still shows the
+welcome next time and ONLY an explicit `POST /me/onboarding/dismiss` (or
+the deploy backfill for pre-existing users) hides it. The dashboard's
+WelcomeBanner is the seam (content is a placeholder for the content
+pass). The hub's `tool_first_login` id_token claim is ADVISORY ONLY —
+ecosystem analytics live in the hub's `user_tool_usage` table; no tool
+behavior may hang on the claim flipping exactly once.
+
 ## The hub registry entry (what the HUB operator configures)
 
 The hub seeds first-party tool clients from its `TOOL_REGISTRY` env var
 (inline JSON) or `TOOL_REGISTRY_FILE` (path, wins over inline) at every boot
 — idempotent upsert, and the seeded client ids are pinned so the hub's
 client-management API refuses to mutate them. Each entry's `resourceUrl`
-joins the hub's token-audience allowlist (`validAudiences`), and consent is
-**never skipped** (`skipConsent: false` — the consent page hosts the hub's
-org picker).
+joins the hub's token-audience allowlist (`validAudiences`). Registry
+clients are FIRST-PARTY: consent is skipped for them (`skipConsent: true` —
+a tool account IS an Antasphere account, so there is nothing to consent to;
+user-scoped grants carry no org, so no picker either), they enable
+RP-initiated logout (`enableEndSession: true`, which puts `sid` in their
+id_tokens), and their `postLogoutRedirectUris` pin the tool's
+`/login?signed_out=1` landing EXACTLY. DCR/MCP third-party clients keep the
+full consent dance — the skip is registry-only, keyed on the forge-proof
+`metadata.tool` marker.
 
 Production entry for Slideless cloud (origin per D7 —
 `slideless.antasphere.com`, fixed before the entry is minted because grants
@@ -516,6 +631,8 @@ and redirect URIs die with it):
     "name": "Slideless",
     "resourceUrl": "https://slideless.antasphere.com/mcp",
     "redirectUris": ["https://slideless.antasphere.com/api/v1/auth/oauth2/callback/antasphere"],
+    "postLogoutRedirectUris": ["https://slideless.antasphere.com/login?signed_out=1"],
+    "launchUrl": "https://slideless.antasphere.com/",
     "clientId": "tool-slideless-cloud",
     "clientSecret": "<from the secret store — presence makes it a confidential client>"
   }

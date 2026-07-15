@@ -860,6 +860,118 @@ edition delegates orgs to an upstream account service hits these.
     pass → refuse. Claim-first jti burning stays; org claims in the
     exchange JWT are never read (reconcile is the projection).
 
+## 23. The silent-SSO chassis seam (seamless first-party layer, Stage E)
+
+Found while building the zero-click "already logged into the hub = already
+connected here" experience (SL-3). Any template product whose cloud edition
+federates to an upstream OIDC hub wants this whole layer as a chassis seam
+— it is entirely product-agnostic.
+
+83. **Silent auto-connect is a five-gate lattice, and every gate is
+    loop-safety.** A pure `$lib/sso.ts` module decides `prompt=none`
+    attempts off: posture (discovery `auth.sso` presence + the provider
+    method — NEVER edition sniffing), a shared parent-domain hint cookie,
+    no `?error`/`?signed_out` param, a per-tab sessionStorage attempt
+    marker (~2 min TTL, written BEFORE navigating, cleared by a signed-in
+    bootstrap), and no live session. The guard belongs in the LOGIN PAGE
+    only — the app-shell guard already funnels unauthenticated visitors to
+    `/login?next=…`, so /setup, invitation/claim pages, and the consent
+    page stay out of the blast radius by construction. The four known
+    redirect-cycle entries (AS login_required family → param gate + STALE
+    HINT CLEAR, no banner; the fail-closed projection error → param gate,
+    banner kept; logout landing → param gate + no hint anyway; anything
+    unforeseen → the marker TTL) each need their own unit pin. Server
+    halves of the seam: a strict per-call whitelist forwarding ONLY the
+    literal `prompt=none` (`authorizationUrlParams` as a function of
+    `ctx.body.additionalData`), and a cloud-gated `onAPIError.errorURL`
+    landing AS errors on the login page.
+84. **The connecting state is product UX, not a spinner.** A zero-click
+    redirect chain shows the user 2–4 page transitions; the login page must
+    paint a branded, design-system interstitial SYNCHRONOUSLY at component
+    init (deciding in onMount flashes the login form first), and the
+    app-shell boot splash must cover the callback-return leg. Budget real
+    design time here — this screen IS the product's face during every
+    silent connect.
+85. **Return-to-origin needs a second channel beyond the OAuth state.**
+    `callbackURL=safeNext(next)` covers ordinary logins, but the
+    signup detour (signup → email verification → hub "continue to tool"
+    CTA → tool ROOT) outlives the state row. A `pendingNext` localStorage
+    record (~1 h TTL; `safeNext` on write AND consume; consume-once by the
+    root layout after a signed-in bootstrap; root-only navigation so
+    invitation/claim landings are never hijacked; a root write never
+    clobbers a fresh deeper value — the CTA re-entry dances again from
+    `/`) closes it with no server state.
+
+## 24. RP-initiated logout: the ordering + two 1.6.15 gotchas
+
+Single logout (SL-2/SL-4): the tool's logout must end the HUB anchor
+session, and open sibling tabs must converge.
+
+86. **Two pinned oauth-provider/better-auth 1.6.15 facts the logout leg
+    stands on — re-verify on ANY bump.** (a) `encryptOAuthTokens` covers
+    access/refresh tokens ONLY: the id_token is stored PLAINTEXT on the
+    account row, so the end-session hint read must be plaintext-first but
+    encrypted-TOLERANT (a future bump that encrypts it must degrade, not
+    break logout). (b) `GET /oauth2/end-session` HARD-FAILS an
+    `id_token_hint` without a `sid` claim — tokens minted before the
+    client's `enableEndSession` flip carry none, so the URL builder must
+    require `sid` itself and answer null (local-only signout) instead of
+    bouncing the user through an AS error page. Rollout caveat worth
+    documenting: pre-flip users get degraded logout until their next
+    login stores a sid-bearing token.
+87. **The logout endpoint's ordering is the contract: build the hub leg →
+    revoke the local session (forwarding the cookie-clearing Set-Cookie) →
+    clear the hint → respond `{url|null}`.** Every failure fails SOFT to
+    null — a hub outage degrades logout to local-only, never blocks it.
+    The client mirrors that: any error → local signout + client-side hint
+    clear + `/login?signed_out=1`; the two can never fail together, which
+    is what closes the auto-connect insta-relogin trap twice over (the
+    landing param and the missing hint are independent lattice gates).
+    Session-only reachability matters: leave the path UNLISTED in the
+    fail-closed machine scope allowlist, and resolve the session
+    route-locally so zero-membership sessions can still log out.
+88. **Cross-tab convergence is a hint-WATCH, and its predicate is operator
+    safety.** On bootstrap + visibilitychange→visible (throttled), a
+    signed-in tab signs out iff discovery posture AND `via === 'session'`
+    AND `ssoOnly === true` (exactly — a server-derived /me field: has an
+    SSO account row AND no credential row) AND the hint is absent. The
+    exactly-true bar is the whole point: a break-glass operator holds a
+    credential account, is never ssoOnly, and must never be watch-signed
+    -out; oss and machine credentials are excluded twice over.
+
+## 25. First-run onboarding must be tool-local and retry-safe
+
+89. **Never hang a first-run banner on an upstream "first login" claim
+    flipping exactly once.** The hub's `tool_first_login` id_token claim
+    is ecosystem ANALYTICS (its `user_tool_usage` table answers "who never
+    tried tool X"), not a UI trigger: a transiently-lost flip would erase
+    someone's welcome forever. The tool-local seam: a `user_onboarding`
+    table (app-owned, no auth-schema drift) where `firstRunPending :=
+NOT EXISTS(row WHERE dismissed_at IS NOT NULL)` — absence means the
+    welcome is still OWED, so a lost best-effort first-login insert
+    self-heals, and only an explicit dismiss endpoint (idempotent upsert,
+    session-only, machines 403 via the fail-closed allowlist) or the
+    deploy backfill (pre-existing users get dismissed rows — no
+    retroactive welcome) ever hides it. `/me` carries the flag
+    cloud+session-only; the banner itself flips local state first and
+    treats the POST as best-effort.
+
+## 26. Connect-on-demand belongs in cli-core
+
+90. **The "no key? probe discovery, exchange the hub login, cache per
+    (tool, hub org)" flow is tool-agnostic — extract it, don't copy it.**
+    Slideless's `connectViaHub` (~100 lines) ported verbatim to
+    `@antasphere/cli-core` `connectOnDemand` + `probeToolInstance`; the
+    tool CLI keeps only its namespace, base URL, and copy (a `messages`
+    seam preserves branded strings byte-for-byte, `notify` routes the
+    connect notice to stderr so machine stdout stays clean). Two traps for
+    the next consumer: pass the resolved `org` EXPLICITLY (omitting it
+    makes the hub default to the key's bound org and silently ignore
+    `--org`/`org use`), and thread the injected `fetch` (or the probe
+    escapes the test harness wire). Discipline that made the swap safe:
+    the tool's existing connect test suite is a BEHAVIORAL PIN — it must
+    pass unchanged against the extracted seam before the copy is deleted.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and

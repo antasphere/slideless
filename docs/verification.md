@@ -8,7 +8,10 @@ and CI; the manual drills below are reproducible with the scripts named.
 - **Unit** (`pnpm --filter @slideless/server test`, `@slideless/dashboard test`):
   scope allowlist, key format + constant-time verify, content-address +
   traversal guard, Range parser, disposition policy, env schema, CSP hashes,
-  pino redaction (the real `REDACT_PATHS`), `safeNext` open-redirect guard.
+  pino redaction (the real `REDACT_PATHS`), `safeNext` open-redirect guard,
+  the SL-3 silent-connect lattice (full gate table, the four redirect-cycle
+  entries, pendingNext write/consume-once/expiry/hostile-value), and the
+  SL-4 hint-watch predicate (operator-safety truth table + throttle).
 - **Integration** (`test:integration`, testcontainers `pgvector/pg17`, real
   routes via `app.request()` + a real listening server for the OAuth/MCP
   dance): migrator idempotency, setup + 410, live-membership revocation on
@@ -291,6 +294,138 @@ Expected: every U1-directed probe is a fail-closed 401/403 with no
 distinguishing detail (a foreign workspace and a phantom one answer
 identically), U2 sees no U1 org name or member email on ANY path, and the
 captured `hubRefreshToken` is inert without `HUB_CLIENT_SECRET`.
+
+**H — The seamless first-party layer (SL-3…SL-6 + cli-core seam).**
+
+Run after A–G on the same harness (U1/U2 present, both apps healthy). The
+hint cookie in the harness is `ant_sso_hint` on `Domain=localhost` (issuer
+`hub.localhost` minus its first label), so it is shared between
+`hub.localhost:3300` and `slideless.localhost:3310` exactly like production.
+Steps H1–H7 and H9–H10 are browser-driven with the network tab open;
+deviations anywhere are a NO-GO.
+
+**H1 — Zero-click silent connect, with network evidence.** Sign into the
+hub as U1 (hint cookie appears), then — with no Slideless session (clear
+slideless cookies only, keep the hub's) — open a DEEP link, e.g.
+`http://slideless.localhost:3310/decks`. Expected: the branded
+"Connecting to your Antasphere account…" interstitial owns the screen (no
+blank frame, and the LOGIN FORM never flashes), then the exact deep link
+renders signed-in with zero clicks. Network evidence:
+`POST /api/v1/auth/sign-in/oauth2` (request body carries
+`additionalData.prompt: "none"`), the hub authorize URL carries
+`prompt=none`, then `/api/v1/auth/oauth2/callback/antasphere` → 302 to the
+deep link. `sessionStorage["sso.attempt"]` is written before the bounce and
+cleared after the signed-in bootstrap.
+
+**H2 — Anonymous visitor: zero sign-in traffic.** Fresh browser profile
+(no hub session, no hint). Open `http://slideless.localhost:3310/`.
+Expected: the plain login page — network shows NO `/sign-in/oauth2` call,
+no hub request of any kind (lattice gate B).
+
+**H3 — Stale hint: one quiet bounce, hint retired, 2-min quiet.** Sign the
+HUB out (hint cleared), then hand-forge a stale hint on the Slideless tab:
+`document.cookie = 'ant_sso_hint=1; domain=localhost; path=/'` — the hint
+is deliberately not a security input, so forging it must buy exactly one
+harmless bounce. Visit `/decks`. Expected: interstitial → hub → back on
+`/login?error=login_required…` with NO error banner (quiet login page), the
+hint cookie GONE (client-side clear), and a reload within ~2 minutes does
+not bounce again (the per-tab marker; the cleared hint blocks it after
+that too).
+
+**H4 — Single logout: signed_out landing, hub anchor dead, NO relogin.**
+From H1's signed-in state, Sign out (user menu). Expected network:
+`POST /api/v1/sso/logout` → 200 `{url: "…/oauth2/end-session?…"}` whose
+response already cleared the local session cookie + the hint; the browser
+then visits the hub end-session URL and lands on `/login?signed_out=1`
+showing the quiet "You have been signed out." notice — and STAYS there
+(reload → still the login page: the insta-relogin trap is closed by the
+`signed_out` param AND the cleared hint independently). The hub anchor is
+dead too: `hub.localhost:3300` now shows ITS login page, and
+`hubdb "SELECT count(*) FROM session WHERE user_id=(SELECT id FROM \"user\"
+WHERE email='u1@drill.test')"` returns 0.
+
+**H5 — sid-less fallback (rollout caveat).** Simulate a pre-flip token:
+`sldb "UPDATE account SET id_token=NULL WHERE provider_id='antasphere' AND
+user_id=(SELECT id FROM \"user\" WHERE email='u1@drill.test')"`, then (from
+a signed-in state) sign out. Expected: `POST /sso/logout` answers
+`{url: null}`, the browser goes straight to `/login?signed_out=1`, local
+session + hint are gone; the HUB session survives (documented degrade —
+the next hub-side login stores a sid-bearing token and full single logout
+resumes).
+
+**H6 — Break-glass untouched; the operator is never watch-target.**
+`curl -fsS -X POST $SL/api/v1/auth/sign-in/email -H 'content-type:
+application/json' -d '{"email":"<setup operator>","password":"<setup
+password>"}' -c /tmp/op.jar` still answers a session on cloud, and
+`curl -fsS $SL/api/v1/me -b /tmp/op.jar | jq .ssoOnly` prints **false**
+(the operator holds a credential account). Browser as the operator: delete
+the hint cookie, hide + reshow the tab past the 30 s throttle — expected:
+STILL signed in (the hint-watch predicate requires `ssoOnly === true`,
+exactly). The operator is also never trapped on `/login`: with no hint
+there is no bounce, and a login_required return never loops (H3).
+
+**H7 — Onboarding lifecycle, incl. the failed-insert retry.** Fresh hub
+user U3 → first Slideless SSO login. Expected: the welcome banner renders;
+Dismiss fires `POST /api/v1/me/onboarding/dismiss` → 200 → banner gone;
+sign out + back in → still gone (`sldb "SELECT dismissed_at FROM
+user_onboarding WHERE user_id=…"` is non-null). Retry-safety: for a fresh
+user U4, simulate the lost best-effort first-login insert —
+`sldb "DELETE FROM user_onboarding WHERE user_id=(SELECT id FROM \"user\"
+WHERE email='u4@drill.test')"` — and reload: the banner STILL shows
+(`firstRunPending` is `NOT EXISTS(dismissed row)`, so absence means owed).
+Backfill: U1 (existing at deploy) never sees the banner — their backfilled
+row carries `dismissed_at`.
+
+**H8 — CLI connect rides the cli-core seam.** With the hub profile from
+`antasphere login` (or seeded per its docs) and NO Slideless key:
+
+```bash
+slideless list --api-url http://localhost:3310
+# stderr: Connected to http://localhost:3310 as u1@drill.test via Antasphere (org <hub org id>).
+slideless list --api-url http://localhost:3310   # second run: silent — the cached slk_ key serves
+```
+
+Expected: first run probes `/api/v1/instance`, exchanges
+`/sso/tool-token` → `/sso/cli-connect`, prints the connect notice on
+stderr (stdout stays machine-clean), caches per (tool, hub org); the
+second run makes no hub call. (Automated twin:
+`packages/cli/test/connect.test.ts` — pinned unchanged across the cli-core
+0.3.0 extraction.)
+
+**H9 — Anchor renewal (decision 6): a tool re-derivation slides the hub
+session.** Force the tool session to its fixed expiry and pre-age the hub
+session past the hub's `updateAge` so the slide is observable:
+
+```bash
+sldb "UPDATE session SET expires_at = now() - interval '1 minute'
+      WHERE user_id=(SELECT id FROM \"user\" WHERE email='u1@drill.test')"
+hubdb "UPDATE session SET updated_at = now() - interval '2 days'
+       WHERE user_id=(SELECT id FROM \"user\" WHERE email='u1@drill.test')"
+hubdb "SELECT expires_at, updated_at FROM session
+       WHERE user_id=(SELECT id FROM \"user\" WHERE email='u1@drill.test')"  # note the values
+```
+
+Browser (U1, hub session alive): open a DEEP link, e.g.
+`http://slideless.localhost:3310/decks`. Expected: the silent
+re-derivation runs (interstitial, no clicks, no credentials) and lands
+back on THAT deep link; re-running the `hubdb SELECT` shows
+`expires_at`/`updated_at` ADVANCED — the authorize touch slid the anchor.
+The harness has one tool, so the cross-TOOL leg is asserted via the
+mechanism (ANY authorize touch slides the anchor — a hub-dashboard visit
+shows the same advance); the literal two-tool drill arrives with the
+second product.
+
+**H10 — Return-to-origin lands on the EXACT page (decision 7).**
+(a) Interactive: fresh profile, open a deep link
+(`http://slideless.localhost:3310/decks/<id>?tab=versions`) → funneled to
+`/login?next=…` → "Sign in with Antasphere" → hub login as U1 → expected:
+back on the EXACT URL, query string included. (b) The signup detour
+(outlives the OAuth state row): fresh profile, open the same deep link →
+"Sign in with Antasphere" → hub → Sign UP as U5 → verify the email at
+Mailpit (`:8030`) → `/verified` → "Continue to Slideless" CTA → the tool
+re-enters at its ROOT, silent-connects, and finishes on the ORIGINAL deep
+link (`localStorage["sso.pendingNext"]` carried it; verify it is REMOVED
+afterwards — consume-once).
 
 **Teardown.**
 
