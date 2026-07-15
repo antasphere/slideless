@@ -8,18 +8,30 @@ import { z } from 'zod';
  * The counterpart of the hub's H3 `POST /sso/tool-token`: `antasphere login`
  * mints a hub API key once; the hub exchanges it for a short-lived RS256 JWT
  * (`aud` = THIS instance's resource URL, `purpose: 'sso-connect'`, unique
- * `jti`), and this endpoint turns that JWT into an ordinary local API key —
- * no tool-specific login. PUBLIC path (the hub JWT IS the credential),
+ * `jti`) PLUS a one-time raw offline-grant refresh token (`hubRefreshToken`,
+ * scopes `offline_access account:read`), and this endpoint turns the pair
+ * into an ordinary USER-scoped local API key — no tool-specific login, and
+ * the stored grant drives the same live as-the-user hub org reads as a
+ * browser SSO login's. PUBLIC path (the hub JWT IS the credential),
  * rate-limited, jti one-time-use. Registered ONLY on EDITION=cloud; an oss
  * instance answers 404 (the route does not exist there).
  *
  * The response reuses the CLI-auth completion shape (`CliAuthCompleted`) —
- * the mint semantics are identical: presentations:read + presentations:write,
- * never data:export, full key shown exactly once.
+ * presentations:read + presentations:write, never data:export, full key
+ * shown exactly once; `workspaceId` is null (user-scoped, unpinned).
  */
 
 export const ssoCliConnectSchema = z.object({
   /** The hub-minted exchange JWT (compact JWS — three base64url segments). */
-  token: z.string().min(20).max(4096)
+  token: z.string().min(20).max(4096),
+  /**
+   * The raw one-time offline-grant refresh token from the SAME H3 response
+   * (`hubRefreshToken`). Stored encrypted on the account row — it is what
+   * keeps a headless CLI user's org reads LIVE between browser logins.
+   * Optional on the wire for older clients, but a connect that carries none
+   * is refused unless a prior grant already exists (a key must never be
+   * minted born-dead).
+   */
+  hubRefreshToken: z.string().min(20).max(512).optional()
 });
 export type SsoCliConnect = z.infer<typeof ssoCliConnectSchema>;

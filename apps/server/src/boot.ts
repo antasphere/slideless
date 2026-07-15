@@ -499,6 +499,8 @@ export async function boot(
     sharing,
     collaborators: collaboratorService,
     hubSso,
+    // Cloud only: /sso/cli-connect stores the H3 offline grant through it.
+    hubGrant,
     // Cloud only (docs/federation.md): the post-resolution LIVE hub gate —
     // reconcile-as-the-user + suspension/revocation/grant-death verdicts —
     // run by authContext on every authenticated request. undefined on oss.

@@ -205,9 +205,17 @@ export class FakeHub {
    * mints for `slideless /sso/cli-connect` (the P5 pinned contract): a
    * 120 s RS256 JWT, `aud` = the TOOL's resource URL (single string, no
    * userinfo entry — this is not an OIDC access token), the transitional
-   * org-claims payload, `purpose: 'sso-connect'`, and a unique `jti`.
-   * `opts` bends the connect-specific claims for negative tests;
-   * `fixture.overrides` still bends iss/exp/aud like everywhere else.
+   * org-claims payload (Slideless must IGNORE it — suites prove nothing
+   * reads it), `purpose: 'sso-connect'`, and a unique `jti`. Like the real
+   * H3 response, a `hubRefreshToken` rides along: a RAW one-time
+   * offline-grant refresh token in the ordinary (sub, client) rotation
+   * family — redeemable at this fake's token endpoint under the TOOL
+   * CLIENT's credentials, rotation + reuse detection included. And like
+   * the real hub (whose H3 mint proves a live membership of the target
+   * org), the fixture's org is seeded into the sub's registry so a
+   * subsequent as-the-user `GET /orgs` asserts it. `opts` bends the
+   * connect-specific claims for negative tests; `fixture.overrides` still
+   * bends iss/exp/aud like everywhere else.
    */
   async signConnectToken(
     fixture: HubUserFixture,
@@ -220,7 +228,7 @@ export class FakeHub {
       /** Replacement purpose; null = omit the claim. Default 'sso-connect'. */
       purpose?: string | null | undefined;
     } = {}
-  ): Promise<{ token: string; jti: string }> {
+  ): Promise<{ token: string; jti: string; hubRefreshToken: string }> {
     const key = this.signingKey();
     const o = fixture.overrides ?? {};
     const now = Math.floor(Date.now() / 1000);
@@ -241,7 +249,20 @@ export class FakeHub {
       .setIssuedAt(now)
       .setExpirationTime(now + (o.expiresInSeconds ?? 120))
       .sign(key.privateKey);
-    return { token, jti };
+    // The org registry mirror of the real H3 membership precondition —
+    // registry-level extras survive, exactly like the code-exchange seed.
+    const previous = this.userOrgs.get(fixture.sub)?.get(fixture.workspaceId);
+    this.setUserOrg(fixture.sub, fixture.workspaceId, {
+      name: fixture.workspaceName === null ? null : (fixture.workspaceName ?? 'Fake Org'),
+      role: fixture.role,
+      ...(previous?.status !== undefined ? { status: previous.status } : {}),
+      ...(previous?.isDefault !== undefined ? { isDefault: previous.isDefault } : {})
+    });
+    // A fresh H3 exchange is a FRESH grant, like a fresh consent: a past
+    // reuse-detection teardown must not shadow a new connect.
+    this.deadFamilies.delete(`${fixture.sub}:tool-slideless-cloud`);
+    const hubRefreshToken = this.mintRefreshToken(fixture.sub, 'tool-slideless-cloud');
+    return { token, jti, hubRefreshToken };
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {

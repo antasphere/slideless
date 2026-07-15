@@ -17,11 +17,18 @@ import * as sso from './sso-helpers.js';
  *  - the full verification chain fail-closed: signature, iss pin, aud pin,
  *    `purpose` required (a flow-(a) hub access token dies here), expiry,
  *    `jti` required, and — G8 — jti ONE-TIME-USE (replay, incl. concurrent);
- *  - JIT parity with SSO login: same user/account/workspace/membership rows,
- *    the `user.created` seam fires (once), the two entrances interleave
- *    without duplicating anything;
- *  - the minted key: `slk_`, bound to the projected workspace, scopes
- *    presentations:read + presentations:write, NEVER data:export;
+ *  - JIT parity with SSO login: same user/account/workspace/membership rows
+ *    (projection via the SAME fail-closed reconcile — the token's
+ *    transitional org claims are never read), the `user.created` seam fires
+ *    (once), the two entrances interleave without duplicating anything;
+ *  - the H3 GRANT CHANNEL (acquireFromConnect): the request's
+ *    `hubRefreshToken` lands encrypted on the account row and drives live
+ *    as-the-user org reads immediately — no browser SSO needed; a connect
+ *    that can prove no usable grant refuses (hub_grant_missing) instead of
+ *    minting a born-dead key;
+ *  - the minted key: `slk_`, USER-scoped (workspaceId null — the org is a
+ *    per-request parameter), scopes presentations:read +
+ *    presentations:write, NEVER data:export;
  *  - oss: the route does not exist (404, absent from the OpenAPI document).
  */
 
@@ -60,8 +67,13 @@ function cloudEnv() {
 }
 
 /** POST the exchange token from a fresh per-call IP (the login wall is per IP). */
-async function connect(app: TestApp, token: string, ip = sso.nextIp()): Promise<Response> {
-  const init = json({ token });
+async function connect(
+  app: TestApp,
+  token: string,
+  hubRefreshToken?: string,
+  ip = sso.nextIp()
+): Promise<Response> {
+  const init = json({ token, ...(hubRefreshToken ? { hubRefreshToken } : {}) });
   return await app.app.request('/api/v1/sso/cli-connect', {
     ...init,
     headers: { ...init.headers, 'x-forwarded-for': ip }
@@ -72,7 +84,11 @@ describe('cloud edition: POST /sso/cli-connect', () => {
   let app: TestApp;
 
   beforeAll(async () => {
-    app = await createTestApp(await createDatabase(container, 'sso_cli_connect'), cloudEnv());
+    app = await createTestApp(await createDatabase(container, 'sso_cli_connect'), cloudEnv(), {
+      // Shrunk reconcile TTL so the between-logins liveness assertions can
+      // watch a hub-side change propagate in milliseconds.
+      hubDials: { reconcileTtlMs: 120, reconcileStaleMaxMs: 60_000, retryMs: 250 }
+    });
     const res = await app.app.request('/api/v1/setup', json({ instanceName: 'Connect', owner: OWNER }));
     expect(res.status).toBe(201);
   });
@@ -89,7 +105,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     workspaceName: 'Acme Corp'
   };
 
-  it('exchanges a valid token: JIT user + projection + an slk_ key bound to the projected workspace', async () => {
+  it('exchanges a valid token: JIT user + reconciled projection + a USER-scoped slk_ key that works NOW', async () => {
     // The user.created seam must fire exactly once, from the internal
     // adapter's JIT create — the proof this entrance is the sanctioned one
     // (same hook the collaborator grant sweep rides).
@@ -98,83 +114,103 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       created.push(p);
     });
 
-    const { token } = await hub.signConnectToken(alice, RESOURCE);
-    const res = await connect(app, token);
+    const { token, hubRefreshToken } = await hub.signConnectToken(alice, RESOURCE);
+    const res = await connect(app, token, hubRefreshToken);
     expect(res.status).toBe(201);
     const body = await readJson(res);
 
-    // The one-shot key: slk_, the CLI grant, never data:export.
+    // The one-shot key: slk_, the CLI grant, never data:export — and
+    // USER-scoped: no workspace pin anywhere in the response.
     expect(body.key).toMatch(/^slk_/);
     expect(body.apiKey.scopes.sort()).toEqual(['presentations:read', 'presentations:write']);
     expect(body.apiKey.scopes).not.toContain('data:export');
     expect(body.apiKey.name).toMatch(/^Antasphere CLI \d{4}-\d{2}-\d{2}$/);
     expect(body.apiKey.expiresAt).toBeNull();
+    expect(body.apiKey.workspaceId).toBeNull();
+    expect(body.workspaceId).toBeNull();
     expect(body.user.email).toBe('alice@connect.test');
 
     // DB truth — the same rows an SSO login would produce (hub-sso suite):
     // verified user, antasphere account link, projection stamped with the
-    // hub org id, membership role verbatim with origin='hub'.
+    // hub org id, membership role verbatim with origin='hub'. The
+    // projection came from the fail-closed connect reconcile (as the user,
+    // with the grant this very request delivered) — never from the token's
+    // transitional org claims.
     const { rows: users } = await app.db.pool.query(
       `SELECT id, email_verified FROM "user" WHERE email = 'alice@connect.test'`
     );
     expect(users).toHaveLength(1);
     expect(users[0].email_verified).toBe(true);
     const { rows: accounts } = await app.db.pool.query(
-      `SELECT provider_id, account_id FROM account WHERE user_id = $1`,
+      `SELECT provider_id, account_id, refresh_token FROM account WHERE user_id = $1`,
       [users[0].id]
     );
-    expect(accounts).toEqual([{ provider_id: 'antasphere', account_id: 'hub-cli-alice' }]);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0].provider_id).toBe('antasphere');
+    expect(accounts[0].account_id).toBe('hub-cli-alice');
+    // The grant landed ENCRYPTED on the row (never the raw token), and the
+    // reconcile's refresh already ROTATED it — the raw H3 token is spent.
+    expect(accounts[0].refresh_token).toBeTruthy();
+    expect(accounts[0].refresh_token).not.toBe(hubRefreshToken);
     const { rows: ws } = await app.db.pool.query(
       `SELECT id, name FROM workspaces WHERE central_account_id = $1`,
       [ORG_ACME]
     );
     expect(ws).toHaveLength(1);
     expect(ws[0].name).toBe('Acme Corp');
-    expect(body.workspaceId).toBe(ws[0].id);
     const { rows: members } = await app.db.pool.query(
       `SELECT role, origin, is_active FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
       [ws[0].id, users[0].id]
     );
     expect(members).toEqual([{ role: 'member', origin: 'hub', is_active: true }]);
 
-    // The key row binds the projected workspace.
+    // The key row is UNPINNED (user credential).
     const { rows: keys } = await app.db.pool.query(
       `SELECT workspace_id, scopes FROM api_keys WHERE created_by = $1`,
       [users[0].id]
     );
-    expect(keys).toEqual([{ workspace_id: ws[0].id, scopes: ['presentations:read', 'presentations:write'] }]);
+    expect(keys).toEqual([{ workspace_id: null, scopes: ['presentations:read', 'presentations:write'] }]);
 
-    // The audit row landed (principal-less route writes it directly).
+    // The reconcile redeemed the grant at the hub with OUR client
+    // credentials and the hub-API resource (the tokenResource seam).
+    const lastRefresh = hub.refreshRequests.at(-1)!;
+    expect(lastRefresh.refreshToken).toBe(hubRefreshToken);
+    expect(lastRefresh.clientId).toBe('tool-slideless-cloud');
+    expect(lastRefresh.resource).toBe(hub.apiResource);
+
+    // The audit row landed (principal-less route writes it directly) —
+    // INSTANCE-attributed: a user-scoped key belongs to no one workspace.
     const { rows: audits } = await app.db.pool.query(
-      `SELECT action, metadata FROM audit_log WHERE workspace_id = $1 AND action = 'apikey.create'`,
-      [ws[0].id]
+      `SELECT metadata FROM audit_log WHERE workspace_id IS NULL AND action = 'apikey.create'`
     );
     expect(audits).toHaveLength(1);
     expect(audits[0].metadata.via).toBe('sso_cli_connect');
+    expect(audits[0].metadata.grantChannel).toBe('h3_exchange');
 
     // JIT fired the single user.created seam exactly once.
     expect(created).toEqual([{ userId: users[0].id, email: 'alice@connect.test' }]);
     off();
 
-    // STAGE E INTERIM (until the acquireFromConnect grant channel): a
-    // connect-JIT user holds NO hub grant — the live gate fails their
-    // requests CLOSED (401 hub_grant_expired), steering to one browser SSO.
-    // A key must never act on a grant its holder does not hold.
-    const beforeHeal = await app.app.request('/api/v1/me', {
-      headers: { authorization: `Bearer ${body.key}` }
-    });
-    expect(beforeHeal.status).toBe(401);
-    expect((await readJson(beforeHeal)).error.code).toBe('hub_grant_expired');
-
-    // One browser SSO login seeds the grant; the key then works.
-    await sso.ssoLogin(app, hub, alice);
+    // THE HEADLINE (replacing the Stage E interim): the key works
+    // IMMEDIATELY — no browser SSO needed. The stored H3 grant drives the
+    // live gate's as-the-user reconcile.
     const me = await app.app.request('/api/v1/me', {
       headers: { authorization: `Bearer ${body.key}` }
     });
     expect(me.status).toBe(200);
     const meBody = await readJson(me);
-    expect(meBody.workspace.id).toBe(ws[0].id);
+    expect(meBody.activeWorkspaceId).toBe(ws[0].id);
     expect(meBody.via).toBe('api_key');
+
+    // …and stays LIVE between logins: a hub-side role change propagates to
+    // the next keyed request after the reconcile TTL.
+    hub.setUserOrg(alice.sub, ORG_ACME, { name: 'Acme Corp', role: 'admin' });
+    await new Promise((r) => setTimeout(r, 200));
+    const meAfter = await readJson(
+      await app.app.request('/api/v1/me', { headers: { authorization: `Bearer ${body.key}` } })
+    );
+    expect(meAfter.role).toBe('admin');
+    hub.setUserOrg(alice.sub, ORG_ACME, { name: 'Acme Corp', role: 'member' });
 
     // …and CANNOT reach the export surface (no data:export, ever).
     const exportRes = await app.app.request('/api/v1/workspace/export', {
@@ -189,8 +225,8 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     const off = app.registry.events.on('user.created', (p) => {
       created.push(p);
     });
-    const { token } = await hub.signConnectToken(alice, RESOURCE);
-    const res = await connect(app, token);
+    const { token, hubRefreshToken } = await hub.signConnectToken(alice, RESOURCE);
+    const res = await connect(app, token, hubRefreshToken);
     expect(res.status).toBe(201);
     off();
     expect(created).toEqual([]);
@@ -218,17 +254,17 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       role: 'owner',
       workspaceName: 'Beta GmbH'
     };
-    const { token } = await hub.signConnectToken(bob, RESOURCE);
-    const res = await connect(app, token);
+    const { token, hubRefreshToken } = await hub.signConnectToken(bob, RESOURCE);
+    const res = await connect(app, token, hubRefreshToken);
     expect(res.status).toBe(201);
     const body = await readJson(res);
+    expect(body.workspaceId).toBeNull(); // user-scoped — no pin to report
 
     // …then logs in via the browser SSO dance: same user, same account
     // link, same projected workspace, still exactly one membership row.
     const cookie = await sso.ssoLogin(app, hub, bob);
     const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie } }));
     expect(me.user.email).toBe('bob@connect.test');
-    expect(me.activeWorkspaceId).toBe(body.workspaceId);
 
     const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = 'bob@connect.test'`);
     expect(users).toHaveLength(1);
@@ -241,6 +277,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       ORG_BETA
     ]);
     expect(ws).toHaveLength(1);
+    expect(me.activeWorkspaceId).toBe(ws[0].id);
     const { rows: members } = await app.db.pool.query(
       `SELECT role, origin, is_active FROM workspace_members WHERE user_id = $1`,
       [users[0].id]
@@ -249,11 +286,11 @@ describe('cloud edition: POST /sso/cli-connect', () => {
   });
 
   it('rejects a replayed jti within the TTL — one token mints exactly one key (G8)', async () => {
-    const { token } = await hub.signConnectToken(alice, RESOURCE);
-    const first = await connect(app, token);
+    const { token, hubRefreshToken } = await hub.signConnectToken(alice, RESOURCE);
+    const first = await connect(app, token, hubRefreshToken);
     expect(first.status).toBe(201);
 
-    const replay = await connect(app, token);
+    const replay = await connect(app, token, hubRefreshToken);
     expect(replay.status).toBe(401);
     expect((await readJson(replay)).error.code).toBe('invalid_token');
 
@@ -274,8 +311,11 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       workspaceId: ORG_ACME,
       role: 'member'
     };
-    const { token } = await hub.signConnectToken(carol, RESOURCE);
-    const [a, b] = await Promise.all([connect(app, token), connect(app, token)]);
+    const { token, hubRefreshToken } = await hub.signConnectToken(carol, RESOURCE);
+    const [a, b] = await Promise.all([
+      connect(app, token, hubRefreshToken),
+      connect(app, token, hubRefreshToken)
+    ]);
     expect([a.status, b.status].sort()).toEqual([201, 401]);
 
     const { rows: users } = await app.db.pool.query(
@@ -348,13 +388,103 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       await expectRejected(token);
     });
 
-    it('rejects an unknown hub role claim (D11: derived, never mapped)', async () => {
-      const { token } = await hub.signConnectToken({ ...mallory, role: 'superowner' }, RESOURCE);
-      await expectRejected(token);
-    });
-
     it('rejects a garbage body token', async () => {
       await expectRejected('x'.repeat(64));
+    });
+  });
+
+  describe('the grant channel (acquireFromConnect): never a born-dead key', () => {
+    it('refuses a connect that carries no grant when none is stored (hub_grant_missing, no key)', async () => {
+      const dana: HubUserFixture = {
+        sub: 'hub-cli-dana',
+        email: 'dana@connect.test',
+        workspaceId: ORG_ACME,
+        role: 'member'
+      };
+      const { token } = await hub.signConnectToken(dana, RESOURCE);
+      const res = await connect(app, token); // deliberately NO hubRefreshToken
+      expect(res.status).toBe(403);
+      const body = await readJson(res);
+      expect(body.error.code).toBe('hub_grant_missing');
+      expect(body.error.message).toContain('browser');
+      // The user was provisioned (claim-first posture; the orphan purge
+      // collects never-returned strands) but NO key exists.
+      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
+        dana.email
+      ]);
+      expect(users).toHaveLength(1);
+      const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
+        users[0].id
+      ]);
+      expect(keys).toHaveLength(0);
+    });
+
+    it('a garbage hubRefreshToken is refused end-to-end (grant_dead at the hub → no key)', async () => {
+      const erin: HubUserFixture = {
+        sub: 'hub-cli-erin',
+        email: 'erin@connect.test',
+        workspaceId: ORG_ACME,
+        role: 'member'
+      };
+      const { token } = await hub.signConnectToken(erin, RESOURCE);
+      const res = await connect(app, token, 'not-a-real-hub-refresh-token-000000000000');
+      expect(res.status).toBe(403);
+      expect((await readJson(res)).error.code).toBe('hub_grant_missing');
+      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
+        erin.email
+      ]);
+      expect(users).toHaveLength(1);
+      const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
+        users[0].id
+      ]);
+      expect(keys).toHaveLength(0);
+      // The refusal nulled the garbage grant (the invalid_grant dead
+      // marker) — the row is back to the no-grant state, not stuck.
+      const { rows: accounts } = await app.db.pool.query(
+        `SELECT refresh_token FROM account WHERE user_id = $1 AND provider_id = 'antasphere'`,
+        [users[0].id]
+      );
+      expect(accounts).toEqual([{ refresh_token: null }]);
+    });
+
+    it('a grantless connect for a user with a STORED grant mints (older CLI against a healed account)', async () => {
+      // alice holds a live stored grant from the earlier connects.
+      const { token } = await hub.signConnectToken(alice, RESOURCE);
+      const res = await connect(app, token); // no hubRefreshToken carried
+      expect(res.status).toBe(201);
+      const body = await readJson(res);
+      expect(body.apiKey.workspaceId).toBeNull();
+      const { rows: audits } = await app.db.pool.query(
+        `SELECT metadata FROM audit_log WHERE action = 'apikey.create' AND id = (
+           SELECT max(id) FROM audit_log WHERE action = 'apikey.create'
+         )`
+      );
+      expect(audits[0].metadata.grantChannel).toBe('stored');
+    });
+
+    it('an unknown hub role on the SOLE org yields no usable membership — refused, never a dead key (D11)', async () => {
+      // Roles are DERIVED, never mapped: the reconcile keeps unknown-role
+      // entries alive but projects nothing — a fresh user ends with zero
+      // memberships, and a key for them would be born dead.
+      const frank: HubUserFixture = {
+        sub: 'hub-cli-frank',
+        email: 'frank@connect.test',
+        workspaceId: ORG_BETA,
+        role: 'superowner'
+      };
+      const { token, hubRefreshToken } = await hub.signConnectToken(frank, RESOURCE);
+      const res = await connect(app, token, hubRefreshToken);
+      expect(res.status).toBe(403);
+      expect((await readJson(res)).error.code).toBe('no_membership');
+      const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
+        frank.email
+      ]);
+      expect(users).toHaveLength(1);
+      const { rows: keys } = await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [
+        users[0].id
+      ]);
+      expect(keys).toHaveLength(0);
+      hub.clearUserOrgs(frank.sub);
     });
   });
 
@@ -362,10 +492,10 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     const ip = sso.nextIp();
     // The login wall is 10/15min per key; burn the bucket with rejects.
     for (let i = 0; i < 10; i++) {
-      const res = await connect(app, 'x'.repeat(64), ip);
+      const res = await connect(app, 'x'.repeat(64), undefined, ip);
       expect([401, 429]).toContain(res.status);
     }
-    const eleventh = await connect(app, 'x'.repeat(64), ip);
+    const eleventh = await connect(app, 'x'.repeat(64), undefined, ip);
     expect(eleventh.status).toBe(429);
   });
 
@@ -395,11 +525,11 @@ describe('cloud edition: POST /sso/cli-connect', () => {
   it('links onto a VERIFIED local account of the same email (the D9 operator path)', async () => {
     // The setup operator's email is verified — a connect asserting it links
     // instead of duplicating, exactly like the browser SSO trusted link.
-    const { token } = await hub.signConnectToken(
+    const { token, hubRefreshToken } = await hub.signConnectToken(
       { sub: 'hub-cli-operator', email: OWNER.email, workspaceId: ORG_ACME, role: 'admin' },
       RESOURCE
     );
-    const res = await connect(app, token);
+    const res = await connect(app, token, hubRefreshToken);
     expect(res.status).toBe(201);
     const { rows: users } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [OWNER.email]);
     expect(users).toHaveLength(1); // still one local user
@@ -408,8 +538,7 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       [users[0].id]
     );
     expect(accounts).toEqual([{ account_id: 'hub-cli-operator' }]);
-    // The hub-asserted role landed on the projected org's membership; the
-    // operator's own setup workspace membership is untouched.
+    // The reconciled role landed on the projected org's membership.
     const { rows: members } = await app.db.pool.query(
       `SELECT wm.role, wm.origin FROM workspace_members wm
        JOIN workspaces w ON w.id = wm.workspace_id

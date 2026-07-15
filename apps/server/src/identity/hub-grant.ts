@@ -186,6 +186,59 @@ export class HubGrantService {
   }
 
   /**
+   * Store the H3 offline grant — the raw one-time `hubRefreshToken` from
+   * the hub's `POST /sso/tool-token` response, delivered through
+   * `/sso/cli-connect` — on the user's `antasphere` account row, encrypted
+   * with the SAME primitive + key as every Better Auth write, so the
+   * ordinary refresh path consumes it exactly like a browser-SSO grant.
+   * This is what gives a HEADLESS CLI user live as-the-user org reads
+   * between browser logins (and replaces the Stage E interim, where a
+   * connect-minted key answered 401 hub_grant_expired until one browser
+   * SSO).
+   *
+   * Overwrites any previous grant unconditionally: the H3 mint is the
+   * NEWEST valid credential, and the replaced family simply idles to expiry
+   * at the hub. The stored access token is cleared (the new grant has none
+   * yet); the caller VALIDATES the grant end-to-end by running the
+   * fail-closed connect reconcile right after — a garbage token surfaces as
+   * `grant_dead` there and no key is minted.
+   *
+   * Throws when the user holds no `antasphere` account row — the connect
+   * flow provisions the link BEFORE acquiring the grant, so that is a
+   * wiring bug, never a user state.
+   */
+  async acquireFromConnect(userId: string, rawRefreshToken: string): Promise<void> {
+    const key = await this.opts.key();
+    const encrypted = await symmetricEncrypt({ key, data: rawRefreshToken });
+    const updated = await this.opts.db
+      .update(account)
+      .set({
+        accessToken: null,
+        accessTokenExpiresAt: null,
+        refreshToken: encrypted,
+        refreshTokenExpiresAt: null,
+        updatedAt: new Date()
+      })
+      .where(and(eq(account.userId, userId), eq(account.providerId, HUB_SSO_PROVIDER_ID)))
+      .returning({ id: account.id });
+    if (updated.length === 0) {
+      throw new Error('acquireFromConnect: no antasphere account row to store the grant on');
+    }
+    this.cache.delete(userId);
+  }
+
+  /**
+   * Whether a stored (possibly stale) grant exists — the connect route's
+   * born-dead guard for requests that carry no hubRefreshToken: with no
+   * stored grant either, minting a key would strand it on
+   * hub_grant_expired, so the connect refuses with steering instead.
+   */
+  async hasStoredGrant(userId: string): Promise<boolean> {
+    const row = await this.readRow(userId);
+    return Boolean(row?.refreshToken);
+  }
+
+  /**
    * Seed the in-memory cache with the SSO callback's access token (already
    * hub-audienced — the code exchange sends the same `resource`), so the
    * login-path reads and the first post-login requests need no refresh.

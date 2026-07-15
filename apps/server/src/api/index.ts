@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
+import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
 import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
 import { instanceSettings, user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
 import { hubConfig, type Env } from '../env.js';
@@ -25,6 +26,7 @@ import {
 } from '../middleware/rate-limit.js';
 import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
 import type { HubSsoService } from '../identity/hub-sso.js';
+import type { HubGrantService } from '../identity/hub-grant.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerSsoConnectRoutes } from './sso-connect.js';
@@ -76,8 +78,13 @@ export interface ApiDeps {
    */
   hubSso?: HubSsoService | undefined;
   /**
-   * Cloud edition only (P4): the post-resolution hub gate authContext runs —
-   * org suspension (cached, D5) + hub-membership re-assertion (cached, D3).
+   * Cloud edition only: the per-user hub grant store — /sso/cli-connect
+   * lands the H3 offline grant through its `acquireFromConnect` seam.
+   */
+  hubGrant?: HubGrantService | undefined;
+  /**
+   * Cloud edition only: the post-resolution LIVE hub gate authContext runs
+   * (reconcile-as-the-user + suspension/revocation/grant-death verdicts).
    * Absent on oss: the middleware carries zero hub surface.
    */
   principalGate?: PrincipalGate | undefined;
@@ -396,6 +403,16 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   api.openapi(meRoute, async (c) => {
     const principal = c.get('principal');
     if (!principal) {
+      // The zero state exists ONLY for the selector-less default request: a
+      // session that NAMED a workspace and failed its membership check must
+      // keep the fail-closed 401 (no oracle about the workspace, and the
+      // dashboard's stale-selection self-heal keys on that failure). With
+      // no selector, a live session resolving to null principal means
+      // exactly "zero active memberships" (the shared resolveMembership
+      // default rule).
+      if (c.req.header(ACTIVE_WORKSPACE_HEADER)?.trim()) {
+        return c.json(err('unauthenticated', 'Authentication required'), 401);
+      }
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
       if (!session?.user) {
         return c.json(err('unauthenticated', 'Authentication required'), 401);
@@ -495,11 +512,20 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // D1 hub-only entrance closure; the self-revoke stays open.
   registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger, hubSso });
   // CLI cross-tool connect (docs/federation.md P5): PUBLIC exchange of a
-  // hub-minted 120 s JWT for an `slk_` key. Registered ONLY on cloud —
-  // an oss boot leaves the path to the JSON 404 terminator below, so the
-  // self-host edition provably carries zero hub surface here.
-  if (hubSso) {
-    registerSsoConnectRoutes(api, { db, auth, hubSso, apiKeys: apiKeyService, audit, logger });
+  // hub-minted 120 s JWT (+ its H3 offline grant) for a USER-scoped `slk_`
+  // key. Registered ONLY on cloud — an oss boot leaves the path to the JSON
+  // 404 terminator below, so the self-host edition provably carries zero
+  // hub surface here.
+  if (hubSso && deps.hubGrant) {
+    registerSsoConnectRoutes(api, {
+      db,
+      auth,
+      hubSso,
+      grant: deps.hubGrant,
+      apiKeys: apiKeyService,
+      audit,
+      logger
+    });
   }
   registerMemberRoutes(api, {
     db,

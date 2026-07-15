@@ -448,7 +448,10 @@ export const ssoCliConnectRoute = createRoute({
     201: jsonBody(cliAuthCompletedSchema, 'Key minted; the full key appears only here'),
     400: jsonBody(apiErrorSchema, 'Validation error'),
     401: jsonBody(apiErrorSchema, 'invalid_token: bad signature/iss/aud/purpose, expired, or replayed jti'),
-    403: jsonBody(apiErrorSchema, 'Provisioning refused (identity/email conflict, link refused)'),
+    403: jsonBody(
+      apiErrorSchema,
+      'Provisioning refused (identity/email conflict, link refused) or hub_grant_missing: no usable hub grant — a key is never minted born-dead'
+    ),
     429: errorResponses[429],
     500: errorResponses[500]
   }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
+import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
 
@@ -31,6 +31,8 @@ const ORG_TINA = '33333333-aaaa-4bbb-8ccc-000000000005';
 const ORG_FRESH = '33333333-aaaa-4bbb-8ccc-000000000006';
 const ORG_WEIRD = '33333333-aaaa-4bbb-8ccc-000000000009';
 const ORG_DANA = '33333333-aaaa-4bbb-8ccc-00000000000a';
+const ORG_BG = '33333333-aaaa-4bbb-8ccc-00000000000b';
+const ORG_OPX = '33333333-aaaa-4bbb-8ccc-00000000000c';
 
 const DIALS = {
   reconcileTtlMs: 120,
@@ -57,7 +59,9 @@ beforeAll(async () => {
       HUB_ISSUER_URL: hub.issuer,
       HUB_CLIENT_ID: 'tool-slideless-cloud',
       HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001',
-      METRICS_TOKEN: 'reconcile-metrics-token'
+      METRICS_TOKEN: 'reconcile-metrics-token',
+      // The break-glass lifeboat suite below acts as the setup operator.
+      SUPERADMIN_EMAILS: OWNER.email
     },
     { hubDials: DIALS }
   );
@@ -453,5 +457,106 @@ describe('observability', () => {
     expect(text).toMatch(/hub_reconcile_passes_total\{outcome="ok"\} [1-9]/);
     expect(text).toMatch(/hub_reconcile_passes_total\{outcome="inconclusive"\} [1-9]/);
     expect(text).toMatch(/hub_grant_refreshes_total/);
+  });
+});
+
+describe('break-glass claim on a PROJECTED workspace: the origin=local lifeboat (pin)', () => {
+  // Decision 2 (user-scoped federation): cloud setup mints no workspace, so
+  // operator recovery targets PROJECTED workspaces — break-glass
+  // claim-ownership writes an `origin='local'` owner row there, and the
+  // reconcile sweep is scoped to `origin='hub'` rows ONLY. This pin proves
+  // the whole lifeboat: the zero-membership operator claims a projection,
+  // gains dashboard access, and KEEPS it through the maximal sweep — a
+  // reconcile pass whose hub org list is EMPTY.
+  let operatorCookie: string;
+  let wsBg: string;
+
+  it('a zero-membership operator claims ownership of a projected workspace', async () => {
+    // A hub user projects ORG_BG first (the workspace break-glass targets).
+    await sso.ssoLogin(app, hub, {
+      sub: 'hub-bg-owner',
+      email: 'bg-owner@reconcile.test',
+      workspaceId: ORG_BG,
+      role: 'owner',
+      workspaceName: 'BG Org'
+    });
+    wsBg = await workspaceIdOf(ORG_BG);
+
+    // The operator: setup ran in beforeAll — a verified user with ZERO
+    // memberships (cloud setup creates no workspace). The break-glass door
+    // is the wired-but-hidden password sign-in.
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      sso.json({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    operatorCookie = extractCookie(signIn);
+    const zero = await readJson(await me(operatorCookie));
+    expect(zero.workspaces).toEqual([]);
+
+    const claim = await app.app.request('/api/v1/admin/break-glass/claim-ownership', {
+      ...sso.json({ workspaceId: wsBg }),
+      headers: { 'content-type': 'application/json', cookie: operatorCookie, 'x-forwarded-for': '10.88.0.1' }
+    });
+    expect(claim.status).toBe(200);
+    const claimed = await readJson(claim);
+    expect(claimed.role).toBe('owner');
+    expect(claimed.created).toBe(true);
+
+    // Dashboard access: the projected workspace resolves for the operator,
+    // via the local row (the live gate skips hub enforcement for it).
+    const meRes = await me(operatorCookie, wsBg);
+    expect(meRes.status).toBe(200);
+    const body = await readJson(meRes);
+    expect(body.activeWorkspaceId).toBe(wsBg);
+    expect(body.origin).toBe('local');
+    expect(body.role).toBe('owner');
+
+    // The row break-glass wrote is origin='local' — the sweep's blind spot,
+    // by design.
+    const { rows } = await app.db.pool.query(
+      `SELECT m.origin, m.role, m.is_active FROM workspace_members m
+        JOIN "user" u ON u.id = m.user_id
+       WHERE m.workspace_id = $1 AND u.email = $2`,
+      [wsBg, OWNER.email]
+    );
+    expect(rows).toEqual([{ origin: 'local', role: 'owner', is_active: true }]);
+  });
+
+  it('the claim survives an EMPTY-hub-list reconcile (the maximal sweep)', async () => {
+    // Give the operator a hub identity + one hub org of their own: the D9
+    // trusted link rides the verified operator email.
+    const operatorSsoCookie = await sso.ssoLogin(app, hub, {
+      sub: 'hub-operator-bg',
+      email: OWNER.email,
+      workspaceId: ORG_OPX,
+      role: 'owner',
+      workspaceName: 'Operator Own Org'
+    });
+    const wsOpx = await workspaceIdOf(ORG_OPX);
+    expect((await me(operatorSsoCookie, wsOpx)).status).toBe(200);
+
+    // The hub now asserts NOTHING for the operator: the next reconcile pass
+    // runs with an EMPTY org list — the maximal deactivation sweep.
+    hub.clearUserOrgs('hub-operator-bg');
+    await expireTtl();
+    const swept = await me(operatorSsoCookie, wsOpx);
+    expect(swept.status).toBe(401); // the hub-origin row went with the sweep
+
+    // …but the break-glass claim row is origin='local': untouched. The
+    // operator keeps full dashboard access to the projected workspace.
+    const kept = await me(operatorSsoCookie, wsBg);
+    expect(kept.status).toBe(200);
+    const body = await readJson(kept);
+    expect(body.activeWorkspaceId).toBe(wsBg);
+    expect(body.origin).toBe('local');
+    expect(body.role).toBe('owner');
+    const { rows } = await app.db.pool.query(
+      `SELECT m.is_active FROM workspace_members m
+        JOIN "user" u ON u.id = m.user_id
+       WHERE m.workspace_id = $1 AND u.email = $2`,
+      [wsBg, OWNER.email]
+    );
+    expect(rows).toEqual([{ is_active: true }]);
   });
 });

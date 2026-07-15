@@ -9,6 +9,7 @@ import {
   startPostgres,
   type TestApp
 } from './helpers.js';
+import * as sso from './sso-helpers.js';
 
 /**
  * The edition split, Phase 2 (docs/federation.md):
@@ -151,6 +152,21 @@ describe('cloud edition on a fresh database', () => {
     expect(withKey.status).toBe(401);
   });
 
+  it('a session NAMING a workspace keeps the fail-closed 401 — the zero state is selector-less only', async () => {
+    // A failed explicit selection must never soften into the 200 zero state:
+    // it is the no-oracle posture AND the dashboard's stale-selection
+    // self-heal signal (it drops the stored selector only on failure).
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    const cookie = extractCookie(signIn);
+    const res = await app.app.request('/api/v1/me', {
+      headers: { cookie, 'x-workspace-id': '99999999-9999-4999-8999-999999999999' }
+    });
+    expect(res.status).toBe(401);
+  });
+
   it('reports edition=cloud in discovery', async () => {
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.edition).toBe('cloud');
@@ -237,6 +253,9 @@ describe('cloud edition closes the local password-reset surface (P8, ADR 017)', 
     );
     const res = await app.app.request('/api/v1/setup', jsonIp({ instanceName: 'EdReset', owner: OWNER }));
     expect(res.status).toBe(201);
+    // Cloud setup mints no workspace — the cloud-LOCAL workspace this
+    // suite's reset-link + break-glass fixtures need is seeded directly.
+    await sso.seedLocalWorkspace(app, 'EdReset', OWNER.email);
   });
 
   afterAll(async () => {
@@ -389,6 +408,9 @@ describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () 
     );
     const res = await app.app.request('/api/v1/setup', jsonIp({ instanceName: 'EdOtp', owner: OWNER }));
     expect(res.status).toBe(201);
+    // Cloud setup mints no workspace — the key-mint fixture below needs the
+    // operator to hold a membership; seed a cloud-LOCAL one.
+    await sso.seedLocalWorkspace(app, 'EdOtp', OWNER.email);
   });
 
   afterAll(async () => {
