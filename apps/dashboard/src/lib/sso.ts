@@ -171,7 +171,11 @@ function parsePendingNext(raw: string | null, now: number): string | null {
  * (registry launchUrl), and that second dance must not erase the deep link
  * the journey started from.
  */
-export function writePendingNext(storage: StorageLike | null, next: string | null | undefined, now: number): void {
+export function writePendingNext(
+  storage: StorageLike | null,
+  next: string | null | undefined,
+  now: number
+): void {
   if (!storage) return;
   const value = safeNext(next);
   try {

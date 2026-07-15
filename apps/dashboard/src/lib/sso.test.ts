@@ -87,9 +87,9 @@ describe('evaluateAutoConnect — the gate table', () => {
   });
 
   it('gate D: a marker past the TTL no longer blocks', () => {
-    expect(
-      evaluateAutoConnect(ctx({ attemptMarker: String(NOW - SSO_ATTEMPT_TTL_MS - 1) })).attempt
-    ).toBe(true);
+    expect(evaluateAutoConnect(ctx({ attemptMarker: String(NOW - SSO_ATTEMPT_TTL_MS - 1) })).attempt).toBe(
+      true
+    );
   });
 
   it('gate D: a FUTURE-dated marker still blocks (clock skew never opens a loop)', () => {
@@ -122,9 +122,9 @@ describe('evaluateAutoConnect — the four cycle entries stay bounded', () => {
       'consent_required'
     ]) {
       expect(isLoginRequiredError(code)).toBe(true);
-      expect(
-        evaluateAutoConnect(ctx({ params: new URLSearchParams(`error=${code}`) })).clearStaleHint
-      ).toBe(true);
+      expect(evaluateAutoConnect(ctx({ params: new URLSearchParams(`error=${code}`) })).clearStaleHint).toBe(
+        true
+      );
     }
     expect(isLoginRequiredError('sso_email_conflict')).toBe(false);
     expect(isLoginRequiredError(null)).toBe(false);
@@ -138,17 +138,13 @@ describe('evaluateAutoConnect — the four cycle entries stay bounded', () => {
   });
 
   it('2. after-hook fail-closed landing (?error=sso_projection_failed) → no attempt, hint KEPT (banner case)', () => {
-    const decision = evaluateAutoConnect(
-      ctx({ params: new URLSearchParams('error=sso_projection_failed') })
-    );
+    const decision = evaluateAutoConnect(ctx({ params: new URLSearchParams('error=sso_projection_failed') }));
     expect(decision).toMatchObject({ attempt: false, blockedBy: 'error_param', clearStaleHint: false });
   });
 
   it('3. logout landing: ?signed_out=1 AND no hint each block independently (insta-relogin pin)', () => {
     // Both gates must hold on their own: the signed_out param alone…
-    expect(
-      evaluateAutoConnect(ctx({ params: new URLSearchParams('signed_out=1') })).attempt
-    ).toBe(false);
+    expect(evaluateAutoConnect(ctx({ params: new URLSearchParams('signed_out=1') })).attempt).toBe(false);
     // …and the cleared hint alone (e.g. the user navigates to a bare /login
     // right after logout) — no re-connect either way.
     expect(evaluateAutoConnect(ctx({ cookies: '' })).attempt).toBe(false);

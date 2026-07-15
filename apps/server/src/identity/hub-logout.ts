@@ -136,8 +136,7 @@ export class HubLogoutService {
   /** Discovery read, cached on success; a failed fetch retries next call. */
   private async endSessionEndpoint(): Promise<string | null> {
     if (this.endpointCache) return this.endpointCache;
-    const discoveryUrl =
-      this.opts.issuerUrl.replace(/\/+$/, '') + '/.well-known/openid-configuration';
+    const discoveryUrl = this.opts.issuerUrl.replace(/\/+$/, '') + '/.well-known/openid-configuration';
     try {
       const res = await this.fetchImpl(discoveryUrl, {
         headers: { accept: 'application/json' },

@@ -679,7 +679,10 @@ describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (
         // The cloud-only surfaces stay dark 404s on oss — probed INSIDE the
         // spy window so a regression that mounts them (or makes them phone
         // the hub) fails the zero-fetch assertion below too.
-        const ssoLogout = await app.app.request('/api/v1/sso/logout', { method: 'POST', headers: { cookie } });
+        const ssoLogout = await app.app.request('/api/v1/sso/logout', {
+          method: 'POST',
+          headers: { cookie }
+        });
         expect(ssoLogout.status).toBe(404);
         const dismiss = await app.app.request('/api/v1/me/onboarding/dismiss', {
           method: 'POST',

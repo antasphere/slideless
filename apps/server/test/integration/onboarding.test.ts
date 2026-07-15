@@ -2,7 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import {
+  createDatabase,
+  createTestApp,
+  extractCookie,
+  readJson,
+  startPostgres,
+  type TestApp
+} from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
 

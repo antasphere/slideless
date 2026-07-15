@@ -26,9 +26,9 @@ describe('shouldHintWatchSignOut — predicate truth table', () => {
   });
 
   it('OPERATOR SAFETY: ssoOnly false → never signs out, hint or no hint', () => {
-    expect(
-      shouldHintWatchSignOut({ sso: SSO, me: { via: 'session', ssoOnly: false }, cookies: '' })
-    ).toBe(false);
+    expect(shouldHintWatchSignOut({ sso: SSO, me: { via: 'session', ssoOnly: false }, cookies: '' })).toBe(
+      false
+    );
   });
 
   it('OPERATOR SAFETY: ssoOnly ABSENT (oss shape, older server) → never — exactly-true is the bar', () => {
@@ -36,12 +36,12 @@ describe('shouldHintWatchSignOut — predicate truth table', () => {
   });
 
   it('machine credentials are never watch targets', () => {
-    expect(
-      shouldHintWatchSignOut({ sso: SSO, me: { via: 'api_key', ssoOnly: true }, cookies: '' })
-    ).toBe(false);
-    expect(
-      shouldHintWatchSignOut({ sso: SSO, me: { via: 'oauth', ssoOnly: true }, cookies: '' })
-    ).toBe(false);
+    expect(shouldHintWatchSignOut({ sso: SSO, me: { via: 'api_key', ssoOnly: true }, cookies: '' })).toBe(
+      false
+    );
+    expect(shouldHintWatchSignOut({ sso: SSO, me: { via: 'oauth', ssoOnly: true }, cookies: '' })).toBe(
+      false
+    );
   });
 
   it('no me (signed out) → false', () => {

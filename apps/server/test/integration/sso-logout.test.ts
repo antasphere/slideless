@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { decodeJwt } from 'jose';
-import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import {
+  createDatabase,
+  createTestApp,
+  extractCookie,
+  readJson,
+  startPostgres,
+  type TestApp
+} from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
 
@@ -98,7 +105,10 @@ describe('cloud: POST /sso/logout + the prompt=none authorize seam', () => {
       headers: { 'content-type': 'application/json', 'x-forwarded-for': sso.nextIp() }
     });
     // The silent-connect shape: prompt=none passes through.
-    const silent = await app.app.request('/api/v1/auth/sign-in/oauth2', init({ additionalData: { prompt: 'none' } }));
+    const silent = await app.app.request(
+      '/api/v1/auth/sign-in/oauth2',
+      init({ additionalData: { prompt: 'none' } })
+    );
     expect(silent.status).toBe(200);
     const silentUrl = new URL((await readJson(silent)).url);
     expect(silentUrl.searchParams.get('prompt')).toBe('none');
@@ -219,7 +229,10 @@ describe('cloud: logout degrades to local-only when hub discovery is down', () =
     // A dedicated hub so this suite can kill discovery without touching the
     // shared FakeHub: log in while it lives, stop it, THEN log out.
     const hub2 = await FakeHub.start();
-    const app2 = await createTestApp(await createDatabase(container, 'sso_logout_down'), cloudEnv(hub2.issuer));
+    const app2 = await createTestApp(
+      await createDatabase(container, 'sso_logout_down'),
+      cloudEnv(hub2.issuer)
+    );
     try {
       const setup = await app2.app.request('/api/v1/setup', json({ instanceName: 'Down', owner: OWNER }));
       expect(setup.status).toBe(201);
