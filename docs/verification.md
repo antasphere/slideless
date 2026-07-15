@@ -398,7 +398,7 @@ fresh `slk_` minted on EVERY invocation because the cache keyed on a
 `workspaceId` the hub had stopped sending). (Automated twin:
 `packages/cli/test/connect.test.ts` — mocks aligned to the REAL hub
 contract, `{token, expiresAt, hubRefreshToken}` with no workspaceId, as of
-cli-core 0.3.1 / CLI 0.2.4.)
+cli-core 0.4.0 / CLI 0.2.4.)
 
 **H9 — Anchor renewal (decision 6): a tool re-derivation slides the hub
 session.** Force the tool session to its fixed expiry and pre-age the hub
