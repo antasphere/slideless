@@ -477,6 +477,19 @@ safeNext(next))`), so the authorize context is silently discarded and
 Found while binding the org-suspension gate and the H2 membership
 re-assertion (Slideless `identity/hub-status.ts` + `hub-gate.ts`, ADR 016).
 
+> ⚠️ **CONTEXT (2026-07-15, after the user-scoped re-architecture).** The specific
+> gate APPLICATION this section was discovered under — the cached `accounts:status`
+> / `HUB_SERVICE_KEY` entitlement read + the ~5-min membership re-assertion
+> (`hub-status.ts` + `hub-gate.ts`) — was **rejected and DELETED**: a live drill
+> proved that master-key path leaks tenant data, and it was replaced by the
+> user-scoped **live reconcile** (see sections 20–22 and ADR 019). Those files no
+> longer exist in Slideless. **The three TEMPLATE SEAMS below (57 post-resolution
+> `principalGate`, 58 `accountRef` parity across resolvers, 59 metrics ordering)
+> SURVIVE unchanged and are USED by the new model** — the live gate hangs off the
+> same `principalGate` seam and keys on the same `accountRef`. So when upstreaming:
+> take the SEAMS (57–59, still needed), NOT the deleted master-key gate. Read this
+> section together with 20–22.
+
 57. **`authContext` has no post-resolution seam — an edition cannot veto an
     otherwise-valid principal.** The template's registry seams cover WHO the
     caller is (IdentityProvider) and WHAT they may consume
