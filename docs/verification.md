@@ -128,6 +128,13 @@ export HUB_COOKIE_U1='<U1 hub session cookie>' HUB_COOKIE_U2='<U2 hub session co
 
 **A — Org lifecycle propagates live (create / rename / remove).**
 
+> The frozen hub image ships no org-rename or org-delete API endpoint yet
+> (a hub backlog item), so in the drill the rename/remove steps are driven
+> against the hub DB — `hubdb "UPDATE workspaces SET name=… WHERE …"` /
+> `hubdb "DELETE FROM workspace_members WHERE …"` — which is the org source
+> of truth until the hub adds those endpoints. The `curl` calls below show
+> the intended API shape.
+
 ```bash
 # create at the hub → visible on Slideless within the reconcile TTL (~10 s)
 curl -fsS -X POST $HUB/api/v1/orgs -H "cookie: $HUB_COOKIE_U1" \
@@ -189,7 +196,16 @@ sldb "SELECT count(*) FROM workspace_members WHERE is_active=false"             
 ```bash
 hubdb "DELETE FROM oauth_refresh_token WHERE client_id='tool-slideless-cloud'
        AND user_id=(SELECT id FROM \"user\" WHERE email='u1@drill.test')"
-$FED restart app   # clears the in-memory access-token cache so the next read must refresh
+# Restarting the app clears only the IN-MEMORY access-token cache. The access
+# token is ALSO persisted (encrypted) on the Slideless `account` row and is
+# trusted WHILE FRESH — so on its own, revoking the hub refresh token surfaces
+# as hub_grant_expired only once that stored access token genuinely ages out
+# (the hub's ~15-min access lifetime). Null it too to force the refresh — and
+# thus the invalid_grant → hub_grant_expired — immediately:
+sldb "UPDATE account SET access_token=NULL, access_token_expires_at=NULL
+      WHERE provider_id='antasphere'
+        AND user_id=(SELECT id FROM \"user\" WHERE email='u1@drill.test')"
+$FED restart app
 sleep 5
 curl -s $SL/api/v1/presentations -H "cookie: $SL_COOKIE" -H "x-workspace-id: $W1" | jq .error.code
 ```
