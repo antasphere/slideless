@@ -37,6 +37,7 @@ import type {
   MemberResetLink,
   MemberUpdate,
   MeResponse,
+  OnboardingDismissed,
   Presentation,
   PresentationVersion,
   PresentationVersionDetail,
@@ -50,6 +51,7 @@ import type {
   ShareTokenSent,
   ShareTokenUpdate,
   SsoCliConnect,
+  SsoLogoutResponse,
   UploadSession,
   UploadSessionCommit,
   VersionCommit,
@@ -224,6 +226,15 @@ export class PlatformClient {
     return this.request('GET', '/me');
   }
 
+  /**
+   * CLOUD EDITION only (404 on oss); sessions only (machines 403): record
+   * the explicit first-run-welcome dismissal — flips /me's
+   * `firstRunPending` to false, permanently. Idempotent.
+   */
+  dismissOnboarding(): Promise<OnboardingDismissed> {
+    return this.request('POST', '/me/onboarding/dismiss');
+  }
+
   /** Better Auth session probe — null when signed out. */
   async session(): Promise<{ user: { id: string; email: string; name: string } } | null> {
     return this.request('GET', '/auth/get-session');
@@ -270,6 +281,18 @@ export class PlatformClient {
    */
   ssoCliConnect(req: SsoCliConnect): Promise<CliAuthCompleted> {
     return this.request('POST', '/sso/cli-connect', req);
+  }
+
+  /**
+   * CLOUD EDITION only (404 on oss); sessions only (machines 403 — the
+   * path is unlisted in the scope allowlist): single logout. The server
+   * revokes the local session and clears the SSO hint cookie in this very
+   * response; `url` is the hub end-session URL the browser must then VISIT
+   * to end the hub anchor session (null = local signout only — go straight
+   * to /login?signed_out=1).
+   */
+  ssoLogout(): Promise<SsoLogoutResponse> {
+    return this.request('POST', '/sso/logout');
   }
 
   // ── Members ───────────────────────────────────────────────────────────────

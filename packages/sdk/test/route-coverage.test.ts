@@ -34,6 +34,8 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
       owner: { email: 'a@b.co', name: 'A', password: 'x'.repeat(12) }
     }),
   'GET /me': (c) => c.me(),
+  'POST /me/onboarding/dismiss': (c) => c.dismissOnboarding(),
+  'POST /sso/logout': (c) => c.ssoLogout(),
   'POST /cli/auth/request': (c) => c.cliAuthRequest({ email: 'a@b.co' }),
   'POST /cli/auth/complete': (c) => c.cliAuthComplete({ email: 'a@b.co', otp: '123456' }),
   'DELETE /cli/auth/key': (c) => c.cliAuthRevoke(),
