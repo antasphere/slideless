@@ -2,6 +2,7 @@
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { Separator } from '$lib/components/ui/separator/index.js';
   import AppSidebar from '$lib/components/sidebar/AppSidebar.svelte';
+  import WelcomeBanner from '$lib/components/shared/WelcomeBanner.svelte';
 
   let { data, children } = $props();
 </script>
@@ -25,6 +26,10 @@
     </header>
     <main class="flex-1 overflow-y-auto px-6 pb-10 pt-4">
       <div class="mx-auto w-full max-w-6xl">
+        {#if data.me.firstRunPending}
+          <!-- SL-6: cloud + sessions only — the field is absent on oss. -->
+          <WelcomeBanner instanceName={data.instance.name} />
+        {/if}
         {@render children()}
       </div>
     </main>
