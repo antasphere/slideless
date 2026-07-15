@@ -277,3 +277,103 @@ describe('ORPHAN_USER_RETENTION_HOURS=0 disables the sweep', () => {
     expect(await userExists(app, 'orphan-ancient')).toBe(true);
   }, 40_000);
 });
+
+/**
+ * The no_link HARD CONSTRAINT, at the mechanism level (user-scoped
+ * federation). The purge never deletes a user who HOLDS a membership — so
+ * the cascade the constraint leans on ("delete the WHOLE user … whose FK
+ * cascade removes account rows AND membership rows together") is, in every
+ * other suite, asserted but never exercised: all deleted users have zero
+ * memberships. This pins the actual DB-level guarantee that makes the
+ * constraint hold even under the scan→delete race — a hub-origin membership
+ * row can NEVER outlive its `antasphere` account row, because
+ * `internalAdapter.deleteUser` (the exact call the purge AND both GDPR
+ * delete surfaces make) removes the `user` row and Postgres cascades BOTH
+ * children in one shot. If this ever regressed — an ON DELETE that stops
+ * cascading, or a partial account-only cleanup swapped in — the reconciler's
+ * fail-open `no_link` branch would become reachable for a hub-origin
+ * principal (a live authorization hole), and only this test would catch it.
+ */
+describe('the deletion MECHANISM cascades a hub-origin membership with its account (no_link hard constraint)', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp(await createDatabase(container, 'gc_cascade'));
+    await app.app.request('/api/v1/setup', json({ instanceName: 'GCCascade', owner: OWNER }));
+  }, 60_000);
+
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('internalAdapter.deleteUser removes the antasphere account AND the origin=hub membership together', async () => {
+    const userId = 'cascade-hub-user';
+    const wsId = '33333333-cccc-4ddd-8eee-000000000001';
+    const hubOrgId = 'hub-org-cascade-0001';
+
+    // A PROJECTED workspace (central_account_id set) with an active
+    // origin='hub' membership whose user holds a live-grant `antasphere`
+    // account row — the exact shape a fail-closed-login strand or any
+    // hub-origin principal carries.
+    await app.db.pool.query(
+      `INSERT INTO workspaces (id, name, central_account_id, hub_status, created_at)
+       VALUES ($1, 'Cascade Org', $2, 'active', now())`,
+      [wsId, hubOrgId]
+    );
+    await app.db.pool.query(
+      `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
+       VALUES ($1, 'Cascade User', 'cascade@gc.test', true, now(), now())`,
+      [userId]
+    );
+    await app.db.pool.query(
+      `INSERT INTO account (id, account_id, provider_id, user_id, refresh_token, created_at, updated_at)
+       VALUES ('acc-cascade', 'hub-cascade', 'antasphere', $1, 'live-grant-ciphertext', now(), now())`,
+      [userId]
+    );
+    await app.db.pool.query(
+      `INSERT INTO workspace_members (id, workspace_id, user_id, role, origin, is_active, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'member', 'hub', true, now())`,
+      [wsId, userId]
+    );
+
+    // Sanity: the pre-delete state is exactly the one the constraint protects.
+    const before = await app.db.pool.query(
+      `SELECT 1 FROM workspace_members WHERE user_id = $1 AND origin = 'hub' AND is_active = true`,
+      [userId]
+    );
+    expect(before.rows).toHaveLength(1);
+
+    // The mechanism under test — the exact deletion call jobs/pgboss.ts makes.
+    const ctx = await app.auth.$context;
+    await ctx.internalAdapter.deleteUser(userId);
+
+    // The whole user is gone…
+    expect(await userExists(app, userId)).toBe(false);
+    // …its antasphere account row is gone…
+    const acc = await app.db.pool.query(
+      `SELECT 1 FROM account WHERE user_id = $1 AND provider_id = 'antasphere'`,
+      [userId]
+    );
+    expect(acc.rows).toHaveLength(0);
+    // …and — the load-bearing assertion — its origin='hub' membership
+    // cascaded WITH the account, never outliving it.
+    const mem = await app.db.pool.query(`SELECT 1 FROM workspace_members WHERE user_id = $1`, [userId]);
+    expect(mem.rows).toHaveLength(0);
+
+    // The fail-open state is unreachable: no origin='hub' row lacks its
+    // antasphere account anywhere in the instance.
+    const dangling = await app.db.pool.query(
+      `SELECT wm.id FROM workspace_members wm
+       WHERE wm.origin = 'hub'
+         AND NOT EXISTS (
+           SELECT 1 FROM account a WHERE a.user_id = wm.user_id AND a.provider_id = 'antasphere'
+         )`
+    );
+    expect(dangling.rows).toHaveLength(0);
+
+    // The projected workspace itself survives (only the membership cascaded) —
+    // the delete is scoped to the user, not the org.
+    const ws = await app.db.pool.query(`SELECT 1 FROM workspaces WHERE id = $1`, [wsId]);
+    expect(ws.rows).toHaveLength(1);
+  }, 40_000);
+});
