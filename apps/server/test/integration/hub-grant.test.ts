@@ -304,9 +304,9 @@ describe('the failure taxonomy', () => {
     // The write-back upgraded the row to ciphertext.
     const upgraded = await grantRow();
     expect(upgraded.refresh_token).not.toMatch(/^rt_/);
-    await expect(
-      symmetricDecrypt({ key: AUTH_SECRET, data: upgraded.refresh_token! })
-    ).resolves.toMatch(/^rt_/);
+    await expect(symmetricDecrypt({ key: AUTH_SECRET, data: upgraded.refresh_token! })).resolves.toMatch(
+      /^rt_/
+    );
     // Sanity: our encrypt primitive matches better-auth's (same key path).
     const cipher = await symmetricEncrypt({ key: AUTH_SECRET, data: 'probe' });
     await expect(symmetricDecrypt({ key: AUTH_SECRET, data: cipher })).resolves.toBe('probe');

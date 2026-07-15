@@ -55,7 +55,11 @@ async function signIn(email: string, password: string): Promise<string> {
   return extractCookie(res);
 }
 
-async function mintKey(cookie: string, name: string, workspaceId?: string): Promise<{ key: string; id: string }> {
+async function mintKey(
+  cookie: string,
+  name: string,
+  workspaceId?: string
+): Promise<{ key: string; id: string }> {
   const res = await app.app.request('/api/v1/api-keys', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },

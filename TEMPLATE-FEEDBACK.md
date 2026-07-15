@@ -775,14 +775,14 @@ beyond the login callback hits every one of these.
     'better-auth/crypto') needs a structural cast plus a fallback to the
     configured secret (identical under a plain string-secret config).
     Slideless wired `key: async () => ((await auth.$context) as {…})
-    .secretConfig ?? authSecret` in boot. A template shim (one typed
+.secretConfig ?? authSecret` in boot. A template shim (one typed
     accessor) would remove the cast from every product.
 78. **A rotating-refresh-token store DEMANDS cross-replica single-flight —
     ship the advisory-lock pattern as chassis code.** RFC 9700 reuse
     detection means a double-refresh from two replicas is not a race but a
     grant-family-killing event. The proven shape (identity/hub-grant.ts):
     in-process single-flight Map + session-scoped `pg_advisory_lock(<ns>,
-    hashtext(userId))` on a DEDICATED pg client (the migrate.ts/deletion.ts
+hashtext(userId))` on a DEDICATED pg client (the migrate.ts/deletion.ts
     lock discipline) + RE-READ-AFTER-LOCK (consume a sibling's fresh token
     instead of presenting the rotated-out one) + a watchdog cutting the
     connection. Also the failure taxonomy: `invalid_grant` = grant dead

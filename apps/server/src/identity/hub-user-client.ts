@@ -42,10 +42,7 @@ export interface HubOrg {
 }
 
 export type HubOrgsResult =
-  | { kind: 'ok'; orgs: HubOrg[] }
-  | { kind: 'no_link' }
-  | { kind: 'grant_dead' }
-  | { kind: 'inconclusive' };
+  { kind: 'ok'; orgs: HubOrg[] } | { kind: 'no_link' } | { kind: 'grant_dead' } | { kind: 'inconclusive' };
 
 /** Strict UUID shape — a malformed hub entry must never reach Postgres' uuid cast. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

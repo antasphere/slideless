@@ -2,13 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { JWTPayload } from 'jose';
 import { and, eq, ne } from 'drizzle-orm';
 import type { GenericOAuthConfig } from 'better-auth/plugins';
-import {
-  account,
-  user as userTable,
-  workspaceRoles,
-  type Db,
-  type WorkspaceRole
-} from '@slideless/db';
+import { account, user as userTable, workspaceRoles, type Db, type WorkspaceRole } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { HubJwtVerifier } from './hub-jwt.js';
 import { projectOrgMembership } from './hub-projection.js';

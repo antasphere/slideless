@@ -113,8 +113,11 @@ export class FakeHub {
   /** Every /api/v1/orgs request: the presented Authorization header. */
   readonly orgsRequests: Array<{ auth: string | null }> = [];
   /** Every refresh-grant presentation (single-flight/rotation pins). */
-  readonly refreshRequests: Array<{ refreshToken: string; resource: string | null; clientId: string | null }> =
-    [];
+  readonly refreshRequests: Array<{
+    refreshToken: string;
+    resource: string | null;
+    clientId: string | null;
+  }> = [];
 
   private constructor(
     private readonly server: Server,
@@ -379,7 +382,10 @@ export class FakeHub {
       // as theft — the WHOLE (sub, client) family dies, current token
       // included. The single most important behavior this fake models.
       this.deadFamilies.add(record.family);
-      return sendJson(res, 400, { error: 'invalid_grant', error_description: 'reuse detected — family revoked' });
+      return sendJson(res, 400, {
+        error: 'invalid_grant',
+        error_description: 'reuse detected — family revoked'
+      });
     }
     record.rotatedOut = true;
     const rotated = this.mintRefreshToken(record.sub, record.clientId);

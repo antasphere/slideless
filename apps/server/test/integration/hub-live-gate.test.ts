@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { createDatabase, createTestApp, extractCookie, readJson, startPostgres, type TestApp } from './helpers.js';
+import {
+  createDatabase,
+  createTestApp,
+  extractCookie,
+  readJson,
+  startPostgres,
+  type TestApp
+} from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
 
@@ -34,7 +41,10 @@ const ORG_ROLE = '55555555-aaaa-4bbb-8ccc-000000000005';
 
 const DIALS = {
   reconcileTtlMs: 120,
-  reconcileStaleMaxMs: 900,
+  // Wide enough that "inside the stale window" can never flake under
+  // parallel-suite container load, small enough that the fail-closed leg
+  // costs the outage test ~2.5 s.
+  reconcileStaleMaxMs: 2_500,
   retryMs: 100,
   orgsTimeoutMs: 400,
   tokenTimeoutMs: 2_000
@@ -288,8 +298,7 @@ describe('grant death: 401 hub_grant_expired immediately, healed by a browser re
     const again = await sso.ssoLogin(app, hub, dora);
     expect((await me(again)).status).toBe(200);
     expect(
-      (await app.app.request('/api/v1/presentations', { headers: { authorization: `Bearer ${key}` } }))
-        .status
+      (await app.app.request('/api/v1/presentations', { headers: { authorization: `Bearer ${key}` } })).status
     ).toBe(200);
   });
 });

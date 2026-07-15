@@ -430,10 +430,9 @@ describe('cloud edition: the SSO entrance', () => {
       // No session, no projection. (The JIT user row exists — created
       // before the after-hook; the orphan purge covers it, and a later
       // successful login adopts it.)
-      const { rows: ws } = await app.db.pool.query(
-        `SELECT 1 FROM workspaces WHERE central_account_id = $1`,
-        [ORG_DARK]
-      );
+      const { rows: ws } = await app.db.pool.query(`SELECT 1 FROM workspaces WHERE central_account_id = $1`, [
+        ORG_DARK
+      ]);
       expect(ws).toHaveLength(0);
       // The retry heals end-to-end once the hub answers again.
       const cookie = await ssoLogin(app, dana);

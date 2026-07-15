@@ -471,10 +471,7 @@ describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (
       try {
         // The request matrix: setup, session login, whoami, key mint, key
         // use, a domain read — every credential kind exercised.
-        const setup = await app.app.request(
-          '/api/v1/setup',
-          json({ instanceName: 'Dark', owner: OWNER })
-        );
+        const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'Dark', owner: OWNER }));
         expect(setup.status).toBe(201);
         const signIn = await app.app.request(
           '/api/v1/auth/sign-in/email',
@@ -493,9 +490,7 @@ describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (
         expect(
           (await app.app.request('/api/v1/me', { headers: { authorization: `Bearer ${key}` } })).status
         ).toBe(200);
-        expect(
-          (await app.app.request('/api/v1/presentations', { headers: { cookie } })).status
-        ).toBe(200);
+        expect((await app.app.request('/api/v1/presentations', { headers: { cookie } })).status).toBe(200);
       } finally {
         await app.stop();
       }
