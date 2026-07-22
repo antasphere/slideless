@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Slideless follows the workspace branch model: prod (default, deploys)
+    # + dev (day-to-day). The template's main-only trigger would never fire.
+    branches: [prod, dev]
   pull_request:
 
 jobs:
