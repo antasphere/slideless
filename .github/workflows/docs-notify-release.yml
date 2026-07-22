@@ -1,0 +1,24 @@
+# Ping the docs site (antasphere/docs) on every release tag so the synced
+# docs and the generated changelog pick the release up within minutes.
+# Requires the antasphere-docs-sync GitHub App's org secrets.
+name: Notify docs site (release)
+
+on:
+  push:
+    tags: ["v*", "cli-v*"]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app
+        with:
+          app-id: ${{ secrets.DOCS_SYNC_APP_ID }}
+          private-key: ${{ secrets.DOCS_SYNC_APP_KEY }}
+          owner: antasphere
+          repositories: docs
+      - name: Dispatch docs sync
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: gh api repos/antasphere/docs/dispatches -f event_type=tool-release

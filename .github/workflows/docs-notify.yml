@@ -1,0 +1,26 @@
+# Ping the docs site (antasphere/docs) when public docs change on prod.
+# Release tags are covered by docs-notify-release.yml; a daily cron on the
+# docs repo backstops both. Requires the antasphere-docs-sync GitHub App's
+# org secrets (DOCS_SYNC_APP_ID / DOCS_SYNC_APP_KEY).
+name: Notify docs site
+
+on:
+  push:
+    branches: [prod]
+    paths: ["docs/**"]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app
+        with:
+          app-id: ${{ secrets.DOCS_SYNC_APP_ID }}
+          private-key: ${{ secrets.DOCS_SYNC_APP_KEY }}
+          owner: antasphere
+          repositories: docs
+      - name: Dispatch docs sync
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: gh api repos/antasphere/docs/dispatches -f event_type=tool-release
