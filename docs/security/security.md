@@ -116,7 +116,7 @@ responsible for, and the rules that govern rendering user content.
   trusted origins, and sign-in additionally rejects a foreign `Origin`
   outright even on cookieless requests (M9 — closes the legacy-browser
   login-CSRF/session-fixation window; CLI/SDK/MCP calls carry no Origin and
-  are unaffected). The fresh-session (<24 h) no-password `/delete-user`
+  are unaffected). The fresh-session (under 24 h) no-password `/delete-user`
   window is a Better Auth default: blocked cross-site by that Origin guard
   and by SameSite=Lax, it is only self-triggerable. The custom `/api/v1`
   routes rely on **SameSite=Lax cookies alone** (no per-request Origin
