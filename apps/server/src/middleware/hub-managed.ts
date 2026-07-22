@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { apiError } from '../api/errors.js';
 
 /**
- * P7 (docs/federation.md "Hub-managed membership"): on the cloud edition,
+ * P7 (internal/federation.md "Hub-managed membership"): on the cloud edition,
  * membership of a HUB-ORIGIN (projected) workspace is the hub's source of
  * truth — invites, roles, and removals happen at the hub and flow in via
  * SSO login + the P4 re-assertion. A local membership mutation on such a

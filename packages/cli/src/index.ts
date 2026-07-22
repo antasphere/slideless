@@ -21,7 +21,7 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  * instance-portable, human tables by default and `--json` everywhere; any
  * error prints to stderr and exits non-zero.
  *
- * Resolution order (documented in docs/cli.md):
+ * Resolution order (documented in docs/agents/cli.md):
  *   base URL: --api-url (alias --url) → SLIDELESS_URL → profile baseUrl → error
  *   API key:  --api-key → SLIDELESS_API_KEY → profile apiKey
  *             → cached hub-connect key (cloud instances; user-scoped —

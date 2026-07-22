@@ -119,7 +119,7 @@ export const errorResponses = {
   500: jsonBody(apiErrorSchema, 'Internal error')
 } as const;
 
-/** Opt-in retry-safe creates: replay-or-409 semantics per docs/security.md. */
+/** Opt-in retry-safe creates: replay-or-409 semantics per docs/security/security.md. */
 const idempotencyHeaders = z.object({
   'idempotency-key': z.string().min(1).max(200).optional()
 });

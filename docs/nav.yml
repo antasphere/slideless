@@ -1,0 +1,29 @@
+product: Slideless
+description: Versioned, shareable live links for what your agents build — push decks from a CLI or MCP agent, share them with a secret URL.
+groups:
+  - title: Getting started
+    pages:
+      - index
+      - getting-started/connect-an-agent
+      - getting-started/antasphere-account
+  - title: Agents
+    pages:
+      - agents/cli
+      - agents/mcp-connector
+  - title: Self-hosting
+    pages:
+      - self-hosting/install
+      - self-hosting/reverse-proxy
+      - self-hosting/deployment-profiles
+      - self-hosting/upgrade
+  - title: Operations
+    pages:
+      - operations/backup-restore
+      - operations/scaling
+  - title: Security
+    pages:
+      - security/security
+      - security/viewer-security-model
+  - title: Reference
+    pages:
+      - reference/env-reference

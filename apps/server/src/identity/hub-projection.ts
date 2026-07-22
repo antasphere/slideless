@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { workspaceMembers, workspaces, type Db, type WorkspaceRole } from '@slideless/db';
 
 /**
- * The ONE hub-org projection primitive (docs/federation.md, ADR 015/018):
+ * The ONE hub-org projection primitive (internal/federation.md, ADR 015/018):
  * extracted verbatim from `HubSsoService.project()` so the SSO login path
  * and the H4 reconciler (`hub-reconcile.ts`) write byte-identical rows.
  *

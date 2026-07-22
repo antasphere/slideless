@@ -30,7 +30,7 @@ connector at once. Sessions dying on a secret rotation is an acceptable
   colon; secrets ≥ 32 chars; malformed values refuse boot via the env
   schema). Entries override the default, so `1:<historical secret>` pins
   version 1 independently of the live `AUTH_SECRET` — the prerequisite step
-  of the rotation runbook (docs/security.md). When version 1 is pinned it
+  of the rotation runbook (internal/security-runbooks.md). When version 1 is pinned it
   MUST carry the historical value, or existing keys stop resolving; the app
   warns at boot when `API_KEY_PEPPERS` is set without pinning version 1.
 - **Mint uses the current version** — the highest defined — and stores it on
@@ -60,7 +60,7 @@ connector at once. Sessions dying on a secret rotation is an acceptable
 
 ## Consequences
 
-- Operators get the two runbooks in docs/security.md: rotate `AUTH_SECRET`
+- Operators get the two runbooks in internal/security-runbooks.md: rotate `AUTH_SECRET`
   (pin v1, deploy, rotate) and rotate the pepper itself (add v2, drain v1,
   drop it). `SELECT count(*) FROM api_keys WHERE pepper_version = 1 AND
 revoked_at IS NULL` tells them when a retired version is droppable.

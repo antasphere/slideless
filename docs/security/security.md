@@ -1,6 +1,7 @@
 # Security posture
 
-What the template enforces, and the one rule its consumers must keep.
+What a Slideless instance enforces out of the box, what its operator is
+responsible for, and the rules that govern rendering user content.
 
 ## Enforced by the chassis
 
@@ -8,8 +9,7 @@ What the template enforces, and the one rule its consumers must keep.
   only: the HTTP sign-up endpoint is disabled, OTP signs in existing
   accounts only, social providers have `disableSignUp`. `SETUP_TOKEN` gates
   the wizard against squatters on freshly exposed instances.
-- **Optional per-user 2FA (TOTP + backup codes,
-  [ADR 009](decisions/009-two-factor-and-invite-verification.md)).** Any
+- **Optional per-user 2FA (TOTP + backup codes).** Any
   member can enroll from the account page: password-gated enrollment issues
   an authenticator secret plus 10 one-time backup codes (shown exactly once),
   and 2FA activates only after one TOTP verifies — an abandoned enrollment
@@ -20,8 +20,7 @@ What the template enforces, and the one rule its consumers must keep.
   OAuth tokens) never see a 2FA step. Disable is password-gated;
   enable/disable are audited; `/auth/two-factor/*` sits behind the login
   rate-limit wall.
-- **Invite-acceptance email verification is honest
-  ([ADR 009](decisions/009-two-factor-and-invite-verification.md)).** Every
+- **Invite-acceptance email verification is honest.** Every
   invitation has two tokens: the copyable link the inviter sees, and a second
   token that exists only inside the invitation email. Accepting with the
   emailed token proves mailbox control → `emailVerified = true`; accepting
@@ -73,8 +72,7 @@ What the template enforces, and the one rule its consumers must keep.
   the auto-generated secret lands in `/data` mode 0600; pino redacts
   passwords, tokens, cookies, and connection strings. Rotating `AUTH_SECRET`
   invalidates sessions and OAuth JWTs (sign in again); API keys survive it
-  through versioned peppers — see the rotation runbook below and
-  [ADR 008](decisions/008-api-key-pepper-versioning.md).
+  through versioned peppers (next item).
 - **Versioned API-key peppers.** Key secrets are stored as
   `sha256(secret + pepper)` and each row records the pepper version that
   hashed it. Version 1 is always the `AUTH_SECRET`-derived pepper (with no
@@ -105,15 +103,14 @@ What the template enforces, and the one rule its consumers must keep.
   `workspace_members` trigger (migration 0009) makes a zero-active-owner
   end state impossible under any concurrency, and the HTTP surfaces
   serialize on a per-workspace advisory lock so a concurrent-race loser
-  gets a clean `400 last_owner`. Semantics in
-  [ADR 006](decisions/006-gdpr-delete-semantics.md).
+  gets a clean `400 last_owner`.
 - **Orphaned-user cleanup.** Users with ZERO workspace memberships (e.g.
   losers of the one-shot setup race: they can sign in but 401 everywhere)
   are garbage-collected by a nightly sweep once older than
   `ORPHAN_USER_RETENTION_HOURS` (default 72; 0 disables). A user with ANY
   membership row — even deactivated — is never touched; deletion runs
   through Better Auth's own cascade path and is audited as
-  `user.orphan_purge` (system actor). See ADR 010.
+  `user.orphan_purge` (system actor).
 - **CSRF posture.** Better Auth's routes are Origin-checked: any
   cookie-bearing or fetch-metadata-bearing request is validated against the
   trusted origins, and sign-in additionally rejects a foreign `Origin`
@@ -135,7 +132,7 @@ What the template enforces, and the one rule its consumers must keep.
   token automatically — an existing install created before this change must
   add one to start scraping again.
 - **Terminate TLS at a reverse proxy** and set `TRUST_PROXY=true` only there
-  ([reverse-proxy.md](reverse-proxy.md)).
+  ([reverse-proxy.md](../self-hosting/reverse-proxy.md)).
 - **Account recovery when `EMAIL_DRIVER=none`.** Self-service password reset
   and email change both need an email driver (the change mails a verification
   link to the new address). Without one, an owner/admin generates a one-time
@@ -147,107 +144,24 @@ What the template enforces, and the one rule its consumers must keep.
   the authenticator and every backup code cannot complete sign-in, and there
   is deliberately no admin "disable someone's 2FA" endpoint (it would make
   every admin a second-factor bypass). After verifying the person's identity
-  out of band, the operator either uses the break-glass `reset-2fa` endpoint
-  (below — superadmin only, audited) or clears the factor at the database:
-  `DELETE FROM two_factor WHERE user_id = '<id>';
-UPDATE "user" SET two_factor_enabled = false WHERE id = '<id>';`
-  (or deletes the account and re-invites). A password reset alone does NOT
-  disable 2FA — by design.
-
-### Break-glass recovery (`SUPERADMIN_EMAILS`, ADR 010)
-
-**Off by default.** When a workspace ends up with no usable owner (sole
-owner locked out, membership state damaged), the operator recovers it
-through the break-glass endpoints instead of SQL surgery. The posture:
-
-- **Env allowlist, no DB super-role.** `SUPERADMIN_EMAILS` (comma-separated)
-  is the whole switch; unset/empty = the endpoints answer `403` for
-  everyone. A malformed entry fails boot loudly.
-- **Session + verified email only, never machines.** A caller is superadmin
-  only on a Better Auth SESSION whose email is on the list AND verified
-  (`user.email_verified`) — accounts accepted via the copyable invite link
-  are unverified and do NOT qualify until proven. The paths are deliberately
-  unlisted in the machine scope allowlist, so API keys and OAuth tokens 403
-  fail-closed even when their owner is listed. Identity is re-read from the
-  database by session user id, never from a header.
-- **Audited + rate-limited.** Every use lands a `break_glass.*` audit row
-  with the superadmin identity and before/after state, plus a warn-level
-  log line; the endpoints sit behind a tight per-IP wall.
-- **Treat listed accounts as instance-takeover-capable.** Keep the list
-  empty except while needed; unset it (and redeploy) when done.
-
-The recovery runbook (no dashboard UI on purpose; superadmin status is never
-exposed to users):
-
-1. Add the operator email to `SUPERADMIN_EMAILS` in `.env`, then
-   `docker compose up -d` to restart with it.
-2. Ensure that account exists and its email is VERIFIED — invite it and
-   accept via the token in the invitation EMAIL (not the copyable link), or
-   complete an email-change/verification flow. As last resort on a box you
-   already administer: `UPDATE "user" SET email_verified = true WHERE email = '<you>';`
-3. Sign in with that account, then claim ownership (the session cookie is
-   the credential — a membership is NOT required):
-
-   ```bash
-   curl -sS -X POST https://<instance>/api/v1/admin/break-glass/claim-ownership \
-     -H 'content-type: application/json' -b '<session cookie>' -d '{}'
-   # or recover a specific existing user instead:
-   #   -d '{"userId":"<better-auth user id>"}'
-   # on an instance running SEVERAL workspaces (ADR 014), the target is
-   # explicit — the no-argument call answers 400 workspace_required:
-   #   -d '{"workspaceId":"<workspace uuid>"}'
-   ```
-
-   The call creates/reactivates/promotes the membership to an ACTIVE OWNER
-   (it only ever ADDS an owner, so the last-owner trigger is never at risk).
-   Do this PROMPTLY: until it runs, the operator account has no membership and
-   is therefore an orphaned-user-cleanup candidate — the nightly sweep would
-   delete it once it ages past `ORPHAN_USER_RETENTION_HOURS` (72h default).
-   Claiming ownership gives it a membership and takes it out of scope.
-
-4. For a 2FA lockout, clear the member's factor:
-
-   ```bash
-   curl -sS -X POST https://<instance>/api/v1/admin/break-glass/reset-2fa \
-     -H 'content-type: application/json' -b '<session cookie>' \
-     -d '{"userId":"<better-auth user id>"}'
-   ```
-
-5. Finish the recovery in the dashboard (reset links, role fixes), then
-   REMOVE the email from `SUPERADMIN_EMAILS` and restart. Review the
-   `break_glass.*` audit entries.
-
-### Rotating `AUTH_SECRET` without breaking API keys
-
-`API_KEY_PEPPERS` holds `<version>:<secret>` entries joined by `;` (secrets
-at least 32 chars, entry split at the first colon so secrets may contain
-colons). **The loud rule: whenever version 1 appears in `API_KEY_PEPPERS`,
-its value MUST be the historical `AUTH_SECRET`-derived pepper** — the secret
-that was live when the version-1 keys were minted (if `AUTH_SECRET` was
-never set, that is the generated `/data/secret` file's content). Pin
-anything else and every existing key stops resolving. The app logs a boot
-warning when `API_KEY_PEPPERS` is set without pinning version 1, because
-those version-1 keys still silently depend on the live `AUTH_SECRET`.
-
-To rotate `AUTH_SECRET` (keys keep working, sessions restart):
-
-1. Pin version 1 to the current secret: `API_KEY_PEPPERS=1:<current AUTH_SECRET>`.
-   Deploy. Key verification now reads the pinned value, not the live secret.
-2. Change `AUTH_SECRET` to the new value. Deploy. Sessions and OAuth JWTs
-   are invalidated (users sign in again — expected); every API key keeps
-   authenticating via its pinned pepper.
-
-To rotate the pepper itself (e.g. after a suspected leak of the old secret):
-
-1. Add a higher version: `API_KEY_PEPPERS=1:<historical secret>;2:<new random secret>`.
-   Deploy. New keys mint under version 2; existing version-1 keys keep
-   resolving.
-2. Re-mint integrations onto new keys at your own pace. This query says when
-   version 1 is retirable:
-   `SELECT count(*) FROM api_keys WHERE pepper_version = 1 AND revoked_at IS NULL;`
-3. When it reports zero, drop the `1:<...>` entry. Any straggler version-1
-   key then fails closed (the standard 401) — it never falls back to
-   another pepper.
+  out of band, the operator clears the factor through the break-glass
+  recovery path below (superadmin only, audited), or deletes the account and
+  re-invites. A password reset alone does NOT disable 2FA — by design.
+- **Break-glass recovery is off by default.** When a workspace ends up with
+  no usable owner (sole owner locked out, membership state damaged), the
+  operator recovers it through audited break-glass endpoints instead of SQL
+  surgery. `SUPERADMIN_EMAILS` (comma-separated) is the whole switch —
+  unset/empty means the endpoints answer `403` for everyone. A caller
+  qualifies only on a SESSION whose email is on the list AND verified;
+  machine credentials (API keys, OAuth tokens) always fail closed. Every use
+  lands a `break_glass.*` audit row behind a tight per-IP wall. Treat listed
+  accounts as instance-takeover-capable: keep the list empty except while
+  needed, and unset it (with a redeploy) when done.
+- **Secret rotation is supported without breaking API keys.** Rotating
+  `AUTH_SECRET` invalidates sessions and OAuth JWTs (users sign in again);
+  existing API keys keep resolving as long as their pepper version is pinned
+  in `API_KEY_PEPPERS` — pin version 1 to the historical secret first, then
+  change `AUTH_SECRET`.
 
 ## The rule for products built on this template
 
@@ -258,11 +172,11 @@ content (e.g. a presentation viewer) does it under a sandboxing CSP without
 `allow-same-origin`, or on a separate origin entirely. The files module's
 attachment-by-default policy implements this; keep it when extending.
 
-### The one sanctioned exception: the public viewer (Phase 4, ADR 012)
+### The one sanctioned exception: the public viewer
 
 Slideless's whole point is rendering user-authored HTML, so `/v/{secret}`
 (apps/server/src/viewer/routes.ts) serves deck content **inline** — under
-the exact regime the ADR 012 browser spike proved safe on Chromium, WebKit,
+the exact regime a dedicated browser spike proved safe on Chromium, WebKit,
 and Firefox:
 
 - Every user-content response carries
@@ -277,13 +191,15 @@ allow-modals allow-downloads` (an **opaque origin**: no cookies, no
   viewer response shape (the protection is one header on one route — treat
   any change there as security-critical).
 - Share links are per-recipient 384-bit path secrets, stored hash-only
-  (sha256 + the versioned API-key pepper, ADR 008); optional expiry and an
+  (sha256 + the versioned API-key pepper); optional expiry and an
   scrypt-hashed viewer password gate the bytes; revocation is instant
   (`no-store` entries, revalidated assets).
 - `VIEWER_BASE_URL` moves share links onto a dedicated user-content origin —
-  the ADR 012 hardening path; the sandbox stays on as defense-in-depth.
+  the recommended hardening once share links leave your team
+  ([viewer-security-model.md](viewer-security-model.md)); the sandbox stays
+  on as defense-in-depth.
 
-### The second sanctioned exception: the token-authed annotation surface (Phase 5)
+### The second sanctioned exception: the token-authed annotation surface
 
 Annotator share links (`can_annotate`) get an overlay client injected into
 the viewer's ENTRY HTML (browser navigations only — never `?raw`, never
@@ -312,17 +228,17 @@ surface, `GET|POST /api/v1/viewer/{secret}/annotations`
   sits in an opaque origin (`Origin: null`) and nothing here is
   credentialed — the token in the path is the whole credential, so CORS is
   not the boundary (the public-OAuth-endpoints precedent). The overlay
-  itself always fetches `credentials: 'omit'`, closing ADR 012's Firefox
-  cookie-forwarding residual on this path.
+  itself always fetches `credentials: 'omit'`, closing the Firefox
+  cookie-forwarding residual the browser spike had left open on this path.
 - **Trust boundary:** the overlay shares the document with hostile deck JS.
   It holds nothing the deck could not already reach (the secret is in the
   URL; the unlock MAC only unlocks annotation calls for this same token),
   so a malicious deck gains no capability beyond spamming its own reviewers'
   notes into its own owner's inbox — bounded by the rate limit.
 
-### Per-deck collaborators (Phase 5)
+### Per-deck collaborators
 
-Dev collaborators are per-deck email grants (ADR 011) claimed through the
+Dev collaborators are per-deck email grants claimed through the
 invitations pattern: hash-only two-token storage (the emailed token proves
 mailbox control and may set `emailVerified`; the copyable link never does),
 14-day pending TTL, 10 live grants per deck. Claiming makes a new account an

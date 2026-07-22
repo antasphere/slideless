@@ -1,4 +1,4 @@
-# Scale-drill stack (the Profile B rehearsal) — see docs/scaling.md.
+# Scale-drill stack (the Profile B rehearsal) — see docs/operations/scaling.md.
 #
 # This is NOT the operator stack; docker-compose.yml stays the documented
 # install. scripts/scale-drill.sh drives this file under the isolated

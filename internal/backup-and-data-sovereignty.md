@@ -3,7 +3,7 @@
 > **Status: captured discussion, not yet implemented (2026-07-07).** This
 > records the reasoning so the next person to tackle durable backups does not
 > re-derive it. The operator runbook for the tooling that exists today lives in
-> [backup-restore.md](backup-restore.md); this file is the roadmap and the
+> [backup-restore.md](../docs/operations/backup-restore.md); this file is the roadmap and the
 > constraints around it.
 
 ## Why this exists

@@ -1,5 +1,8 @@
 # Upgrade
 
+Upgrading a self-hosted instance is one command; data survives in the
+Docker volumes and migrations apply themselves at boot.
+
 ```bash
 ./update.sh            # = docker compose pull && docker compose up -d
 ```

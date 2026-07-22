@@ -1,4 +1,4 @@
-# Seamless-drill overlay for the federation harness (docs/verification.md §H).
+# Seamless-drill overlay for the federation harness (internal/verification.md §H).
 #
 # The base harness runs each app on its own single-label *.localhost name
 # (hub.localhost / slideless.localhost). Those CANNOT share a parent-domain

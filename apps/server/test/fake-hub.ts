@@ -4,7 +4,7 @@ import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
 
 /**
  * A minimal in-process Antasphere-hub stand-in for tests, faithful to the
- * USER-SCOPED federation contract (docs/federation.md; verified against the
+ * USER-SCOPED federation contract (internal/federation.md; verified against the
  * hub's Stage A `api/orgs.ts` + the pinned oauth-provider plugin):
  *
  *  - OIDC discovery + JWKS + token endpoint. The token endpoint honors

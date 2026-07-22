@@ -56,7 +56,7 @@ everything still unchecked remains genuinely open.
       the template's thesis.** (Shipped: `packages/cli`, a thin typed CLI
       over the SDK exposing the `slideless` binary: API-key auth, discovery
       via `/api/v1/instance`, whoami, files commands, `--json` output. See
-      docs/cli.md.)
+      docs/agents/cli.md.)
 
 ## Auth & account completeness (P1)
 
@@ -273,7 +273,7 @@ What "CI green" does **not** currently cover — be honest about this:
       unit-plausible but never deployed as a real multi-replica stack.
       (Closed by the scale drill — `scripts/scale-drill.sh` +
       `docker-compose.scale.yml`, run in CI on every push (`scale-drill` job
-      in ci.yml) and locally per docs/scaling.md. Proven with evidence: the
+      in ci.yml) and locally per docs/operations/scaling.md. Proven with evidence: the
       migration advisory lock under forced 3-replica contention (pg_locks +
       serialized log intervals + Postgres DDL log showing ONE applying
       session), cross-replica sessions and API keys, Redis-shared rate
@@ -284,7 +284,7 @@ What "CI green" does **not** currently cover — be honest about this:
       pg-boss schema install races to a self-healed deadlock/restart on
       fresh-DB multi-replica boots, and a local-storage blob read from the
       wrong replica dies mid-stream after a 200 rather than 404ing — both
-      recorded in docs/scaling.md. Still NOT covered: the s3 driver against
+      recorded in internal/scale-drill-findings.md. Still NOT covered: the s3 driver against
       real MinIO/S3, and managed-Postgres/PgBouncer behavior.)
 - [ ] **The drain (#6) and upgrade (#5) proofs are manual scripts, not CI
       gates** — they will rot. Add an automated in-flight-drop-zero test and
@@ -316,7 +316,7 @@ What "CI green" does **not** currently cover — be honest about this:
       (an earlier draft of this list wrongly claimed the templates were
       bilingual). Localizing them properly needs a per-user locale column
       (Better Auth schema territory) and is deferred; see the emails caveat in
-      docs/i18n.md and ADR 007.
+      internal/i18n.md and ADR 007.
 - [ ] Webhooks — internal event bus exists but no outbound subscription for
       product/customer integrations.
 - [ ] Notifications — no in-app notification primitive; no email beyond OTP +

@@ -26,7 +26,7 @@ moved to managed services:
 | Rate limits | per-replica memory                           | `REDIS_URL` (shared buckets)                                                                           |
 | Secret      | auto-generated in `/data`                    | set `AUTH_SECRET` explicitly — all replicas must share it                                              |
 | Roles       | one container, `SERVICE_ROLE=all`            | API pool `SERVICE_ROLE=api`, worker pool `SERVICE_ROLE=worker`                                         |
-| pgvector    | included in the compose image                | enable the extension on the managed instance; products run `CREATE EXTENSION` (ADR 004)                |
+| pgvector    | included in the compose image                | enable the extension on the managed instance; products run `CREATE EXTENSION`                          |
 
 **Profile B requires shared storage.** `STORAGE_DRIVER=local` is
 single-replica only: each replica has a private disk, so a blob uploaded
@@ -49,7 +49,7 @@ These claims are not just documented — they are exercised as a real
 multi-replica stack by the scale drill (`scripts/scale-drill.sh`, run in CI
 on every push): the migration-lock race, cross-replica sessions and API
 keys, Redis-shared rate limits (with the in-memory contrast), and the
-api/worker split. See [scaling.md](scaling.md), including its findings on
+api/worker split. See [scaling.md](../operations/scaling.md), including its findings on
 first-boot ordering (a fresh database needs one `all`/`worker` boot before
 api-only replicas can start).
 

@@ -50,7 +50,7 @@ The dashboard's en/fr i18n is a library-free, two-file catalog system
 - **A language switch is a full page reload.** Acceptable for a
   set-once preference.
 - **Server-originated messages stay English** (API errors, transactional
-  emails). Documented in docs/i18n.md; proper email localization needs a
+  emails). Documented in internal/i18n.md; proper email localization needs a
   per-user locale column and is tracked in production-readiness.md.
 
 ## Revisit when

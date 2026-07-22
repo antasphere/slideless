@@ -32,7 +32,7 @@ export interface ServeBlobOptions {
 
 /**
  * Stream one content-addressed blob: immutable ETag (= the sha), 304, single
- * Range (206/416), safe-serving disposition + nosniff (docs/security.md —
+ * Range (206/416), safe-serving disposition + nosniff (docs/security/security.md —
  * user content never renders on the app origin). Shared by the files content
  * route and the presentation asset download; both resolve METADATA first and
  * only then hand the bytes question here.
@@ -61,7 +61,7 @@ export async function serveBlob(c: Context, opts: ServeBlobOptions): Promise<Res
   // died mid-body — silent truncation the client cannot distinguish from
   // the real file (scale drill, I2). The clean 404 is a safety net, not a
   // supported topology: multi-replica requires shared storage
-  // (STORAGE_DRIVER=s3), docs/deployment-profiles.md.
+  // (STORAGE_DRIVER=s3), docs/self-hosting/deployment-profiles.md.
   const key = blobKey(opts.workspaceId, opts.sha256);
   if (!(await opts.storage.exists(key))) {
     opts.logger.error(

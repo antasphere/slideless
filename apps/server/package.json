@@ -15,7 +15,7 @@
     "test": "vitest run --dir test/unit",
     "test:integration": "vitest run --dir test/integration",
     "drift:check": "bash scripts/check-auth-schema-drift.sh",
-    "docs:env": "tsx scripts/generate-env-docs.ts && prettier --write ../../docs/env-reference.md"
+    "docs:env": "tsx scripts/generate-env-docs.ts && prettier --write ../../docs/reference/env-reference.md"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

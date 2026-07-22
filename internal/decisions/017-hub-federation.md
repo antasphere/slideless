@@ -17,7 +17,7 @@ Slideless ships one Docker image that runs in two postures: `EDITION=oss`
 `EDITION=cloud` (a managed instance whose ACCOUNT layer — identity, orgs,
 membership, billing status — is owned by the Antasphere hub). The binding
 was built across phases P2–P8 and is documented operationally in
-[docs/federation.md](../federation.md); the per-slice decisions live in
+[internal/federation.md](../federation.md); the per-slice decisions live in
 ADRs [014](./014-workspace-scoped-principal.md) (the workspace-scoped
 principal the whole binding keys on),
 [015](./015-hub-sso-assertion-handoff.md) (the SSO assertion handoff), and
@@ -186,7 +186,7 @@ plain local API-key path, hub out of the loop.
   "remember not to set the var." Romain's rule: no non-SSO session entrance
   on cloud except the deliberate break-glass `/sign-in/email`. oss keeps
   OTP login, the CLI mint, AND Google social unchanged; see
-  docs/federation.md "Discovery".
+  internal/federation.md "Discovery".
 
 ### 8. The P8 hardening closes (this program's exit gate)
 
@@ -243,7 +243,7 @@ Two residuals identified during the build were closed at P8:
 - **The next tool on this chassis binds the same way**: the whole binding is
   seam-shaped (identity, entitlements, principal gate, three conditional
   route mounts, one middleware), selected by one env switch, with
-  `docs/federation.md` as the operational runbook and
+  `internal/federation.md` as the operational runbook and
   `cloud-edition-binding-patterns.md` (initiative docs) as the reusable
   pattern write-up.
 - Every posture above is pinned by integration tests that boot the real app

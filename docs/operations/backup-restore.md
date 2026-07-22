@@ -1,5 +1,8 @@
 # Backup and restore
 
+What to back up on a self-hosted instance, how to automate dailies, how to
+restore — and the drill that proves your backups actually work.
+
 ## What must be backed up
 
 1. **The database** — users, workspaces, keys, audit, file metadata, jobs.
@@ -38,7 +41,7 @@ Restores the database and the `/data` volume, then restarts the app. The
 `.env` archive is restored manually when needed (it contains the secrets the
 data was encrypted/peppered with — losing `AUTH_SECRET` invalidates all
 sessions, and API keys with it unless their pepper versions are pinned in
-`API_KEY_PEPPERS`; see the rotation runbook in security.md).
+`API_KEY_PEPPERS`; see [security.md](../security/security.md)).
 
 ## Disaster recovery drill
 

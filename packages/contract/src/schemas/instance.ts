@@ -27,7 +27,7 @@ export const instanceInfoSchema = z.object({
      * dashboard-side HINT for the silent auto-connect (attempt vs don't),
      * NEVER a security input: the hub sets it, this tool reads it
      * client-side and clears it on logout / login_required
-     * (docs/federation.md, cross-repo contract).
+     * (internal/federation.md, cross-repo contract).
      */
     sso: z
       .object({

@@ -493,7 +493,7 @@ export const fr: Record<MessageKey, string> = {
   'decks.pushConnect':
     '1. Connectez la CLI (créez une clé sur la page Clés API, ou connectez-vous par e-mail) :',
   'decks.pushPush': '2. Poussez le dossier de votre deck :',
-  'decks.pushDocs': 'Le guide complet se trouve dans docs/cli.md du dépôt Slideless.',
+  'decks.pushDocs': 'Le guide complet se trouve dans docs/agents/cli.md du dépôt Slideless.',
   'decks.copyCommandAria': 'Copier la commande',
   'decks.commandCopied': 'Commande copiée dans le presse-papiers',
 

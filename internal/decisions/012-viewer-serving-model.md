@@ -13,7 +13,7 @@ Slideless exists to render arbitrary **user-authored HTML** — single files or
 folders of HTML/JS/CSS/images/video/3D/shaders — to anonymous viewers behind
 secret share-token URLs. The dashboard, versioned API, Better Auth session, and
 the OAuth 2.1 server all live on **one origin**. The chassis carries a hard
-invariant (CLAUDE.md, docs/security.md, `files/http.ts`): _never render user
+invariant (CLAUDE.md, docs/security/security.md, `files/http.ts`): _never render user
 content on the app origin_ — active types are served `attachment` + `nosniff`.
 Slideless must break that surface open safely. The load-bearing question:
 

@@ -46,7 +46,7 @@ normalization of the diff).
 
 ## Version pins
 
-ADR 001 (`docs/decisions/001-version-pins.md`) exact-pins the
+ADR 001 (`internal/decisions/001-version-pins.md`) exact-pins the
 `better-auth` / `@better-auth/oauth-provider` / `@better-auth/cli` trio.
 **Never bump one of them in isolation** — the oauth-provider peer conflict
 breaks installs and the drift guard fails CI. Bump all three together with
@@ -57,7 +57,7 @@ configured to ignore the trio for this reason.
 
 - Tests for every behavior change — no untested behavior lands.
 - Docs updated in the same PR (`docs/`, and regenerate
-  `docs/env-reference.md` via `pnpm --filter @slideless/server docs:env`
+  `docs/reference/env-reference.md` via `pnpm --filter @slideless/server docs:env`
   when env vars change).
 - prettier and eslint clean (`pnpm format`, `pnpm turbo lint`).
 - Call out breaking changes and migration impact explicitly in the PR

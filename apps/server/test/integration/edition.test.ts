@@ -12,7 +12,7 @@ import {
 import * as sso from './sso-helpers.js';
 
 /**
- * The edition split, Phase 2 (docs/federation.md):
+ * The edition split, Phase 2 (internal/federation.md):
  *  - setup stamps the instance's edition; the R7 boot guard refuses an env
  *    EDITION that differs on an already-set-up instance, and
  *    EDITION_CHANGE_ALLOWED=true is the one-boot acknowledgement that

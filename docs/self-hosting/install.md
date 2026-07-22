@@ -1,6 +1,7 @@
 # Install
 
-Two supported paths. Both end with the first-boot wizard in the browser.
+Install Slideless on your own machine: two supported paths, both ending
+with the first-boot wizard in the browser.
 
 ## One-liner (fresh VPS)
 
@@ -37,7 +38,8 @@ host**. Setup runs exactly once; afterwards the endpoint answers `410 Gone`.
 
 Teammates join via invitations (Members → Invite). Every invitation yields a
 copyable accept link — SMTP is never required. To also send invitation
-emails, configure an email driver in `.env` ([env-reference.md](env-reference.md)).
+emails, configure an email driver in `.env`
+([env-reference.md](../reference/env-reference.md)).
 
 ## What's running
 

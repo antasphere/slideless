@@ -58,7 +58,7 @@ Uniform `403 forbidden` for every rejection reason (dormant / not listed /
 unverified) so the endpoint is not an oracle for the allowlist. No schema
 change, no migration; the dashboard deliberately has no break-glass UI and
 superadmin status is never exposed to normal users. Invocation is
-API/CLI-by-curl — runbook in [security.md](../security.md).
+API/CLI-by-curl — runbook in [security-runbooks.md](../security-runbooks.md).
 
 **Rejected alternative:** a `user.is_superadmin` column. A persistent DB
 super-role survives compromise of any admin surface that can write users, is

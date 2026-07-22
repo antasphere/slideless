@@ -13,7 +13,7 @@ import { CLI_KEY_SCOPES } from './cli-auth.js';
 const err = (code: string, message: string) => ({ error: { code, message } });
 
 /**
- * CLI cross-tool connect (cloud edition ONLY — docs/federation.md P5):
+ * CLI cross-tool connect (cloud edition ONLY — internal/federation.md P5):
  *
  *   POST /sso/cli-connect → verify a hub-minted 120 s exchange JWT (the H3
  *   counterpart), JIT-provision exactly like an SSO login, store the H3

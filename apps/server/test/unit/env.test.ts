@@ -93,7 +93,7 @@ describe('env schema', () => {
     expect(envSchema.safeParse({ ...minimal, ORPHAN_USER_RETENTION_HOURS: '-1' }).success).toBe(false);
   });
 
-  describe('edition split (docs/federation.md)', () => {
+  describe('edition split (internal/federation.md)', () => {
     const hubVars = {
       HUB_ISSUER_URL: 'https://account.antasphere.com',
       HUB_CLIENT_ID: 'tool-slideless-cloud',

@@ -35,7 +35,7 @@ export const instanceSettings = pgTable('instance_settings', {
   telemetryEnabled: boolean('telemetry_enabled').notNull().default(false),
   /**
    * The EDITION this instance was set up as (R7 boot guard,
-   * docs/federation.md). Boot refuses an env EDITION that differs unless
+   * internal/federation.md). Boot refuses an env EDITION that differs unless
    * EDITION_CHANGE_ALLOWED=true re-stamps it — an edition flip under
    * existing users/workspaces silently changes identity semantics. The
    * default covers pre-column rows honestly: everything so far is oss.
@@ -59,7 +59,7 @@ export const workspaces = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     // Central-rail seam: a projected workspace names the ONE hub org it
-    // mirrors (cloud edition SSO, docs/federation.md); NULL = locally owned.
+    // mirrors (cloud edition SSO, internal/federation.md); NULL = locally owned.
     centralAccountId: text('central_account_id'),
     /**
      * The hub-asserted org status, materialized locally so suspension is
@@ -272,7 +272,7 @@ export const idempotencyKeys = pgTable(
 
 /**
  * One-time-use ledger for hub→tool exchange JWTs (`POST /sso/cli-connect`,
- * cloud edition only — docs/federation.md P5). The hub mints every 120 s
+ * cloud edition only — internal/federation.md P5). The hub mints every 120 s
  * exchange token with a unique `jti`; consuming a token INSERTs its jti
  * here first, and the primary-key conflict IS the replay detection — a
  * replayed token inside its TTL loses the insert and is rejected before it

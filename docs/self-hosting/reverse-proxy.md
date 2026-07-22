@@ -52,7 +52,7 @@ Notes:
 ## Optional: a dedicated user-content origin (`VIEWER_BASE_URL`)
 
 The share-link viewer hardening
-([viewer-security-model.md](viewer-security-model.md)) is one more site
+([viewer-security-model.md](../security/viewer-security-model.md)) is one more site
 block pointing at the **same** app — a second hostname that carries no app
 cookies:
 

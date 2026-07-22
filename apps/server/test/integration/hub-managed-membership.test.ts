@@ -14,7 +14,7 @@ import * as sso from './sso-helpers.js';
 
 /**
  * P7 — cloud-gating the local membership surfaces on hub-origin workspaces
- * (docs/federation.md "Hub-managed membership"; binding plan §7; patterns §6).
+ * (internal/federation.md "Hub-managed membership"; binding plan §7; patterns §6).
  *
  * On EDITION=cloud a hub org projects into a workspace whose MEMBERSHIP is
  * the hub's source of truth. This suite pins:

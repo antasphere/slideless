@@ -6,7 +6,7 @@ import * as sso from './sso-helpers.js';
 
 /**
  * CLI cross-tool connect — Phase 5, `POST /api/v1/sso/cli-connect`
- * (docs/federation.md): the endpoint that turns a hub-minted 120 s exchange
+ * (internal/federation.md): the endpoint that turns a hub-minted 120 s exchange
  * JWT (hub delta H3, `purpose: 'sso-connect'`, unique `jti`) into an
  * ordinary local `slk_` key, so `antasphere login` is the ONLY login a
  * cloud CLI user ever performs.

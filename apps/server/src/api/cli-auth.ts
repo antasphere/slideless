@@ -76,7 +76,7 @@ export interface CliAuthRouteDeps {
   audit: AuditService;
   logger: Logger;
   /**
-   * Cloud presence switch (docs/federation.md, D1 hub-only login): when set
+   * Cloud presence switch (internal/federation.md, D1 hub-only login): when set
    * (EDITION=cloud boots only), the OTP mint pair refuses 403
    * cli_otp_disabled. Only the boolean presence is consulted — the service
    * itself is never called from this module. The self-revoke is unaffected.

@@ -32,8 +32,8 @@ entitlement seams.
 
 ## Environment contract
 
-Full variable reference: [env-reference.md](env-reference.md). The cloud
-block:
+Full variable reference: [env-reference.md](../docs/reference/env-reference.md).
+The cloud block:
 
 | Variable            | Meaning                                                                                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -369,7 +369,7 @@ writes) and the SAME fail-closed reconcile as a browser login projects
 the user's orgs as-the-user. Only a definitive pass mints: a USER-scoped
 `slk_` key (`workspaceId: null` — the org is a per-request parameter),
 scopes `presentations:read presentations:write` (never `data:export`),
-named "Antasphere CLI <date>", audited, returned once. **Never a
+named "Antasphere CLI `<date>`", audited, returned once. **Never a
 born-dead key**: no grant carried and none stored → `403
 hub_grant_missing` with steering (re-run `antasphere login` with a
 current CLI, or one browser SSO); a dead grant → the same refusal; zero
@@ -514,9 +514,10 @@ re-asserts it on live `GET /get-session` (healing tool-side clears); it is
 cleared on hub sign-out and `/oauth2/end-session`. TOOLS read it
 client-side as a hint and clear it (a) on single logout and (b) when a
 silent attempt answers the login_required family (a stale hint). Discovery
-advertises the tool's view as `instance.auth.sso =
-{hintCookieName, hintCookieDomain}` (`HUB_HINT_COOKIE_NAME` /
-`HUB_HINT_COOKIE_DOMAIN`, cloud-validated in env.ts) — absent on oss.
+advertises the tool's view as
+`instance.auth.sso = {hintCookieName, hintCookieDomain}`
+(`HUB_HINT_COOKIE_NAME` / `HUB_HINT_COOKIE_DOMAIN`, cloud-validated in
+env.ts) — absent on oss.
 Security posture: the hint only decides whether a silent `prompt=none`
 bounce is WORTH ATTEMPTING. Forging it buys one harmless redirect (the hub
 session check is the real gate); deleting it buys a login page. Nothing

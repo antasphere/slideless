@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Multi-replica scale drill (the Profile B rehearsal) — docs/scaling.md.
+# Multi-replica scale drill (the Profile B rehearsal) — docs/operations/scaling.md.
 #
 # Proves, against a real multi-replica stack (docker-compose.scale.yml under
 # the isolated `scale-drill` compose project), every horizontal-scaling claim

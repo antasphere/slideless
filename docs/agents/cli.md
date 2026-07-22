@@ -1,7 +1,7 @@
-# CLI
+# The Slideless CLI
 
-`slideless` is the typed command-line client over `@slideless/sdk` — the
-primary human/agent face of an instance. It signs in over email OTP (minting
+`slideless` is the typed command-line client for a Slideless instance — the
+primary human/agent face of it. It signs in over email OTP (minting
 its own API key), pushes deck folders as immutable versions, pulls them back
 byte-exactly, manages share links and collaborators, and previews decks
 locally under the exact viewer sandbox.
@@ -22,46 +22,6 @@ From a checkout:
 pnpm --filter @antasphere/slideless... build
 node packages/cli/dist/bin.js --help
 ```
-
-## Release
-
-Releases are tokenless via npm **trusted publishing** (OIDC):
-`.github/workflows/publish-cli.yml` fires on a `cli-vX.Y.Z` tag (the `cli-v`
-prefix cannot collide with `release.yml`'s Docker-image `v*` tags), verifies
-the tag matches `packages/cli/package.json#version` and that the bundled
-binary reports the same version (keep `VERSION` in `src/index.ts` in sync),
-runs lint/typecheck/test/build for the CLI and its workspace dependencies,
-and publishes from `packages/cli` with no npm token.
-
-```bash
-# bump packages/cli/package.json#version + VERSION in src/index.ts, commit, then:
-git tag cli-v0.3.0 && git push origin cli-v0.3.0
-```
-
-**First publish is manual.** Trusted publishing can only be configured on a
-package that already exists on npm, so the very first publish of the name is
-done by hand while logged in to an account that owns the npm `antasphere` org:
-
-```bash
-pnpm --filter @antasphere/slideless... build
-cd packages/cli && npm publish   # publishConfig.access = public
-```
-
-After that, configure the trusted publisher on npmjs.com
-(package → Settings → Trusted Publisher → GitHub Actions) with exactly:
-
-| Field                | Value             |
-| -------------------- | ----------------- |
-| Organization or user | `antasphere`      |
-| Repository           | `slideless`       |
-| Workflow filename    | `publish-cli.yml` |
-| Environment          | _(leave empty)_   |
-
-and every further release is just the tag. Caveat until then: the workflow's
-install step fetches the git-pinned private `antasphere/cli-core` repo, which
-the runner's `GITHUB_TOKEN` cannot read — once `@antasphere/cli-core` is on
-npm, switch the devDependency pin to the published version (the one-line swap
-in cli-core's README) or make that repo public.
 
 ## Configuration: profiles, flags, environment
 
@@ -107,8 +67,9 @@ On an **Antasphere-cloud** instance you never run a Slideless-specific login.
 When no direct key resolves, the CLI asks discovery (`GET /api/v1/instance`)
 whether the instance signs in through the hub (`auth.methods` contains
 `antasphere`); if so, it exchanges the stored `antasphere login` credential
-for a **user-scoped** tool-local `slk_` key (hub → tool, docs/federation.md
-P5) and caches it in the profile **per hub profile** (`connectKeys` — ONE
+for a **user-scoped** tool-local `slk_` key (hub → tool; see
+[Your Antasphere account](../getting-started/antasphere-account.md)) and
+caches it in the profile **per hub profile** (`connectKeys` — ONE
 key per hub account, valid for every org; the org is a per-request
 selection, never part of the credential):
 
@@ -119,7 +80,7 @@ slideless list                                      # served from the cache — 
 ```
 
 - The exchange names **no organization** (the hub credential identifies the
-  USER — hub ADR 014); a single cached key serves whatever org context is
+  USER, never one org); a single cached key serves whatever org context is
   active. Second and later runs make zero hub calls and mint nothing.
 - The hub key is sent to the **hub only**; the instance sees a short-lived
   user-scoped JWT (plus its own one-time offline grant, relayed once and
@@ -142,7 +103,7 @@ exactly as documented, and the hub is never contacted.
 The OTP flow is the **self-host** entrance. On an Antasphere-cloud instance
 it refuses — the CLI detects cloud via discovery and steers you to
 `antasphere login` (see "Cloud instances" above); server-side the endpoints
-answer `403 cli_otp_disabled` (hub-only login, docs/federation.md D1). The
+answer `403 cli_otp_disabled` (cloud instances are hub-login-only). The
 flow needs the instance to have a delivering email driver
 (`EMAIL_DRIVER=smtp|resend`); it signs in **existing accounts only** — sign-up
 stays closed (accounts enter via setup, workspace invitations, or

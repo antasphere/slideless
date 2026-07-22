@@ -2,7 +2,7 @@ import type { InstanceInfo } from '@slideless/contract';
 import { safeNext } from '$lib/utils';
 
 /**
- * SL-3 — the silent auto-connect lattice (docs/federation.md "The seamless
+ * SL-3 — the silent auto-connect lattice (internal/federation.md "The seamless
  * session layer"). Pure decision logic + the small storage/cookie helpers
  * the login page and root layout wire up. Everything here keys off
  * DISCOVERY (`instance.auth.sso` presence + the `antasphere` method), never

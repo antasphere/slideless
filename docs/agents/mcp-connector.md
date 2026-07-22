@@ -1,4 +1,4 @@
-# Connecting agents (MCP)
+# The MCP connector
 
 Every instance is MCP-capable at boot: the monolith serves a streamable-HTTP
 MCP endpoint at `/mcp`, protected by the instance's own built-in OAuth 2.1
@@ -23,8 +23,8 @@ connector instantly (tokens are re-checked against the live membership on
 every call).
 
 The consent screen names the workspace being granted, and the grant is
-bound to exactly that workspace for its whole life — refreshes included
-(ADR 014). Members of several workspaces pick one at consent; connecting
+bound to exactly that workspace for its whole life — refreshes included.
+Members of several workspaces pick one at consent; connecting
 the same client to another workspace is a second consent (send
 `prompt=consent` to force the picker past an existing grant).
 
@@ -56,13 +56,13 @@ one call.
 All product tools are prefixed `slideless_` and act as the connected user —
 identity always comes from the verified credential (OAuth token or API key),
 never from a tool parameter. Reads require `presentations:read`, writes
-`presentations:write`; the API's fail-closed allowlist and ADR 013 deck-read
+`presentations:write`; the API's fail-closed allowlist and per-deck read
 privacy apply unchanged (a tool can never read a deck the caller can't).
 
 | Tool                                  | Scope | Does                                                                                                                                                     |
 | ------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `slideless_whoami`                    | read  | The connected user, workspace, role, scopes (`get_me` is the chassis alias)                                                                              |
-| `slideless_list_presentations`        | read  | Cursor-paginated deck list, scoped by ADR 013                                                                                                            |
+| `slideless_list_presentations`        | read  | Cursor-paginated deck list, scoped by per-deck read privacy                                                                                              |
 | `slideless_get_presentation`          | read  | One deck's metadata                                                                                                                                      |
 | `slideless_list_versions`             | read  | Version history (metadata only)                                                                                                                          |
 | `slideless_get_version`               | read  | One version incl. its full manifest (omit `version` = latest)                                                                                            |

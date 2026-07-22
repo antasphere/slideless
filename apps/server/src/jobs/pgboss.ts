@@ -49,7 +49,7 @@ export async function purgeExpiredUploadSessions(db: Db): Promise<number> {
  * DeadLockReport; scale drill, I2). Same session-scoped pattern as the
  * migration lock (packages/db/src/migrate.ts). The key is distinct from the
  * migration lock (7432001) and the last-owner locks (7432002 trigger xact /
- * 7432003 session) — see docs/scaling.md.
+ * 7432003 session) — see internal/scale-drill-findings.md.
  */
 const PGBOSS_INSTALL_LOCK_KEY = 7_432_004;
 
@@ -346,7 +346,7 @@ export async function createJobs(
   } else {
     // api role: migrate:false start() runs no DDL and creates no queues — it
     // only verifies the pgboss schema exists ('pg-boss is not installed' on a
-    // fresh DB until an all|worker boot installs it; docs/scaling.md), so it
+    // fresh DB until an all|worker boot installs it; internal/scale-drill-findings.md), so it
     // needs neither the install lock nor DDL rights.
     await boss.start();
   }

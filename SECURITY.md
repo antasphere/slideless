@@ -16,4 +16,4 @@ responsible for pulling fixes into their own trees.
 
 The enforced security posture (headers, rate limits, the fail-closed scope
 allowlist for machine principals, the user-content rule) is documented in
-[docs/security.md](docs/security.md).
+[docs/security/security.md](docs/security/security.md).

@@ -7,7 +7,7 @@ import { z } from 'zod';
  * SETUP_TOKEN. On the CLOUD edition setup creates NO workspace (the
  * response's `workspaceId` is null): every cloud workspace is a hub-org
  * projection, so the operator bootstrap mints a verified, break-glass
- * capable USER only (docs/federation.md, user-scoped federation).
+ * capable USER only (internal/federation.md, user-scoped federation).
  */
 export const setupRequestSchema = z.object({
   instanceName: z.string().min(1).max(120),

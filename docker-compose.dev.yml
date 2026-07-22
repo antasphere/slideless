@@ -7,7 +7,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
 # Never use this overlay in production: Mailpit accepts unauthenticated SMTP
-# and stores mail unencrypted. See docs/dev-mailpit.md.
+# and stores mail unencrypted. See internal/dev-mailpit.md.
 services:
   app:
     environment:

@@ -31,7 +31,7 @@ export const meResponseSchema = z.object({
       name: z.string(),
       /**
        * True when this workspace is the lazy projection of a hub org (cloud
-       * edition, docs/federation.md) — its MEMBERSHIP is managed at the hub,
+       * edition, internal/federation.md) — its MEMBERSHIP is managed at the hub,
        * so clients hide local member/invitation management and link out
        * (P7). Derived from `centralAccountId IS NOT NULL`; the raw hub org
        * id is deliberately never exposed. Always false on oss.

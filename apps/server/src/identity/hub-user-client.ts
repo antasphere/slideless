@@ -3,7 +3,7 @@ import type { Logger } from '../logger.js';
 import type { GrantAccess, HubGrantService } from './hub-grant.js';
 
 /**
- * The as-the-user hub reader (docs/federation.md, live user-scoped
+ * The as-the-user hub reader (internal/federation.md, live user-scoped
  * federation): every org/membership read between logins is `GET
  * <hub>/api/v1/orgs` presented with the USER's OWN grant token
  * (identity/hub-grant.ts) — the hub only ever returns what that user may

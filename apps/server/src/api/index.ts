@@ -82,7 +82,7 @@ export interface ApiDeps {
   /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
   collaborators: CollaboratorService;
   /**
-   * Cloud edition only (docs/federation.md): the hub SSO binding. Its sole
+   * Cloud edition only (internal/federation.md): the hub SSO binding. Its sole
    * job here is wrapping the auth mount in the request-scoped login scope
    * that carries the verified hub assertion from the callback's token
    * verification to its after-hook (ADR 015).
@@ -118,7 +118,7 @@ class SetupAlreadyDone extends Error {}
 export function createApiApp(deps: ApiDeps): OpenAPIHono {
   const { db, env, auth, registry, logger, apiKeys: apiKeyService, audit, email, limiters } = deps;
 
-  // P7 (docs/federation.md): on EDITION=cloud, membership of a hub-origin
+  // P7 (internal/federation.md): on EDITION=cloud, membership of a hub-origin
   // (projected) workspace is managed at the hub — this is the pointer the
   // membership-mutation gates and /me carry. Same single `hubConfig` switch
   // as every cloud seam: null on oss, so oss wires no gate and /me answers
@@ -271,7 +271,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         make: limiters.make,
         logger
       }),
-      // Cloud edition's post-resolution veto (docs/federation.md P4);
+      // Cloud edition's post-resolution veto (internal/federation.md P4);
       // undefined on oss.
       principalGate: deps.principalGate
     })
@@ -353,7 +353,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
 
     // The operator drove the wizard (holding the setup token when one is
     // set) — their address needs no mailbox dance, and on the cloud edition
-    // it MUST be verified (D9, docs/federation.md): under hub-only login the
+    // it MUST be verified (D9, internal/federation.md): under hub-only login the
     // operator's only entrance is the hub trusted-link, and Better Auth
     // refuses to link a trusted provider onto an UNVERIFIED local email
     // (requireLocalEmailVerified stays on). An unverified operator bricks a
@@ -377,7 +377,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         const claimed = await tx
           .insert(instanceSettings)
           // The edition stamp is what the R7 boot guard compares against
-          // (boot.ts, docs/federation.md): setup records the edition this
+          // (boot.ts, internal/federation.md): setup records the edition this
           // instance was born under.
           .values({ id: 'instance', instanceId, name: body.instanceName, edition: env.EDITION })
           .onConflictDoNothing()
@@ -490,7 +490,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           workspaces: [],
           activeWorkspaceId: null,
           // The zero state's CTA target on cloud: organizations are created
-          // at the hub, never locally (docs/federation.md).
+          // at the hub, never locally (internal/federation.md).
           hubManageUrl: hubManaged?.manageUrl ?? null,
           // Cloud + session extras (SL-6): the zero state is session-only
           // by construction, so only the edition gate applies here.
@@ -586,7 +586,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // cloud (hubSso present) the mint pair refuses 403 cli_otp_disabled — the
   // D1 hub-only entrance closure; the self-revoke stays open.
   registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger, hubSso });
-  // CLI cross-tool connect (docs/federation.md P5): PUBLIC exchange of a
+  // CLI cross-tool connect (internal/federation.md P5): PUBLIC exchange of a
   // hub-minted 120 s JWT (+ its H3 offline grant) for a USER-scoped `slk_`
   // key. Registered ONLY on cloud — an oss boot leaves the path to the JSON
   // 404 terminator below, so the self-host edition provably carries zero
@@ -685,7 +685,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     logger,
     presentations: presentationService,
     collaborators: deps.collaborators,
-    // Cloud presence switch (docs/federation.md P6): closes the claim
+    // Cloud presence switch (internal/federation.md P6): closes the claim
     // endpoint's local-password account creation — invitees arrive through
     // the P3 SSO entrance instead. undefined on oss.
     hubSso

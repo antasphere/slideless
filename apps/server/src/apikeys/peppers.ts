@@ -12,7 +12,7 @@
  * entries joined by `;` (e.g. `1:<old secret>;2:<new pepper>`). Entries
  * override the defaults, so pinning `1:<value>` freezes version 1
  * independently of the live AUTH_SECRET — the first step of the rotation
- * runbook in docs/security.md. LOUD RULE: whenever version 1 is pinned, its
+ * runbook in internal/security-runbooks.md. LOUD RULE: whenever version 1 is pinned, its
  * value MUST be the historical AUTH_SECRET-derived pepper (the secret that
  * was live when the version-1 keys were minted), or every existing key stops
  * resolving. New keys always mint under the HIGHEST version in the registry.

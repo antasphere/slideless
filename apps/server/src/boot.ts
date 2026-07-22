@@ -146,7 +146,7 @@ export async function boot(
     }
   }
 
-  // R7 edition-flip guard (docs/federation.md): EDITION selects the identity
+  // R7 edition-flip guard (internal/federation.md): EDITION selects the identity
   // binding, so flipping it under an already-set-up instance silently changes
   // who can log in and where workspace ownership is asserted. Setup stamps
   // the instance's edition; a boot whose env EDITION differs refuses to start
@@ -176,7 +176,7 @@ export async function boot(
         `refusing to boot: EDITION=${env.EDITION} but this instance was set up as ` +
         `'${stampedEdition}'. An edition flip on a populated instance changes identity ` +
         `semantics for existing users and workspaces. If this is intentional, set ` +
-        `EDITION_CHANGE_ALLOWED=true for ONE boot to re-stamp it (docs/federation.md).`;
+        `EDITION_CHANGE_ALLOWED=true for ONE boot to re-stamp it (internal/federation.md).`;
       logger.error({ stamped: stampedEdition, env: env.EDITION }, message);
       await db.pool.end(); // clean refusal — no leaked pool for the caller
       throw new Error(message);
@@ -193,7 +193,7 @@ export async function boot(
     logger.warn(
       'EDITION_CHANGE_ALLOWED=true but no edition change is pending — unset it: while it stays ' +
         'set, the R7 edition-flip guard is disarmed and a future EDITION change re-stamps ' +
-        'without refusal (docs/federation.md)'
+        'without refusal (internal/federation.md)'
     );
   }
 
@@ -243,7 +243,7 @@ export async function boot(
   // call sites.
   const events = new EventBus(logger);
 
-  // The cloud edition's hub SSO binding (docs/federation.md): constructed
+  // The cloud edition's hub SSO binding (internal/federation.md): constructed
   // iff EDITION=cloud — hubConfig() is the single switch, so an oss boot
   // provably instantiates no SSO surface. Everything hub-SSO hangs off this
   // one object: the genericOAuth provider inside createAuth, the per-login
@@ -343,7 +343,7 @@ export async function boot(
       : {})
   });
 
-  // The live user-scoped federation stack (cloud only, docs/federation.md):
+  // The live user-scoped federation stack (cloud only, internal/federation.md):
   // each user's OWN hub grant (offline_access refresh token on the account
   // row) → as-the-user `GET /orgs` reads → the org reconciler that the
   // login pass, the live gate, and the unknown-workspace miss hook all
@@ -422,7 +422,7 @@ export async function boot(
     audit
   );
 
-  // The edition split (docs/federation.md): the local defaults below are the
+  // The edition split (internal/federation.md): the local defaults below are the
   // oss binding, passed through bindEditionSeams — the ONE place EDITION
   // decides what the registry gets. oss returns them untouched; cloud
   // rebinds the identity descriptor and wires the live principal gate off
@@ -464,7 +464,7 @@ export async function boot(
     logger.warn(
       'API_KEY_PEPPERS is set but does not pin version 1 — version-1 API keys still ' +
         'depend on the live AUTH_SECRET; pin `1:<historical secret>` before rotating it ' +
-        '(docs/security.md).'
+        '(internal/security-runbooks.md).'
     );
   }
   const apiKeys = new ApiKeyService(db.db, pepperRegistry, onWorkspaceMiss);
@@ -519,7 +519,7 @@ export async function boot(
     hubGrant,
     // Cloud only: /sso/logout builds the hub end-session leg through it.
     hubLogout,
-    // Cloud only (docs/federation.md): the post-resolution LIVE hub gate —
+    // Cloud only (internal/federation.md): the post-resolution LIVE hub gate —
     // reconcile-as-the-user + suspension/revocation/grant-death verdicts —
     // run by authContext on every authenticated request. undefined on oss.
     principalGate: seams.principalGate

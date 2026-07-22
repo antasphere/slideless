@@ -7,7 +7,7 @@ import type { Logger } from '../logger.js';
 import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 
 /**
- * The per-user hub grant (docs/federation.md, live user-scoped federation):
+ * The per-user hub grant (internal/federation.md, live user-scoped federation):
  * cloud Slideless holds each user's OWN `offline_access account:read` grant
  * — obtained at SSO login, persisted by Better Auth on the `account` row —
  * and refreshes it against the hub's token endpoint to mint HUB-audienced

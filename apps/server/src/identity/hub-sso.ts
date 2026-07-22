@@ -10,7 +10,7 @@ import type { LoginAccessToken } from './hub-user-client.js';
 
 /**
  * "Sign in with Antasphere" — the cloud edition's SSO entrance
- * (docs/federation.md, user-scoped federation). This module owns everything
+ * (internal/federation.md, user-scoped federation). This module owns everything
  * hub-SSO:
  *
  *  - the relying-party provider config for better-auth's `genericOAuth`
@@ -59,7 +59,7 @@ export interface HubSsoAssertion {
 
 /**
  * What one VERIFIED hub exchange JWT asserts (`POST /sso/cli-connect`,
- * docs/federation.md P5): the USER only. The H3 token still carries ONE
+ * internal/federation.md P5): the USER only. The H3 token still carries ONE
  * org's transitional claims through the hub's compat window, but Slideless
  * reads none of them — org truth comes from the connect-time reconcile
  * (as-the-user `GET /orgs` with the grant the SAME H3 response delivered),
@@ -249,7 +249,7 @@ export class HubSsoService {
    *    login reconcile + every between-logins read), never for ours.
    *  - `disableSignUp` stays UNSET: SSO IS the sanctioned signup entrance
    *    on cloud — the deliberate FOURTH switch next to the three
-   *    closed-signup switches (CLAUDE.md invariant, docs/federation.md).
+   *    closed-signup switches (CLAUDE.md invariant, internal/federation.md).
    *  - `getUserInfo` replaces the plugin's default entirely, so IT owns the
    *    emailVerified mapping — set from the hub's verified `email_verified`
    *    claim, never defaulted.
@@ -366,7 +366,7 @@ export class HubSsoService {
 
   /**
    * Verify a hub-minted exchange JWT (`POST /sso/cli-connect`, the H3
-   * counterpart — docs/federation.md P5) and extract its assertion. The
+   * counterpart — internal/federation.md P5) and extract its assertion. The
    * chain, every link fail-closed:
    *
    *  1. `HubJwtVerifier.verify` — hub JWKS signature, `iss` pinned to the

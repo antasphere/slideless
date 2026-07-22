@@ -49,7 +49,7 @@ export interface Principal {
   workspaceId: string;
   role: 'owner' | 'admin' | 'member';
   /**
-   * How the resolved membership came to exist (D2, docs/federation.md §P6):
+   * How the resolved membership came to exist (D2, internal/federation.md §P6):
    * 'local' = ordinary membership (setup, workspace invitation), 'hub' = a
    * hub-org projection (cloud SSO), 'guest' = an external per-deck
    * collaborator minted by the claim path. Origin is a CAPABILITY axis, not

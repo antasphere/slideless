@@ -7,7 +7,7 @@ import { projectOrgMembership } from './hub-projection.js';
 import type { HubUserClient, LoginAccessToken } from './hub-user-client.js';
 
 /**
- * Live org reconciliation (docs/federation.md, user-scoped federation): org
+ * Live org reconciliation (internal/federation.md, user-scoped federation): org
  * and membership truth live ONLY at the hub, and Slideless reflects it by
  * reading the hub's caller-scoped `GET /orgs` AS THE USER (hub-user-client)
  * — every SSO login runs the TTL-bypassing `forceReconcile()` (fail-CLOSED:

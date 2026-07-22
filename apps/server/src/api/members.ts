@@ -22,7 +22,7 @@ export interface MemberRouteDeps {
   publicBaseUrl: string;
   accountDeletion: AccountDeletionService;
   /**
-   * Cloud edition only (P7, docs/federation.md): when set, every membership
+   * Cloud edition only (P7, internal/federation.md): when set, every membership
    * MUTATION on a hub-origin workspace answers 403 `hub_managed` with this
    * pointer. undefined on oss — zero behavior change there.
    */

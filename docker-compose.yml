@@ -16,10 +16,10 @@ services:
       # Empty = same origin (the viewer stays under CSP: sandbox either way).
       - VIEWER_BASE_URL=${VIEWER_BASE_URL:-}
       - AUTH_SECRET=${AUTH_SECRET:-}
-      # Versioned API-key peppers for secret rotation (docs/security.md).
+      # Versioned API-key peppers for secret rotation (internal/security-runbooks.md).
       - API_KEY_PEPPERS=${API_KEY_PEPPERS:-}
       - SETUP_TOKEN=${SETUP_TOKEN:-}
-      # Break-glass superadmin allowlist (docs/security.md). Empty = dormant.
+      # Break-glass superadmin allowlist (internal/security-runbooks.md). Empty = dormant.
       - SUPERADMIN_EMAILS=${SUPERADMIN_EMAILS:-}
       # Orphaned-user cleanup grace in hours. Empty = default (72); 0 disables.
       - ORPHAN_USER_RETENTION_HOURS=${ORPHAN_USER_RETENTION_HOURS:-}

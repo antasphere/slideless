@@ -102,7 +102,7 @@ export interface CreateAuthOptions {
   /** Completion hook, run AFTER the cascade (the audit row's system actor). */
   afterUserDelete?: (user: { id: string; email: string }) => Promise<void>;
   /**
-   * The cloud edition's hub SSO binding (docs/federation.md, ADR 015).
+   * The cloud edition's hub SSO binding (internal/federation.md, ADR 015).
    * Present ONLY when the instance boots EDITION=cloud: registers the
    * `antasphere` genericOAuth relying party, the D9 trusted-link config,
    * and the per-login callback after-hook (JIT projection + re-sync). An
@@ -175,7 +175,7 @@ const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy
  *  - /sign-up/email is closed by the sign-up switches + the before-hook.
  *
  * On EDITION=cloud these are the SSO-bypass entrance the D1 hub-only posture
- * closes (docs/federation.md, ADR 017): a hub-JIT user (no credential
+ * closes (internal/federation.md, ADR 017): a hub-JIT user (no credential
  * account) could otherwise mail themselves a reset, SET a local password,
  * and mint sessions via /sign-in/email that skip the per-login hub re-sync.
  * P4's re-assertion still gates every such session, so this is posture, not
@@ -327,7 +327,7 @@ export function createAuth({
       // "Sign in with Antasphere" relying party. `disableSignUp` is
       // DELIBERATELY unset on this provider — hub SSO is the sanctioned
       // account entrance on cloud, the conscious FOURTH switch next to the
-      // three closed-signup switches (docs/federation.md). Discovery, token
+      // three closed-signup switches (internal/federation.md). Discovery, token
       // exchange (with RFC 8707 `resource`), and token verification all
       // live in the provider config hub-sso.ts builds.
       ...(hubSso ? [genericOAuth({ config: [hubSso.providerConfig()] })] : []),
@@ -443,7 +443,7 @@ export function createAuth({
       // Keeping requireLocalEmailVerified true (stated, not defaulted)
       // means a parked UNVERIFIED local account can never be taken over via
       // SSO; the cloud setup flow mints the operator emailVerified=true for
-      // exactly this reason (docs/federation.md, pinned by edition tests).
+      // exactly this reason (internal/federation.md, pinned by edition tests).
       ...(hubSso
         ? {
             accountLinking: {

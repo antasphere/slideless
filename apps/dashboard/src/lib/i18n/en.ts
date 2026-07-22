@@ -39,7 +39,7 @@ export const en = {
   // ── Error page ───────────────────────────────────────────────────────
   'error.generic': 'Something went wrong.',
 
-  // ── Hub-gate notice (cloud edition, docs/federation.md P4) ───────────
+  // ── Hub-gate notice (cloud edition, internal/federation.md P4) ───────────
   'suspended.unavailableTitle': 'Temporarily unavailable',
   'suspended.unavailableBody':
     'The Antasphere account service has been unreachable for a while, so this workspace is paused as a precaution. Access resumes automatically once it recovers.',
@@ -475,7 +475,7 @@ export const en = {
   'decks.pushDescription': 'Connect the CLI to this instance once, then push any folder with an index.html.',
   'decks.pushConnect': '1. Connect the CLI (mint a key on the API keys page, or use email sign-in):',
   'decks.pushPush': '2. Push your deck folder:',
-  'decks.pushDocs': 'The full guide lives in docs/cli.md of the Slideless repository.',
+  'decks.pushDocs': 'The full guide lives in docs/agents/cli.md of the Slideless repository.',
   'decks.copyCommandAria': 'Copy command',
   'decks.commandCopied': 'Command copied to clipboard',
 

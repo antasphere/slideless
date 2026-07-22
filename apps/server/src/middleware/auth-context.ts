@@ -44,7 +44,7 @@ export function isPublicApiPath(path: string): boolean {
  * `ok` with a `role` means "the caller's authoritative role just changed —
  * run THIS request under it"; a refusal carries the exact wire error. The
  * seam exists for the cloud edition's hub gates (org suspension + hub
- * membership re-assertion, docs/federation.md P4); oss never wires one.
+ * membership re-assertion, internal/federation.md P4); oss never wires one.
  * The gate also sees WHAT is being asked (`request`), so a policy can exempt
  * specific surfaces (e.g. suspension keeping GET /me readable — the
  * visible-but-blocked posture); implementations may ignore it.
@@ -80,7 +80,7 @@ export interface AuthContextDeps {
    * Post-resolution principal veto (cloud edition only). Runs here — in the
    * single credential resolver — rather than inside any one identity path,
    * so sessions, API keys, AND OAuth bearers all pass the same gate
-   * (docs/decisions/016). Absent (oss) = zero overhead, zero hub surface.
+   * (internal/decisions/016). Absent (oss) = zero overhead, zero hub surface.
    */
   principalGate?: PrincipalGate | undefined;
 }
@@ -192,7 +192,7 @@ export function authContext({
     }
 
     // Edition principal gate (cloud: hub org-status + membership
-    // re-assertion, docs/federation.md P4). AFTER the quota — hammering a
+    // re-assertion, internal/federation.md P4). AFTER the quota — hammering a
     // suspended org stays rate-bounded — and BEFORE the scope gate, so a
     // definitive hub refusal wins over any per-endpoint outcome. Cache-first
     // inside; the hub is never a hard round-trip in the hot path.
@@ -242,7 +242,7 @@ export function requireAuth(): MiddlewareHandler {
 }
 
 /**
- * Route guard (D2, docs/federation.md P6): an `origin='guest'` membership
+ * Route guard (D2, internal/federation.md P6): an `origin='guest'` membership
  * belongs to an EXTERNAL per-deck collaborator — it exists so the platform
  * can resolve them to a principal at all, not to make them a workspace
  * actor. Guests keep every ADR 013 per-deck surface their grant opens

@@ -36,7 +36,7 @@ jobs:
   # The Profile B rehearsal: a real multi-replica stack (advisory-lock
   # migration race, cross-replica sessions/API keys, Redis-shared rate
   # limits + the in-memory contrast, the api/worker SERVICE_ROLE split).
-  # Same script as the local drill — docs/scaling.md.
+  # Same script as the local drill — docs/operations/scaling.md.
   scale-drill:
     runs-on: ubuntu-latest
     steps:

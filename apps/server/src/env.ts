@@ -36,11 +36,12 @@ const envObjectSchema = z.object({
   PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
   /**
    * Base URL share links point at (the `/v/{secret}` viewer). Unset (default)
-   * = same origin as PUBLIC_BASE_URL — the ADR 012 proven-safe MVP: user HTML
+   * = same origin as PUBLIC_BASE_URL — the proven-safe default: user HTML
    * only ever renders under `Content-Security-Policy: sandbox` (opaque
    * origin, never `allow-same-origin`). Setting this to a dedicated
    * user-content origin (a domain that carries no app cookies and no API,
-   * fronting the same instance) is the ADR 012 hardening path: share URLs are
+   * fronting the same instance) is the documented hardening path
+   * (docs/security/viewer-security-model.md): share URLs are
    * then built on that origin, and a header regression can no longer expose
    * the dashboard session across a real origin boundary.
    */
@@ -53,7 +54,7 @@ const envObjectSchema = z.object({
   SERVICE_ROLE: z.enum(['all', 'api', 'worker']).default('all'),
   /** Session/JWKS encryption secret. Auto-generated into DATA_DIR/secret when unset or empty. */
   AUTH_SECRET: optionalString(z.string().min(32)),
-  /** Versioned API-key peppers for secret rotation: `<version>:<secret>` entries joined by `;` (e.g. `1:<historical AUTH_SECRET>;2:<new pepper>`, secrets >=32 chars). Version 1 defaults to AUTH_SECRET and, when pinned here, MUST keep the historical AUTH_SECRET-derived value or every existing key stops resolving; new keys mint under the highest version. Rotation runbook: docs/security.md. */
+  /** Versioned API-key peppers for secret rotation: `<version>:<secret>` entries joined by `;` (e.g. `1:<historical AUTH_SECRET>;2:<new pepper>`, secrets >=32 chars). Version 1 defaults to AUTH_SECRET and, when pinned here, MUST keep the historical AUTH_SECRET-derived value or every existing key stops resolving; new keys mint under the highest version. Rotation runbook: internal/security-runbooks.md. */
   API_KEY_PEPPERS: optionalString(
     z.string().superRefine((raw, ctx) => {
       try {
@@ -65,7 +66,7 @@ const envObjectSchema = z.object({
   ),
   /** When set, POST /api/v1/setup requires this token (constant-time compared). */
   SETUP_TOKEN: optionalString(z.string().min(8)),
-  /** Break-glass operator allowlist: comma-separated emails. A caller is superadmin ONLY on a SESSION whose VERIFIED email is listed here — machine credentials (API keys, OAuth tokens) never qualify, they 403 fail-closed. Unset (default) = the break-glass endpoints are dormant and 403 for everyone. Runbook: docs/security.md. */
+  /** Break-glass operator allowlist: comma-separated emails. A caller is superadmin ONLY on a SESSION whose VERIFIED email is listed here — machine credentials (API keys, OAuth tokens) never qualify, they 403 fail-closed. Unset (default) = the break-glass endpoints are dormant and 403 for everyone. Runbook: internal/security-runbooks.md. */
   SUPERADMIN_EMAILS: optionalString(
     z.string().superRefine((raw, ctx) => {
       try {
@@ -78,19 +79,19 @@ const envObjectSchema = z.object({
   /** Optional Google social login. */
   GOOGLE_CLIENT_ID: optionalString(z.string().min(1)),
   GOOGLE_CLIENT_SECRET: optionalString(z.string().min(1)),
-  /** Edition selector (docs/federation.md): `oss` (default, self-host — zero hub surface at runtime) or `cloud` (federates human login + entitlements to the Antasphere hub; requires the HUB_* block). Any other value refuses to boot — the selector decides the identity binding, so a typo must fail loudly, never silently bind `oss`. Also surfaced in discovery + usage events. */
+  /** Edition selector (internal/federation.md): `oss` (default, self-host — zero hub surface at runtime) or `cloud` (federates human login + entitlements to the Antasphere hub; requires the HUB_* block). Any other value refuses to boot — the selector decides the identity binding, so a typo must fail loudly, never silently bind `oss`. Also surfaced in discovery + usage events. */
   EDITION: z.preprocess(blankToUndefined, z.enum(['oss', 'cloud']).default('oss')),
   /** Hub OIDC issuer, e.g. https://account.antasphere.com — discovery, JWKS, and the authorize/token endpoints all derive from it. Required when EDITION=cloud; never read when EDITION=oss. */
   HUB_ISSUER_URL: z.preprocess(blankToUndefined, z.url().optional()),
   /** OAuth client id from this tool's entry in the hub TOOL_REGISTRY (e.g. tool-slideless-cloud). Required when EDITION=cloud. */
   HUB_CLIENT_ID: optionalString(z.string().min(4)),
-  /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Also authenticates the per-user refresh grant — there is NO service key: every hub read between logins presents the USER's own grant (docs/federation.md). Required when EDITION=cloud. */
+  /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Also authenticates the per-user refresh grant — there is NO service key: every hub read between logins presents the USER's own grant (internal/federation.md). Required when EDITION=cloud. */
   HUB_CLIENT_SECRET: optionalString(z.string().min(16)),
-  /** Name of the hub-set shared SSO hint cookie the dashboard reads client-side (docs/federation.md; NEVER a security input — it only gates whether a silent connect is attempted). Cloud-only; unset = the cross-repo default `ant_sso_hint`. Never read when EDITION=oss. */
+  /** Name of the hub-set shared SSO hint cookie the dashboard reads client-side (internal/federation.md; NEVER a security input — it only gates whether a silent connect is attempted). Cloud-only; unset = the cross-repo default `ant_sso_hint`. Never read when EDITION=oss. */
   HUB_HINT_COOKIE_NAME: optionalString(z.string().min(1)),
   /** Domain the hint cookie lives on (the hub sets it, tools clear it — both sides must agree). Cloud-only; unset = the hub issuer host minus its first label (account.antasphere.com → antasphere.com). Never read when EDITION=oss. */
   HUB_HINT_COOKIE_DOMAIN: optionalString(z.string().min(1)),
-  /** R7 escape hatch (docs/federation.md): acknowledge an EDITION change on an already-set-up instance. Without it, boot refuses an EDITION that differs from the one stamped at setup — flipping editions under existing users/workspaces changes identity semantics and must be a conscious operator act. */
+  /** R7 escape hatch (internal/federation.md): acknowledge an EDITION change on an already-set-up instance. Without it, boot refuses an EDITION that differs from the one stamped at setup — flipping editions under existing users/workspaces changes identity semantics and must be a conscious operator act. */
   EDITION_CHANGE_ALLOWED: booleanish.default(false),
   /** Build version stamped by CI (Docker ARG); 'dev' locally. */
   APP_VERSION: z.string().default('dev'),
@@ -157,7 +158,7 @@ export const envSchema = envObjectSchema.superRefine((env, ctx) => {
       ctx.addIssue({
         code: 'custom',
         path: [key],
-        message: 'required when EDITION=cloud — see docs/federation.md'
+        message: 'required when EDITION=cloud — see internal/federation.md'
       });
     }
   }
@@ -166,7 +167,7 @@ export const envSchema = envObjectSchema.superRefine((env, ctx) => {
 export type Env = z.infer<typeof envSchema>;
 
 /**
- * The hub half of the edition split (docs/federation.md), extracted once at
+ * The hub half of the edition split (internal/federation.md), extracted once at
  * boot. Returns null on EDITION=oss — the single switch every cloud seam
  * hangs off, so the self-host edition provably reads no hub config. The
  * tool's own OAuth resource URL is DERIVED (`<PUBLIC_BASE_URL>/mcp`, see
@@ -177,7 +178,7 @@ export interface HubConfig {
   clientId: string;
   clientSecret: string;
   /**
-   * The shared SSO hint cookie's name + domain (docs/federation.md,
+   * The shared SSO hint cookie's name + domain (internal/federation.md,
    * cross-repo contract with the hub): the HUB sets the cookie on any
    * response that mints a session; this tool only READS it client-side (a
    * silent-connect hint, never a security input) and CLEARS it on logout /
@@ -232,7 +233,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {
     `  ${'-'.repeat(width)}  ${'-'.repeat(40)}`,
     ...rows.map(([k, msg]) => `  ${k.padEnd(width)}  ${msg}`),
     '',
-    'See docs/env-reference.md (or .env.example) for every variable.',
+    'See docs/reference/env-reference.md (or .env.example) for every variable.',
     ''
   ];
   console.error(lines.join('\n'));

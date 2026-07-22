@@ -1,14 +1,16 @@
 # Connect an agent to your instance
 
-Agents are the primary authors on a Slideless instance. There are two
-surfaces, both self-contained on your box:
+Agents are the primary authors on a Slideless instance — this is the
+on-ramp for pointing one at yours. There are two surfaces, both
+self-contained on your box:
 
 - **The CLI** — for terminal agents (Claude Code, shell loops, CI): push
   folders, pull them back, mint share links. Full reference:
-  [cli.md](cli.md).
+  [cli.md](../agents/cli.md).
 - **The MCP endpoint** — for MCP hosts (claude.ai connectors, Claude
   Desktop, Claude Code, any MCP client): 18 `slideless_` tools over
-  streamable HTTP at `/mcp`. Full reference: [mcp-connector.md](mcp-connector.md).
+  streamable HTTP at `/mcp`. Full reference:
+  [mcp-connector.md](../agents/mcp-connector.md).
 
 Both authenticate against **your instance only**. There is no central
 Slideless service in either path — the key self-host property is that every
@@ -30,8 +32,7 @@ errors if none is set. That is deliberate: a self-hosted CLI must name its
 instance instead of silently talking to the wrong host.
 
 **Sign in, option A — browserless OTP** (requires the instance to have an
-email driver; in dev the [Mailpit overlay](dev-mailpit.md) provides one).
-Signs in existing accounts only — sign-up stays closed:
+email driver). Signs in existing accounts only — sign-up stays closed:
 
 ```bash
 slideless auth login-request  --api-url https://slides.example.com --email you@example.com
@@ -41,7 +42,7 @@ slideless auth login-complete --api-url https://slides.example.com --email you@e
 `login-complete` mints an `slk_` API key server-side (scopes
 `presentations:read` + `presentations:write`) and stores it as the active
 profile in `~/.config/antasphere/tools/slideless.json` (mode 600; the
-shared Antasphere CLI config home, see [cli.md](cli.md)).
+shared Antasphere CLI config home, see [cli.md](../agents/cli.md)).
 
 **Sign in, option B — paste a dashboard key** (works with `EMAIL_DRIVER=none`,
 and required for accounts with 2FA):
@@ -66,7 +67,7 @@ slideless pull "$id" ./out          # byte-exact round-trip
 same folder is a new immutable version), the first push writes
 `.slideless.json` into the folder so later pushes target the same deck, and
 `--json` on any command emits the wire shape for machine parsing. See
-[cli.md](cli.md) for sharing flags (expiry, password, pin-to-version),
+[cli.md](../agents/cli.md) for sharing flags (expiry, password, pin-to-version),
 collaborator grants, annotations export, and `slideless dev` (a local
 preview server with the exact viewer sandbox headers).
 
@@ -101,7 +102,7 @@ Tools act as the connected user — identity always comes from the verified
 credential, never from a tool parameter, and the API's fail-closed scope
 allowlist plus per-deck read privacy apply unchanged. The tool set (whoami,
 list/get/upload/download presentations, share tokens, collaborators,
-annotations) is tabled in [mcp-connector.md](mcp-connector.md); note the
+annotations) is tabled in [mcp-connector.md](../agents/mcp-connector.md); note the
 1 MiB `/mcp` body cap — tools answer a clean "use the CLI" error for bigger
 decks.
 
@@ -120,6 +121,6 @@ npx @modelcontextprotocol/inspector   # connect → OAuth dance → call slidele
 | OAuth token    | The scopes approved on the consent screen; 15-minute access tokens, rotating refresh                                | Deactivate the member, or revoke the client's consent |
 
 Machine credentials reach **only** the endpoints consciously allowlisted for
-their scopes (fail-closed — see [security.md](security.md)); member
+their scopes (fail-closed — see [security.md](../security/security.md)); member
 deactivation is re-checked on every request, so cutting a person off cuts
 their agents off in the same moment.

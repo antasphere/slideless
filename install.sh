@@ -4,7 +4,7 @@
 #     sudo bash -s -- --domain slideless.example.com
 #
 # Steps: prereqs (git, docker) → clone/update → setup.sh → UFW (22, 80, 443,
-# and 3000 only when no domain/proxy is used). TLS: see docs/reverse-proxy.md.
+# and 3000 only when no domain/proxy is used). TLS: see docs/self-hosting/reverse-proxy.md.
 set -euo pipefail
 
 info() { printf '\033[0;34m▸ %s\033[0m\n' "$*"; }
@@ -65,7 +65,7 @@ if command -v ufw >/dev/null || command -v apt-get >/dev/null; then
   ufw allow 443/tcp >/dev/null
   if [ -z "$DOMAIN" ]; then
     ufw allow 3000/tcp >/dev/null
-    info "port 3000 open (no domain given). Put Caddy in front for TLS: docs/reverse-proxy.md"
+    info "port 3000 open (no domain given). Put Caddy in front for TLS: docs/self-hosting/reverse-proxy.md"
   fi
   ufw --force enable >/dev/null
   success "firewall active"
@@ -73,7 +73,7 @@ fi
 
 success "install complete"
 if [ -n "$DOMAIN" ]; then
-  echo "Next: configure the reverse proxy for https://$DOMAIN (docs/reverse-proxy.md),"
+  echo "Next: configure the reverse proxy for https://$DOMAIN (docs/self-hosting/reverse-proxy.md),"
   echo "set TRUST_PROXY=true in $INSTALL_DIR/.env, then open https://$DOMAIN to finish setup."
 else
   echo "Next: open http://<server-ip>:3000 to finish setup (token in $INSTALL_DIR/.env)."

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * CLI cross-tool connect (cloud edition only — docs/federation.md P5):
+ * CLI cross-tool connect (cloud edition only — internal/federation.md P5):
  *
  *   POST /sso/cli-connect — exchange a hub-minted 120 s JWT for an `slk_` key
  *

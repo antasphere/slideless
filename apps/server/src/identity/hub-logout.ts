@@ -7,7 +7,7 @@ import { isLikelyEncrypted } from './hub-grant.js';
 import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 
 /**
- * RP-initiated logout against the hub (SL-2, docs/federation.md): "one
+ * RP-initiated logout against the hub (SL-2, internal/federation.md): "one
  * concept of being logged in" needs logout-anywhere to end the HUB session,
  * not just the local one. The hub's oauth-provider plugin exposes
  * `GET /oauth2/end-session` (RP-initiated logout); this module builds the

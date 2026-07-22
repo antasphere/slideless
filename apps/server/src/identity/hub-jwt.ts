@@ -6,7 +6,7 @@ const DISCOVERY_TTL_MS = 10 * 60 * 1000;
 /**
  * Verifies hub-minted RS256 JWTs against the hub's REMOTE JWKS (discovered
  * via OIDC discovery at the issuer root) — the cloud edition's trust anchor
- * for "Sign in with Antasphere" (docs/federation.md). Same discipline as
+ * for "Sign in with Antasphere" (internal/federation.md). Same discipline as
  * the local OauthJwtVerifier: hard issuer pinning, per-call audience
  * pinning, RS256 allowlist (implicitly rejects none/HS256), small clock
  * tolerance. jose's remote key set self-refreshes on an unknown `kid`; a

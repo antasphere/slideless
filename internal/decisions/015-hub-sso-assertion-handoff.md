@@ -12,7 +12,7 @@ posture. Kept for the race analysis and historical rationale.
 ## Context
 
 The cloud edition delegates human login to the Antasphere hub
-(docs/federation.md). Each hub login asserts exactly ONE org — chosen on the
+(internal/federation.md). Each hub login asserts exactly ONE org — chosen on the
 hub's consent org picker — as verified claims on the callback's access token
 (`workspace_id`, `role`, `workspace_name`, `email`; the id_token adds
 `email_verified` and `name`). Slideless must turn that assertion into local

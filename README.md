@@ -39,7 +39,7 @@ open http://localhost:3000
    When the instance has an email driver configured, agents and headless
    machines can skip the dashboard entirely with the OTP flow
    (`slideless auth login-request` / `login-complete` — see
-   [docs/cli.md](docs/cli.md)).
+   [docs/agents/cli.md](docs/agents/cli.md)).
 
 3. **Push a deck and share it.**
 
@@ -53,7 +53,7 @@ open http://localhost:3000
 
 Upgrades: `./update.sh`. Data survives in the `pg_data` and `app_data`
 volumes; migrations apply automatically at boot under an advisory lock.
-Fresh VPS? There is a one-liner installer — see [docs/install.md](docs/install.md).
+Fresh VPS? There is a one-liner installer — see [docs/self-hosting/install.md](docs/self-hosting/install.md).
 
 ## What an instance does
 
@@ -68,20 +68,21 @@ Fresh VPS? There is a one-liner installer — see [docs/install.md](docs/install
 - **A sandboxed public viewer.** User HTML renders under
   `Content-Security-Policy: sandbox` — an opaque origin with no cookies, no
   storage, no credentialed API. See
-  [docs/viewer-security-model.md](docs/viewer-security-model.md).
+  [docs/security/viewer-security-model.md](docs/security/viewer-security-model.md).
 - **Collaborators + annotations.** Per-deck dev grants (external people who
   can push new versions of one deck) and reviewer annotations captured
   straight from annotator share links into the owner's inbox.
 - **Agents as first-class users.** The `slideless` CLI
-  ([docs/cli.md](docs/cli.md)), the `/mcp` endpoint with 18 `slideless_`
-  tools ([docs/mcp-connector.md](docs/mcp-connector.md)), scoped `slk_` API
+  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 18 `slideless_`
+  tools ([docs/agents/mcp-connector.md](docs/agents/mcp-connector.md)), scoped `slk_` API
   keys, and a browserless email-OTP → API-key login. Start at
-  [docs/connect-an-agent.md](docs/connect-an-agent.md).
+  [docs/getting-started/connect-an-agent.md](docs/getting-started/connect-an-agent.md).
 - **A real multi-user platform underneath.** SvelteKit dashboard (English
   and French), members + invitations, closed sign-up, optional per-user 2FA,
   audit log, GDPR workspace export (opt-in `data:export` scope) and account
   deletion, file storage (local volume or S3), background jobs, Prometheus
-  `/metrics`, break-glass recovery. Posture: [docs/security.md](docs/security.md).
+  `/metrics`, break-glass recovery. Posture:
+  [docs/security/security.md](docs/security/security.md).
 
 ## Self-hosted vs. cloud — what this repo does not include
 
@@ -99,28 +100,29 @@ here:
 
 ## Repository layout
 
-| Path                | What it is                                                                     |
-| ------------------- | ------------------------------------------------------------------------------ |
-| `apps/server`       | The Node 22 Hono monolith: API, viewer, health, metrics, MCP, static dashboard |
-| `apps/dashboard`    | SvelteKit SPA (adapter-static), built into the server image                    |
-| `packages/db`       | Drizzle schema + committed versioned migrations + advisory-lock migrator       |
-| `packages/contract` | zod schemas + route contracts (OpenAPI source of truth)                        |
-| `packages/sdk`      | Typed fetch client over the contract                                           |
-| `packages/cli`      | Typed CLI over the SDK; the `slideless` binary ([docs/cli.md](docs/cli.md))    |
-| `docs/`             | Operator guides + ADRs ([docs/README.md](docs/README.md) is the index)         |
+| Path                | What it is                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| `apps/server`       | The Node 22 Hono monolith: API, viewer, health, metrics, MCP, static dashboard            |
+| `apps/dashboard`    | SvelteKit SPA (adapter-static), built into the server image                               |
+| `packages/db`       | Drizzle schema + committed versioned migrations + advisory-lock migrator                  |
+| `packages/contract` | zod schemas + route contracts (OpenAPI source of truth)                                   |
+| `packages/sdk`      | Typed fetch client over the contract                                                      |
+| `packages/cli`      | Typed CLI over the SDK; the `slideless` binary ([docs/agents/cli.md](docs/agents/cli.md)) |
+| `docs/`             | Public product docs ([docs/index.md](docs/index.md) is the landing page)                  |
+| `internal/`         | Engineering docs + ADRs ([internal/decisions/](internal/decisions/))                      |
 
 ## Operating an instance
 
-| Topic                       | Doc                                                            |
-| --------------------------- | -------------------------------------------------------------- |
-| Install (one-liner, manual) | [docs/install.md](docs/install.md)                             |
-| Every env var               | [docs/env-reference.md](docs/env-reference.md)                 |
-| Reverse proxy + TLS (Caddy) | [docs/reverse-proxy.md](docs/reverse-proxy.md)                 |
-| Upgrades + rollback         | [docs/upgrade.md](docs/upgrade.md)                             |
-| Backup + restore            | [docs/backup-restore.md](docs/backup-restore.md)               |
-| Connect an agent (CLI/MCP)  | [docs/connect-an-agent.md](docs/connect-an-agent.md)           |
-| Viewer security model       | [docs/viewer-security-model.md](docs/viewer-security-model.md) |
-| Scaling beyond one box      | [docs/deployment-profiles.md](docs/deployment-profiles.md)     |
+| Topic                       | Doc                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| Install (one-liner, manual) | [docs/self-hosting/install.md](docs/self-hosting/install.md)                         |
+| Every env var               | [docs/reference/env-reference.md](docs/reference/env-reference.md)                   |
+| Reverse proxy + TLS (Caddy) | [docs/self-hosting/reverse-proxy.md](docs/self-hosting/reverse-proxy.md)             |
+| Upgrades + rollback         | [docs/self-hosting/upgrade.md](docs/self-hosting/upgrade.md)                         |
+| Backup + restore            | [docs/operations/backup-restore.md](docs/operations/backup-restore.md)               |
+| Connect an agent (CLI/MCP)  | [docs/getting-started/connect-an-agent.md](docs/getting-started/connect-an-agent.md) |
+| Viewer security model       | [docs/security/viewer-security-model.md](docs/security/viewer-security-model.md)     |
+| Scaling beyond one box      | [docs/self-hosting/deployment-profiles.md](docs/self-hosting/deployment-profiles.md) |
 
 ## Development
 
@@ -137,7 +139,7 @@ DATABASE_URL=postgres://slideless:<pw>@localhost:5432/slideless pnpm --filter @s
 For local development with a real, inspectable mail-catcher (Mailpit — the
 OTP and invitation emails land in a local inbox), run the dev overlay:
 `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
-([docs/dev-mailpit.md](docs/dev-mailpit.md)).
+([internal/dev-mailpit.md](internal/dev-mailpit.md)).
 
 Built on the codika-platform-template chassis (instantiated at template
 commit `b0dcd13`). Template-level friction discovered while building

@@ -42,7 +42,7 @@ export interface InvitationRouteDeps {
   registry: PlatformRegistry;
   logger: Logger;
   /**
-   * Cloud edition only (P7, docs/federation.md): when set, invitation
+   * Cloud edition only (P7, internal/federation.md): when set, invitation
    * MUTATIONS targeting a hub-origin workspace answer 403 `hub_managed`
    * with this pointer. undefined on oss — zero behavior change there.
    */

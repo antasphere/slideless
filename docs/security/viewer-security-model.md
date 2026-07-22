@@ -3,10 +3,7 @@
 Slideless's whole point is rendering **untrusted, user-authored HTML** to
 anonymous visitors. This page is what an operator needs to know about how
 that is made safe, what the guarantees are, and the one hardening knob.
-(The engineering rationale and browser evidence live in
-[ADR 012](decisions/012-viewer-serving-model.md) and
-[ADR 013](decisions/013-deck-read-privacy.md); the full platform posture in
-[security.md](security.md).)
+(The full platform posture lives in [security.md](security.md).)
 
 ## What a share link is
 
@@ -38,7 +35,7 @@ Referrer-Policy: no-referrer
 localStorage/IndexedDB, cannot register service workers, and cannot make a
 credentialed call to the instance's API — verified empirically on Chromium,
 WebKit, and Firefox with a hostile deck and a live owner session in the
-browser (ADR 012). The dashboard's own preview additionally wraps decks in
+browser. The dashboard's own preview additionally wraps decks in
 a `sandbox` iframe as a second, independent lock.
 
 This is the **safe default**: with zero configuration, a share link on the
@@ -61,11 +58,11 @@ session across the real origin boundary — the browser itself separates the
 two worlds. The sandbox headers stay on as defense-in-depth. This is the
 recommended setup for any instance where outsiders routinely open share
 links. (Per-deck subdomains — full storage isolation for interactive
-`app`-kind decks — are the target architecture and remain open; ADR 012.)
+`app`-kind decks — are the target architecture and remain open.)
 
 ## Who can read a deck at all
 
-Deck reads are **private by construction** (ADR 013), never workspace-wide:
+Deck reads are **private by construction**, never workspace-wide:
 
 - A deck's content is readable by its **owner**, workspace
   **admins/owners**, an **active per-deck collaborator grant**, or — for
@@ -92,7 +89,7 @@ Deck reads are **private by construction** (ADR 013), never workspace-wide:
 ## Operator checklist
 
 - Serve the instance over **HTTPS behind a reverse proxy**
-  ([reverse-proxy.md](reverse-proxy.md)) — share secrets travel in URLs.
+  ([reverse-proxy.md](../self-hosting/reverse-proxy.md)) — share secrets travel in URLs.
 - Consider `VIEWER_BASE_URL` (above) once share links leave your team.
 - Never hand out `data:export`-scoped keys casually; never share the
   `/v/{secret}` URL of anything sensitive without an expiry or password.

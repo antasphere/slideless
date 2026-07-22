@@ -15,7 +15,7 @@ import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
 
 /**
- * Phase 6 — the cloud SSO-first collaborator claim journey (docs/federation.md;
+ * Phase 6 — the cloud SSO-first collaborator claim journey (internal/federation.md;
  * binding plan §5), against the FakeHub:
  *
  *  - On EDITION=cloud the claim endpoint's account-creation branch is CLOSED

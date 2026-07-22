@@ -4,7 +4,7 @@ import { FakeHub } from '../fake-hub.js';
 
 /**
  * HubJwtVerifier — the cloud edition's trust anchor for hub-minted tokens
- * (docs/federation.md). Mirrors oauth-jwt.ts's discipline: hard issuer +
+ * (internal/federation.md). Mirrors oauth-jwt.ts's discipline: hard issuer +
  * audience pinning, RS256 allowlist, one forced key refresh on an unknown
  * signature. Every rejection here is a fail-closed SSO login.
  */

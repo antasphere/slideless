@@ -127,7 +127,7 @@ export interface AnnotationListParams extends ListParams {
 /**
  * Options for the non-idempotent create calls. Setting `idempotencyKey`
  * (any client-chosen string ≤200 chars, e.g. a UUID) makes a retried create
- * replay the original response instead of double-creating (docs/security.md).
+ * replay the original response instead of double-creating (docs/security/security.md).
  */
 export interface IdempotentRequestOptions {
   idempotencyKey?: string;

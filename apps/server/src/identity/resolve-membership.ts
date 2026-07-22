@@ -36,7 +36,7 @@ export function isWorkspaceSelector(value: string): boolean {
 }
 
 /**
- * The cloud edition's unknown-workspace retry hook (docs/federation.md):
+ * The cloud edition's unknown-workspace retry hook (internal/federation.md):
  * a verified credential naming a workspace the local join cannot see MAY be
  * a hub org granted since the last reconcile pass — "invited at the hub,
  * clicks a deep link". Boot wires ONE cached reconcile; the resolver then

@@ -87,7 +87,7 @@ export interface CollaboratorRouteDeps {
   presentations: PresentationService;
   collaborators: CollaboratorService;
   /**
-   * Cloud edition only (docs/federation.md P6) — the same presence switch
+   * Cloud edition only (internal/federation.md P6) — the same presence switch
    * every cloud seam keys on (boot constructs it iff EDITION=cloud, so oss
    * provably carries zero hub surface here). Present, the claim endpoint's
    * account-creation branch is CLOSED (409 sso_required): cloud identity is

@@ -15,7 +15,7 @@ import type { HubConfig } from '../env.js';
 import type { Logger } from '../logger.js';
 
 /**
- * The edition split (docs/federation.md): one codebase, one Docker image,
+ * The edition split (internal/federation.md): one codebase, one Docker image,
  * two seam bindings selected purely by instance config. This module is the
  * ONLY place edition decides which implementations the boot-time registry
  * gets — `oss` binds the local defaults byte-identically; `cloud` rebinds
@@ -121,7 +121,7 @@ export function bindEditionSeams(
     { hubIssuer: hub.issuerUrl },
     'EDITION=cloud: hub SSO is the human entrance (identity resolution stays local sessions); ' +
       'org/membership truth is reconciled live AS THE USER via each user’s own hub grant ' +
-      '(docs/federation.md).'
+      '(internal/federation.md).'
   );
   const gate = deps.reconciler
     ? new HubLiveGate({ db: deps.db, reconciler: deps.reconciler, logger })

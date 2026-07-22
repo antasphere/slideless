@@ -54,7 +54,7 @@ export { PlatformApiError };
 /**
  * Human-readable message for a thrown API error (toast copy). Only the
  * FALLBACKS are localized — a server-originated e.message passes through
- * untranslated (the API speaks English; see docs/i18n.md).
+ * untranslated (the API speaks English; see internal/i18n.md).
  */
 export function errorMessage(e: unknown, fallback = t('common.genericError')): string {
   if (e instanceof PlatformApiError) {

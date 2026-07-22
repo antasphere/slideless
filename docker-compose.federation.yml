@@ -1,4 +1,4 @@
-# Federation dev harness (docs/federation.md): the Antasphere hub AND a
+# Federation dev harness (internal/federation.md): the Antasphere hub AND a
 # Slideless CLOUD-edition instance in one compose project, pre-wired so the
 # Phase 3+ SSO work has a live two-instance loop to develop against.
 #
@@ -30,12 +30,12 @@
 #   2. Slideless setup: POST http://localhost:3310/api/v1/setup or open
 #      http://slideless.localhost:3310. It boots EDITION=cloud. There is NO
 #      service key to mint: every hub read between logins presents the
-#      USER's own grant (offline_access from SSO — docs/federation.md).
+#      USER's own grant (offline_access from SSO — internal/federation.md).
 #
 # The hub's TOOL_REGISTRY below seeds the OAuth client `tool-slideless-cloud`
 # at hub boot (look for "tool registry: client seeded" in `docker compose -f
 # docker-compose.federation.yml logs hub`). Redirect URI + resource URL are
-# the localhost twins of the production entry (docs/federation.md carries
+# the localhost twins of the production entry (internal/federation.md carries
 # the real slideless.antasphere.com recipe).
 #
 # The hub repo is a sibling checkout; override FEDERATION_HUB_DIR if your
@@ -68,7 +68,7 @@ services:
       - EMAIL_FROM=Antasphere Federation Dev <dev@antasphere.local>
       - LOG_LEVEL=info
       # Seeds the Slideless cloud tool client at boot (idempotent upsert).
-      # Dev twin of the production recipe in docs/federation.md.
+      # Dev twin of the production recipe in internal/federation.md.
       - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:3310/mcp","redirectUris":["http://slideless.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"}]'
     ports:
       - '127.0.0.1:3300:3300'
@@ -118,7 +118,7 @@ services:
       - PORT=3310
       - DATABASE_URL=postgres://slideless:federation-dev@db:5432/slideless
       - PUBLIC_BASE_URL=http://slideless.localhost:3310
-      # ── The cloud edition (docs/federation.md) ──────────────────────────
+      # ── The cloud edition (internal/federation.md) ──────────────────────────
       - EDITION=cloud
       - HUB_ISSUER_URL=http://hub.localhost:3300
       - HUB_CLIENT_ID=tool-slideless-cloud

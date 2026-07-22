@@ -162,7 +162,7 @@ export class ApiKeyService {
     // unpinned key selects like a session. Guest capability limits (D2) bind
     // machine credentials too — the origin of the LIVE membership rides the
     // principal, and accountRef carries the projection id the cloud live
-    // gate keys on (docs/federation.md).
+    // gate keys on (internal/federation.md).
     const selector = row.workspaceId ?? requested;
     let member = await resolveMembership(this.db, row.createdBy, selector);
     if (!member && selector && this.onWorkspaceMiss && isWorkspaceSelector(selector)) {

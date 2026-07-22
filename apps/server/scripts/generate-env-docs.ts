@@ -1,5 +1,5 @@
 /**
- * Generates docs/env-reference.md from the zod env schema (the single
+ * Generates docs/reference/env-reference.md from the zod env schema (the single
  * configuration entry point). Types/defaults/required come from schema
  * introspection; prose comes from the doc comment above each key in
  * env.ts — so the reference cannot drift from the code that parses the
@@ -104,5 +104,5 @@ ${table(required)}
 ${table(optional)}
 `;
 
-await writeFile(join(here, '../../../docs/env-reference.md'), out);
+await writeFile(join(here, '../../../docs/reference/env-reference.md'), out);
 console.log(`env reference written: ${rows.length} variables (${required.length} required)`);

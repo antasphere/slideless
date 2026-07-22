@@ -6,7 +6,7 @@ import * as sso from './sso-helpers.js';
 
 /**
  * "Sign in with Antasphere" under the user-scoped federation model
- * (docs/federation.md), exercised against the FakeHub (real OIDC discovery
+ * (internal/federation.md), exercised against the FakeHub (real OIDC discovery
  * + JWKS + token endpoint with refresh rotation + a caller-scoped
  * /api/v1/orgs):
  *

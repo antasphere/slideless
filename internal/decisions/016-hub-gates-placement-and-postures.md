@@ -14,7 +14,7 @@ verdicts inherit. Kept for the placement rationale.
 Phase 3 made hub truth authoritative **at login**: SSO verifies the org
 assertion, projects the org, and (re-)asserts the membership. But tool
 sessions live 365 days, and API keys and OAuth grants live independently of
-logins. Two propagation problems remain (docs/federation.md, "The hub
+logins. Two propagation problems remain (internal/federation.md, "The hub
 gates"):
 
 1. a hub org that gets **suspended** (or deleted) must stop working in the
