@@ -972,6 +972,37 @@ NOT EXISTS(row WHERE dismissed_at IS NOT NULL)` — absence means the
     the tool's existing connect test suite is a BEHAVIORAL PIN — it must
     pass unchanged against the extracted seam before the copy is deleted.
 
+## 27. Docs split: public `docs/` + engineering `internal/` (docs-site sync)
+
+91. **The template's flat `docs/` mixes publishable operator guides with
+    engineering material (ADRs, verification drills, gap audits) — a public
+    docs-site sync can't consume it.** Slideless restructured for the
+    Antasphere docs site (docs.antasphere.com, one sidebar per tool,
+    auto-synced from the repo): `docs/` now holds ONLY publishable pages,
+    organized in subfolders that map 1:1 to sidebar groups
+    (`getting-started/`, `agents/`, `self-hosting/`, `operations/`,
+    `security/`, `reference/`), with a `docs/nav.yml` contract the sync
+    consumes (`product` + `description` + `groups[].title/pages[]`;
+    docs/-relative extensionless page ids, every `.md` listed exactly once)
+    and `docs/index.md` as the authored landing page (the old
+    `docs/README.md` index is retired). Everything engineering-facing moved
+    to a repo-root `internal/`: `internal/decisions/` (all ADRs),
+    verification.md, production-readiness.md, backup-and-data-sovereignty.md,
+    dev-mailpit.md, i18n.md, plus runbook halves split OUT of public pages
+    (security break-glass/rotation → `internal/security-runbooks.md`, the
+    CLI npm release process → `internal/cli-release.md`, scale-drill bug
+    narratives → `internal/scale-drill-findings.md`). Rules that made it
+    publishable: source pages stay `.md`, H1-led, NO frontmatter (title
+    derives from the H1, description from the opening paragraph — every
+    public page opens with a crisp standalone intro); public pages never
+    link into `internal/`; ADR citations on public pages become inline
+    "why"s or are dropped. Fix: adopt the same split in the template
+    (docs/ = public + nav.yml, internal/ = ADRs + engineering docs) so
+    instantiated tools are docs-site-ready without this migration — and
+    note the generated env-reference's zod doc-comments then live under
+    `docs/reference/`, so `generate-env-docs.ts` + the `docs:env` script
+    paths must match.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
