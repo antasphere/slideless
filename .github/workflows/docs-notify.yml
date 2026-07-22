@@ -7,7 +7,7 @@ name: Notify docs site
 on:
   push:
     branches: [prod]
-    paths: ["docs/**"]
+    paths: ['docs/**']
 
 jobs:
   notify:
