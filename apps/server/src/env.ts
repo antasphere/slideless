@@ -107,7 +107,7 @@ const envObjectSchema = z.object({
   SMTP_URL: optionalString(z.string().min(1)),
   /** Required when EMAIL_DRIVER=resend. */
   RESEND_API_KEY: optionalString(z.string().min(1)),
-  /** Sender, e.g. "Slideless <noreply@slideless.app>". Required when a driver delivers. */
+  /** Sender, e.g. `Slideless <noreply@slideless.app>`. Required when a driver delivers. */
   EMAIL_FROM: optionalString(z.string().min(3)),
   /** When set, rate limits (and later caches) are shared across replicas. */
   REDIS_URL: optionalString(z.string().min(1)),
