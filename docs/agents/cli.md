@@ -144,6 +144,8 @@ slideless push ./deck                            # next push = version 2 of the 
 slideless pull <id> ./out                        # byte-exact download of the latest version
 slideless pull <id> ./out --at 1                 # …or any pinned version
 slideless pull-annotations [id] [--version N] [--status open|resolved] [--out notes.json]
+slideless annotation resolve <id> <annotationId> # mark a note resolved
+slideless annotation reopen <id> <annotationId>  # …and flip it back open
 slideless dev ./deck --port 4173 --no-open       # local preview, no backend
 ```
 
@@ -193,6 +195,7 @@ slideless unshare <id>                                    # revoke ALL active li
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed
 slideless pin <id> <tokenId> --to-version 1               # freeze a recipient on v1
 slideless pin <id> <tokenId> --latest                     # follow the latest again
+slideless tokens <id> [--all]                             # list links + access stats (opens, last opened)
 ```
 
 Secrets are stored hash-only server-side: the URL printed at creation is
@@ -211,6 +214,7 @@ slideless uninvite <id> <collaboratorId>           # revoke the grant
 ```bash
 slideless list [--all]        # presentations, newest first
 slideless get <id>            # metadata
+slideless versions <id> [--all]  # version history, newest first (numbers line up with pull --at)
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed
 slideless files list|upload|download|rm

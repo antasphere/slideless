@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
 import { loadConfig, saveConfig } from '../src/config.js';
-import { DECK, routedHarness, tempConfigEnv, type Route } from './harness.js';
+import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './harness.js';
 
 /**
  * Profile resolution + the OTP auth pair, against a routed fake fetch and an
@@ -451,6 +451,131 @@ describe('deck + sharing commands (request shapes)', () => {
     expect(code).toBe(0);
     expect(created).toEqual(['a@x.co', 'b@x.co']);
     expect(h.out()).toContain('sent');
+  });
+
+  it('tokens lists share links with access stats (--all paginates; --json wire shape)', async () => {
+    const OPENED = {
+      ...TOKEN,
+      id: '99999999-9999-9999-9999-999999999999',
+      name: 'Alice',
+      versionMode: 'pinned',
+      pinnedVersion: 2,
+      canAnnotate: true,
+      accessCount: 3,
+      lastAccessedAt: '2026-07-11T00:00:00.000Z'
+    };
+    const REVOKED = { ...TOKEN, revokedAt: '2026-07-01T00:00:00.000Z' };
+    const h = routedHarness([
+      {
+        method: 'GET',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/tokens$`),
+        reply: ({ path }) =>
+          path.includes('cursor=next')
+            ? { body: { shareTokens: [REVOKED], nextCursor: null } }
+            : { body: { shareTokens: [OPENED], nextCursor: 'next' } }
+      }
+    ]);
+    const code = await run(['tokens', DECK.id, '--all', '--url', 'http://x', '--api-key', 'slk_k_s'], h.io);
+    expect(h.err()).toBe('');
+    expect(code).toBe(0);
+    expect(h.out()).toContain('3 opens');
+    expect(h.out()).toContain('pinned v2');
+    expect(h.out()).toContain('annotator');
+    expect(h.out()).toContain('revoked');
+
+    const h2 = routedHarness([
+      {
+        method: 'GET',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/tokens$`),
+        reply: () => ({ body: { shareTokens: [TOKEN], nextCursor: 'n1' } })
+      }
+    ]);
+    expect(await run(['tokens', DECK.id, '--json', '--url', 'http://x', '--api-key', 'slk_k_s'], h2.io)).toBe(
+      0
+    );
+    expect(JSON.parse(h2.out())).toEqual({ shareTokens: [TOKEN], nextCursor: 'n1' });
+  });
+
+  it('versions lists the history with --json wire shape', async () => {
+    const V2 = {
+      ...VERSION_ROW,
+      version: 2,
+      sizeBytes: 2048,
+      fileCount: 3,
+      createdByRole: 'dev',
+      createdAt: '2026-07-12T00:00:00.000Z'
+    };
+    const route: Route = {
+      method: 'GET',
+      path: new RegExp(`/api/v1/presentations/${DECK.id}/versions$`),
+      reply: () => ({ body: { versions: [V2, VERSION_ROW], nextCursor: null } })
+    };
+    const h = routedHarness([route]);
+    const code = await run(['versions', DECK.id, '--url', 'http://x', '--api-key', 'slk_k_s'], h.io);
+    expect(h.err()).toBe('');
+    expect(code).toBe(0);
+    expect(h.out()).toContain('v2');
+    expect(h.out()).toContain('2.0 KB');
+    expect(h.out()).toContain('3 files');
+    expect(h.out()).toContain('u1 (dev)');
+
+    const h2 = routedHarness([route]);
+    expect(
+      await run(['versions', DECK.id, '--json', '--url', 'http://x', '--api-key', 'slk_k_s'], h2.io)
+    ).toBe(0);
+    expect(JSON.parse(h2.out())).toEqual({ versions: [V2, VERSION_ROW], nextCursor: null });
+  });
+
+  it('annotation resolve / reopen PATCH the status', async () => {
+    const ANNOTATION_ID = '99999999-0000-0000-0000-999999999999';
+    const ANNOTATION = {
+      id: ANNOTATION_ID,
+      presentationId: DECK.id,
+      version: 1,
+      shareTokenId: null,
+      authorUserId: 'u1',
+      authorName: null,
+      selection: {},
+      body: 'Fix the chart',
+      status: 'resolved',
+      createdAt: '2026-07-10T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z'
+    };
+    const h = routedHarness([
+      {
+        method: 'PATCH',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/annotations/${ANNOTATION_ID}$`),
+        reply: ({ body }) => {
+          expect(body).toEqual({ status: 'resolved' });
+          return { body: ANNOTATION };
+        }
+      }
+    ]);
+    const code = await run(
+      ['annotation', 'resolve', DECK.id, ANNOTATION_ID, '--url', 'http://x', '--api-key', 'slk_k_s'],
+      h.io
+    );
+    expect(h.err()).toBe('');
+    expect(code).toBe(0);
+    expect(h.out()).toContain(`Annotation ${ANNOTATION_ID} resolved.`);
+
+    const h2 = routedHarness([
+      {
+        method: 'PATCH',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/annotations/${ANNOTATION_ID}$`),
+        reply: ({ body }) => {
+          expect(body).toEqual({ status: 'open' });
+          return { body: { ...ANNOTATION, status: 'open' } };
+        }
+      }
+    ]);
+    expect(
+      await run(
+        ['annotation', 'reopen', DECK.id, ANNOTATION_ID, '--url', 'http://x', '--api-key', 'slk_k_s'],
+        h2.io
+      )
+    ).toBe(0);
+    expect(h2.out()).toContain(`Annotation ${ANNOTATION_ID} reopened.`);
   });
 
   it('invite prints the claim link; uninvite revokes', async () => {

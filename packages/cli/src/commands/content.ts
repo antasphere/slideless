@@ -6,6 +6,7 @@ import { PlatformApiError } from '@slideless/sdk';
 import type { ManifestEntry, PresentationKind } from '@slideless/contract';
 import {
   CliUsageError,
+  fmtBytes,
   printJson,
   requireApiKey,
   resolveContext,
@@ -18,16 +19,11 @@ import { startDevServer } from '../devserver.js';
 
 /**
  * Authoring commands: push (the 3-step upload protocol), pull (byte-exact
- * round trip), pull-annotations, and dev (local sandboxed preview).
+ * round trip), pull-annotations, annotation resolve/reopen, and dev (local
+ * sandboxed preview).
  */
 
 const UPLOAD_CONCURRENCY = 4;
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function toManifest(scan: DeckScan): ManifestEntry[] {
   return scan.files.map((f) => ({
@@ -291,6 +287,24 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       }
     );
 
+  const annotation = program
+    .command('annotation')
+    .description('Update deck annotations (pull-annotations lists them)');
+
+  annotation
+    .command('resolve <id> <annotationId>')
+    .description('Mark an annotation resolved')
+    .action((id: string, annotationId: string, _opts, cmd: Command) =>
+      setAnnotationStatus(cmd, io, id, annotationId, 'resolved')
+    );
+
+  annotation
+    .command('reopen <id> <annotationId>')
+    .description('Reopen a resolved annotation')
+    .action((id: string, annotationId: string, _opts, cmd: Command) =>
+      setAnnotationStatus(cmd, io, id, annotationId, 'open')
+    );
+
   program
     .command('dev [path]')
     .description(
@@ -341,6 +355,21 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         });
       }
     );
+}
+
+/** One PATCH behind both status verbs: `annotation resolve` / `annotation reopen`. */
+async function setAnnotationStatus(
+  cmd: Command,
+  io: CliIo,
+  id: string,
+  annotationId: string,
+  status: 'open' | 'resolved'
+): Promise<void> {
+  const ctx = resolveContext(cmd, io);
+  await requireApiKey(ctx);
+  const updated = await ctx.client.updateAnnotation(id, annotationId, { status });
+  if (ctx.json) return printJson(io, updated);
+  io.out.write(`Annotation ${updated.id} ${status === 'resolved' ? 'resolved' : 'reopened'}.\n`);
 }
 
 /** `dev` is backendless: only the --json flag matters, never URL/key. */

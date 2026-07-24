@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { ListParams } from '@slideless/sdk';
 import type { ShareTokenCreate } from '@slideless/contract';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
 
@@ -156,6 +157,55 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         );
       }
     );
+
+  program
+    .command('tokens <id>')
+    .description("List a deck's share tokens with access stats (newest first, cursor-paginated)")
+    .option('--cursor <cursor>', 'resume from a previous nextCursor')
+    .option('--limit <n>', 'page size (1-100)', (v: string) => parseInt(v, 10))
+    .option('--all', 'follow nextCursor until every page is fetched', false)
+    .action(async (id: string, opts: { cursor?: string; limit?: number; all: boolean }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      const params: ListParams = {};
+      if (opts.cursor) params.cursor = opts.cursor;
+      if (opts.limit !== undefined) params.limit = opts.limit;
+      const first = await ctx.client.shareTokens(id, params);
+      const rows = [...first.shareTokens];
+      if (opts.all) {
+        let cursor = first.nextCursor;
+        while (cursor) {
+          const page = await ctx.client.shareTokens(id, { ...params, cursor });
+          rows.push(...page.shareTokens);
+          cursor = page.nextCursor;
+        }
+      }
+      const nextCursor = opts.all ? null : first.nextCursor;
+      if (ctx.json) return printJson(io, { shareTokens: rows, nextCursor });
+      if (rows.length === 0) {
+        io.out.write('No share tokens.\n');
+        return;
+      }
+      io.out.write(
+        table(
+          rows.map((t) => [
+            t.id,
+            t.name,
+            `${t.accessCount} open${t.accessCount === 1 ? '' : 's'}`,
+            t.lastAccessedAt ?? 'never',
+            t.versionMode === 'pinned' ? `pinned v${t.pinnedVersion}` : 'latest',
+            [t.canAnnotate ? 'annotator' : null, t.hasPassword ? 'password' : null]
+              .filter(Boolean)
+              .join(', ') || '-',
+            t.expiresAt ? `expires ${t.expiresAt}` : '-',
+            t.revokedAt ? 'revoked' : 'active'
+          ])
+        )
+      );
+      if (nextCursor) {
+        io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
+      }
+    });
 
   program
     .command('invite <id>')

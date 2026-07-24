@@ -6,18 +6,12 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Command } from 'commander';
 import { PlatformApiError, type ListParams } from '@slideless/sdk';
-import { printJson, requireApiKey, resolveContext, type CliIo } from '../context.js';
+import { fmtBytes, printJson, requireApiKey, resolveContext, type CliIo } from '../context.js';
 
 /**
  * The platform substrate commands inherited from the template: instance
  * discovery, the raw workspace-files surface, and the full export download.
  */
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export function registerFileCommands(program: Command, io: CliIo): void {
   program

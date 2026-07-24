@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import type { ListParams } from '@slideless/sdk';
-import { printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
+import { fmtBytes, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
 
-/** Deck management: list / get / delete. */
+/** Deck management: list / get / versions / delete. */
 
 export function registerDeckCommands(program: Command, io: CliIo): void {
   program
@@ -57,6 +57,50 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
           `  created:  ${deck.createdAt}\n` +
           `  updated:  ${deck.updatedAt}\n`
       );
+    });
+
+  program
+    .command('versions <id>')
+    .description("List a deck's version history (newest first, cursor-paginated)")
+    .option('--cursor <cursor>', 'resume from a previous nextCursor')
+    .option('--limit <n>', 'page size (1-100)', (v: string) => parseInt(v, 10))
+    .option('--all', 'follow nextCursor until every page is fetched', false)
+    .action(async (id: string, opts: { cursor?: string; limit?: number; all: boolean }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      const params: ListParams = {};
+      if (opts.cursor) params.cursor = opts.cursor;
+      if (opts.limit !== undefined) params.limit = opts.limit;
+      const first = await ctx.client.presentationVersions(id, params);
+      const rows = [...first.versions];
+      if (opts.all) {
+        let cursor = first.nextCursor;
+        while (cursor) {
+          const page = await ctx.client.presentationVersions(id, { ...params, cursor });
+          rows.push(...page.versions);
+          cursor = page.nextCursor;
+        }
+      }
+      const nextCursor = opts.all ? null : first.nextCursor;
+      if (ctx.json) return printJson(io, { versions: rows, nextCursor });
+      if (rows.length === 0) {
+        io.out.write('No versions.\n');
+        return;
+      }
+      io.out.write(
+        table(
+          rows.map((v) => [
+            `v${v.version}`,
+            v.createdAt,
+            fmtBytes(v.sizeBytes),
+            `${v.fileCount} file${v.fileCount === 1 ? '' : 's'}`,
+            `${v.createdBy ?? '(deleted user)'} (${v.createdByRole})`
+          ])
+        )
+      );
+      if (nextCursor) {
+        io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
+      }
     });
 
   program

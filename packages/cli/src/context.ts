@@ -151,6 +151,13 @@ export async function requireApiKey(ctx: CliContext): Promise<string> {
   return outcome.key;
 }
 
+/** Human-readable size (B / KB / MB) for the listing commands. */
+export function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /** Minimal aligned two-space table for human output. */
 export function table(rows: string[][]): string {
   if (rows.length === 0) return '';

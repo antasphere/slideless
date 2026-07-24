@@ -46,11 +46,11 @@ function buildProgram(io: CliIo): Command {
   // Identity + profiles: auth login-request/login-complete, login, logout,
   // whoami, verify, use, profiles, config show/clear.
   registerAuthCommands(program, io);
-  // Deck management: list, get, delete.
+  // Deck management: list, get, versions, delete.
   registerDeckCommands(program, io);
-  // Authoring: push, pull, pull-annotations, dev.
+  // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
   registerContentCommands(program, io);
-  // Sharing + collaborators: share, unshare, share-email, pin, invite, uninvite.
+  // Sharing + collaborators: share, unshare, share-email, pin, tokens, invite, uninvite.
   registerSharingCommands(program, io);
   // Platform substrate (template heritage): instance, export, files *.
   registerFileCommands(program, io);
