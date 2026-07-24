@@ -536,7 +536,8 @@ export async function boot(
     authSecret,
     passwordLimiter: limiters.viewerPassword,
     clientIp: makeClientIp(env.TRUST_PROXY),
-    secureCookies: env.PUBLIC_BASE_URL.startsWith('https://')
+    secureCookies: env.PUBLIC_BASE_URL.startsWith('https://'),
+    viewDedupeWindowMs: env.VIEW_DEDUPE_WINDOW_MINUTES * 60_000
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.

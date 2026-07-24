@@ -93,6 +93,22 @@ describe('env schema', () => {
     expect(envSchema.safeParse({ ...minimal, ORPHAN_USER_RETENTION_HOURS: '-1' }).success).toBe(false);
   });
 
+  it('defaults VIEW_DEDUPE_WINDOW_MINUTES to 10 and keeps 0 as the conscious opt-out', () => {
+    expect(envSchema.parse(minimal).VIEW_DEDUPE_WINDOW_MINUTES).toBe(10);
+    // `VAR=` / whitespace in compose means "default", never "coerce to 0
+    // and silently disable de-dupe".
+    expect(envSchema.parse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: '' }).VIEW_DEDUPE_WINDOW_MINUTES).toBe(
+      10
+    );
+    expect(envSchema.parse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: ' ' }).VIEW_DEDUPE_WINDOW_MINUTES).toBe(
+      10
+    );
+    expect(envSchema.parse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: '0' }).VIEW_DEDUPE_WINDOW_MINUTES).toBe(
+      0
+    );
+    expect(envSchema.safeParse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: '-1' }).success).toBe(false);
+  });
+
   describe('edition split (internal/federation.md)', () => {
     const hubVars = {
       HUB_ISSUER_URL: 'https://account.antasphere.com',

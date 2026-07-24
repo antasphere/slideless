@@ -4,7 +4,9 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
 import { PREVIEW_SHARE_TOKEN_NAME } from '@slideless/contract';
 import { presentations } from '@slideless/db';
+import { OVERLAY_MARKER } from '../../src/viewer/overlay.js';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
+import { mintViewedValue } from '../../src/viewer/viewed.js';
 import {
   createDatabase,
   createTestApp,
@@ -330,6 +332,102 @@ describe('public viewer (ADR 012)', () => {
     expect(after.lastViewedAt).not.toBeNull();
   });
 
+  it('de-dupes repeat opens per browser: a counted GET sets slvd_, replaying it never re-counts', async () => {
+    // PRDCT-1243: one "open" is several GETs in the wild (speculative
+    // prefetch/prerender + the navigation, reloads). The first counted GET
+    // hands out the signed viewed cookie; while the browser presents it,
+    // the entry is served but not re-counted.
+    const created = await createToken({ name: 'Deduped' });
+    const before = await totalViewsOf(deckId);
+
+    const first = await app.app.request(`/v/${created.secret}`);
+    expect(first.status).toBe(200);
+    const setCookie = first.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain(`slvd_${created.shareToken.id}=`);
+    expect(setCookie).toContain(`Path=/v/${created.secret}`);
+    expect(setCookie).toContain('HttpOnly');
+    expect(setCookie).toContain('Max-Age=600'); // 10-minute default, in seconds
+    expectViewerContentHeaders(first);
+    const viewedCookie = setCookie.split(';')[0]!;
+
+    const second = await app.app.request(`/v/${created.secret}`, { headers: { cookie: viewedCookie } });
+    expect(second.status).toBe(200); // served in full…
+    expect(await second.text()).toContain('marker');
+
+    const listed = await listTokens();
+    const row = listed.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id);
+    expect(row.accessCount).toBe(1); // …but counted once
+    expect((await totalViewsOf(deckId)).totalViews).toBe(before.totalViews + 1);
+  });
+
+  it('forged, expired, and wrong-token viewed cookies never suppress counting', async () => {
+    const a = await createToken({ name: 'Dedupe A' });
+    const b = await createToken({ name: 'Dedupe B' });
+
+    const first = await app.app.request(`/v/${a.secret}`); // counts 1, hands out A's cookie
+    const aPair = (first.headers.get('set-cookie') ?? '').split(';')[0]!;
+    const aValue = aPair.slice(aPair.indexOf('=') + 1);
+
+    // Garbage under the right name.
+    await app.app.request(`/v/${a.secret}`, {
+      headers: { cookie: `slvd_${a.shareToken.id}=garbage` }
+    });
+    // Well-signed but expired (minted with a negative TTL under the real key).
+    const expired = mintViewedValue(app.authSecret, a.shareToken.id, -1000);
+    await app.app.request(`/v/${a.secret}`, {
+      headers: { cookie: `slvd_${a.shareToken.id}=${expired}` }
+    });
+    // Token A's genuine value smuggled under token B's cookie name.
+    await app.app.request(`/v/${b.secret}`, {
+      headers: { cookie: `slvd_${b.shareToken.id}=${aValue}` }
+    });
+
+    const listed = await listTokens();
+    const rowA = listed.shareTokens.find((t: { id: string }) => t.id === a.shareToken.id);
+    const rowB = listed.shareTokens.find((t: { id: string }) => t.id === b.shareToken.id);
+    expect(rowA.accessCount).toBe(3); // initial + garbage + expired all counted
+    expect(rowB.accessCount).toBe(1); // the cross-token replay counted
+  });
+
+  it('HEAD and preview responses never carry the viewed cookie', async () => {
+    const created = await createToken({ name: 'No cookie on HEAD' });
+    const head = await app.app.request(`/v/${created.secret}`, { method: 'HEAD' });
+    expect(head.status).toBe(200);
+    expect(head.headers.get('set-cookie')).toBeNull();
+
+    const previewRes = await app.app.request(
+      `/api/v1/presentations/${deckId}/preview-token`,
+      json({}, { cookie })
+    );
+    expect(previewRes.status).toBe(201);
+    const preview = await readJson(previewRes);
+    const served = await app.app.request(`/v/${preview.secret}`);
+    expect(served.status).toBe(200);
+    expect(served.headers.get('set-cookie')).toBeNull(); // never counted → never marked
+  });
+
+  it('the overlay-injected (transform) entry path carries the viewed cookie too', async () => {
+    // The annotator/browser entry is served through the buffered transform
+    // path, not serveBlob — the de-dupe cookie must ride both serve paths.
+    const created = await createToken({ name: 'Overlay dedupe', canAnnotate: true });
+
+    const first = await app.app.request(`/v/${created.secret}`, { headers: { accept: 'text/html' } });
+    expect(first.status).toBe(200);
+    expect(await first.text()).toContain(OVERLAY_MARKER); // proves the transform path served it
+    const setCookie = first.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain(`slvd_${created.shareToken.id}=`);
+    const viewedCookie = setCookie.split(';')[0]!;
+
+    const second = await app.app.request(`/v/${created.secret}`, {
+      headers: { accept: 'text/html', cookie: viewedCookie }
+    });
+    expect(second.status).toBe(200);
+
+    const listed = await listTokens();
+    const row = listed.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id);
+    expect(row.accessCount).toBe(1);
+  });
+
   it('exposes totalViews on the wire and never counts dashboard preview tokens', async () => {
     // The dashboard detail page mints a transient preview token through the
     // DEDICATED endpoint for its sandboxed iframe (ADR 012 Surface D) —
@@ -591,6 +689,38 @@ describe('password gate', () => {
     expect((await app.app.request(`/v/${created.secret}`)).status).toBe(200);
   });
 
+  it('the unlock flow counts exactly once: challenge never counts, unlocked GET counts + de-dupes', async () => {
+    const created = await createToken({ name: 'Gated dedupe', password: PASSWORD });
+
+    // Challenge and form POST hand out no viewed cookie and count nothing.
+    const challenge = await app.app.request(`/v/${created.secret}`, { headers: { accept: 'text/html' } });
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get('set-cookie')).toBeNull();
+    const post = await app.app.request(`/v/${created.secret}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: PASSWORD }).toString()
+    });
+    expect(post.status).toBe(303);
+    expect(post.headers.get('set-cookie')).not.toContain('slvd_'); // only the slv_ unlock cookie
+    const unlockCookie = (post.headers.get('set-cookie') ?? '').split(';')[0]!;
+
+    // The unlocked GET is the view: counted once, viewed cookie minted.
+    const entry = await app.app.request(`/v/${created.secret}`, { headers: { cookie: unlockCookie } });
+    expect(entry.status).toBe(200);
+    const viewedCookie = (entry.headers.get('set-cookie') ?? '').split(';')[0]!;
+    expect(viewedCookie).toContain(`slvd_${created.shareToken.id}=`);
+
+    const again = await app.app.request(`/v/${created.secret}`, {
+      headers: { cookie: `${unlockCookie}; ${viewedCookie}` }
+    });
+    expect(again.status).toBe(200);
+
+    const listed = await listTokens();
+    const row = listed.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id);
+    expect(row.accessCount).toBe(1);
+  });
+
   it('failed attempts burn a per-IP+token bucket (429 after exhaustion)', async () => {
     const created = await createToken({ name: 'Bruteforce', password: PASSWORD });
     // The limiter allows 10 failures per 15 min; app.request has no socket,
@@ -605,6 +735,84 @@ describe('password gate', () => {
       headers: { 'x-viewer-password': PASSWORD } // even the right one is walled now
     });
     expect(blocked.status).toBe(429);
+  });
+});
+
+// ═══ De-dupe disabled (VIEW_DEDUPE_WINDOW_MINUTES=0) ═════════════════════════
+
+describe('view counting with de-dupe disabled', () => {
+  let offApp: TestApp;
+  let offCookie: string;
+  let offDeckId: string;
+
+  beforeAll(async () => {
+    // Own boot on the shared container: the window is an env knob, fixed at
+    // boot (createTestApp extraEnv), so the opt-out needs its own app + db.
+    offApp = await createTestApp(await createDatabase(container, 'view_dedupe_off'), {
+      VIEW_DEDUPE_WINDOW_MINUTES: '0'
+    });
+    await offApp.app.request('/api/v1/setup', json({ instanceName: 'Dedupe Off', owner: OWNER }));
+    const signIn = await offApp.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    offCookie = extractCookie(signIn);
+
+    const reserve = await readJson(
+      await offApp.app.request('/api/v1/presentations/uploads', {
+        method: 'POST',
+        headers: { cookie: offCookie }
+      })
+    );
+    offDeckId = reserve.uploadSession.presentationId;
+    const form = new FormData();
+    form.set('sha256', shaOf(HTML_V1));
+    form.set('file', new Blob([new Uint8Array(HTML_V1)], { type: 'text/html' }), 'index.html');
+    const upload = await offApp.app.request('/api/v1/presentations/assets', {
+      method: 'POST',
+      headers: { cookie: offCookie },
+      body: form
+    });
+    expect(upload.status).toBe(201);
+    const commit = await offApp.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        {
+          title: 'Dedupe Off',
+          entryPath: 'index.html',
+          manifest: [entryOf('index.html', HTML_V1, 'text/html')]
+        },
+        { cookie: offCookie }
+      )
+    );
+    expect(commit.status).toBe(201);
+  }, 120_000);
+
+  afterAll(async () => {
+    await offApp?.stop();
+  });
+
+  it('0 disables de-dupe: every entry GET counts and no viewed cookie is set (pre-fix behavior)', async () => {
+    const createRes = await offApp.app.request(
+      `/api/v1/presentations/${offDeckId}/tokens`,
+      json({ name: 'Raw counter' }, { cookie: offCookie })
+    );
+    expect(createRes.status).toBe(201);
+    const created = await readJson(createRes);
+
+    for (let i = 0; i < 3; i++) {
+      const res = await offApp.app.request(`/v/${created.secret}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('set-cookie')).toBeNull();
+    }
+
+    const listRes = await offApp.app.request(`/api/v1/presentations/${offDeckId}/tokens`, {
+      headers: { cookie: offCookie }
+    });
+    expect(listRes.status).toBe(200);
+    const listed = await readJson(listRes);
+    const row = listed.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id);
+    expect(row.accessCount).toBe(3);
   });
 });
 

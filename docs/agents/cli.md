@@ -202,6 +202,11 @@ Secrets are stored hash-only server-side: the URL printed at creation is
 never retrievable again (`share-email` mints and mails a fresh secret per
 send).
 
+Access stats count entry loads only, de-duplicated per browser within a
+short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
+open is one count, while cookie-less fetches (CLI, curl) count each time.
+"Last opened" is the last counted open.
+
 ## Collaborators
 
 ```bash

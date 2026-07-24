@@ -20,6 +20,22 @@ that is made safe, what the guarantees are, and the one hardening knob.
 - Anyone with the URL (and the password, if set) can view the deck.
   **Treat share URLs as the credential they are.**
 
+### What counts as an open
+
+A link's view stats (`accessCount`, "last opened") count **entry-document
+loads only** — asset fetches, `HEAD` requests, password challenges, and the
+dashboard's own preview never count. To keep the number meaning "opens"
+rather than "HTTP requests", repeat loads from the same browser inside a
+short window count once: a counted open sets a signed, link-scoped,
+HttpOnly cookie, and while the browser presents it the deck is served
+without re-counting. That collapses browser prefetch/prerender, reloads,
+and second tabs into one open. The window is
+[`VIEW_DEDUPE_WINDOW_MINUTES`](../reference/env-reference.md) (default 10
+minutes; `0` disables de-duplication and counts every entry load). Two
+consequences worth knowing: cookie-less clients (CLIs, SDKs, mail-provider
+link scanners) count on every fetch, and a very large window shifts the
+metric toward "unique browsers" rather than "opens".
+
 ## How untrusted HTML is contained
 
 Every byte of deck content is served under this exact header set:

@@ -674,8 +674,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     {
       description:
         "A deck's share tokens with access stats (name, versionMode, pinnedVersion, expiry, " +
-        'hasPassword, revokedAt, accessCount). Secrets are never retrievable — only creation returns ' +
-        'them. Returns { shareTokens: [...], nextCursor }.',
+        'hasPassword, revokedAt, accessCount). accessCount is de-duplicated opens — repeat opens ' +
+        'from one browser within the configured window count once, not raw request hits. Secrets ' +
+        'are never retrievable — only creation returns them. Returns { shareTokens: [...], nextCursor }.',
       inputSchema: {
         workspace: workspaceInput,
         presentationId: deckIdInput,

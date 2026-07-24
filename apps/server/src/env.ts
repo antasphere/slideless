@@ -46,6 +46,8 @@ const envObjectSchema = z.object({
    * the dashboard session across a real origin boundary.
    */
   VIEWER_BASE_URL: z.preprocess(blankToUndefined, z.url().optional()),
+  /** De-dupe window (minutes) for share-link view counting: repeat opens of the same link from one browser inside this window count once, so browser prefetch/prerender, reloads, and mail-scanner hits no longer inflate a token's accessCount. Enforced with a signed, token-scoped HttpOnly cookie; cookie-less clients (SDKs, curl) count every fetch. Large values shift the metric toward "unique browsers" rather than "opens". 0 disables de-dupe: every entry GET counts and no cookie is set. */
+  VIEW_DEDUPE_WINDOW_MINUTES: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).default(10)),
   /** Writable data directory (auto-generated secret, local file storage). */
   DATA_DIR: z.string().default('/data'),
   /** Apply pending migrations at boot. When false the app only checks and refuses readiness while behind. */

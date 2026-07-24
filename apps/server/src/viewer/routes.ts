@@ -14,7 +14,8 @@ import type { ShareTokenService } from '../sharing/service.js';
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
 import { entryTransformFor } from './inject.js';
-import { mintUnlockValue, unlockCookieName, verifyUnlockValue } from './unlock.js';
+import { mintUnlockValue, unlockCookieName, UNLOCK_TTL_MS, verifyUnlockValue } from './unlock.js';
+import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.js';
 
 /**
  * THE PUBLIC VIEWER (Phase 4, ADR 012) — the one sanctioned exception to the
@@ -72,6 +73,12 @@ export interface ViewerDeps {
   clientIp: ClientIpFn;
   /** True when the instance runs on https (Secure attribute on the unlock cookie). */
   secureCookies: boolean;
+  /**
+   * De-dupe window for entry-view counting, in ms (0 = disabled): one counted
+   * open per browser per window, enforced by the signed token-scoped `slvd_`
+   * cookie (viewer/viewed.ts). Operator-set via VIEW_DEDUPE_WINDOW_MINUTES.
+   */
+  viewDedupeWindowMs: number;
 }
 
 /** Everything resolved about one viewer request before bytes are served. */
@@ -157,6 +164,22 @@ function viewerError(
 export function viewerRoutes(deps: ViewerDeps): Hono {
   const { sharing, presentations, fileService, storage, logger } = deps;
   const app = new Hono();
+
+  /**
+   * Token-scoped cookie string — the unlock and viewed cookies wear this
+   * exact attribute set: Path pinned to the token's own /v/{secret} subtree
+   * (byte-exact raw segment), HttpOnly, SameSite=Lax, Secure on https.
+   */
+  function tokenCookie(name: string, value: string, rawSecretSegment: string, maxAgeSeconds: number): string {
+    const attrs = [
+      `Path=${VIEWER_PATH_PREFIX}/${rawSecretSegment}`,
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${maxAgeSeconds}`,
+      ...(deps.secureCookies ? ['Secure'] : [])
+    ].join('; ');
+    return `${name}=${value}; ${attrs}`;
+  }
 
   /**
    * Secret → token → live deck → version → manifest, or a typed failure:
@@ -312,22 +335,24 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     }
 
     const value = mintUnlockValue(deps.authSecret, token.id, token.passwordHash);
-    const attrs = [
-      `Path=${VIEWER_PATH_PREFIX}/${rawSecretSegment}`,
-      'HttpOnly',
-      'SameSite=Lax',
-      'Max-Age=3600',
-      ...(deps.secureCookies ? ['Secure'] : [])
-    ].join('; ');
-    c.header('set-cookie', `${unlockCookieName(token.id)}=${value}; ${attrs}`);
+    c.header(
+      'set-cookie',
+      tokenCookie(unlockCookieName(token.id), value, rawSecretSegment, UNLOCK_TTL_MS / 1000)
+    );
     return c.redirect(c.req.path, 303);
   });
+
+  /** True when the request presents a live, well-signed viewed cookie for this token. */
+  function hasValidViewedCookie(c: Context, tokenId: string): boolean {
+    const value = getCookie(c, viewedCookieName(tokenId));
+    return value !== undefined && verifyViewedValue(deps.authSecret, tokenId, value);
+  }
 
   // ── Entry HTML ─────────────────────────────────────────────────────────────
   app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret`, async (c) => {
     const resolved = await resolve(c);
     if (!resolved.ok) return viewerError(c, resolved.failure);
-    const { token, deck, version, manifest } = resolved.view;
+    const { token, deck, version, manifest, rawSecretSegment } = resolved.view;
 
     const gate = await passwordSatisfied(c, token);
     if (!gate.ok) return gate.response;
@@ -341,15 +366,26 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       return viewerError(c, { status: 404, code: 'not_found', message: 'This deck is no longer available.' });
     }
 
-    // View accounting: the ENTRY serve is the view — assets never count.
-    // Awaited so the count is durable before the bytes go out. The
-    // dashboard's own transient preview tokens are excluded so an owner
-    // previewing their deck never inflates its view stats. SECURITY: the
-    // exclusion keys on the SERVER-SET `purpose` column, never on the token
-    // NAME — the name is client input, and a name-keyed exclusion let any
-    // deck writer mint stat-silent tokens (a token merely NAMED "Dashboard
-    // preview" counts like any other).
-    if (c.req.method === 'GET' && token.purpose !== 'preview') {
+    // View accounting: the ENTRY serve is the view — assets never count, HEAD
+    // never counts, password challenges never reach here. One open counts at
+    // most once per browser per de-dupe window: a counted GET sets the signed
+    // token-scoped `slvd_` cookie (viewer/viewed.ts) and later GETs presenting
+    // a live one are served without re-counting — so a browser's speculative
+    // prefetch/prerender + navigation, reloads, and second tabs collapse to
+    // one view, while cookie-less agents (SDKs, curl) count every pull.
+    // `lastAccessedAt` therefore means "last COUNTED open". A window of 0
+    // disables de-dupe (every entry GET counts, no cookie). Awaited so the
+    // count is durable before the bytes go out. The dashboard's own transient
+    // preview tokens are excluded so an owner previewing their deck never
+    // inflates its view stats. SECURITY: the exclusion keys on the SERVER-SET
+    // `purpose` column, never on the token NAME — the name is client input,
+    // and a name-keyed exclusion let any deck writer mint stat-silent tokens
+    // (a token merely NAMED "Dashboard preview" counts like any other).
+    const counted =
+      c.req.method === 'GET' &&
+      token.purpose !== 'preview' &&
+      (deps.viewDedupeWindowMs === 0 || !hasValidViewedCookie(c, token.id));
+    if (counted) {
       await sharing.recordEntryView(token.id, deck.id);
     }
 
@@ -360,6 +396,17 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       ...VIEWER_CONTENT_HEADERS,
       'cache-control': 'no-store'
     };
+    // The de-dupe marker rides ONLY counted 200 responses — error paths build
+    // their own headers, so a 404 can never hand out a cookie. Attached to the
+    // header OBJECT (not c.header()) so both serve paths below carry it.
+    if (counted && deps.viewDedupeWindowMs > 0) {
+      entryHeaders['set-cookie'] = tokenCookie(
+        viewedCookieName(token.id),
+        mintViewedValue(deps.authSecret, token.id, deps.viewDedupeWindowMs),
+        rawSecretSegment,
+        Math.floor(deps.viewDedupeWindowMs / 1000)
+      );
+    }
 
     // The annotation-injection seam (Phase 5). null = stream untouched.
     // `browserEntry` keeps the overlay away from agents: it requires an HTML
