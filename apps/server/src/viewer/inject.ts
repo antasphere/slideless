@@ -50,6 +50,12 @@ export interface EntryTransformContext {
   /** The version's entry path — tells the overlay the root document's name. */
   entryPath: string;
   /**
+   * Resolved badge slot for this link (token override ?? deck default), or
+   * null = the overlay's own bottom-right default. One of the 8 slots: the
+   * 4 corners + the 4 edge centers.
+   */
+  badgePosition: string | null;
+  /**
    * Mints the signed annotation unlock proof for password-protected tokens
    * (viewer/unlock.ts MAC), or null for password-less tokens. Called only
    * when the overlay is actually injected — the request already passed the
@@ -86,7 +92,8 @@ export function entryTransformFor(ctx: EntryTransformContext): EntryTransform | 
   const script = overlayScriptTag({
     version: ctx.version,
     unlock: ctx.mintUnlockProof(),
-    entry: ctx.entryPath
+    entry: ctx.entryPath,
+    badge: ctx.badgePosition
   });
   return (html) => injectBeforeBodyClose(html, script);
 }

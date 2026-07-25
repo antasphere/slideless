@@ -6,6 +6,7 @@ import {
   presentations,
   presentationVersions,
   uploadSessions,
+  type BadgePosition,
   type Db,
   type DbConn,
   type PresentationRow,
@@ -389,6 +390,18 @@ export class PresentationService {
       )
       .limit(1);
     return row ?? null;
+  }
+
+  /**
+   * Remember the deck's badge slot for annotator links. Written whenever a
+   * share token is created or patched with an EXPLICIT badgePosition, so
+   * the next link on this deck inherits the last deliberate choice.
+   */
+  async rememberBadgePosition(workspaceId: string, id: string, position: BadgePosition): Promise<void> {
+    await this.db
+      .update(presentations)
+      .set({ annotationBadgePosition: position, updatedAt: new Date() })
+      .where(and(eq(presentations.id, id), eq(presentations.workspaceId, workspaceId)));
   }
 
   /** Handler-facing wrapper over the module-level canWriteDeck (needs a conn). */

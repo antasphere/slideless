@@ -1,7 +1,17 @@
 import type { Command } from 'commander';
 import type { ListParams } from '@slideless/sdk';
-import type { ShareTokenCreate } from '@slideless/contract';
+import { badgePositionSchema, type BadgePositionValue, type ShareTokenCreate } from '@slideless/contract';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
+
+const BADGE_POSITIONS = badgePositionSchema.options.join(' | ');
+
+function parseBadgePosition(v: string): BadgePositionValue {
+  const parsed = badgePositionSchema.safeParse(v);
+  if (!parsed.success) {
+    throw new CliUsageError(`--badge-position must be one of: ${BADGE_POSITIONS}`);
+  }
+  return parsed.data;
+}
 
 /**
  * Sharing (per-recipient tokens) + per-deck dev collaborators.
@@ -13,6 +23,7 @@ function shareOptionsOf(opts: {
   name?: string;
   toVersion?: number;
   annotator: boolean;
+  badgePosition?: BadgePositionValue;
   expires?: string;
   password?: string;
 }): ShareTokenCreate {
@@ -24,6 +35,7 @@ function shareOptionsOf(opts: {
     versionMode: opts.toVersion !== undefined ? 'pinned' : 'latest',
     ...(opts.toVersion !== undefined ? { pinnedVersion: opts.toVersion } : {}),
     canAnnotate: opts.annotator,
+    ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
     ...(opts.password ? { password: opts.password } : {})
   };
@@ -36,12 +48,24 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--name <name>', 'owner-facing recipient label', 'cli')
     .option('--to-version <n>', 'pin the recipient to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let the recipient annotate', false)
+    .option(
+      '--badge-position <slot>',
+      `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
+      parseBadgePosition
+    )
     .option('--expires <datetime>', 'ISO expiry, e.g. 2026-12-31T23:59:59Z')
     .option('--password <password>', 'viewer password (min 4 chars)')
     .action(
       async (
         id: string,
-        opts: { name: string; toVersion?: number; annotator: boolean; expires?: string; password?: string },
+        opts: {
+          name: string;
+          toVersion?: number;
+          annotator: boolean;
+          badgePosition?: BadgePositionValue;
+          expires?: string;
+          password?: string;
+        },
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
@@ -98,6 +122,11 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .requiredOption('--to <email...>', 'recipient email(s)')
     .option('--to-version <n>', 'pin recipients to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let recipients annotate', false)
+    .option(
+      '--badge-position <slot>',
+      `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
+      parseBadgePosition
+    )
     .option('--expires <datetime>', 'ISO expiry')
     .option('--password <password>', 'viewer password (tell recipients separately)')
     .option('--message <text>', 'personal note included in the email')
@@ -108,6 +137,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           to: string[];
           toVersion?: number;
           annotator: boolean;
+          badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
           message?: string;

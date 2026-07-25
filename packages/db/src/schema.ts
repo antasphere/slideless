@@ -397,6 +397,24 @@ export type PresentationKind = (typeof presentationKinds)[number];
  * like files — ADR 006); `remixed_from` is lineage-only for the future
  * marketplace (column reserved, no behavior yet).
  */
+/**
+ * Where the annotation overlay's floating badge sits: the 4 corners plus the
+ * 4 edge centers (bare edge name = that edge's center). The badge floats
+ * over unknown deck content, so no automatic placement can know what it
+ * covers — this is the one deliberately user-controllable slot.
+ */
+export const badgePositions = [
+  'top-left',
+  'top',
+  'top-right',
+  'right',
+  'bottom-right',
+  'bottom',
+  'bottom-left',
+  'left'
+] as const;
+export type BadgePosition = (typeof badgePositions)[number];
+
 export const presentations = pgTable(
   'presentations',
   {
@@ -420,6 +438,13 @@ export const presentations = pgTable(
     // yet — the P8 dashboard decides how to surface them.
     totalViews: integer('total_views').notNull().default(0),
     lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+    /**
+     * The deck's remembered badge slot for annotator links: whenever a share
+     * token is created or patched with an EXPLICIT badgePosition, it lands
+     * here too, so the next annotator link inherits it. Null = never chosen
+     * = the overlay default (bottom-right).
+     */
+    annotationBadgePosition: text('annotation_badge_position', { enum: badgePositions }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -512,6 +537,11 @@ export const shareTokens = pgTable(
     tokenHash: text('token_hash').notNull(),
     pinnedVersion: integer('pinned_version'),
     canAnnotate: boolean('can_annotate').notNull().default(false),
+    /**
+     * Per-link badge slot override for the annotation overlay. Null = use
+     * the deck's remembered `annotation_badge_position`, else bottom-right.
+     */
+    badgePosition: text('badge_position', { enum: badgePositions }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     passwordHash: text('password_hash'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),

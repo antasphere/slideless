@@ -182,6 +182,28 @@ describe('overlay injection', () => {
     // Untransformed entries keep streaming with their content-sha ETag.
     expect(plain.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
   });
+
+  it('badge position: explicit on the link, remembered as the deck default for the next link', async () => {
+    const explicit = await createToken({ name: 'Badge', canAnnotate: true, badgePosition: 'top-left' });
+    expect(await (await fetchEntry(explicit.secret)).text()).toContain('"badge":"top-left"');
+
+    // A link created WITHOUT a position inherits the deck's remembered one…
+    const inherited = await createToken({ name: 'Badge Inherit', canAnnotate: true });
+    expect(await (await fetchEntry(inherited.secret)).text()).toContain('"badge":"top-left"');
+
+    // …until it makes its own explicit choice (which becomes the new default).
+    const own = await createToken({ name: 'Badge Own', canAnnotate: true, badgePosition: 'bottom' });
+    expect(await (await fetchEntry(own.secret)).text()).toContain('"badge":"bottom"');
+    const after = await createToken({ name: 'Badge After', canAnnotate: true });
+    expect(await (await fetchEntry(after.secret)).text()).toContain('"badge":"bottom"');
+
+    // Unknown slots are rejected at the contract.
+    const bad = await app.app.request(
+      `/api/v1/presentations/${deckId}/tokens`,
+      json({ name: 'Bad Badge', badgePosition: 'middle' }, { cookie })
+    );
+    expect(bad.status).toBe(400);
+  });
 });
 
 // ═══ Multi-page overlay injection (PRDCT-1296) ═══════════════════════════════

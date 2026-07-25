@@ -357,13 +357,16 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
 
   /** The injection seam's inputs for this request (viewer/inject.ts). */
   function transformContextFor(c: Context, view: ResolvedView) {
-    const { token, version } = view;
+    const { token, deck, version } = view;
     return {
       token,
       rawRequested: rawRequested(c),
       browserEntry: docNavigation(c),
       version: version.version,
       entryPath: version.entryPath,
+      // Badge slot resolution: per-link override → the deck's remembered
+      // default (last explicit choice) → the overlay's own bottom-right.
+      badgePosition: token.badgePosition ?? deck.annotationBadgePosition,
       mintUnlockProof: () =>
         token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
     };

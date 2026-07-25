@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { badgePositionSchema } from '@slideless/contract';
 import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } from './errors.js';
 import {
   callApi,
@@ -646,11 +647,18 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           .optional()
           .describe('Freeze the recipient on this version; omitted = they always see the latest.'),
         canAnnotate: z.boolean().optional().describe('Let the recipient leave annotations (default false).'),
+        badgePosition: badgePositionSchema
+          .optional()
+          .describe(
+            'Annotation badge slot (4 corners + 4 edge centers, e.g. "top-left", "bottom"); an ' +
+              "explicit choice is remembered as the deck's default for future links. Omitted = " +
+              'inherit the deck default (else bottom-right).'
+          ),
         expiresAt: z.iso.datetime().optional().describe('ISO 8601 expiry; omitted = never expires.'),
         password: z.string().min(4).max(256).optional().describe('Viewer password gate (optional).')
       }
     },
-    async ({ workspace, presentationId, name, pinnedVersion, canAnnotate, expiresAt, password }) =>
+    async ({ workspace, presentationId, name, pinnedVersion, canAnnotate, badgePosition, expiresAt, password }) =>
       write(workspace, async (c) =>
         jsonText(
           await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens`, {
@@ -661,6 +669,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
               versionMode: pinnedVersion !== undefined ? 'pinned' : 'latest',
               ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
               canAnnotate: canAnnotate ?? false,
+              ...(badgePosition !== undefined ? { badgePosition } : {}),
               ...(expiresAt !== undefined ? { expiresAt } : {}),
               ...(password !== undefined ? { password } : {})
             })

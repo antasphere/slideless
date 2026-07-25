@@ -190,6 +190,8 @@ reloads the browser. No backend, no credentials.
 slideless share <id> --name "Alice"                       # prints the /v/{secret} URL — shown ONCE
 slideless share <id> --to-version 2 --annotator \
                      --expires 2026-12-31T23:59:59Z --password hunter22
+slideless share <id> --annotator --badge-position top-left  # move the notes button (8 slots;
+                                                            # remembered as the deck default)
 slideless unshare <id> --token <tokenId>                  # revoke one link
 slideless unshare <id>                                    # revoke ALL active links
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed

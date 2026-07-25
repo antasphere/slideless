@@ -27,6 +27,7 @@
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import type { PresentationVersion, ShareToken, ShareTokenCreate } from '@slideless/contract';
+  import { badgePositionSchema } from '@slideless/contract';
 
   interface Props {
     deckId: string;
@@ -53,8 +54,25 @@
   let versionMode = $state<'latest' | 'pinned'>('latest');
   let pinnedVersion = $state('');
   let canAnnotate = $state(false);
+  let badgePosition = $state('default');
   let expiresIn = $state('never');
   let password = $state('');
+
+  // The 8 badge slots (4 corners + 4 edge centers) + inherit-the-deck-default.
+  const badgeSlotLabels: Record<(typeof badgePositionSchema.options)[number], string> = $derived({
+    'top-left': t('tokens.badgePosTopLeft'),
+    top: t('tokens.badgePosTop'),
+    'top-right': t('tokens.badgePosTopRight'),
+    right: t('tokens.badgePosRight'),
+    'bottom-right': t('tokens.badgePosBottomRight'),
+    bottom: t('tokens.badgePosBottom'),
+    'bottom-left': t('tokens.badgePosBottomLeft'),
+    left: t('tokens.badgePosLeft')
+  });
+  const badgePositionOptions = $derived([
+    { value: 'default', label: t('tokens.badgePositionDefault') },
+    ...badgePositionSchema.options.map((slot) => ({ value: slot, label: badgeSlotLabels[slot] }))
+  ]);
 
   // ── Created dialog: the viewer URL appears exactly once ───────────────
   let createdUrl = $state<string | null>(null);
@@ -65,6 +83,7 @@
     versionMode = 'latest';
     pinnedVersion = versions[0] ? String(versions[0].version) : '';
     canAnnotate = false;
+    badgePosition = 'default';
     expiresIn = 'never';
     password = '';
     showCreateDialog = true;
@@ -78,6 +97,9 @@
         versionMode,
         ...(versionMode === 'pinned' ? { pinnedVersion: Number(pinnedVersion) } : {}),
         canAnnotate,
+        ...(canAnnotate && badgePosition !== 'default'
+          ? { badgePosition: badgePosition as ShareTokenCreate['badgePosition'] }
+          : {}),
         ...(expiresIn !== 'never'
           ? { expiresAt: new Date(Date.now() + Number(expiresIn) * 86_400_000).toISOString() }
           : {}),
@@ -343,6 +365,28 @@
       <span class="text-muted-foreground">{t('tokens.annotateHint')}</span>
     </Label>
   </div>
+  {#if canAnnotate}
+    <div class="space-y-2">
+      <Label for="token-badge-position">{t('tokens.badgePositionLabel')}</Label>
+      <Select.Root
+        type="single"
+        value={badgePosition}
+        onValueChange={(v) => {
+          if (v) badgePosition = v;
+        }}
+      >
+        <Select.Trigger id="token-badge-position" class="w-full">
+          {badgePositionOptions.find((o) => o.value === badgePosition)?.label}
+        </Select.Trigger>
+        <Select.Content>
+          {#each badgePositionOptions as option (option.value)}
+            <Select.Item value={option.value} label={option.label} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      <p class="text-xs text-muted-foreground">{t('tokens.badgePositionHint')}</p>
+    </div>
+  {/if}
   <div class="space-y-2">
     <Label for="token-expiry">{t('tokens.expiryLabel')}</Label>
     <Select.Root

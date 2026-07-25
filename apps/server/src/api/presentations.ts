@@ -526,9 +526,15 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       purpose: 'share',
       pinnedVersion,
       canAnnotate: body.canAnnotate,
+      badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
     });
+    // An explicit badge choice becomes the deck's remembered default, so the
+    // next annotator link on this deck inherits it.
+    if (body.badgePosition !== undefined) {
+      await service.rememberBadgePosition(principal.workspaceId, id, body.badgePosition);
+    }
 
     c.set('audit', {
       action: 'presentation.share_token_create',
@@ -540,6 +546,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         versionMode: row.pinnedVersion === null ? 'latest' : 'pinned',
         pinnedVersion: row.pinnedVersion,
         canAnnotate: row.canAnnotate,
+        badgePosition: row.badgePosition,
         hasPassword: row.passwordHash !== null,
         expiresAt: row.expiresAt?.toISOString() ?? null
       }
@@ -589,6 +596,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       purpose: 'preview',
       pinnedVersion,
       canAnnotate: false,
+      badgePosition: null, // no overlay on previews — nothing to place
       expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS),
       passwordHash: null
     });
@@ -642,6 +650,13 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     }
     if (patch.name !== undefined) set.name = patch.name;
     if (patch.canAnnotate !== undefined) set.canAnnotate = patch.canAnnotate;
+    if (patch.badgePosition !== undefined) {
+      set.badgePosition = patch.badgePosition;
+      // Explicit slot → new deck default; explicit null just falls back.
+      if (patch.badgePosition !== null) {
+        await service.rememberBadgePosition(principal.workspaceId, id, patch.badgePosition);
+      }
+    }
     if (patch.expiresAt !== undefined) {
       set.expiresAt = patch.expiresAt === null ? null : new Date(patch.expiresAt);
     }

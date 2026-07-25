@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   presentations,
   shareTokens,
+  type BadgePosition,
   type Db,
   type ShareTokenPurpose,
   type ShareTokenRow
@@ -78,6 +79,8 @@ export class ShareTokenService {
     purpose: ShareTokenPurpose;
     pinnedVersion: number | null;
     canAnnotate: boolean;
+    /** Explicit badge slot for this link, or null = inherit the deck default. */
+    badgePosition: BadgePosition | null;
     expiresAt: Date | null;
     passwordHash: string | null;
   }): Promise<{ row: ShareTokenRow; secret: string }> {
@@ -92,6 +95,7 @@ export class ShareTokenService {
         tokenHash,
         pinnedVersion: opts.pinnedVersion,
         canAnnotate: opts.canAnnotate,
+        badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
         createdBy: opts.createdBy
@@ -218,6 +222,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
   versionMode: 'latest' | 'pinned';
   pinnedVersion: number | null;
   canAnnotate: boolean;
+  badgePosition: BadgePosition | null;
   expiresAt: string | null;
   hasPassword: boolean;
   revokedAt: string | null;
@@ -233,6 +238,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
     versionMode: t.pinnedVersion === null ? 'latest' : 'pinned',
     pinnedVersion: t.pinnedVersion,
     canAnnotate: t.canAnnotate,
+    badgePosition: t.badgePosition,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     hasPassword: t.passwordHash !== null,
     revokedAt: t.revokedAt?.toISOString() ?? null,

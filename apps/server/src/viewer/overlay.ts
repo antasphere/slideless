@@ -60,6 +60,12 @@ export interface OverlayConfig {
   unlock: string | null;
   /** The deck's entry path — the canonical name of the root document. */
   entry: string;
+  /**
+   * Badge slot (token override ?? deck default; viewer/routes.ts resolves).
+   * One of: top-left, top, top-right, right, bottom-right, bottom,
+   * bottom-left, left. Null = bottom-right.
+   */
+  badge: string | null;
 }
 
 /** Attribute marking the injected script — tests and humans grep for it. */
@@ -126,6 +132,11 @@ var savedName = '';        // reviewer name, kept for the session only
                            // (the opaque origin has no storage — ADR 012)
 var mode = 'browse';       // 'browse' | 'annotate'
 var pinsVisible = true;    // sheet toggle; per-visit (no storage, ADR 012)
+var indicatorRect = null;  // viewport rect of the pending capture's indicator
+                           // (selection rect / pin point / region box) — what
+                           // the composer must sit BESIDE, never on top of.
+                           // Kept OUT of the snapshot: it is placement state,
+                           // not anchor data, and must never be submitted.
 var seenIds = null;        // ids already rendered once (animate only new)
 var isSaving = false;
 
@@ -551,6 +562,32 @@ badge.appendChild(bIcon);
 badge.appendChild(bLabel);
 badge.appendChild(bCount);
 
+// ---- Badge placement -----------------------------------------------------
+// Server-resolved slot (link override ?? deck's remembered default): the 4
+// corners + the 4 edge centers. The stylesheet default is bottom-right; a
+// slot sets its own sides and pins the others to auto (leaving them empty
+// would let the stylesheet's right/bottom stretch the box). Config is
+// server-controlled, but validate anyway and fall back to the default.
+(function () {
+  var slots = {
+    'top-left': { top: '20px', left: '20px' },
+    top: { top: '20px', left: '50%', transform: 'translateX(-50%)' },
+    'top-right': { top: '20px', right: '20px' },
+    right: { right: '20px', top: '50%', transform: 'translateY(-50%)' },
+    'bottom-right': { bottom: '20px', right: '20px' },
+    bottom: { bottom: '20px', left: '50%', transform: 'translateX(-50%)' },
+    'bottom-left': { bottom: '20px', left: '20px' },
+    left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
+  };
+  var slot = slots[CFG.badge] || null;
+  if (!slot) return;
+  badge.style.top = slot.top || 'auto';
+  badge.style.bottom = slot.bottom || 'auto';
+  badge.style.left = slot.left || 'auto';
+  badge.style.right = slot.right || 'auto';
+  if (slot.transform) badge.style.transform = slot.transform;
+})();
+
 var sheet = el('div');
 sheet.id = '__sl-sheet';
 var head = el('div', '__sl-head');
@@ -661,12 +698,73 @@ function showAddAt(range, text) {
   var rect = range.getBoundingClientRect();
   snapshot = textAnchor(range, text);
   pendingRange = range;
+  indicatorRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   var left = Math.min(rect.left, window.innerWidth - 140);
   addBtn.style.left = Math.max(8, left) + 'px';
   addBtn.style.top = Math.max(8, rect.bottom) + 'px';
   addBtn.style.display = 'inline-flex';
 }
-function openComposerAt(left, top) {
+
+function rectsIntersect(aLeft, aTop, aW, aH, b) {
+  return aLeft < b.left + b.width && aLeft + aW > b.left && aTop < b.top + b.height && aTop + aH > b.top;
+}
+
+/**
+ * Place the composer BESIDE the capture indicator, never on top of it (or
+ * of the ghost pin): try right → left → below → above of the indicator
+ * rect, take the first candidate that fits the viewport and covers neither
+ * the indicator nor the pin; as a last resort clamp near the indicator's
+ * bottom-right. Deliberately no placement setting — auto-placement is the
+ * product behavior; a knob only appears if a real deck ever defeats it.
+ */
+function placeComposer() {
+  var W = 300;
+  var M = 8;
+  var GAP = 14;
+  pop.style.visibility = 'hidden';
+  pop.style.display = 'block';
+  var H = pop.offsetHeight || 280;
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  var r = indicatorRect || { left: vw / 2, top: vh / 2, width: 0, height: 0 };
+  // Everything the panel must not cover: the indicator (inflated so the
+  // panel never touches it) and the provisional pin's own footprint.
+  var avoid = [{ left: r.left - 14, top: r.top - 14, width: r.width + 28, height: r.height + 28 }];
+  var pRect = snapshot ? anchorRect(snapshot) : null;
+  if (pRect) {
+    var pinX = snapshot.type === 'point' ? pRect.left : pRect.left + pRect.width;
+    avoid.push({ left: pinX - 16, top: pRect.top - 16, width: 32, height: 32 });
+  }
+  var candidates = [
+    { left: r.left + r.width + GAP, top: r.top, clampY: true },
+    { left: r.left - GAP - W, top: r.top, clampY: true },
+    { left: r.left, top: r.top + r.height + GAP, clampY: false },
+    { left: r.left, top: r.top - GAP - H, clampY: false }
+  ];
+  var chosen = null;
+  for (var i = 0; i < candidates.length && !chosen; i++) {
+    var c = candidates[i];
+    if (c.clampY) c.top = Math.max(M, Math.min(c.top, vh - H - M));
+    else c.left = Math.max(M, Math.min(c.left, vw - W - M));
+    if (c.left < M || c.top < M || c.left + W > vw - M || c.top + H > vh - M) continue;
+    var hits = false;
+    for (var j = 0; j < avoid.length; j++) {
+      if (rectsIntersect(c.left, c.top, W, H, avoid[j])) { hits = true; break; }
+    }
+    if (!hits) chosen = c;
+  }
+  if (!chosen) {
+    chosen = {
+      left: Math.max(M, Math.min(r.left + r.width + GAP, vw - W - M)),
+      top: Math.max(M, Math.min(r.top + r.height + GAP, vh - H - M))
+    };
+  }
+  pop.style.left = chosen.left + 'px';
+  pop.style.top = chosen.top + 'px';
+  pop.style.visibility = '';
+}
+
+function openComposer() {
   popQuote.style.display = 'none';
   popQuote.textContent = '';
   if (snapshot && snapshot.type === 'text' && snapshot.quote) {
@@ -681,17 +779,14 @@ function openComposerAt(left, top) {
   popName.value = savedName;
   popText.value = '';
   popErr.style.display = 'none';
-  left = Math.max(8, Math.min(left, window.innerWidth - 316));
-  if (top + 260 > window.innerHeight) top = Math.max(8, window.innerHeight - 270);
-  pop.style.left = left + 'px';
-  pop.style.top = Math.max(8, top) + 'px';
-  pop.style.display = 'block';
+  placeComposer();
   popText.focus();
   renderPreview();
 }
 function closeComposer() {
   pop.style.display = 'none';
   snapshot = null;
+  indicatorRect = null;
   renderPreview();
 }
 
@@ -711,7 +806,6 @@ function openCount() {
 function renderPreview() {
   previewLayer.textContent = '';
   if (!snapshot || pop.style.display !== 'block') return;
-  if (snapshot.type !== 'point' && snapshot.type !== 'region') return;
   var rect = anchorRect(snapshot);
   if (!rect) return;
   if (rect.el) {
@@ -732,7 +826,9 @@ function renderPreview() {
     previewLayer.appendChild(regionEl);
   }
   var pin = el('div', '__sl-pin __sl-ghost', String(openCount() + 1));
-  var px = snapshot.type === 'region' ? rect.left + rect.width : rect.left;
+  // Same corner the SAVED pin will take (renderPins): element/region
+  // top-right for text and region anchors, the exact point for point ones.
+  var px = snapshot.type === 'point' ? rect.left : rect.left + rect.width;
   pin.style.left = Math.max(12, Math.min(px, window.innerWidth - 12)) + 'px';
   pin.style.top = Math.max(12, Math.min(rect.top, window.innerHeight - 12)) + 'px';
   previewLayer.appendChild(pin);
@@ -741,10 +837,8 @@ function renderPreview() {
 addBtn.addEventListener('mousedown', function (e) { e.preventDefault(); });
 addBtn.addEventListener('click', function () {
   if (!snapshot) return;
-  var left = parseFloat(addBtn.style.left) || 8;
-  var top = parseFloat(addBtn.style.top) || 8;
   hideAdd();
-  openComposerAt(left, top);
+  openComposer();
 });
 popCancel.addEventListener('click', function () { closeComposer(); });
 
@@ -850,11 +944,12 @@ layer.addEventListener('pointerup', function (e) {
   dragBox.style.display = 'none';
   if (box.width > 6 || box.height > 6) {
     snapshot = regionAnchor(box);
-    openComposerAt(box.left + box.width + 10, box.top);
+    indicatorRect = box;
   } else {
     snapshot = pointAnchor(e.clientX, e.clientY);
-    openComposerAt(e.clientX + 12, e.clientY + 12);
+    indicatorRect = { left: e.clientX - 11, top: e.clientY - 11, width: 22, height: 22 };
   }
+  openComposer();
 });
 function dragRect(e) {
   var x1 = Math.min(dragStart.x, e.clientX);
@@ -1131,9 +1226,11 @@ if (doc.readyState === 'loading') {
  * document allows — see the trust-boundary note above).
  */
 export function overlayScriptTag(cfg: OverlayConfig): string {
-  const json = JSON.stringify({ version: cfg.version, unlock: cfg.unlock, entry: cfg.entry }).replace(
-    /</g,
-    '\\u003c'
-  );
+  const json = JSON.stringify({
+    version: cfg.version,
+    unlock: cfg.unlock,
+    entry: cfg.entry,
+    badge: cfg.badge
+  }).replace(/</g, '\\u003c');
   return `\n<script ${OVERLAY_MARKER}>\n(function(){\n"use strict";\ntry{\nvar CFG=${json};\n${OVERLAY_JS}\n}catch(e){}\n})();\n</script>\n`;
 }

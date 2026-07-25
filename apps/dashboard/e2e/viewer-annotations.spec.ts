@@ -68,6 +68,16 @@ async function uploadAsset(page: Page, text: string): Promise<void> {
   expect(res.status()).toBe(201);
 }
 
+/** The composer must sit BESIDE its indicator, never on top of it. */
+async function expectNoOverlap(page: Page, aSel: string, bSel: string): Promise<void> {
+  const a = await page.locator(aSel).boundingBox();
+  const b = await page.locator(bSel).boundingBox();
+  if (!a || !b) throw new Error(`missing bounding box for ${!a ? aSel : bSel}`);
+  const overlaps =
+    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  expect(overlaps, `${aSel} must not cover ${bSel}`).toBe(false);
+}
+
 /** Programmatic selection + mouseup — deterministic where mouse-drags flake. */
 async function selectText(page: Page, selector: string): Promise<void> {
   await page.evaluate((sel) => {
@@ -160,6 +170,11 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await reviewer.locator('#__sl-add').click();
     await expect(reviewer.locator('#__sl-pop')).toBeVisible();
     await expect(reviewer.locator('#__sl-pop .__sl-quote')).toContainText('Select this distinctive');
+    // Text captures preview like every other type: numbered ghost pin +
+    // contour around the stored element, with the composer placed beside.
+    await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toHaveText('1');
+    await expect(reviewer.locator('#__sl-preview .__sl-target')).toBeVisible();
+    await expectNoOverlap(reviewer, '#__sl-pop', '#__sl-preview .__sl-ghost');
 
     // The 1242 repro: while the composer is open, the live selection moves
     // to entirely different text. The frozen snapshot must not follow it.
@@ -233,6 +248,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toBeVisible();
     await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toHaveText('2');
     await expect(reviewer.locator('#__sl-preview .__sl-target')).toBeVisible();
+    await expectNoOverlap(reviewer, '#__sl-pop', '#__sl-preview .__sl-ghost');
     await reviewer.locator('#__sl-pop textarea').fill('Swap this hero image');
     await reviewer.locator('#__sl-pop .__sl-btn-primary').click();
     await expect(reviewer.locator('#__sl-pop')).toBeHidden();
@@ -268,6 +284,8 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await expect(reviewer.locator('#__sl-preview .__sl-region')).toBeVisible();
     await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toBeVisible();
     await expect(reviewer.locator('#__sl-preview .__sl-target')).toBeVisible();
+    await expectNoOverlap(reviewer, '#__sl-pop', '#__sl-preview .__sl-region');
+    await expectNoOverlap(reviewer, '#__sl-pop', '#__sl-preview .__sl-ghost');
     await reviewer.locator('#__sl-pop textarea').fill('Tighten this whole paragraph');
     await reviewer.locator('#__sl-pop .__sl-btn-primary').click();
     await expect(reviewer.locator('#__sl-pop')).toBeHidden();

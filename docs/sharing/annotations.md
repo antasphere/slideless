@@ -18,6 +18,16 @@ Any share link can carry the annotate capability:
 
 Everything else about share links applies unchanged: pin the link to a version with `--to-version`, protect it with `--password`, expire it with `--expires`. See [cli.md](../agents/cli.md) for the full sharing reference.
 
+### Placing the notes button
+
+The reviewer's floating notes button sits at the bottom-right by default, which can cover something important in a particular deck. Its position is the one placement you control explicitly, with eight slots: the four corners and the four edge centers (`top-left`, `top`, `top-right`, `right`, `bottom-right`, `bottom`, `bottom-left`, `left`).
+
+- **Dashboard** — a *Notes button position* select appears in the share-link dialog when annotations are enabled.
+- **CLI** — `slideless share DECK_ID --annotator --badge-position top-left` (also on `share-email`).
+- **MCP** — `slideless_add_share_token` accepts `badgePosition`.
+
+An explicit choice is remembered as the deck's default, so the next annotator link on the same deck inherits it automatically; any link can still override it, and updating a link's position updates the deck default too.
+
 ## What reviewers can do
 
 Opening an annotator link shows the deck with a small annotation layer on top:
@@ -27,6 +37,14 @@ Opening an annotator link shows the deck with a small annotation layer on top:
 - **Review their notes** — a badge in the corner opens a side panel listing the reviewer's notes in *Open* and *Resolved* tabs. Open notes render as numbered pins on the page; clicking a note jumps to the place it was made and highlights it — including across pages of a multi-page deck. A *Pins* toggle in the panel header hides the markers when the deck should read clean.
 
 Notes are private per link: a reviewer sees only the notes made with their own link, never another reviewer's. Interacting with the annotation layer never navigates the deck — slide decks that react to clicks or keys stay where they are.
+
+## How capture works
+
+Every capture follows the same three-part pattern, whichever way it starts:
+
+1. **The anchor freezes immediately.** The moment the *Add note* button appears on a selection, or a pin or region lands in *Add pin* mode, the anchor — the quote, the element, the exact position — is snapshotted. Nothing you do afterwards (typing, clicking, selecting other text) changes what gets saved: what the composer previews is exactly what is stored.
+2. **The pending note previews itself in place.** While the composer is open you see a pulsing provisional pin carrying the number the note will take, a dashed contour around the DOM element the anchor attaches to, and — for regions — the rectangle you drew. The preview is rendered by re-resolving the frozen anchor through the same lookup a saved note uses later, so it shows precisely where the note will land when the deck is reopened. For a text selection the contour outlines the containing element (typically the paragraph), which is what the anchor stores alongside the quoted text.
+3. **The composer places itself beside the indicator, never on top.** It tries the right side first, then the left, then below, then above, always staying inside the viewport and never covering the pin, the region, or the selection. There is deliberately no placement setting — the auto-placement is the behavior.
 
 ## How anchors work
 

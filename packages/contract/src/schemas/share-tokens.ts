@@ -12,6 +12,26 @@ export const shareTokenVersionModeSchema = z.enum(['latest', 'pinned']);
 export type ShareTokenVersionMode = z.infer<typeof shareTokenVersionModeSchema>;
 
 /**
+ * Where the annotation overlay's floating badge sits for this link: the 4
+ * corners plus the 4 edge centers (a bare edge name means that edge's
+ * center). The badge floats over unknown deck content, so no automatic
+ * placement can know what it covers — this is the one deliberately
+ * user-controllable slot. Null on a token = inherit the deck's remembered
+ * position (set by the last explicit choice), else bottom-right.
+ */
+export const badgePositionSchema = z.enum([
+  'top-left',
+  'top',
+  'top-right',
+  'right',
+  'bottom-right',
+  'bottom',
+  'bottom-left',
+  'left'
+]);
+export type BadgePositionValue = z.infer<typeof badgePositionSchema>;
+
+/**
  * SERVER-SET token purpose. 'preview' rows are the dashboard's own transient
  * iframe tokens (ADR 012 Surface D): hidden from the share-links panel,
  * excluded from view stats, minted ONLY through the dedicated preview-token
@@ -44,6 +64,8 @@ export const shareTokenSchema = z.object({
   /** The frozen version — null while versionMode is 'latest'. */
   pinnedVersion: z.number().int().nullable(),
   canAnnotate: z.boolean(),
+  /** Per-link badge slot; null = deck default (then bottom-right). */
+  badgePosition: badgePositionSchema.nullable(),
   expiresAt: z.string().nullable(),
   /** Whether a viewer password is set (the hash never leaves the server). */
   hasPassword: z.boolean(),
@@ -71,6 +93,12 @@ export const shareTokenCreateSchema = z
     /** Required when versionMode is 'pinned'. */
     pinnedVersion: z.number().int().min(1).optional(),
     canAnnotate: z.boolean().default(false),
+    /**
+     * Explicit badge slot for this link. Also becomes the deck's remembered
+     * default for future links. Omitted = inherit the deck's remembered
+     * position.
+     */
+    badgePosition: badgePositionSchema.optional(),
     expiresAt: z.iso.datetime().optional(),
     /** Optional viewer password (stored hashed, shown as hasPassword). */
     password: z.string().min(4).max(256).optional()
@@ -113,6 +141,11 @@ export const shareTokenUpdateSchema = z
     /** Required alongside versionMode 'pinned'; ignored for 'latest'. */
     pinnedVersion: z.number().int().min(1).optional(),
     canAnnotate: z.boolean().optional(),
+    /**
+     * Explicit slot (also updates the deck's remembered default) or null to
+     * fall back to the deck default again.
+     */
+    badgePosition: badgePositionSchema.nullable().optional(),
     expiresAt: z.iso.datetime().nullable().optional(),
     password: z.string().min(4).max(256).nullable().optional()
   })
