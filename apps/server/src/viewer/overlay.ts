@@ -1086,7 +1086,6 @@ function setMode(next) {
   mode = next;
   layer.classList.toggle('on', next === 'annotate');
   banner.classList.toggle('on', next === 'annotate');
-  modeBtn.classList.toggle('on', next === 'annotate');
   if (next === 'annotate') { hideAdd(); closeComposer(); toggleSheet(false); toggleSettings(false); }
   syncFabTransform();
   renderPins();
@@ -1109,7 +1108,8 @@ doc.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     if (settings.classList.contains('on')) { toggleSettings(false); return; }
     if (pop.style.display === 'block') { closeComposer(); return; }
-    if (mode === 'annotate') setMode('browse');
+    if (mode === 'annotate') { setMode('browse'); return; }
+    if (sheet.classList.contains('open')) toggleSheet(false);
   }
 }, true);
 

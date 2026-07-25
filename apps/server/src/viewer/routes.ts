@@ -322,13 +322,25 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     return `${VIEWER_PATH_PREFIX}/${c.req.path.split('/')[2] ?? ''}/`;
   }
 
-  // POST /v/{secret}[/] — the browser password form. Verifies, then hands the
-  // browser a signed unlock cookie and bounces back to the canonical GET.
+  /**
+   * Where a successful password unlock bounces to. The gate challenges on
+   * EVERY document under /v/{secret}/ (assets enforce it too), and the form
+   * posts to the URL that challenged — so a sub-page of a multi-page deck
+   * returns to that same sub-page, while the entry forms normalize to the
+   * canonical slash URL.
+   */
+  function postUnlockTarget(c: Context): string {
+    const segments = c.req.path.split('/').filter((s) => s !== '');
+    return segments.length > 2 ? c.req.path : canonicalEntryPath(c);
+  }
+
+  // POST /v/{secret}[/…] — the browser password form. Verifies, then hands
+  // the browser a signed unlock cookie and bounces back to the GET.
   const passwordFormHandler = async (c: Context): Promise<Response> => {
     const resolved = await resolve(c);
     if (!resolved.ok) return viewerError(c, resolved.failure);
     const { token, rawSecretSegment } = resolved.view;
-    if (!token.passwordHash) return c.redirect(canonicalEntryPath(c), 303);
+    if (!token.passwordHash) return c.redirect(postUnlockTarget(c), 303);
 
     if (await passwordAttemptsExhausted(c, token)) return rateLimited(c);
 
@@ -344,10 +356,12 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       'set-cookie',
       tokenCookie(unlockCookieName(token.id), value, rawSecretSegment, UNLOCK_TTL_MS / 1000)
     );
-    return c.redirect(canonicalEntryPath(c), 303);
+    return c.redirect(postUnlockTarget(c), 303);
   };
   app.post(`${VIEWER_PATH_PREFIX}/:secret`, passwordFormHandler);
   app.post(`${VIEWER_PATH_PREFIX}/:secret/`, passwordFormHandler);
+  // Sub-pages challenge too (multi-page decks): their forms must not 404.
+  app.post(`${VIEWER_PATH_PREFIX}/:secret/*`, passwordFormHandler);
 
   /** True when the request presents a live, well-signed viewed cookie for this token. */
   function hasValidViewedCookie(c: Context, tokenId: string): boolean {

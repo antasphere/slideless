@@ -670,6 +670,26 @@ describe('password gate', () => {
     expect(row.accessCount).toBe(1); // only the successful entry load counted
   });
 
+  it('the password form on a SUB-PAGE posts back to that sub-page (multi-page decks)', async () => {
+    // The gate challenges on every document under /v/{secret}/, and the form
+    // posts to the URL that challenged — a sub-page unlock must bounce back
+    // to the sub-page, not 404 (found by the overlay-rework review).
+    const created = await createToken({ name: 'Gated subpage', password: PASSWORD });
+    const post = await app.app.request(`/v/${created.secret}/pages/two.html`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': '10.9.9.1' },
+      body: new URLSearchParams({ password: PASSWORD }).toString()
+    });
+    expect(post.status).toBe(303);
+    expect(post.headers.get('location')).toBe(`/v/${created.secret}/pages/two.html`);
+    const unlockCookie = (post.headers.get('set-cookie') ?? '').split(';')[0]!;
+    const page = await app.app.request(`/v/${created.secret}/pages/two.html`, {
+      headers: { cookie: unlockCookie }
+    });
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('Subpage marker');
+  });
+
   it('browser form POST sets a token-scoped unlock cookie honored by entry + assets', async () => {
     const created = await createToken({ name: 'Gated form', password: PASSWORD });
 

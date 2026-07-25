@@ -531,8 +531,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
     });
     // An explicit badge choice becomes the deck's remembered default, so the
-    // next annotator link on this deck inherits it.
-    if (body.badgePosition !== undefined) {
+    // next annotator link on this deck inherits it — but only when the link
+    // actually annotates: a view-only create carrying the field must not
+    // silently move every future annotator link's badge.
+    if (body.badgePosition !== undefined && row.canAnnotate) {
       await service.rememberBadgePosition(principal.workspaceId, id, body.badgePosition);
     }
 
@@ -652,8 +654,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (patch.canAnnotate !== undefined) set.canAnnotate = patch.canAnnotate;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
-      // Explicit slot → new deck default; explicit null just falls back.
-      if (patch.badgePosition !== null) {
+      // Explicit slot → new deck default (explicit null just falls back),
+      // gated on the link's EFFECTIVE annotate capability after this patch.
+      const annotates = patch.canAnnotate ?? token.canAnnotate;
+      if (patch.badgePosition !== null && annotates) {
         await service.rememberBadgePosition(principal.workspaceId, id, patch.badgePosition);
       }
     }

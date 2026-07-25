@@ -234,6 +234,12 @@ describe('overlay injection', () => {
       body: JSON.stringify({ position: 'left' })
     });
     expect(denied.status).toBe(403);
+
+    // A VIEW-ONLY create carrying badgePosition must not rewrite the deck
+    // default either — only annotator links carry that intent.
+    await createToken({ name: 'View Badge', canAnnotate: false, badgePosition: 'top-right' });
+    const unmoved = await createToken({ name: 'Still Deck Default', canAnnotate: true });
+    expect(await (await fetchEntry(unmoved.secret)).text()).toContain('"badge":"bottom"');
   });
 });
 
