@@ -66,6 +66,10 @@ export interface OverlayConfig {
    * bottom-left, left. Null = bottom-right.
    */
   badge: string | null;
+  /** When this share link was created (ISO) — settings-dialog metadata. */
+  linkCreatedAt: string;
+  /** When this share link expires (ISO), or null — settings-dialog metadata. */
+  linkExpiresAt: string | null;
 }
 
 /** Attribute marking the injected script — tests and humans grep for it. */
@@ -426,11 +430,55 @@ var css = [
   '#__sl-sheet .__sl-x{display:flex;align-items:center;justify-content:center;width:30px;height:30px;',
   '  border-radius:8px;cursor:pointer;color:var(--sl-muted);}',
   '#__sl-sheet .__sl-x:hover{background:var(--sl-bg2);color:var(--sl-ink);}',
-  '.__sl-hbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--sl-border);',
-  '  background:transparent;color:var(--sl-ink);border-radius:8px;padding:6px 10px;cursor:pointer;',
-  '  font:600 12px/1 inherit;}',
-  '.__sl-hbtn:hover{border-color:var(--sl-border2);}',
-  '.__sl-hbtn.on{background:var(--sl-accent);color:var(--sl-accent-ink);border-color:var(--sl-accent);}',
+  // Footer CTA — THE action of the sheet; settings-ish things live behind ⚙.
+  '#__sl-foot{padding:12px 16px 16px;border-top:1px solid var(--sl-border);}',
+  '#__sl-mode{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;',
+  '  background:var(--sl-accent);color:var(--sl-accent-ink);border:0;border-radius:10px;',
+  '  padding:11px;cursor:pointer;font:600 13px/1 inherit;}',
+  '#__sl-mode:hover{filter:brightness(1.05);}',
+  '#__sl-mode svg{width:15px;height:15px;}',
+
+  // Settings dialog: badge-position grid + pins switch + link metadata.
+  '#__sl-scrim{position:fixed;inset:0;display:none;background:rgba(0,0,0,.35);}',
+  '#__sl-scrim.on{display:block;}',
+  '#__sl-settings{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);display:none;',
+  '  width:320px;max-width:92vw;background:var(--sl-bg);border:1px solid var(--sl-border);',
+  '  border-radius:14px;padding:16px;box-shadow:var(--sl-shadow);}',
+  '#__sl-settings.on{display:block;}',
+  '#__sl-settings .__sl-shead{display:flex;align-items:center;justify-content:space-between;',
+  '  margin-bottom:6px;}',
+  '#__sl-settings .__sl-shead strong{font-size:14px;font-weight:650;}',
+  '.__sl-slabel{font:600 11px/1 inherit;letter-spacing:.06em;text-transform:uppercase;',
+  '  color:var(--sl-muted);margin:12px 0 8px;}',
+  '#__sl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}',
+  '#__sl-grid button{height:34px;border:1px solid var(--sl-border);border-radius:8px;',
+  '  background:var(--sl-bg2);cursor:pointer;position:relative;padding:0;}',
+  '#__sl-grid button:hover{border-color:var(--sl-border2);}',
+  '#__sl-grid button.active{border-color:var(--sl-accent);background:var(--sl-accent);}',
+  '#__sl-grid button::after{content:"";position:absolute;width:8px;height:8px;border-radius:999px;',
+  '  background:var(--sl-muted);}',
+  '#__sl-grid button.active::after{background:var(--sl-accent-ink);}',
+  '#__sl-grid button[data-slot="top-left"]::after{top:5px;left:5px;}',
+  '#__sl-grid button[data-slot="top"]::after{top:5px;left:50%;margin-left:-4px;}',
+  '#__sl-grid button[data-slot="top-right"]::after{top:5px;right:5px;}',
+  '#__sl-grid button[data-slot="left"]::after{top:50%;margin-top:-4px;left:5px;}',
+  '#__sl-grid button[data-slot="right"]::after{top:50%;margin-top:-4px;right:5px;}',
+  '#__sl-grid button[data-slot="bottom-left"]::after{bottom:5px;left:5px;}',
+  '#__sl-grid button[data-slot="bottom"]::after{bottom:5px;left:50%;margin-left:-4px;}',
+  '#__sl-grid button[data-slot="bottom-right"]::after{bottom:5px;right:5px;}',
+  '#__sl-grid .__sl-void{border:0;background:transparent;cursor:default;pointer-events:none;}',
+  '#__sl-grid .__sl-void::after{display:none;}',
+  '.__sl-setrow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;}',
+  '.__sl-setrow span{font-size:13px;}',
+  '#__sl-pinvis{width:38px;height:22px;flex:none;border-radius:999px;border:1px solid var(--sl-border);',
+  '  background:var(--sl-bg2);position:relative;cursor:pointer;padding:0;}',
+  '#__sl-pinvis::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;',
+  '  border-radius:999px;background:var(--sl-muted);transition:left .15s ease,background .15s ease;}',
+  '#__sl-pinvis.on{background:var(--sl-accent);border-color:var(--sl-accent);}',
+  '#__sl-pinvis.on::after{left:18px;background:var(--sl-accent-ink);}',
+  '#__sl-smeta{margin-top:14px;padding-top:12px;border-top:1px solid var(--sl-border);',
+  '  font-size:11.5px;color:var(--sl-muted);line-height:1.7;}',
+  '#__sl-serr{color:#e0625e;font-size:11.5px;margin-top:8px;display:none;}',
   '#__sl-tabs{display:flex;gap:4px;margin:2px 16px 8px;padding:3px;background:var(--sl-bg2);',
   '  border-radius:10px;}',
   '.__sl-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;text-align:center;',
@@ -509,7 +557,7 @@ var ICONS = {
   mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
-  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
 };
 
@@ -568,48 +616,41 @@ badge.appendChild(bCount);
 // slot sets its own sides and pins the others to auto (leaving them empty
 // would let the stylesheet's right/bottom stretch the box). Config is
 // server-controlled, but validate anyway and fall back to the default.
-(function () {
-  var slots = {
-    'top-left': { top: '20px', left: '20px' },
-    top: { top: '20px', left: '50%', transform: 'translateX(-50%)' },
-    'top-right': { top: '20px', right: '20px' },
-    right: { right: '20px', top: '50%', transform: 'translateY(-50%)' },
-    'bottom-right': { bottom: '20px', right: '20px' },
-    bottom: { bottom: '20px', left: '50%', transform: 'translateX(-50%)' },
-    'bottom-left': { bottom: '20px', left: '20px' },
-    left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
-  };
-  var slot = slots[CFG.badge] || null;
-  if (!slot) return;
+var BADGE_SLOTS = {
+  'top-left': { top: '20px', left: '20px' },
+  top: { top: '20px', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: '20px', right: '20px' },
+  right: { right: '20px', top: '50%', transform: 'translateY(-50%)' },
+  'bottom-right': { bottom: '20px', right: '20px' },
+  bottom: { bottom: '20px', left: '50%', transform: 'translateX(-50%)' },
+  'bottom-left': { bottom: '20px', left: '20px' },
+  left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
+};
+var currentBadge = BADGE_SLOTS[CFG.badge] ? CFG.badge : 'bottom-right';
+function applyBadgeSlot(pos) {
+  var slot = BADGE_SLOTS[pos] || BADGE_SLOTS['bottom-right'];
   badge.style.top = slot.top || 'auto';
   badge.style.bottom = slot.bottom || 'auto';
   badge.style.left = slot.left || 'auto';
   badge.style.right = slot.right || 'auto';
-  if (slot.transform) badge.style.transform = slot.transform;
-})();
+  badge.style.transform = slot.transform || '';
+}
+applyBadgeSlot(currentBadge);
 
 var sheet = el('div');
 sheet.id = '__sl-sheet';
 var head = el('div', '__sl-head');
 head.appendChild(el('strong', null, 'Annotations'));
-var modeBtn = el('button', '__sl-hbtn');
-modeBtn.id = '__sl-mode';
-modeBtn.type = 'button';
-modeBtn.innerHTML = ICONS.pin;
-modeBtn.appendChild(el('span', null, 'Add pin'));
-// Show/hide the numbered pins on the deck — reviewers need to read (or
-// present) the page clean sometimes. Per-visit only: the opaque origin has
-// no storage (ADR 012), so the toggle resets to ON on every load.
-var pinsBtn = el('button', '__sl-hbtn on');
-pinsBtn.id = '__sl-pinvis';
-pinsBtn.type = 'button';
-pinsBtn.title = 'Show or hide the pins on the deck';
-pinsBtn.innerHTML = ICONS.eye;
-pinsBtn.appendChild(el('span', null, 'Pins'));
+// Lean header: title · ⚙ · ✕. Actions live elsewhere — "Add a pin" is the
+// sheet's footer CTA, viewing preferences sit behind the gear.
+var gearBtn = el('div', '__sl-x');
+gearBtn.id = '__sl-gear';
+gearBtn.title = 'Annotation settings';
+gearBtn.innerHTML = ICONS.gear;
 var headClose = el('div', '__sl-x');
+headClose.id = '__sl-close';
 headClose.innerHTML = ICONS.close;
-head.appendChild(pinsBtn);
-head.appendChild(modeBtn);
+head.appendChild(gearBtn);
 head.appendChild(headClose);
 var tabs = el('div');
 tabs.id = '__sl-tabs';
@@ -627,9 +668,116 @@ tabs.appendChild(tabOpen);
 tabs.appendChild(tabDone);
 var list = el('div');
 list.id = '__sl-list';
+var foot = el('div');
+foot.id = '__sl-foot';
+var modeBtn = el('button');
+modeBtn.id = '__sl-mode';
+modeBtn.type = 'button';
+modeBtn.innerHTML = ICONS.pin;
+modeBtn.appendChild(el('span', null, 'Add a pin'));
+foot.appendChild(modeBtn);
 sheet.appendChild(head);
 sheet.appendChild(tabs);
 sheet.appendChild(list);
+sheet.appendChild(foot);
+
+// ---- Settings dialog -----------------------------------------------------
+var scrim = el('div');
+scrim.id = '__sl-scrim';
+var settings = el('div');
+settings.id = '__sl-settings';
+var shead = el('div', '__sl-shead');
+shead.appendChild(el('strong', null, 'Settings'));
+var settingsClose = el('div', '__sl-x');
+settingsClose.innerHTML = ICONS.close;
+shead.appendChild(settingsClose);
+settings.appendChild(shead);
+settings.appendChild(el('div', '__sl-slabel', 'Notes button position'));
+var grid = el('div');
+grid.id = '__sl-grid';
+// 3×3 spatial picker: the 8 slots around an empty center. Saved to THIS
+// link (token-authed PUT), so it sticks across pages and visits — and never
+// touches the deck's owner-set default.
+['top-left', 'top', 'top-right', 'left', null, 'right', 'bottom-left', 'bottom', 'bottom-right'].forEach(
+  function (slot) {
+    if (!slot) {
+      grid.appendChild(el('div', '__sl-void'));
+      return;
+    }
+    var cell = el('button');
+    cell.type = 'button';
+    cell.setAttribute('data-slot', slot);
+    cell.title = slot.replace('-', ' ');
+    cell.addEventListener('click', function () { setBadgeSlot(slot); });
+    grid.appendChild(cell);
+  }
+);
+settings.appendChild(grid);
+var settingsErr = el('div');
+settingsErr.id = '__sl-serr';
+settingsErr.textContent = 'Could not save the position — it will reset on reload.';
+settings.appendChild(settingsErr);
+var pinsRow = el('div', '__sl-setrow');
+pinsRow.appendChild(el('span', null, 'Show pins on the deck'));
+// Per-visit only: the opaque origin has no storage (ADR 012), so this
+// resets to ON on every load — which suits a "read it clean" toggle.
+var pinsBtn = el('button', 'on');
+pinsBtn.id = '__sl-pinvis';
+pinsBtn.type = 'button';
+pinsBtn.title = 'Show or hide the pins on the deck';
+pinsRow.appendChild(pinsBtn);
+settings.appendChild(pinsRow);
+var smeta = el('div');
+smeta.id = '__sl-smeta';
+settings.appendChild(smeta);
+
+function fmtDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch (e) { return String(iso); }
+}
+function syncSettings() {
+  var cells = grid.children;
+  for (var i = 0; i < cells.length; i++) {
+    if (cells[i].classList) {
+      cells[i].classList.toggle('active', cells[i].getAttribute('data-slot') === currentBadge);
+    }
+  }
+  pinsBtn.classList.toggle('on', pinsVisible);
+  smeta.textContent = '';
+  smeta.appendChild(el('div', null, 'Viewing version ' + CFG.version));
+  if (CFG.linkCreatedAt) smeta.appendChild(el('div', null, 'Link active since ' + fmtDate(CFG.linkCreatedAt)));
+  if (CFG.linkExpiresAt) smeta.appendChild(el('div', null, 'Link expires ' + fmtDate(CFG.linkExpiresAt)));
+}
+function toggleSettings(open) {
+  scrim.classList.toggle('on', open);
+  settings.classList.toggle('on', open);
+  if (open) { settingsErr.style.display = 'none'; syncSettings(); }
+}
+function setBadgeSlot(slot) {
+  var previous = currentBadge;
+  if (slot === previous) return;
+  currentBadge = slot;
+  applyBadgeSlot(slot); // optimistic: move now, persist behind it
+  syncSettings();
+  settingsErr.style.display = 'none';
+  fetchFn(new URL('/api/v1/viewer/' + rawSecret + '/badge', location.href).toString(), {
+    method: 'PUT',
+    headers: headers(true),
+    credentials: 'omit',
+    mode: 'cors',
+    body: JSON.stringify({ position: slot })
+  }).then(function (res) {
+    if (!res.ok) throw new Error('save_failed');
+  }).catch(function () {
+    // Keep the moved badge for this visit (the reviewer wanted it there),
+    // but say plainly that it will not survive a reload.
+    settingsErr.style.display = 'block';
+  });
+}
+gearBtn.addEventListener('click', function () { toggleSettings(true); });
+settingsClose.addEventListener('click', function () { toggleSettings(false); });
+scrim.addEventListener('click', function () { toggleSettings(false); });
 
 var pins = el('div');
 pins.id = '__sl-pins';
@@ -898,7 +1046,7 @@ function setMode(next) {
   layer.classList.toggle('on', next === 'annotate');
   banner.classList.toggle('on', next === 'annotate');
   modeBtn.classList.toggle('on', next === 'annotate');
-  if (next === 'annotate') { hideAdd(); closeComposer(); toggleSheet(false); }
+  if (next === 'annotate') { hideAdd(); closeComposer(); toggleSheet(false); toggleSettings(false); }
   renderPins();
 }
 modeBtn.addEventListener('click', function () {
@@ -914,6 +1062,7 @@ bannerDone.addEventListener('click', function () { setMode('browse'); });
 // not swallow it, and our root's stopPropagation must not starve it.
 doc.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
+    if (settings.classList.contains('on')) { toggleSettings(false); return; }
     if (pop.style.display === 'block') { closeComposer(); return; }
     if (mode === 'annotate') setMode('browse');
   }
@@ -1199,6 +1348,8 @@ function mount() {
   root.appendChild(pop);
   root.appendChild(badge);
   root.appendChild(sheet);
+  root.appendChild(scrim);
+  root.appendChild(settings);
   root.appendChild(banner);
   root.appendChild(toast);
   doc.body.appendChild(root);
@@ -1230,7 +1381,9 @@ export function overlayScriptTag(cfg: OverlayConfig): string {
     version: cfg.version,
     unlock: cfg.unlock,
     entry: cfg.entry,
-    badge: cfg.badge
+    badge: cfg.badge,
+    linkCreatedAt: cfg.linkCreatedAt,
+    linkExpiresAt: cfg.linkExpiresAt
   }).replace(/</g, '\\u003c');
   return `\n<script ${OVERLAY_MARKER}>\n(function(){\n"use strict";\ntry{\nvar CFG=${json};\n${OVERLAY_JS}\n}catch(e){}\n})();\n</script>\n`;
 }

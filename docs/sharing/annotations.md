@@ -28,13 +28,16 @@ The reviewer's floating notes button sits at the bottom-right by default, which 
 
 An explicit choice is remembered as the deck's default, so the next annotator link on the same deck inherits it automatically; any link can still override it, and updating a link's position updates the deck default too.
 
+Reviewers can also move the button themselves, from the gear in the annotation panel: their choice is saved to their own link only — it never changes the deck default or anyone else's link.
+
 ## What reviewers can do
 
 Opening an annotator link shows the deck with a small annotation layer on top:
 
 - **Select text** anywhere in the deck — an *Add note* button appears at the selection. The selected quote is captured the moment the composer opens and is saved exactly as previewed.
 - **Pin a spot or mark a region** — the *Add pin* mode turns the deck static for a moment: a click drops a pin on that element (a button, an image, whitespace), a drag marks a rectangular region. Press *Esc* or *Done* to go back to browsing. This is also how non-textual content gets annotated.
-- **Review their notes** — a badge in the corner opens a side panel listing the reviewer's notes in *Open* and *Resolved* tabs. Open notes render as numbered pins on the page; clicking a note jumps to the place it was made and highlights it — including across pages of a multi-page deck. A *Pins* toggle in the panel header hides the markers when the deck should read clean.
+- **Review their notes** — a badge opens a side panel listing the reviewer's notes in *Open* and *Resolved* tabs, with *Add a pin* as the panel's main action. Open notes render as numbered pins on the page; clicking a note jumps to the place it was made and highlights it — including across pages of a multi-page deck.
+- **Adjust their view** — a gear in the panel opens a small settings dialog: a position grid moves the notes button (saved to their link, so it sticks across pages and visits), a switch hides the pins when the deck should read clean (per visit), and a footer shows the link's context — the version being viewed, when the link went live, and its expiry if one is set.
 
 Notes are private per link: a reviewer sees only the notes made with their own link, never another reviewer's. Interacting with the annotation layer never navigates the deck — slide decks that react to clicks or keys stay where they are.
 

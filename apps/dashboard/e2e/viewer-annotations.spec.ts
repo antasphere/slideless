@@ -147,9 +147,9 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await expect(reviewer.locator('#counter')).toHaveText('1');
     await reviewer.locator('#__sl-badge').click(); // open the sheet
     await expect(reviewer.locator('#__sl-sheet')).toHaveClass(/open/);
-    await reviewer.locator('#__sl-sheet .__sl-x').click(); // close it again
+    await reviewer.locator('#__sl-close').click(); // close it again
     await reviewer.locator('#__sl-badge').click(); // and toggle once more
-    await reviewer.locator('#__sl-sheet .__sl-x').click();
+    await reviewer.locator('#__sl-close').click();
     // The fixture advances a slide on ANY document click — none of the four
     // overlay clicks may have reached it.
     await expect(reviewer.locator('#counter')).toHaveText('1');
@@ -219,17 +219,20 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await expect(reviewer.locator('#__sl-sheet')).toHaveClass(/open/);
     await expect(reviewer.locator('.__sl-item')).toHaveCount(1);
     await expect(reviewer.locator('#p1.__sl-anno-flash')).toHaveCount(1);
-    await reviewer.locator('#__sl-sheet .__sl-x').click();
+    await reviewer.locator('#__sl-close').click();
   });
 
-  await test.step('the sheet toggle hides and re-shows the pins', async () => {
+  await test.step('settings: the pins switch hides and re-shows the pins', async () => {
     await reviewer.locator('#__sl-badge').click();
     await expect(reviewer.locator('.__sl-pin')).toHaveCount(1);
+    await reviewer.locator('#__sl-gear').click();
+    await expect(reviewer.locator('#__sl-settings')).toHaveClass(/on/);
     await reviewer.locator('#__sl-pinvis').click();
     await expect(reviewer.locator('.__sl-pin')).toHaveCount(0);
     await reviewer.locator('#__sl-pinvis').click();
     await expect(reviewer.locator('.__sl-pin')).toHaveCount(1);
-    await reviewer.locator('#__sl-sheet .__sl-x').click();
+    await reviewer.locator('#__sl-settings .__sl-x').click();
+    await reviewer.locator('#__sl-close').click();
   });
 
   await test.step('annotate mode: a point pin on the image, deck frozen while active', async () => {
@@ -351,6 +354,28 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
       reviewer.locator('.__sl-item').filter({ hasText: 'Please rephrase this sentence' })
     ).toBeVisible();
     await expect(reviewer.locator('.__sl-item .__sl-meta').first()).toContainText('resolved');
+  });
+
+  await test.step('settings: the position grid moves the notes button and persists on the link', async () => {
+    await reviewer.goto(`${origin}/v/${secret}/`);
+    await reviewer.locator('#__sl-badge').click();
+    await reviewer.locator('#__sl-gear').click();
+    await expect(reviewer.locator('#__sl-smeta')).toContainText('Viewing version 1');
+    await expect(reviewer.locator('#__sl-smeta')).toContainText('Link active since');
+
+    const saved = reviewer.waitForResponse(
+      (r) => r.url().includes('/badge') && r.request().method() === 'PUT'
+    );
+    await reviewer.locator('#__sl-grid [data-slot="top-left"]').click();
+    await expect(reviewer.locator('#__sl-grid [data-slot="top-left"]')).toHaveClass(/active/);
+    expect((await saved).status()).toBe(200);
+    const moved = await reviewer.locator('#__sl-badge').boundingBox();
+    expect(moved && moved.x < 100 && moved.y < 100, 'badge moved top-left').toBe(true);
+
+    // Persisted on the LINK: a fresh load places it from the server config.
+    await reviewer.goto(`${origin}/v/${secret}/`);
+    const reloaded = await reviewer.locator('#__sl-badge').boundingBox();
+    expect(reloaded && reloaded.x < 100 && reloaded.y < 100, 'position survived reload').toBe(true);
   });
 
   await test.step('agent paths stay byte-exact: ?raw carries no overlay', async () => {

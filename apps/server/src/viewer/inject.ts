@@ -40,7 +40,7 @@ import { overlayScriptTag } from './overlay.js';
 export type EntryTransform = (html: string) => string;
 
 export interface EntryTransformContext {
-  token: Pick<ShareTokenRow, 'id' | 'canAnnotate'>;
+  token: Pick<ShareTokenRow, 'id' | 'canAnnotate' | 'createdAt' | 'expiresAt'>;
   /** True when the caller asked for the raw authored HTML (?raw / ?format=html). */
   rawRequested: boolean;
   /** True for a browser top-level document navigation — see docNavigation(). */
@@ -93,7 +93,10 @@ export function entryTransformFor(ctx: EntryTransformContext): EntryTransform | 
     version: ctx.version,
     unlock: ctx.mintUnlockProof(),
     entry: ctx.entryPath,
-    badge: ctx.badgePosition
+    badge: ctx.badgePosition,
+    // Settings-dialog metadata: the recipient's own link, safe to show.
+    linkCreatedAt: ctx.token.createdAt.toISOString(),
+    linkExpiresAt: ctx.token.expiresAt?.toISOString() ?? null
   });
   return (html) => injectBeforeBodyClose(html, script);
 }

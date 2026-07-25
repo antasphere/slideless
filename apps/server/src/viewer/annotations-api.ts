@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
+import { badgePositionSchema } from '@slideless/contract';
 import type { ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { PresentationService } from '../presentations/service.js';
@@ -53,7 +54,7 @@ import { verifyUnlockValue } from './unlock.js';
 
 export const VIEWER_API_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Viewer-Password, X-Slideless-Unlock',
   'Access-Control-Max-Age': '86400'
 } as const;
@@ -276,5 +277,49 @@ export function registerViewerAnnotationRoutes(api: OpenAPIHono, deps: ViewerAnn
       'viewer annotation created'
     );
     return c.json(annotationToReviewerWire(row), 201);
+  });
+
+  // ── PUT: move this link's notes button (the overlay's settings dialog) ────
+  // Reviewer-scoped by design: writes ONLY this token's own badgePosition so
+  // the choice sticks across pages and visits of this one link. It NEVER
+  // touches the deck's remembered default — that is owner intent, set on the
+  // owner surface. Same containment as annotation creates: token re-resolve,
+  // password proof, zod enum, and the shared per-IP+token write bucket.
+  api.put('/viewer/:secret/badge', async (c) => {
+    const resolved = await resolveAnnotator(c);
+    if (!resolved.ok) return resolved.res;
+    const { token } = resolved.view;
+
+    try {
+      await deps.annotateLimiter.consume(`${clientIp(c)}:${token.id}`);
+    } catch {
+      return c.json(err('rate_limited', 'Too many requests — slow down.'), 429);
+    }
+
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json(err('validation_error', 'Body must be JSON'), 400);
+    }
+    const parsed = z.object({ position: badgePositionSchema }).safeParse(raw);
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: {
+            code: 'validation_error',
+            message: 'Request validation failed',
+            details: parsed.error.issues
+          }
+        },
+        400
+      );
+    }
+    await sharing.update(token.id, { badgePosition: parsed.data.position });
+    deps.logger.info(
+      { shareTokenId: token.id, badgePosition: parsed.data.position },
+      'viewer badge position updated'
+    );
+    return c.json({ badgePosition: parsed.data.position }, 200);
   });
 }

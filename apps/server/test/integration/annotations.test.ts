@@ -204,6 +204,37 @@ describe('overlay injection', () => {
     );
     expect(bad.status).toBe(400);
   });
+
+  it('reviewer badge PUT: persists to the link only — never the deck default', async () => {
+    const a = await createToken({ name: 'Reviewer Badge', canAnnotate: true });
+    const put = await app.app.request(`/api/v1/viewer/${a.secret}/badge`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({ position: 'left' })
+    });
+    expect(put.status).toBe(200);
+    expect(await (await fetchEntry(a.secret)).text()).toContain('"badge":"left"');
+
+    // The deck's remembered default (set to 'bottom' by the previous test's
+    // last explicit owner choice) is untouched by the reviewer's move.
+    const fresh = await createToken({ name: 'After Reviewer', canAnnotate: true });
+    expect(await (await fetchEntry(fresh.secret)).text()).toContain('"badge":"bottom"');
+
+    const bad = await app.app.request(`/api/v1/viewer/${a.secret}/badge`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({ position: 'center' })
+    });
+    expect(bad.status).toBe(400);
+
+    const viewOnly = await createToken({ name: 'No Annot Badge', canAnnotate: false });
+    const denied = await app.app.request(`/api/v1/viewer/${viewOnly.secret}/badge`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({ position: 'left' })
+    });
+    expect(denied.status).toBe(403);
+  });
 });
 
 // ═══ Multi-page overlay injection (PRDCT-1296) ═══════════════════════════════
@@ -339,6 +370,8 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
     expect(preflight.headers.get('access-control-allow-headers')).toContain('X-Slideless-Unlock');
+    // The settings dialog's badge PUT preflights too.
+    expect(preflight.headers.get('access-control-allow-methods')).toContain('PUT');
 
     const list = await overlayList(secret);
     expect(list.status).toBe(200);
