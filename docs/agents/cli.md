@@ -192,6 +192,8 @@ slideless share <id> --to-version 2 --annotator \
                      --expires 2026-12-31T23:59:59Z --password hunter22
 slideless share <id> --annotator --badge-position top-left  # move the notes button (8 slots;
                                                             # remembered as the deck default)
+slideless share <id> --embed                              # also print the website embed snippets
+slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link
 slideless unshare <id>                                    # revoke ALL active links
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed
@@ -206,6 +208,16 @@ slideless views <id> [tokenId] [--all]                    # per-view events of o
 Secrets are stored hash-only server-side: the URL printed at creation is
 never retrievable again (`share-email` mints and mails a fresh secret per
 send).
+
+**Embedding from the CLI**: `share --json` always carries an `embed` object
+(`{ script, iframe, embedJsUrl }`) alongside the token and URL, so an agent
+that both manages decks and builds websites mints the link and pastes the
+snippet in one step — no second command, nothing to assemble by hand. In
+human output, `--embed` prints the same two snippets. Both come from the
+same builder as the dashboard's copy dialog (identical sandbox attributes);
+`--placement <label>` bakes a per-spot analytics label into them (it shows
+up per view in `slideless views`). Details: the Embedding page under
+Sharing & review.
 
 Access stats count entry loads only, de-duplicated per browser within a
 short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
@@ -223,7 +235,12 @@ slideless uninvite <id> <collaboratorId>           # revoke the grant
 
 ```bash
 slideless list [--all]        # presentations, newest first
-slideless get <id>            # metadata
+slideless get <id>            # one deck: title, kind, version, agent doc, metadata keys
+slideless meta <id>           # print the deck's metadata object (JSON)
+slideless meta <id> --set client=Acme --set priority=3   # merge keys (values parse as JSON when valid)
+slideless meta <id> --unset priority                     # remove a key
+slideless meta <id> --replace '{"stage":"final"}'        # replace the WHOLE object
+slideless agent-doc [id] [--at <version>] [--out <file>] # print the bundle's AGENT.md briefing
 slideless versions <id> [--all]  # version history, newest first (numbers line up with pull --at)
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed

@@ -46,6 +46,30 @@ If you'd rather not load a script, embed the frame directly:
 
 This is exactly the frame the loader builds. Keep the `sandbox` attribute exactly as shown — it is the security boundary (below). To tag the embed in the link analytics, append `?p=your-label` to the `src` URL yourself.
 
+## From the CLI (for agents)
+
+You never have to assemble these snippets by hand. Minting a link and
+getting its embed code is one command:
+
+```bash
+slideless share <deckId> --embed                          # URL + both snippets
+slideless share <deckId> --embed --placement blog-footer  # with the analytics label baked in
+slideless share <deckId> --json                           # machine form
+```
+
+`--json` always includes an `embed` object — `{ script, iframe, embedJsUrl }`
+— next to the token and URL, so an agent that manages a deck and builds a
+website can mint the link and drop the snippet into the page in one step:
+
+```bash
+slideless share <deckId> --placement pricing --json | jq -r '.embed.script'
+```
+
+The CLI, the dashboard's copy dialog, and this page all emit the same
+snippet from one shared builder, sandbox attributes included. Placement
+labels are slugs (letters, digits, `.`, `_`, `-`, max 64); each embedded
+view then shows its label in `slideless views <deckId> <tokenId>`.
+
 ## Why this is safe — for your site and for the deck
 
 Slideless decks are user-authored HTML, so the embed is built to guarantee that a deck can never touch the page that embeds it:

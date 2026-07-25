@@ -17,4 +17,5 @@ export * from './schemas/presentations.js';
 export * from './schemas/share-tokens.js';
 export * from './schemas/collaborators.js';
 export * from './schemas/annotations.js';
+export * from './embed.js';
 export * from './seams.js';

@@ -1,4 +1,5 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
+import { EMBED_PLACEMENT_RE } from '@slideless/contract';
 import { shareTokenViews, type Db, type ShareTokenViewRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
@@ -40,8 +41,12 @@ export function viewReferrerHost(referer: string | undefined): string | null {
   }
 }
 
-/** Placement labels are owner-chosen slugs, never free text. */
-const PLACEMENT_RE = /^[A-Za-z0-9._-]{1,64}$/;
+/**
+ * Placement labels are owner-chosen slugs, never free text. The shape is
+ * shared with the snippet builder (EMBED_PLACEMENT_RE) so what the CLI and
+ * dashboard emit is exactly what this sanitizer admits.
+ */
+const PLACEMENT_RE = EMBED_PLACEMENT_RE;
 
 /**
  * The entry URL's `?p=` placement label, sanitized: at most 64 chars from

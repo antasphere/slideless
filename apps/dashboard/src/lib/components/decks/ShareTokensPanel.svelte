@@ -32,7 +32,7 @@
     ShareTokenCreate,
     ShareTokenView
   } from '@slideless/contract';
-  import { badgePositionSchema, VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
+  import { badgePositionSchema, buildEmbedSnippets } from '@slideless/contract';
 
   interface Props {
     deckId: string;
@@ -92,17 +92,13 @@
   // stays createdUrl (which honors VIEWER_BASE_URL). Sandbox attrs come
   // from the contract constant, the single source of truth (ADR 012
   // Surface D).
-  const embedScriptSnippet = $derived(
+  const embedSnippets = $derived(
     createdUrl === null
       ? null
-      : // \x3C keeps the literal "</script" sequence out of this component's source.
-        `<script src="${window.location.origin}/embed.js" async>\x3C/script>\n<div data-slideless-embed="${createdUrl}"></div>`
+      : buildEmbedSnippets({ viewerUrl: createdUrl, appOrigin: window.location.origin })
   );
-  const embedIframeSnippet = $derived(
-    createdUrl === null
-      ? null
-      : `<iframe src="${createdUrl}" sandbox="${VIEWER_IFRAME_SANDBOX}" referrerpolicy="no-referrer" allow="fullscreen" style="width:100%;aspect-ratio:16/9;border:0"></iframe>`
-  );
+  const embedScriptSnippet = $derived(embedSnippets?.script ?? null);
+  const embedIframeSnippet = $derived(embedSnippets?.iframe ?? null);
 
   function openCreateDialog() {
     tokenName = '';

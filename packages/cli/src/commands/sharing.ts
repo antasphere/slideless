@@ -1,6 +1,12 @@
 import type { Command } from 'commander';
 import type { ListParams } from '@slideless/sdk';
-import { badgePositionSchema, type BadgePositionValue, type ShareTokenCreate } from '@slideless/contract';
+import {
+  badgePositionSchema,
+  buildEmbedSnippets,
+  EMBED_PLACEMENT_RE,
+  type BadgePositionValue,
+  type ShareTokenCreate
+} from '@slideless/contract';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
 
 const BADGE_POSITIONS = badgePositionSchema.options.join(' | ');
@@ -55,6 +61,11 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     )
     .option('--expires <datetime>', 'ISO expiry, e.g. 2026-12-31T23:59:59Z')
     .option('--password <password>', 'viewer password (min 4 chars)')
+    .option('--embed', 'also print the website embed snippets (script+div and plain iframe)', false)
+    .option(
+      '--placement <label>',
+      'placement label baked into the embed snippets (per-view analytics dimension; slug of [A-Za-z0-9._-], max 64)'
+    )
     .action(
       async (
         id: string,
@@ -65,13 +76,28 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
+          embed: boolean;
+          placement?: string;
         },
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
         await requireApiKey(ctx);
+        if (opts.placement !== undefined && !EMBED_PLACEMENT_RE.test(opts.placement)) {
+          throw new CliUsageError(
+            '--placement must be 1-64 characters of letters, digits, ".", "_" or "-"'
+          );
+        }
         const created = await ctx.client.createShareToken(id, shareOptionsOf(opts));
-        if (ctx.json) return printJson(io, created);
+        // Snippets are producible only NOW (secrets are hash-only at rest);
+        // the JSON envelope always carries them so agents that also build
+        // websites can pipe the snippet without a second command.
+        const embed = buildEmbedSnippets({
+          viewerUrl: created.url,
+          appOrigin: ctx.baseUrl,
+          placement: opts.placement
+        });
+        if (ctx.json) return printJson(io, { ...created, embed });
         io.out.write(
           `${created.url}\n` +
             `  token: ${created.shareToken.id} ("${created.shareToken.name}", ` +
@@ -80,6 +106,13 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             `${created.shareToken.hasPassword ? ', password' : ''})\n` +
             '  The URL is shown once — copy it now.\n'
         );
+        if (opts.embed || opts.placement !== undefined) {
+          io.out.write(
+            `\nEmbed (script, responsive):\n${embed.script}\n` +
+              `\nEmbed (plain iframe):\n${embed.iframe}\n` +
+              '\nPassword-protected links do not render inside embeds; docs: sharing/embedding.\n'
+          );
+        }
       }
     );
 
