@@ -228,6 +228,11 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await hero.click({ force: true }); // lands on the capture layer above it
     await expect(reviewer.locator('#__sl-pop')).toBeVisible();
     await expect(reviewer.locator('#__sl-pop .__sl-cap')).toContainText('pin');
+    // The pending capture previews immediately: a provisional numbered pin
+    // at the click point and a contour around the resolved target element.
+    await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toBeVisible();
+    await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toHaveText('2');
+    await expect(reviewer.locator('#__sl-preview .__sl-target')).toBeVisible();
     await reviewer.locator('#__sl-pop textarea').fill('Swap this hero image');
     await reviewer.locator('#__sl-pop .__sl-btn-primary').click();
     await expect(reviewer.locator('#__sl-pop')).toBeHidden();
@@ -246,6 +251,43 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     expect(pin.selection.point.nx).toBeLessThanOrEqual(1);
   });
 
+  await test.step('annotate mode: a region drag previews its box + contour and saves rect fractions', async () => {
+    await reviewer.locator('#__sl-badge').click();
+    await reviewer.locator('#__sl-mode').click();
+    await expect(reviewer.locator('#__sl-layer')).toHaveClass(/on/);
+
+    const box = await reviewer.locator('#p1').boundingBox();
+    if (!box) throw new Error('no #p1 box');
+    await reviewer.mouse.move(box.x + 8, box.y + 4);
+    await reviewer.mouse.down();
+    await reviewer.mouse.move(box.x + box.width * 0.6, box.y + box.height - 4, { steps: 5 });
+    await reviewer.mouse.up();
+
+    await expect(reviewer.locator('#__sl-pop')).toBeVisible();
+    await expect(reviewer.locator('#__sl-pop .__sl-cap')).toContainText('region');
+    await expect(reviewer.locator('#__sl-preview .__sl-region')).toBeVisible();
+    await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toBeVisible();
+    await expect(reviewer.locator('#__sl-preview .__sl-target')).toBeVisible();
+    await reviewer.locator('#__sl-pop textarea').fill('Tighten this whole paragraph');
+    await reviewer.locator('#__sl-pop .__sl-btn-primary').click();
+    await expect(reviewer.locator('#__sl-pop')).toBeHidden();
+    // The preview cleared and the real pins took over (3 open notes now).
+    await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toHaveCount(0);
+    await reviewer.locator('#__sl-banner .__sl-btn').click();
+    await expect(reviewer.locator('.__sl-pin')).toHaveCount(3);
+
+    const listed = await page.request.get(`/api/v1/presentations/${deckId}/annotations`);
+    const { annotations } = await listed.json();
+    const region = annotations.find(
+      (a: { body: string }) => a.body === 'Tighten this whole paragraph'
+    );
+    expect(region.selection).toMatchObject({ v: 2, type: 'region', page: 'index.html' });
+    for (const k of ['nx', 'ny', 'nw', 'nh'] as const) {
+      expect(region.selection.rect[k]).toBeGreaterThanOrEqual(0);
+      expect(region.selection.rect[k]).toBeLessThanOrEqual(1);
+    }
+  });
+
   await test.step('the overlay survives navigation to a sub-page (multi-page deck)', async () => {
     await reviewer.goto(`${origin}/v/${secret}/guide/page2.html`);
     await expect(reviewer.locator('#__slideless_annotate')).toHaveCount(1);
@@ -260,7 +302,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
   await test.step('cross-page jump-to: a note made on page two resolves from the entry', async () => {
     await reviewer.goto(`${origin}/v/${secret}/`);
     await reviewer.locator('#__sl-badge').click();
-    await expect(reviewer.locator('.__sl-item')).toHaveCount(3);
+    await expect(reviewer.locator('.__sl-item')).toHaveCount(4);
     const remote = reviewer
       .locator('.__sl-item')
       .filter({ hasText: 'Tighten the guidance wording' });

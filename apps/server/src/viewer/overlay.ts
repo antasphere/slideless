@@ -460,6 +460,19 @@ var css = [
   '.__sl-region{position:fixed;border:2px dashed var(--sl-accent);border-radius:6px;',
   '  background:rgba(245,179,1,.08);}',
 
+  // Pending-capture preview: while the composer is open for a point/region,
+  // a provisional pin marks the exact spot, and a dashed contour outlines
+  // the DOM element the anchor resolves to — what you see is literally
+  // anchorRect() re-resolving the frozen snapshot, i.e. what re-opening the
+  // note will find later.
+  '#__sl-preview{position:fixed;inset:0;pointer-events:none;}',
+  '.__sl-target{position:fixed;border:2px dashed var(--sl-accent);border-radius:8px;',
+  '  pointer-events:none;}',
+  '@keyframes __sl-ghost-pulse{0%,100%{box-shadow:0 2px 8px rgba(0,0,0,.35),0 0 0 0 rgba(245,179,1,.45);}',
+  '  50%{box-shadow:0 2px 8px rgba(0,0,0,.35),0 0 0 7px rgba(245,179,1,0);}}',
+  '.__sl-pin.__sl-ghost{animation:__sl-ghost-pulse 1.4s ease-out infinite;}',
+  '@media (prefers-reduced-motion: reduce){.__sl-pin.__sl-ghost{animation:none;}}',
+
   // Annotate mode: capture layer + instruction banner + live drag rect
   '#__sl-layer{position:fixed;inset:0;display:none;cursor:crosshair;}',
   '#__sl-layer.on{display:block;}',
@@ -583,6 +596,8 @@ sheet.appendChild(list);
 
 var pins = el('div');
 pins.id = '__sl-pins';
+var previewLayer = el('div');
+previewLayer.id = '__sl-preview';
 var layer = el('div');
 layer.id = '__sl-layer';
 var dragBox = el('div');
@@ -672,10 +687,55 @@ function openComposerAt(left, top) {
   pop.style.top = Math.max(8, top) + 'px';
   pop.style.display = 'block';
   popText.focus();
+  renderPreview();
 }
 function closeComposer() {
   pop.style.display = 'none';
   snapshot = null;
+  renderPreview();
+}
+
+function openCount() {
+  var n = 0;
+  for (var i = 0; i < notes.length; i++) { if (notes[i].status === 'open') n++; }
+  return n;
+}
+
+/**
+ * Live preview of the PENDING point/region capture while the composer is
+ * open: provisional pin (with the number it will get), the region box, and
+ * a dashed contour around the resolved target element. Rendered from the
+ * frozen snapshot through the same anchorRect() ladder saved notes use, so
+ * the preview shows exactly where the note will re-anchor.
+ */
+function renderPreview() {
+  previewLayer.textContent = '';
+  if (!snapshot || pop.style.display !== 'block') return;
+  if (snapshot.type !== 'point' && snapshot.type !== 'region') return;
+  var rect = anchorRect(snapshot);
+  if (!rect) return;
+  if (rect.el) {
+    var tr = rect.el.getBoundingClientRect();
+    var contour = el('div', '__sl-target');
+    contour.style.left = tr.left - 3 + 'px';
+    contour.style.top = tr.top - 3 + 'px';
+    contour.style.width = tr.width + 6 + 'px';
+    contour.style.height = tr.height + 6 + 'px';
+    previewLayer.appendChild(contour);
+  }
+  if (snapshot.type === 'region' && rect.width > 4 && rect.height > 4) {
+    var regionEl = el('div', '__sl-region');
+    regionEl.style.left = rect.left + 'px';
+    regionEl.style.top = rect.top + 'px';
+    regionEl.style.width = rect.width + 'px';
+    regionEl.style.height = rect.height + 'px';
+    previewLayer.appendChild(regionEl);
+  }
+  var pin = el('div', '__sl-pin __sl-ghost', String(openCount() + 1));
+  var px = snapshot.type === 'region' ? rect.left + rect.width : rect.left;
+  pin.style.left = Math.max(12, Math.min(px, window.innerWidth - 12)) + 'px';
+  pin.style.top = Math.max(12, Math.min(rect.top, window.innerHeight - 12)) + 'px';
+  previewLayer.appendChild(pin);
 }
 
 addBtn.addEventListener('mousedown', function (e) { e.preventDefault(); });
@@ -816,6 +876,7 @@ function layoutPins() {
   requestAnimationFrame(function () {
     pinLayoutQueued = false;
     renderPins();
+    renderPreview();
   });
 }
 function renderPins() {
@@ -1036,6 +1097,7 @@ function mount() {
   if (!doc.body) return;
   root.appendChild(style);
   root.appendChild(pins);
+  root.appendChild(previewLayer);
   root.appendChild(layer);
   root.appendChild(dragBox);
   root.appendChild(addBtn);
