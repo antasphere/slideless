@@ -248,6 +248,32 @@ describe('the counted gate writes exactly one event', () => {
     expect(after.every((r) => r.placement === null)).toBe(true);
   });
 
+  it('an absurdly long Referer host stores null, not a header-sized row', async () => {
+    // `Referer` is VISITOR-supplied and referrer_host is unbounded `text` on
+    // an unbounded table, with no rate limit on entry views — an uncapped
+    // host let any link holder write header-sized rows at request rate.
+    const token = await mintToken('Long host');
+    const res = await app.app.request(`/v/${token.secret}/`, {
+      headers: {
+        referer: `https://${'a'.repeat(4000)}.example.com/p`,
+        'x-forwarded-for': nextIp()
+      }
+    });
+    expect(res.status).toBe(200); // the view still counts
+    const rows = await rowsOfToken(token.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.referrerHost).toBeNull();
+
+    // A real-world host of legal length is untouched.
+    const ok = await app.app.request(`/v/${token.secret}/`, {
+      headers: { referer: 'https://docs.example.com/a/b?c=d', 'x-forwarded-for': nextIp() }
+    });
+    expect(ok.status).toBe(200);
+    const after = await rowsOfToken(token.id);
+    expect(after).toHaveLength(2);
+    expect(after[1]!.referrerHost).toBe('docs.example.com');
+  });
+
   it('the no-trailing-slash 301 preserves the query string, so ?p= survives the canonical redirect', async () => {
     const token = await mintToken('Redirect');
     const res = await app.app.request(`/v/${token.secret}?p=hero`, {

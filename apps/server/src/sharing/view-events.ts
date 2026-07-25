@@ -14,14 +14,27 @@ import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
  */
 
 /**
- * Host of the Referer header, or null when absent or unparsable. The full
- * URL (path, query) is deliberately discarded before it can be stored.
+ * Longest host this table will store. A DNS name maxes out at 253 chars and
+ * `:65535` adds 6; anything past that is not a real host. The cap matters
+ * because `Referer` is VISITOR-supplied and this column is unbounded `text`
+ * on an unbounded table: `new URL()` happily parses a 4000-char host, so
+ * without it any share-link holder can write header-sized rows at request
+ * rate (entry views are not rate-limited — only password attempts are).
+ */
+const REFERRER_HOST_MAX = 260;
+
+/**
+ * Host of the Referer header, or null when absent, unparsable, or longer
+ * than a real host can be. The full URL (path, query) is deliberately
+ * discarded before it can be stored. Over-long hosts answer null rather
+ * than a truncated string: the same posture as viewPlacement, and a
+ * truncated host would read in the dashboard as a real referring site.
  */
 export function viewReferrerHost(referer: string | undefined): string | null {
   if (!referer) return null;
   try {
     const host = new URL(referer).host;
-    return host === '' ? null : host;
+    return host === '' || host.length > REFERRER_HOST_MAX ? null : host;
   } catch {
     return null;
   }
