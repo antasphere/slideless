@@ -32,7 +32,7 @@
     ShareTokenCreate,
     ShareTokenView
   } from '@slideless/contract';
-  import { badgePositionSchema } from '@slideless/contract';
+  import { badgePositionSchema, VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
 
   interface Props {
     deckId: string;
@@ -82,6 +82,27 @@
   // ── Created dialog: the viewer URL appears exactly once ───────────────
   let createdUrl = $state<string | null>(null);
   let showCreatedDialog = $state(false);
+
+  // ── Embed snippets (PRDCT-1312) ────────────────────────────────────────
+  // Producible only NOW: secrets are hash-only at rest, so the snippets die
+  // with this dialog exactly like the URL above. The script src is the APP
+  // origin: the dashboard runs on it and it is the origin serving
+  // /embed.js, so window.location.origin is correct even when
+  // VIEWER_BASE_URL points share links elsewhere. The embedded deck URL
+  // stays createdUrl (which honors VIEWER_BASE_URL). Sandbox attrs come
+  // from the contract constant, the single source of truth (ADR 012
+  // Surface D).
+  const embedScriptSnippet = $derived(
+    createdUrl === null
+      ? null
+      : // \x3C keeps the literal "</script" sequence out of this component's source.
+        `<script src="${window.location.origin}/embed.js" async>\x3C/script>\n<div data-slideless-embed="${createdUrl}"></div>`
+  );
+  const embedIframeSnippet = $derived(
+    createdUrl === null
+      ? null
+      : `<iframe src="${createdUrl}" sandbox="${VIEWER_IFRAME_SANDBOX}" referrerpolicy="no-referrer" allow="fullscreen" style="width:100%;aspect-ratio:16/9;border:0"></iframe>`
+  );
 
   function openCreateDialog() {
     tokenName = '';
@@ -506,6 +527,52 @@
           <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <span>{t('tokens.secretWarning')}</span>
         </p>
+        <details class="rounded-md border">
+          <summary class="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+            {t('tokens.embedTitle')}
+          </summary>
+          <div class="space-y-4 border-t p-3">
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-medium">{t('tokens.embedScriptLabel')}</span>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  class="h-7 w-7 shrink-0"
+                  aria-label={t('tokens.embedCopyScriptAria')}
+                  onclick={() => void copyText(embedScriptSnippet!, t('tokens.embedCopied'))}
+                >
+                  <Copy class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <!-- Snippets render through escaped {} interpolation — never {@html}. -->
+              <pre
+                class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
+                  >{embedScriptSnippet}</code
+                ></pre>
+              <p class="text-xs text-muted-foreground">{t('tokens.embedScriptHint')}</p>
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-medium">{t('tokens.embedIframeLabel')}</span>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  class="h-7 w-7 shrink-0"
+                  aria-label={t('tokens.embedCopyIframeAria')}
+                  onclick={() => void copyText(embedIframeSnippet!, t('tokens.embedCopied'))}
+                >
+                  <Copy class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <pre
+                class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
+                  >{embedIframeSnippet}</code
+                ></pre>
+              <p class="text-xs text-muted-foreground">{t('tokens.embedIframeHint')}</p>
+            </div>
+          </div>
+        </details>
       </div>
     {/if}
     <div class="flex justify-end pt-2">

@@ -578,6 +578,15 @@ export const fr: Record<MessageKey, string> = {
   'tokens.urlCopied': 'URL de lecture copiée dans le presse-papiers',
   'tokens.secretWarning':
     'Cette URL ne peut pas être retrouvée plus tard. Pour la redistribuer, créez un nouveau lien.',
+  'tokens.embedTitle': 'Intégrer sur un site web',
+  'tokens.embedScriptLabel': 'Intégration par script (responsive)',
+  'tokens.embedScriptHint':
+    'Collez le code là où le deck doit apparaître. Le script transforme la div en cadre isolé et responsive ; ajoutez data-slideless-placement="…" pour étiqueter l’emplacement dans les statistiques du lien.',
+  'tokens.embedIframeLabel': 'Iframe simple',
+  'tokens.embedIframeHint': 'Sans script : un cadre isolé fixe avec les mêmes attributs de sécurité.',
+  'tokens.embedCopyScriptAria': 'Copier le code d’intégration par script',
+  'tokens.embedCopyIframeAria': 'Copier le code d’intégration iframe',
+  'tokens.embedCopied': 'Code d’intégration copié dans le presse-papiers',
   'tokens.versionDialogTitle': 'Changer la version',
   'tokens.versionDialogDescription': 'Ce que « {name} » ouvre.',
   'tokens.updatedToast': 'Lien de partage « {name} » mis à jour',

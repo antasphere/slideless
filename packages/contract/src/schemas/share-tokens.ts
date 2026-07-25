@@ -53,6 +53,18 @@ export type ShareTokenPurpose = z.infer<typeof shareTokenPurposeSchema>;
  */
 export const PREVIEW_SHARE_TOKEN_NAME = 'Dashboard preview';
 
+/**
+ * The exact iframe `sandbox` attribute set for embedding the viewer — ADR
+ * 012 Surface D. Single source of truth: the dashboard's deck preview, the
+ * official embed loader (`GET /embed.js`), the copyable embed snippets, and
+ * the docs all carry exactly this string. SECURITY: this must NEVER gain
+ * `allow-same-origin` (that one token re-opens full session theft, ADR 012
+ * Surface C) or `allow-top-navigation*` (framebusting). Pinned by
+ * decks.test.ts (dashboard) and embed.test.ts (server).
+ */
+export const VIEWER_IFRAME_SANDBOX =
+  'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+
 export const shareTokenSchema = z.object({
   id: z.string(),
   presentationId: z.string(),

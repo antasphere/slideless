@@ -67,6 +67,11 @@ function expectViewerContentHeaders(res: Response): void {
   expect(csp).toContain('sandbox');
   expect(csp).not.toContain('allow-same-origin');
   expect(csp).not.toContain('allow-top-navigation');
+  // Framing policy (ADR 021): deck bytes are deliberately frameable — the
+  // official embeds depend on this. The sandbox is the boundary, not
+  // frame-ancestors / X-Frame-Options.
+  expect(csp).not.toContain('frame-ancestors');
+  expect(res.headers.get('x-frame-options')).toBeNull();
   expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   expect(res.headers.get('referrer-policy')).toBe('no-referrer');
 }

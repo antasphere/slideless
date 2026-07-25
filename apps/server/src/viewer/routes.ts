@@ -19,6 +19,7 @@ import {
 } from '../sharing/view-events.js';
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
+import { embedRoutes } from './embed.js';
 import { docNavigation, entryTransformFor, type EntryTransform } from './inject.js';
 import { mintUnlockValue, unlockCookieName, UNLOCK_TTL_MS, verifyUnlockValue } from './unlock.js';
 import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.js';
@@ -172,6 +173,10 @@ function viewerError(
 export function viewerRoutes(deps: ViewerDeps): Hono {
   const { sharing, presentations, fileService, storage, logger } = deps;
   const app = new Hono();
+
+  // The official embed loader (PRDCT-1312, viewer/embed.ts): public static
+  // JS, part of this same anonymous surface.
+  app.route('/', embedRoutes());
 
   /**
    * Token-scoped cookie string — the unlock and viewed cookies wear this

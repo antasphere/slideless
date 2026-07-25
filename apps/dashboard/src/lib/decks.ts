@@ -1,5 +1,5 @@
 import { t } from '$lib/i18n';
-import type { PresentationKind, ShareToken } from '@slideless/contract';
+import { VIEWER_IFRAME_SANDBOX, type PresentationKind, type ShareToken } from '@slideless/contract';
 
 /**
  * Deck-domain helpers shared by the decks list, the deck detail page, and
@@ -8,11 +8,14 @@ import type { PresentationKind, ShareToken } from '@slideless/contract';
 
 /**
  * The exact iframe sandbox set for the dashboard's deck preview — ADR 012
- * Surface D. SECURITY: this must NEVER contain `allow-same-origin` (that
- * single token re-opens full session theft, ADR 012 Surface C) and never
- * `allow-top-navigation*`. decks.test.ts pins both properties.
+ * Surface D. The canonical string lives in the contract
+ * (`VIEWER_IFRAME_SANDBOX`) so the preview, the /embed.js loader, and the
+ * documented snippets can never drift apart. SECURITY: it must NEVER
+ * contain `allow-same-origin` (that single token re-opens full session
+ * theft, ADR 012 Surface C) and never `allow-top-navigation*`.
+ * decks.test.ts pins both properties.
  */
-export const PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+export const PREVIEW_SANDBOX = VIEWER_IFRAME_SANDBOX;
 
 export type TokenStatus = 'active' | 'revoked' | 'expired';
 

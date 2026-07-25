@@ -26,7 +26,8 @@ export default defineConfig({
   projects: [
     { name: 'smoke', testMatch: /smoke\.spec\.ts/ },
     { name: 'decks', testMatch: /decks\.spec\.ts/, dependencies: ['smoke'] },
-    { name: 'viewer', testMatch: /viewer-annotations\.spec\.ts/, dependencies: ['smoke'] }
+    { name: 'viewer', testMatch: /viewer-annotations\.spec\.ts/, dependencies: ['smoke'] },
+    { name: 'embed', testMatch: /embed\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,
