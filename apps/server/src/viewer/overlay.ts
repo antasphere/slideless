@@ -417,6 +417,15 @@ var css = [
   '#__sl-badge.__sl-has .__sl-bcount{display:inline-block;}',
   '#__sl-badge.__sl-open .__sl-bcount,#__sl-badge:hover .__sl-bcount{margin-left:0;}',
 
+  // The big + : one-click entry into annotate mode, stacked beside the
+  // badge (follows its slot). Rotates into an × while the mode is active.
+  '#__sl-fab-pin{position:fixed;width:46px;height:46px;border:0;border-radius:14px;',
+  '  background:var(--sl-accent);color:var(--sl-accent-ink);cursor:pointer;box-shadow:var(--sl-shadow);',
+  '  font:300 30px/1 inherit;display:flex;align-items:center;justify-content:center;',
+  '  transition:transform .18s ease;}',
+  '#__sl-fab-pin:hover{filter:brightness(1.05);}',
+  '@media (prefers-reduced-motion: reduce){#__sl-fab-pin{transition:none;}}',
+
   // Right sliding sheet
   '#__sl-sheet{position:fixed;top:0;right:0;height:100%;width:360px;max-width:92vw;',
   '  background:var(--sl-bg);border-left:1px solid var(--sl-border);box-shadow:var(--sl-shadow);',
@@ -427,9 +436,11 @@ var css = [
   '#__sl-sheet .__sl-head{display:flex;align-items:center;justify-content:space-between;gap:8px;',
   '  padding:16px 16px 12px;}',
   '#__sl-sheet .__sl-head strong{font-size:15px;font-weight:650;flex:1;}',
-  '#__sl-sheet .__sl-x{display:flex;align-items:center;justify-content:center;width:30px;height:30px;',
-  '  border-radius:8px;cursor:pointer;color:var(--sl-muted);}',
-  '#__sl-sheet .__sl-x:hover{background:var(--sl-bg2);color:var(--sl-ink);}',
+  // Root-scoped (not sheet-scoped): the settings dialog reuses this icon
+  // button too. Root prefix keeps it off deck content, which shares the doc.
+  '#__slideless_annotate .__sl-x{display:flex;align-items:center;justify-content:center;',
+  '  width:30px;height:30px;border-radius:8px;cursor:pointer;color:var(--sl-muted);}',
+  '#__slideless_annotate .__sl-x:hover{background:var(--sl-bg2);color:var(--sl-ink);}',
   // Footer CTA — THE action of the sheet; settings-ish things live behind ⚙.
   '#__sl-foot{padding:12px 16px 16px;border-top:1px solid var(--sl-border);}',
   '#__sl-mode{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;',
@@ -610,12 +621,21 @@ badge.appendChild(bIcon);
 badge.appendChild(bLabel);
 badge.appendChild(bCount);
 
+// The big + FAB: one click into annotate mode, no sheet detour. Lives next
+// to the badge and follows its slot.
+var fabPin = el('button');
+fabPin.id = '__sl-fab-pin';
+fabPin.type = 'button';
+fabPin.title = 'Add a pin';
+fabPin.textContent = '+';
+
 // ---- Badge placement -----------------------------------------------------
 // Server-resolved slot (link override ?? deck's remembered default): the 4
 // corners + the 4 edge centers. The stylesheet default is bottom-right; a
 // slot sets its own sides and pins the others to auto (leaving them empty
 // would let the stylesheet's right/bottom stretch the box). Config is
-// server-controlled, but validate anyway and fall back to the default.
+// server-controlled, but validate anyway and fall back to the default. The
+// + FAB stacks toward the viewport center from the badge's slot.
 var BADGE_SLOTS = {
   'top-left': { top: '20px', left: '20px' },
   top: { top: '20px', left: '50%', transform: 'translateX(-50%)' },
@@ -626,7 +646,21 @@ var BADGE_SLOTS = {
   'bottom-left': { bottom: '20px', left: '20px' },
   left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
 };
+var FAB_SLOTS = {
+  'top-left': { top: '74px', left: '20px' },
+  top: { top: '74px', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: '74px', right: '20px' },
+  right: { right: '20px', top: 'calc(50% - 62px)', transform: 'translateY(-50%)' },
+  'bottom-right': { bottom: '74px', right: '20px' },
+  bottom: { bottom: '74px', left: '50%', transform: 'translateX(-50%)' },
+  'bottom-left': { bottom: '74px', left: '20px' },
+  left: { left: '20px', top: 'calc(50% - 62px)', transform: 'translateY(-50%)' }
+};
 var currentBadge = BADGE_SLOTS[CFG.badge] ? CFG.badge : 'bottom-right';
+var fabBaseTransform = '';
+function syncFabTransform() {
+  fabPin.style.transform = fabBaseTransform + (mode === 'annotate' ? ' rotate(45deg)' : '');
+}
 function applyBadgeSlot(pos) {
   var slot = BADGE_SLOTS[pos] || BADGE_SLOTS['bottom-right'];
   badge.style.top = slot.top || 'auto';
@@ -634,6 +668,13 @@ function applyBadgeSlot(pos) {
   badge.style.left = slot.left || 'auto';
   badge.style.right = slot.right || 'auto';
   badge.style.transform = slot.transform || '';
+  var f = FAB_SLOTS[pos] || FAB_SLOTS['bottom-right'];
+  fabPin.style.top = f.top || 'auto';
+  fabPin.style.bottom = f.bottom || 'auto';
+  fabPin.style.left = f.left || 'auto';
+  fabPin.style.right = f.right || 'auto';
+  fabBaseTransform = f.transform || '';
+  syncFabTransform();
 }
 applyBadgeSlot(currentBadge);
 
@@ -1047,9 +1088,13 @@ function setMode(next) {
   banner.classList.toggle('on', next === 'annotate');
   modeBtn.classList.toggle('on', next === 'annotate');
   if (next === 'annotate') { hideAdd(); closeComposer(); toggleSheet(false); toggleSettings(false); }
+  syncFabTransform();
   renderPins();
 }
 modeBtn.addEventListener('click', function () {
+  setMode(mode === 'annotate' ? 'browse' : 'annotate');
+});
+fabPin.addEventListener('click', function () {
   setMode(mode === 'annotate' ? 'browse' : 'annotate');
 });
 pinsBtn.addEventListener('click', function () {
@@ -1347,6 +1392,7 @@ function mount() {
   root.appendChild(addBtn);
   root.appendChild(pop);
   root.appendChild(badge);
+  root.appendChild(fabPin);
   root.appendChild(sheet);
   root.appendChild(scrim);
   root.appendChild(settings);

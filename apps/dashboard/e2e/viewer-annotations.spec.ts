@@ -235,6 +235,15 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await reviewer.locator('#__sl-close').click();
   });
 
+  await test.step('the floating + toggles annotate mode directly (no sheet detour)', async () => {
+    await reviewer.locator('#__sl-fab-pin').click();
+    await expect(reviewer.locator('#__sl-layer')).toHaveClass(/on/);
+    await reviewer.locator('#__sl-fab-pin').click();
+    await expect(reviewer.locator('#__sl-layer')).not.toHaveClass(/on/);
+    // The counter never moved: the FAB clicks stayed inside the overlay.
+    await expect(reviewer.locator('#counter')).toHaveText('1');
+  });
+
   await test.step('annotate mode: a point pin on the image, deck frozen while active', async () => {
     const counterBefore = await reviewer.locator('#counter').textContent();
     await reviewer.locator('#__sl-badge').click();
