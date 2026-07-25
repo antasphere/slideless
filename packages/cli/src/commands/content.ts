@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { PlatformApiError } from '@slideless/sdk';
-import type { ManifestEntry, PresentationKind } from '@slideless/contract';
+import { AGENT_DOC_PATH, type ManifestEntry, type PresentationKind } from '@slideless/contract';
 import {
   CliUsageError,
   fmtBytes,
@@ -24,6 +24,11 @@ import { startDevServer } from '../devserver.js';
  */
 
 const UPLOAD_CONCURRENCY = 4;
+
+/** One-line nudge printed after a push whose bundle ships no AGENT.md. */
+const AGENT_DOC_HINT =
+  `  tip: no ${AGENT_DOC_PATH} in this bundle — ship one so agents can brief themselves ` +
+  `before rendering (read back with \`slideless agent-doc\`)\n`;
 
 function toManifest(scan: DeckScan): ManifestEntry[] {
   return scan.files.map((f) => ({
@@ -140,6 +145,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
               `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
               `  id: ${committed.presentation.id}\n`
           );
+          if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
           return;
         }
 
@@ -168,6 +174,56 @@ export function registerContentCommands(program: Command, io: CliIo): void {
             `  id: ${committed.presentation.id}\n` +
             `  linked: ${join(scan.rootDir, LINK_FILENAME)}\n`
         );
+        if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
+      }
+    );
+
+  program
+    .command('agent-doc [id]')
+    .description(
+      `Print a deck's ${AGENT_DOC_PATH} briefing (id defaults to the ${LINK_FILENAME} link in .)`
+    )
+    .option('--at <version>', 'read this version instead of the latest', (v: string) => parseInt(v, 10))
+    .option('--out <file>', 'write to a file instead of stdout')
+    .action(
+      async (id: string | undefined, opts: { at?: number; out?: string }, cmd: Command) => {
+        const ctx = resolveContext(cmd, io);
+        await requireApiKey(ctx);
+
+        let deckId = id ?? null;
+        if (!deckId) {
+          const link = await readLink(resolve('.'));
+          if (!link) {
+            throw new CliUsageError(
+              `No deck id given and no ${LINK_FILENAME} found — run \`slideless agent-doc <id>\`.`
+            );
+          }
+          deckId = link.presentationId;
+        }
+
+        let content: string;
+        try {
+          content = await ctx.client.agentDoc(deckId, opts.at);
+        } catch (e) {
+          if (e instanceof PlatformApiError && e.code === 'agent_doc_not_found') {
+            throw new CliUsageError(
+              `This deck ships no ${AGENT_DOC_PATH}` +
+                `${opts.at !== undefined ? ` at version ${opts.at}` : ''} — add one at the bundle root and push.`
+            );
+          }
+          throw e;
+        }
+
+        if (opts.out) {
+          const target = resolve(opts.out);
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(target, content);
+          if (ctx.json) return printJson(io, { presentationId: deckId, path: target });
+          io.out.write(`Wrote ${AGENT_DOC_PATH} of ${deckId} → ${target}\n`);
+          return;
+        }
+        if (ctx.json) return printJson(io, { presentationId: deckId, content });
+        io.out.write(content.endsWith('\n') ? content : `${content}\n`);
       }
     );
 

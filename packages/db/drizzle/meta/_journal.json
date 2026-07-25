@@ -211,6 +211,20 @@
       "when": 1784982515973,
       "tag": "0029_badge_position",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784996405285,
+      "tag": "0030_presentation_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784996427588,
+      "tag": "0031_agent_doc",
+      "breakpoints": true
     }
   ]
 }

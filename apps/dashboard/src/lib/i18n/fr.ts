@@ -515,6 +515,13 @@ export const fr: Record<MessageKey, string> = {
   'deck.previewFailed': 'Aperçu indisponible : {error}',
   'deck.previewOwnerOnly':
     'L’aperçu est réservé au propriétaire du deck et aux admins de l’espace. Créez un lien de partage ci-dessous pour voir ce deck.',
+  'deck.selfDescTitle': 'Détails du deck',
+  'deck.selfDescDescription': 'Métadonnées définies par le propriétaire et briefing AGENT.md du bundle.',
+  'deck.metadataHeading': 'Métadonnées',
+  'deck.agentDocHeading': 'Briefing agent (AGENT.md)',
+  'deck.agentDocShow': 'Afficher le briefing',
+  'deck.agentDocHide': 'Masquer le briefing',
+  'deck.agentDocLoadFailed': 'Impossible de charger le briefing : {error}',
 
   // ── Share links (per-recipient viewer tokens) ────────────────────────
   'tokens.title': 'Liens de partage',

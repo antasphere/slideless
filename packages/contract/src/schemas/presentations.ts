@@ -33,15 +33,50 @@ export const assetPathSchema = z
     'relative path without empty, "." or ".." segments required'
   );
 
+/**
+ * Serialized size cap for a deck's owner-defined metadata object, in
+ * JSON.stringify characters (an environment-free proxy for bytes — the
+ * contract runs in browsers and Node alike, so no TextEncoder/Buffer here).
+ */
+export const PRESENTATION_METADATA_MAX_LENGTH = 16 * 1024;
+
+/**
+ * Owner-defined structured metadata: a plain JSON object, opaque to the
+ * server beyond shape and size (≤16k serialized). The seam for building
+ * external dashboards on top of the API — PATCH replaces the whole object,
+ * merge is a client concern.
+ */
+export const presentationMetadataSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (v) => JSON.stringify(v).length <= PRESENTATION_METADATA_MAX_LENGTH,
+    `metadata must serialize to at most ${PRESENTATION_METADATA_MAX_LENGTH} characters`
+  );
+export type PresentationMetadata = z.infer<typeof presentationMetadataSchema>;
+
+/**
+ * The reserved root filename of a deck's agent-facing briefing: authored by
+ * the creator, shipped inside the bundle, detected at version commit (exact,
+ * case-sensitive — manifest paths never normalize).
+ */
+export const AGENT_DOC_PATH = 'AGENT.md';
+
 export const presentationSchema = z.object({
   id: z.string(),
   title: z.string(),
   kind: presentationKindSchema,
   /** Legacy badge orthogonal to `kind`: the deck embeds interactive content. */
   interactive: z.boolean(),
+  /** Owner-defined metadata object (see presentationMetadataSchema). */
+  metadata: z.record(z.string(), z.unknown()),
   /** 0 until the first version commit. */
   currentVersion: z.number().int(),
   entryPath: z.string(),
+  /**
+   * Whether the current version's bundle carries the reserved AGENT.md
+   * briefing (readable at GET /presentations/{id}/agent-doc).
+   */
+  hasAgentDoc: z.boolean(),
   /** Null once the owner's account was deleted (decks are workspace data). */
   ownerUserId: z.string().nullable(),
   /** Marketplace lineage (reserved) — the deck this one was remixed from. */
@@ -82,6 +117,8 @@ export const presentationVersionSchema = z.object({
   entryPath: z.string(),
   sizeBytes: z.number(),
   fileCount: z.number().int(),
+  /** Whether this version's manifest carries the reserved AGENT.md briefing. */
+  hasAgentDoc: z.boolean(),
   /** Null once the author's account was deleted. */
   createdBy: z.string().nullable(),
   createdByRole: versionAuthorRoleSchema,
@@ -147,10 +184,24 @@ export const uploadSessionCommitSchema = z.object({
   title: z.string().min(1).max(300),
   kind: presentationKindSchema.default('presentation'),
   interactive: z.boolean().default(false),
+  metadata: presentationMetadataSchema.optional(),
   entryPath: assetPathSchema,
   manifest: manifestSchema
 });
 export type UploadSessionCommit = z.infer<typeof uploadSessionCommitSchema>;
+
+/**
+ * Mutable deck properties. `metadata` is a full replace of the stored
+ * object; `title` here is the rename-without-a-version-push path (the
+ * version commit's optional `title` stays for atomic push-and-retitle).
+ */
+export const presentationUpdateSchema = z
+  .object({
+    title: z.string().min(1).max(300).optional(),
+    metadata: presentationMetadataSchema.optional()
+  })
+  .refine((v) => v.title !== undefined || v.metadata !== undefined, 'at least one field required');
+export type PresentationUpdate = z.infer<typeof presentationUpdateSchema>;
 
 /**
  * Commit a new version onto an existing deck. `expectedBaseVersion` is

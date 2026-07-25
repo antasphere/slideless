@@ -388,8 +388,10 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     'slideless_get_presentation',
     {
       description:
-        'One presentation by id: title, kind, currentVersion, entryPath, owner, timestamps. ' +
-        'Answers not_found for decks this credential cannot read.',
+        'One presentation by id: title, kind, metadata (the owner-defined JSON object), ' +
+        'currentVersion, entryPath, hasAgentDoc (whether the bundle ships an AGENT.md briefing — ' +
+        'read it with slideless_get_agent_doc), owner, timestamps. Answers not_found for decks ' +
+        'this credential cannot read.',
       inputSchema: { workspace: workspaceInput, presentationId: deckIdInput },
       annotations: { readOnlyHint: true }
     },
@@ -508,6 +510,39 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       })
   );
 
+  server.registerTool(
+    'slideless_get_agent_doc',
+    {
+      description:
+        "A deck's AGENT.md briefing: the creator-authored, agent-facing description shipped at " +
+        'the bundle root — read it BEFORE downloading or rendering a deck to learn what it is and ' +
+        'how to use it. Omit version for the latest. Answers agent_doc_not_found when the version ' +
+        'ships none (hasAgentDoc on the presentation tells you upfront).',
+      inputSchema: {
+        workspace: workspaceInput,
+        presentationId: deckIdInput,
+        version: z.number().int().min(1).optional().describe('Version number; omitted = the latest version.')
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ workspace, presentationId, version }) =>
+      read(workspace, async (c) => {
+        const id = encodeURIComponent(presentationId);
+        const query = version !== undefined ? `?version=${version}` : '';
+        const res = await fetchApiRaw(c, `/api/v1/presentations/${id}/agent-doc${query}`);
+        const content = await res.text();
+        const truncated = content.length > INLINE_DOWNLOAD_FILE_MAX;
+        return jsonText({
+          presentationId,
+          version: version ?? 'latest',
+          content: truncated ? content.slice(0, INLINE_DOWNLOAD_FILE_MAX) : content,
+          ...(truncated
+            ? { note: `truncated at ${Math.floor(INLINE_DOWNLOAD_FILE_MAX / 1024)} KiB — ${CLI_HINT}` }
+            : {})
+        });
+      })
+  );
+
   // ── Decks: writes ──────────────────────────────────────────────────────────
 
   server.registerTool(
@@ -600,6 +635,42 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       write(workspace, async (c) =>
         pushInlineDeck(c, decodeInlineFiles(files), { title, entryPath, kind, interactive, presentationId })
       )
+  );
+
+  server.registerTool(
+    'slideless_update_presentation',
+    {
+      description:
+        "Update a deck's mutable properties without pushing a new version: retitle it, or set its " +
+        'metadata (an owner-defined JSON object, ≤16k serialized — the seam for building custom ' +
+        'dashboards). metadata REPLACES the stored object wholesale: read the deck first and send ' +
+        'the merged result. Always confirm with the user before calling.',
+      inputSchema: {
+        workspace: workspaceInput,
+        presentationId: deckIdInput,
+        title: z.string().min(1).max(300).optional().describe('New deck title.'),
+        metadata: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('The COMPLETE new metadata object (full replace, not a merge).')
+      }
+    },
+    async ({ workspace, presentationId, title, metadata }) =>
+      write(workspace, async (c) => {
+        if (title === undefined && metadata === undefined) {
+          return deny('Nothing to update — pass title and/or metadata.');
+        }
+        return jsonText(
+          await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              ...(title !== undefined ? { title } : {}),
+              ...(metadata !== undefined ? { metadata } : {})
+            })
+          })
+        );
+      })
   );
 
   server.registerTool(

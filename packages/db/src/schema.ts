@@ -426,10 +426,22 @@ export const presentations = pgTable(
     title: text('title').notNull(),
     kind: text('kind', { enum: presentationKinds }).notNull().default('presentation'),
     interactive: boolean('interactive').notNull().default(false),
+    /**
+     * Owner-defined structured metadata (a plain JSON object), the seam for
+     * building external dashboards on top of the API. Opaque to the server
+     * beyond shape + size (object-only, serialized cap enforced at the
+     * contract layer); PATCH replaces the whole object — merge is a client
+     * concern.
+     */
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     currentVersion: integer('current_version').notNull().default(0),
     // Mirrors the current version's entry path so viewers/listings never
     // join presentation_versions for the common case.
     entryPath: text('entry_path').notNull().default('index.html'),
+    // Mirrors the current version's has_agent_doc (the reserved root file
+    // AGENT.md — the deck's agent-facing briefing) so listings stay
+    // manifest-free, like entry_path.
+    hasAgentDoc: boolean('has_agent_doc').notNull().default(false),
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
@@ -484,6 +496,10 @@ export const presentationVersions = pgTable(
     // Denormalized totals so listings never aggregate the manifest.
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     fileCount: integer('file_count').notNull(),
+    // Whether the manifest carries the reserved root file AGENT.md (exact,
+    // case-sensitive path — the deck's agent-facing briefing). Stamped at
+    // commit like sizeBytes/fileCount; never derived at read time.
+    hasAgentDoc: boolean('has_agent_doc').notNull().default(false),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdByRole: text('created_by_role', { enum: versionAuthorRoles }).notNull().default('owner'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()

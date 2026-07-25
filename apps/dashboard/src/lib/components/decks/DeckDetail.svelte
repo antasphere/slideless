@@ -9,6 +9,7 @@
   import CollaboratorsPanel from './CollaboratorsPanel.svelte';
   import AnnotationsPanel from './AnnotationsPanel.svelte';
   import VersionsPanel from './VersionsPanel.svelte';
+  import DeckMetaPanel from './DeckMetaPanel.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { kindLabel, PREVIEW_SANDBOX } from '$lib/decks';
@@ -248,6 +249,8 @@
         {/if}
       </Card.Content>
     </Card.Root>
+
+    <DeckMetaPanel {deck} />
 
     <ShareTokensPanel {deckId} list={tokensList} versions={versionsList.items} />
 

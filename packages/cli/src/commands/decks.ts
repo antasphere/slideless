@@ -1,8 +1,35 @@
 import type { Command } from 'commander';
 import type { ListParams } from '@slideless/sdk';
-import { fmtBytes, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
+import {
+  CliUsageError,
+  fmtBytes,
+  printJson,
+  requireApiKey,
+  resolveContext,
+  table,
+  type CliIo
+} from '../context.js';
 
-/** Deck management: list / get / versions / delete. */
+/** Deck management: list / get / versions / meta / delete. */
+
+/**
+ * `--set k=v` value parsing: JSON when it parses (numbers, booleans, arrays,
+ * objects, quoted strings), the raw string otherwise — so `--set priority=3`
+ * stores a number and `--set client=Acme` stores a string.
+ */
+function parseSetPair(pair: string): [string, unknown] {
+  const eq = pair.indexOf('=');
+  if (eq <= 0) throw new CliUsageError(`--set expects key=value, got "${pair}"`);
+  const key = pair.slice(0, eq);
+  const raw = pair.slice(eq + 1);
+  try {
+    return [key, JSON.parse(raw)];
+  } catch {
+    return [key, raw];
+  }
+}
+
+const collect = (value: string, all: string[]): string[] => [...all, value];
 
 export function registerDeckCommands(program: Command, io: CliIo): void {
   program
@@ -47,17 +74,75 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
       await requireApiKey(ctx);
       const deck = await ctx.client.presentation(id);
       if (ctx.json) return printJson(io, deck);
+      const metaKeys = Object.keys(deck.metadata);
       io.out.write(
         `${deck.title}\n` +
-          `  id:       ${deck.id}\n` +
-          `  kind:     ${deck.kind}${deck.interactive ? ' (interactive)' : ''}\n` +
-          `  version:  ${deck.currentVersion}\n` +
-          `  entry:    ${deck.entryPath}\n` +
-          `  owner:    ${deck.ownerUserId ?? '(deleted user)'}\n` +
-          `  created:  ${deck.createdAt}\n` +
-          `  updated:  ${deck.updatedAt}\n`
+          `  id:        ${deck.id}\n` +
+          `  kind:      ${deck.kind}${deck.interactive ? ' (interactive)' : ''}\n` +
+          `  version:   ${deck.currentVersion}\n` +
+          `  entry:     ${deck.entryPath}\n` +
+          `  agent doc: ${deck.hasAgentDoc ? 'yes (slideless agent-doc)' : 'no'}\n` +
+          `  metadata:  ${metaKeys.length === 0 ? '(none)' : `${metaKeys.length} key(s) — slideless meta ${deck.id}`}\n` +
+          `  owner:     ${deck.ownerUserId ?? '(deleted user)'}\n` +
+          `  created:   ${deck.createdAt}\n` +
+          `  updated:   ${deck.updatedAt}\n`
       );
     });
+
+  program
+    .command('meta <id>')
+    .description("Show or edit a deck's metadata object (the seam for building your own dashboard)")
+    .option('--set <key=value>', 'set one key (repeatable; values parse as JSON when valid, else string)', collect, [])
+    .option('--unset <key>', 'remove one key (repeatable)', collect, [])
+    .option('--replace <object>', 'replace the WHOLE metadata object with this JSON')
+    .action(
+      async (id: string, opts: { set: string[]; unset: string[]; replace?: string }, cmd: Command) => {
+        const ctx = resolveContext(cmd, io);
+        await requireApiKey(ctx);
+        const editing = opts.set.length > 0 || opts.unset.length > 0 || opts.replace !== undefined;
+        if (opts.replace !== undefined && (opts.set.length > 0 || opts.unset.length > 0)) {
+          throw new CliUsageError('--replace cannot be combined with --set/--unset');
+        }
+
+        if (!editing) {
+          const deck = await ctx.client.presentation(id);
+          if (ctx.json) return printJson(io, deck.metadata);
+          io.out.write(`${JSON.stringify(deck.metadata, null, 2)}\n`);
+          return;
+        }
+
+        let metadata: Record<string, unknown>;
+        if (opts.replace !== undefined) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(opts.replace);
+          } catch {
+            throw new CliUsageError('--replace expects valid JSON');
+          }
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            throw new CliUsageError('--replace expects a JSON object');
+          }
+          metadata = parsed as Record<string, unknown>;
+        } else {
+          // Read-modify-write: the server's PATCH replaces wholesale, so the
+          // merge happens here on the freshly read object.
+          const deck = await ctx.client.presentation(id);
+          metadata = { ...deck.metadata };
+          for (const pair of opts.set) {
+            const [key, value] = parseSetPair(pair);
+            metadata[key] = value;
+          }
+          for (const key of opts.unset) delete metadata[key];
+        }
+
+        const updated = await ctx.client.updatePresentation(id, { metadata });
+        if (ctx.json) return printJson(io, updated.metadata);
+        io.out.write(
+          `Updated metadata of "${updated.title}" (${Object.keys(updated.metadata).length} key(s)):\n` +
+            `${JSON.stringify(updated.metadata, null, 2)}\n`
+        );
+      }
+    );
 
   program
     .command('versions <id>')

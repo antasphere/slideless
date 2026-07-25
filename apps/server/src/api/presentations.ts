@@ -4,6 +4,7 @@ import type { Context as HonoContext } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { ulid } from 'ulid';
 import {
+  agentDocGetRoute,
   annotationCreateRoute,
   annotationDeleteRoute,
   annotationsInboxRoute,
@@ -15,6 +16,7 @@ import {
   presentationDeleteRoute,
   presentationGetRoute,
   presentationsListRoute,
+  presentationUpdateRoute,
   previewTokenCreateRoute,
   shareTokenCreateRoute,
   shareTokenRevokeRoute,
@@ -27,7 +29,7 @@ import {
   versionGetRoute,
   versionsListRoute
 } from '@slideless/contract/routes';
-import { PREVIEW_SHARE_TOKEN_NAME, type ManifestEntry } from '@slideless/contract';
+import { AGENT_DOC_PATH, PREVIEW_SHARE_TOKEN_NAME, type ManifestEntry } from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
@@ -65,8 +67,10 @@ const presentationToWire = (p: PresentationRow) => ({
   title: p.title,
   kind: p.kind,
   interactive: p.interactive,
+  metadata: p.metadata,
   currentVersion: p.currentVersion,
   entryPath: p.entryPath,
+  hasAgentDoc: p.hasAgentDoc,
   ownerUserId: p.ownerUserId,
   remixedFrom: p.remixedFrom,
   // Viewer entry loads recorded by recordEntryView (dashboard preview
@@ -82,6 +86,7 @@ const versionToWire = (v: Omit<PresentationVersionRow, 'manifest'>) => ({
   entryPath: v.entryPath,
   sizeBytes: v.sizeBytes,
   fileCount: v.fileCount,
+  hasAgentDoc: v.hasAgentDoc,
   createdBy: v.createdBy,
   createdByRole: v.createdByRole,
   createdAt: v.createdAt.toISOString()
@@ -234,6 +239,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       title: body.title,
       kind: body.kind,
       interactive: body.interactive,
+      metadata: body.metadata,
       entryPath: body.entryPath,
       manifest: body.manifest as ManifestEntry[]
     });
@@ -375,6 +381,31 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     return c.json(presentationToWire(deck), 200);
   });
 
+  api.openapi(presentationUpdateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const deck = await service.get(principal.workspaceId, id);
+    // Writers only, and 404 — not 403 — on a failed check: today canWrite
+    // coincides with canRead (ADR 013), so a principal refused here could
+    // not read the deck either, and its existence must not be probeable.
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const updated = await service.update(principal.workspaceId, id, {
+      title: body.title,
+      metadata: body.metadata
+    });
+    if (!updated) return c.json(err('not_found', 'Presentation not found'), 404);
+    c.set('audit', {
+      action: 'presentation.update',
+      resourceType: 'presentation',
+      resourceId: deck.id,
+      metadata: { fields: Object.keys(body) }
+    });
+    return c.json(presentationToWire(updated), 200);
+  });
+
   api.openapi(presentationDeleteRoute, async (c) => {
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
@@ -448,6 +479,42 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // active content as attachment + nosniff either way).
       contentType: entry.contentType,
       filename: entry.path.split('/').pop() ?? entry.path,
+      headOnly: false
+    });
+  });
+
+  api.openapi(agentDocGetRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const { version } = c.req.valid('query');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    // currentVersion 0 = no versions committed yet — nothing to resolve.
+    const target = version ?? deck.currentVersion;
+    const row = target >= 1 ? await service.getVersion(principal.workspaceId, id, target) : null;
+    if (!row) {
+      return c.json(err('agent_doc_not_found', 'This version has no AGENT.md briefing'), 404);
+    }
+    const entry = (row.manifest as ManifestEntry[]).find((e) => e.path === AGENT_DOC_PATH);
+    if (!entry) {
+      return c.json(err('agent_doc_not_found', 'This version has no AGENT.md briefing'), 404);
+    }
+    const fileRow = await fileService.getBySha(principal.workspaceId, entry.sha256);
+    if (!fileRow) return c.json(err('not_found', 'Asset content not available'), 404);
+
+    return serveBlob(c, {
+      storage,
+      logger,
+      workspaceId: principal.workspaceId,
+      sha256: entry.sha256,
+      sizeBytes: fileRow.sizeBytes,
+      // Served as markdown regardless of the manifest's declared type: the
+      // convention is a markdown briefing, and the safe-serving policy keeps
+      // it attachment + nosniff on the app origin like every user blob.
+      contentType: 'text/markdown; charset=utf-8',
+      filename: AGENT_DOC_PATH,
       headOnly: false
     });
   });

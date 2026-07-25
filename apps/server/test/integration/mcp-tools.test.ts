@@ -41,6 +41,8 @@ const EXPECTED_TOOLS = [
   'slideless_list_versions',
   'slideless_get_version',
   'slideless_download_version',
+  'slideless_get_agent_doc',
+  'slideless_update_presentation',
   'slideless_delete_presentation',
   'slideless_upload_html_presentation',
   'slideless_upload_presentation_files',
@@ -221,6 +223,7 @@ describe('discovery + auth gate', () => {
       'slideless_list_versions',
       'slideless_get_version',
       'slideless_download_version',
+      'slideless_get_agent_doc',
       'slideless_list_share_tokens',
       'slideless_list_collaborators',
       'slideless_list_annotations'

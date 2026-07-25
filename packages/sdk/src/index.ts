@@ -39,6 +39,7 @@ import type {
   MeResponse,
   OnboardingDismissed,
   Presentation,
+  PresentationUpdate,
   PresentationVersion,
   PresentationVersionDetail,
   PreviewTokenCreate,
@@ -461,6 +462,14 @@ export class PlatformClient {
     return this.request('GET', `/presentations/${encodeURIComponent(id)}`);
   }
 
+  /**
+   * Update mutable deck properties. `metadata` replaces the stored object
+   * wholesale — read-modify-write to merge.
+   */
+  updatePresentation(id: string, patch: PresentationUpdate): Promise<Presentation> {
+    return this.request('PATCH', `/presentations/${encodeURIComponent(id)}`, patch);
+  }
+
   /** Soft delete: versions and share tokens stop resolving. */
   deletePresentation(id: string): Promise<Presentation> {
     return this.request('DELETE', `/presentations/${encodeURIComponent(id)}`);
@@ -554,6 +563,31 @@ export class PlatformClient {
       await this.parse(res); // throws PlatformApiError with the wire shape
     }
     return res;
+  }
+
+  /** URL of the streamed AGENT.md briefing endpoint. */
+  agentDocUrl(id: string, version?: number): string {
+    const base = `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/agent-doc`;
+    return version !== undefined ? `${base}?version=${version}` : base;
+  }
+
+  /**
+   * The deck's AGENT.md briefing as markdown text (current version, or a
+   * pinned one). 404 agent_doc_not_found when that version ships none.
+   */
+  async agentDoc(id: string, version?: number): Promise<string> {
+    const headers: Record<string, string> = this.baseHeaders();
+    const res = await this.fetchImpl(this.agentDocUrl(id, version), {
+      method: 'GET',
+      headers,
+      credentials: 'same-origin',
+      // Browser-only field; cast keeps this isomorphic under a Node lib.
+      cache: 'no-store'
+    } as RequestInit);
+    if (!res.ok) {
+      await this.parse(res); // throws PlatformApiError with the wire shape
+    }
+    return res.text();
   }
 
   // ── Sharing ───────────────────────────────────────────────────────────────

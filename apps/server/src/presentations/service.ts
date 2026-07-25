@@ -14,7 +14,7 @@ import {
   type UploadSessionRow,
   type VersionAuthorRole
 } from '@slideless/db';
-import type { ManifestEntry, Principal } from '@slideless/contract';
+import { AGENT_DOC_PATH, type ManifestEntry, type Principal } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 
 /** Upload sessions reserve the future deck id for ~1 h (ADR 011). */
@@ -143,12 +143,15 @@ export class PresentationService {
   private stampManifest(
     manifest: ManifestEntry[],
     sizeBySha: Map<string, number>
-  ): { manifest: ManifestEntry[]; sizeBytes: number; fileCount: number } {
+  ): { manifest: ManifestEntry[]; sizeBytes: number; fileCount: number; hasAgentDoc: boolean } {
     const stamped = manifest.map((e) => ({ ...e, sizeBytes: sizeBySha.get(e.sha256)! }));
     return {
       manifest: stamped,
       sizeBytes: stamped.reduce((sum, e) => sum + e.sizeBytes, 0),
-      fileCount: stamped.length
+      fileCount: stamped.length,
+      // The reserved agent briefing: exact root path, case-sensitive like
+      // every manifest path. Stamped here so reads never open the manifest.
+      hasAgentDoc: stamped.some((e) => e.path === AGENT_DOC_PATH)
     };
   }
 
@@ -165,6 +168,7 @@ export class PresentationService {
     title: string;
     kind: PresentationRow['kind'];
     interactive: boolean;
+    metadata?: Record<string, unknown> | undefined;
     entryPath: string;
     manifest: ManifestEntry[];
   }): Promise<SessionCommitResult> {
@@ -203,8 +207,10 @@ export class PresentationService {
           title: opts.title,
           kind: opts.kind,
           interactive: opts.interactive,
+          ...(opts.metadata !== undefined ? { metadata: opts.metadata } : {}),
           currentVersion: 1,
-          entryPath: opts.entryPath
+          entryPath: opts.entryPath,
+          hasAgentDoc: stamped.hasAgentDoc
         })
         .returning();
       const [version] = await tx
@@ -217,6 +223,7 @@ export class PresentationService {
           manifest: stamped.manifest,
           sizeBytes: stamped.sizeBytes,
           fileCount: stamped.fileCount,
+          hasAgentDoc: stamped.hasAgentDoc,
           createdBy: opts.principal.userId,
           createdByRole: 'owner'
         })
@@ -295,6 +302,7 @@ export class PresentationService {
           manifest: stamped.manifest,
           sizeBytes: stamped.sizeBytes,
           fileCount: stamped.fileCount,
+          hasAgentDoc: stamped.hasAgentDoc,
           createdBy: opts.principal.userId,
           // 'owner' for the deck owner / workspace admins, 'dev' for an
           // active per-deck collaborator (resolved above, in-transaction).
@@ -306,6 +314,7 @@ export class PresentationService {
         .set({
           currentVersion: newVersion,
           entryPath: opts.entryPath,
+          hasAgentDoc: stamped.hasAgentDoc,
           updatedAt: new Date(),
           ...(opts.title !== undefined ? { title: opts.title } : {})
         })
@@ -393,6 +402,35 @@ export class PresentationService {
   }
 
   /**
+   * Update mutable deck properties (PATCH /presentations/{id}). `metadata`
+   * replaces the stored object wholesale — merge is a client concern (the
+   * caller read the deck to know what to send). Null when the deck is gone
+   * (the handler's 404; write authorization is the handler's canWriteDeck).
+   */
+  async update(
+    workspaceId: string,
+    id: string,
+    patch: { title?: string | undefined; metadata?: Record<string, unknown> | undefined }
+  ): Promise<PresentationRow | null> {
+    const [row] = await this.db
+      .update(presentations)
+      .set({
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(presentations.id, id),
+          eq(presentations.workspaceId, workspaceId),
+          isNull(presentations.deletedAt)
+        )
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  /**
    * Remember the deck's badge slot for annotator links. Written whenever a
    * share token is created or patched with an EXPLICIT badgePosition, so
    * the next link on this deck inherits the last deliberate choice.
@@ -434,6 +472,7 @@ export class PresentationService {
         entryPath: presentationVersions.entryPath,
         sizeBytes: presentationVersions.sizeBytes,
         fileCount: presentationVersions.fileCount,
+        hasAgentDoc: presentationVersions.hasAgentDoc,
         createdBy: presentationVersions.createdBy,
         createdByRole: presentationVersions.createdByRole,
         createdAt: presentationVersions.createdAt

@@ -497,6 +497,13 @@ export const en = {
   'deck.previewFailed': 'Preview unavailable: {error}',
   'deck.previewOwnerOnly':
     'The preview is available to the deck owner and workspace admins. Create a share link below to view this deck.',
+  'deck.selfDescTitle': 'Deck details',
+  'deck.selfDescDescription': 'Owner-defined metadata and the bundle’s AGENT.md agent briefing.',
+  'deck.metadataHeading': 'Metadata',
+  'deck.agentDocHeading': 'Agent briefing (AGENT.md)',
+  'deck.agentDocShow': 'Show briefing',
+  'deck.agentDocHide': 'Hide briefing',
+  'deck.agentDocLoadFailed': 'Could not load the briefing: {error}',
 
   // ── Share links (per-recipient viewer tokens) ────────────────────────
   'tokens.title': 'Share links',

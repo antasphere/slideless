@@ -49,6 +49,7 @@ import {
   assetUploadedSchema,
   presentationSchema,
   presentationsListSchema,
+  presentationUpdateSchema,
   presentationVersionDetailSchema,
   presentationVersionsListSchema,
   sha256Schema,
@@ -707,6 +708,23 @@ export const presentationGetRoute = createRoute({
   }
 });
 
+export const presentationUpdateRoute = createRoute({
+  method: 'patch',
+  path: '/presentations/{id}',
+  tags: ['presentations'],
+  summary: 'Update mutable deck properties (title, metadata — metadata is a full replace)',
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(presentationUpdateSchema, 'Fields to change (at least one)')
+  },
+  responses: {
+    200: jsonBody(presentationSchema, 'Updated presentation'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
 export const presentationDeleteRoute = createRoute({
   method: 'delete',
   path: '/presentations/{id}',
@@ -847,6 +865,23 @@ export const assetDownloadRoute = createRoute({
     // Deliberately NO `content` key on the 200 (workspace-export precedent):
     // the handler returns a plain streamed Response.
     200: { description: 'Asset bytes (streamed)' },
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
+export const agentDocGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/agent-doc',
+  tags: ['presentations'],
+  summary: "The deck's AGENT.md briefing (current version, or ?version=N)",
+  request: {
+    params: uuidParams,
+    query: z.object({ version: z.coerce.number().int().min(1).optional() })
+  },
+  responses: {
+    // Streamed like assetDownloadRoute; markdown bytes, inline disposition.
+    200: { description: 'AGENT.md bytes (streamed, text/markdown)' },
     401: errorResponses[401],
     404: errorResponses[404]
   }
