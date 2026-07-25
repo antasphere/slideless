@@ -568,6 +568,13 @@ export const en = {
   'tokens.revokedToast': 'Share link "{name}" revoked',
   'tokens.empty': 'No share links yet.',
   'tokens.loadFailed': 'Failed to load share links: {error}',
+  'tokens.actionViews': 'View activity…',
+  'tokens.viewsTitle': 'Link activity',
+  'tokens.viewsDescription':
+    'Recent views of "{name}" — when, the referring site, the placement label, the browser family. No IP addresses and no full URLs are ever stored.',
+  'tokens.viewsEmpty': 'No recorded views yet.',
+  'tokens.viewsDirect': 'direct / unknown',
+  'tokens.viewsLoadFailed': 'Failed to load link activity: {error}',
 
   // ── Collaborators (per-deck dev grants) ──────────────────────────────
   'collaborators.title': 'Collaborators',

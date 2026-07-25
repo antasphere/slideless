@@ -729,7 +729,16 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         password: z.string().min(4).max(256).optional().describe('Viewer password gate (optional).')
       }
     },
-    async ({ workspace, presentationId, name, pinnedVersion, canAnnotate, badgePosition, expiresAt, password }) =>
+    async ({
+      workspace,
+      presentationId,
+      name,
+      pinnedVersion,
+      canAnnotate,
+      badgePosition,
+      expiresAt,
+      password
+    }) =>
       write(workspace, async (c) =>
         jsonText(
           await callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens`, {
@@ -771,6 +780,39 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           await callApi(
             c,
             pageQuery(`/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens`, { cursor, limit })
+          )
+        )
+      )
+  );
+
+  server.registerTool(
+    'slideless_list_token_views',
+    {
+      description:
+        "One share token's per-view events, newest first: when each counted open happened " +
+        '(occurredAt), the referring site (referrerHost — host only, never the full URL), the ' +
+        "link's ?p= placement label, the coarse browser family (chrome/firefox/safari/edge/bot/" +
+        'other), and the deck version served. Only counted opens appear — de-dupe-window ' +
+        'repeats, owner previews, asset fetches never do. No IP and no geolocation are ever ' +
+        'stored. Returns { views: [...], nextCursor }.',
+      inputSchema: {
+        workspace: workspaceInput,
+        presentationId: deckIdInput,
+        tokenId: z.uuid().describe('Share token id (from creation or slideless_list_share_tokens).'),
+        cursor: cursorInput,
+        limit: limitInput
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ workspace, presentationId, tokenId, cursor, limit }) =>
+      read(workspace, async (c) =>
+        jsonText(
+          await callApi(
+            c,
+            pageQuery(
+              `/api/v1/presentations/${encodeURIComponent(presentationId)}/tokens/${encodeURIComponent(tokenId)}/views`,
+              { cursor, limit }
+            )
           )
         )
       )

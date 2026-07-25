@@ -66,6 +66,7 @@ import {
   shareTokenSendSchema,
   shareTokenSentSchema,
   shareTokensListSchema,
+  shareTokenViewsListSchema,
   shareTokenUpdateSchema
 } from '../schemas/share-tokens.js';
 import {
@@ -974,6 +975,24 @@ export const shareTokenRevokeRoute = createRoute({
     200: jsonBody(shareTokenSchema, 'Revoked share token'),
     401: errorResponses[401],
     403: errorResponses[403],
+    404: errorResponses[404]
+  }
+});
+
+export const shareTokenViewsListRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/tokens/{tokenId}/views',
+  tags: ['sharing'],
+  summary:
+    'Per-view events of one share token (cursor-paginated, newest first). Each event carries ' +
+    'occurredAt, the referring site host, the sanitized ?p= placement label, a coarse browser ' +
+    'family, and the version served. No IP, no geolocation, no full referrer URLs — ever.',
+  request: { params: tokenParams, query: cursorPageQuerySchema },
+  responses: {
+    200: jsonBody(shareTokenViewsListSchema, 'View events, newest first'),
+    401: errorResponses[401],
+    // Deliberately NO 403 (the annotations-list posture): an ordinary member
+    // gets the same 404 an outsider would — existence is not advertised.
     404: errorResponses[404]
   }
 });

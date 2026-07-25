@@ -8,6 +8,7 @@ import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
 import type { AuditService } from '../audit/service.js';
 import { parseSuperadminEmails } from '../accounts/superadmin.js';
+import { purgeShareTokenViews } from '../sharing/view-events.js';
 
 /**
  * pg-boss job runtime. Queue creation and worker registration follow
@@ -26,6 +27,7 @@ export const APIKEY_EXPIRY_QUEUE = 'apikey-expiry-sweep';
 export const IDEMPOTENCY_PURGE_QUEUE = 'idempotency-purge';
 export const ORPHAN_USER_PURGE_QUEUE = 'orphan-user-purge';
 export const UPLOAD_SESSION_PURGE_QUEUE = 'upload-session-purge';
+export const VIEW_EVENTS_PURGE_QUEUE = 'view-events-purge';
 
 /**
  * Upload sessions carry a ~1 h TTL (ADR 011), so the table is bounded by an
@@ -91,6 +93,7 @@ export async function createJobs(
     | 'DATABASE_URL'
     | 'SERVICE_ROLE'
     | 'AUDIT_RETENTION_DAYS'
+    | 'VIEW_EVENTS_RETENTION_DAYS'
     | 'ORPHAN_USER_RETENTION_HOURS'
     | 'SUPERADMIN_EMAILS'
   >,
@@ -116,6 +119,7 @@ export async function createJobs(
   boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
 
   const retentionDays = env.AUDIT_RETENTION_DAYS;
+  const viewRetentionDays = env.VIEW_EVENTS_RETENTION_DAYS;
   const orphanRetentionHours = env.ORPHAN_USER_RETENTION_HOURS;
 
   if (isWorker) {
@@ -142,6 +146,14 @@ export async function createJobs(
       await boss.schedule(IDEMPOTENCY_PURGE_QUEUE, '0 3 * * *');
       await boss.createQueue(UPLOAD_SESSION_PURGE_QUEUE);
       await boss.schedule(UPLOAD_SESSION_PURGE_QUEUE, '0 3 * * *');
+      // Per-view analytics retention: 0 = keep forever; the queue always
+      // exists so the schedule can be flipped later (audit-purge pattern).
+      await boss.createQueue(VIEW_EVENTS_PURGE_QUEUE);
+      if (viewRetentionDays > 0) {
+        await boss.schedule(VIEW_EVENTS_PURGE_QUEUE, '0 3 * * *');
+      } else {
+        await boss.unschedule(VIEW_EVENTS_PURGE_QUEUE).catch(() => {});
+      }
       // Orphaned-user GC: 0 = disabled; the queue always exists so the
       // schedule can be flipped later (audit-purge pattern).
       await boss.createQueue(ORPHAN_USER_PURGE_QUEUE);
@@ -218,6 +230,15 @@ export async function createJobs(
     await boss.work(UPLOAD_SESSION_PURGE_QUEUE, async () => {
       const deleted = await purgeExpiredUploadSessions(db);
       logger.info({ deleted }, 'upload session purge ran');
+    });
+
+    // Per-view analytics retention (PRDCT-1313): share_token_views grows one
+    // row per counted link open, unbounded — the batched, index-backed purge
+    // lives in sharing/view-events.ts so the integration suite exercises the
+    // exact statement this job runs.
+    await boss.work(VIEW_EVENTS_PURGE_QUEUE, async () => {
+      const deleted = await purgeShareTokenViews(db, viewRetentionDays);
+      logger.info({ retentionDays: viewRetentionDays, deleted }, 'view events retention purge ran');
     });
 
     // Orphaned-user GC: setup-race losers, fail-closed SSO login strands

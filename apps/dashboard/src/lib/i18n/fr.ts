@@ -588,6 +588,13 @@ export const fr: Record<MessageKey, string> = {
   'tokens.revokedToast': 'Lien de partage « {name} » révoqué',
   'tokens.empty': 'Aucun lien de partage pour l’instant.',
   'tokens.loadFailed': 'Échec du chargement des liens de partage : {error}',
+  'tokens.actionViews': 'Voir l’activité…',
+  'tokens.viewsTitle': 'Activité du lien',
+  'tokens.viewsDescription':
+    'Vues récentes de « {name} » — le moment, le site référent, l’étiquette d’emplacement, la famille de navigateur. Aucune adresse IP ni URL complète n’est jamais conservée.',
+  'tokens.viewsEmpty': 'Aucune vue enregistrée pour l’instant.',
+  'tokens.viewsDirect': 'direct / inconnu',
+  'tokens.viewsLoadFailed': 'Échec du chargement de l’activité du lien : {error}',
 
   // ── Collaborators (per-deck dev grants) ──────────────────────────────
   'collaborators.title': 'Collaborateurs',

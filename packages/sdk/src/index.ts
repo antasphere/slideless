@@ -51,6 +51,7 @@ import type {
   ShareTokenSend,
   ShareTokenSent,
   ShareTokenUpdate,
+  ShareTokenView,
   SsoCliConnect,
   SsoLogoutResponse,
   UploadSession,
@@ -621,6 +622,26 @@ export class PlatformClient {
    */
   createPreviewToken(id: string, req: PreviewTokenCreate = {}): Promise<ShareTokenCreated> {
     return this.request('POST', `/presentations/${encodeURIComponent(id)}/preview-token`, req);
+  }
+
+  /**
+   * Per-view events of one share token, newest first (cursor-paginated):
+   * when each counted open happened, the referring site's host, the `?p=`
+   * placement label, and a coarse browser family. No IP, no geolocation,
+   * no full referrer URLs — the server never stores them.
+   */
+  shareTokenViews(
+    id: string,
+    tokenId: string,
+    params: ListParams = {}
+  ): Promise<{ views: ShareTokenView[]; nextCursor: string | null }> {
+    return this.request(
+      'GET',
+      this.pathWithQuery(
+        `/presentations/${encodeURIComponent(id)}/tokens/${encodeURIComponent(tokenId)}/views`,
+        params
+      )
+    );
   }
 
   /** Pin/unpin version, rename, annotate flag, expiry, password (null clears). */

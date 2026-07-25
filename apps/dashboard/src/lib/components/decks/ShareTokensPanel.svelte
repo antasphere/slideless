@@ -26,7 +26,12 @@
   import { formatDate, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { PresentationVersion, ShareToken, ShareTokenCreate } from '@slideless/contract';
+  import type {
+    PresentationVersion,
+    ShareToken,
+    ShareTokenCreate,
+    ShareTokenView
+  } from '@slideless/contract';
   import { badgePositionSchema } from '@slideless/contract';
 
   interface Props {
@@ -153,6 +158,55 @@
     }
   }
 
+  // ── Per-view activity dialog (PRDCT-1313) ─────────────────────────────
+  // Recent counted views of one link: time, referring site host, placement
+  // label, coarse browser family. All values render through escaped Svelte
+  // interpolation — referrerHost/placement are visitor-influenced text.
+  let showViewsDialog = $state(false);
+  let viewsTarget = $state<ShareToken | null>(null);
+  let viewsRows = $state<ShareTokenView[]>([]);
+  let viewsCursor = $state<string | null>(null);
+  let viewsLoading = $state(false);
+  let viewsLoadingMore = $state(false);
+  let viewsError = $state<string | null>(null);
+
+  const VIEWS_PAGE = 25;
+
+  async function openViewsDialog(token: ShareToken) {
+    viewsTarget = token;
+    viewsRows = [];
+    viewsCursor = null;
+    viewsError = null;
+    showViewsDialog = true;
+    viewsLoading = true;
+    try {
+      const page = await api.shareTokenViews(deckId, token.id, { limit: VIEWS_PAGE });
+      viewsRows = page.views;
+      viewsCursor = page.nextCursor;
+    } catch (e) {
+      viewsError = errorMessage(e);
+    } finally {
+      viewsLoading = false;
+    }
+  }
+
+  async function loadMoreViews() {
+    if (!viewsTarget || !viewsCursor) return;
+    viewsLoadingMore = true;
+    try {
+      const page = await api.shareTokenViews(deckId, viewsTarget.id, {
+        limit: VIEWS_PAGE,
+        cursor: viewsCursor
+      });
+      viewsRows = [...viewsRows, ...page.views];
+      viewsCursor = page.nextCursor;
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      viewsLoadingMore = false;
+    }
+  }
+
   // ── Revoke ─────────────────────────────────────────────────────────────
   let showRevokeDialog = $state(false);
   let revokeLoading = $state(false);
@@ -245,24 +299,32 @@
     {
       id: 'actions',
       cell: ({ row }) =>
-        tokenStatus(row.original) !== 'active'
-          ? ''
-          : renderComponent(DataTableActions, {
-              actions: [
-                {
-                  label: t('tokens.actionChangeVersion'),
-                  onclick: () => openVersionDialog(row.original)
-                },
-                {
-                  label: t('tokens.actionRevoke'),
-                  onclick: () => {
-                    revokeTarget = row.original;
-                    showRevokeDialog = true;
+        renderComponent(DataTableActions, {
+          actions: [
+            // View activity stays available on revoked/expired links too —
+            // access history deliberately survives revocation.
+            {
+              label: t('tokens.actionViews'),
+              onclick: () => void openViewsDialog(row.original)
+            },
+            ...(tokenStatus(row.original) !== 'active'
+              ? []
+              : [
+                  {
+                    label: t('tokens.actionChangeVersion'),
+                    onclick: () => openVersionDialog(row.original)
                   },
-                  variant: 'destructive' as const
-                }
-              ]
-            }),
+                  {
+                    label: t('tokens.actionRevoke'),
+                    onclick: () => {
+                      revokeTarget = row.original;
+                      showRevokeDialog = true;
+                    },
+                    variant: 'destructive' as const
+                  }
+                ])
+          ]
+        }),
       meta: { width: '60px' }
     }
   ]);
@@ -455,6 +517,68 @@
       >
         {t('common.done')}
       </Button>
+    </div>
+  </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root
+  bind:open={showViewsDialog}
+  onOpenChange={(isOpen) => {
+    if (!isOpen) {
+      viewsTarget = null;
+      viewsRows = [];
+      viewsCursor = null;
+      viewsError = null;
+    }
+  }}
+>
+  <Dialog.Content class="sm:max-w-lg">
+    <Dialog.Header>
+      <Dialog.Title>{t('tokens.viewsTitle')}</Dialog.Title>
+      <Dialog.Description>
+        {t('tokens.viewsDescription', { name: viewsTarget?.name ?? '' })}
+      </Dialog.Description>
+    </Dialog.Header>
+    {#if viewsLoading}
+      <p class="py-4 text-sm text-muted-foreground">{t('common.loading')}</p>
+    {:else if viewsError}
+      <p class="py-4 text-sm text-destructive">{t('tokens.viewsLoadFailed', { error: viewsError })}</p>
+    {:else if !viewsRows.length}
+      <p class="py-4 text-sm text-muted-foreground">{t('tokens.viewsEmpty')}</p>
+    {:else}
+      <div class="max-h-80 space-y-0 overflow-y-auto rounded-md border">
+        {#each viewsRows as view (view.id)}
+          <!-- referrerHost/placement are visitor-influenced: escaped {} only. -->
+          <div class="flex items-baseline justify-between gap-3 border-b px-3 py-2 text-sm last:border-b-0">
+            <span class="shrink-0 text-muted-foreground">{formatTimeAgo(view.occurredAt)}</span>
+            <span class="min-w-0 flex-1 truncate text-right">
+              {view.referrerHost ?? t('tokens.viewsDirect')}
+              {#if view.placement}
+                <span class="text-muted-foreground">· {view.placement}</span>
+              {/if}
+              {#if view.uaFamily}
+                <span class="text-muted-foreground">· {view.uaFamily}</span>
+              {/if}
+              <span class="text-muted-foreground">· v{view.version}</span>
+            </span>
+          </div>
+        {/each}
+      </div>
+      {#if viewsCursor}
+        <div class="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => void loadMoreViews()}
+            disabled={viewsLoadingMore}
+          >
+            {viewsLoadingMore ? t('common.loading') : t('common.loadMore')}
+          </Button>
+        </div>
+      {/if}
+    {/if}
+    <div class="flex justify-end pt-2">
+      <Button onclick={() => (showViewsDialog = false)}>{t('common.close')}</Button>
     </div>
   </Dialog.Content>
 </Dialog.Root>

@@ -167,3 +167,30 @@ export const shareTokenSentSchema = z.object({
   emailSent: z.boolean()
 });
 export type ShareTokenSent = z.infer<typeof shareTokenSentSchema>;
+
+/**
+ * One counted view of a share link (PRDCT-1313). Recorded under exactly the
+ * gate that increments accessCount — dedupe-window repeats, preview tokens,
+ * asset fetches, and HEAD never produce an event. Privacy posture (fixed):
+ * NO IP, NO geolocation, NO full referrer URL — host, sanitized placement
+ * label, and coarse browser family only.
+ */
+export const shareTokenViewSchema = z.object({
+  id: z.string(),
+  /** The deck version the recipient was served. */
+  version: z.number().int(),
+  occurredAt: z.string(),
+  /** Host of the referring site (e.g. "docs.example.com"); null = direct/unknown. */
+  referrerHost: z.string().nullable(),
+  /** The entry URL's sanitized `?p=` label (≤64 chars, [A-Za-z0-9._-]); null when absent/illegal. */
+  placement: z.string().nullable(),
+  /** Coarse browser family: chrome, firefox, safari, edge, bot, or other; null when no UA. */
+  uaFamily: z.string().nullable()
+});
+export type ShareTokenView = z.infer<typeof shareTokenViewSchema>;
+
+export const shareTokenViewsListSchema = z.object({
+  views: z.array(shareTokenViewSchema),
+  nextCursor: z.string().nullable()
+});
+export type ShareTokenViewsList = z.infer<typeof shareTokenViewsListSchema>;

@@ -496,6 +496,68 @@ describe('deck + sharing commands (request shapes)', () => {
     expect(JSON.parse(h2.out())).toEqual({ shareTokens: [TOKEN], nextCursor: 'n1' });
   });
 
+  it('views drills into one token (--all paginates; --json wire shape) and lists tokens without one', async () => {
+    const VIEW = {
+      id: '77777777-7777-7777-7777-777777777777',
+      version: 2,
+      occurredAt: '2026-07-20T10:00:00.000Z',
+      referrerHost: 'docs.example.com',
+      placement: 'hero',
+      uaFamily: 'chrome'
+    };
+    const DIRECT = {
+      ...VIEW,
+      id: '88888888-8888-8888-8888-888888888888',
+      referrerHost: null,
+      placement: null,
+      uaFamily: null
+    };
+    const h = routedHarness([
+      {
+        method: 'GET',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/tokens/${TOKEN_ID}/views`),
+        reply: ({ path }) =>
+          path.includes('cursor=next')
+            ? { body: { views: [DIRECT], nextCursor: null } }
+            : { body: { views: [VIEW], nextCursor: 'next' } }
+      }
+    ]);
+    const code = await run(
+      ['views', DECK.id, TOKEN_ID, '--all', '--url', 'http://x', '--api-key', 'slk_k_s'],
+      h.io
+    );
+    expect(h.err()).toBe('');
+    expect(code).toBe(0);
+    expect(h.out()).toContain('docs.example.com');
+    expect(h.out()).toContain('p:hero');
+    expect(h.out()).toContain('chrome');
+    expect(h.out()).toContain('direct');
+
+    const h2 = routedHarness([
+      {
+        method: 'GET',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/tokens/${TOKEN_ID}/views`),
+        reply: () => ({ body: { views: [VIEW], nextCursor: 'n1' } })
+      }
+    ]);
+    expect(
+      await run(['views', DECK.id, TOKEN_ID, '--json', '--url', 'http://x', '--api-key', 'slk_k_s'], h2.io)
+    ).toBe(0);
+    expect(JSON.parse(h2.out())).toEqual({ views: [VIEW], nextCursor: 'n1' });
+
+    // Without a tokenId the command lists the deck's tokens + the drill hint.
+    const h3 = routedHarness([
+      {
+        method: 'GET',
+        path: new RegExp(`/api/v1/presentations/${DECK.id}/tokens$`),
+        reply: () => ({ body: { shareTokens: [TOKEN], nextCursor: null } })
+      }
+    ]);
+    expect(await run(['views', DECK.id, '--url', 'http://x', '--api-key', 'slk_k_s'], h3.io)).toBe(0);
+    expect(h3.out()).toContain(TOKEN_ID);
+    expect(h3.out()).toContain('slideless views');
+  });
+
   it('versions lists the history with --json wire shape', async () => {
     const V2 = {
       ...VERSION_ROW,

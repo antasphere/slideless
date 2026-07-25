@@ -225,6 +225,13 @@
       "when": 1784996427588,
       "tag": "0031_agent_doc",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784998064752,
+      "tag": "0032_share_token_views",
+      "breakpoints": true
     }
   ]
 }

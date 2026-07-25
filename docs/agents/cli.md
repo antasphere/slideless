@@ -198,6 +198,9 @@ slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one persona
 slideless pin <id> <tokenId> --to-version 1               # freeze a recipient on v1
 slideless pin <id> <tokenId> --latest                     # follow the latest again
 slideless tokens <id> [--all]                             # list links + access stats (opens, last opened)
+slideless views <id> [tokenId] [--all]                    # per-view events of one link: when, referring
+                                                          # site, ?p= label, browser family (no IPs, no
+                                                          # full URLs — never stored)
 ```
 
 Secrets are stored hash-only server-side: the URL printed at creation is

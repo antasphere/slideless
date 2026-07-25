@@ -137,6 +137,8 @@ const envObjectSchema = z.object({
   METRICS_TOKEN: optionalString(z.string().min(8)),
   /** Days of audit_log to keep (nightly purge at 03:00). 0 = keep forever. */
   AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).default(365),
+  /** Days of per-view share-link analytics events (share_token_views: when a link was opened, referring site host, placement label, browser family — never IPs or full URLs) to keep. Nightly purge at 03:00; 0 = keep forever. */
+  VIEW_EVENTS_RETENTION_DAYS: z.coerce.number().int().min(0).default(90),
   /** Grace period for orphaned users (accounts with ZERO workspace memberships, e.g. setup-race losers): the nightly 03:00 sweep deletes them once older than this many hours. A user with ANY membership row — even deactivated — is never touched. 0 = sweep disabled. */
   ORPHAN_USER_RETENTION_HOURS: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).default(72)),
   /** pino level. */

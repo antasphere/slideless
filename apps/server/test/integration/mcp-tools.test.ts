@@ -48,6 +48,7 @@ const EXPECTED_TOOLS = [
   'slideless_upload_presentation_files',
   'slideless_add_share_token',
   'slideless_list_share_tokens',
+  'slideless_list_token_views',
   'slideless_set_token_version_mode',
   'slideless_unshare_presentation',
   'slideless_share_via_email',
@@ -225,6 +226,7 @@ describe('discovery + auth gate', () => {
       'slideless_download_version',
       'slideless_get_agent_doc',
       'slideless_list_share_tokens',
+      'slideless_list_token_views',
       'slideless_list_collaborators',
       'slideless_list_annotations'
     ]) {
@@ -561,6 +563,26 @@ describe('sharing, collaborators, annotations, delete', () => {
     const after = await callTool(ownerKey, 'slideless_list_share_tokens', { presentationId: deckId });
     expect(after.data.shareTokens.every((t: { revokedAt: string | null }) => t.revokedAt !== null)).toBe(
       true
+    );
+  });
+
+  it('slideless_list_token_views returns per-view events (survives revocation; no IP-shaped fields)', async () => {
+    const list = await callTool(ownerKey, 'slideless_list_share_tokens', { presentationId: deckId });
+    // The anonymous link was opened (counted) earlier in the suite; its
+    // history survives the revoke-all above.
+    const opened = list.data.shareTokens.find((t: { accessCount: number }) => t.accessCount >= 1);
+    expect(opened, 'a token with at least one counted open').toBeDefined();
+    const views = await callTool(ownerKey, 'slideless_list_token_views', {
+      presentationId: deckId,
+      tokenId: opened.id
+    });
+    expect(views.isError, views.text).toBe(false);
+    expect(Array.isArray(views.data.views)).toBe(true);
+    expect(views.data.views.length).toBeGreaterThanOrEqual(1);
+    // The wire shape is EXACTLY the privacy-vetted field set — an ip/geo/url
+    // field appearing here is a regression, not an addition.
+    expect(Object.keys(views.data.views[0]).sort()).toEqual(
+      ['id', 'occurredAt', 'placement', 'referrerHost', 'uaFamily', 'version'].sort()
     );
   });
 

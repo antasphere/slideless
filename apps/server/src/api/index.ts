@@ -51,6 +51,7 @@ import { registerPresentationRoutes } from './presentations.js';
 import { registerCollaboratorRoutes } from './collaborators.js';
 import { PresentationService } from '../presentations/service.js';
 import { AnnotationService } from '../annotations/service.js';
+import { ShareTokenViewService } from '../sharing/view-events.js';
 import type { CollaboratorService } from '../collaborators/service.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
 import type { ShareTokenService } from '../sharing/service.js';
@@ -664,6 +665,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   registerPresentationRoutes(api, {
     service: presentationService,
     sharing: deps.sharing,
+    views: new ShareTokenViewService(db, logger),
     annotations: annotationService,
     fileService: deps.fileService,
     storage: deps.storage,

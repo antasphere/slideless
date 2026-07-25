@@ -670,6 +670,45 @@ export const annotations = pgTable(
 );
 
 /**
+ * One row per COUNTED share-link view (PRDCT-1313): written by the viewer's
+ * entry serve under exactly the gate that increments accessCount, so the
+ * event stream and the counters can never disagree about what a "view" is.
+ * Deliberately minimal by privacy design — referrer HOST only (never the
+ * full URL), a sanitized `?p=` placement label, a coarse browser family;
+ * NO IP, NO geolocation, ever (self-hosters must be able to trust the
+ * posture). `share_token_id` is set-null so a token's history survives its
+ * deletion; deck deletion cascades the rows away with the deck.
+ */
+export const shareTokenViews = pgTable(
+  'share_token_views',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    shareTokenId: uuid('share_token_id').references(() => shareTokens.id, { onDelete: 'set null' }),
+    /** The deck version the recipient was served. */
+    version: integer('version').notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Host of the Referer header (`new URL(...).host`); null when absent/unparsable. */
+    referrerHost: text('referrer_host'),
+    /** Sanitized `?p=` label from the entry URL (≤64 chars, [A-Za-z0-9._-]); else null. */
+    placement: text('placement'),
+    /** Coarse browser family (chrome/firefox/safari/edge/bot/other) — never a full UA. */
+    uaFamily: text('ua_family')
+  },
+  (t) => [
+    // Serves the API's keyset pagination (occurred_at DESC, id DESC per token).
+    index('share_token_views_token_occurred_id_idx').on(t.shareTokenId, t.occurredAt, t.id),
+    // Serves the nightly retention purge's age scan.
+    index('share_token_views_occurred_idx').on(t.occurredAt)
+  ]
+);
+
+/**
  * Transient reservation for new-deck uploads (~1 h): mints the future
  * presentation id up front so asset uploads and the final commit share one
  * handle. `presentation_id` deliberately has NO foreign key — the
@@ -710,4 +749,5 @@ export type PresentationVersionRow = typeof presentationVersions.$inferSelect;
 export type ShareTokenRow = typeof shareTokens.$inferSelect;
 export type CollaboratorRow = typeof collaborators.$inferSelect;
 export type AnnotationRow = typeof annotations.$inferSelect;
+export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;

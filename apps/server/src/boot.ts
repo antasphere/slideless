@@ -52,6 +52,7 @@ import { NoopUsageSink } from './platform/usage.js';
 import { WorkspaceService } from './platform/workspaces.js';
 import { resolveAuthSecret } from './secret.js';
 import { ShareTokenService } from './sharing/service.js';
+import { ShareTokenViewService } from './sharing/view-events.js';
 import { PresentationService } from './presentations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { viewerRoutes } from './viewer/routes.js';
@@ -529,6 +530,7 @@ export async function boot(
   // app.ts's public-route slot, serves user HTML ONLY under CSP: sandbox.
   const viewer = viewerRoutes({
     sharing,
+    views: new ShareTokenViewService(db.db, logger),
     presentations: new PresentationService(db.db),
     fileService,
     storage,

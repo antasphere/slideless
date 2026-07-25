@@ -23,6 +23,7 @@ import {
   shareTokenSendRoute,
   shareTokensListRoute,
   shareTokenUpdateRoute,
+  shareTokenViewsListRoute,
   uploadSessionCommitRoute,
   uploadSessionCreateRoute,
   versionCommitRoute,
@@ -48,6 +49,7 @@ import {
   type ShareTokenService
 } from '../sharing/service.js';
 import { hashViewerPassword } from '../sharing/password.js';
+import { shareTokenViewToWire, type ShareTokenViewService } from '../sharing/view-events.js';
 import { annotationToWire, type AnnotationService } from '../annotations/service.js';
 import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
 
@@ -102,6 +104,8 @@ const sessionToWire = (s: UploadSessionRow) => ({
 export interface PresentationRouteDeps {
   service: PresentationService;
   sharing: ShareTokenService;
+  /** Per-view share-link analytics (PRDCT-1313), read surface only here. */
+  views: ShareTokenViewService;
   annotations: AnnotationService;
   fileService: FileService;
   storage: StorageDriver;
@@ -113,7 +117,7 @@ export interface PresentationRouteDeps {
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
-  const { service, sharing, annotations, fileService, storage, registry, env, email, logger } = deps;
+  const { service, sharing, views, annotations, fileService, storage, registry, env, email, logger } = deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   api.use('/presentations', requireAuth());
@@ -559,6 +563,27 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     });
     // shareTokenToWire never exposes the secret or any hash — hasPassword only.
     return c.json({ shareTokens: tokens.map(shareTokenToWire), nextCursor }, 200);
+  });
+
+  // Per-view analytics of one token (PRDCT-1313). Deck-writers' surface like
+  // the token list, but with the ANNOTATIONS-LIST posture: the contract
+  // declares no 403, so an ordinary member gets the same 404 an outsider
+  // would — neither the deck's nor the token's existence is advertised.
+  api.openapi(shareTokenViewsListRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, tokenId } = c.req.valid('param');
+    const { cursor, limit } = c.req.valid('query');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const token = await sharing.get(principal.workspaceId, id, tokenId);
+    if (!token) return c.json(err('not_found', 'Share token not found'), 404);
+    const { views: rows, nextCursor } = await views.list(principal.workspaceId, id, tokenId, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit
+    });
+    return c.json({ views: rows.map(shareTokenViewToWire), nextCursor }, 200);
   });
 
   api.openapi(shareTokenCreateRoute, async (c) => {

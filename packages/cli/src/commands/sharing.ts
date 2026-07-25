@@ -238,6 +238,92 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     });
 
   program
+    .command('views <id> [tokenId]')
+    .description(
+      'Per-view stats of a share link: when it was opened, the referring site, the ?p= placement ' +
+        'label, and the browser family (no IPs, no full URLs — never stored). Omit tokenId to see ' +
+        'which links exist.'
+    )
+    .option('--cursor <cursor>', 'resume from a previous nextCursor')
+    .option('--limit <n>', 'page size (1-100)', (v: string) => parseInt(v, 10))
+    .option('--all', 'follow nextCursor until every page is fetched', false)
+    .action(
+      async (
+        id: string,
+        tokenId: string | undefined,
+        opts: { cursor?: string; limit?: number; all: boolean },
+        cmd: Command
+      ) => {
+        const ctx = resolveContext(cmd, io);
+        await requireApiKey(ctx);
+
+        // No tokenId: show the deck's tokens so the caller knows what to
+        // drill into — same shape as `tokens`, plus the drill-in hint.
+        if (!tokenId) {
+          const tokens: Array<{ id: string; name: string; accessCount: number; revokedAt: string | null }> =
+            [];
+          let cursor: string | null = opts.cursor ?? null;
+          do {
+            const page = await ctx.client.shareTokens(id, cursor ? { cursor } : {});
+            tokens.push(...page.shareTokens);
+            cursor = page.nextCursor;
+          } while (cursor);
+          if (ctx.json) return printJson(io, { shareTokens: tokens });
+          if (tokens.length === 0) {
+            io.out.write('No share tokens on this deck yet — nothing to drill into.\n');
+            return;
+          }
+          io.out.write(
+            table(
+              tokens.map((t) => [
+                t.id,
+                t.name,
+                `${t.accessCount} open${t.accessCount === 1 ? '' : 's'}`,
+                t.revokedAt ? 'revoked' : 'active'
+              ])
+            )
+          );
+          io.out.write(`Pick one: slideless views ${id} <tokenId>\n`);
+          return;
+        }
+
+        const params: ListParams = {};
+        if (opts.cursor) params.cursor = opts.cursor;
+        if (opts.limit !== undefined) params.limit = opts.limit;
+        const first = await ctx.client.shareTokenViews(id, tokenId, params);
+        const rows = [...first.views];
+        if (opts.all) {
+          let cursor = first.nextCursor;
+          while (cursor) {
+            const page = await ctx.client.shareTokenViews(id, tokenId, { ...params, cursor });
+            rows.push(...page.views);
+            cursor = page.nextCursor;
+          }
+        }
+        const nextCursor = opts.all ? null : first.nextCursor;
+        if (ctx.json) return printJson(io, { views: rows, nextCursor });
+        if (rows.length === 0) {
+          io.out.write('No recorded views yet (only counted opens appear — see the docs).\n');
+          return;
+        }
+        io.out.write(
+          table(
+            rows.map((v) => [
+              v.occurredAt,
+              v.referrerHost ?? 'direct',
+              v.placement ? `p:${v.placement}` : '-',
+              v.uaFamily ?? '-',
+              `v${v.version}`
+            ])
+          )
+        );
+        if (nextCursor) {
+          io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
+        }
+      }
+    );
+
+  program
     .command('invite <id>')
     .description('Invite a dev collaborator to one deck (prints the claim link)')
     .requiredOption('--email <email>', 'invitee email')

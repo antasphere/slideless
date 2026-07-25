@@ -11,6 +11,12 @@ import { encodeContentDisposition } from '../files/http.js';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
+import {
+  viewPlacement,
+  viewReferrerHost,
+  viewUaFamily,
+  type ShareTokenViewService
+} from '../sharing/view-events.js';
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
 import { docNavigation, entryTransformFor, type EntryTransform } from './inject.js';
@@ -62,6 +68,8 @@ export const VIEWER_CONTENT_HEADERS: Readonly<Record<string, string>> = {
 
 export interface ViewerDeps {
   sharing: ShareTokenService;
+  /** Per-view analytics events (PRDCT-1313), written under the counted gate. */
+  views: ShareTokenViewService;
   presentations: PresentationService;
   fileService: FileService;
   storage: StorageDriver;
@@ -469,6 +477,22 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       (deps.viewDedupeWindowMs === 0 || !hasValidViewedCookie(c, token.id));
     if (counted) {
       await sharing.recordEntryView(token.id, deck.id);
+      // Per-view analytics event (PRDCT-1313), under EXACTLY the counted
+      // gate above so events and counters can never disagree. Everything
+      // stored is computed server-side here: referrer HOST only (never the
+      // URL), the sanitized `?p=` placement label, a coarse browser family.
+      // NO IP, NO geo — fixed privacy posture. record() is best-effort
+      // (AuditService.write posture): a failed insert logs and the response
+      // still goes out — the counter increment above already committed.
+      await deps.views.record({
+        workspaceId: token.workspaceId,
+        presentationId: deck.id,
+        shareTokenId: token.id,
+        version: version.version,
+        referrerHost: viewReferrerHost(c.req.header('referer')),
+        placement: viewPlacement(c.req.query('p')),
+        uaFamily: viewUaFamily(c.req.header('user-agent'))
+      });
     }
 
     // The exact ADR 012 header set. Entry HTML is `no-store`: it must
