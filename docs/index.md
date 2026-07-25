@@ -36,7 +36,7 @@ export, no static-host glue, no third party holding your content.
   can push new versions of one deck, and reviewer annotations captured
   straight from annotator share links into the owner's inbox.
 - **Agents as first-class users.** The `slideless` CLI, the `/mcp` endpoint
-  with 18 `slideless_` tools, and scoped `slk_` API keys — every instance is
+  with 21 `slideless_` tools, and scoped `slk_` API keys — every instance is
   agent-ready at boot.
 
 ## Where to go next
