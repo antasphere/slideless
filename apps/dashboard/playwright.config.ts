@@ -25,7 +25,8 @@ export default defineConfig({
   // creates the owner; the decks product suite signs in as that owner.
   projects: [
     { name: 'smoke', testMatch: /smoke\.spec\.ts/ },
-    { name: 'decks', testMatch: /decks\.spec\.ts/, dependencies: ['smoke'] }
+    { name: 'decks', testMatch: /decks\.spec\.ts/, dependencies: ['smoke'] },
+    { name: 'viewer', testMatch: /viewer-annotations\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,

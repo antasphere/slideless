@@ -501,6 +501,27 @@ allow-downloads`, never `allow-same-origin` — on every viewer response
   serializes against the commit instead of racing it — same discipline as
   the blob FOR SHARE locks.
 
+## Annotation overlay rework (anchors + multi-page, 2026-07-25 — ADR 020)
+
+- **"Browser entry" was not enough: multi-page decks lost the overlay on
+  their second page.** Sub-pages go through the ASSET route, which never
+  called the injection seam — so navigation to `page2.html` silently dropped
+  the annotation layer. The seam now fires for any same-deck `text/html`
+  DOCUMENT navigation; `Sec-Fetch-Dest` is the discriminator (`document` =
+  navigate/inject, `iframe` et al. = sub-resource/byte-exact, absent = the
+  old three-condition Accept heuristic). Same rule tightened the entry: an
+  iframe-embedded entry is a sub-resource and no longer gets the overlay.
+- **Never re-read `getSelection()` after the composer opens.** The original
+  overlay kept a module-level `selection` that every later mouseup silently
+  overwrote — reviewers saved anchors pointing at text they never selected
+  (PRDCT-1242). Anchors are now FROZEN into a snapshot at capture time
+  (pill shown / pin placed) and submitted verbatim.
+- **An in-document overlay must stop propagation at its root, or every
+  overlay click is also a deck click.** Decks navigate slides off
+  document-level bubble listeners; the ✎ button was advancing slides
+  (PRDCT-1241). Capture-phase deck listeners still win by design — accepted
+  as the cost of sharing the document (ADR 012 trust model).
+
 ## Phase 5 security review (deck read privacy, 2026-07-10)
 
 - **Inheriting the template's "workspace data" read posture silently made

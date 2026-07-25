@@ -13,7 +13,7 @@ import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
-import { entryTransformFor } from './inject.js';
+import { docNavigation, entryTransformFor, type EntryTransform } from './inject.js';
 import { mintUnlockValue, unlockCookieName, UNLOCK_TTL_MS, verifyUnlockValue } from './unlock.js';
 import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.js';
 
@@ -317,13 +317,18 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     );
   }
 
-  // POST /v/{secret} — the browser password form. Verifies, then hands the
-  // browser a signed unlock cookie and bounces back to the GET.
-  app.post(`${VIEWER_PATH_PREFIX}/:secret`, async (c) => {
+  /** The canonical (trailing-slash) entry URL, from the RAW secret segment. */
+  function canonicalEntryPath(c: Context): string {
+    return `${VIEWER_PATH_PREFIX}/${c.req.path.split('/')[2] ?? ''}/`;
+  }
+
+  // POST /v/{secret}[/] — the browser password form. Verifies, then hands the
+  // browser a signed unlock cookie and bounces back to the canonical GET.
+  const passwordFormHandler = async (c: Context): Promise<Response> => {
     const resolved = await resolve(c);
     if (!resolved.ok) return viewerError(c, resolved.failure);
     const { token, rawSecretSegment } = resolved.view;
-    if (!token.passwordHash) return c.redirect(c.req.path, 303);
+    if (!token.passwordHash) return c.redirect(canonicalEntryPath(c), 303);
 
     if (await passwordAttemptsExhausted(c, token)) return rateLimited(c);
 
@@ -339,8 +344,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       'set-cookie',
       tokenCookie(unlockCookieName(token.id), value, rawSecretSegment, UNLOCK_TTL_MS / 1000)
     );
-    return c.redirect(c.req.path, 303);
-  });
+    return c.redirect(canonicalEntryPath(c), 303);
+  };
+  app.post(`${VIEWER_PATH_PREFIX}/:secret`, passwordFormHandler);
+  app.post(`${VIEWER_PATH_PREFIX}/:secret/`, passwordFormHandler);
 
   /** True when the request presents a live, well-signed viewed cookie for this token. */
   function hasValidViewedCookie(c: Context, tokenId: string): boolean {
@@ -348,8 +355,66 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     return value !== undefined && verifyViewedValue(deps.authSecret, tokenId, value);
   }
 
+  /** The injection seam's inputs for this request (viewer/inject.ts). */
+  function transformContextFor(c: Context, view: ResolvedView) {
+    const { token, version } = view;
+    return {
+      token,
+      rawRequested: rawRequested(c),
+      browserEntry: docNavigation(c),
+      version: version.version,
+      entryPath: version.entryPath,
+      mintUnlockProof: () =>
+        token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
+    };
+  }
+
+  /**
+   * Buffer a blob, apply the overlay transform, and serve the result.
+   * Transformed responses re-assert the exact ADR 012 header set and carry
+   * deliberately NO ETag: serveBlob's content-sha ETag would lie about the
+   * mutated bytes (they are no-store anyway, so nothing is lost). Returns
+   * null when the blob is gone (caller answers its own 404).
+   */
+  async function serveTransformed(
+    c: Context,
+    workspaceId: string,
+    sha256: string,
+    transform: EntryTransform,
+    baseHeaders: Record<string, string>
+  ): Promise<Response | null> {
+    const key = blobKey(workspaceId, sha256);
+    if (!(await storage.exists(key))) return null;
+    const chunks: Buffer[] = [];
+    for await (const chunk of await storage.getStream(key)) {
+      chunks.push(chunk as Buffer);
+    }
+    const html = transform(Buffer.concat(chunks).toString('utf8'));
+    const headers = {
+      ...baseHeaders,
+      'content-type': 'text/html; charset=utf-8',
+      'content-disposition': 'inline'
+    };
+    return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.body(html, 200, headers);
+  }
+
+  // ── Entry URL canonicalization ─────────────────────────────────────────────
+  // The entry is served at the TRAILING-SLASH URL so a deck's RELATIVE
+  // references (styles, images, links to other pages of a multi-file deck)
+  // resolve inside the token's own /v/{secret}/ subtree. At the no-slash URL
+  // the browser resolves `images/x.png` against /v/ — REPLACING the secret
+  // segment — and every relative reference 404s (found by the viewer e2e
+  // suite; the route's design note always intended relative refs to work).
+  // The no-slash form (printed links predating this, hand-typed URLs)
+  // permanently redirects, query string preserved. The token-scoped cookies
+  // Path=/v/{secret} cover the slash subtree unchanged.
+  app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret`, (c) => {
+    const query = new URL(c.req.url).search;
+    return c.redirect(`${canonicalEntryPath(c)}${query}`, 301);
+  });
+
   // ── Entry HTML ─────────────────────────────────────────────────────────────
-  app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret`, async (c) => {
+  app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret/`, async (c) => {
     const resolved = await resolve(c);
     if (!resolved.ok) return viewerError(c, resolved.failure);
     const { token, deck, version, manifest, rawSecretSegment } = resolved.view;
@@ -408,45 +473,20 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       );
     }
 
-    // The annotation-injection seam (Phase 5). null = stream untouched.
-    // `browserEntry` keeps the overlay away from agents: it requires an HTML
-    // Accept AND no agent-style password unlock (x-viewer-password header) —
-    // raw/agent pulls always get the exact authored bytes.
-    const transform = entryTransformFor({
-      token,
-      rawRequested: rawRequested(c),
-      browserEntry:
-        (c.req.header('accept') ?? '').includes('text/html') &&
-        c.req.header('x-viewer-password') === undefined,
-      version: version.version,
-      mintUnlockProof: () =>
-        token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
-    });
+    // The annotation-injection seam (Phase 5). null = stream untouched;
+    // docNavigation (inject.ts) keeps the overlay away from agents, raw
+    // pulls, and sub-resource loads — those get the exact authored bytes.
+    const transform = entryTransformFor(transformContextFor(c, resolved.view));
     if (transform) {
-      const key = blobKey(token.workspaceId, entry.sha256);
-      if (!(await storage.exists(key))) {
+      const served = await serveTransformed(c, token.workspaceId, entry.sha256, transform, entryHeaders);
+      if (!served) {
         return viewerError(c, {
           status: 404,
           code: 'not_found',
           message: 'This deck is no longer available.'
         });
       }
-      const chunks: Buffer[] = [];
-      for await (const chunk of await storage.getStream(key)) {
-        chunks.push(chunk as Buffer);
-      }
-      const html = transform(Buffer.concat(chunks).toString('utf8'));
-      // Injected responses re-assert the exact ADR 012 header set and carry
-      // deliberately NO ETag: serveBlob's content-sha ETag would lie about
-      // the mutated bytes (the entry is no-store anyway, so nothing is lost).
-      const transformedHeaders = {
-        ...entryHeaders,
-        'content-type': 'text/html; charset=utf-8',
-        'content-disposition': 'inline'
-      };
-      return c.req.method === 'HEAD'
-        ? c.body(null, 200, transformedHeaders)
-        : c.body(html, 200, transformedHeaders);
+      return served;
     }
 
     return serveBlob(c, {
@@ -501,6 +541,28 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     const fileRow = await fileService.getBySha(token.workspaceId, entry.sha256);
     if (!fileRow) {
       return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+
+    // Multi-page decks (PRDCT-1296): an HTML sub-page opened as a TOP-LEVEL
+    // DOCUMENT is a deck page exactly like the entry, so an annotator token
+    // gets the overlay here too — otherwise the annotation layer vanishes
+    // the moment the reviewer follows a link to page2.html, and cross-page
+    // jump-to has nothing to land on. docNavigation() (Sec-Fetch-Dest)
+    // keeps everything else byte-exact: nested-iframe loads (`iframe`),
+    // ?raw, non-HTML Accepts, and agent-style password unlocks all stream
+    // below. Transformed sub-pages are no-store like the entry — with the
+    // ETag gone there is no validator, so no-cache would just refetch.
+    const isHtmlDoc = entry.contentType.toLowerCase().startsWith('text/html');
+    const transform = isHtmlDoc ? entryTransformFor(transformContextFor(c, resolved.view)) : null;
+    if (transform) {
+      const served = await serveTransformed(c, token.workspaceId, entry.sha256, transform, {
+        ...VIEWER_CONTENT_HEADERS,
+        'cache-control': 'no-store'
+      });
+      if (!served) {
+        return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+      }
+      return served;
     }
 
     void version; // resolved version pins the manifest; nothing else needed

@@ -131,7 +131,8 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
 
     const created = page.getByRole('dialog').filter({ hasText: 'Share link created' });
     viewerUrl = await created.getByRole('textbox', { name: 'Viewer URL' }).inputValue();
-    expect(viewerUrl).toMatch(/\/v\/[A-Za-z0-9_-]{64}$/);
+    // Trailing slash: the canonical entry URL, so relative deck refs resolve.
+    expect(viewerUrl).toMatch(/\/v\/[A-Za-z0-9_-]{64}\/$/);
     await expect(created.getByRole('button', { name: 'Copy viewer URL' })).toBeVisible();
     await created.getByRole('button', { name: 'Done' }).click();
 

@@ -69,6 +69,54 @@
     }
   }
 
+  /** Where the overlay's annotations page lives on the public docs site. */
+  const ANNOTATIONS_DOCS_URL = 'https://docs.antasphere.com/slideless/sharing/annotations';
+
+  interface AnchorSummary {
+    label: string;
+    quote: string | null;
+    location: string;
+  }
+
+  function asString(v: unknown): string | null {
+    return typeof v === 'string' && v.trim() !== '' ? v : null;
+  }
+
+  /**
+   * Human rendering of the overlay's anchor descriptor (v2: type/page/
+   * container/quote — see viewer/overlay.ts) with the v1 quote-only shape
+   * still recognized. Unknown shapes fall back to the raw JSON line below.
+   * Every returned string is reviewer-controlled — render with {…} only.
+   */
+  function anchorSummary(annotation: Annotation): AnchorSummary | null {
+    const sel = annotation.selection as Record<string, unknown>;
+    const type = asString(sel.type);
+    const quote = asString(sel.quote);
+    if (type !== 'text' && type !== 'point' && type !== 'region') {
+      // Legacy v1 anchors ({type:'text', quote}) land here when type is
+      // missing; anything quote-less and unrecognized gets the JSON line.
+      return quote ? { label: t('annotations.anchorText'), quote: quote.slice(0, 200), location: '' } : null;
+    }
+    const bits: string[] = [];
+    const page = asString(sel.page);
+    if (page) bits.push(page);
+    const container = sel.container;
+    if (container && typeof container === 'object') {
+      const c = container as Record<string, unknown>;
+      const kind = asString(c.kind);
+      if (kind && typeof c.index === 'number') bits.push(`${kind} ${c.index}`);
+      const heading = asString(c.heading);
+      if (heading) bits.push(`“${heading.slice(0, 120)}”`);
+    }
+    const label =
+      type === 'point'
+        ? t('annotations.anchorPoint')
+        : type === 'region'
+          ? t('annotations.anchorRegion')
+          : t('annotations.anchorText');
+    return { label, quote: quote ? quote.slice(0, 200) : null, location: bits.join(' · ') };
+  }
+
   let mutatingId = $state<string | null>(null);
 
   async function setStatus(annotation: Annotation, status: AnnotationStatus) {
@@ -111,7 +159,17 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="space-y-1">
         <Card.Title class="text-base">{t('annotations.title')}</Card.Title>
-        <Card.Description>{t('annotations.description')}</Card.Description>
+        <Card.Description>
+          {t('annotations.description')}
+          <a
+            href={ANNOTATIONS_DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
+            class="underline underline-offset-2 hover:text-foreground"
+          >
+            {t('annotations.learnMore')}
+          </a>
+        </Card.Description>
       </div>
       <div class="flex items-end gap-3">
         <div class="space-y-1">
@@ -198,7 +256,22 @@
                  "<img src=x onerror=…>" must appear as literal text, never
                  become an element. NEVER switch this to {@html}. -->
             <p class="whitespace-pre-wrap break-words text-sm">{annotation.body}</p>
-            {#if selectionText(annotation)}
+            {#if anchorSummary(annotation)}
+              {@const anchor = anchorSummary(annotation)!}
+              <!-- SECURITY: quote, location, and page all come out of the
+                   reviewer-controlled selection JSON — Svelte {…}
+                   interpolation escapes them. NEVER switch to {@html}. -->
+              <div class="space-y-1">
+                {#if anchor.quote}
+                  <blockquote class="border-l-2 pl-2 text-xs italic text-muted-foreground">
+                    “{anchor.quote}”
+                  </blockquote>
+                {/if}
+                <p class="text-xs text-muted-foreground">
+                  {anchor.label}{anchor.location ? ` · ${anchor.location}` : ''}
+                </p>
+              </div>
+            {:else if selectionText(annotation)}
               <!-- SECURITY: the selection anchor is reviewer-controlled JSON,
                    rendered as escaped text via {…} — never {@html}. -->
               <p class="break-all font-mono text-xs text-muted-foreground">

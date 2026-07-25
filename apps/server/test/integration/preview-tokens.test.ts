@@ -179,7 +179,7 @@ describe('the covert channel is closed', () => {
 
     // COUNTED: opening the viewer entry bumps the token AND deck counters.
     const before = await totalViewsOf(deckId);
-    expect((await app.app.request(`/v/${created.secret}`)).status).toBe(200);
+    expect((await app.app.request(`/v/${created.secret}/`)).status).toBe(200);
     expect(await totalViewsOf(deckId)).toBe(before + 1);
     const after = await ownerTokenList();
     expect(after.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id).accessCount).toBe(1);
@@ -235,7 +235,7 @@ describe('the owner preview path still works', () => {
     expect(ttl).toBeLessThanOrEqual(60 * 60 * 1000);
 
     const before = await totalViewsOf(deckId);
-    const served = await app.app.request(`/v/${created.secret}`);
+    const served = await app.app.request(`/v/${created.secret}/`);
     expect(served.status).toBe(200); // the iframe still renders…
     expect(await served.text()).toContain('Preview deck v1');
     expect(await totalViewsOf(deckId)).toBe(before); // …and never counts
@@ -304,6 +304,6 @@ describe('the owner preview path still works', () => {
     });
     expect(ownerRevoke.status).toBe(200);
     expect((await readJson(ownerRevoke)).revokedAt).not.toBeNull();
-    expect((await app.app.request(`/v/${created.secret}`)).status).toBe(403);
+    expect((await app.app.request(`/v/${created.secret}/`)).status).toBe(403);
   });
 });

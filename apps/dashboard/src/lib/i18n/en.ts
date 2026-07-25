@@ -584,7 +584,12 @@ export const en = {
 
   // ── Annotations (reviewer notes) ─────────────────────────────────────
   'annotations.title': 'Annotations',
-  'annotations.description': 'Reviewer notes on this deck, by version.',
+  'annotations.description':
+    'Notes reviewers leave on shared versions of this deck — anchored to the text, spot, or region they marked. Resolve each note once addressed.',
+  'annotations.learnMore': 'Learn how annotations work',
+  'annotations.anchorText': 'Text selection',
+  'annotations.anchorPoint': 'Pinned spot',
+  'annotations.anchorRegion': 'Marked region',
   'annotations.filterVersion': 'Version',
   'annotations.filterAllVersions': 'All versions',
   'annotations.filterStatus': 'Status',

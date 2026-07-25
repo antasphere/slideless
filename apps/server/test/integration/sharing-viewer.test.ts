@@ -154,7 +154,7 @@ describe('share-token management API', () => {
   it('creates a token: 64-char base64url secret + viewer URL, shown exactly once', async () => {
     const created = await createToken({ name: 'Alice' });
     expect(created.secret).toMatch(/^[A-Za-z0-9_-]{64}$/); // 48 bytes base64url
-    expect(created.url).toBe(`http://localhost:3000/v/${created.secret}`);
+    expect(created.url).toBe(`http://localhost:3000/v/${created.secret}/`);
     expect(created.shareToken).toMatchObject({
       name: 'Alice',
       versionMode: 'latest',
@@ -270,13 +270,34 @@ describe('share-token management API', () => {
 describe('public viewer (ADR 012)', () => {
   it('serves the entry HTML anonymously, inline, under the exact sandbox header set', async () => {
     const { secret } = await createToken({ name: 'Viewer' });
-    const res = await app.app.request(`/v/${secret}`); // NO auth of any kind
+    const res = await app.app.request(`/v/${secret}/`); // NO auth of any kind
     expect(res.status).toBe(200);
     expectViewerContentHeaders(res);
     expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
     expect(res.headers.get('content-disposition')).toContain('inline');
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.text()).toContain('Deck v1 marker');
+  });
+
+  it('301s the no-slash entry URL to the trailing-slash form, query preserved', async () => {
+    // The slash form is what makes a deck's RELATIVE references (styles,
+    // images, links to other pages) resolve inside /v/{secret}/ — at the
+    // no-slash URL the browser would resolve them against /v/, replacing
+    // the secret segment. Old printed links heal through this redirect.
+    const { secret } = await createToken({ name: 'Redirect' });
+    const bare = await app.app.request(`/v/${secret}`);
+    expect(bare.status).toBe(301);
+    expect(bare.headers.get('location')).toBe(`/v/${secret}/`);
+
+    const withQuery = await app.app.request(`/v/${secret}?raw`);
+    expect(withQuery.status).toBe(301);
+    expect(withQuery.headers.get('location')).toBe(`/v/${secret}/?raw`);
+
+    // The redirect resolves nothing: even an unknown secret gets the same
+    // 301 (existence stays unprobeable from the bare form; the slash form
+    // answers 404 as before).
+    const unknown = await app.app.request(`/v/${'A'.repeat(64)}`);
+    expect(unknown.status).toBe(301);
   });
 
   it('sub-page HTML assets carry the sandbox set too (every user-HTML response)', async () => {
@@ -316,11 +337,11 @@ describe('public viewer (ADR 012)', () => {
     const created = await createToken({ name: 'Counter' });
     const before = await totalViewsOf(deckId);
 
-    await app.app.request(`/v/${created.secret}`);
-    await app.app.request(`/v/${created.secret}`);
+    await app.app.request(`/v/${created.secret}/`);
+    await app.app.request(`/v/${created.secret}/`);
     await app.app.request(`/v/${created.secret}/assets/logo.png`);
     await app.app.request(`/v/${created.secret}/pages/two.html`);
-    await app.app.request(`/v/${created.secret}`, { method: 'HEAD' });
+    await app.app.request(`/v/${created.secret}/`, { method: 'HEAD' });
 
     const listed = await listTokens();
     const row = listed.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id);
@@ -340,7 +361,7 @@ describe('public viewer (ADR 012)', () => {
     const created = await createToken({ name: 'Deduped' });
     const before = await totalViewsOf(deckId);
 
-    const first = await app.app.request(`/v/${created.secret}`);
+    const first = await app.app.request(`/v/${created.secret}/`);
     expect(first.status).toBe(200);
     const setCookie = first.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain(`slvd_${created.shareToken.id}=`);
@@ -350,7 +371,7 @@ describe('public viewer (ADR 012)', () => {
     expectViewerContentHeaders(first);
     const viewedCookie = setCookie.split(';')[0]!;
 
-    const second = await app.app.request(`/v/${created.secret}`, { headers: { cookie: viewedCookie } });
+    const second = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: viewedCookie } });
     expect(second.status).toBe(200); // served in full…
     expect(await second.text()).toContain('marker');
 
@@ -364,21 +385,21 @@ describe('public viewer (ADR 012)', () => {
     const a = await createToken({ name: 'Dedupe A' });
     const b = await createToken({ name: 'Dedupe B' });
 
-    const first = await app.app.request(`/v/${a.secret}`); // counts 1, hands out A's cookie
+    const first = await app.app.request(`/v/${a.secret}/`); // counts 1, hands out A's cookie
     const aPair = (first.headers.get('set-cookie') ?? '').split(';')[0]!;
     const aValue = aPair.slice(aPair.indexOf('=') + 1);
 
     // Garbage under the right name.
-    await app.app.request(`/v/${a.secret}`, {
+    await app.app.request(`/v/${a.secret}/`, {
       headers: { cookie: `slvd_${a.shareToken.id}=garbage` }
     });
     // Well-signed but expired (minted with a negative TTL under the real key).
     const expired = mintViewedValue(app.authSecret, a.shareToken.id, -1000);
-    await app.app.request(`/v/${a.secret}`, {
+    await app.app.request(`/v/${a.secret}/`, {
       headers: { cookie: `slvd_${a.shareToken.id}=${expired}` }
     });
     // Token A's genuine value smuggled under token B's cookie name.
-    await app.app.request(`/v/${b.secret}`, {
+    await app.app.request(`/v/${b.secret}/`, {
       headers: { cookie: `slvd_${b.shareToken.id}=${aValue}` }
     });
 
@@ -391,7 +412,7 @@ describe('public viewer (ADR 012)', () => {
 
   it('HEAD and preview responses never carry the viewed cookie', async () => {
     const created = await createToken({ name: 'No cookie on HEAD' });
-    const head = await app.app.request(`/v/${created.secret}`, { method: 'HEAD' });
+    const head = await app.app.request(`/v/${created.secret}/`, { method: 'HEAD' });
     expect(head.status).toBe(200);
     expect(head.headers.get('set-cookie')).toBeNull();
 
@@ -401,7 +422,7 @@ describe('public viewer (ADR 012)', () => {
     );
     expect(previewRes.status).toBe(201);
     const preview = await readJson(previewRes);
-    const served = await app.app.request(`/v/${preview.secret}`);
+    const served = await app.app.request(`/v/${preview.secret}/`);
     expect(served.status).toBe(200);
     expect(served.headers.get('set-cookie')).toBeNull(); // never counted → never marked
   });
@@ -411,14 +432,14 @@ describe('public viewer (ADR 012)', () => {
     // path, not serveBlob — the de-dupe cookie must ride both serve paths.
     const created = await createToken({ name: 'Overlay dedupe', canAnnotate: true });
 
-    const first = await app.app.request(`/v/${created.secret}`, { headers: { accept: 'text/html' } });
+    const first = await app.app.request(`/v/${created.secret}/`, { headers: { accept: 'text/html' } });
     expect(first.status).toBe(200);
     expect(await first.text()).toContain(OVERLAY_MARKER); // proves the transform path served it
     const setCookie = first.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain(`slvd_${created.shareToken.id}=`);
     const viewedCookie = setCookie.split(';')[0]!;
 
-    const second = await app.app.request(`/v/${created.secret}`, {
+    const second = await app.app.request(`/v/${created.secret}/`, {
       headers: { accept: 'text/html', cookie: viewedCookie }
     });
     expect(second.status).toBe(200);
@@ -439,7 +460,7 @@ describe('public viewer (ADR 012)', () => {
     expect(preview.shareToken.purpose).toBe('preview');
     const before = await totalViewsOf(deckId);
 
-    const served = await app.app.request(`/v/${preview.secret}`);
+    const served = await app.app.request(`/v/${preview.secret}/`);
     expect(served.status).toBe(200); // the preview still renders…
     const after = await totalViewsOf(deckId);
     expect(after.totalViews).toBe(before.totalViews); // …but never counts
@@ -466,7 +487,7 @@ describe('public viewer (ADR 012)', () => {
     expect(spoofed.shareToken.purpose).toBe('share');
     const before = await totalViewsOf(deckId);
 
-    expect((await app.app.request(`/v/${spoofed.secret}`)).status).toBe(200);
+    expect((await app.app.request(`/v/${spoofed.secret}/`)).status).toBe(200);
     const after = await totalViewsOf(deckId);
     expect(after.totalViews).toBe(before.totalViews + 1); // counted like any token
 
@@ -478,18 +499,18 @@ describe('public viewer (ADR 012)', () => {
   });
 
   it('unknown → 404, revoked → 403, expired → 410', async () => {
-    const unknown = await app.app.request(`/v/${'A'.repeat(64)}`);
+    const unknown = await app.app.request(`/v/${'A'.repeat(64)}/`);
     expect(unknown.status).toBe(404);
 
     const revokable = await createToken({ name: 'Revoke me' });
-    expect((await app.app.request(`/v/${revokable.secret}`)).status).toBe(200);
+    expect((await app.app.request(`/v/${revokable.secret}/`)).status).toBe(200);
     const revoke = await app.app.request(
       `/api/v1/presentations/${deckId}/tokens/${revokable.shareToken.id}`,
       { method: 'DELETE', headers: { cookie } }
     );
     expect(revoke.status).toBe(200);
     expect((await readJson(revoke)).revokedAt).not.toBeNull();
-    const afterRevoke = await app.app.request(`/v/${revokable.secret}`);
+    const afterRevoke = await app.app.request(`/v/${revokable.secret}/`);
     expect(afterRevoke.status).toBe(403);
     // Assets die with the token too.
     expect((await app.app.request(`/v/${revokable.secret}/assets/logo.png`)).status).toBe(403);
@@ -498,15 +519,25 @@ describe('public viewer (ADR 012)', () => {
       name: 'Expired',
       expiresAt: new Date(Date.now() - 60_000).toISOString()
     });
-    expect((await app.app.request(`/v/${expired.secret}`)).status).toBe(410);
+    expect((await app.app.request(`/v/${expired.secret}/`)).status).toBe(410);
   });
 
   it('rejects traversal-shaped asset paths without touching the manifest', async () => {
     const { secret } = await createToken({ name: 'Traversal' });
-    for (const path of ['../secret', '..%2F..%2Fetc%2Fpasswd', 'a//b', '.%2e/x', 'assets/%2e%2e/logo.png']) {
+    for (const path of ['..%2F..%2Fetc%2Fpasswd', 'a//b', 'assets/%2e%2e/logo.png']) {
       const res = await app.app.request(`/v/${secret}/${path}`);
       expect(res.status, `path ${path}`).toBe(404);
     }
+    // Dot-dot segments (literal or percent-encoded, per the WHATWG URL
+    // parser) normalize BEFORE routing: /v/{secret}/../x becomes /v/x — the
+    // bare-entry shape, which 301s to /v/x/ where the nonexistent "secret"
+    // answers 404. Nothing in the manifest is reachable either way.
+    for (const path of ['../secret', '.%2e/x']) {
+      const res = await app.app.request(`/v/${secret}/${path}`);
+      expect(res.status, `path ${path}`).toBe(301);
+      expect(res.headers.get('location'), `path ${path}`).toMatch(/^\/v\/[^/]+\/$/);
+    }
+    expect((await app.app.request('/v/secret/')).status).toBe(404);
   });
 
   it('pinned tokens stay on their version while latest follows a new push', async () => {
@@ -531,9 +562,9 @@ describe('public viewer (ADR 012)', () => {
     );
     expect(commit.status).toBe(201);
 
-    const pinnedRes = await app.app.request(`/v/${pinned.secret}`);
+    const pinnedRes = await app.app.request(`/v/${pinned.secret}/`);
     expect(await pinnedRes.text()).toContain('Deck v1 marker');
-    const latestRes = await app.app.request(`/v/${latest.secret}`);
+    const latestRes = await app.app.request(`/v/${latest.secret}/`);
     expect(await latestRes.text()).toContain('Deck v2 marker');
     expectViewerContentHeaders(pinnedRes);
     expectViewerContentHeaders(latestRes);
@@ -545,14 +576,14 @@ describe('public viewer (ADR 012)', () => {
     });
     expect(pin.status).toBe(200);
     expect((await readJson(pin)).versionMode).toBe('pinned');
-    expect(await (await app.app.request(`/v/${latest.secret}`)).text()).toContain('Deck v1 marker');
+    expect(await (await app.app.request(`/v/${latest.secret}/`)).text()).toContain('Deck v1 marker');
 
     const unpin = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${latest.shareToken.id}`, {
       ...json({ versionMode: 'latest' }, { cookie }),
       method: 'PATCH'
     });
     expect(unpin.status).toBe(200);
-    expect(await (await app.app.request(`/v/${latest.secret}`)).text()).toContain('Deck v2 marker');
+    expect(await (await app.app.request(`/v/${latest.secret}/`)).text()).toContain('Deck v2 marker');
   });
 
   it('soft-deleting the deck makes its tokens stop resolving (404)', async () => {
@@ -573,9 +604,9 @@ describe('public viewer (ADR 012)', () => {
       json({ name: 'D' }, { cookie })
     );
     const { secret } = await readJson(res);
-    expect((await app.app.request(`/v/${secret}`)).status).toBe(200);
+    expect((await app.app.request(`/v/${secret}/`)).status).toBe(200);
     await app.app.request(`/api/v1/presentations/${doomedId}`, { method: 'DELETE', headers: { cookie } });
-    expect((await app.app.request(`/v/${secret}`)).status).toBe(404);
+    expect((await app.app.request(`/v/${secret}/`)).status).toBe(404);
   });
 });
 
@@ -587,7 +618,7 @@ describe('password gate', () => {
   it('challenges browsers with a form, agents with the JSON wire shape', async () => {
     const created = await createToken({ name: 'Gated', password: PASSWORD });
 
-    const browser = await app.app.request(`/v/${created.secret}`, {
+    const browser = await app.app.request(`/v/${created.secret}/`, {
       headers: { accept: 'text/html,application/xhtml+xml' }
     });
     expect(browser.status).toBe(401);
@@ -599,12 +630,12 @@ describe('password gate', () => {
     // The gate shell is OURS — first-party HTML, strict CSP, NOT the sandbox.
     expect(browser.headers.get('content-security-policy')).not.toContain('allow-scripts');
 
-    const agent = await app.app.request(`/v/${created.secret}`, { headers: { accept: '*/*' } });
+    const agent = await app.app.request(`/v/${created.secret}/`, { headers: { accept: '*/*' } });
     expect(agent.status).toBe(401);
     expect((await readJson(agent)).error.code).toBe('password_required');
 
     // ?raw never gets the HTML shell, whatever the Accept header says.
-    const raw = await app.app.request(`/v/${created.secret}?raw`, { headers: { accept: 'text/html' } });
+    const raw = await app.app.request(`/v/${created.secret}/?raw`, { headers: { accept: 'text/html' } });
     expect(raw.status).toBe(401);
     expect((await readJson(raw)).error.code).toBe('password_required');
   });
@@ -612,13 +643,13 @@ describe('password gate', () => {
   it('accepts the x-viewer-password header (agents), counting the view', async () => {
     const created = await createToken({ name: 'Gated header', password: PASSWORD });
 
-    const wrong = await app.app.request(`/v/${created.secret}`, {
+    const wrong = await app.app.request(`/v/${created.secret}/`, {
       headers: { 'x-viewer-password': 'nope' }
     });
     expect(wrong.status).toBe(401);
     expect((await readJson(wrong)).error.code).toBe('password_invalid');
 
-    const right = await app.app.request(`/v/${created.secret}`, {
+    const right = await app.app.request(`/v/${created.secret}/`, {
       headers: { 'x-viewer-password': PASSWORD }
     });
     expect(right.status).toBe(200);
@@ -642,20 +673,20 @@ describe('password gate', () => {
   it('browser form POST sets a token-scoped unlock cookie honored by entry + assets', async () => {
     const created = await createToken({ name: 'Gated form', password: PASSWORD });
 
-    const post = await app.app.request(`/v/${created.secret}`, {
+    const post = await app.app.request(`/v/${created.secret}/`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ password: PASSWORD }).toString()
     });
     expect(post.status).toBe(303);
-    expect(post.headers.get('location')).toBe(`/v/${created.secret}`);
+    expect(post.headers.get('location')).toBe(`/v/${created.secret}/`);
     const setCookie = post.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain(`slv_${created.shareToken.id}=`);
     expect(setCookie).toContain(`Path=/v/${created.secret}`);
     expect(setCookie).toContain('HttpOnly');
     const unlockCookie = setCookie.split(';')[0]!;
 
-    const entry = await app.app.request(`/v/${created.secret}`, { headers: { cookie: unlockCookie } });
+    const entry = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: unlockCookie } });
     expect(entry.status).toBe(200);
     expectViewerContentHeaders(entry);
     const asset = await app.app.request(`/v/${created.secret}/assets/logo.png`, {
@@ -664,7 +695,7 @@ describe('password gate', () => {
     expect(asset.status).toBe(200);
 
     // A wrong form POST re-challenges.
-    const bad = await app.app.request(`/v/${created.secret}`, {
+    const bad = await app.app.request(`/v/${created.secret}/`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
       body: new URLSearchParams({ password: 'wrong' }).toString()
@@ -678,7 +709,7 @@ describe('password gate', () => {
       method: 'PATCH'
     });
     expect(patch.status).toBe(200);
-    const stale = await app.app.request(`/v/${created.secret}`, { headers: { cookie: unlockCookie } });
+    const stale = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: unlockCookie } });
     expect(stale.status).toBe(401);
 
     // Clearing the password re-opens the link.
@@ -686,17 +717,17 @@ describe('password gate', () => {
       ...json({ password: null }, { cookie }),
       method: 'PATCH'
     });
-    expect((await app.app.request(`/v/${created.secret}`)).status).toBe(200);
+    expect((await app.app.request(`/v/${created.secret}/`)).status).toBe(200);
   });
 
   it('the unlock flow counts exactly once: challenge never counts, unlocked GET counts + de-dupes', async () => {
     const created = await createToken({ name: 'Gated dedupe', password: PASSWORD });
 
     // Challenge and form POST hand out no viewed cookie and count nothing.
-    const challenge = await app.app.request(`/v/${created.secret}`, { headers: { accept: 'text/html' } });
+    const challenge = await app.app.request(`/v/${created.secret}/`, { headers: { accept: 'text/html' } });
     expect(challenge.status).toBe(401);
     expect(challenge.headers.get('set-cookie')).toBeNull();
-    const post = await app.app.request(`/v/${created.secret}`, {
+    const post = await app.app.request(`/v/${created.secret}/`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ password: PASSWORD }).toString()
@@ -706,12 +737,12 @@ describe('password gate', () => {
     const unlockCookie = (post.headers.get('set-cookie') ?? '').split(';')[0]!;
 
     // The unlocked GET is the view: counted once, viewed cookie minted.
-    const entry = await app.app.request(`/v/${created.secret}`, { headers: { cookie: unlockCookie } });
+    const entry = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: unlockCookie } });
     expect(entry.status).toBe(200);
     const viewedCookie = (entry.headers.get('set-cookie') ?? '').split(';')[0]!;
     expect(viewedCookie).toContain(`slvd_${created.shareToken.id}=`);
 
-    const again = await app.app.request(`/v/${created.secret}`, {
+    const again = await app.app.request(`/v/${created.secret}/`, {
       headers: { cookie: `${unlockCookie}; ${viewedCookie}` }
     });
     expect(again.status).toBe(200);
@@ -726,12 +757,12 @@ describe('password gate', () => {
     // The limiter allows 10 failures per 15 min; app.request has no socket,
     // so all attempts share the 'unknown' IP + this token's bucket.
     for (let i = 0; i < 10; i++) {
-      const res = await app.app.request(`/v/${created.secret}`, {
+      const res = await app.app.request(`/v/${created.secret}/`, {
         headers: { 'x-viewer-password': `guess-${i}` }
       });
       expect(res.status).toBe(401);
     }
-    const blocked = await app.app.request(`/v/${created.secret}`, {
+    const blocked = await app.app.request(`/v/${created.secret}/`, {
       headers: { 'x-viewer-password': PASSWORD } // even the right one is walled now
     });
     expect(blocked.status).toBe(429);
@@ -801,7 +832,7 @@ describe('view counting with de-dupe disabled', () => {
     const created = await readJson(createRes);
 
     for (let i = 0; i < 3; i++) {
-      const res = await offApp.app.request(`/v/${created.secret}`);
+      const res = await offApp.app.request(`/v/${created.secret}/`);
       expect(res.status).toBe(200);
       expect(res.headers.get('set-cookie')).toBeNull();
     }
@@ -848,8 +879,8 @@ describe('share via email', () => {
 
     // The emailed (rotated) secret works; the create-time secret is retired.
     for (const [i, t] of [alice, bob].entries()) {
-      expect((await app.app.request(`/v/${urls[i]}`)).status).toBe(200);
-      expect((await app.app.request(`/v/${t.secret}`)).status).toBe(404);
+      expect((await app.app.request(`/v/${urls[i]}/`)).status).toBe(200);
+      expect((await app.app.request(`/v/${t.secret}/`)).status).toBe(404);
     }
 
     // Personal note travels escaped into the mail body.

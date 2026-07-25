@@ -254,5 +254,9 @@ export function buildViewerUrl(
   secret: string
 ): string {
   const base = (env.VIEWER_BASE_URL ?? env.PUBLIC_BASE_URL).replace(/\/$/, '');
-  return `${base}/v/${secret}`;
+  // Trailing slash on purpose: the entry serves at /v/{secret}/ so the
+  // deck's RELATIVE references resolve inside the token's subtree (the
+  // no-slash form is a 301) — see viewer/routes.ts "Entry URL
+  // canonicalization".
+  return `${base}/v/${secret}/`;
 }

@@ -606,7 +606,12 @@ export const fr: Record<MessageKey, string> = {
 
   // ── Annotations (reviewer notes) ─────────────────────────────────────
   'annotations.title': 'Annotations',
-  'annotations.description': 'Notes des relecteurs sur ce deck, par version.',
+  'annotations.description':
+    'Notes laissées par les relecteurs sur les versions partagées de ce deck, ancrées au texte, au point ou à la zone marqués. Résolvez chaque note une fois traitée.',
+  'annotations.learnMore': 'Comprendre les annotations',
+  'annotations.anchorText': 'Sélection de texte',
+  'annotations.anchorPoint': 'Point épinglé',
+  'annotations.anchorRegion': 'Zone marquée',
   'annotations.filterVersion': 'Version',
   'annotations.filterAllVersions': 'Toutes les versions',
   'annotations.filterStatus': 'Statut',

@@ -82,7 +82,7 @@ async function createToken(body: Record<string, unknown>): Promise<{ secret: str
 }
 
 const fetchEntry = (secret: string, headers: Record<string, string> = {}) =>
-  app.app.request(`/v/${secret}`, { headers: { accept: 'text/html', ...headers } });
+  app.app.request(`/v/${secret}/`, { headers: { accept: 'text/html', ...headers } });
 
 function expectSandboxHeaders(res: Response): void {
   expect(res.headers.get('content-security-policy')).toBe(VIEWER_CSP);
@@ -157,19 +157,19 @@ describe('overlay injection', () => {
 
   it('never injects for ?raw, non-HTML accepts, agent password unlocks, or non-annotator tokens', async () => {
     const annotator = await createToken({ name: 'Raw Check', canAnnotate: true });
-    const raw = await app.app.request(`/v/${annotator.secret}?raw`, { headers: { accept: 'text/html' } });
+    const raw = await app.app.request(`/v/${annotator.secret}/?raw`, { headers: { accept: 'text/html' } });
     expect(raw.status).toBe(200);
     expect(await raw.text()).not.toContain(OVERLAY_MARKER);
     expectSandboxHeaders(raw);
     // Raw bytes stay byte-exact: content-sha ETag preserved.
     expect(raw.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
 
-    const agent = await app.app.request(`/v/${annotator.secret}`, { headers: { accept: '*/*' } });
+    const agent = await app.app.request(`/v/${annotator.secret}/`, { headers: { accept: '*/*' } });
     expect(agent.status).toBe(200);
     expect(await agent.text()).not.toContain(OVERLAY_MARKER);
 
     const pw = await createToken({ name: 'PW Agent', canAnnotate: true, password: 'agent-pass-1' });
-    const viaHeader = await app.app.request(`/v/${pw.secret}`, {
+    const viaHeader = await app.app.request(`/v/${pw.secret}/`, {
       headers: { accept: 'text/html', 'x-viewer-password': 'agent-pass-1', 'x-forwarded-for': nextIp() }
     });
     expect(viaHeader.status).toBe(200);
@@ -181,6 +181,127 @@ describe('overlay injection', () => {
     expect(await plain.text()).not.toContain(OVERLAY_MARKER);
     // Untransformed entries keep streaming with their content-sha ETag.
     expect(plain.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
+  });
+});
+
+// ═══ Multi-page overlay injection (PRDCT-1296) ═══════════════════════════════
+
+describe('multi-page overlay injection', () => {
+  const PAGE_ONE = Buffer.from(
+    '<!doctype html><html><body><h1>Front</h1><a href="guide/page2.html">next</a></body></html>'
+  );
+  const PAGE_TWO = Buffer.from(
+    '<!doctype html><html><body><h1>Second page</h1></body></html>'
+  );
+  const STYLES = Buffer.from('body{color:#111}');
+
+  let multiDeckId: string;
+
+  async function createMultiToken(body: Record<string, unknown>): Promise<{ secret: string }> {
+    const res = await app.app.request(
+      `/api/v1/presentations/${multiDeckId}/tokens`,
+      json(body, { cookie })
+    );
+    expect(res.status).toBe(201);
+    return { secret: (await readJson(res)).secret };
+  }
+
+  beforeAll(async () => {
+    for (const bytes of [PAGE_ONE, PAGE_TWO, STYLES]) {
+      const form = new FormData();
+      form.set('sha256', shaOf(bytes));
+      form.set('file', new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }), 'f');
+      const res = await app.app.request('/api/v1/presentations/assets', {
+        method: 'POST',
+        headers: { cookie },
+        body: form
+      });
+      expect(res.status).toBe(201);
+    }
+    const reserve = await readJson(
+      await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: { cookie } })
+    );
+    multiDeckId = reserve.uploadSession.presentationId;
+    const commit = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        {
+          title: 'Multi-page Deck',
+          entryPath: 'index.html',
+          manifest: [
+            entryOf('index.html', PAGE_ONE),
+            entryOf('guide/page2.html', PAGE_TWO),
+            { path: 'styles.css', sha256: shaOf(STYLES), sizeBytes: STYLES.length, contentType: 'text/css' }
+          ]
+        },
+        { cookie }
+      )
+    );
+    expect(commit.status).toBe(201);
+  });
+
+  it('injects into an HTML sub-page opened as a top-level document — the overlay survives page navigation', async () => {
+    const { secret } = await createMultiToken({ name: 'Multi', canAnnotate: true });
+    // No Sec-Fetch-Dest (older engines / plain clients): the Accept heuristic.
+    const res = await app.app.request(`/v/${secret}/guide/page2.html`, {
+      headers: { accept: 'text/html' }
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(OVERLAY_MARKER);
+    expect(html).toContain('Second page'); // the page itself is untouched
+    // The config tells the overlay the deck's root document.
+    expect(html).toContain('"entry":"index.html"');
+    expectSandboxHeaders(res);
+    expect(res.headers.get('etag')).toBeNull();
+    expect(res.headers.get('cache-control')).toBe('no-store');
+
+    // Modern browsers: Sec-Fetch-Dest: document marks the navigation.
+    const dest = await app.app.request(`/v/${secret}/guide/page2.html`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'document' }
+    });
+    expect(await dest.text()).toContain(OVERLAY_MARKER);
+  });
+
+  it('keeps sub-resource loads byte-exact: iframe dest, ?raw, non-HTML types, view-only tokens', async () => {
+    const { secret } = await createMultiToken({ name: 'Multi Frames', canAnnotate: true });
+
+    // A nested iframe pointing at a deck page is a sub-resource — untouched
+    // (the frame participation protocol is deliberately deferred).
+    const framed = await app.app.request(`/v/${secret}/guide/page2.html`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'iframe' }
+    });
+    expect(framed.status).toBe(200);
+    expect(await framed.text()).not.toContain(OVERLAY_MARKER);
+    expect(framed.headers.get('etag')).toBe(`"${shaOf(PAGE_TWO)}"`);
+
+    // The ENTRY inside an iframe is a sub-resource too (tightened with the
+    // Sec-Fetch-Dest gate; the overlay also refuses to mount below top).
+    const framedEntry = await app.app.request(`/v/${secret}/`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'iframe' }
+    });
+    expect(framedEntry.status).toBe(200);
+    expect(await framedEntry.text()).not.toContain(OVERLAY_MARKER);
+
+    const raw = await app.app.request(`/v/${secret}/guide/page2.html?raw`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'document' }
+    });
+    expect(await raw.text()).not.toContain(OVERLAY_MARKER);
+
+    // Non-HTML manifest types never transform, whatever the fetch metadata.
+    const css = await app.app.request(`/v/${secret}/styles.css`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'document' }
+    });
+    expect(css.status).toBe(200);
+    expect(await css.text()).not.toContain(OVERLAY_MARKER);
+    expect(css.headers.get('etag')).toBe(`"${shaOf(STYLES)}"`);
+
+    const viewOnly = await createMultiToken({ name: 'Multi View', canAnnotate: false });
+    const plain = await app.app.request(`/v/${viewOnly.secret}/guide/page2.html`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'document' }
+    });
+    expect(plain.status).toBe(200);
+    expect(await plain.text()).not.toContain(OVERLAY_MARKER);
   });
 });
 
@@ -230,6 +351,25 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
       body: 'The intro chart is unclear',
       status: 'open'
     });
+  });
+
+  it('round-trips the v2 anchor descriptor verbatim (opaque to the server)', async () => {
+    const { secret } = await createToken({ name: 'Anchor v2', canAnnotate: true });
+    const anchor = {
+      v: 2,
+      type: 'region',
+      page: 'guide/page2.html',
+      frame: null,
+      selector: '#pricing > table:nth-of-type(2)',
+      container: { kind: 'slide', index: 3, heading: 'Pricing' },
+      rect: { nx: 0.12, ny: 0.4, nw: 0.5, nh: 0.2 },
+      viewport: { w: 1440, h: 900 }
+    };
+    const res = await overlayPost(secret, { body: 'this table', selection: anchor });
+    expect(res.status).toBe(201);
+    const listed = await readJson(await overlayList(secret));
+    expect(listed.annotations).toHaveLength(1);
+    expect(listed.annotations[0].selection).toEqual(anchor);
   });
 
   it('lists ONLY this token’s own notes (per-recipient isolation)', async () => {
@@ -339,7 +479,7 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
 
     // Browser dance: unlock via the form → cookie → injected overlay carries
     // the unlock MAC → the MAC authenticates the annotation write.
-    const form = await app.app.request(`/v/${pw.secret}`, {
+    const form = await app.app.request(`/v/${pw.secret}/`, {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
@@ -350,7 +490,7 @@ describe('public annotation write/list (token-authed, cross-origin)', () => {
     });
     expect(form.status).toBe(303);
     const unlockCookie = extractCookie(form);
-    const entry = await app.app.request(`/v/${pw.secret}`, {
+    const entry = await app.app.request(`/v/${pw.secret}/`, {
       headers: { accept: 'text/html', cookie: unlockCookie }
     });
     expect(entry.status).toBe(200);
