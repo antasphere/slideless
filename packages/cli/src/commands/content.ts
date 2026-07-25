@@ -30,6 +30,34 @@ const AGENT_DOC_HINT =
   `  tip: no ${AGENT_DOC_PATH} in this bundle — ship one so agents can brief themselves ` +
   `before rendering (read back with \`slideless agent-doc\`)\n`;
 
+/** The authoring contract's marker (`<form data-slideless-form="name">`), quoted or bare. */
+const FORM_NAME_RE = /data-slideless-form\s*=\s*["']?([A-Za-z0-9._-]{1,64})/gi;
+
+/**
+ * Best-effort local scan of the pushed HTML for embedded forms (ADR 022):
+ * the CLI reads the bytes it just pushed and collects the form names so the
+ * push output can point at `slideless responses`. Purely a hint; any
+ * failure yields an empty list and never breaks the push.
+ */
+async function detectFormNames(scan: DeckScan): Promise<string[]> {
+  try {
+    const names = new Set<string>();
+    for (const file of scan.files) {
+      if (file.contentType !== 'text/html') continue;
+      const html = await readFile(file.absPath, 'utf8');
+      for (const match of html.matchAll(FORM_NAME_RE)) names.add(match[1]!);
+    }
+    return [...names];
+  } catch {
+    return [];
+  }
+}
+
+/** The one-line collection pointer printed when a pushed deck embeds forms. */
+function formsDetectedLine(names: string[], deckId: string): string {
+  return `  Forms detected: ${names.join(', ')}. Collect responses with: slideless responses ${deckId}\n`;
+}
+
 function toManifest(scan: DeckScan): ManifestEntry[] {
   return scan.files.map((f) => ({
     path: f.path,
@@ -139,12 +167,16 @@ export function registerContentCommands(program: Command, io: CliIo): void {
             throw e;
           }
           await writeLink(scan.rootDir, { presentationId: existingId, baseUrl: ctx.baseUrl });
-          if (ctx.json) return printJson(io, committed);
+          const formNames = await detectFormNames(scan);
+          if (ctx.json) {
+            return printJson(io, formNames.length > 0 ? { ...committed, formsDetected: formNames } : committed);
+          }
           io.out.write(
             `Pushed "${committed.presentation.title}" → version ${committed.version.version} ` +
               `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
               `  id: ${committed.presentation.id}\n`
           );
+          if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
           if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
           return;
         }
@@ -167,13 +199,17 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           presentationId: committed.presentation.id,
           baseUrl: ctx.baseUrl
         });
-        if (ctx.json) return printJson(io, committed);
+        const formNames = await detectFormNames(scan);
+        if (ctx.json) {
+          return printJson(io, formNames.length > 0 ? { ...committed, formsDetected: formNames } : committed);
+        }
         io.out.write(
           `Created "${committed.presentation.title}" at version 1 ` +
             `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
             `  id: ${committed.presentation.id}\n` +
             `  linked: ${join(scan.rootDir, LINK_FILENAME)}\n`
         );
+        if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
         if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
       }
     );

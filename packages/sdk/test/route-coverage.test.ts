@@ -109,7 +109,11 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
     c.updateAnnotation(SAMPLE_ID, SAMPLE_CHILD_ID, { status: 'resolved' }),
   'DELETE /presentations/{id}/annotations/{annotationId}': (c) =>
     c.deleteAnnotation(SAMPLE_ID, SAMPLE_CHILD_ID),
-  'GET /annotations': (c) => c.annotationInbox()
+  'GET /annotations': (c) => c.annotationInbox(),
+  'GET /presentations/{id}/responses': (c) => c.formResponses(SAMPLE_ID),
+  'GET /presentations/{id}/responses/summary': (c) => c.formResponsesSummary(SAMPLE_ID),
+  'DELETE /presentations/{id}/responses/{responseId}': (c) =>
+    c.deleteFormResponse(SAMPLE_ID, SAMPLE_CHILD_ID)
 };
 
 interface ContractRoute {
@@ -145,7 +149,7 @@ function recordingClient(): { client: PlatformClient; calls: Array<{ method: str
 function expectedPath(contractPath: string): string {
   return `/api/v1${contractPath
     .replace('{id}', SAMPLE_ID)
-    .replace(/\{(tokenId|collaboratorId|annotationId)\}/, SAMPLE_CHILD_ID)
+    .replace(/\{(tokenId|collaboratorId|annotationId|responseId)\}/, SAMPLE_CHILD_ID)
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)}`;
 }

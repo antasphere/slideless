@@ -13,6 +13,9 @@ import {
   assetDownloadRoute,
   assetPrecheckRoute,
   assetUploadRoute,
+  formResponseDeleteRoute,
+  formResponsesListRoute,
+  formResponsesSummaryRoute,
   presentationDeleteRoute,
   presentationGetRoute,
   presentationsListRoute,
@@ -51,6 +54,7 @@ import {
 import { hashViewerPassword } from '../sharing/password.js';
 import { shareTokenViewToWire, type ShareTokenViewService } from '../sharing/view-events.js';
 import { annotationToWire, type AnnotationService } from '../annotations/service.js';
+import { formResponseToWire, type FormResponseService } from '../forms/service.js';
 import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
 
 /**
@@ -107,6 +111,7 @@ export interface PresentationRouteDeps {
   /** Per-view share-link analytics (PRDCT-1313), read surface only here. */
   views: ShareTokenViewService;
   annotations: AnnotationService;
+  forms: FormResponseService;
   fileService: FileService;
   storage: StorageDriver;
   registry: PlatformRegistry;
@@ -117,7 +122,8 @@ export interface PresentationRouteDeps {
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
-  const { service, sharing, views, annotations, fileService, storage, registry, env, email, logger } = deps;
+  const { service, sharing, views, annotations, forms, fileService, storage, registry, env, email, logger } =
+    deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   api.use('/presentations', requireAuth());
@@ -618,6 +624,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       purpose: 'share',
       pinnedVersion,
       canAnnotate: body.canAnnotate,
+      canSubmitForms: body.canSubmitForms,
       badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
@@ -690,6 +697,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       purpose: 'preview',
       pinnedVersion,
       canAnnotate: false,
+      // Owner previews must never create respondent rows — matching the
+      // preview exclusion from view stats (and canAnnotate above).
+      canSubmitForms: false,
       badgePosition: null, // no overlay on previews — nothing to place
       expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS),
       passwordHash: null
@@ -744,6 +754,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     }
     if (patch.name !== undefined) set.name = patch.name;
     if (patch.canAnnotate !== undefined) set.canAnnotate = patch.canAnnotate;
+    if (patch.canSubmitForms !== undefined) set.canSubmitForms = patch.canSubmitForms;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
       // Explicit slot → new deck default (explicit null just falls back),
@@ -977,6 +988,78 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       metadata: { presentationId: id, version: existing.version }
     });
     return c.json(annotationToWire(deleted), 200);
+  });
+
+  // ── Form responses (ADR 022, owner/dev management surface) ───────────────
+  // Gated exactly like annotations: responses are addressed to the deck's
+  // WRITERS (owner, workspace admin, active dev collaborator). The list and
+  // summary contracts declare no 403, so an ordinary member gets the same
+  // 404 an outsider would — the response stream's existence is not
+  // advertised. The anonymous submit surface lives in viewer/forms-api.ts.
+  // NOTE: the literal `/responses/summary` handler registers BEFORE the
+  // `{responseId}` param handler (the literal-segment trap, LESSONS.md).
+
+  api.openapi(formResponsesSummaryRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const { buckets, total } = await forms.summary(principal.workspaceId, id);
+    return c.json(
+      {
+        buckets: buckets.map((b) => ({ ...b, lastResponseAt: b.lastResponseAt.toISOString() })),
+        total
+      },
+      200
+    );
+  });
+
+  api.openapi(formResponsesListRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const { cursor, limit, form, token, source, placement, since } = c.req.valid('query');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const { responses, nextCursor } = await forms.list(principal.workspaceId, id, {
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit,
+      form,
+      token,
+      source,
+      placement,
+      since: since !== undefined ? new Date(since) : undefined
+    });
+    return c.json({ responses: responses.map(formResponseToWire), nextCursor }, 200);
+  });
+
+  api.openapi(formResponseDeleteRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, responseId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!(await service.canWrite(principal, deck))) {
+      return c.json(
+        err(
+          'forbidden',
+          'Only the deck owner, a workspace admin, or an active collaborator can manage responses'
+        ),
+        403
+      );
+    }
+    const existing = await forms.get(principal.workspaceId, id, responseId);
+    if (!existing) return c.json(err('not_found', 'Response not found'), 404);
+    await forms.delete(existing.response.id);
+    c.set('audit', {
+      action: 'presentation.form_response_delete',
+      resourceType: 'form_response',
+      resourceId: existing.response.id,
+      metadata: { presentationId: id, formName: existing.response.formName }
+    });
+    return c.json(formResponseToWire(existing), 200);
   });
 
   // Workspace-wide inbox: admins/owners see every live deck's annotations;

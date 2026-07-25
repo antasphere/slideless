@@ -79,6 +79,12 @@ import {
   collaboratorsListSchema
 } from '../schemas/collaborators.js';
 import {
+  formResponseSchema,
+  formResponsesListQuerySchema,
+  formResponsesListSchema,
+  formResponsesSummarySchema
+} from '../schemas/forms.js';
+import {
   annotationCreateSchema,
   annotationSchema,
   annotationsListQuerySchema,
@@ -1171,5 +1177,54 @@ export const annotationsInboxRoute = createRoute({
   responses: {
     200: jsonBody(annotationsListSchema, 'Annotations across the workspace, newest first'),
     401: errorResponses[401]
+  }
+});
+
+// ── Form responses (owner surface; the token-session submit surface ships
+// with the viewer — apps/server viewer/forms-api.ts) ─────────────────────────
+// Gated like annotations: the deck's writers (canWrite), 404 for everyone
+// else — the response stream's existence is not advertised. NOTE the handler
+// registration order: the literal `/responses/summary` route MUST register
+// before the `{responseId}` param route (the literal-segment trap, LESSONS.md).
+
+const formResponseParams = z.object({ id: z.uuid(), responseId: z.uuid() });
+
+export const formResponsesListRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/responses',
+  tags: ['forms'],
+  summary: 'List form responses of a presentation (filter by form/link/source/placement/since)',
+  request: { params: uuidParams, query: formResponsesListQuerySchema },
+  responses: {
+    200: jsonBody(formResponsesListSchema, 'Responses, newest first'),
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
+export const formResponsesSummaryRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/responses/summary',
+  tags: ['forms'],
+  summary: 'Grouped response counts per form × link × source × placement',
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(formResponsesSummarySchema, 'Summary buckets plus the deck total'),
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
+export const formResponseDeleteRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}/responses/{responseId}',
+  tags: ['forms'],
+  summary: 'Delete one form response (owner moderation)',
+  request: { params: formResponseParams },
+  responses: {
+    200: jsonBody(formResponseSchema, 'Deleted response (final snapshot)'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404]
   }
 });

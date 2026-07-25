@@ -554,6 +554,15 @@ export const shareTokens = pgTable(
     pinnedVersion: integer('pinned_version'),
     canAnnotate: boolean('can_annotate').notNull().default(false),
     /**
+     * Whether viewers of this link may submit the deck's embedded forms
+     * (data-slideless-form). Defaults TRUE — a form is the deck's own
+     * intended interaction, unlike the opt-in annotation layer — so
+     * push + share yields a working form with zero flags; owners opt out
+     * per link. Preview tokens are minted with false (owner previews must
+     * never create respondent rows, matching their view-stat exclusion).
+     */
+    canSubmitForms: boolean('can_submit_forms').notNull().default(true),
+    /**
      * Per-link badge slot override for the annotation overlay. Null = use
      * the deck's remembered `annotation_badge_position`, else bottom-right.
      */
@@ -669,6 +678,66 @@ export const annotations = pgTable(
   ]
 );
 
+/** Where a form submission's serving document came from (attribution-grade). */
+export const formResponseSources = ['link', 'embed'] as const;
+export type FormResponseSource = (typeof formResponseSources)[number];
+
+/**
+ * Form submissions (ADR 022): one row per respondent's answer to one named
+ * `data-slideless-form` in a deck, submitted anonymously through a share
+ * token. `payload` is an OPAQUE flat JSON object (string / string[] values)
+ * — the server enforces shape and size at the viewer API, never meaning
+ * (the annotations.selection precedent). A row is one respondent's EVOLVING
+ * answer: the injected runtime updates it in place through the row's own
+ * edit secret (`response_secret_hash`, the share-token hash+pepper pattern
+ * one level down — minted once, never stored, unique index is the lookup).
+ *
+ * Attribution: `share_token_id` names the link (set-null so responses
+ * survive token deletion), `source`/`placement` mirror the view-events
+ * posture (visitor-influenced, sanitize-then-store, attribution-grade —
+ * never authz), and `respondent_user_id` is stamped ONLY from the signed
+ * serve-time identity assertion (viewer/respondent.ts), never from client
+ * claims — the annotations dual-authorship shape.
+ */
+export const formResponses = pgTable(
+  'form_responses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    /** The deck version the respondent SAW (validated like annotations). */
+    version: integer('version').notNull(),
+    /** The form's `data-slideless-form` name (slug, validated at the API). */
+    formName: text('form_name').notNull(),
+    shareTokenId: uuid('share_token_id').references(() => shareTokens.id, { onDelete: 'set null' }),
+    source: text('source', { enum: formResponseSources }).notNull().default('link'),
+    /** Sanitized `?p=` label of the serving document (view-events sanitizer); else null. */
+    placement: text('placement'),
+    respondentUserId: text('respondent_user_id').references(() => user.id, { onDelete: 'set null' }),
+    /** sha256(editSecret + pepper) — resolution probes every registered pepper version. */
+    responseSecretHash: text('response_secret_hash').notNull(),
+    payload: jsonb('payload').$type<Record<string, string | string[]>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex('form_responses_secret_hash_uniq').on(t.responseSecretHash),
+    // Serves the owner listing + keyset pagination (per deck, optionally per
+    // form) AND the per-deck response-cap COUNT by prefix.
+    index('form_responses_presentation_form_created_id_idx').on(
+      t.presentationId,
+      t.formName,
+      t.createdAt,
+      t.id
+    ),
+    index('form_responses_share_token_idx').on(t.shareTokenId)
+  ]
+);
+
 /**
  * One row per COUNTED share-link view (PRDCT-1313): written by the viewer's
  * entry serve under exactly the gate that increments accessCount, so the
@@ -749,5 +818,6 @@ export type PresentationVersionRow = typeof presentationVersions.$inferSelect;
 export type ShareTokenRow = typeof shareTokens.$inferSelect;
 export type CollaboratorRow = typeof collaborators.$inferSelect;
 export type AnnotationRow = typeof annotations.$inferSelect;
+export type FormResponseRow = typeof formResponses.$inferSelect;
 export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;

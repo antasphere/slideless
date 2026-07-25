@@ -252,3 +252,37 @@ export function buildOtpEmail(p: OtpEmailParams): { subject: string; html: strin
   const text = `Your ${PRODUCT_NAME} code: ${p.otp}`;
   return { subject, html, text };
 }
+
+export interface ResponseLinkEmailParams {
+  /** The respondent's personal edit link (share URL + fragment secret). */
+  editUrl: string;
+}
+
+/**
+ * The form-response edit link (ADR 022): mailed on the respondent's explicit
+ * opt-in, or automatically to a recognized signed-in respondent's account
+ * address. Carries ONLY the recipient's own capability URL — whoever holds
+ * it can view and update exactly that one response.
+ */
+export function buildResponseLinkEmail(p: ResponseLinkEmailParams): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const subject = `Your ${PRODUCT_NAME} form response`;
+  const html = shell(
+    'Your response was recorded',
+    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
+       Keep this personal link to view or update your answer later — anyone
+       who has it can edit this one response, so treat it like a password.</p>
+     <p style="margin:0 0 24px">
+       <a href="${p.editUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
+          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
+         View or update my response</a></p>
+     <p style="margin:0;color:#a1a1aa;font-size:12px">
+       If the button does not work, open:<br>
+       <span style="word-break:break-all">${p.editUrl}</span></p>`
+  );
+  const text = `Your ${PRODUCT_NAME} form response was recorded.\n\nView or update it: ${p.editUrl}\n\nAnyone holding this link can edit this one response — treat it like a password.`;
+  return { subject, html, text };
+}

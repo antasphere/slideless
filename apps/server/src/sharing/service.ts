@@ -79,6 +79,8 @@ export class ShareTokenService {
     purpose: ShareTokenPurpose;
     pinnedVersion: number | null;
     canAnnotate: boolean;
+    /** Forms default ON (share route) — the preview mint passes false. */
+    canSubmitForms: boolean;
     /** Explicit badge slot for this link, or null = inherit the deck default. */
     badgePosition: BadgePosition | null;
     expiresAt: Date | null;
@@ -95,6 +97,7 @@ export class ShareTokenService {
         tokenHash,
         pinnedVersion: opts.pinnedVersion,
         canAnnotate: opts.canAnnotate,
+        canSubmitForms: opts.canSubmitForms,
         badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
@@ -222,6 +225,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
   versionMode: 'latest' | 'pinned';
   pinnedVersion: number | null;
   canAnnotate: boolean;
+  canSubmitForms: boolean;
   badgePosition: BadgePosition | null;
   expiresAt: string | null;
   hasPassword: boolean;
@@ -238,6 +242,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
     versionMode: t.pinnedVersion === null ? 'latest' : 'pinned',
     pinnedVersion: t.pinnedVersion,
     canAnnotate: t.canAnnotate,
+    canSubmitForms: t.canSubmitForms,
     badgePosition: t.badgePosition,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     hasPassword: t.passwordHash !== null,
