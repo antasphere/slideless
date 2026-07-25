@@ -125,6 +125,7 @@ var pendingRange = null;   // candidate selection behind the visible pill
 var savedName = '';        // reviewer name, kept for the session only
                            // (the opaque origin has no storage — ADR 012)
 var mode = 'browse';       // 'browse' | 'annotate'
+var pinsVisible = true;    // sheet toggle; per-visit (no storage, ADR 012)
 var seenIds = null;        // ids already rendered once (animate only new)
 var isSaving = false;
 
@@ -414,11 +415,11 @@ var css = [
   '#__sl-sheet .__sl-x{display:flex;align-items:center;justify-content:center;width:30px;height:30px;',
   '  border-radius:8px;cursor:pointer;color:var(--sl-muted);}',
   '#__sl-sheet .__sl-x:hover{background:var(--sl-bg2);color:var(--sl-ink);}',
-  '#__sl-mode{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--sl-border);',
+  '.__sl-hbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--sl-border);',
   '  background:transparent;color:var(--sl-ink);border-radius:8px;padding:6px 10px;cursor:pointer;',
   '  font:600 12px/1 inherit;}',
-  '#__sl-mode:hover{border-color:var(--sl-border2);}',
-  '#__sl-mode.on{background:var(--sl-accent);color:var(--sl-accent-ink);border-color:var(--sl-accent);}',
+  '.__sl-hbtn:hover{border-color:var(--sl-border2);}',
+  '.__sl-hbtn.on{background:var(--sl-accent);color:var(--sl-accent-ink);border-color:var(--sl-accent);}',
   '#__sl-tabs{display:flex;gap:4px;margin:2px 16px 8px;padding:3px;background:var(--sl-bg2);',
   '  border-radius:10px;}',
   '.__sl-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;text-align:center;',
@@ -484,6 +485,7 @@ var ICONS = {
   mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
   empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
 };
 
@@ -540,13 +542,23 @@ var sheet = el('div');
 sheet.id = '__sl-sheet';
 var head = el('div', '__sl-head');
 head.appendChild(el('strong', null, 'Annotations'));
-var modeBtn = el('button');
+var modeBtn = el('button', '__sl-hbtn');
 modeBtn.id = '__sl-mode';
 modeBtn.type = 'button';
 modeBtn.innerHTML = ICONS.pin;
 modeBtn.appendChild(el('span', null, 'Add pin'));
+// Show/hide the numbered pins on the deck — reviewers need to read (or
+// present) the page clean sometimes. Per-visit only: the opaque origin has
+// no storage (ADR 012), so the toggle resets to ON on every load.
+var pinsBtn = el('button', '__sl-hbtn on');
+pinsBtn.id = '__sl-pinvis';
+pinsBtn.type = 'button';
+pinsBtn.title = 'Show or hide the pins on the deck';
+pinsBtn.innerHTML = ICONS.eye;
+pinsBtn.appendChild(el('span', null, 'Pins'));
 var headClose = el('div', '__sl-x');
 headClose.innerHTML = ICONS.close;
+head.appendChild(pinsBtn);
 head.appendChild(modeBtn);
 head.appendChild(headClose);
 var tabs = el('div');
@@ -738,6 +750,11 @@ function setMode(next) {
 modeBtn.addEventListener('click', function () {
   setMode(mode === 'annotate' ? 'browse' : 'annotate');
 });
+pinsBtn.addEventListener('click', function () {
+  pinsVisible = !pinsVisible;
+  pinsBtn.classList.toggle('on', pinsVisible);
+  renderPins();
+});
 bannerDone.addEventListener('click', function () { setMode('browse'); });
 // Esc leaves annotate mode wherever focus sits. Capture phase: the deck must
 // not swallow it, and our root's stopPropagation must not starve it.
@@ -802,7 +819,9 @@ function layoutPins() {
   });
 }
 function renderPins() {
-  if (mode === 'annotate') { // keep the capture layer visually clean
+  // Cleared while annotate mode owns the viewport, and while the reviewer
+  // has toggled pins off to read the deck clean.
+  if (mode === 'annotate' || !pinsVisible) {
     pins.textContent = '';
     pinSignature = '';
     return;

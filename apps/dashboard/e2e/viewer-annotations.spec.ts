@@ -207,6 +207,16 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await reviewer.locator('#__sl-sheet .__sl-x').click();
   });
 
+  await test.step('the sheet toggle hides and re-shows the pins', async () => {
+    await reviewer.locator('#__sl-badge').click();
+    await expect(reviewer.locator('.__sl-pin')).toHaveCount(1);
+    await reviewer.locator('#__sl-pinvis').click();
+    await expect(reviewer.locator('.__sl-pin')).toHaveCount(0);
+    await reviewer.locator('#__sl-pinvis').click();
+    await expect(reviewer.locator('.__sl-pin')).toHaveCount(1);
+    await reviewer.locator('#__sl-sheet .__sl-x').click();
+  });
+
   await test.step('annotate mode: a point pin on the image, deck frozen while active', async () => {
     const counterBefore = await reviewer.locator('#counter').textContent();
     await reviewer.locator('#__sl-badge').click();
