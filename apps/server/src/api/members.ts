@@ -315,10 +315,75 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     return c.json(toWire(snapshot!), 200);
   });
 
-  // Admin-generated password reset link — the recovery path that works with
+  /**
+   * Shared refusal for the two SIGN-IN-EQUIVALENT mint routes (PRDCT-1354,
+   * findings AUTH-1/AUTH-2/AUTH-8). Both `/members/{id}/reset-link` and
+   * `/members/{id}/change-email-link` hand the caller a bearer credential
+   * for ANOTHER user's GLOBAL account: consuming either one signs the
+   * target in (LESSONS.md M6: "Consuming a change-email JWT while logged
+   * out CREATES a session for the target user"). A `user` row is
+   * instance-global, so the blast radius of a mint is every workspace that
+   * user belongs to — not just the minter's.
+   *
+   * Two target classes therefore make a mint a CROSS-TENANT takeover and
+   * are refused outright:
+   *
+   *  1. `origin='guest'` — the guest row exists for principal resolution
+   *     only (D2). It was created by the per-deck claim path for an
+   *     EXTERNAL party whose account is not this tenant's to administer;
+   *     the host tenant never owned that credential. Admins have no
+   *     recovery duty toward a guest, so there is nothing to trade away.
+   *  2. a target holding a membership in ANY OTHER workspace — the minted
+   *     credential would carry into that workspace too. "Admin of the
+   *     workspace" is not "owner of the person"; a user who works with two
+   *     tenants must never be recoverable by either one unilaterally.
+   *     Recovery for such a user is self-serve (`/request-password-reset`)
+   *     or the operator's break-glass surface.
+   *
+   * The role gate is OWNER, not admin (AUTH-8): the old guards only fired
+   * when `target.role === 'owner'`, so any admin could mint against any
+   * other admin and escalate laterally. Minting someone else's credential
+   * is an owner-level act on both routes.
+   *
+   * Fail-CLOSED shape: a new mint route added under `/members` must call
+   * this helper. Returning `null` means "no refusal found".
+   */
+  const mintRefusal = async (
+    principal: { workspaceId: string },
+    target: { userId: string; origin: string }
+  ): Promise<{ code: string; message: string } | null> => {
+    if (target.origin === 'guest') {
+      return {
+        code: 'guest_target',
+        message:
+          'This member is an external per-deck guest — their account is not this workspace’s to recover'
+      };
+    }
+    const [foreign] = await db
+      .select({ id: workspaceMembers.id })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.userId, target.userId),
+          ne(workspaceMembers.workspaceId, principal.workspaceId)
+        )
+      )
+      .limit(1);
+    if (foreign) {
+      return {
+        code: 'cross_workspace_target',
+        message:
+          'This member also belongs to another workspace — an admin-minted link would carry into it, so it is refused'
+      };
+    }
+    return null;
+  };
+
+  // Owner-generated password reset link — the recovery path that works with
   // no email driver (invitations' copyable-link pattern). The 2-segment gate
-  // above does NOT cover this 3-segment path, so gate it explicitly.
-  api.use('/members/:id/reset-link', requireRole('admin'));
+  // above does NOT cover this 3-segment path, so gate it explicitly — and at
+  // OWNER, not admin (AUTH-8: see mintRefusal).
+  api.use('/members/:id/reset-link', requireRole('owner'));
   api.openapi(memberResetLinkRoute, async (c) => {
     // Cloud edition (`hubManaged` is present iff EDITION=cloud): the token a
     // mint would produce lands on POST /reset-password, which the D1 hub-only
@@ -341,14 +406,18 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     const { id } = c.req.valid('param');
 
     const [target] = await db
-      .select({ id: workspaceMembers.id, userId: workspaceMembers.userId, role: workspaceMembers.role })
+      .select({
+        id: workspaceMembers.id,
+        userId: workspaceMembers.userId,
+        role: workspaceMembers.role,
+        origin: workspaceMembers.origin
+      })
       .from(workspaceMembers)
       .where(and(eq(workspaceMembers.id, id), eq(workspaceMembers.workspaceId, principal.workspaceId)))
       .limit(1);
     if (!target) return c.json(err('not_found', 'Member not found'), 404);
-    if (target.role === 'owner' && principal.role !== 'owner') {
-      return c.json(err('forbidden', 'Only an owner can reset an owner'), 403);
-    }
+    const refusal = await mintRefusal(principal, target);
+    if (refusal) return c.json(err(refusal.code, refusal.message), 403);
 
     // Mint a single-use token in Better Auth's own verification table, in the
     // exact shape POST /reset-password consumes (`reset-password:<token>`).
@@ -376,12 +445,30 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     );
   });
 
-  // Admin-generated email change link — the email-change path that works
+  // Owner-generated email change link — the email-change path that works
   // with no email driver (same copyable-link pattern as the reset link).
   // The 2-segment gate above does NOT cover this 3-segment path either, so
-  // gate it explicitly.
-  api.use('/members/:id/change-email-link', requireRole('admin'));
+  // gate it explicitly — at OWNER, like its sibling (AUTH-8).
+  api.use('/members/:id/change-email-link', requireRole('owner'));
   api.openapi(memberChangeEmailLinkRoute, async (c) => {
+    // Cloud edition (`hubManaged` is present iff EDITION=cloud): the SAME
+    // closure the reset-link sibling carries, which this route was missing
+    // (AUTH-1). It is the stronger of the two — the minted JWT is
+    // sign-in-equivalent AND rewrites the address the hub identity is keyed
+    // on, while on cloud a user's email is the hub's to own (D10 re-syncs it
+    // on every login, so a local rewrite is either overwritten or a
+    // hijack). Hub-origin workspaces already died at the P7 subtree gate
+    // with `hub_managed`; this covers cloud-LOCAL workspaces (the
+    // operator's, deck-guest hosts). oss is untouched.
+    if (hubManaged) {
+      return c.json(
+        err(
+          'email_change_disabled',
+          'Local email changes are disabled on this edition — identities are managed at the Antasphere hub'
+        ),
+        403
+      );
+    }
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
@@ -391,6 +478,7 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
         id: workspaceMembers.id,
         userId: workspaceMembers.userId,
         role: workspaceMembers.role,
+        origin: workspaceMembers.origin,
         email: userTable.email
       })
       .from(workspaceMembers)
@@ -398,11 +486,20 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
       .where(and(eq(workspaceMembers.id, id), eq(workspaceMembers.workspaceId, principal.workspaceId)))
       .limit(1);
     if (!target) return c.json(err('not_found', 'Member not found'), 404);
-    if (target.role === 'owner' && principal.role !== 'owner') {
-      return c.json(err('forbidden', "Only an owner can change an owner's email"), 403);
-    }
+    const refusal = await mintRefusal(principal, target);
+    if (refusal) return c.json(err(refusal.code, refusal.message), 403);
 
     // Better Auth stores emails lowercased — compare and mint in that form.
+    // ⚠️ RACE-7: this lookup is ADVISORY ONLY, never the boundary. It is a
+    // read outside any lock, and the mint writes nothing (the token is a
+    // stateless JWT — LESSONS.md M6), so two concurrent mints for the same
+    // `newEmail` both pass it. The REAL enforcement is the `user.email`
+    // UNIQUE constraint at CONSUMPTION time: whichever link is consumed
+    // first wins the address and the loser's link fails, leaving exactly one
+    // account on that email (asserted in test/integration/minted-credentials
+    // .test.ts). Never promote this pre-check to a uniqueness guarantee, and
+    // never widen it into an existence oracle beyond the workspace-owner
+    // audience it already has.
     const newEmail = body.newEmail.toLowerCase();
     const [existing] = await db
       .select({ id: userTable.id })

@@ -44,6 +44,17 @@ plain member pages only decks they own or actively collaborate on.
 by principals who cannot read the deck — the same hide-existence posture the
 annotation and collaborator-roster routes already take.
 
+**Amendment 2026-07-26 (PRDCT-1354, AUTH-5): the WRITE surface answers 404
+too.** `deckForSharing` (`api/presentations.ts`), the resolver behind the
+share-token management routes, used to distinguish 404 (no such deck) from
+403 (exists, you cannot manage it). That 403 was the same existence oracle
+this section forbids, reachable by any workspace member against every deck
+in the tenant — hiding a deck from a principal's READS while confirming it
+to their WRITES leaks the identical bit. The refusal is now a uniform 404,
+matching the sibling surfaces in that file (`shareTokenViewsListRoute`, the
+annotation routes) that already answered that way. Rule going forward: any
+per-deck surface, read or write, answers 404 when the deck check fails.
+
 `canReadDeck` today coincides with `canWriteDeck` (owner-level OR active dev
 grant); it is deliberately a separate policy function so a future read-only
 collaborator role can widen reads without widening writes.

@@ -208,7 +208,7 @@ describe('share-token management API', () => {
     expect(malformed.status).toBe(400);
   });
 
-  it('gates the sharing surface on deck write access: a plain member 403s', async () => {
+  it('gates the sharing surface on deck write access: a plain member 404s (AUTH-5)', async () => {
     // Invite + accept a plain member, then try the owner's deck.
     const invite = await app.app.request(
       '/api/v1/invitations',
@@ -228,15 +228,18 @@ describe('share-token management API', () => {
     );
     const memberCookie = extractCookie(memberSignIn);
 
+    // 404, not 403 (PRDCT-1354 / AUTH-5): a 403 here confirmed the deck
+    // exists to any workspace member, the same existence oracle the ADR 013
+    // read invariant forbids. Indistinguishable from an unknown deck id.
     const list = await app.app.request(`/api/v1/presentations/${deckId}/tokens`, {
       headers: { cookie: memberCookie }
     });
-    expect(list.status).toBe(403);
+    expect(list.status).toBe(404);
     const create = await app.app.request(
       `/api/v1/presentations/${deckId}/tokens`,
       json({ name: 'Nope' }, { cookie: memberCookie })
     );
-    expect(create.status).toBe(403);
+    expect(create.status).toBe(404);
   });
 
   it('machine principals ride the presentations scopes: read lists, write creates', async () => {

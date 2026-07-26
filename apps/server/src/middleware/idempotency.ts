@@ -12,10 +12,18 @@ import { apiError } from '../api/errors.js';
  * inserted BEFORE the handler runs (the unique index is the mutex), so two
  * concurrent requests with the same key can never both execute.
  *
- * Explicit target list, fail-closed style — only these four consult it:
+ * Explicit target list, fail-closed style — only these consult it:
  *   POST /api/v1/api-keys
  *   POST /api/v1/invitations
  *   POST /api/v1/members/{id}/reset-link
+ *   POST /api/v1/members/{id}/change-email-link (FUZZ-7, PRDCT-1354: the
+ *     SECOND secret-minting member route, and the more dangerous one — its
+ *     token is sign-in-equivalent. Its contract has always declared
+ *     `Idempotency-Key` and a 409, but the claim never covered it, so a
+ *     retried mint silently produced a SECOND live sign-in-equivalent JWT
+ *     that cannot be revoked, on top of the first. The two mint routes must
+ *     stay listed together.)
+ *   POST /api/v1/presentations/{id}/tokens
  *   POST /api/v1/presentations/uploads (a retried reserve must not leak a
  *     second session + reserved deck id)
  * Deliberate NON-targets:
@@ -48,7 +56,11 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 const KEY_MAX_LENGTH = 200;
 
 const TARGET_PATHS = new Set(['/api/v1/api-keys', '/api/v1/invitations', '/api/v1/presentations/uploads']);
+// The two member routes that MINT a credential for another user. Both are
+// covered (FUZZ-7): a replayed mint hands out a second live secret, and the
+// change-email JWT is stateless, so it cannot even be revoked afterwards.
 const RESET_LINK_RE = /^\/api\/v1\/members\/[^/]+\/reset-link$/;
+const CHANGE_EMAIL_LINK_RE = /^\/api\/v1\/members\/[^/]+\/change-email-link$/;
 // Share-token creation returns a one-shot secret — exactly what replay
 // protection exists for (a retried create must not mint a second link).
 const SHARE_TOKEN_CREATE_RE = /^\/api\/v1\/presentations\/[^/]+\/tokens$/;
@@ -56,7 +68,10 @@ const SHARE_TOKEN_CREATE_RE = /^\/api\/v1\/presentations\/[^/]+\/tokens$/;
 function isTarget(method: string, path: string): boolean {
   return (
     method === 'POST' &&
-    (TARGET_PATHS.has(path) || RESET_LINK_RE.test(path) || SHARE_TOKEN_CREATE_RE.test(path))
+    (TARGET_PATHS.has(path) ||
+      RESET_LINK_RE.test(path) ||
+      CHANGE_EMAIL_LINK_RE.test(path) ||
+      SHARE_TOKEN_CREATE_RE.test(path))
   );
 }
 

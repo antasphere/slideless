@@ -244,7 +244,7 @@ export const memberResetLinkRoute = createRoute({
   method: 'post',
   path: '/members/{id}/reset-link',
   tags: ['members'],
-  summary: 'Generate a one-time password reset link for a member (admin+)',
+  summary: 'Generate a one-time password reset link for a member (OWNER only)',
   request: { params: uuidParams, headers: idempotencyHeaders },
   responses: {
     200: jsonBody(memberResetLinkSchema, 'Copyable reset link + expiry'),
@@ -260,7 +260,7 @@ export const memberChangeEmailLinkRoute = createRoute({
   method: 'post',
   path: '/members/{id}/change-email-link',
   tags: ['members'],
-  summary: 'Generate a one-time email change link for a member (admin+; the link also signs them in)',
+  summary: 'Generate a one-time email change link for a member (OWNER only; the link also signs them in)',
   request: {
     params: uuidParams,
     body: jsonRequestBody(memberChangeEmailLinkRequestSchema, 'The new email address'),

@@ -135,11 +135,15 @@ responsible for, and the rules that govern rendering user content.
   ([reverse-proxy.md](../self-hosting/reverse-proxy.md)).
 - **Account recovery when `EMAIL_DRIVER=none`.** Self-service password reset
   and email change both need an email driver (the change mails a verification
-  link to the new address). Without one, an owner/admin generates a one-time
-  copyable link from the Members page instead — a reset link for recovery, a
-  change-email link to move a member's address — the same no-SMTP pattern as
-  invitations. The change-email link is sign-in-equivalent; hand it only to
-  the member it is for.
+  link to the new address). Without one, a workspace **owner** generates a
+  one-time copyable link from the Members page instead — a reset link for
+  recovery, a change-email link to move a member's address — the same no-SMTP
+  pattern as invitations. The change-email link is sign-in-equivalent; hand it
+  only to the member it is for. Both links are refused for a per-deck guest
+  and for any member who also belongs to another workspace: a `user` account
+  is instance-global, so such a link would reach a workspace the minter has
+  no authority over. Those people recover self-service, or through the
+  operator's break-glass surface.
 - **2FA lockout recovery is an operator action.** A member who loses BOTH
   the authenticator and every backup code cannot complete sign-in, and there
   is deliberately no admin "disable someone's 2FA" endpoint (it would make
