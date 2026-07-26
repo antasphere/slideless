@@ -39,6 +39,7 @@ const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex'
 let container: StartedPostgreSqlContainer;
 let app: TestApp;
 let httpsApp: TestApp;
+let dcrOffApp: TestApp;
 let cookie: string;
 let deckId: string;
 let shareSecret: string;
@@ -108,10 +109,27 @@ beforeAll(async () => {
   httpsApp = await createTestApp(await createDatabase(container, 'hardening_https'), {
     PUBLIC_BASE_URL: 'https://secure.example'
   });
+  dcrOffApp = await createTestApp(await createDatabase(container, 'hardening_dcr_off'), {
+    OAUTH_DYNAMIC_CLIENT_REGISTRATION: 'false'
+  });
 }, 240_000);
+
+/** RFC 7591 dynamic client registration — the PLT-29 switch's only sink. */
+const registerClient = (target: TestApp) =>
+  target.app.request('/api/v1/auth/oauth2/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      client_name: 'plt-29-probe',
+      redirect_uris: ['https://plt29.example/cb'],
+      grant_types: ['authorization_code'],
+      response_types: ['code']
+    })
+  });
 
 afterAll(async () => {
   await app?.stop();
+  await dcrOffApp?.stop();
   await httpsApp?.stop();
   await container?.stop();
 });
@@ -457,5 +475,29 @@ describe('the login wall no longer bills successful sign-ins to the account', ()
       if (res.status === 429) sawRateLimit = true;
     }
     expect(sawRateLimit).toBe(true);
+  });
+});
+
+// ── PLT-29 ──────────────────────────────────────────────────────────────────
+
+/**
+ * The switch has to DO something. `env.test.ts` only proves the variable
+ * parses and defaults to true — with that as the whole coverage, replacing
+ * `env.OAUTH_DYNAMIC_CLIENT_REGISTRATION` in identity/better-auth.ts with a
+ * hardcoded `true` leaves the entire suite green (verified by mutation), i.e.
+ * an operator setting it to false would get no protection and no warning.
+ * These two cases pin the wiring at the endpoint, in both positions.
+ */
+describe('dynamic client registration honours the env switch', () => {
+  it('mints a client with the default (unchanged) posture', async () => {
+    const res = await registerClient(app);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { client_id?: string }).client_id).toBeTruthy();
+  });
+
+  it('refuses every caller when the switch is off', async () => {
+    const res = await registerClient(dcrOffApp);
+    expect(res.status).toBe(403);
+    expect((await res.json()) as { error?: string }).toMatchObject({ error: 'access_denied' });
   });
 });

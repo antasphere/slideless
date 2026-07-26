@@ -77,3 +77,70 @@ describe('request completion logging', () => {
     expect(typeof line?.latencyMs).toBe('number');
   });
 });
+
+/**
+ * The block above pins `requestId` against a SYNTHETIC root app whose viewer
+ * routes are declared inline. The real app composes a SEPARATE Hono sub-app
+ * (`app.route('/', viewer)` in app.ts, patterns from viewer/routes.ts), so the
+ * question that actually decides PRIV-1 on this repo is whether
+ * `c.req.routePath` survives that composition — if it did not, the middleware
+ * would be correct and the deployed app would still log live share secrets.
+ * Same class of gap as the PLT-39 / PLT-3 tests that passed while their fixes
+ * were broken: assert against the real shape, not an isolated one.
+ */
+describe('the route label survives the real viewer sub-app composition', () => {
+  const SECRET = 'Zq7-LIVE-SHARE-SECRET-abc123';
+
+  function composed() {
+    const lines: Array<Record<string, unknown>> = [];
+    const logger = pino(
+      { level: 'info' },
+      { write: (chunk: string) => lines.push(JSON.parse(chunk) as Record<string, unknown>) }
+    );
+    // Exactly the registrations viewer/routes.ts makes, in its own sub-app.
+    const embed = new Hono();
+    embed.get('/embed.js', (c) => c.text('//'));
+    const viewer = new Hono();
+    viewer.route('/', embed);
+    viewer.post('/v/:secret', (c) => c.text('ok'));
+    viewer.post('/v/:secret/', (c) => c.text('ok'));
+    viewer.post('/v/:secret/*', (c) => c.text('ok'));
+    viewer.on(['GET', 'HEAD'], '/v/:secret', (c) => c.text('ok'));
+    viewer.on(['GET', 'HEAD'], '/v/:secret/', (c) => c.text('ok'));
+    viewer.on(['GET', 'HEAD'], '/v/:secret/*', (c) => c.text('ok'));
+
+    const api = new Hono();
+    api.post('/viewer/:secret/annotations', (c) => c.json({ ok: true }));
+
+    const app = new Hono();
+    app.use('*', requestId(logger));
+    app.route('/api/v1', api);
+    app.route('/', viewer);
+    return { app, lines };
+  }
+
+  const probes: ReadonlyArray<readonly [string, string, string]> = [
+    ['GET', `/v/${SECRET}`, '/v/:secret'],
+    ['GET', `/v/${SECRET}/`, '/v/:secret/'],
+    ['GET', `/v/${SECRET}/slides/3.html`, '/v/:secret/*'],
+    // HEAD is rewritten to GET before routing (PLT-39) — the pattern must
+    // still be what gets logged, not the raw path.
+    ['HEAD', `/v/${SECRET}`, '/v/:secret'],
+    ['HEAD', `/v/${SECRET}/assets/a.png`, '/v/:secret/*'],
+    // The password form posts back to the same capability-bearing URL.
+    ['POST', `/v/${SECRET}`, '/v/:secret'],
+    ['POST', `/v/${SECRET}/x`, '/v/:secret/*'],
+    // The share-token annotation API carries the secret under /api/v1 too.
+    ['POST', `/api/v1/viewer/${SECRET}/annotations`, '/api/v1/viewer/:secret/annotations']
+  ];
+
+  for (const [method, path, expected] of probes) {
+    it(`${method} ${path} logs ${expected}, never the secret`, async () => {
+      const { app, lines } = composed();
+      await app.request(path, { method });
+      const line = lines.find((l) => l.msg === 'request');
+      expect(line?.path).toBe(expected);
+      expect(JSON.stringify(line)).not.toContain(SECRET);
+    });
+  }
+});
