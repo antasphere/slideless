@@ -649,3 +649,31 @@ allow-downloads`, never `allow-same-origin` — on every viewer response
   around it (account-by-(provider,sub) first, then trusted-link by email
   ONLY onto a VERIFIED local address) or the entrance diverges from the
   browser SSO path's takeover posture.
+
+## Blob authorization (SL-B1, 2026-07-26)
+
+- **An ACL on the resource is not an ACL on its bytes.** ADR 013 made deck
+  reads private, then left `/files` authorizing on `workspace_id` alone —
+  so the same content ADR 013 protected was streamable by any member and
+  any `presentations:read` key one route down. When a policy is added to a
+  domain surface, sweep every OTHER surface that can reach the same rows:
+  here the generic file cabinet, its DELETE, and the version-commit path
+  that binds shas into manifests.
+- **`files.created_by` cannot answer "does this principal hold these
+  bytes".** Blobs are content-addressed and unique per (workspace, sha256),
+  so the SECOND uploader of identical bytes deduplicates onto the FIRST
+  uploader's row and the column keeps naming the first one. Authorizing on
+  it would lock a member out of a shared logo they just pushed, and refuse
+  the commit that references it. Possession is its own fact —
+  `file_uploaders` (migration 0034), written on BOTH the fresh-insert and
+  the dedupe branch, by every upload route.
+- **Scope the existence oracle with the read.** `precheckMissing` answering
+  "already present" for a blob the caller may not read is both a
+  whole-workspace existence probe and a protocol dead end: the client skips
+  the upload on that answer, then the commit guard refuses the sha and
+  there is no way forward. Precheck and the commit guard must share one
+  predicate.
+- **Refuse an unauthorized sha as MISSING, not as its own error code.** A
+  distinct "you may not use this blob" status would confirm that the
+  workspace holds those exact bytes — the same reason a deck read answers
+  404 and never 403.

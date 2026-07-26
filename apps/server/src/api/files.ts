@@ -2,7 +2,9 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
+import type { SQL } from 'drizzle-orm';
 import { fileDeleteRoute, fileGetRoute, filesListRoute, fileUploadRoute } from '@slideless/contract/routes';
+import type { Principal } from '@slideless/contract';
 import type { DbConn, FileRow } from '@slideless/db';
 import { ulid } from 'ulid';
 import type { Env } from '../env.js';
@@ -41,6 +43,13 @@ export interface FileRouteDeps {
    * presentation-agnostic; the wiring point injects the presentation check).
    */
   blobInUse: (tx: DbConn, workspaceId: string, sha256: string) => Promise<boolean>;
+  /**
+   * ADR 013 per-blob read scope (SL-B1): a WHERE predicate over the `files`
+   * row, or `undefined` for the workspace admin/owner operator view. Injected
+   * for the same reason as `blobInUse` — the files module stays
+   * presentation-agnostic and the wiring point supplies the deck policy.
+   */
+  blobReadScope: (principal: Principal) => SQL | undefined;
 }
 
 export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void {
@@ -50,15 +59,14 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
   api.use('/files', requireAuth());
   api.use('/files/*', requireAuth());
   // Guest capability limit (D2, both editions): the generic files surface is
-  // WORKSPACE data end-to-end (ADR 006 — list/read/delete span every blob in
-  // the workspace, deck assets included, with no per-deck authorization).
-  // For ordinary members that posture is a deliberate ADR 013 divergence;
-  // for an external guest it would be a whole-tenant read/write channel that
-  // bypasses the per-deck grant model — reads included: GET /files/{id}/content
-  // serves ANY workspace blob, so leaving reads open would hand a guest the
-  // content of decks they were never invited to. Guests push and pull deck
-  // bytes through the ADR 013-gated presentation routes instead
-  // (/presentations/assets, /presentations/{id}/assets/{sha256}).
+  // a WORKSPACE-level surface (ADR 006) — an inventory of the tenant's blobs
+  // with a delete on it. Its READS are now per-deck authorized like every
+  // other content read (SL-B1: `deps.blobReadScope`, ADR 013), but the
+  // surface as a whole still belongs to the workspace, and an external guest
+  // has no business there: they were invited to ONE deck, not to the host
+  // tenant's file cabinet. Guests push and pull deck bytes through the ADR
+  // 013-gated presentation routes instead (/presentations/assets,
+  // /presentations/{id}/assets/{sha256}).
   api.use('/files', requireNonGuest());
   api.use('/files/*', requireNonGuest());
 
@@ -67,7 +75,11 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
     const { cursor, limit } = c.req.valid('query');
     const { files: rows, nextCursor } = await service.list(principal.workspaceId, {
       ...(cursor !== undefined ? { cursor } : {}),
-      limit
+      limit,
+      // ADR 013 (SL-B1): a plain member pages the blobs they uploaded plus
+      // those referenced by decks they can read; admins/owners keep the
+      // whole-workspace operator view.
+      visibility: deps.blobReadScope(principal)
     });
     return c.json({ files: rows.map(toWire), nextCursor }, 200);
   });
@@ -136,7 +148,9 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
   api.openapi(fileGetRoute, async (c) => {
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
-    const file = await service.get(principal.workspaceId, id);
+    // 404, never 403, when the scope excludes the blob (ADR 013): a blob a
+    // principal cannot read must not be probeable by id either.
+    const file = await service.get(principal.workspaceId, id, deps.blobReadScope(principal));
     if (!file) return c.json(err('not_found', 'File not found'), 404);
     return c.json(toWire(file), 200);
   });
@@ -144,7 +158,9 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
   api.openapi(fileDeleteRoute, async (c) => {
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
-    const file = await service.get(principal.workspaceId, id);
+    // Same scope on the mutation: a member must not be able to delete (or
+    // probe) a blob they may not read.
+    const file = await service.get(principal.workspaceId, id, deps.blobReadScope(principal));
     if (!file) return c.json(err('not_found', 'File not found'), 404);
     const outcome = await service.delete(file, (tx, row) => deps.blobInUse(tx, row.workspaceId, row.sha256));
     if (outcome === 'in_use') {
@@ -171,7 +187,10 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
     // Plain Hono route (no contract param schema): reject a non-UUID id here
     // or it reaches Postgres' uuid cast and surfaces as a sanitized 500.
     if (!isUuid(id)) return c.json(err('not_found', 'File not found'), 404);
-    const file = await service.get(principal.workspaceId, id);
+    // The byte route carries the ADR 013 scope too (SL-B1) — this was the
+    // whole-tenant read: `workspace_id` alone served ANY deck's content to
+    // any member and to any presentations:read key.
+    const file = await service.get(principal.workspaceId, id, deps.blobReadScope(principal));
     if (!file) return c.json(err('not_found', 'File not found'), 404);
 
     return serveBlob(c, {

@@ -159,7 +159,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   api.openapi(assetPrecheckRoute, async (c) => {
     const principal = c.get('principal')!;
     const { sha256 } = c.req.valid('json');
-    const missing = await service.precheckMissing(principal.workspaceId, sha256);
+    // Scoped to what THIS principal may read (SL-B1): "already present" must
+    // never double as a whole-workspace existence oracle, and a sha the
+    // caller could not bind at commit time has to report as missing here.
+    const missing = await service.precheckMissing(principal.workspaceId, principal, sha256);
     return c.json({ missing }, 200);
   });
 

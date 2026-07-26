@@ -92,7 +92,12 @@ responsible for, and the rules that govern rendering user content.
   invitation token hashes and API-key secret hashes never leave) — for an
   admin+ session, or an API key deliberately granted the opt-in
   `data:export` scope (never implied by `presentations:read`, or any admin read key
-  would double as a whole-tenant exfiltration tool). Account deletion is
+  would double as a whole-tenant exfiltration tool). A `presentations:read`
+  key is bounded by its owner's own reach: for a plain member that is the
+  decks they own or collaborate on, down to the raw blobs
+  ([viewer-security-model.md](viewer-security-model.md)); for an admin or
+  owner it is the workspace, because the operator view is theirs by role,
+  key or no key. Account deletion is
   **sessions only, never machines**: the self-service danger zone
   (password-gated) and the admin Members action; `DELETE /members/{id}` is
   unlisted in the scope allowlist and absent from the CLI — a conscious

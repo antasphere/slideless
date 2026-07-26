@@ -88,6 +88,13 @@ Deck reads are **private by construction**, never workspace-wide:
   access immediately.
 - A failed read check answers **404, never 403** — the existence of a deck
   (or a share token) is not probeable.
+- The rule reaches the **raw bytes**, not just the deck endpoints. The
+  generic file surface (`/api/v1/files`, and the blob download under it)
+  applies the same check: a member sees the blobs they uploaded plus those
+  belonging to decks they can read, and nothing else. There is no route on
+  which workspace membership alone yields another deck's content — and a
+  version commit can only reference blobs its author is allowed to read, so
+  one deck's content cannot be re-published from another.
 
 ## The account boundary
 

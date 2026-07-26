@@ -600,12 +600,16 @@ function invitationSchemaRef() {
 }
 
 // ── Files ────────────────────────────────────────────────────────────────────
+// Every read here is per-deck authorized (ADR 013): you get the blobs you
+// uploaded plus those belonging to decks you can read; workspace admins and
+// owners get the whole workspace. Anything outside that scope answers 404,
+// never 403 — a blob you cannot read must not be probeable.
 
 export const filesListRoute = createRoute({
   method: 'get',
   path: '/files',
   tags: ['files'],
-  summary: 'List files in the workspace (cursor-paginated)',
+  summary: 'List the files you can read (cursor-paginated)',
   request: { query: cursorPageQuerySchema },
   responses: { 200: jsonBody(filesListSchema, 'Files, newest first'), 401: errorResponses[401] }
 });
@@ -614,7 +618,7 @@ export const fileGetRoute = createRoute({
   method: 'get',
   path: '/files/{id}',
   tags: ['files'],
-  summary: 'File metadata',
+  summary: 'File metadata (404 when you cannot read the blob)',
   request: { params: uuidParams },
   responses: {
     200: jsonBody(fileSchema, 'File'),
