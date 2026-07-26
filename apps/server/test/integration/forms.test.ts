@@ -2,11 +2,11 @@ import { createHash, createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
-import { auditLog, formResponses } from '@slideless/db';
+import { auditLog, formResponses, presentations, presentationVersions } from '@slideless/db';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
 import { FORMS_MARKER } from '../../src/viewer/forms-runtime.js';
+import { FRAGMENT_CAPTURE_MARKER } from '../../src/viewer/inject.js';
 import { OVERLAY_MARKER } from '../../src/viewer/overlay.js';
-import { mintRespondentAssertion } from '../../src/viewer/respondent.js';
 import {
   createDatabase,
   createTestApp,
@@ -23,13 +23,13 @@ import {
  *  - FORMS RUNTIME INJECTION: the served deck HTML carries the inline forms
  *    client exactly when (can_submit_forms × document OR frame navigation ×
  *    not ?raw / not agent-style), with the injected config stamping
- *    source/placement/assertion/emailAvailable — while ?raw, x-viewer-password
+ *    source/placement/emailAvailable — while ?raw, x-viewer-password
  *    fetches, and can_submit_forms=false links stay byte-exact;
  *  - the PUBLIC token-session write surface (/api/v1/viewer/…/forms/…):
  *    CORS, status mapping, capability + password proof, version integrity,
  *    payload caps, the one-time edit secret (read/update own row), the
- *    email leg via the recording driver, the signed respondent assertion,
- *    source/placement sanitization, the per-deck cap, and the spam bucket;
+ *    email leg via the recording driver, source/placement sanitization,
+ *    the per-deck cap, and the spam bucket;
  *  - the OWNER management surface (/api/v1/presentations/{id}/responses):
  *    filters, keyset pagination, summary buckets, audited delete, member
  *    gating (404 on reads, 403 on delete), and the machine-scope split.
@@ -49,6 +49,17 @@ const HTML_PAGE2 = Buffer.from(
   '<!doctype html><html><body><form data-slideless-form="feedback"><textarea name="note"></textarea></form></body></html>'
 );
 const HTML_V2 = Buffer.from('<!doctype html><html><body><h1>v2 content</h1></body></html>');
+/** No marked form anywhere — PRDCT-1333's streaming-path regression pin. */
+const HTML_NO_FORM = Buffer.from(
+  '<!doctype html><html><head><title>Plain</title></head><body><h1>Just slides</h1></body></html>'
+);
+/** Two forms on one page — the cross-form corruption fixture (PRDCT-1334). */
+const HTML_TWO_FORMS = Buffer.from(
+  '<!doctype html><html><head></head><body>' +
+    '<form data-slideless-form="rsvp"><input name="who"></form>' +
+    '<form data-slideless-form="feedback"><input name="note"></form>' +
+    '</body></html>'
+);
 const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const entryOf = (path: string, bytes: Buffer) => ({
   path,
@@ -89,13 +100,13 @@ const submit = (secret: string, form: string, body: unknown, headers: Record<str
     body: JSON.stringify(body)
   });
 
-const getMe = (secret: string, headers: Record<string, string> = {}) =>
-  app.app.request(`/api/v1/viewer/${secret}/forms/responses/me`, {
+const getMe = (secret: string, form: string, headers: Record<string, string> = {}) =>
+  app.app.request(`/api/v1/viewer/${secret}/forms/${form}/responses/me`, {
     headers: { origin: 'null', 'x-forwarded-for': nextIp(), ...headers }
   });
 
-const putMe = (secret: string, body: unknown, headers: Record<string, string> = {}) =>
-  app.app.request(`/api/v1/viewer/${secret}/forms/responses/me`, {
+const putMe = (secret: string, form: string, body: unknown, headers: Record<string, string> = {}) =>
+  app.app.request(`/api/v1/viewer/${secret}/forms/${form}/responses/me`, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
@@ -106,8 +117,8 @@ const putMe = (secret: string, body: unknown, headers: Record<string, string> = 
     body: JSON.stringify(body)
   });
 
-const emailMe = (secret: string, body: unknown, headers: Record<string, string> = {}) =>
-  app.app.request(`/api/v1/viewer/${secret}/forms/responses/me/email`, {
+const emailMe = (secret: string, form: string, body: unknown, headers: Record<string, string> = {}) =>
+  app.app.request(`/api/v1/viewer/${secret}/forms/${form}/responses/me/email`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -177,6 +188,8 @@ beforeAll(async () => {
   await upload(HTML_V1);
   await upload(HTML_PAGE2);
   await upload(HTML_V2);
+  await upload(HTML_NO_FORM);
+  await upload(HTML_TWO_FORMS);
 
   deckId = await uploadDeck('Forms Deck', [
     entryOf('index.html', HTML_V1),
@@ -208,8 +221,13 @@ describe('forms runtime injection', () => {
     // The injected config: a direct link, no unlock, anonymous, mail available.
     expect(html).toContain('"source":"link"');
     expect(html).toContain('"unlock":null');
-    expect(html).toContain('"assertion":null');
+    // PRDCT-1331: the config carries no identity field of any kind.
+    expect(html).not.toContain('assertion');
     expect(html).toContain('"emailAvailable":true');
+    // PRDCT-1334 item 4: the early fragment stub runs before any deck script.
+    expect(html).toContain(FRAGMENT_CAPTURE_MARKER);
+    expect(html.indexOf(FRAGMENT_CAPTURE_MARKER)).toBeLessThan(html.indexOf(FORMS_MARKER));
+    expect(html.indexOf(FRAGMENT_CAPTURE_MARKER)).toBeLessThan(html.indexOf('<form'));
     expect(html).toContain('"version":1');
     expectSandboxHeaders(res);
     expect(res.headers.get('etag')).toBeNull();
@@ -229,8 +247,7 @@ describe('forms runtime injection', () => {
     expect(html).not.toContain(OVERLAY_MARKER);
     expect(html).toContain('"source":"embed"');
     expect(html).toContain('"placement":"hero"');
-    // A frame is cross-site: no session is readable there, never an assertion.
-    expect(html).toContain('"assertion":null');
+    expect(html).not.toContain('assertion');
     expect(framed.headers.get('etag')).toBeNull();
     expectSandboxHeaders(framed);
 
@@ -284,30 +301,88 @@ describe('forms runtime injection', () => {
     expect(framed.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
   });
 
-  it('a signed-in document navigation injects a respondent assertion that actually verifies', async () => {
+  it('PRDCT-1331: a SIGNED-IN document navigation hands the deck nothing that identifies the viewer', async () => {
     const { secret, id: tokenId } = await createToken({ name: 'Signed-in' });
     const res = await fetchEntry(secret, { cookie });
     expect(res.status).toBe(200);
     const html = await res.text();
-    const assertion = /"assertion":"([^"]+)"/.exec(html)?.[1];
-    expect(assertion).toBeDefined();
+    const config = /<script data-slideless-forms>[\s\S]*?var CFG=(\{[^\n]*?\});/.exec(html)?.[1];
+    expect(config).toBeDefined();
+    // The injected config is a CLOSED set: version, unlock, source,
+    // placement, emailAvailable. Anything else here is readable by deck JS
+    // (ADR 012), which is exactly how leg 3 leaked a stranger's identity.
+    expect(Object.keys(JSON.parse(config!)).sort()).toEqual(
+      ['emailAvailable', 'placement', 'source', 'unlock', 'version'].sort()
+    );
+    // Nothing anywhere in the served document names the signed-in viewer.
+    expect(html).not.toContain(ownerUserId);
+    expect(html).not.toContain(OWNER.email);
 
-    // The extracted assertion stamps the respondent on a real submit and
-    // auto-emails the edit link to the account address (leg 3).
+    // …and no auto-mail fires on create for a signed-in viewer (the leg-3
+    // mail never consulted the email limiter: 12 replays were 12 mails).
     const before = mail.sent.length;
-    const created = await submit(secret, 'rsvp', { payload: { name: 'me' }, assertion });
+    const created = await submit(secret, 'rsvp', { payload: { name: 'me' } }, { cookie });
     expect(created.status).toBe(201);
-    const body = await readJson(created);
-    expect(body.emailSent).toBe(true);
-    expect(mail.sent.length).toBe(before + 1);
-    expect(mail.sent[before]!.to).toBe(OWNER.email);
+    expect((await readJson(created)).emailSent).toBe(false);
+    expect(mail.sent.length).toBe(before);
 
     const listed = await ownerList(deckId, `?token=${tokenId}`);
     expect(listed.responses).toHaveLength(1);
-    expect(listed.responses[0]).toMatchObject({
-      respondentUserId: ownerUserId,
-      respondentEmail: OWNER.email
+    expect(listed.responses[0].respondentUserId).toBeUndefined();
+    expect(listed.responses[0].respondentEmail).toBeUndefined();
+  });
+
+  it('PRDCT-1333: a FORM-LESS deck keeps the streaming path and its content-sha ETag', async () => {
+    const plainDeck = await uploadDeck('Plain Deck', [entryOf('index.html', HTML_NO_FORM)]);
+    // canSubmitForms defaults ON — the capability alone must not arm the
+    // buffering/injecting seam, or every share link leaves the stream path.
+    const { secret } = await createToken({ name: 'Plain' }, plainDeck);
+    const res = await fetchEntry(secret);
+    expect(res.status).toBe(200);
+    expect(await res.text()).not.toContain(FORMS_MARKER);
+    expect(res.headers.get('etag')).toBe(`"${shaOf(HTML_NO_FORM)}"`);
+    expect(res.headers.get('accept-ranges')).toBe('bytes');
+
+    // The same deck's frame navigation stays on the stream path too.
+    const framed = await app.app.request(`/v/${secret}/`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'iframe' }
     });
+    expect(await framed.text()).not.toContain(FORMS_MARKER);
+    expect(framed.headers.get('etag')).toBe(`"${shaOf(HTML_NO_FORM)}"`);
+  });
+
+  it('PRDCT-1333: hasForms is stamped at commit, per version, and mirrored on the deck', async () => {
+    const deck = await uploadDeck('Stamp Deck', [entryOf('index.html', HTML_NO_FORM)]);
+    const [v1] = await app.db.db
+      .select()
+      .from(presentationVersions)
+      .where(eq(presentationVersions.presentationId, deck));
+    expect(v1!.hasForms).toBe(false);
+
+    // v2 introduces a form → the flag flips forward…
+    const push = await app.app.request(
+      `/api/v1/presentations/${deck}/versions`,
+      json(
+        { expectedBaseVersion: 1, entryPath: 'index.html', manifest: [entryOf('index.html', HTML_V1)] },
+        { cookie }
+      )
+    );
+    expect(push.status).toBe(201);
+    const [row] = await app.db.db.select().from(presentations).where(eq(presentations.id, deck));
+    expect(row!.hasForms).toBe(true);
+    const { secret } = await createToken({ name: 'Stamped' }, deck);
+    expect(await (await fetchEntry(secret)).text()).toContain(FORMS_MARKER);
+
+    // …and a sub-page-only form arms the whole version, not just that page.
+    const subOnly = await uploadDeck('Sub Only', [
+      entryOf('index.html', HTML_NO_FORM),
+      entryOf('guide/page2.html', HTML_PAGE2)
+    ]);
+    const sub = await createToken({ name: 'Sub Only Link' }, subOnly);
+    const page2 = await app.app.request(`/v/${sub.secret}/guide/page2.html`, {
+      headers: { accept: 'text/html' }
+    });
+    expect(await page2.text()).toContain(FORMS_MARKER);
   });
 });
 
@@ -367,10 +442,12 @@ describe('public form submit (token-authed, cross-origin)', () => {
       shareTokenName: 'Alice Link',
       source: 'link',
       placement: null,
-      respondentUserId: null,
-      respondentEmail: null,
       payload: { name: 'Ada', dish: ['salad', 'bread'] }
     });
+    // PRDCT-1331: identity is off the owner wire entirely, so a
+    // presentations:read machine key cannot harvest respondent addresses.
+    expect(listed.responses[0]).not.toHaveProperty('respondentUserId');
+    expect(listed.responses[0]).not.toHaveProperty('respondentEmail');
     // The edit secret never appears in any owner-facing bytes.
     expect(JSON.stringify(listed)).not.toContain(body.editSecret);
   });
@@ -620,7 +697,7 @@ describe('own-row read/update via the edit secret', () => {
   });
 
   it('GET /responses/me prefills the own row with the edit secret', async () => {
-    const res = await getMe(secretA, { 'x-slideless-response': editSecret });
+    const res = await getMe(secretA, 'rsvp', { 'x-slideless-response': editSecret });
     expect(res.status).toBe(200);
     const body = await readJson(res);
     expect(body.response).toMatchObject({
@@ -634,22 +711,71 @@ describe('own-row read/update via the edit secret', () => {
   });
 
   it('404s a missing, malformed, or unknown edit secret', async () => {
-    expect((await getMe(secretA)).status).toBe(404);
-    expect((await getMe(secretA, { 'x-slideless-response': 'short' })).status).toBe(404);
-    expect((await getMe(secretA, { 'x-slideless-response': 'A'.repeat(64) })).status).toBe(404);
+    expect((await getMe(secretA, 'rsvp')).status).toBe(404);
+    expect((await getMe(secretA, 'rsvp', { 'x-slideless-response': 'short' })).status).toBe(404);
+    expect((await getMe(secretA, 'rsvp', { 'x-slideless-response': 'A'.repeat(64) })).status).toBe(404);
+  });
+
+  it('PRDCT-1334: the own-row routes are FORM-SCOPED — a valid secret cannot reach another form', async () => {
+    // Two forms, one page, one respondent: the runtime used to keep a single
+    // module-level secret, so editing `rsvp` filed the edit under
+    // `feedback` and destroyed that answer while the card said "updated".
+    // The routes now name the form and the server refuses the mismatch,
+    // whatever the client sends.
+    const twoFormDeck = await uploadDeck('Two Forms', [entryOf('index.html', HTML_TWO_FORMS)]);
+    const { secret } = await createToken({ name: 'Two Forms Link' }, twoFormDeck);
+    const rsvp = await readJson(await submit(secret, 'rsvp', { payload: { who: 'Ada' } }));
+    const feedback = await readJson(await submit(secret, 'feedback', { payload: { note: 'good' } }));
+
+    // The rsvp secret on the feedback route: 404, and nothing is written.
+    const crossGet = await getMe(secret, 'feedback', { 'x-slideless-response': rsvp.editSecret });
+    expect(crossGet.status).toBe(404);
+    const crossPut = await putMe(
+      secret,
+      'feedback',
+      { payload: { note: 'HIJACKED' } },
+      { 'x-slideless-response': rsvp.editSecret }
+    );
+    expect(crossPut.status).toBe(404);
+    const crossMail = await emailMe(
+      secret,
+      'feedback',
+      { email: 'cross@forms.test' },
+      { 'x-slideless-response': rsvp.editSecret }
+    );
+    expect(crossMail.status).toBe(404);
+
+    // Both rows are exactly as their own respondents left them.
+    const listed = await ownerList(twoFormDeck);
+    const byForm = Object.fromEntries(
+      listed.responses.map((r: { formName: string; payload: unknown; id: string }) => [r.formName, r])
+    );
+    expect(byForm['feedback'].payload).toEqual({ note: 'good' });
+    expect(byForm['feedback'].id).toBe(feedback.response.id);
+    expect(byForm['rsvp'].payload).toEqual({ who: 'Ada' });
+
+    // Each secret still works on its OWN form.
+    const own = await putMe(
+      secret,
+      'rsvp',
+      { payload: { who: 'Ada again' } },
+      { 'x-slideless-response': rsvp.editSecret }
+    );
+    expect(own.status).toBe(200);
   });
 
   it("404s an edit secret presented through ANOTHER token's session (no foreign-row oracle)", async () => {
-    const foreignGet = await getMe(secretB, { 'x-slideless-response': editSecret });
+    const foreignGet = await getMe(secretB, 'rsvp', { 'x-slideless-response': editSecret });
     expect(foreignGet.status).toBe(404);
     const foreignPut = await putMe(
       secretB,
+      'rsvp',
       { payload: { name: 'hijack' } },
       { 'x-slideless-response': editSecret }
     );
     expect(foreignPut.status).toBe(404);
     // The row is untouched.
-    const still = await readJson(await getMe(secretA, { 'x-slideless-response': editSecret }));
+    const still = await readJson(await getMe(secretA, 'rsvp', { 'x-slideless-response': editSecret }));
     expect(still.response.payload).toEqual({ name: 'Eve', dish: 'pie' });
   });
 
@@ -657,6 +783,7 @@ describe('own-row read/update via the edit secret', () => {
     await sleep(20);
     const res = await putMe(
       secretA,
+      'rsvp',
       { payload: { name: 'Eve', dish: 'cake' } },
       { 'x-slideless-response': editSecret }
     );
@@ -664,19 +791,19 @@ describe('own-row read/update via the edit secret', () => {
     const body = await readJson(res);
     expect(body.response.id).toBe(responseId); // same row, not a new one
     expect(body.response.payload).toEqual({ name: 'Eve', dish: 'cake' });
-    expect(new Date(body.response.updatedAt).getTime()).toBeGreaterThan(
-      new Date(createdUpdatedAt).getTime()
-    );
+    expect(new Date(body.response.updatedAt).getTime()).toBeGreaterThan(new Date(createdUpdatedAt).getTime());
 
     // Validation applies to updates too.
     const nested = await putMe(
       secretA,
+      'rsvp',
       { payload: { a: { deep: true } } },
       { 'x-slideless-response': editSecret }
     );
     expect(nested.status).toBe(400);
     const oversized = await putMe(
       secretA,
+      'rsvp',
       { payload: { essay: 'z'.repeat(33 * 1024) } },
       { 'x-slideless-response': editSecret }
     );
@@ -706,6 +833,7 @@ describe('email-me-my-link', () => {
     const before = mail.sent.length;
     const res = await emailMe(
       secret,
+      'rsvp',
       { email: 'MiXed@Forms.TEST' },
       { 'x-slideless-response': editSecret }
     );
@@ -720,10 +848,15 @@ describe('email-me-my-link', () => {
   });
 
   it('rejects an invalid address and requires the edit secret', async () => {
-    const bad = await emailMe(secret, { email: 'not-an-email' }, { 'x-slideless-response': editSecret });
+    const bad = await emailMe(
+      secret,
+      'rsvp',
+      { email: 'not-an-email' },
+      { 'x-slideless-response': editSecret }
+    );
     expect(bad.status).toBe(400);
     expect((await readJson(bad)).error.code).toBe('validation_error');
-    const noSecret = await emailMe(secret, { email: 'a@b.test' });
+    const noSecret = await emailMe(secret, 'rsvp', { email: 'a@b.test' });
     expect(noSecret.status).toBe(404);
   });
 
@@ -734,6 +867,7 @@ describe('email-me-my-link', () => {
     for (let i = 0; i < 5; i++) {
       const res = await emailMe(
         s,
+        'rsvp',
         { email: `drain${i}@forms.test` },
         { 'x-slideless-response': minted.editSecret, 'x-forwarded-for': ip }
       );
@@ -741,6 +875,7 @@ describe('email-me-my-link', () => {
     }
     const limited = await emailMe(
       s,
+      'rsvp',
       { email: 'drain-final@forms.test' },
       { 'x-slideless-response': minted.editSecret, 'x-forwarded-for': ip }
     );
@@ -754,6 +889,7 @@ describe('email-me-my-link', () => {
     for (let i = 0; i < 5; i++) {
       const res = await emailMe(
         s,
+        'rsvp',
         { email: 'shared@forms.test' }, // same address…
         { 'x-slideless-response': minted.editSecret } // …rotating IPs (nextIp)
       );
@@ -761,6 +897,7 @@ describe('email-me-my-link', () => {
     }
     const limited = await emailMe(
       s,
+      'rsvp',
       { email: 'shared@forms.test' },
       { 'x-slideless-response': minted.editSecret }
     );
@@ -811,7 +948,10 @@ describe("mail driver 'none'", () => {
     );
     expect(commit.status).toBe(201);
     const token = await readJson(
-      await app2.app.request(`/api/v1/presentations/${deck2}/tokens`, json({ name: 'NM' }, { cookie: cookie2 }))
+      await app2.app.request(
+        `/api/v1/presentations/${deck2}/tokens`,
+        json({ name: 'NM' }, { cookie: cookie2 })
+      )
     );
     secret2 = token.secret;
   }, 120_000);
@@ -820,7 +960,7 @@ describe("mail driver 'none'", () => {
     await app2?.stop();
   });
 
-  it("hides the opt-in (emailAvailable:false), 400s the email leg, and never auto-mails", async () => {
+  it('hides the opt-in (emailAvailable:false), 400s the email leg, and never auto-mails', async () => {
     const entry = await app2.app.request(`/v/${secret2}/`, { headers: { accept: 'text/html' } });
     expect(await entry.text()).toContain('"emailAvailable":false');
 
@@ -833,7 +973,7 @@ describe("mail driver 'none'", () => {
     const body = await readJson(created);
     expect(body.emailSent).toBe(false);
 
-    const denied = await app2.app.request(`/api/v1/viewer/${secret2}/forms/responses/me/email`, {
+    const denied = await app2.app.request(`/api/v1/viewer/${secret2}/forms/rsvp/responses/me/email`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -848,67 +988,119 @@ describe("mail driver 'none'", () => {
   });
 });
 
-// ═══ Respondent assertion (leg 3) ════════════════════════════════════════════
+// ═══ Leg 3 is GONE (PRDCT-1331) ══════════════════════════════════════════════
 
-describe('respondent assertion', () => {
+describe('no respondent identity, by construction', () => {
   let secret: string;
   let tokenId: string;
 
   beforeAll(async () => {
-    ({ secret, id: tokenId } = await createToken({ name: 'Asserted' }));
+    ({ secret, id: tokenId } = await createToken({ name: 'Anonymous Only' }));
   });
 
-  it('a validly minted assertion stamps respondent_user_id and auto-emails the edit link', async () => {
-    const assertion = mintRespondentAssertion(AUTH_SECRET, tokenId, ownerUserId);
-    const before = mail.sent.length;
-    const res = await submit(secret, 'rsvp', { payload: { name: 'Known' }, assertion });
-    expect(res.status).toBe(201);
-    const body = await readJson(res);
-    expect(body.emailSent).toBe(true);
-    expect(mail.sent.length).toBe(before + 1);
-    expect(mail.sent[before]!.to).toBe(OWNER.email);
-    expect(mail.sent[before]!.text).toContain(`#slr=${body.editSecret}`);
-    // The respondent wire itself never carries the identity.
-    expect(body.response.respondentUserId).toBeUndefined();
-
-    const listed = await ownerList(deckId, `?token=${tokenId}`);
-    const row = listed.responses.find((r: { id: string }) => r.id === body.response.id);
-    expect(row).toMatchObject({ respondentUserId: ownerUserId, respondentEmail: OWNER.email });
-  });
-
-  it('a forged, foreign-token, or expired assertion degrades to anonymous — never a 4xx', async () => {
-    const valid = mintRespondentAssertion(AUTH_SECRET, tokenId, ownerUserId);
-    // Tampered MAC: flip the last character.
-    const tampered =
-      valid.slice(0, -1) + (valid.endsWith('A') ? 'B' : 'A');
-    // Minted for a DIFFERENT token: must not vouch on this link.
-    const foreign = await createToken({ name: 'Other Link' });
-    const foreignAssertion = mintRespondentAssertion(AUTH_SECRET, foreign.id, ownerUserId);
-    // Expired: hand-built with the exact viewer-respondent MAC label but a
-    // past expiry (mintRespondentAssertion has no TTL knob on purpose).
-    const exp = Date.now() - 60_000;
-    const staleMac = createHmac('sha256', AUTH_SECRET)
+  it('stores anonymously whatever assertion-shaped input a submit carries', async () => {
+    // Anything a client claims about identity is stripped by the schema and
+    // never reaches a column. The shapes below are the exact ones leg 3
+    // accepted, including one minted with the real MAC label and auth
+    // secret — the value type that used to work.
+    const exp = Date.now() + 60_000;
+    const encoded = Buffer.from(ownerUserId, 'utf8').toString('base64url');
+    // Exactly the value leg 3 minted and verified: the real MAC label, the
+    // real auth secret, a live expiry. It must still store anonymously.
+    const macd = createHmac('sha256', AUTH_SECRET)
       .update(`viewer-respondent\n${tokenId}\n${ownerUserId}\n${exp}`)
       .digest('base64url');
-    const stale = `${Buffer.from(ownerUserId, 'utf8').toString('base64url')}.${exp}.${staleMac}`;
-
+    const shapes: Array<Record<string, unknown>> = [
+      { assertion: `${encoded}.${exp}.${macd}` },
+      { assertion: 'garbage' },
+      { respondentUserId: ownerUserId },
+      { respondent_user_id: ownerUserId },
+      { respondentEmail: OWNER.email }
+    ];
     const before = mail.sent.length;
-    for (const assertion of [tampered, foreignAssertion, stale, 'garbage']) {
-      const res = await submit(secret, 'rsvp', { payload: { who: 'anon' }, assertion });
+    for (const extra of shapes) {
+      const res = await submit(secret, 'rsvp', { payload: { who: 'anon' }, ...extra });
       expect(res.status).toBe(201);
       expect((await readJson(res)).emailSent).toBe(false);
     }
-    expect(mail.sent.length).toBe(before); // no mail for any of them
+    // No auto-mail for any of them: the leg-3 mail never consulted the email
+    // limiter, so a replayed submit was a mail amplifier at a stranger.
+    expect(mail.sent.length).toBe(before);
 
-    const listed = await ownerList(deckId, `?token=${tokenId}`);
-    const anon = listed.responses.filter(
-      (r: { payload: Record<string, unknown> }) => r.payload['who'] === 'anon'
+    // Rows are anonymous in the database itself, not merely on the wire.
+    const rows = await app.db.db.select().from(formResponses).where(eq(formResponses.shareTokenId, tokenId));
+    expect(rows).toHaveLength(shapes.length);
+    for (const row of rows) expect(row.respondentUserId).toBeNull();
+  });
+
+  it('a signed-in browser submit is anonymous too (the cookie can no longer be turned into an identity)', async () => {
+    const { secret: s, id } = await createToken({ name: 'Cookied' });
+    const res = await submit(s, 'rsvp', { payload: { who: 'signed-in' } }, { cookie });
+    expect(res.status).toBe(201);
+    const [row] = await app.db.db.select().from(formResponses).where(eq(formResponses.shareTokenId, id));
+    expect(row!.respondentUserId).toBeNull();
+  });
+});
+
+// ═══ Attribution re-stamped on update (PRDCT-1332) ═══════════════════════════
+
+describe('update re-stamps attribution', () => {
+  it("an edit from a different source and placement no longer keeps the creator's", async () => {
+    // The link cannot change (an edit secret is bound to its token — the
+    // cross-token 404 above), but source and placement can: the same link
+    // read directly, then edited from inside an embed on a blog post.
+    const deck = await uploadDeck('Restamp Deck', [entryOf('index.html', HTML_V1)]);
+    const link = await createToken({ name: 'One Link' }, deck);
+
+    const first = await readJson(
+      await submit(link.secret, 'rsvp', { payload: { a: '1' }, source: 'link', placement: 'launch' })
     );
-    expect(anon).toHaveLength(4);
-    for (const row of anon) {
-      expect(row.respondentUserId).toBeNull();
-      expect(row.respondentEmail).toBeNull();
-    }
+    expect((await ownerList(deck)).responses[0]).toMatchObject({
+      source: 'link',
+      placement: 'launch'
+    });
+
+    const put = await putMe(
+      link.secret,
+      'rsvp',
+      { payload: { a: '2' }, source: 'embed', placement: 'blog-post' },
+      { 'x-slideless-response': first.editSecret }
+    );
+    expect(put.status).toBe(200);
+
+    const listed = await ownerList(deck);
+    expect(listed.responses).toHaveLength(1);
+    expect(listed.responses[0]).toMatchObject({
+      id: first.response.id,
+      shareTokenId: link.id,
+      source: 'embed',
+      placement: 'blog-post',
+      payload: { a: '2' }
+    });
+
+    // An illegal placement on an edit is sanitized like any other.
+    const dirty = await putMe(
+      link.secret,
+      'rsvp',
+      { payload: { a: '3' }, placement: 'bad label!' },
+      { 'x-slideless-response': first.editSecret }
+    );
+    expect(dirty.status).toBe(200);
+    expect((await ownerList(deck)).responses[0].placement).toBeNull();
+  });
+
+  it('an update cannot claim a version the editing link never served', async () => {
+    const deck = await uploadDeck('Restamp Pin', [entryOf('index.html', HTML_V1)]);
+    const { secret } = await createToken({ name: 'Pinned Edit' }, deck);
+    const created = await readJson(await submit(secret, 'rsvp', { payload: { a: '1' } }));
+    const bad = await putMe(
+      secret,
+      'rsvp',
+      { payload: { a: '2' }, version: 99 },
+      { 'x-slideless-response': created.editSecret }
+    );
+    expect(bad.status).toBe(400);
+    expect((await readJson(bad)).error.code).toBe('invalid_version');
   });
 });
 
@@ -1188,7 +1380,7 @@ describe('owner responses surface (list / summary / delete)', () => {
     });
     expect(viaKey.status).toBe(403);
     expect((await readJson(viaKey)).error.code).toBe('endpoint_not_allowed');
-    const readViaKey = await app.app.request(`/api/v1/viewer/${tokenA.secret}/forms/responses/me`, {
+    const readViaKey = await app.app.request(`/api/v1/viewer/${tokenA.secret}/forms/rsvp/responses/me`, {
       headers: { authorization: `Bearer ${minted.key}` }
     });
     expect(readViaKey.status).toBe(403);

@@ -68,6 +68,13 @@ export const EMBED_JS_SOURCE = `/* Slideless official embed loader — https://g
     }
     var placement = el.getAttribute('data-slideless-placement');
     if (placement) url.searchParams.set('p', placement);
+    // Drop any fragment the embedding page supplied. The loader validates
+    // the PATH and used to forward url.href whole, so a site could mount
+    // .../v/{secret}/#slr=<their own response's edit secret> and harvest
+    // whatever a visitor typed into the deck's form: the runtime adopted the
+    // fragment and the visitor's answers overwrote the framer's row
+    // (PRDCT-1332, audit §2). The fragment carries nothing an embed needs.
+    url.hash = '';
     var ratio = el.getAttribute('data-aspect-ratio');
     var frame = document.createElement('iframe');
     frame.setAttribute('sandbox', SANDBOX);

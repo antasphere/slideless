@@ -545,22 +545,12 @@ export async function boot(
     clientIp: makeClientIp(env.TRUST_PROXY),
     secureCookies: env.PUBLIC_BASE_URL.startsWith('https://'),
     viewDedupeWindowMs: env.VIEW_DEDUPE_WINDOW_MINUTES * 60_000,
-    emailDelivers: email.delivers,
-    // ADR 022 leg 3: the signed-in viewer of a top-level share-link
-    // navigation, validated against the session store (never a claim). The
-    // cookie-name sniff is a cheap pre-filter — Better Auth session cookies
-    // all carry 'session_token' — so anonymous viewers (and unlock/viewed
-    // cookie holders) skip the lookup; getSession stays the validator.
-    resolveSessionUserId: async (c) => {
-      const cookie = c.req.header('cookie');
-      if (!cookie || !cookie.includes('session_token')) return null;
-      try {
-        const session = await auth.api.getSession({ headers: c.req.raw.headers });
-        return session?.user.id ?? null;
-      } catch {
-        return null;
-      }
-    }
+    // The forms runtime's email opt-in flag. NOTHING identity-shaped is
+    // handed to the viewer any more: ADR 022 leg 3 read the serving
+    // request's session here and injected a signed assertion of the viewer's
+    // identity into the deck document, which deck JS could lift
+    // (PRDCT-1331). Never reintroduce a session read on this path.
+    emailDelivers: email.delivers
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.

@@ -61,10 +61,12 @@ export const formResponseSchema = z.object({
   source: formResponseSourceSchema,
   /** Sanitized `?p=` label of the serving document; null when absent/illegal. */
   placement: z.string().nullable(),
-  /** Set ONLY when a signed-in viewer's serve-time assertion verified. */
-  respondentUserId: z.string().nullable(),
-  /** The asserted respondent's account email, joined for attribution. */
-  respondentEmail: z.string().nullable(),
+  // NO respondent identity on this wire. ADR 022 leg 3 put the viewer's
+  // account id and email here; the identity was minted into the deck
+  // document and provably forgeable by deck JS, and the email made the
+  // listing an exfiltration shape for any `presentations:read` machine key
+  // (PRDCT-1331, audit §1). A response is anonymous unless the AUTHOR asked
+  // for a name in the form.
   payload: formResponsePayloadSchema,
   createdAt: z.string(),
   updatedAt: z.string()

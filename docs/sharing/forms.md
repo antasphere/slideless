@@ -39,9 +39,9 @@ Submitting swaps the form for a confirmation card, with double-submit protection
 
 - **The personal edit link**: the page URL plus a private `#slr=` fragment. Opening it later prefills the form with the viewer's own answer, and submitting again updates it in place. One respondent keeps one evolving response instead of piling up duplicates. The fragment never travels to the server as part of a request URL, so the edit secret stays out of logs; it is shown once, and without it a new submission is simply a new response.
 - **Email me my link** (optional): the card offers to mail the edit link to an address the viewer types at that moment. The field appears only on instances that send email, and the mail only ever carries that viewer's own link.
-- **Automatic recognition for signed-in viewers on direct links.** When someone opens a share link in a browser where they are signed in to the same Slideless instance, their submission is attributed to their account, and on instances that send email the edit link is mailed to their account address with no prompting. Everyone else stays anonymous. Inside embeds nobody is auto-recognized (see below).
+- **Returning with an edit link asks first.** Opening a `#slr=` link does not silently put the form into edit mode. The card explains that the link points at a response submitted on a given date and offers _Edit that response_ or _Submit a new response_, defaulting to a new one. The link may have been forwarded, pasted on a page, or handed out deliberately, and overwriting a stranger's answers must never happen by merely opening a URL.
 
-A form is otherwise anonymous by design: if you want names or emails in the data, add fields for them. The deck author decides what to ask, and Slideless never infers meaning from the answers.
+**Responses are anonymous.** Slideless never attaches a viewer's account to a response, even when they happen to be signed in to the same instance in the same browser. A deck runs in a sandbox, and anything the page is told, the deck's own scripts can read and replay, so an identity handed to the page would be an identity anyone could claim. If you want names or emails in the data, add fields for them: the deck author decides what to ask, and Slideless never infers meaning from the answers.
 
 ## Collecting responses
 
@@ -81,7 +81,7 @@ On a link with forms off, no submission wiring is served and direct submission a
 Two embed rules carry over:
 
 - **Password-protected links stay unusable in embeds.** The password gate never renders inside a frame, so such a link's forms are unreachable there too. Embed links without a password.
-- **No automatic recognition in embeds.** An embedded view can never see a Slideless sign-in, so responses from embeds stay anonymous unless the form itself asks. The personal edit link and the email option work exactly the same from inside an embed.
+- **Responses stay anonymous**, exactly as they do on a direct link, unless the form itself asks. The personal edit link and the email option work the same from inside an embed, and the loader ignores any `#…` fragment on a `data-slideless-embed` URL, so an embedding page cannot point visitors at somebody else's response.
 
 ## Limits
 
@@ -92,7 +92,7 @@ Two embed rules carry over:
 
 ## What is stored, and what is never stored
 
-A response stores the answer exactly as submitted, plus attribution context: the form name, the deck version, the share link, `link` or `embed`, the placement label, and (only for a recognized signed-in respondent on a direct link) their account identity. As with [link analytics](link-analytics.md), on every edition, self-hosted included:
+A response stores the answer exactly as submitted, plus attribution context: the form name, the deck version, the share link, `link` or `embed`, and the placement label. **No respondent identity is ever stored** — see above. Editing a response re-stamps that context from the visit that made the edit, so it describes where the answer came from now, not where it started. As with [link analytics](link-analytics.md), on every edition, self-hosted included:
 
 - **No IP addresses** are stored on responses.
 - **No User-Agent strings.**

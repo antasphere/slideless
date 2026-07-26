@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -20,8 +21,8 @@ import {
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
 import { embedRoutes } from './embed.js';
-import { docNavigation, entryTransformFor, frameNavigation, type EntryTransform } from './inject.js';
-import { mintRespondentAssertion } from './respondent.js';
+import { docNavigation, entryInjectionFor, frameNavigation, type InjectionPlan } from './inject.js';
+import { injectIntoStream } from './inject-stream.js';
 import { mintUnlockValue, unlockCookieName, UNLOCK_TTL_MS, verifyUnlockValue } from './unlock.js';
 import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.js';
 
@@ -91,13 +92,6 @@ export interface ViewerDeps {
   viewDedupeWindowMs: number;
   /** Whether the instance's mail driver delivers — the forms runtime's email opt-in flag. */
   emailDelivers: boolean;
-  /**
-   * The signed-in viewer of THIS request, or null (ADR 022 leg 3): resolved
-   * from the first-party session cookie a top-level share-link navigation
-   * carries, validated against the session store (the break-glass posture —
-   * never a claim). Called only when the forms runtime would inject.
-   */
-  resolveSessionUserId: (c: Context) => Promise<string | null>;
 }
 
 /** Everything resolved about one viewer request before bytes are served. */
@@ -393,21 +387,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   }
 
   /** The injection seam's inputs for this request (viewer/inject.ts). */
-  async function transformContextFor(c: Context, view: ResolvedView) {
+  function transformContextFor(c: Context, view: ResolvedView) {
     const { token, deck, version } = view;
     const raw = rawRequested(c);
     const browserEntry = docNavigation(c);
-    // Leg 3 (ADR 022): only a top-level DOCUMENT navigation can carry the
-    // first-party session cookie (a cross-site embed frame never sends it),
-    // so the session lookup is skipped everywhere else — anonymous viewers
-    // cost nothing extra.
-    let respondentAssertion: string | null = null;
-    if (browserEntry && !raw && token.canSubmitForms) {
-      const userId = await deps.resolveSessionUserId(c);
-      if (userId !== null) {
-        respondentAssertion = mintRespondentAssertion(deps.authSecret, token.id, userId);
-      }
-    }
     return {
       token,
       rawRequested: raw,
@@ -421,7 +404,9 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       // Submission attribution (ADR 022): the ?p= label of THIS navigation,
       // sanitized exactly like the view event's.
       placement: viewPlacement(c.req.query('p')),
-      respondentAssertion,
+      // PRDCT-1333: the forms runtime rides only versions that actually hold
+      // a form, so a form-less deck keeps its streaming ETag serve.
+      versionHasForms: version.hasForms,
       emailAvailable: deps.emailDelivers,
       mintUnlockProof: () =>
         token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
@@ -429,32 +414,39 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   }
 
   /**
-   * Buffer a blob, apply the overlay transform, and serve the result.
-   * Transformed responses re-assert the exact ADR 012 header set and carry
-   * deliberately NO ETag: serveBlob's content-sha ETag would lie about the
-   * mutated bytes (they are no-store anyway, so nothing is lost). Returns
-   * null when the blob is gone (caller answers its own 404).
+   * STREAM a blob through the injector and serve the result. Transformed
+   * responses re-assert the exact ADR 012 header set and carry deliberately
+   * NO ETag: serveBlob's content-sha ETag would lie about the mutated bytes
+   * (they are no-store anyway, so nothing is lost). Returns null when the
+   * blob is gone (caller answers its own 404).
+   *
+   * This used to read the whole document into a Buffer[] and stringify it.
+   * With `can_submit_forms` defaulting ON that became the path EVERY share
+   * link took, and one anonymous GET of a 100 MB deck peaked the server
+   * around a gigabyte — on a route with no rate limiter at all
+   * (PRDCT-1333). Peak memory is now the injector's fixed window.
    */
-  async function serveTransformed(
+  async function serveInjected(
     c: Context,
     workspaceId: string,
     sha256: string,
-    transform: EntryTransform,
+    plan: InjectionPlan,
     baseHeaders: Record<string, string>
   ): Promise<Response | null> {
     const key = blobKey(workspaceId, sha256);
     if (!(await storage.exists(key))) return null;
-    const chunks: Buffer[] = [];
-    for await (const chunk of await storage.getStream(key)) {
-      chunks.push(chunk as Buffer);
-    }
-    const html = transform(Buffer.concat(chunks).toString('utf8'));
     const headers = {
       ...baseHeaders,
       'content-type': 'text/html; charset=utf-8',
       'content-disposition': 'inline'
     };
-    return c.req.method === 'HEAD' ? c.body(null, 200, headers) : c.body(html, 200, headers);
+    if (c.req.method === 'HEAD') return c.body(null, 200, headers);
+    const source = await storage.getStream(key);
+    // A client abort must destroy the source or every seek-away leaks a
+    // descriptor / S3 socket (the serveBlob posture).
+    c.req.raw.signal.addEventListener('abort', () => source.destroy());
+    const web = Readable.toWeb(injectIntoStream(source, plan)) as unknown as ReadableStream;
+    return c.body(web, 200, headers);
   }
 
   // ── Entry URL canonicalization ─────────────────────────────────────────────
@@ -551,9 +543,9 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     // The injection seam (Phase 5 overlay + ADR 022 forms). null = stream
     // untouched; the per-runtime gates (inject.ts) keep agents, raw pulls,
     // and non-frame sub-resources byte-exact.
-    const transform = entryTransformFor(await transformContextFor(c, resolved.view));
-    if (transform) {
-      const served = await serveTransformed(c, token.workspaceId, entry.sha256, transform, entryHeaders);
+    const plan = entryInjectionFor(transformContextFor(c, resolved.view));
+    if (plan) {
+      const served = await serveInjected(c, token.workspaceId, entry.sha256, plan, entryHeaders);
       if (!served) {
         return viewerError(c, {
           status: 404,
@@ -628,11 +620,9 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     // below. Transformed sub-pages are no-store like the entry — with the
     // ETag gone there is no validator, so no-cache would just refetch.
     const isHtmlDoc = entry.contentType.toLowerCase().startsWith('text/html');
-    const transform = isHtmlDoc
-      ? entryTransformFor(await transformContextFor(c, resolved.view))
-      : null;
-    if (transform) {
-      const served = await serveTransformed(c, token.workspaceId, entry.sha256, transform, {
+    const plan = isHtmlDoc ? entryInjectionFor(transformContextFor(c, resolved.view)) : null;
+    if (plan) {
+      const served = await serveInjected(c, token.workspaceId, entry.sha256, plan, {
         ...VIEWER_CONTENT_HEADERS,
         'cache-control': 'no-store'
       });

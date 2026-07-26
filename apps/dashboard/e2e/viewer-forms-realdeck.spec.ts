@@ -1,0 +1,330 @@
+import { createHash } from 'node:crypto';
+import { test, expect, type Page } from '@playwright/test';
+import { OWNER } from './accounts';
+import {
+  ARCHITECTURE_DECK_HTML,
+  HASH_DECK_HTML,
+  LATE_DECK_HTML,
+  REALDECK_SUCCESS,
+  TWO_FORMS_DECK_HTML
+} from './deck-fixtures';
+
+/**
+ * PRDCT-1334 + PRDCT-1332 — the forms runtime IN ITS HABITAT.
+ *
+ * The pre-existing forms specs drive a bare `<form>` on an otherwise empty
+ * page. That is why a feature whose own suite was 7/7 green broke five of
+ * five genuine presentations: every real deck binds document-level keydown
+ * and click navigation, and the runtime shielded only its confirmation
+ * card. These specs use fixtures whose navigation engines are lifted
+ * verbatim from `workspace/content/presentations/` (see deck-fixtures.ts).
+ *
+ * Each `test` names ONE audit finding and fails on its own if that finding
+ * regresses — deliberately not one long chained scenario, so a single
+ * broken defence cannot hide behind an earlier assertion.
+ */
+
+const shaOf = (text: string) => createHash('sha256').update(Buffer.from(text)).digest('hex');
+
+interface ResponseRow {
+  id: string;
+  formName: string;
+  payload: Record<string, string | string[]>;
+}
+
+async function signIn(page: Page): Promise<void> {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(OWNER.email);
+  await page.getByLabel('Password').fill(OWNER.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+}
+
+/** Push a one-file deck and mint a default share link (forms ON by default). */
+async function seedDeck(
+  page: Page,
+  title: string,
+  html: string
+): Promise<{ deckId: string; secret: string }> {
+  const reserve = await page.request.post('/api/v1/presentations/uploads');
+  expect(reserve.status()).toBe(201);
+  const { uploadSession } = await reserve.json();
+  const upload = await page.request.post('/api/v1/presentations/assets', {
+    multipart: {
+      sha256: shaOf(html),
+      file: { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(html) }
+    }
+  });
+  expect(upload.status()).toBe(201);
+  const commit = await page.request.post(`/api/v1/presentations/uploads/${uploadSession.id}/commit`, {
+    data: {
+      title,
+      entryPath: 'index.html',
+      manifest: [
+        {
+          path: 'index.html',
+          sha256: shaOf(html),
+          sizeBytes: Buffer.byteLength(html),
+          contentType: 'text/html'
+        }
+      ]
+    }
+  });
+  expect(commit.status()).toBe(201);
+  const deckId = (await commit.json()).presentation.id;
+  const token = await page.request.post(`/api/v1/presentations/${deckId}/tokens`, {
+    data: { name: `e2e-${title}` }
+  });
+  expect(token.status()).toBe(201);
+  return { deckId, secret: (await token.json()).secret };
+}
+
+async function listResponses(page: Page, deckId: string): Promise<ResponseRow[]> {
+  const listed = await page.request.get(`/api/v1/presentations/${deckId}/responses`);
+  expect(listed.status()).toBe(200);
+  return (await listed.json()).responses as ResponseRow[];
+}
+
+test.describe('forms runtime in a real slide deck', () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+  });
+
+  test('§4.1 deck handlers do not own the form: clicking, spacing and submitting stay on the slide', async ({
+    page,
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'ArchDeck', ARCHITECTURE_DECK_HTML);
+    const visitor = await (await browser.newContext()).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+
+    // Reach the form's slide with the deck's OWN keyboard nav: the shield is
+    // scoped to the form, it must not disarm the deck.
+    await expect(visitor.locator('#count')).toHaveText('1');
+    await visitor.locator('body').press('ArrowRight');
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await expect(visitor.locator('form[data-slideless-form="contact"]')).toBeVisible();
+
+    // 1. Clicking a field must not drive the #deck click handler. The field
+    //    sits left of centre, which in this engine means "previous slide".
+    await visitor.locator('#f-name').click();
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await expect(visitor.locator('#f-name')).toBeFocused();
+
+    // 2. SPACE must reach the input, not the deck. The deck's handler both
+    //    advances AND preventDefaults, so the original failure lost the
+    //    space from the value ("JeanDupont") and moved the slide.
+    await visitor.locator('#f-name').pressSequentially('Jean Dupont', { delay: 10 });
+    await expect(visitor.locator('#f-name')).toHaveValue('Jean Dupont');
+    await expect(visitor.locator('#count')).toHaveText('2');
+
+    // 3. Arrow keys inside a text field belong to the field's caret, not to
+    //    the deck's navigation.
+    await visitor.locator('#f-mail').pressSequentially('jean@exemple.be', { delay: 10 });
+    await visitor.locator('#f-mail').press('ArrowLeft');
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await expect(visitor.locator('#f-mail')).toHaveValue('jean@exemple.be');
+
+    // 4. Submitting must not navigate: the confirmation card has to be born
+    //    on the VISIBLE slide, or the respondent never sees their edit link.
+    await visitor.locator('#f-send').click();
+    const card = visitor.locator('[data-slideless-card="contact"]');
+    await expect(card).toBeVisible();
+    await expect(card.locator('.sl-forms-ok')).toHaveText(REALDECK_SUCCESS);
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await expect(card.locator('.sl-forms-link')).toContainText(`/v/${secret}/#slr=`);
+
+    // …and clicking inside the card does not navigate the deck either.
+    await card.locator('.sl-forms-ok').click();
+    await expect(visitor.locator('#count')).toHaveText('2');
+
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      formName: 'contact',
+      payload: { name: 'Jean Dupont', email: 'jean@exemple.be' }
+    });
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('§4.2 two forms on one page: editing one never touches the other', async ({ page, browser }) => {
+    const { deckId, secret } = await seedDeck(page, 'TwoForms', TWO_FORMS_DECK_HTML);
+    const visitor = await (await browser.newContext()).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+    await visitor.locator('body').press('ArrowRight');
+    await expect(visitor.locator('form[data-slideless-form="public"]')).toBeVisible();
+
+    // Submit `public`, THEN `salary`. The old runtime kept ONE module-level
+    // editSecret, so the second create clobbered the first form's handle.
+    await visitor.locator('#pub-note').fill('nothing to hide');
+    await visitor.locator('#pub-send').click();
+    await expect(visitor.locator('[data-slideless-card="public"]')).toBeVisible();
+
+    await visitor.locator('#sal-amount').fill('42000');
+    await visitor.locator('#sal-send').click();
+    await expect(visitor.locator('[data-slideless-card="salary"]')).toBeVisible();
+
+    expect(await listResponses(page, deckId)).toHaveLength(2);
+
+    // Correct the PUBLIC answer. With the shared secret this filed the
+    // correction under `salary`, destroying the salary answer, while the
+    // card told the respondent "Your response has been updated."
+    const publicCard = visitor.locator('[data-slideless-card="public"]');
+    await publicCard.getByRole('button', { name: 'Edit response' }).click();
+    await expect(visitor.locator('form[data-slideless-form="public"]')).toBeVisible();
+    await visitor.locator('#pub-note').fill('corrected note');
+    await visitor.locator('#pub-send').click();
+    await expect(visitor.locator('[data-slideless-card="public"] .sl-forms-ok')).toHaveText(
+      'Your response has been updated.'
+    );
+
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(2); // an update, never a third row
+    const byForm = Object.fromEntries(rows.map((r) => [r.formName, r.payload]));
+    expect(byForm['public']).toEqual({ note: 'corrected note' });
+    // The load-bearing assertion of this whole spec.
+    expect(byForm['salary']).toEqual({ amount: '42000' });
+
+    // The two cards advertise DIFFERENT edit links — one shared secret made
+    // form A's card hand out form B's respondent capability (verified in the
+    // audit via Mailpit, under text telling the recipient it is a password).
+    const pubLink = await publicCard.locator('.sl-forms-link').textContent();
+    const salLink = await visitor.locator('[data-slideless-card="salary"] .sl-forms-link').textContent();
+    expect(pubLink).not.toBe(salLink);
+
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('§4.3 a form rendered on DOMContentLoaded is still intercepted', async ({ page, browser }) => {
+    const { deckId, secret } = await seedDeck(page, 'LateDeck', LATE_DECK_HTML);
+    const visitor = await (await browser.newContext()).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+
+    await expect(visitor.locator('form[data-slideless-form="late"]')).toBeVisible();
+    await visitor.locator('#f-note').fill('rendered late');
+    await visitor.locator('#f-send').click();
+
+    // A missed form native-submits: the sandbox navigates with the answers
+    // in the query string and nothing is stored. Both halves are asserted.
+    await expect(visitor.locator('[data-slideless-card="late"]')).toBeVisible();
+    expect(new URL(visitor.url()).search).toBe('');
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ formName: 'late', payload: { note: 'rendered late' } });
+
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('§4.4 a deck that rewrites its own hash does not destroy the edit link', async ({ page, browser }) => {
+    const { deckId, secret } = await seedDeck(page, 'HashDeck', HASH_DECK_HTML);
+    const origin = new URL(page.url()).origin;
+    const visitor = await (await browser.newContext()).newPage();
+    await visitor.goto(`${origin}/v/${secret}/`);
+    await visitor.locator('body').press('ArrowRight');
+    await expect(visitor.locator('form[data-slideless-form="avis"]')).toBeVisible();
+
+    // This engine makes DIGITS hotkeys (1..7), so an address with a digit
+    // used to jump the deck mid-typing.
+    await visitor.locator('#f-mail').pressSequentially('avis2@exemple.be', { delay: 10 });
+    await expect(visitor.locator('#f-mail')).toHaveValue('avis2@exemple.be');
+    await expect(visitor.locator('#count')).toHaveText('2');
+
+    await visitor.locator('#f-send').click();
+    const editUrl =
+      (await visitor.locator('[data-slideless-card="avis"] .sl-forms-link').textContent()) ?? '';
+    expect(editUrl).toContain('#slr=');
+    await visitor.context().close();
+
+    // The deck runs history.replaceState(null,'','#slide=1') at start-up,
+    // BEFORE the end-of-body runtime, so location.hash is already gone by
+    // the time the runtime reads it. The early <head> stub is what saves it.
+    const returning = await (await browser.newContext()).newPage();
+    await returning.goto(editUrl);
+    await expect(returning).toHaveURL(/#slide=1$/); // the deck did wipe it
+    await returning.locator('body').press('ArrowRight');
+
+    // PRDCT-1332: the fragment is a CANDIDATE, never adopted silently. This
+    // prompt existing at all is the proof the secret survived the wipe.
+    const resume = returning.locator('[data-slideless-resume="avis"]');
+    await expect(resume).toBeVisible();
+    await expect(returning.locator('#f-mail')).toHaveValue(''); // nothing adopted yet
+    await resume.getByRole('button', { name: 'Edit that response' }).click();
+    await expect(returning.locator('#f-mail')).toHaveValue('avis2@exemple.be');
+
+    await returning.locator('#f-mail').fill('avis3@exemple.be');
+    await returning.locator('#f-send').click();
+    await expect(returning.locator('[data-slideless-card="avis"] .sl-forms-ok')).toHaveText(
+      'Your response has been updated.'
+    );
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(1); // updated in place, not duplicated
+    expect(rows[0]!.payload).toEqual({ email: 'avis3@exemple.be' });
+
+    await returning.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('PRDCT-1332: a PLANTED #slr= creates a new row instead of overwriting the stranger it points at', async ({
+    page,
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'HijackDeck', ARCHITECTURE_DECK_HTML);
+    const origin = new URL(page.url()).origin;
+
+    // The attacker submits one blank response through the public link and
+    // keeps its edit secret. A blank payload makes the prefill invisible,
+    // which is what made the original attack silent to the victim.
+    const attacker = await (await browser.newContext()).newPage();
+    await attacker.goto(`${origin}/v/${secret}/`);
+    await attacker.locator('body').press('ArrowRight');
+    await attacker.locator('#f-send').click();
+    const attackerLink =
+      (await attacker.locator('[data-slideless-card="contact"] .sl-forms-link').textContent()) ?? '';
+    const attackerSecret = attackerLink.split('#slr=')[1] ?? '';
+    expect(attackerSecret).not.toBe('');
+    await attacker.context().close();
+
+    const before = await listResponses(page, deckId);
+    expect(before).toHaveLength(1);
+    const attackerRowId = before[0]!.id;
+
+    // The victim opens the ATTACKER's link and fills the form.
+    const victim = await (await browser.newContext()).newPage();
+    await victim.goto(attackerLink);
+    await victim.locator('body').press('ArrowRight');
+
+    // The hijack is now visible and consented: an explicit prompt, create is
+    // the default, nothing is prefilled and no secret is adopted.
+    await expect(victim.locator('[data-slideless-resume="contact"]')).toBeVisible();
+    await expect(victim.locator('#f-name')).toHaveValue('');
+    await victim.locator('#f-name').fill('Real Subscriber');
+    await victim.locator('#f-mail').fill('real.subscriber@bank.example');
+    await victim.locator('#f-send').click();
+    // The author's success message, NOT "updated" — the only tell the audit
+    // found for the victim, and it now says the truthful thing.
+    await expect(victim.locator('[data-slideless-card="contact"] .sl-forms-ok')).toHaveText(REALDECK_SUCCESS);
+
+    // TWO rows: the victim created their own, the attacker's is untouched.
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(2);
+    const attackerRow = rows.find((r) => r.id === attackerRowId);
+    expect(attackerRow!.payload).toEqual({ name: '', email: '' });
+    expect(rows.some((r) => r.payload['name'] === 'Real Subscriber')).toBe(true);
+
+    // And the attacker reading their own row back harvests nothing.
+    const readBack = await page.request.get(`${origin}/api/v1/viewer/${secret}/forms/contact/responses/me`, {
+      headers: { 'x-slideless-response': attackerSecret, origin: 'null' }
+    });
+    expect(readBack.status()).toBe(200);
+    expect((await readBack.json()).response.payload).toEqual({ name: '', email: '' });
+
+    await victim.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+});

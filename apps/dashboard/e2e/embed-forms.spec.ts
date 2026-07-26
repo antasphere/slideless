@@ -17,7 +17,14 @@ import { OWNER } from './accounts';
  *  - the recorded row carries source 'embed' and the
  *    `data-slideless-placement` label of the embedding div;
  *  - the confirmation card renders inside the frame with the personal
- *    edit link.
+ *    edit link;
+ *  - PRDCT-1332: the loader STRIPS any fragment the embedding page put in
+ *    `data-slideless-embed`. It validates `url.pathname` and used to
+ *    forward `url.href` whole, so a site could mount
+ *    `.../v/{secret}/#slr=<its own response's edit secret>` and harvest
+ *    whatever a visitor typed — their answers overwrote the framer's row,
+ *    which the framer then read back. The sandbox held throughout; this is
+ *    a fragment-channel attack, not an origin break.
  */
 
 const DECK_HTML = [
@@ -32,11 +39,15 @@ const DECK_HTML = [
 
 const shaOf = (text: string) => createHash('sha256').update(Buffer.from(text)).digest('hex');
 
-function embeddingPage(stackOrigin: string, secret: string): string {
+/**
+ * `fragment` is the hostile half: whatever the embedding SITE appends to
+ * the deck URL it hands the loader. Empty on the honest first render.
+ */
+function embeddingPage(stackOrigin: string, secret: string, fragment = ''): string {
   return [
     '<!doctype html><html><head><meta charset="utf-8"><title>Customer site</title></head><body>',
     '<h1>A customer page embedding a deck with a form</h1>',
-    `<div id="good" data-slideless-embed="${stackOrigin}/v/${secret}"`,
+    `<div id="good" data-slideless-embed="${stackOrigin}/v/${secret}${fragment}"`,
     ' data-slideless-placement="e2e-form-embed"></div>',
     `<script src="${stackOrigin}/embed.js" async></script>`,
     '</body></html>'
@@ -98,10 +109,12 @@ test('embedded form: submits cross-origin from the iframe; the row records sourc
   // a different origin from the stack in every browser's eyes.
   let server: Server | undefined;
   let embedOrigin = '';
+  // Mutated below so the SAME origin can re-render itself hostile.
+  let plantedFragment = '';
   await test.step('serve a customer page from its own origin', async () => {
     server = createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(embeddingPage(stackOrigin, secret));
+      res.end(embeddingPage(stackOrigin, secret, plantedFragment));
     });
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
     embedOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -138,7 +151,6 @@ test('embedded form: submits cross-origin from the iframe; the row records sourc
         formName: 'rsvp',
         source: 'embed',
         placement: 'e2e-form-embed',
-        respondentUserId: null, // cross-site frame: no session, no identity
         payload: { name: 'Embedded Visitor' }
       });
 
@@ -151,6 +163,48 @@ test('embedded form: submits cross-origin from the iframe; the row records sourc
         placement: 'e2e-form-embed',
         count: 1
       });
+    });
+
+    await test.step('PRDCT-1332: the loader strips a planted #slr= and the harvest fails', async () => {
+      // The framer now owns a response (the one just submitted from their
+      // own page) and re-serves themselves with its secret in the fragment.
+      const frame = visitor.frameLocator('#good iframe');
+      const link = (await frame.locator('.sl-forms-link').textContent()) ?? '';
+      const framerSecret = link.split('#slr=')[1] ?? '';
+      expect(framerSecret).not.toBe('');
+      plantedFragment = `/#slr=${framerSecret}`;
+
+      const mark = await (await browser.newContext()).newPage();
+      try {
+        await mark.goto(`${embedOrigin}/`);
+        // Half 1 — embed.ts: the mounted frame's src carries NO fragment.
+        const src = await mark.locator('#good iframe').getAttribute('src');
+        expect(src).not.toContain('#');
+        expect(src).not.toContain(framerSecret);
+
+        // Half 2 — end to end: the visitor's answers become their OWN row.
+        const marked = mark.frameLocator('#good iframe');
+        await expect(marked.locator('form[data-slideless-form="rsvp"]')).toBeVisible();
+        // Nothing was adopted, so no resume prompt and no prefill either.
+        await expect(marked.locator('[data-slideless-resume="rsvp"]')).toHaveCount(0);
+        await expect(marked.locator('#f-name')).toHaveValue('');
+        await marked.locator('#f-name').fill('Real Subscriber');
+        await marked.locator('#f-send').click();
+        await expect(marked.locator('[data-slideless-card="rsvp"]')).toBeVisible();
+
+        const listed = await page.request.get(`/api/v1/presentations/${deckId}/responses`);
+        const { responses } = await listed.json();
+        expect(responses).toHaveLength(2); // a new row, not an overwrite
+        const framerRow = responses.find(
+          (r: { payload: Record<string, string> }) => r.payload['name'] === 'Embedded Visitor'
+        );
+        expect(framerRow).toBeDefined(); // the framer's row is untouched
+        expect(
+          responses.some((r: { payload: Record<string, string> }) => r.payload['name'] === 'Real Subscriber')
+        ).toBe(true);
+      } finally {
+        await mark.context().close();
+      }
     });
   } finally {
     await visitor.context().close();

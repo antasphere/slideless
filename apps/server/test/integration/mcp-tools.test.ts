@@ -660,9 +660,11 @@ describe('sharing, collaborators, annotations, delete', () => {
       shareTokenName: 'form-filler',
       source: 'embed',
       placement: 'mcp-embed',
-      respondentUserId: null,
       payload: { name: 'MCP Respondent' }
     });
+    // PRDCT-1331: no respondent identity on the wire, agents included.
+    expect(listed.data.responses[0]).not.toHaveProperty('respondentUserId');
+    expect(listed.data.responses[0]).not.toHaveProperty('respondentEmail');
     expect(listed.data.nextCursor).toBeNull();
 
     // Filters ride through to the API.

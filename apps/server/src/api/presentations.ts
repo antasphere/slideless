@@ -44,6 +44,7 @@ import type { FileService } from '../files/service.js';
 import { FileTooLargeError } from '../files/service.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
+import { manifestHasForms } from '../forms/detect.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import {
   buildViewerUrl,
@@ -251,7 +252,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       interactive: body.interactive,
       metadata: body.metadata,
       entryPath: body.entryPath,
-      manifest: body.manifest as ManifestEntry[]
+      manifest: body.manifest as ManifestEntry[],
+      // PRDCT-1333: scanned HERE, before the commit transaction, so blob
+      // reads never happen while the session/deck rows are locked.
+      hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[])
     });
     if (!result.ok) {
       const f = result.failure;
@@ -306,7 +310,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       expectedBaseVersion: body.expectedBaseVersion,
       entryPath: body.entryPath,
       manifest: body.manifest as ManifestEntry[],
-      title: body.title
+      title: body.title,
+      hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[])
     });
     if (!result.ok) {
       const f = result.failure;

@@ -73,8 +73,7 @@ async function expectNoOverlap(page: Page, aSel: string, bSel: string): Promise<
   const a = await page.locator(aSel).boundingBox();
   const b = await page.locator(bSel).boundingBox();
   if (!a || !b) throw new Error(`missing bounding box for ${!a ? aSel : bSel}`);
-  const overlaps =
-    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  const overlaps = a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(overlaps, `${aSel} must not cover ${bSel}`).toBe(false);
 }
 
@@ -198,9 +197,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     const listed = await page.request.get(`/api/v1/presentations/${deckId}/annotations`);
     expect(listed.status()).toBe(200);
     const { annotations } = await listed.json();
-    const note = annotations.find(
-      (a: { body: string }) => a.body === 'Please rephrase this sentence'
-    );
+    const note = annotations.find((a: { body: string }) => a.body === 'Please rephrase this sentence');
     expect(note).toBeDefined();
     expect(note.authorName).toBe('Alice E2E');
     expect(note.selection).toMatchObject({
@@ -308,9 +305,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
 
     const listed = await page.request.get(`/api/v1/presentations/${deckId}/annotations`);
     const { annotations } = await listed.json();
-    const region = annotations.find(
-      (a: { body: string }) => a.body === 'Tighten this whole paragraph'
-    );
+    const region = annotations.find((a: { body: string }) => a.body === 'Tighten this whole paragraph');
     expect(region.selection).toMatchObject({ v: 2, type: 'region', page: 'index.html' });
     for (const k of ['nx', 'ny', 'nw', 'nh'] as const) {
       expect(region.selection.rect[k]).toBeGreaterThanOrEqual(0);
@@ -333,9 +328,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await reviewer.goto(`${origin}/v/${secret}/`);
     await reviewer.locator('#__sl-badge').click();
     await expect(reviewer.locator('.__sl-item')).toHaveCount(4);
-    const remote = reviewer
-      .locator('.__sl-item')
-      .filter({ hasText: 'Tighten the guidance wording' });
+    const remote = reviewer.locator('.__sl-item').filter({ hasText: 'Tighten the guidance wording' });
     await expect(remote.locator('.__sl-where')).toContainText('guide/page2.html');
     await remote.click();
     await reviewer.waitForURL(/guide\/page2\.html/);
@@ -346,13 +339,10 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
   await test.step('owner resolves a note; the reviewer sees it move to Done', async () => {
     const listed = await page.request.get(`/api/v1/presentations/${deckId}/annotations`);
     const { annotations } = await listed.json();
-    const note = annotations.find(
-      (a: { body: string }) => a.body === 'Please rephrase this sentence'
-    );
-    const patch = await page.request.patch(
-      `/api/v1/presentations/${deckId}/annotations/${note.id}`,
-      { data: { status: 'resolved' } }
-    );
+    const note = annotations.find((a: { body: string }) => a.body === 'Please rephrase this sentence');
+    const patch = await page.request.patch(`/api/v1/presentations/${deckId}/annotations/${note.id}`, {
+      data: { status: 'resolved' }
+    });
     expect(patch.status()).toBe(200);
 
     await reviewer.goto(`${origin}/v/${secret}/`);

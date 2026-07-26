@@ -133,7 +133,16 @@
     // seen order). buildCsv guards EVERY cell — keys included — against
     // formula injection.
     const payloadKeys = [...new Set(rows.flatMap((r) => Object.keys(r.payload)))];
-    const header = ['form', 'link', 'source', 'placement', 'respondentEmail', 'version', 'createdAt', 'updatedAt', ...payloadKeys];
+    const header = [
+      'form',
+      'link',
+      'source',
+      'placement',
+      'version',
+      'createdAt',
+      'updatedAt',
+      ...payloadKeys
+    ];
     const csv = buildCsv(
       header,
       rows.map((r) => [
@@ -141,7 +150,6 @@
         r.shareTokenName ?? '',
         r.source,
         r.placement ?? '',
-        r.respondentEmail ?? '',
         String(r.version),
         r.createdAt,
         r.updatedAt,
@@ -154,7 +162,8 @@
     );
     // Filename: only the server-validated form slug may appear (defense in
     // depth — the charset gate already holds at the contract).
-    const formPart = filterForm !== 'all' && /^[A-Za-z0-9._-]{1,64}$/.test(filterForm) ? `-${filterForm}` : '';
+    const formPart =
+      filterForm !== 'all' && /^[A-Za-z0-9._-]{1,64}$/.test(filterForm) ? `-${filterForm}` : '';
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -242,13 +251,7 @@
           <RefreshCw class="mr-2 h-3.5 w-3.5" />
           {t('formResponses.refresh')}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          class="h-8"
-          onclick={downloadCsv}
-          disabled={!list.items.length}
-        >
+        <Button variant="outline" size="sm" class="h-8" onclick={downloadCsv} disabled={!list.items.length}>
           <Download class="mr-2 h-3.5 w-3.5" />
           {t('formResponses.downloadCsv')}
         </Button>
@@ -335,9 +338,6 @@
                   <Badge variant="secondary">{sourceLabel(response.source)}</Badge>
                   {#if response.placement !== null}
                     <span>· {response.placement}</span>
-                  {/if}
-                  {#if response.respondentEmail !== null}
-                    <span>· {response.respondentEmail}</span>
                   {/if}
                   <span>{t('formResponses.onVersion', { n: response.version })}</span>
                   <span>{formatTimeAgo(response.createdAt)}</span>
