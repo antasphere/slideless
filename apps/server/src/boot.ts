@@ -41,6 +41,7 @@ import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
 import { createLogger, type Logger } from './logger.js';
 import { createStorageDriver } from './storage/factory.js';
 import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-limit.js';
+import { hstsValue } from './middleware/security-headers.js';
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from './observability/otel.js';
 import { bindEditionSeams } from './platform/edition.js';
@@ -591,7 +592,8 @@ export async function boot(
     viewer,
     metricsMiddleware: metrics.middleware,
     metricsRoutes: metrics.routes(env.METRICS_TOKEN),
-    otelMiddleware: otel.middleware
+    otelMiddleware: otel.middleware,
+    hsts: hstsValue(env)
   });
   rootApp.current = app;
 

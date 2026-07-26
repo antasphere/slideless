@@ -34,6 +34,8 @@ export interface RateLimiters {
   workspaceExport: RateLimiterAbstract;
   /** Break-glass superadmin recovery — a rare operator action, tight per IP. */
   breakGlass: RateLimiterAbstract;
+  /** The unauthenticated OpenAPI document — cheap now that it is a boot-time buffer, but still anonymous. */
+  openapiDoc: RateLimiterAbstract;
   /**
    * Viewer password attempts (Phase 4) — share-link passwords are
    * low-entropy human secrets, so failed guesses burn from a tight bucket
@@ -88,6 +90,7 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     passwordReset: make('pw-reset', 5, 10 * 60),
     workspaceExport: make('ws-export', 5, 600),
     breakGlass: make('break-glass', 10, 60 * 60),
+    openapiDoc: make('openapi', 60, 60),
     viewerPassword: make('viewer-pw', 10, 15 * 60),
     viewerAnnotate: make('viewer-annot', 60, 10 * 60),
     make
@@ -123,21 +126,70 @@ export function makeClientIp(trustProxy: boolean): ClientIpFn {
 export type ClientIpFn = (c: Context) => string;
 
 /** 429 with the standard wire shape when the bucket is empty. */
+/**
+ * WHEN a request costs a point.
+ *
+ *  - `arrival` (default): consume before the handler runs. Correct for
+ *    everything whose cost IS the arrival — sending mail, accepting an
+ *    invitation, registering an OAuth client, running setup.
+ *  - `failure`: check the bucket before the handler (an exhausted bucket
+ *    still 429s immediately) but consume only when the handler answered a
+ *    client error. Correct for CREDENTIAL-VERIFICATION walls: on arrival, the
+ *    limiter cannot yet know whether the caller is the account owner, so an
+ *    email-keyed bucket consumed up front lets anyone who knows an address
+ *    spend that account's whole budget and lock its owner out — including on
+ *    the requests the owner themselves gets right. Consuming on failure keeps
+ *    the brute-force wall exactly as tight (a guess is a failure) while a
+ *    legitimate sign-in costs nothing.
+ */
+export interface RateLimitOptions {
+  consumeOn?: 'arrival' | 'failure';
+}
+
+const RATE_LIMITED_BODY = {
+  error: { code: 'rate_limited', message: 'Too many requests, slow down' }
+} as const;
+
 export function rateLimit(
   limiter: RateLimiterAbstract,
   clientIp: ClientIpFn,
-  extraKeys?: (c: Context) => Promise<string[]>
+  extraKeys?: (c: Context) => Promise<string[]>,
+  options: RateLimitOptions = {}
 ): MiddlewareHandler {
+  const consumeOn = options.consumeOn ?? 'arrival';
   return async (c, next) => {
     const keys = [clientIp(c), ...(extraKeys ? await extraKeys(c) : [])];
-    try {
-      for (const key of keys) {
-        await limiter.consume(key);
+
+    if (consumeOn === 'arrival') {
+      try {
+        for (const key of keys) {
+          await limiter.consume(key);
+        }
+      } catch {
+        return c.json(RATE_LIMITED_BODY, 429);
       }
-    } catch {
-      return c.json({ error: { code: 'rate_limited', message: 'Too many requests, slow down' } }, 429);
+      return next();
     }
-    return next();
+
+    // Failure-only: read the buckets (no consume) and refuse an exhausted one
+    // BEFORE the handler, so a drained wall still costs an attacker nothing to
+    // hit and no credential check runs. Backend errors fail open, matching
+    // every other limiter here.
+    for (const key of keys) {
+      const state = await limiter.get(key).catch(() => null);
+      if (state && state.remainingPoints <= 0 && state.msBeforeNext > 0) {
+        return c.json(RATE_LIMITED_BODY, 429);
+      }
+    }
+    await next();
+    // 4xx/5xx = the credential was not accepted. Better Auth answers 401 for a
+    // bad password, 400 for a malformed attempt, 403 for a refused origin —
+    // all of them are attempts that must cost.
+    if (c.res.status >= 400) {
+      for (const key of keys) {
+        await limiter.consume(key).catch(() => {});
+      }
+    }
   };
 }
 

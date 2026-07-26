@@ -186,6 +186,11 @@ export function registerFileRoutes(api: OpenAPIHono, deps: FileRouteDeps): void 
     });
   };
 
-  api.get('/files/:id/content', (c) => contentHandler(c, false));
-  api.on('HEAD', '/files/:id/content', (c) => contentHandler(c, true));
+  // ONE registration for both verbs. Hono rewrites HEAD to GET before routing
+  // (verified against the pinned version: a HEAD request runs the GET handler
+  // and the HEAD registration never fires), so a separate `api.on('HEAD', …)`
+  // is dead code and every HEAD would silently stream the whole body. Read
+  // the verb off the request instead — that is the only signal that survives
+  // the rewrite. Never add an `api.on('HEAD', …)` route on this app.
+  api.get('/files/:id/content', (c) => contentHandler(c, c.req.method === 'HEAD'));
 }

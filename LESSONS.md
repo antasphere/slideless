@@ -649,3 +649,54 @@ allow-downloads`, never `allow-same-origin` — on every viewer response
   around it (account-by-(provider,sub) first, then trusted-link by email
   ONLY onto a VERIFIED local address) or the entrance diverges from the
   browser SSO path's takeover posture.
+
+## Config / HTTP hardening pass (PRDCT-1374 + PRDCT-1375, 2026-07-26)
+
+Ported from the template. The generic rules live in the template's own LESSONS
+entry; these are what THIS repo added or had to do differently.
+
+- **PRIV-1 was live here, not latent.** The public viewer route is literally
+  `/v/:secret`, so `path: c.req.path` on the completion log line wrote every
+  working share capability into the log stream, and the OTel `url.path`
+  attribute exported it off-instance to whatever trace backend an operator
+  points at. Redaction cannot help — pino keys off object PROPERTIES and `path`
+  is one opaque string. Both now carry `routeLabel(c)`, the matched pattern
+  (`/v/:secret`, `/v/:secret/*`), read AFTER `next()`.
+- **The cross-site gate must NOT cover the viewer, and that is load-bearing.**
+  Two surfaces are deliberately cross-origin here and neither is
+  cookie-authenticated (the share secret in the path IS the credential):
+  `/v/:secret` on the root app (embeddable by design — ADR 021 + `/embed.js`,
+  password-form POST included) and `/api/v1/viewer/*`, whose overlay client
+  runs inside the sandboxed iframe and therefore sends `Origin: null`. The
+  guard is mounted on `/api/v1` only, with an explicit `isExempt` for
+  `/api/v1/viewer/`; the integration suite asserts BOTH stay open, so a future
+  tightening fails there first instead of silently killing annotations.
+- **A contract-wide sweep does not reach an inline schema.** The
+  share-token annotation write validates against a schema defined INLINE in
+  `viewer/annotations-api.ts`, not `@slideless/contract` — and it is the most
+  anonymously-reachable free-text write on the instance, since a reviewer needs
+  no account at all. Both its `body` and `authorName` needed their own
+  `noControlChars`. When sweeping a class of sink, grep for the pattern in
+  `apps/server/src` too, not just `packages/contract`.
+- **"4xx" is not an assertion.** Two of this pass's own tests passed while the
+  fix they named was broken. The share-secret fixture silently produced
+  `undefined`, so every viewer assertion was hitting a 404 — which satisfies
+  both `not.toBe(403)` and `status < 500`. And the deck-title case parsed a
+  half-built commit payload, so `success === false` held for reasons that had
+  nothing to do with the title. Fixes: assert the SPECIFIC status and error
+  code, assert the negative control (the same request without the NUL
+  succeeds), attribute the zod failure to a path, and assert every fixture step
+  in `beforeAll` so a broken fixture fails loudly instead of making the suite
+  vacuous.
+- **`VIEWER_BASE_URL` joins the http(s)-only set.** It is the isolated
+  user-content origin; a `javascript:`/`data:` value there is a redirect/XSS
+  primitive, and the pinned zod's `z.url()` accepts both.
+- **`HUB_CLIENT_SECRET` belongs on the redaction list.** It is this tool's own
+  identity at the Antasphere hub — leaking it lets anyone impersonate Slideless
+  at the authorization server. `*.secret` never matched it, and neither it nor
+  `GOOGLE_CLIENT_SECRET` was listed.
+- **This repo's compose does NOT feed the retention knobs blank** (the hub's
+  does), so PLT-13 was latent here rather than live. It is still fixed the same
+  way — every numeric knob rides `numeric()`, including the two view-analytics
+  ones (`VIEW_EVENTS_RETENTION_DAYS`, `VIEW_DEDUPE_WINDOW_MINUTES`) — because
+  the day someone adds `VAR=${VAR:-}` to compose it would go live silently.

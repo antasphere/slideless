@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '../logger.js';
+import { routeLabel } from '../route-label.js';
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -35,7 +36,13 @@ export function requestId(base: Logger): MiddlewareHandler {
       log.info(
         {
           method: c.req.method,
-          path: c.req.path,
+          // The MATCHED ROUTE PATTERN, never the raw URL path — see
+          // route-label.ts. On THIS repo that is not hypothetical: the public
+          // viewer is `/v/:secret`, so logging c.req.path wrote every live
+          // share-link capability into the log stream, where redaction (which
+          // keys off object properties) can do nothing about one opaque
+          // string. Read after next() so routing has resolved.
+          path: routeLabel(c),
           status: c.error ? 500 : c.res.status,
           latencyMs,
           ...(c.error ? { failed: true } : {})

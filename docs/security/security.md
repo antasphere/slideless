@@ -119,9 +119,57 @@ responsible for, and the rules that govern rendering user content.
   are unaffected). The fresh-session (under 24 h) no-password `/delete-user`
   window is a Better Auth default: blocked cross-site by that Origin guard
   and by SameSite=Lax, it is only self-triggerable. The custom `/api/v1`
-  routes rely on **SameSite=Lax cookies alone** (no per-request Origin
-  symmetry check) — every current browser blocks cross-site POSTs with Lax
-  cookies; adding Origin symmetry there is a known defense-in-depth item.
+  routes are covered by a **cross-site gate of their own**
+  (`middleware/cross-site.ts`, PRDCT-1375): every unsafe method under
+  `/api/v1` is refused when `Sec-Fetch-Site` says `cross-site`, or when an
+  `Origin` arrives that is neither the serving origin nor `PUBLIC_BASE_URL`.
+  Exempt, each deliberately and each with a test: safe methods;
+  `Authorization`-bearing calls (API keys and OAuth bearers are not ambient
+  credentials); the wildcard-CORS OAuth endpoints (`middleware/oauth-public.ts`);
+  and **`/api/v1/viewer/*`**, the share-token annotation API, which the overlay
+  client calls from inside the sandboxed iframe whose Origin is the opaque
+  `null`. The **share-link viewer itself (`/v/:secret`) is mounted on the root
+  app and is not behind this gate at all** — it is deliberately embeddable
+  cross-origin (ADR 021, `/embed.js`), password-form POST included. Neither
+  viewer surface is cookie-authenticated: the share secret in the path is the
+  credential, so neither is the ambient-credential class this closes.
+- **The raw request path never reaches the log stream or a trace.** This was
+  the live critical here, not a hypothetical: the viewer route is literally
+  `/v/:secret`, so logging `c.req.path` wrote every working share capability
+  into the logs and (as `url.path`) into the trace backend. Both now carry the
+  MATCHED ROUTE PATTERN (`route-label.ts`); pino redaction could never have
+  helped, because it keys off object properties and `path` is one opaque
+  string.
+- **Free text is NUL-free at the contract.** `plainText()` in
+  `@slideless/contract` refuses NUL and the invisible C0 controls on every
+  user-supplied name/label (deck title, share-token name, annotation body,
+  collaborator/invitation names, API key names, setup, filenames). The
+  share-token annotation API keeps its own INLINE schema in
+  `viewer/annotations-api.ts` — the most anonymously-reachable free-text write
+  on the instance, since a reviewer needs no account — so it is guarded there
+  explicitly with `noControlChars`. `app.onError` maps SQLSTATE 22021/22P05 to
+  400 as the backstop; before this, a NUL surfaced as a 500 whose error log
+  printed the statement and its bound parameters.
+- **Request JSON is depth-capped at 100** (`middleware/json-depth.ts`).
+  `JSON.parse` swallows any nesting but `JSON.stringify` is recursive and
+  throws `RangeError` on the shipped `node:22-alpine` (measured on v22.23.1:
+  depth 1000 fine, depth 5000 throws; host Node 25 reproduces neither).
+- **The OpenAPI document is a boot-time buffer** (`api/openapi-doc.ts`), not a
+  per-request generation on an unauthenticated path.
+- **Authenticated JSON is `Cache-Control: no-store`**
+  (`middleware/no-store.ts`); the viewer and public discovery keep their own.
+- **HSTS** rides every response when `PUBLIC_BASE_URL` is https
+  (`HSTS_MAX_AGE`, default 180 days, `0` disables), set-if-absent so it never
+  disturbs the viewer's sandbox headers.
+- **`AUTH_SECRET` must look random** (entropy floor, not just `min(32)`), and
+  every URL knob is http(s)-only — including `VIEWER_BASE_URL`, where a
+  non-http scheme would be a redirect primitive on the user-content origin.
+- **The login wall consumes on FAILURE, not on arrival**, so nobody can lock an
+  account out by typing its address ten times. Residual, stated plainly: an
+  attacker's failed guesses still drain the victim's bucket, which is inherent
+  to any per-account brute-force wall.
+- **Dynamic client registration has an off switch**
+  (`OAUTH_DYNAMIC_CLIENT_REGISTRATION`, default `true` = unchanged behaviour).
 
 ## Operator responsibilities
 

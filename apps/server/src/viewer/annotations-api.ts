@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
-import { badgePositionSchema } from '@slideless/contract';
+import { badgePositionSchema, noControlChars } from '@slideless/contract';
 import type { ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { PresentationService } from '../presentations/service.js';
@@ -62,9 +62,15 @@ export const VIEWER_API_CORS_HEADERS = {
 /** Serialized-selection byte cap (the anchor payload is a quote, not a document). */
 export const MAX_SELECTION_JSON_BYTES = 8 * 1024;
 
+// SL-B4: this schema is INLINE here, not the contract's annotationCreateSchema,
+// so the contract-level `plainText` sweep does not reach it — and this is the
+// most anonymously-reachable free-text write on the whole instance (a share-link
+// reviewer needs no account). Both sinks land in Postgres `text` columns, where
+// a NUL raises SQLSTATE 22021 and the resulting 500 logs the statement with its
+// bound parameters.
 const annotationCreateBody = z.object({
-  body: z.string().min(1).max(10000),
-  authorName: z.string().trim().min(1).max(120).optional(),
+  body: noControlChars(z.string().min(1).max(10000)),
+  authorName: noControlChars(z.string().trim().min(1).max(120)).optional(),
   selection: z.record(z.string(), z.unknown()).default({}),
   version: z.number().int().min(1).optional()
 });

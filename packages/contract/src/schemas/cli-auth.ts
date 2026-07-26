@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { apiKeySchema } from './api-keys.js';
+import { plainText } from './common.js';
 
 /**
  * Browserless CLI/agent sign-in: email OTP → API key. Two PUBLIC (pre-auth)
@@ -35,7 +36,7 @@ export const cliAuthCompleteSchema = z.object({
   email: z.email(),
   otp: z.string().min(4).max(16),
   /** Display name for the minted key (defaults to a CLI-login label). */
-  keyName: z.string().min(1).max(120).optional(),
+  keyName: plainText(1, 120).optional(),
   /** TTL at mint; the server computes the absolute expiry. Omit = never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),
   /**

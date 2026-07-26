@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
+import type { Env } from '../env.js';
 import type { RuntimeState } from '../state.js';
 
 /**
@@ -42,12 +43,44 @@ export function buildCsp(scriptHashes: string[]): string {
 export interface SecurityHeaderOptions {
   csp: string;
   state: RuntimeState;
+  /**
+   * `Strict-Transport-Security` value, or null to send none. Computed once at
+   * boot from PUBLIC_BASE_URL + HSTS_MAX_AGE (see {@link hstsValue}) rather
+   * than sniffed per request: `X-Forwarded-Proto` is client-controlled unless
+   * TRUST_PROXY vouches for it, and this origin issues the session cookie —
+   * the operator's declared public scheme is the honest signal.
+   */
+  hsts?: string | null;
 }
 
-export function securityHeaders({ csp, state }: SecurityHeaderOptions): MiddlewareHandler {
+/**
+ * The HSTS header for this instance, or null when it must not be sent.
+ * Only an https PUBLIC_BASE_URL arms it: a browser MUST ignore HSTS received
+ * over plain http (RFC 6797 §7.2), and pinning an http-only self-host into
+ * https for 180 days would brick it. `HSTS_MAX_AGE=0` is the operator opt-out
+ * (e.g. a subdomain that cannot yet serve TLS).
+ */
+export function hstsValue(env: Pick<Env, 'PUBLIC_BASE_URL' | 'HSTS_MAX_AGE'>): string | null {
+  if (env.HSTS_MAX_AGE <= 0) return null;
+  let isHttps = false;
+  try {
+    isHttps = new URL(env.PUBLIC_BASE_URL).protocol === 'https:';
+  } catch {
+    isHttps = false;
+  }
+  if (!isHttps) return null;
+  return `max-age=${env.HSTS_MAX_AGE}; includeSubDomains`;
+}
+
+export function securityHeaders({ csp, state, hsts }: SecurityHeaderOptions): MiddlewareHandler {
   return async (c, next) => {
     await next();
     c.header('x-content-type-options', 'nosniff');
+    // HSTS on EVERY response, not just HTML: the cookie this origin issues is
+    // sent with XHR too, so an http downgrade on /api/v1 is the same theft.
+    if (hsts && !c.res.headers.has('strict-transport-security')) {
+      c.header('strict-transport-security', hsts);
+    }
     // Baseline defaults, but NEVER clobber a value a route set for itself:
     // the public viewer (ADR 012) serves user-authored HTML under its own
     // `Content-Security-Policy: sandbox …` + `Referrer-Policy: no-referrer`,

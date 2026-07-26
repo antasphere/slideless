@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plainText } from './common.js';
 
 /**
  * Reviewer notes tied to a specific deck version. Authored either by a
@@ -40,13 +41,13 @@ export const annotationsListSchema = z.object({
 export const annotationCreateSchema = z.object({
   version: z.number().int().min(1),
   selection: annotationSelectionSchema,
-  body: z.string().min(1).max(10000)
+  body: plainText(1, 10000)
 });
 export type AnnotationCreate = z.infer<typeof annotationCreateSchema>;
 
 export const annotationUpdateSchema = z
   .object({
-    body: z.string().min(1).max(10000).optional(),
+    body: plainText(1, 10000).optional(),
     status: annotationStatusSchema.optional()
   })
   .refine((v) => v.body !== undefined || v.status !== undefined, {
