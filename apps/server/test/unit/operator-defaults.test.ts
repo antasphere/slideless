@@ -151,17 +151,24 @@ describe('PLT-12 — restore.sh verifies before it destroys', () => {
   });
 
   it('verifies every archive BEFORE the first destructive command', () => {
-    const verified = Math.max(body.indexOf('dr_verify_pg_dump'), body.indexOf('dr_verify_tar'));
-    expect(verified).toBeGreaterThan(-1);
+    // EVERY archive, named individually. A `Math.max` over the two lookups
+    // was a false green: deleting the /data verification left the dump's
+    // lookup to satisfy the ordering, so an empty or corrupt tarball would
+    // have been extracted over a /data that had just been swapped away.
+    const dumpVerified = body.indexOf('dr_verify_pg_dump "$DB_DUMP"');
+    const dataVerified = body.indexOf('dr_verify_tar "$DATA_TAR"');
+    expect(dumpVerified, 'the database dump must be verified').toBeGreaterThan(-1);
+    expect(dataVerified, 'the /data tarball must be verified').toBeGreaterThan(-1);
+    const verified = Math.max(dumpVerified, dataVerified);
     for (const destructive of ['docker compose stop app', 'DROP DATABASE', 'ALTER DATABASE']) {
       expect(body.indexOf(destructive), destructive).toBeGreaterThan(verified);
     }
   });
 
   it('asks for confirmation only after the archives have been proven readable', () => {
-    expect(body.indexOf("Type 'restore' to continue")).toBeGreaterThan(
-      body.indexOf('dr_verify_tar "$DATA_TAR"')
-    );
+    const dataVerified = body.indexOf('dr_verify_tar "$DATA_TAR"');
+    expect(dataVerified).toBeGreaterThan(-1);
+    expect(body.indexOf("Type 'restore' to continue")).toBeGreaterThan(dataVerified);
   });
 
   it('loads into a scratch database and swaps, instead of dropping the live one first', () => {
@@ -177,6 +184,18 @@ describe('PLT-12 — restore.sh verifies before it destroys', () => {
     expect(sh).toContain('pg_constraint');
     expect(sh).toContain('convalidated');
     expect(sh).toMatch(/row counts do not match the dump/);
+  });
+
+  /**
+   * The row-count query is BUILT by interpolating a table identifier that
+   * came out of the backup file's own COPY header. A crafted dump could
+   * otherwise carry a statement into a psql running as the database owner —
+   * the one place in this script where file content reaches SQL.
+   */
+  it('pins the identifier taken from the dump before it reaches the SQL it builds', () => {
+    const guard = sh.indexOf('*[!A-Za-z0-9_.\\"]*) dr_fail "unexpected table identifier in dump');
+    expect(guard, 'the COPY-header identifier must be shape-checked').toBeGreaterThan(-1);
+    expect(sh.indexOf('(SELECT count(*) FROM $tbl)'), 'checked BEFORE interpolation').toBeGreaterThan(guard);
   });
 
   it('installs a trap that brings the previous instance back up on failure', () => {
@@ -271,6 +290,10 @@ describe('OPS-5 — a custom APP_PORT survives setup and upgrade', () => {
   it('setup.sh backfills them into a pre-existing .env instead of silently moving the port', () => {
     const sh = read('setup.sh');
     expect(sh).toMatch(/APP_PORT=\$\{APP_PORT\}" "APP_BIND=\$\{APP_BIND\}/);
+  });
+
+  it('setup.sh leaves the generated .env at 0600 — it holds the pepper root', () => {
+    expect(read('setup.sh')).toMatch(/^\s*chmod 600 \.env$/m);
   });
 
   it('update.sh reads the port from .env and never hardcodes localhost:3000', () => {

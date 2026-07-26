@@ -119,12 +119,24 @@ describe('dr_verify_pg_dump — a bad dump must fail BEFORE anything is dropped'
   });
 
   it('does not mistake COPY-looking DATA for a new COPY header', () => {
-    // A text column may legitimately hold a line that reads like a header.
-    const sql = pgDump([{ name: 'public.notes', rows: ['1\tCOPY public.evil (id) FROM stdin;', '2\tok'] }]);
+    // A text column may legitimately hold a line that reads like a header —
+    // and on a SINGLE-column table the data line is that text and nothing
+    // else, so it matches `^COPY .* FROM stdin;$` exactly. That is the case
+    // the `!incopy` guard exists for: a row that merely CONTAINS the text
+    // (`1<tab>COPY …`) never matches the anchored pattern and therefore
+    // exercises nothing.
+    const sql = pgDump([
+      {
+        name: 'public.notes',
+        rows: ['COPY public.evil (id) FROM stdin;', 'ok', '1\tCOPY public.other (id) FROM stdin;']
+      }
+    ]);
     writeDump('db.sql.gz', sql);
     const r = sh('dr_verify_pg_dump db.sql.gz');
     expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe('public.notes\t2');
+    // Without the guard the first data line would restart the counter under
+    // the name `public.evil`, and the real table's count would be lost.
+    expect(r.stdout.trim()).toBe('public.notes\t3');
   });
 });
 
