@@ -57,6 +57,16 @@ and `--json`. Resolution order:
 | Base URL | `--api-url` | `SLIDELESS_URL`     | profile `baseUrl` | **error**                                                                     |
 | API key  | `--api-key` | `SLIDELESS_API_KEY` | profile `apiKey`  | hub connect (cloud, below) — else the public commands work and the rest error |
 
+**Keeping secrets out of `argv`**: a value passed as `--api-key slk_…` or
+`--password …` is visible to every process on the machine (`ps`) and lands in
+the shell history. Both have alternatives that do not touch the command line:
+`--api-key-stdin` reads the key from the first line of stdin
+(`pass show slideless | slideless --api-key-stdin files list`), `SLIDELESS_API_KEY`
+carries it in the environment, and `share` / `share-email` take
+`--password-stdin` or `SLIDELESS_SHARE_PASSWORD`. stdin can only be spent
+once per invocation — asking twice is a usage error rather than two commands
+silently sharing one secret.
+
 There is deliberately **no default URL**: a self-hosted CLI must name its
 instance explicitly (flag, env, or saved profile) rather than silently talking
 to the wrong host.
@@ -161,12 +171,21 @@ re-uploaded.
   `--id <deckId>` targets a deck explicitly; `--new` forces a fresh deck. A
   link pointing at a _different_ instance errors loudly instead of silently
   targeting a foreign id.
-- **Ignores**: `.git`, `node_modules`, `.DS_Store`, `.slideless.json`, and
-  `.slidelessignore` are always skipped. A `.slidelessignore` in the deck root
-  adds gitignore-style rules (a pragmatic subset: `#` comments, `*`, `?`,
-  `**`; trailing `/` = directories only; patterns with `/` anchor to the deck
-  root, without `/` they match any path segment; no `!` negation). Symlinks
-  are never followed.
+- **Ignores**: `node_modules`, `Thumbs.db`, `.slideless.json`,
+  `.slidelessignore`, **every dot-prefixed file or directory** (`.git`,
+  `.DS_Store`, `.env`, `.github`, …) and `package.json` / the common
+  lockfiles are always skipped. That is not a taste call: a manifest path is
+  what `slideless pull` writes onto someone's disk, so those names are
+  refused by the wire contract at commit and by the CLI again at pull —
+  `.git/hooks/pre-commit`, `.env` and `package.json` are all "write this and
+  something else runs it later" paths. Pushing a single dotfile
+  (`slideless push .env`) errors instead of uploading it. A
+  `.slidelessignore` in the deck root adds gitignore-style rules (a
+  pragmatic subset: `#` comments, `*`, `?`, `**`; trailing `/` = directories
+  only; patterns with `/` anchor to the deck root, without `/` they match
+  any path segment; no `!` negation). Patterns are capped at 256 characters
+  and 8 `**` wildcards, and a longer or heavier one errors — an unbounded
+  pattern used to hang the scan. Symlinks are never followed.
 - **Entry detection**: `--entry` wins, else `index.html`, else the only
   `.html` file, else an error listing candidates. A single-file push
   (`slideless push deck.html`) uses that file as the entry.
@@ -175,7 +194,13 @@ re-uploaded.
 
 **pull** downloads a version's manifest and streams every blob to disk —
 byte-identical to what was pushed — then writes/refreshes `.slideless.json`
-so a later `push` in that folder targets the same deck.
+so a later `push` in that folder targets the same deck. It treats the
+instance's answer as untrusted input: every manifest path is re-validated
+locally, each blob is capped at the size the manifest declared and must hash
+to the sha256 the manifest claims before anything is written, writes refuse
+to follow a symlink (file or directory) and never leave a file executable,
+and a destination whose `.slideless.json` names a _different_ instance errors
+loudly — the same refusal `push` has always had.
 
 **dev** serves the folder locally with the **exact** public-viewer posture —
 `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups
@@ -183,6 +208,13 @@ allow-modals allow-downloads`, `nosniff`, `no-referrer`, `no-store` — so what
 you preview is exactly what share-link recipients get (same isolation, same
 relative paths). Live reload is injected into HTML responses; any file change
 reloads the browser. No backend, no credentials.
+
+It serves the deck folder and nothing else: a path is resolved with
+`realpath` and re-checked against the root, so a symlink inside the folder
+cannot serve a file from elsewhere on the disk; dot-prefixed paths 404
+outright; and requests whose `Host` header is not the address the server
+bound answer 403, which is what stops a DNS-rebinding page from reading your
+deck (and anything else) through the browser.
 
 ## Share
 
@@ -264,7 +296,9 @@ slideless agent-doc [id] [--at <version>] [--out <file>] # print the bundle's AG
 slideless versions <id> [--all]  # version history, newest first (numbers line up with pull --at)
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed
-slideless files list|upload|download|rm
+slideless files list|upload|rm
+slideless files download <id> [--dir ./here]  # writes the stored name (basename only) into --dir
+slideless files download <id> --out ./exact/path.bin   # …or a path you choose, verbatim
 slideless export [-o file]    # workspace zip (key needs the opt-in data:export scope)
 ```
 

@@ -5,10 +5,11 @@ import {
   CliUsageError,
   connectOnDemand,
   lookupConnectKey,
+  printJson as corePrintJson,
   resolveApiKey,
   resolveBaseUrl,
   resolveProfile as coreResolveProfile,
-  type CliIo,
+  type CliIo as CoreCliIo,
   type ResolvedProfile
 } from '@antasphere/cli-core';
 import { loadConfig, type CliConfig, type CliProfile } from './config.js';
@@ -16,8 +17,91 @@ import { loadConfig, type CliConfig, type CliProfile } from './config.js';
 // The injectable I/O seam, the usage-error class, and the resolution
 // helpers live in @antasphere/cli-core (extracted from this CLI); re-exported
 // so the command modules' imports stay unchanged.
-export { CliUsageError, printJson } from '@antasphere/cli-core';
-export type { CliIo } from '@antasphere/cli-core';
+export { CliUsageError } from '@antasphere/cli-core';
+
+/**
+ * The tool's I/O seam: cli-core's, plus an injectable stdin reader so the
+ * `--*-stdin` secret flags (stdin.ts) stay testable in-process. The bin
+ * leaves it unset and the default reads `process.stdin`.
+ */
+export interface CliIo extends CoreCliIo {
+  readStdin?: () => Promise<string>;
+}
+
+// ── Terminal-control sanitation ──────────────────────────────────────────────
+
+/**
+ * Strip terminal control sequences from human output.
+ *
+ * Almost everything the CLI prints in its human mode is content someone
+ * ELSE wrote: annotation bodies and author names from a share-link
+ * recipient, deck and share-token titles, form-response payloads, stored
+ * filenames, and server error messages. A terminal renders ANSI escapes in
+ * all of it — colours and cursor moves are the mild end; OSC 8 hyperlinks
+ * hide a URL behind friendly text, OSC 52 writes the user's clipboard, and
+ * a CSI sequence can scrub the line above so the owner never sees what the
+ * command really did.
+ *
+ * So the human sinks are wrapped (`ttySafeIo`) and everything they print
+ * loses C0 (except tab / LF / CR, which the tables and the CSV need), the
+ * 8-bit C1 introducers, and complete CSI/OSC/two-character escapes. `--json`
+ * output deliberately bypasses this: it is data, not display, and
+ * `JSON.stringify` already escapes every C0 byte.
+ */
+export function sanitizeForTty(s: string): string {
+  /* eslint-disable no-control-regex -- matching control characters IS the job here. */
+  return (
+    s
+      // OSC: ESC ] … terminated by BEL, ST (ESC \\) or the end of the string.
+      .replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\|$)/g, '')
+      // CSI: ESC [ params intermediates final.
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+      // Any other two-character escape (charset switches, RIS, …).
+      .replace(/\u001b[@-Z\\-_]/g, '')
+      // Whatever is left: stray C0 (ESC included), DEL, and the 8-bit C1
+      // block whose 0x9b / 0x9d are CSI / OSC on their own. Tab (0x09),
+      // LF (0x0a) and CR (0x0d) survive — tables and CSV are built of them.
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '')
+  );
+  /* eslint-enable no-control-regex */
+}
+
+/** Raw sink behind a sanitizing one, so `--json` can still print verbatim. */
+const rawSinks = new WeakMap<CliIo, CliIo>();
+
+/** Wrap an io so every human write is sanitized (see sanitizeForTty). */
+export function ttySafeIo(io: CliIo): CliIo {
+  const safe: CliIo = {
+    ...io,
+    out: { write: (s: string) => io.out.write(sanitizeForTty(s)) },
+    err: { write: (s: string) => io.err.write(sanitizeForTty(s)) }
+  };
+  rawSinks.set(safe, io);
+  return safe;
+}
+
+/**
+ * The `--api-key-stdin` value, parked against this invocation's io because
+ * `resolveContext` is synchronous and cannot read stdin itself.
+ */
+const stdinApiKeys = new WeakMap<CliIo, string>();
+
+export function setStdinApiKey(io: CliIo, key: string): void {
+  stdinApiKeys.set(io, key);
+}
+
+/** The key `--api-key-stdin` already read, if any. */
+export function stdinApiKey(io: CliIo): string | undefined {
+  return stdinApiKeys.get(io);
+}
+
+/**
+ * `--json` output goes to the RAW sink: machine output must stay
+ * byte-exact, and JSON.stringify already escapes the C0 range.
+ */
+export function printJson(io: CliIo, value: unknown): void {
+  corePrintJson(rawSinks.get(io) ?? io, value);
+}
 
 export interface CliContext {
   client: PlatformClient;
@@ -84,7 +168,12 @@ export function resolveContext(cmd: Command, io: CliIo): CliContext {
       'No instance configured. Pass --api-url <url>, set SLIDELESS_URL, or sign in once with ' +
       '`slideless auth login-request --api-url <url> --email <you>` to save a profile.'
   });
-  let apiKey = resolveApiKey({ flag: opts.apiKey, env: io.env, envVar: 'SLIDELESS_API_KEY', profile });
+  let apiKey = resolveApiKey({
+    flag: opts.apiKey ?? stdinApiKeys.get(io),
+    env: io.env,
+    envVar: 'SLIDELESS_API_KEY',
+    profile
+  });
   if (!apiKey && profile?.baseUrl?.replace(/\/+$/, '') === baseUrl) {
     // No direct key: the connect cache's slot is the ACTIVE hub profile
     // (what `antasphere login` stored) — org-independent by design.

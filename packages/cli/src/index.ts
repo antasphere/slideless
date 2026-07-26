@@ -1,7 +1,8 @@
 import { Command, CommanderError } from 'commander';
 import { CliAuthError } from '@antasphere/cli-core';
 import { PlatformApiError } from '@slideless/sdk';
-import { CliUsageError, type CliIo } from './context.js';
+import { CliUsageError, setStdinApiKey, ttySafeIo, type CliIo } from './context.js';
+import { readSecretFromStdin } from './stdin.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
@@ -40,6 +41,7 @@ function buildProgram(io: CliIo): Command {
     .option('--api-url <url>', 'instance base URL (or SLIDELESS_URL / profile baseUrl)')
     .option('--url <url>', 'alias of --api-url')
     .option('--api-key <key>', 'API key (or SLIDELESS_API_KEY / profile apiKey)')
+    .option('--api-key-stdin', 'read the API key from the first line of stdin (keeps it out of argv)', false)
     .option('--profile <name>', 'use this saved profile instead of the active one')
     .option('--json', 'machine-readable JSON output', false);
 
@@ -65,7 +67,26 @@ function buildProgram(io: CliIo): Command {
  * Run the CLI with injected I/O and return a process exit code. The bin calls
  * this with real process streams; tests call it in-process.
  */
-export async function run(argv: string[], io: CliIo): Promise<number> {
+export async function run(argv: string[], rawIo: CliIo): Promise<number> {
+  // Every human sink is wrapped ONCE, here: deck titles, annotation bodies,
+  // stored filenames and server error messages are all somebody else's text
+  // heading for a terminal (context.ts `sanitizeForTty`). `--json` keeps the
+  // raw sink through `printJson`.
+  const io = ttySafeIo(rawIo);
+
+  // `--api-key-stdin` is resolved BEFORE commander parses: `resolveContext`
+  // is synchronous, so the key must already be parked against this io by
+  // the time a command asks for it. Reading stdin is the whole point — an
+  // argv-borne secret is visible in `ps` and lands in the shell history.
+  if (argv.includes('--api-key-stdin')) {
+    try {
+      setStdinApiKey(io, await readSecretFromStdin(io, 'API key'));
+    } catch (e) {
+      io.err.write(`Error: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 1;
+    }
+  }
+
   const program = buildProgram(io);
   program.exitOverride();
   program.configureOutput({

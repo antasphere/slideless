@@ -72,6 +72,26 @@ enableJsonResponse: true })` per request** — no session ids, POST responses
   (I5): one `two_factor` table + `user.two_factor_enabled`, migration 0011,
   zero drift surprises.
 
+- **`fs.promises.writeFile` is not a safe way to write a path someone else
+  chose.** It follows a pre-existing symlink at the target, and its
+  `O_TRUNC` write PRESERVES the existing file's mode — a `-rwxr-xr-x` file
+  stayed executable across both `writeFileSync` and `fs.promises.writeFile`
+  (re-proved during PRDCT-1353). `open(target, O_WRONLY|O_CREAT|O_TRUNC|
+O_NOFOLLOW, 0o644)` + an explicit `fchmod` is the shape; the parent
+  directory needs its own `realpath` check, because `mkdir -p` walks
+  straight through an existing symlinked directory.
+- **`fetch` has no default timeout** — not in Node, not in the browser. A
+  peer that accepts the connection and then says nothing parks the caller
+  forever. Every SDK call carries `AbortSignal.timeout` (30 s for JSON,
+  10 min for the byte-streaming ones, both overridable, `0` disables).
+- **`fetch` silently DROPS a `Host` header** (forbidden header name), so a
+  Host-validation test has to go through `node:http` directly. Same trap
+  for any other forbidden header.
+- **A lexical `resolve()` + `startsWith()` is not a traversal guard.** It
+  cannot see a symlink. `slideless dev` shipped one and served `/etc/passwd`
+  through a link inside the deck folder; the fix is `realpath` plus a second
+  containment check on the resolved path.
+
 ## Corrections
 
 - **Setup must claim + create workspace + membership in ONE transaction.**

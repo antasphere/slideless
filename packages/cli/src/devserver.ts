@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
-import { createServer, type Server, type ServerResponse } from 'node:http';
-import { resolve, sep } from 'node:path';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { contentTypeFor } from './manifest.js';
 
 /**
@@ -57,13 +57,74 @@ function injectReload(html: string): string {
   return html.slice(0, idx) + RELOAD_SNIPPET + html.slice(idx);
 }
 
+/**
+ * A served path must stay inside the deck root REALLY, not just lexically:
+ * `resolve()` + `startsWith()` is blind to symlinks, so a link inside the
+ * folder used to serve any file the developer could read (/etc/passwd, .env,
+ * the CLI's own credential file). Dot-prefixed segments are refused outright
+ * — nothing a deck needs starts with a dot, and it is where the secrets are.
+ */
+async function resolveServable(root: string, relPath: string): Promise<string | null> {
+  if (relPath === '' || isAbsolute(relPath)) return null;
+  // A backslash is a path separator on Windows and a legal filename
+  // character on POSIX — refuse it either way rather than resolve it.
+  if (relPath.includes('\\')) return null;
+  if (relPath.split('/').some((seg) => seg.startsWith('.'))) return null;
+  const target = resolve(root, relPath);
+  const lexical = relative(root, target);
+  if (lexical === '' || lexical.startsWith('..') || isAbsolute(lexical)) return null;
+  const real = await realpath(target).catch(() => null);
+  if (real === null) return null;
+  const actual = relative(root, real);
+  if (actual === '' || actual.startsWith('..') || isAbsolute(actual)) return null;
+  return real;
+}
+
+/**
+ * DNS rebinding: a page on any origin can make the browser resolve some
+ * hostname to 127.0.0.1 and then read this server's responses. The Host
+ * header is the only thing that distinguishes such a request from a real
+ * one, so anything but the address the server actually bound is refused.
+ */
+function hostAllowed(req: IncomingMessage, allowed: ReadonlySet<string>): boolean {
+  const host = req.headers.host;
+  if (!host) return false;
+  return allowed.has(host.toLowerCase());
+}
+
+/** Host:port values this server answers to (the bound address + loopback aliases). */
+function allowedHosts(host: string, port: number): Set<string> {
+  const names = new Set<string>([host]);
+  const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+  if (loopback) {
+    names.add('127.0.0.1');
+    names.add('localhost');
+    names.add('[::1]');
+  }
+  const out = new Set<string>();
+  for (const name of names) {
+    out.add(`${name}:${port}`.toLowerCase());
+    // A default-port URL omits it; the dev server never binds 80, but keep
+    // the mapping honest rather than special-casing later.
+    if (port === 80) out.add(name.toLowerCase());
+  }
+  return out;
+}
+
 export async function startDevServer(options: DevServerOptions): Promise<DevServer> {
-  const root = resolve(options.root);
+  // realpath the root once: every containment check below compares against
+  // the REAL directory, so a symlinked deck folder still works.
+  const root = await realpath(resolve(options.root));
   const host = options.host ?? '127.0.0.1';
   const sseClients = new Set<ServerResponse>();
+  let allowed: ReadonlySet<string> = new Set<string>();
 
   const server: Server = createServer((req, res) => {
     void (async () => {
+      if (!hostAllowed(req, allowed)) {
+        res.writeHead(403, CONTENT_HEADERS).end('Forbidden');
+        return;
+      }
       const url = new URL(req.url ?? '/', 'http://localhost');
       let pathname: string;
       try {
@@ -86,9 +147,8 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
       }
 
       const relPath = pathname === '/' ? options.entryPath : pathname.replace(/^\/+/, '');
-      // Traversal guard: the resolved target must stay inside the deck root.
-      const target = resolve(root, relPath);
-      if (target !== root && !target.startsWith(root + sep)) {
+      const target = await resolveServable(root, relPath);
+      if (target === null) {
         res.writeHead(404, CONTENT_HEADERS).end('Not found');
         return;
       }
@@ -133,7 +193,13 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
 
   await new Promise<void>((resolvePromise, reject) => {
     server.once('error', reject);
-    server.listen(options.port, host, () => resolvePromise());
+    server.listen(options.port, host, () => {
+      // The real port is known only here (port 0 = ephemeral), and the Host
+      // allowlist must exist before the first request can land.
+      const bound = server.address();
+      allowed = allowedHosts(host, typeof bound === 'object' && bound ? bound.port : options.port);
+      resolvePromise();
+    });
   });
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : options.port;

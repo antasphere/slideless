@@ -10,7 +10,16 @@ import {
   saveConfig,
   type CliConfig
 } from '../config.js';
-import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
+import {
+  CliUsageError,
+  printJson,
+  requireApiKey,
+  resolveContext,
+  stdinApiKey,
+  table,
+  type CliIo
+} from '../context.js';
+import { readSecretFromStdin } from '../stdin.js';
 
 /**
  * Identity + profile commands: the OTP sign-in pair (login-request /
@@ -51,12 +60,6 @@ function saveProfileKey(
   config.activeProfile = profileName;
   const path = saveConfig(io.env, config);
   return { config, path };
-}
-
-async function readLineFromStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString('utf8').split('\n')[0]?.trim() ?? '';
 }
 
 /**
@@ -159,9 +162,11 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
     .action(async (_opts, cmd: Command) => {
       const globals = cmd.optsWithGlobals() as AuthGlobals & { apiKey?: string };
       const baseUrl = resolveAuthUrl(cmd, io);
-      let key = globals.apiKey ?? io.env.SLIDELESS_API_KEY;
+      // `--api-key-stdin` may already have spent stdin (index.ts); reuse
+      // that read rather than blocking on an exhausted stream.
+      let key = globals.apiKey ?? stdinApiKey(io) ?? io.env.SLIDELESS_API_KEY;
       if (!key) {
-        key = await readLineFromStdin();
+        key = await readSecretFromStdin(io, 'API key').catch(() => '');
       }
       if (!key || !key.startsWith('slk_')) {
         throw new CliUsageError('No API key provided — pass --api-key slk_… or pipe the key on stdin.');

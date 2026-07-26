@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { request as httpRequest } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEV_SANDBOX_CSP, startDevServer } from '../src/devserver.js';
 import type { DevServer } from '../src/devserver.js';
@@ -48,3 +49,82 @@ describe('slideless dev server', () => {
     expect((await fetch(`${server.url}assets/../../secret`)).status).toBe(404);
   });
 });
+
+/**
+ * PRDCT-1353 / CLI-2 — the preview server used to be a filesystem-wide read
+ * primitive: the traversal guard was purely lexical, so any symlink inside
+ * the deck folder served whatever it pointed at, and no Host check meant a
+ * DNS-rebinding page could read the answers.
+ */
+describe('slideless dev server containment', () => {
+  let secureDir: string;
+  let secure: DevServer;
+  let secretPath: string;
+
+  beforeAll(async () => {
+    const root = await mkdtemp(join(tmpdir(), 'slideless-dev-sec-'));
+    secretPath = join(root, 'secret.txt');
+    await writeFile(secretPath, 'TOP SECRET');
+    secureDir = join(root, 'deck');
+    await mkdir(join(secureDir, 'assets'), { recursive: true });
+    await writeFile(join(secureDir, 'index.html'), '<html><body>DECK</body></html>');
+    await writeFile(join(secureDir, '.env'), 'API_KEY=leaked');
+    await symlink(secretPath, join(secureDir, 'passwd'));
+    await symlink('/etc/passwd', join(secureDir, 'etc-passwd'));
+    await symlink(root, join(secureDir, 'assets', 'up'));
+    secure = await startDevServer({ root: secureDir, entryPath: 'index.html', port: 0 });
+  });
+
+  afterAll(async () => {
+    await secure?.close();
+  });
+
+  it('404s a symlink that points outside the deck folder', async () => {
+    const res = await fetch(`${secure.url}passwd`);
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('TOP SECRET');
+    // The literal case from the audit: a link to /etc/passwd in the deck.
+    const real = await fetch(`${secure.url}etc-passwd`);
+    expect(real.status).toBe(404);
+    expect(await real.text()).not.toContain('root:');
+  });
+
+  it('404s a path that traverses through a symlinked sub-directory', async () => {
+    const res = await fetch(`${secure.url}assets/up/secret.txt`);
+    expect(res.status).toBe(404);
+  });
+
+  it('404s dot-prefixed paths outright', async () => {
+    expect((await fetch(`${secure.url}.env`)).status).toBe(404);
+    expect((await fetch(`${secure.url}.git/config`)).status).toBe(404);
+  });
+
+  it('still serves the real deck files', async () => {
+    const res = await fetch(secure.url);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('DECK');
+  });
+
+  it('refuses a request whose Host is not the bound address (DNS rebinding)', async () => {
+    // `fetch` refuses to set Host (forbidden header), so this goes raw.
+    expect(await rawStatus(secure.port, 'deck.attacker.example')).toBe(403);
+    expect(await rawStatus(secure.port, `127.0.0.1:${secure.port + 1}`)).toBe(403);
+  });
+
+  it('accepts the loopback aliases of the bound address', async () => {
+    expect(await rawStatus(secure.port, `localhost:${secure.port}`)).toBe(200);
+    expect(await rawStatus(secure.port, `127.0.0.1:${secure.port}`)).toBe(200);
+  });
+});
+
+/** GET / with an arbitrary Host header — `fetch` will not send one. */
+function rawStatus(port: number, host: string): Promise<number> {
+  return new Promise((resolvePromise, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path: '/', headers: { host } }, (res) => {
+      res.resume();
+      res.on('end', () => resolvePromise(res.statusCode ?? 0));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}

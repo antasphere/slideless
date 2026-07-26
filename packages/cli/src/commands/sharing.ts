@@ -9,6 +9,28 @@ import {
   type ShareTokenCreate
 } from '@slideless/contract';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
+import { readSecretFromStdin } from '../stdin.js';
+
+/** Env fallback for the viewer password — never forces a secret into argv. */
+const SHARE_PASSWORD_ENV = 'SLIDELESS_SHARE_PASSWORD';
+
+/**
+ * The viewer password, from exactly one source: `--password-stdin` (piped),
+ * `--password` (visible in `ps` and the shell history — kept for existing
+ * scripts), or the SLIDELESS_SHARE_PASSWORD environment variable.
+ */
+async function resolveSharePassword(
+  io: CliIo,
+  opts: { password?: string; passwordStdin?: boolean }
+): Promise<string | undefined> {
+  if (opts.passwordStdin && opts.password !== undefined) {
+    throw new CliUsageError('Pass either --password or --password-stdin, not both.');
+  }
+  if (opts.passwordStdin) return readSecretFromStdin(io, 'share password');
+  if (opts.password !== undefined) return opts.password;
+  const fromEnv = io.env[SHARE_PASSWORD_ENV];
+  return fromEnv ? fromEnv : undefined;
+}
 
 const BADGE_POSITIONS = badgePositionSchema.options.join(' | ');
 
@@ -65,7 +87,8 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
       parseBadgePosition
     )
     .option('--expires <datetime>', 'ISO expiry, e.g. 2026-12-31T23:59:59Z')
-    .option('--password <password>', 'viewer password (min 4 chars)')
+    .option('--password <password>', `viewer password (min 4 chars; or ${SHARE_PASSWORD_ENV})`)
+    .option('--password-stdin', 'read the viewer password from stdin (keeps it out of argv)', false)
     .option('--embed', 'also print the website embed snippets (script+div and plain iframe)', false)
     .option(
       '--placement <label>',
@@ -82,6 +105,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
+          passwordStdin: boolean;
           embed: boolean;
           placement?: string;
         },
@@ -94,7 +118,11 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             '--placement must be 1-64 characters of letters, digits, ".", "_" or "-"'
           );
         }
-        const created = await ctx.client.createShareToken(id, shareOptionsOf(opts));
+        const password = await resolveSharePassword(io, opts);
+        const created = await ctx.client.createShareToken(
+          id,
+          shareOptionsOf({ ...opts, ...(password !== undefined ? { password } : {}) })
+        );
         // Snippets are producible only NOW (secrets are hash-only at rest);
         // the JSON envelope always carries them so agents that also build
         // websites can pipe the snippet without a second command.
@@ -168,7 +196,8 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
       parseBadgePosition
     )
     .option('--expires <datetime>', 'ISO expiry')
-    .option('--password <password>', 'viewer password (tell recipients separately)')
+    .option('--password <password>', `viewer password (tell recipients separately; or ${SHARE_PASSWORD_ENV})`)
+    .option('--password-stdin', 'read the viewer password from stdin (keeps it out of argv)', false)
     .option('--message <text>', 'personal note included in the email')
     .action(
       async (
@@ -181,15 +210,20 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
+          passwordStdin: boolean;
           message?: string;
         },
         cmd: Command
       ) => {
         const ctx = resolveContext(cmd, io);
         await requireApiKey(ctx);
+        const password = await resolveSharePassword(io, opts);
         const results: Array<{ email: string; tokenId: string; emailSent: boolean }> = [];
         for (const email of opts.to) {
-          const created = await ctx.client.createShareToken(id, shareOptionsOf({ ...opts, name: email }));
+          const created = await ctx.client.createShareToken(
+            id,
+            shareOptionsOf({ ...opts, name: email, ...(password !== undefined ? { password } : {}) })
+          );
           const sent = await ctx.client.sendShareToken(id, created.shareToken.id, {
             email,
             ...(opts.message ? { message: opts.message } : {})
@@ -574,8 +608,18 @@ function responsesCsv(rows: FormResponse[]): string {
  * RFC 4180 quoting plus the formula-injection guard: payload values are RAW
  * respondent input, so any cell starting with '=', '+', '-' or '@' gets a
  * leading apostrophe before it can reach a spreadsheet as a formula.
+ *
+ * The test runs on the TRIMMED value: Excel, LibreOffice and Sheets all skip
+ * leading whitespace before deciding a cell is a formula, so `" =cmd|…"`
+ * (space, tab, CR, LF, and the whole Unicode space class) walked straight
+ * past a `^[=+\-@]` test on the raw string. The apostrophe still prefixes
+ * the value VERBATIM — the guard changes what a spreadsheet does with the
+ * cell, never what the cell says.
  */
 function csvCell(raw: string): string {
-  const guarded = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  // eslint-disable-next-line no-control-regex -- the leading-whitespace class must cover C0.
+  const guarded = /^[\s\u0000-\u0020\u00a0\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]*[=+\-@]/.test(raw)
+    ? `'${raw}`
+    : raw;
   return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
 }

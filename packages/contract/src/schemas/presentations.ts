@@ -16,21 +16,73 @@ export type VersionAuthorRole = z.infer<typeof versionAuthorRoleSchema>;
 /** Lowercase hex sha256 — the content address of a blob. */
 export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/, 'lowercase hex sha256 required');
 
+/** Maximum length of a manifest path, in characters. */
+export const ASSET_PATH_MAX_LENGTH = 1024;
+
 /**
- * A relative asset path inside a deck: no leading slash, no backslashes, no
- * empty or `..` segments — enforced at the contract so traversal never
- * reaches a handler.
+ * The structural half of the manifest-path rule: a relative path with no
+ * leading slash, no backslashes and no empty, `.` or `..` segments. This is
+ * the traversal guard alone — it says nothing about WHICH names are allowed
+ * (see `isSafeAssetPath`). The viewer uses it on a decoded request path,
+ * where the only question is "could this escape?" (there is no filesystem
+ * under the viewer, only an exact manifest lookup).
  */
+export function isTraversalSafeAssetPath(p: string): boolean {
+  return (
+    p.length >= 1 &&
+    p.length <= ASSET_PATH_MAX_LENGTH &&
+    !p.startsWith('/') &&
+    !p.includes('\\') &&
+    p.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..')
+  );
+}
+
+/**
+ * Names a deck bundle may never carry. `slideless pull` materializes a
+ * manifest onto a developer's disk (into `.` by default), so a path the
+ * SERVER chose must never be able to land on a file some other tool
+ * executes: `package.json` (npm/pnpm lifecycle scripts) and the lockfiles
+ * that decide what a later install fetches. Compared case-insensitively —
+ * macOS and Windows filesystems are case-insensitive, so `Package.json`
+ * overwrites `package.json`.
+ */
+export const RESERVED_ASSET_FILENAMES = [
+  'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lockb'
+] as const;
+
+const RESERVED_ASSET_FILENAME_SET: ReadonlySet<string> = new Set<string>(RESERVED_ASSET_FILENAMES);
+
+/**
+ * A relative asset path inside a deck. Traversal-safe (above) AND free of
+ * dot-prefixed segments and reserved filenames.
+ *
+ * The dotfile ban is the other half of the pull hardening: `.git/hooks/*`,
+ * `.env`, `.npmrc`, `.envrc` and `.github/workflows/*` are all "write this
+ * and something else runs it later" paths, and every one of them is legal
+ * under the traversal rule alone. A deck is a bundle of viewer-served
+ * assets — none of it needs a dotfile — so the contract refuses them at
+ * COMMIT and the CLI refuses them again at PULL (defense in depth: an
+ * instance may be older, hostile, or impersonated).
+ */
+export function isSafeAssetPath(p: string): boolean {
+  if (!isTraversalSafeAssetPath(p)) return false;
+  return p
+    .split('/')
+    .every((seg) => !seg.startsWith('.') && !RESERVED_ASSET_FILENAME_SET.has(seg.toLowerCase()));
+}
+
 export const assetPathSchema = z
   .string()
   .min(1)
-  .max(1024)
+  .max(ASSET_PATH_MAX_LENGTH)
   .refine(
-    (p) =>
-      !p.startsWith('/') &&
-      !p.includes('\\') &&
-      p.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..'),
-    'relative path without empty, "." or ".." segments required'
+    isSafeAssetPath,
+    'relative path required: no empty, "." or ".." segments, no dot-prefixed segment, ' +
+      `and no reserved filename (${RESERVED_ASSET_FILENAMES.join(', ')})`
   );
 
 /**

@@ -1,9 +1,15 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { PlatformApiError } from '@slideless/sdk';
-import { AGENT_DOC_PATH, type ManifestEntry, type PresentationKind } from '@slideless/contract';
+import {
+  AGENT_DOC_PATH,
+  isSafeAssetPath,
+  type ManifestEntry,
+  type PresentationKind
+} from '@slideless/contract';
 import {
   CliUsageError,
   fmtBytes,
@@ -15,6 +21,7 @@ import {
   type CliIo
 } from '../context.js';
 import { detectEntry, readLink, scanDeck, writeLink, LINK_FILENAME, type DeckScan } from '../manifest.js';
+import { writeContained } from '../safe-write.js';
 import { startDevServer } from '../devserver.js';
 
 /**
@@ -88,13 +95,36 @@ async function uploadMissing(ctx: CliContext, scan: DeckScan): Promise<number> {
   return queue.length;
 }
 
-/** Local traversal guard for server-provided manifest paths (defense in depth). */
-function safeRelPath(p: string): boolean {
-  return (
-    !p.startsWith('/') &&
-    !p.includes('\\') &&
-    p.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..')
-  );
+/**
+ * Read a response body with a hard ceiling, streaming: the manifest DECLARES
+ * each blob's size, so anything bigger is a lie and must not be buffered
+ * (an unbounded `arrayBuffer()` on a hostile instance is a memory bomb).
+ */
+async function readCapped(res: Response, maxBytes: number, label: string): Promise<Buffer> {
+  const tooBig = (): Error =>
+    new Error(`Refusing ${label}: the download exceeds the manifest's declared ${maxBytes} bytes.`);
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooBig();
+  const body = res.body;
+  if (!body) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > maxBytes) throw tooBig();
+    return buf;
+  }
+  const reader = body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw tooBig();
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
 }
 
 export function registerContentCommands(program: Command, io: CliIo): void {
@@ -273,6 +303,16 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       const ctx = resolveContext(cmd, io);
       await requireApiKey(ctx);
 
+      // The link file binds a folder to a deck ON ONE INSTANCE. Pulling with
+      // a mismatching baseUrl is the mistake push already refuses (CLI-13):
+      // overwriting a folder's contents — and its link — with a same-id deck
+      // from a FOREIGN instance.
+      const linkMismatch = (linked: string): CliUsageError =>
+        new CliUsageError(
+          `${LINK_FILENAME} links this folder to ${linked}, but you are pulling from ` +
+            `${ctx.baseUrl}. Pull into a different folder, or delete ${LINK_FILENAME} first.`
+        );
+
       let deckId = id ?? null;
       let dest = path ?? null;
       if (!deckId) {
@@ -282,10 +322,15 @@ export function registerContentCommands(program: Command, io: CliIo): void {
             `No deck id given and no ${LINK_FILENAME} found — run \`slideless pull <id> [path]\`.`
           );
         }
+        if (link.baseUrl !== ctx.baseUrl) throw linkMismatch(link.baseUrl);
         deckId = link.presentationId;
         dest = dest ?? '.';
       }
       dest = dest ?? deckId;
+      {
+        const link = await readLink(resolve(dest));
+        if (link && link.baseUrl !== ctx.baseUrl) throw linkMismatch(link.baseUrl);
+      }
 
       const deck = await ctx.client.presentation(deckId);
       const version = opts.at ?? deck.currentVersion;
@@ -294,15 +339,24 @@ export function registerContentCommands(program: Command, io: CliIo): void {
 
       const destRoot = resolve(dest);
       await mkdir(destRoot, { recursive: true });
+      // Every manifest path is re-validated locally (the instance may be
+      // older than this CLI, or hostile), every blob is size-capped and
+      // hash-verified against the manifest BEFORE it touches the disk, and
+      // every write is symlink-refusing + contained (safe-write.ts).
       for (const entry of detail.manifest) {
-        if (!safeRelPath(entry.path)) {
+        if (!isSafeAssetPath(entry.path)) {
           throw new Error(`Refusing to write unsafe manifest path: ${entry.path}`);
         }
         const res = await ctx.client.downloadPresentationAsset(deckId, entry.sha256);
-        const bytes = Buffer.from(await res.arrayBuffer());
-        const target = join(destRoot, entry.path);
-        await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, bytes);
+        const bytes = await readCapped(res, entry.sizeBytes, entry.path);
+        const digest = createHash('sha256').update(bytes).digest('hex');
+        if (digest !== entry.sha256) {
+          throw new Error(
+            `Refusing ${entry.path}: the downloaded bytes hash to ${digest}, but the manifest ` +
+              `claims ${entry.sha256}.`
+          );
+        }
+        await writeContained(destRoot, entry.path, bytes);
       }
       await writeLink(destRoot, { presentationId: deckId, baseUrl: ctx.baseUrl });
       if (ctx.json) {
