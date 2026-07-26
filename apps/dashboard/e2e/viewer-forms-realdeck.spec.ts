@@ -85,13 +85,28 @@ async function listResponses(page: Page, deckId: string): Promise<ResponseRow[]>
   return (await listed.json()).responses as ResponseRow[];
 }
 
+/**
+ * ONE sign-in for the whole file, deliberately. A `beforeEach` here signed
+ * in five times, and `limiters.login` is 10 per 15 minutes per IP AND per
+ * address (middleware/rate-limit.ts) — with smoke, decks, viewer, embed and
+ * forms also signing in, the FULL suite crossed the budget and the last
+ * tests failed at the login page, looking like forms flakes. Keep this at
+ * one login: every test here shares the owner page for its API calls, and
+ * respondents get their own fresh contexts anyway (which is the point).
+ */
 test.describe('forms runtime in a real slide deck', () => {
-  test.beforeEach(async ({ page }) => {
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await (await browser.newContext()).newPage();
     await signIn(page);
   });
 
+  test.afterAll(async () => {
+    await page.context().close();
+  });
+
   test('§4.1 deck handlers do not own the form: clicking, spacing and submitting stay on the slide', async ({
-    page,
     browser
   }) => {
     const { deckId, secret } = await seedDeck(page, 'ArchDeck', ARCHITECTURE_DECK_HTML);
@@ -149,7 +164,7 @@ test.describe('forms runtime in a real slide deck', () => {
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
 
-  test('§4.2 two forms on one page: editing one never touches the other', async ({ page, browser }) => {
+  test('§4.2 two forms on one page: editing one never touches the other', async ({ browser }) => {
     const { deckId, secret } = await seedDeck(page, 'TwoForms', TWO_FORMS_DECK_HTML);
     const visitor = await (await browser.newContext()).newPage();
     const origin = new URL(page.url()).origin;
@@ -199,7 +214,7 @@ test.describe('forms runtime in a real slide deck', () => {
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
 
-  test('§4.3 a form rendered on DOMContentLoaded is still intercepted', async ({ page, browser }) => {
+  test('§4.3 a form rendered on DOMContentLoaded is still intercepted', async ({ browser }) => {
     const { deckId, secret } = await seedDeck(page, 'LateDeck', LATE_DECK_HTML);
     const visitor = await (await browser.newContext()).newPage();
     const origin = new URL(page.url()).origin;
@@ -221,7 +236,7 @@ test.describe('forms runtime in a real slide deck', () => {
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
 
-  test('§4.4 a deck that rewrites its own hash does not destroy the edit link', async ({ page, browser }) => {
+  test('§4.4 a deck that rewrites its own hash does not destroy the edit link', async ({ browser }) => {
     const { deckId, secret } = await seedDeck(page, 'HashDeck', HASH_DECK_HTML);
     const origin = new URL(page.url()).origin;
     const visitor = await (await browser.newContext()).newPage();
@@ -271,7 +286,6 @@ test.describe('forms runtime in a real slide deck', () => {
   });
 
   test('PRDCT-1332: a PLANTED #slr= creates a new row instead of overwriting the stranger it points at', async ({
-    page,
     browser
   }) => {
     const { deckId, secret } = await seedDeck(page, 'HijackDeck', ARCHITECTURE_DECK_HTML);

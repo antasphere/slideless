@@ -577,6 +577,15 @@ secret>` and harvested what visitors typed, straight through the official
 - **A blanket `try/catch` around an injected runtime makes failure silent by
   construction.** The forms suite was 7/7 green while five of five real
   presentations broke. Removed.
+- **A new Playwright project spends a SHARED, rate-limited login budget.**
+  `limiters.login` is 10 per 15 minutes keyed per IP _and_ per address, and
+  every project in the suite signs in as the same owner from the same IP. A
+  `beforeEach(signIn)` in a five-test file took the whole suite from 7
+  logins to 12, and tests 10, 11 and 12 — including `embed-forms.spec.ts`,
+  which this work did not touch — failed at the LOGIN PAGE. It read exactly
+  like a forms flake and was not one. Sign in once per file
+  (`beforeAll` on its own context) and treat the login budget as a suite-wide
+  resource when adding a project.
 - **Test the runtime in its HABITAT.** The e2e specs drove a bare `<form>`
   on an empty page; every real deck binds document-level keydown and click
   navigation written years before forms existed, so clicking a field
