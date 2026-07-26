@@ -1003,6 +1003,39 @@ NOT EXISTS(row WHERE dismissed_at IS NOT NULL)` — absence means the
     `docs/reference/`, so `generate-env-docs.ts` + the `docs:env` script
     paths must match.
 
+## 28. The template's CLI/SDK write path treats the server as trusted (PRDCT-1353)
+
+Every finding below is template heritage, not Slideless product code — the
+same shapes ship in `packages/cli` and `packages/sdk` of
+codika-platform-template, so the whole tool family inherits them.
+
+- **`files download` writes the server-chosen `originalName`.**
+  `const out = opts.out ?? meta.originalName; await writeFile(out, buf)` with
+  a wire schema (`fileUploadQuerySchema`) that allows any 1-255 character
+  name including `/` and `..` is an arbitrary file write from whoever can
+  upload to the workspace. The fix here: reduce to `basename()` (POSIX AND
+  Windows separators), refuse names that are not a plain filename, and write
+  contained inside an explicit `--dir`. Upstream should also decide whether
+  the UPLOAD schema ought to reject separators at the source — we did not
+  change it, because it would retro-invalidate stored names.
+- **`fs.promises.writeFile` is the wrong primitive for a path someone else
+  chose**: it follows a pre-existing symlink and its `O_TRUNC` write
+  preserves the existing file's mode. `packages/cli/src/safe-write.ts` here
+  is small and product-agnostic (`resolveInside` + a `realpath` parent check
+  - `O_NOFOLLOW` + a forced 0644) — a good template lift.
+- **No SDK call carried a timeout.** `fetch` has no default one anywhere, so
+  a stalling instance parks any caller forever. Two knobs (`timeoutMs`,
+  `downloadTimeoutMs`) with `AbortSignal.timeout` is the whole fix.
+- **Every non-`--json` CLI sink prints somebody else's text to a terminal.**
+  A shared `sanitizeForTty` wrapped once in `run()` (with `printJson` kept on
+  the raw sink) belongs in cli-core, not per tool.
+- **Secrets travel in `argv`.** `--api-key` and any `--password` flag are
+  visible in `ps` and land in shell history; cli-core should own the
+  `--api-key-stdin` seam and a one-claim-per-invocation stdin reader.
+- **The `.slidelessignore`-style glob compiler was a ReDoS.** The template's
+  `globToRegex` turns `**/` into `(?:.*/)?` with no ceiling; fifty of them
+  hang the process. Collapse consecutive stars and cap the pattern.
+
 ## Confirmed-good template properties (keep these)
 
 - **The instantiation checklist's file-by-file lists for scope strings and
