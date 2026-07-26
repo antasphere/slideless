@@ -6,17 +6,34 @@ set -euo pipefail
 
 info() { printf '\033[0;34m▸ %s\033[0m\n' "$*"; }
 success() { printf '\033[0;32m✔ %s\033[0m\n' "$*"; }
+warn() { printf '\033[0;33m! %s\033[0m\n' "$*" >&2; }
 fail() { printf '\033[0;31m✖ %s\033[0m\n' "$*" >&2; exit 1; }
 
 cd "$(dirname "$0")"
+# dr_origin_is_secure lives here: the same rule the server enforces, so the
+# hint printed at the end of this script cannot drift from the 403.
+# shellcheck source=scripts/lib/dr-lib.sh
+. "$(pwd)/scripts/lib/dr-lib.sh"
 
 command -v docker >/dev/null || fail "docker is required (https://get.docker.com)"
 docker compose version >/dev/null 2>&1 || fail "docker compose v2 is required"
 
-PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://localhost:3000}"
+APP_PORT="${APP_PORT:-3000}"
+# Loopback by default; docker's DNAT rules bypass ufw, so publishing on
+# 0.0.0.0 has to be a conscious choice (docker-compose.yml, docs/install.md).
+APP_BIND="${APP_BIND:-127.0.0.1}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://localhost:${APP_PORT}}"
+ALLOW_INSECURE_SETUP="${ALLOW_INSECURE_SETUP:-false}"
 
 if [ -f .env ]; then
   info "existing .env found — starting the stack"
+  # APP_PORT/APP_BIND landed in .env only from this version on. Backfill them
+  # rather than letting compose silently fall back to its own defaults and
+  # move a customised instance's port.
+  for pair in "APP_PORT=${APP_PORT}" "APP_BIND=${APP_BIND}"; do
+    key="${pair%%=*}"
+    grep -Eq "^[[:space:]]*${key}=" .env || printf '%s\n' "$pair" >> .env
+  done
 else
   info "generating secrets and writing .env"
   POSTGRES_PASSWORD=$(openssl rand -hex 16)
@@ -31,6 +48,11 @@ AUTH_SECRET=${AUTH_SECRET}
 SETUP_TOKEN=${SETUP_TOKEN}
 METRICS_TOKEN=${METRICS_TOKEN}
 PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+# Host publication of the app port. update.sh and restore.sh read these, so a
+# custom port survives an upgrade instead of reverting to 3000.
+APP_PORT=${APP_PORT}
+APP_BIND=${APP_BIND}
+ALLOW_INSECURE_SETUP=${ALLOW_INSECURE_SETUP}
 EOF
   chmod 600 .env
   success ".env written (mode 600)"
@@ -47,6 +69,24 @@ echo "  Dashboard:    ${PUBLIC_BASE_URL}"
 echo "  First boot:   open the dashboard and complete the setup wizard."
 echo "  Setup token:  ${SETUP_TOKEN:-<none>}   (required by the wizard; keep it private)"
 echo
-echo "  Health:       curl ${PUBLIC_BASE_URL}/healthz"
+echo "  Health:       curl http://127.0.0.1:${APP_PORT}/healthz"
 echo "  Update:       ./update.sh"
 echo "  Backup:       ./scripts/backup.sh"
+
+# The wizard posts the owner password and the setup token. Over plaintext to a
+# non-loopback origin that is a credential handed to the network, so the
+# server refuses it (ALLOW_INSECURE_SETUP). Say so here rather than letting
+# the operator discover it as a 403. dr_origin_is_secure is the same rule the
+# server applies — see scripts/lib/dr-lib.sh.
+if ! dr_origin_is_secure "$PUBLIC_BASE_URL" && [ "${ALLOW_INSECURE_SETUP:-false}" != "true" ]; then
+  echo
+  warn "PUBLIC_BASE_URL=${PUBLIC_BASE_URL} is plaintext HTTP on a non-loopback origin —
+  the setup wizard will REFUSE to run (403 insecure_transport). Either put TLS in front
+  (docs/self-hosting/reverse-proxy.md), or reach the loopback bind through an SSH tunnel:
+
+      ssh -N -L ${APP_PORT}:127.0.0.1:${APP_PORT} <user>@<this-host>
+      open http://localhost:${APP_PORT}
+
+  To accept plaintext anyway (trusted private network only): set ALLOW_INSECURE_SETUP=true
+  in .env and re-run ./setup.sh."
+fi

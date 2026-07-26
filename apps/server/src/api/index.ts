@@ -22,6 +22,7 @@ import type { EmailDriver } from '../email/driver.js';
 import { isApiKeyToken } from '../apikeys/service.js';
 import { auditMiddleware, type AuditService } from '../audit/service.js';
 import { constantTimeEquals } from '../constant-time.js';
+import { isSecureSetupOrigin } from '../setup-transport.js';
 import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
 import { oauthPublicEndpoints } from '../middleware/oauth-public.js';
@@ -316,6 +317,23 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // ── POST /setup — one-shot first-boot wizard ─────────────────────────────
   api.openapi(setupRoute, async (c) => {
     const body = c.req.valid('json');
+
+    // BEFORE the token check: an instance reachable only over plaintext on a
+    // non-loopback origin must not accept the owner password at all, whether
+    // or not the caller holds the token (setup-transport.ts).
+    if (!env.ALLOW_INSECURE_SETUP && !isSecureSetupOrigin(env.PUBLIC_BASE_URL)) {
+      logger.warn(
+        { publicBaseUrl: env.PUBLIC_BASE_URL },
+        'refused setup over plaintext on a non-loopback origin'
+      );
+      return c.json(
+        err(
+          'insecure_transport',
+          'Setup over plaintext HTTP on a non-loopback origin is refused. Put TLS in front, reach the instance through an SSH tunnel, or set ALLOW_INSECURE_SETUP=true.'
+        ),
+        403
+      );
+    }
 
     if (env.SETUP_TOKEN && !constantTimeEquals(body.setupToken ?? '', env.SETUP_TOKEN)) {
       return c.json(err('invalid_setup_token', 'A valid setup token is required'), 403);

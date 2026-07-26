@@ -68,6 +68,8 @@ const envObjectSchema = z.object({
   ),
   /** When set, POST /api/v1/setup requires this token (constant-time compared). */
   SETUP_TOKEN: optionalString(z.string().min(8)),
+  /** Allow POST /api/v1/setup over plaintext HTTP on a non-loopback PUBLIC_BASE_URL. Default false: the wizard 403s, because the owner password and the setup token would cross the network in the clear on the one request that decides who owns the instance. Reach a TLS-less server through an SSH tunnel (`ssh -L`) instead; set this true only on a trusted private network. */
+  ALLOW_INSECURE_SETUP: booleanish.default(false),
   /** Break-glass operator allowlist: comma-separated emails. A caller is superadmin ONLY on a SESSION whose VERIFIED email is listed here — machine credentials (API keys, OAuth tokens) never qualify, they 403 fail-closed. Unset (default) = the break-glass endpoints are dormant and 403 for everyone. Runbook: internal/security-runbooks.md. */
   SUPERADMIN_EMAILS: optionalString(
     z.string().superRefine((raw, ctx) => {

@@ -34,6 +34,11 @@ export interface AppDeps {
   metricsMiddleware?: MiddlewareHandler;
   metricsRoutes?: Hono;
   otelMiddleware?: MiddlewareHandler;
+  /**
+   * Live readiness probe for the backing store (routes/health.ts). Omitted =
+   * /readyz keeps reporting the boot-time storage result forever.
+   */
+  probeStorage?: () => Promise<void>;
 }
 
 /**
@@ -52,7 +57,8 @@ export async function createApp({
   viewer,
   metricsMiddleware,
   metricsRoutes,
-  otelMiddleware
+  otelMiddleware,
+  probeStorage
 }: AppDeps): Promise<Hono> {
   const app = new Hono();
 
@@ -99,7 +105,13 @@ export async function createApp({
     return c.json({ error: { code: 'internal', message: 'Internal server error' } }, 500);
   });
 
-  app.route('/', healthRoutes(state));
+  app.route(
+    '/',
+    healthRoutes(state, {
+      ...(probeStorage ? { probeStorage } : {}),
+      onStorageFailure: (err) => logger.error({ err }, 'storage probe failed — reporting not ready')
+    })
+  );
   if (metricsRoutes) app.route('/', metricsRoutes);
 
   app.route('/api/v1', api);
