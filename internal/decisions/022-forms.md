@@ -262,9 +262,17 @@ get the same 404 an outsider would, and only delete distinguishes
   included.
 - The emailed edit link lands on the deck's ENTRY page (`buildViewerUrl`),
   even when the form lives on a sub-page; only the confirmation card's own
-  link carries the current page URL. Accepted for v1: the runtime keeps an
-  unmatched fragment secret in memory, so navigating to the page that does
-  hold the form still prefills and updates.
+  link carries the current page URL. **This was accepted for v1 on a false
+  premise, corrected here and left open:** the paragraph said "the runtime
+  keeps an unmatched fragment secret in memory, so navigating to the page
+  that does hold the form still prefills and updates". No such behaviour
+  exists or ever did. A sub-page click is a full document navigation, the
+  fragment does not survive it, and a fresh runtime starts with no secret —
+  so the respondent silently creates a SECOND row. Audit §9 verified it
+  end to end. Fixing it (store the serving path and email that URL, or
+  carry the fragment across same-deck navigations) is **PRDCT-1339**, not
+  this change; the ADR is corrected now so nobody re-reasons from the false
+  sentence in the meantime.
 - Edits have no history: update replaces the payload and bumps
   `updated_at`, so a disputed response shows only its latest state. Owner
   delete is the only moderation tool.
