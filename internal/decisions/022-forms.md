@@ -17,7 +17,7 @@
 
 ## Decisions
 
-### 1. The deck HTML is the form; the server never parses deck HTML
+### 1. The deck HTML is the form; the server never PARSES it (it does scan for the marker)
 
 The authoring contract is one attribute: `<form data-slideless-form="name">`
 with standard inputs. The name is gated to the owner-slug charset
@@ -102,7 +102,7 @@ never a gate."
 That is architecturally unsound and was **not patchable in place**.
 Anything handed to the deck document is readable by the deck's own
 JavaScript (the ADR 012 trust model), and the assertion was written into
-the injected config *before* the runtime's "no forms here" early return, so
+the injected config _before_ the runtime's "no forms here" early return, so
 it was present even in decks holding no form. Proven end to end,
 cross-workspace: a victim in another workspace opens the share link while
 signed in, deck JS lifts the assertion out of `script[data-slideless-forms]`
@@ -144,7 +144,7 @@ frame" stays policy). The forms runtime injects on document navigations AND
 same-deck HTML frame navigations (`Sec-Fetch-Dest: iframe`/`frame`),
 because official embeds are iframes and an embedded form must submit;
 without the runtime the sandboxed native submit garbage-navigates. The
-*sandbox* regime holds identically in a frame by the ADR 021 §1 rationale:
+_sandbox_ regime holds identically in a frame by the ADR 021 §1 rationale:
 same opaque origin, same wildcard-CORS `credentials: 'omit'` calls. The
 forms runtime accordingly has NO top-context refusal, on purpose.
 
@@ -164,7 +164,7 @@ through the official `/embed.js` loader. Two defences, both required:
 whole — and the runtime never silently adopts a fragment: on arrival with a
 valid `#slr=` it shows an explicit prompt naming the response's date and
 **defaults to create**. Leg 1 still works; the hijack is now visible and
-consented. Related: an edited row used to keep the *creator's*
+consented. Related: an edited row used to keep the _creator's_
 `source`/`placement`/`version`, so attribution on every edit was silently
 wrong; the update path re-stamps all three from the navigation that made
 the edit.
@@ -207,7 +207,7 @@ and it is stated once, here, in its testable form (PRDCT-1331):**
 Two values qualify and are injected: the share-token secret (already in
 `location.pathname`) and the unlock proof (password links, scoped to viewer
 calls on that same token). The rest of the config — version, source,
-placement, `emailAvailable` — is server *context*, not capability, and the
+placement, `emailAvailable` — is server _context_, not capability, and the
 server re-derives or re-validates each of them at write.
 
 That sentence was true for those values and **false for leg 3's identity
@@ -231,6 +231,16 @@ get the same 404 an outsider would, and only delete distinguishes
   create and update. Unknown share secrets burn the per-IP invalid-secret
   point (the token-session resolver), and failed edit-secret lookups burn
   this same bucket, so probing secrets is never cheaper than submitting.
+  **One carve-out (PRDCT-1334):** a secret that resolves and IS valid for
+  this deck and link but names a DIFFERENT form 404s without burning. The
+  caller already holds that row's capability, so the answer reveals nothing
+  they did not have, and the runtime legitimately probes one own-row route
+  per form when it arrives with a fragment on a multi-form page — burning
+  there would spend the respondent's budget on the page load. Every secret
+  that does not resolve, or resolves to another deck or link, still burns.
+  (Audit §8 separately records that the burn is `.catch(() => {})`-swallowed
+  and no path reads bucket state, so the "never cheaper" claim is weaker
+  than it reads; that is PRDCT-1337's, not fixed here.)
 - `viewerFormEmail`: 5 per 15 minutes per `${ip}:${tokenId}` AND per target
   address (the emailKeyOf posture): a public endpoint that sends mail is a
   spam vector twice over.

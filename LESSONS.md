@@ -522,6 +522,71 @@ allow-downloads`, never `allow-same-origin` — on every viewer response
   (PRDCT-1241). Capture-phase deck listeners still win by design — accepted
   as the cost of sharing the document (ADR 012 trust model).
 
+## Forms audit remediation (2026-07-26 — ADR 022, PRDCT-1331..1334)
+
+- **A trust-boundary comment written as a DESCRIPTION gets a feature waved
+  through; write it as a CONSTRAINT with a test behind it.** The forms
+  runtime said "the runtime adds NO capability the deck did not have". That
+  was true of the share secret and the unlock proof, so a reviewer who
+  checked those two stopped reading — and ADR 022 leg 3 shipped a signed
+  assertion of the SIGNED-IN VIEWER's identity into the same config, which
+  deck JS lifted to file responses under a stranger's account across
+  workspaces (PRDCT-1331). The comment now states the invariant as a rule
+  for future edits, and the injected config's KEY SET is pinned by an
+  integration assertion, so adding a field turns a test red instead of
+  depending on prose being read carefully.
+- **Anything handed to the deck document is a capability grant, full stop.**
+  It cannot be scoped by intent ("this only stamps attribution"), because
+  the deck's own JS reads it and replays it. If a value identifies a
+  person, it belongs on the APP origin behind an explicit click. There is
+  no server-side rescue either: the submit is `credentials: 'omit'` from an
+  opaque origin, so identity can never be re-derived at write time.
+- **The URL FRAGMENT is attacker-controlled input, and the sandbox does not
+  help.** ADR 022 §5 argued a frame was safe "by the ADR 021 §1 rationale",
+  but §1 is about the sandbox regime and says nothing about the framer
+  choosing the fragment. A framer planted `#slr=<their own response's edit
+secret>` and harvested what visitors typed, straight through the official
+  `/embed.js` loader, with the sandbox intact throughout (PRDCT-1332).
+  A capability arriving in a fragment is a CANDIDATE, never an identity:
+  the loader strips the fragment, and the runtime asks before adopting one.
+- **A default-ON capability turns an opt-in code path into the default code
+  path.** `canAnnotate` was opt-in, so buffering the whole document to
+  inject was affordable. `canSubmitForms` defaults ON, and the identical
+  code became a ~10x-document memory spike on EVERY share link — including
+  decks with no form at all, on a route with no rate limiter (PRDCT-1333).
+  When flipping a flag's default, re-audit every path it gates as if it
+  were new. The fix reuses the `has_agent_doc` pattern: detect at commit,
+  denormalize onto the version, and arm the seam only when it is true.
+- **Assert the SHAPE of a memory curve, not a byte count.** A bounded-window
+  injector and a buffering one produce identical output, so length and
+  content prove nothing. Measuring bytes-in-minus-bytes-out at two document
+  sizes does: the windowed one holds the same amount for both, the
+  buffering one holds the document. And sample the high-water mark BEFORE
+  counting each emitted chunk — sampling after reads zero for an
+  implementation that flushes once at the end, which is precisely the
+  implementation the test exists to catch.
+- **Per-page state in a runtime that serves per-ELEMENT capabilities is a
+  data-corruption bug waiting to happen.** One module-level `editSecret`
+  shared by every form on the page, while ownership is per form, meant
+  editing `rsvp` silently overwrote the respondent's `feedback` answer and
+  the card said "updated" (PRDCT-1334). The client fix (`form.__slSecret`)
+  is not the load-bearing one: the own-row routes carried NO form segment,
+  so the server structurally could not detect the mismatch. Put the
+  discriminator in the route, then the server refuses it whatever the
+  client does.
+- **A blanket `try/catch` around an injected runtime makes failure silent by
+  construction.** The forms suite was 7/7 green while five of five real
+  presentations broke. Removed.
+- **Test the runtime in its HABITAT.** The e2e specs drove a bare `<form>`
+  on an empty page; every real deck binds document-level keydown and click
+  navigation written years before forms existed, so clicking a field
+  navigated the deck, typing a space was swallowed, submitting hid the
+  confirmation card, and a deck's own `history.replaceState` wiped the edit
+  secret from the URL. `viewer-forms-realdeck.spec.ts` uses fixtures whose
+  navigation engines are lifted VERBATIM from
+  `workspace/content/presentations/` — the value is being unmodified, so do
+  not tidy them.
+
 ## Phase 5 security review (deck read privacy, 2026-07-10)
 
 - **Inheriting the template's "workspace data" read posture silently made
