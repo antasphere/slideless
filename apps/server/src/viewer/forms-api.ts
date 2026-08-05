@@ -17,7 +17,6 @@ import {
   FORM_RESPONSES_MAX_PER_DECK,
   type FormResponseService
 } from '../forms/service.js';
-import { verifyRespondentAssertion } from './respondent.js';
 import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 /**
@@ -41,9 +40,14 @@ import { resolveTokenSession, type TokenSessionView } from './token-session.js';
  *  - INPUT: zod-validated flat payload (string/string[] values, field-count
  *    and key caps at the contract), a serialized-bytes cap here, and the
  *    view-events placement sanitizer. Payload meaning is NEVER interpreted.
- *  - IDENTITY: `respondent_user_id` is stamped ONLY from the signed
- *    serve-time assertion (viewer/respondent.ts); a stale/forged assertion
- *    degrades to anonymous, never fails the submit.
+ *  - IDENTITY: there is none, by construction. ADR 022 leg 3 injected a
+ *    signed identity assertion into the deck document and let this handler
+ *    stamp `respondent_user_id` from it; deck JS could lift it and file
+ *    responses under a stranger's account (PRDCT-1331, audit §1). Removed.
+ *    A response is anonymous unless the AUTHOR asked for a name in the form.
+ *  - FORM BINDING: the own-row routes carry `{form}` and the row's
+ *    `form_name` must match, so an edit secret can never reach another
+ *    form's row even on the same deck and link (PRDCT-1334 item 2).
  *  - ABUSE: creates/updates burn a per-IP+token bucket; unknown share
  *    secrets burn per-IP; failed edit-secret lookups burn the same submit
  *    bucket; the email leg has its own tight per-IP+token AND per-address
@@ -64,13 +68,20 @@ const formSubmitBody = z.object({
   version: z.number().int().min(1).optional(),
   /** Serving-document context, echoed from the injected config. Attribution-grade. */
   source: formResponseSourceSchema.default('link'),
-  placement: z.string().max(200).optional(),
-  /** The signed respondent assertion, echoed from the injected config. */
-  assertion: z.string().max(1024).optional()
+  placement: z.string().max(200).optional()
 });
 
+/**
+ * An update re-stamps attribution: an edited row used to keep the CREATOR's
+ * source/placement/version forever, so every edit silently mis-attributed
+ * itself (PRDCT-1332, related finding). Unknown keys — an `assertion` from an
+ * old runtime, say — are stripped by zod and never reach a column.
+ */
 const formUpdateBody = z.object({
-  payload: formResponsePayloadSchema
+  payload: formResponsePayloadSchema,
+  version: z.number().int().min(1).optional(),
+  source: formResponseSourceSchema.optional(),
+  placement: z.string().max(200).optional()
 });
 
 const formEmailBody = z.object({
@@ -84,7 +95,7 @@ export interface ViewerFormDeps {
   presentations: PresentationService;
   forms: FormResponseService;
   logger: Logger;
-  /** MAC key for the unlock proof + respondent assertion (the auth secret). */
+  /** MAC key for the unlock proof (the auth secret). */
   authSecret: string;
   email: EmailDriver;
   env: Pick<Env, 'PUBLIC_BASE_URL' | 'VIEWER_BASE_URL'>;
@@ -121,11 +132,37 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     );
   }
 
+  /** The `{form}` path segment, or a 400 — the same gate the create route uses. */
+  function parseFormName(c: Context): { ok: true; name: string } | { ok: false; res: Response } {
+    const parsed = formNameSchema.safeParse(c.req.param('form'));
+    if (!parsed.success) {
+      return {
+        ok: false,
+        res: c.json(err('validation_error', 'form name must be 1-64 chars of [A-Za-z0-9._-]'), 400)
+      };
+    }
+    return { ok: true, name: parsed.data };
+  }
+
   /**
-   * The respondent's own row: token session + edit secret, bound together —
-   * the row must belong to THIS deck and THIS token. Any mismatch answers
-   * the same 404 as a missing secret (no foreign-row oracle), and burns the
-   * submit bucket like an invalid share secret would.
+   * The respondent's own row: token session + edit secret + FORM NAME, bound
+   * together — the row must belong to THIS deck, THIS token and THIS form.
+   * Any mismatch answers the same 404 as a missing secret (no foreign-row
+   * oracle).
+   *
+   * The form segment is what closes PRDCT-1334 item 2 server-side: the
+   * runtime used to keep ONE edit secret for every form on the page, and
+   * because the route carried no form name the server could not tell that a
+   * PUT was landing on the wrong row — an `rsvp` edit silently overwrote the
+   * respondent's `feedback` answer and the card said "updated". Now the
+   * server refuses it whatever the client does.
+   *
+   * Bucket policy: an unresolvable or foreign-deck/foreign-token secret
+   * burns the submit bucket like an invalid share secret would. A secret
+   * that IS valid for this deck+token but names another form does NOT burn:
+   * the caller already holds that capability, so the answer is not an
+   * oracle, and the runtime legitimately probes one own-row route per form
+   * on the page when it arrives with a fragment.
    */
   async function resolveOwnResponse(
     c: Context
@@ -133,16 +170,45 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     const resolved = await resolveSubmitter(c);
     if (!resolved.ok) return resolved;
     const { view } = resolved;
+    const formName = parseFormName(c);
+    if (!formName.ok) return { ok: false, res: formName.res };
+    const notFound = () => c.json(err('not_found', 'No response matches this link and edit secret.'), 404);
     const secret = c.req.header(RESPONSE_SECRET_HEADER);
     const row = secret === undefined ? null : await forms.resolveByEditSecret(secret);
     if (!row || row.presentationId !== view.presentationId || row.shareTokenId !== view.token.id) {
       await deps.formSubmitLimiter.consume(`${clientIp(c)}:${view.token.id}`).catch(() => {});
+      return { ok: false, res: notFound() };
+    }
+    if (row.formName !== formName.name) return { ok: false, res: notFound() };
+    return { ok: true, view, row };
+  }
+
+  /**
+   * The version a response records is the one the respondent SAW — same
+   * discipline as annotations: a pinned token can only mean its pin; a
+   * latest-mode token may claim at most the version its document was served
+   * with. Shared by create and update so an edit cannot rewrite the version
+   * to something the link never served.
+   */
+  function resolveClaimedVersion(
+    c: Context,
+    view: TokenSessionView,
+    claimed: number | undefined
+  ): { ok: true; version: number } | { ok: false; res: Response } {
+    if (claimed === undefined) return { ok: true, version: view.version };
+    if (view.token.pinnedVersion !== null && claimed !== view.token.pinnedVersion) {
       return {
         ok: false,
-        res: c.json(err('not_found', 'No response matches this link and edit secret.'), 404)
+        res: c.json(err('invalid_version', 'This share link is pinned to a different version'), 400)
       };
     }
-    return { ok: true, view, row };
+    if (claimed > view.version) {
+      return {
+        ok: false,
+        res: c.json(err('invalid_version', 'version does not exist on this presentation'), 400)
+      };
+    }
+    return { ok: true, version: claimed };
   }
 
   /** The respondent's personal edit link: their share URL + the fragment secret. */
@@ -169,12 +235,10 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
   api.post('/viewer/:secret/forms/:form/responses', async (c) => {
     const resolved = await resolveSubmitter(c);
     if (!resolved.ok) return resolved.res;
-    const { token, version: resolvedVersion, presentationId } = resolved.view;
+    const { token, presentationId } = resolved.view;
 
-    const formName = formNameSchema.safeParse(c.req.param('form'));
-    if (!formName.success) {
-      return c.json(err('validation_error', 'form name must be 1-64 chars of [A-Za-z0-9._-]'), 400);
-    }
+    const formName = parseFormName(c);
+    if (!formName.ok) return formName.res;
 
     // Spam wall BEFORE any write: per IP + token, from the limiter registry.
     try {
@@ -209,68 +273,51 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
         400
       );
     }
-    // The response records the version the respondent SAW — same discipline
-    // as annotations: a pinned token can only mean its pin; a latest-mode
-    // token may claim the version its document was served with.
-    let version = resolvedVersion;
-    if (body.version !== undefined) {
-      if (token.pinnedVersion !== null && body.version !== token.pinnedVersion) {
-        return c.json(err('invalid_version', 'This share link is pinned to a different version'), 400);
-      }
-      if (body.version > resolvedVersion) {
-        return c.json(err('invalid_version', 'version does not exist on this presentation'), 400);
-      }
-      version = body.version;
-    }
+    const claimed = resolveClaimedVersion(c, resolved.view, body.version);
+    if (!claimed.ok) return claimed.res;
 
     // Hard per-deck ceiling — spam containment on a public write endpoint.
     if ((await forms.countForDeck(presentationId)) >= FORM_RESPONSES_MAX_PER_DECK) {
       return c.json(err('responses_full', 'This deck has reached its response limit.'), 403);
     }
 
-    // Identity is best-effort: a valid assertion stamps the user, anything
-    // else (absent, stale, forged) degrades to anonymous.
-    const respondentUserId =
-      body.assertion !== undefined
-        ? verifyRespondentAssertion(authSecret, token.id, body.assertion)
-        : null;
-
     const { row, editSecret } = await forms.create({
       workspaceId: token.workspaceId,
       presentationId,
-      version,
-      formName: formName.data,
+      version: claimed.version,
+      formName: formName.name,
       shareTokenId: token.id,
       source: body.source,
       placement: viewPlacement(body.placement),
-      respondentUserId,
       payload: body.payload
     });
 
-    // Leg 3 courtesy: a recognized respondent gets their edit link mailed to
-    // their account address with zero prompting. Best-effort, never blocks.
-    let emailSent = false;
-    if (respondentUserId !== null && deps.email.delivers) {
-      const to = await forms.userEmail(respondentUserId);
-      if (to !== null) emailSent = await sendEditLink(c, to, resolved.view, editSecret);
-    }
-
     deps.logger.info(
-      { presentationId, shareTokenId: token.id, responseId: row.id, formName: formName.data, version },
+      {
+        presentationId,
+        shareTokenId: token.id,
+        responseId: row.id,
+        formName: formName.name,
+        version: claimed.version
+      },
       'viewer form response created'
     );
-    return c.json({ response: formResponseToRespondentWire(row), editSecret, emailSent }, 201);
+    // `emailSent` stays on the wire (the runtime and the tests read it) but
+    // is now always false on create: the leg-3 auto-mail is gone with leg 3
+    // — it bypassed the email limiter entirely and turned every replayed
+    // submit into a mail to a stranger's real address (PRDCT-1331).
+    return c.json({ response: formResponseToRespondentWire(row), editSecret, emailSent: false }, 201);
   });
 
   // ── GET: the respondent's own row (prefill on return visits) ─────────────
-  api.get('/viewer/:secret/forms/responses/me', async (c) => {
+  api.get('/viewer/:secret/forms/:form/responses/me', async (c) => {
     const resolved = await resolveOwnResponse(c);
     if (!resolved.ok) return resolved.res;
     return c.json({ response: formResponseToRespondentWire(resolved.row) }, 200);
   });
 
   // ── PUT: update the own row (the one evolving answer) ────────────────────
-  api.put('/viewer/:secret/forms/responses/me', async (c) => {
+  api.put('/viewer/:secret/forms/:form/responses/me', async (c) => {
     const resolved = await resolveOwnResponse(c);
     if (!resolved.ok) return resolved.res;
     const { view, row } = resolved;
@@ -306,7 +353,17 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
         400
       );
     }
-    const updated = (await forms.updatePayload(row.id, parsed.data.payload)) ?? row;
+    // Re-stamp attribution from THIS navigation: an edit made through a
+    // different link, source or placement must not keep the creator's.
+    const claimed = resolveClaimedVersion(c, view, parsed.data.version);
+    if (!claimed.ok) return claimed.res;
+    const updated =
+      (await forms.updatePayload(row.id, parsed.data.payload, {
+        version: claimed.version,
+        shareTokenId: view.token.id,
+        ...(parsed.data.source !== undefined ? { source: parsed.data.source } : {}),
+        placement: viewPlacement(parsed.data.placement)
+      })) ?? row;
     deps.logger.info(
       { presentationId: view.presentationId, shareTokenId: view.token.id, responseId: row.id },
       'viewer form response updated'
@@ -315,7 +372,7 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
   });
 
   // ── POST: mail the respondent their own edit link (leg 2 opt-in) ─────────
-  api.post('/viewer/:secret/forms/responses/me/email', async (c) => {
+  api.post('/viewer/:secret/forms/:form/responses/me/email', async (c) => {
     const resolved = await resolveOwnResponse(c);
     if (!resolved.ok) return resolved.res;
     const { view } = resolved;

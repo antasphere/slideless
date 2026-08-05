@@ -481,6 +481,8 @@ export const presentations = pgTable(
     // AGENT.md — the deck's agent-facing briefing) so listings stay
     // manifest-free, like entry_path.
     hasAgentDoc: boolean('has_agent_doc').notNull().default(false),
+    // Mirrors the current version's has_forms (ADR 022) the same way.
+    hasForms: boolean('has_forms').notNull().default(false),
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
@@ -539,6 +541,13 @@ export const presentationVersions = pgTable(
     // case-sensitive path — the deck's agent-facing briefing). Stamped at
     // commit like sizeBytes/fileCount; never derived at read time.
     hasAgentDoc: boolean('has_agent_doc').notNull().default(false),
+    // Whether ANY text/html file in this version carries a marked
+    // `data-slideless-form` (ADR 022). Detected once at commit, exactly like
+    // has_agent_doc, and read by the viewer's injection seam: without it the
+    // seam had to assume every deck might hold a form, so every share link
+    // left the streaming serve path (PRDCT-1333, audit §3 — a ~10x-document
+    // memory spike on an unauthenticated, unlimited GET).
+    hasForms: boolean('has_forms').notNull().default(false),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdByRole: text('created_by_role', { enum: versionAuthorRoles }).notNull().default('owner'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
@@ -732,11 +741,20 @@ export type FormResponseSource = (typeof formResponseSources)[number];
  * one level down — minted once, never stored, unique index is the lookup).
  *
  * Attribution: `share_token_id` names the link (set-null so responses
- * survive token deletion), `source`/`placement` mirror the view-events
+ * survive token deletion) and `source`/`placement` mirror the view-events
  * posture (visitor-influenced, sanitize-then-store, attribution-grade —
- * never authz), and `respondent_user_id` is stamped ONLY from the signed
- * serve-time identity assertion (viewer/respondent.ts), never from client
- * claims — the annotations dual-authorship shape.
+ * never authz). All three are re-stamped on an update, from the navigation
+ * that made the edit (PRDCT-1332).
+ *
+ * ⚠️ `respondent_user_id` is DEAD (PRDCT-1331, audit §1). ADR 022 leg 3
+ * stamped it from a signed identity assertion injected into the deck
+ * document; deck JS could lift the assertion and file responses under a
+ * stranger's account, cross-workspace. Leg 3 is gone, nothing writes this
+ * column any more, and nothing reads it — a response is anonymous unless
+ * the AUTHOR asked for a name in the form. The column stays for now only to
+ * keep the migration additive; dropping it is a follow-up. Do NOT re-wire
+ * it: account-linked responses must be an explicit claim on the app origin,
+ * never a value handed to a sandboxed deck.
  */
 export const formResponses = pgTable(
   'form_responses',

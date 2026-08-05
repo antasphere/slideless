@@ -3,7 +3,6 @@ import { and, count, desc, eq, gte, inArray, max } from 'drizzle-orm';
 import {
   formResponses,
   shareTokens,
-  user,
   type Db,
   type FormResponseRow,
   type FormResponseSource
@@ -47,9 +46,19 @@ export interface FormResponseCreate {
   shareTokenId: string;
   source: FormResponseSource;
   placement: string | null;
-  /** ONLY from a verified respondent assertion (viewer/respondent.ts). */
-  respondentUserId: string | null;
   payload: FormResponsePayload;
+}
+
+/**
+ * Attribution re-stamped on an update (PRDCT-1332): an edited row used to
+ * keep the CREATOR's link, source, placement and version forever, so every
+ * edit through a different link silently mis-attributed itself.
+ */
+export interface FormResponseAttribution {
+  version: number;
+  shareTokenId: string;
+  source?: FormResponseSource;
+  placement: string | null;
 }
 
 export interface FormResponseFilters {
@@ -69,7 +78,6 @@ export interface FormResponseListed {
   id: string;
   response: FormResponseRow;
   shareTokenName: string | null;
-  respondentEmail: string | null;
 }
 
 export interface FormResponseSummaryBucket {
@@ -109,7 +117,6 @@ export class FormResponseService {
         shareTokenId: opts.shareTokenId,
         source: opts.source,
         placement: opts.placement,
-        respondentUserId: opts.respondentUserId,
         responseSecretHash: hashSecret(editSecret, pepper),
         payload: opts.payload
       })
@@ -139,11 +146,25 @@ export class FormResponseService {
     return row ?? null;
   }
 
-  /** Replace the payload (the respondent's one evolving answer). */
-  async updatePayload(responseId: string, payload: FormResponsePayload): Promise<FormResponseRow | null> {
+  /**
+   * Replace the payload (the respondent's one evolving answer) and re-stamp
+   * the attribution of the navigation that made the edit.
+   */
+  async updatePayload(
+    responseId: string,
+    payload: FormResponsePayload,
+    attribution: FormResponseAttribution
+  ): Promise<FormResponseRow | null> {
     const [row] = await this.db
       .update(formResponses)
-      .set({ payload, updatedAt: new Date() })
+      .set({
+        payload,
+        version: attribution.version,
+        shareTokenId: attribution.shareTokenId,
+        ...(attribution.source !== undefined ? { source: attribution.source } : {}),
+        placement: attribution.placement,
+        updatedAt: new Date()
+      })
       .where(eq(formResponses.id, responseId))
       .returning();
     return row ?? null;
@@ -167,12 +188,10 @@ export class FormResponseService {
       .select({
         id: formResponses.id,
         response: formResponses,
-        shareTokenName: shareTokens.name,
-        respondentEmail: user.email
+        shareTokenName: shareTokens.name
       })
       .from(formResponses)
       .leftJoin(shareTokens, eq(shareTokens.id, formResponses.shareTokenId))
-      .leftJoin(user, eq(user.id, formResponses.respondentUserId))
       .where(
         and(
           eq(formResponses.id, responseId),
@@ -195,12 +214,10 @@ export class FormResponseService {
       .select({
         id: formResponses.id,
         response: formResponses,
-        shareTokenName: shareTokens.name,
-        respondentEmail: user.email
+        shareTokenName: shareTokens.name
       })
       .from(formResponses)
       .leftJoin(shareTokens, eq(shareTokens.id, formResponses.shareTokenId))
-      .leftJoin(user, eq(user.id, formResponses.respondentUserId))
       .where(
         and(
           eq(formResponses.presentationId, presentationId),
@@ -283,16 +300,6 @@ export class FormResponseService {
     const [row] = await this.db.delete(formResponses).where(eq(formResponses.id, responseId)).returning();
     return row ?? null;
   }
-
-  /** Account email for the leg-3 auto-mailed edit link; null when the user is gone. */
-  async userEmail(userId: string): Promise<string | null> {
-    const [row] = await this.db
-      .select({ email: user.email })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1);
-    return row?.email ?? null;
-  }
 }
 
 /**
@@ -314,8 +321,6 @@ export function formResponseToWire(r: FormResponseListed): {
   shareTokenName: string | null;
   source: FormResponseSource;
   placement: string | null;
-  respondentUserId: string | null;
-  respondentEmail: string | null;
   payload: Record<string, string | string[]>;
   createdAt: string;
   updatedAt: string;
@@ -329,8 +334,6 @@ export function formResponseToWire(r: FormResponseListed): {
     shareTokenName: r.shareTokenName,
     source: r.response.source,
     placement: r.response.placement,
-    respondentUserId: r.response.respondentUserId,
-    respondentEmail: r.respondentEmail,
     payload: r.response.payload,
     createdAt: r.response.createdAt.toISOString(),
     updatedAt: r.response.updatedAt.toISOString()

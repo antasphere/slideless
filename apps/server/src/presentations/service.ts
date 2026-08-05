@@ -206,6 +206,12 @@ export class PresentationService {
     metadata?: Record<string, unknown> | undefined;
     entryPath: string;
     manifest: ManifestEntry[];
+    /**
+     * Whether any HTML in this manifest carries `data-slideless-form`
+     * (forms/detect.ts, scanned by the caller before the transaction so the
+     * blob reads never happen with row locks held). PRDCT-1333.
+     */
+    hasForms: boolean;
   }): Promise<SessionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -250,7 +256,8 @@ export class PresentationService {
           ...(opts.metadata !== undefined ? { metadata: opts.metadata } : {}),
           currentVersion: 1,
           entryPath: opts.entryPath,
-          hasAgentDoc: stamped.hasAgentDoc
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms
         })
         .returning();
       const [version] = await tx
@@ -264,6 +271,7 @@ export class PresentationService {
           sizeBytes: stamped.sizeBytes,
           fileCount: stamped.fileCount,
           hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
           createdBy: opts.principal.userId,
           createdByRole: 'owner'
         })
@@ -293,6 +301,8 @@ export class PresentationService {
     entryPath: string;
     manifest: ManifestEntry[];
     title?: string | undefined;
+    /** See commitUploadSession — PRDCT-1333. */
+    hasForms: boolean;
   }): Promise<VersionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -348,6 +358,7 @@ export class PresentationService {
           sizeBytes: stamped.sizeBytes,
           fileCount: stamped.fileCount,
           hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
           createdBy: opts.principal.userId,
           // 'owner' for the deck owner / workspace admins, 'dev' for an
           // active per-deck collaborator (resolved above, in-transaction).
@@ -360,6 +371,7 @@ export class PresentationService {
           currentVersion: newVersion,
           entryPath: opts.entryPath,
           hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
           updatedAt: new Date(),
           ...(opts.title !== undefined ? { title: opts.title } : {})
         })
@@ -518,6 +530,7 @@ export class PresentationService {
         sizeBytes: presentationVersions.sizeBytes,
         fileCount: presentationVersions.fileCount,
         hasAgentDoc: presentationVersions.hasAgentDoc,
+        hasForms: presentationVersions.hasForms,
         createdBy: presentationVersions.createdBy,
         createdByRole: presentationVersions.createdByRole,
         createdAt: presentationVersions.createdAt

@@ -1,6 +1,12 @@
 # ADR 022 — Deck-embedded forms
 
-- **Status**: accepted, 2026-07-25
+- **Status**: accepted, 2026-07-25; **amended 2026-07-26** after the
+  seven-agent audit (`slideless-os` spec `2026-07-25-forms-audit-remediation`).
+  Decision 4's leg 3 is **withdrawn** (PRDCT-1331), decision 5's fragment
+  claim is **corrected** (PRDCT-1332), and decision 1's "never scans deck
+  HTML" is **narrowed** (PRDCT-1333). Amendments are marked inline; the
+  original wording is quoted where it was the thing that failed, because
+  reviewers wave through sentences, not diffs.
 - **Context**: the forms feature: share-link viewers submit forms the deck
   author wrote into the deck HTML, in direct links and inside the ADR 021
   official embeds; owners collect the responses per form, per link, per
@@ -11,15 +17,27 @@
 
 ## Decisions
 
-### 1. The deck HTML is the form; the server never parses deck HTML
+### 1. The deck HTML is the form; the server never PARSES it (it does scan for the marker)
 
 The authoring contract is one attribute: `<form data-slideless-form="name">`
 with standard inputs. The name is gated to the owner-slug charset
 (`[A-Za-z0-9._-]{1,64}`, the placement charset) because it renders in owner
 tooling; everything else about the form is the author's markup, untouched.
-There is no server-side HTML scanning and no manifest declaration: the forms
-runtime (viewer/forms-runtime.ts) is injected whenever the token allows
-submitting and simply no-ops when the document carries no marked form. The
+There is no manifest declaration. **Amended (PRDCT-1333):** the original
+text also said there is "no server-side HTML scanning" and that the runtime
+"is injected whenever the token allows submitting". Since `can_submit_forms`
+defaults ON (decision 6), that made every share link of every deck leave the
+streaming serve path for a buffering one — measured at roughly ten times the
+document in peak RSS on an anonymous GET of a route with no rate limiter,
+for decks containing no form at all. So the commit path now records whether
+a version holds a marked form (`presentation_versions.has_forms`, a byte
+scan for the marker attribute in `forms/detect.ts`, stamped exactly like
+`has_agent_doc`) and the runtime is injected only when the token allows
+submitting AND the version actually carries a form. This is a substring
+question, not parsing: a false negative costs the author their form and a
+false positive costs one inert script tag, and neither is an authorization
+decision — the API still enforces the capability on every submit. Injection
+absence remains a UX fact, never a security boundary (decision 6). The
 runtime must intercept `submit` because a native submit inside the sandboxed
 opaque origin would garbage-navigate the document. Sub-pages of multi-page
 decks come for free: the ADR 020 seam already transforms every same-deck
@@ -58,10 +76,10 @@ answers the same 404 as a missing one and burns the submit bucket, so the
 endpoint is no better an oracle than an invalid share secret. A row is one
 respondent's evolving answer: update replaces the payload in place.
 
-### 4. Three respondent legs; leg 3 stops at the document boundary
+### 4. Two respondent legs; a response is anonymous by construction
 
 The deck runs in an opaque origin with no cookies and no storage (ADR 012),
-so "my response" must come from outside the sandbox. All three legs ship:
+so "my response" must come from outside the sandbox. Two legs ship:
 
 1. **The edit link** on the confirmation card (the current page URL plus
    the fragment secret).
@@ -69,23 +87,53 @@ so "my response" must come from outside the sandbox. All three legs ship:
    is typed in the moment; it is deliberately never auto-detected from the
    payload (the payload stays meaning-free, decision 2). Hidden when the
    mail driver does not deliver; the endpoint answers `email_unavailable`.
-3. **Signed-in auto-identity.** When the serving request carries a live
-   first-party session, the server injects a signed respondent assertion
-   (viewer/respondent.ts on the signed-value envelope, its own
-   `viewer-respondent` MAC label, token-scoped, 1-hour TTL). The runtime
-   echoes it on submit; verification is the ONLY writer of
-   `respondent_user_id`, and the edit link is auto-mailed to the account
-   address. A stale or forged assertion degrades the submit to anonymous
-   rather than failing it: identity is courtesy, never a gate.
 
-Leg 3 fires on top-level DOCUMENT navigations only. An embed's iframe
-navigation is cross-site, so the `SameSite=Lax` session cookie is never
-sent and the server could not see the session anyway (the same weakness
-ADR 021 accepts for view dedupe); skipping the lookup on frames also means
-no session read is ever attempted where it could only mis-assert. The
-session read itself follows the break-glass discipline: a cheap cookie-name
-pre-filter, then `auth.api.getSession` against the session store, never a
-trusted claim. Anonymous viewers cost zero extra lookups.
+A response carries **no respondent identity at all**. If the author wants
+to know who answered, they ask in the form.
+
+#### Leg 3 is WITHDRAWN (PRDCT-1331) — do not rebuild it in this shape
+
+The original decision 4 shipped a third leg: "when the serving request
+carries a live first-party session, the server injects a signed respondent
+assertion … verification is the ONLY writer of `respondent_user_id`, and
+the edit link is auto-mailed to the account address … identity is courtesy,
+never a gate."
+
+That is architecturally unsound and was **not patchable in place**.
+Anything handed to the deck document is readable by the deck's own
+JavaScript (the ADR 012 trust model), and the assertion was written into
+the injected config _before_ the runtime's "no forms here" early return, so
+it was present even in decks holding no form. Proven end to end,
+cross-workspace: a victim in another workspace opens the share link while
+signed in, deck JS lifts the assertion out of `script[data-slideless-forms]`
+and files a cookie-less POST from an unrelated IP, and the deck owner's
+list shows that person's address, internal user id and arbitrary payload
+content attributed to them — with no interaction beyond loading the page,
+and no audit trail to contradict it (viewer writes are unaudited by
+decision 8). Deriving the identity server-side at submit time instead is
+impossible: the submit is a `credentials: 'omit'` fetch from an opaque
+origin and structurally cannot carry the session cookie, which is exactly
+why the assertion existed.
+
+Removing it also removed four dependent defects: an auto-mail that never
+consulted the email limiter (12 replayed submits, 12 mails to a stranger's
+real address from the instance's trusted sender); an unhandled FK violation
+turning a since-deleted user's assertion into a 500 with the response lost,
+contradicting this decision's own "never a gate"; a bearer identity token
+that kept working for its full hour after sign-out or an admin killing the
+session; and `respondentEmail` on the owner wire, readable by any
+`presentations:read` machine key — the exfiltration shape `/workspace/export`
+has its own `data:export` scope to avoid. Leg 3 was also already dead on the
+documented hardening path (`VIEWER_BASE_URL` set = no app cookies on the
+viewer origin) while the docs promised it unconditionally, so it created
+product pressure against ADR 012's own recommended deployment.
+
+`respondent_user_id` remains on `form_responses`, unwritten and unread, so
+the removal stays additive; dropping the column is a follow-up. **Nothing
+may re-wire it.** If account-linked responses are wanted, the safe shape is
+an explicit claim on the APP origin — the respondent clicks through and
+confirms — which is a different feature, not a value injected into a
+sandboxed document.
 
 ### 5. Per-runtime injection gates: overlay document-only, forms document plus frame
 
@@ -95,11 +143,33 @@ overlay keeps its ADR 020 gate: document navigations only, with the
 frame" stays policy). The forms runtime injects on document navigations AND
 same-deck HTML frame navigations (`Sec-Fetch-Dest: iframe`/`frame`),
 because official embeds are iframes and an embedded form must submit;
-without the runtime the sandboxed native submit garbage-navigates. This is
-safe by the ADR 021 §1 rationale: the sandbox regime holds identically in a
-frame, the runtime runs in the same opaque origin, and its wildcard-CORS,
-`credentials: 'omit'` calls work identically. The forms runtime accordingly
-has NO top-context refusal, on purpose. Unchanged everywhere: `?raw` stays
+without the runtime the sandboxed native submit garbage-navigates. The
+_sandbox_ regime holds identically in a frame by the ADR 021 §1 rationale:
+same opaque origin, same wildcard-CORS `credentials: 'omit'` calls. The
+forms runtime accordingly has NO top-context refusal, on purpose.
+
+**Corrected (PRDCT-1332):** the original text read "this is safe by the ADR
+021 §1 rationale" without qualification. That was wrong. ADR 021 §1 argues
+about the sandbox, and says nothing about **the framer controlling the URL
+fragment**. A framer (or any link author) could mount
+`.../v/{secret}/#slr=<the secret of a response they submitted themselves>`;
+the runtime adopted the fragment unconditionally, switched that form into
+update mode, and the victim's answers overwrote the framer's row, which the
+framer then read back through `GET …/responses/me`. An empty planted
+payload made the prefill invisible, and the only tell was the card saying
+"updated" instead of the author's success message. Proven twice, including
+through the official `/embed.js` loader. Two defences, both required:
+`viewer/embed.ts` strips the fragment (`url.hash = ''`) before assigning
+`frame.src` — it validates `url.pathname` and used to forward `url.href`
+whole — and the runtime never silently adopts a fragment: on arrival with a
+valid `#slr=` it shows an explicit prompt naming the response's date and
+**defaults to create**. Leg 1 still works; the hijack is now visible and
+consented. Related: an edited row used to keep the _creator's_
+`source`/`placement`/`version`, so attribution on every edit was silently
+wrong; the update path re-stamps all three from the navigation that made
+the edit.
+
+Unchanged everywhere: `?raw` stays
 byte-exact, agent-style `x-viewer-password` fetches and non-HTML responses
 never see a runtime, `embed`/`object` destinations stay untouched.
 
@@ -124,8 +194,30 @@ navigation's `?p=` label, sanitized server-side with the view-events
 sanitizer (`[A-Za-z0-9._-]{1,64}`, else null), injected into the runtime
 config, echoed, and re-sanitized at write. Both are attribution-grade by
 declaration: deck JS shares the document with the runtime and could POST
-anything the runtime can (the runtime adds no capability the deck lacked),
-so these columns inform dashboards and slicing, never authorization.
+anything the runtime can, so these columns inform dashboards and slicing,
+never authorization.
+
+**The parenthetical that used to sit here — "the runtime adds no capability
+the deck lacked" — is now an enforced INVARIANT rather than a description,
+and it is stated once, here, in its testable form (PRDCT-1331):**
+
+> Every value the server places in the deck document must be one the deck
+> could already obtain by itself.
+
+Two values qualify and are injected: the share-token secret (already in
+`location.pathname`) and the unlock proof (password links, scoped to viewer
+calls on that same token). The rest of the config — version, source,
+placement, `emailAvailable` — is server _context_, not capability, and the
+server re-derives or re-validates each of them at write.
+
+That sentence was true for those values and **false for leg 3's identity
+assertion**, and it is what let leg 3 through review: a reviewer checking
+the claim against the share secret and the unlock proof finds it holds and
+stops reading. So the test is mechanical, not editorial: the injected
+config's key set is pinned by an integration assertion, and adding a key
+turns that test red. If a new value cannot be justified against the
+invariant above, it does not go in the document — it goes on the app
+origin, behind a click.
 `share_token_id` is set-null so responses survive link deletion; the token
 name is joined at read time for display. The owner surface reuses the
 annotations authz shape: responses address the deck's writers via
@@ -139,6 +231,16 @@ get the same 404 an outsider would, and only delete distinguishes
   create and update. Unknown share secrets burn the per-IP invalid-secret
   point (the token-session resolver), and failed edit-secret lookups burn
   this same bucket, so probing secrets is never cheaper than submitting.
+  **One carve-out (PRDCT-1334):** a secret that resolves and IS valid for
+  this deck and link but names a DIFFERENT form 404s without burning. The
+  caller already holds that row's capability, so the answer reveals nothing
+  they did not have, and the runtime legitimately probes one own-row route
+  per form when it arrives with a fragment on a multi-form page — burning
+  there would spend the respondent's budget on the page load. Every secret
+  that does not resolve, or resolves to another deck or link, still burns.
+  (Audit §8 separately records that the burn is `.catch(() => {})`-swallowed
+  and no path reads bucket state, so the "never cheaper" claim is weaker
+  than it reads; that is PRDCT-1337's, not fixed here.)
 - `viewerFormEmail`: 5 per 15 minutes per `${ip}:${tokenId}` AND per target
   address (the emailKeyOf posture): a public endpoint that sends mail is a
   spam vector twice over.
@@ -160,9 +262,17 @@ get the same 404 an outsider would, and only delete distinguishes
   included.
 - The emailed edit link lands on the deck's ENTRY page (`buildViewerUrl`),
   even when the form lives on a sub-page; only the confirmation card's own
-  link carries the current page URL. Accepted for v1: the runtime keeps an
-  unmatched fragment secret in memory, so navigating to the page that does
-  hold the form still prefills and updates.
+  link carries the current page URL. **This was accepted for v1 on a false
+  premise, corrected here and left open:** the paragraph said "the runtime
+  keeps an unmatched fragment secret in memory, so navigating to the page
+  that does hold the form still prefills and updates". No such behaviour
+  exists or ever did. A sub-page click is a full document navigation, the
+  fragment does not survive it, and a fresh runtime starts with no secret —
+  so the respondent silently creates a SECOND row. Audit §9 verified it
+  end to end. Fixing it (store the serving path and email that URL, or
+  carry the fragment across same-deck navigations) is **PRDCT-1339**, not
+  this change; the ADR is corrected now so nobody re-reasons from the false
+  sentence in the meantime.
 - Edits have no history: update replaces the payload and bumps
   `updated_at`, so a disputed response shows only its latest state. Owner
   delete is the only moderation tool.
@@ -170,12 +280,33 @@ get the same 404 an outsider would, and only delete distinguishes
   respondent who discards their fragment and submits again creates a new
   row. The per-deck cap and the buckets bound the damage; real dedupe, if
   an author needs it, lives in the payload they asked for.
-- Hub-signed-in users without a local tool session are not silently
-  detected (popup/redirect identity stays deferred); legs 1 and 2 cover
-  them.
+- No respondent is ever identified automatically, signed in or not. Legs 1
+  and 2 are the whole story; an author who needs a name asks for one.
+- The own-row routes carry the form name
+  (`/viewer/{secret}/forms/{form}/responses/me`) and the server 404s a
+  secret whose row belongs to another form (PRDCT-1334). The runtime keeps
+  its edit secret per form (`form.__slSecret`); the route segment is the
+  half that holds even when the client is wrong, and before it existed the
+  server structurally could not detect the mismatch.
+- The runtime shields each marked form's subtree, not just its confirmation
+  card, stopping click/pointer/touch/wheel/key events at the form root
+  (bubble phase, deliberately: a capture-phase shield at the form root
+  would also skip the AUTHOR's own listeners inside it). Real decks bind
+  document-level navigation and five of five broke without this. A deck
+  binding `capture: true` on `document` still wins — the same residual the
+  annotation overlay card has always had.
 - Regression surface: `apps/server/test/integration/forms.test.ts`
   (token-session mapping, caps, capability off, version validation,
-  edit-secret read/update/foreign-secret, email leg, assertion
-  verify/forge, source/placement sanitization, per-deck cap) and
-  `apps/dashboard/e2e/viewer-forms.spec.ts` plus a second-origin embed
-  submit spec on the `embed.spec.ts` template.
+  edit-secret read/update/foreign-secret and the cross-FORM refusal, email
+  leg, anonymity under assertion-shaped input, source/placement
+  sanitization and re-stamping, `has_forms` stamping and the form-less
+  streaming path, per-deck cap),
+  `apps/server/test/unit/inject-stream.test.ts` (byte fidelity and bounded
+  memory of the streaming injector), and the Playwright suites:
+  `viewer-forms.spec.ts`, the second-origin `embed-forms.spec.ts` (which
+  also pins the fragment strip), and **`viewer-forms-realdeck.spec.ts`,
+  the habitat suite** — fixtures whose navigation engines are lifted
+  verbatim from `workspace/content/presentations/`. The original suite
+  drove a bare `<form>` on an empty page and was 7/7 green while the
+  feature was broken in every real deck; a bare-form-only forms suite is
+  the specific mistake not to repeat.

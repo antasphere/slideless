@@ -125,17 +125,26 @@ test('viewer forms: submit, confirmation card with edit link, return-and-update,
       formName: 'rsvp',
       source: 'link',
       placement: null,
-      respondentUserId: null,
       payload: { name: 'Ada E2E', dish: ['salad', 'bread'] }
     });
     responseId = responses[0].id;
     createdUpdatedAt = responses[0].updatedAt;
   });
 
-  await test.step('a fresh visitor reopens via the edit link: prefilled, and submit updates in place', async () => {
+  await test.step('a fresh visitor reopens via the edit link: consents, is prefilled, and updates in place', async () => {
     // A NEW context: the edit secret in the fragment is the whole handle.
     const returning = await (await browser.newContext()).newPage();
     await returning.goto(editUrl);
+
+    // PRDCT-1332: an arriving fragment is NEVER silently adopted — whoever
+    // wrote the link may not be the person now at the keyboard. The prompt
+    // comes first and CREATE is the default, so nothing is prefilled yet.
+    const resume = returning.locator('[data-slideless-resume="rsvp"]');
+    await expect(resume).toBeVisible();
+    await expect(returning.locator('#f-name')).toHaveValue('');
+    await resume.getByRole('button', { name: 'Edit that response' }).click();
+    await expect(resume).toHaveCount(0);
+
     await expect(returning.locator('#f-name')).toHaveValue('Ada E2E');
     await expect(returning.locator('input[name="dish"][value="salad"]')).toBeChecked();
     await expect(returning.locator('input[name="dish"][value="bread"]')).toBeChecked();
@@ -155,9 +164,7 @@ test('viewer forms: submit, confirmation card with edit link, return-and-update,
     expect(responses).toHaveLength(1); // an update, never a second row
     expect(responses[0].id).toBe(responseId);
     expect(responses[0].payload).toEqual({ name: 'Ada Updated', dish: 'salad' });
-    expect(new Date(responses[0].updatedAt).getTime()).toBeGreaterThan(
-      new Date(createdUpdatedAt).getTime()
-    );
+    expect(new Date(responses[0].updatedAt).getTime()).toBeGreaterThan(new Date(createdUpdatedAt).getTime());
 
     // The summary agrees.
     const summary = await page.request.get(`/api/v1/presentations/${deckId}/responses/summary`);

@@ -29,6 +29,12 @@ export default defineConfig({
     { name: 'viewer', testMatch: /viewer-annotations\.spec\.ts/, dependencies: ['smoke'] },
     { name: 'embed', testMatch: /embed\.spec\.ts/, dependencies: ['smoke'] },
     { name: 'forms', testMatch: /viewer-forms\.spec\.ts/, dependencies: ['smoke'] },
+    // The habitat suite (PRDCT-1334): the runtime inside real slide decks.
+    {
+      name: 'forms-realdeck',
+      testMatch: /viewer-forms-realdeck\.spec\.ts/,
+      dependencies: ['smoke']
+    },
     { name: 'embed-forms', testMatch: /embed-forms\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {

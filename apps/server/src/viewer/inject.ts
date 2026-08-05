@@ -21,12 +21,16 @@ import { formsScriptTag } from './forms-runtime.js';
  *    the runtime a sandboxed native submit would garbage-navigate.
  *
  * Shared contract:
- *  - Return `null` = no transform → the viewer STREAMS the blob
- *    (Range-capable, never buffered). Return a function = the viewer buffers
- *    the document, applies the transform, and serves the result WITHOUT an
- *    ETag (serveBlob's content-sha ETag would lie about the mutated bytes)
- *    and with the exact ADR 012 sandbox header set re-asserted.
- *  - The transform injects before the last `</body>` (appending at the end
+ *  - Return `null` = nothing to inject → the viewer STREAMS the blob
+ *    (Range-capable, ETag-carrying, never buffered). Return a snippet =
+ *    the viewer STILL streams, through the bounded-window injector
+ *    (viewer/inject-stream.ts), and serves the result WITHOUT an ETag
+ *    (serveBlob's content-sha ETag would lie about the mutated bytes) and
+ *    with the exact ADR 012 sandbox header set re-asserted. The document is
+ *    never read into memory whole — PRDCT-1333: `canSubmitForms` defaults
+ *    ON, so a buffering seam was a ~10x-document single-request memory DoS
+ *    on every share link.
+ *  - The snippet is injected before the last `</body>` (appended at the end
  *    when a deck omits the tag) and does NOT sanitize or otherwise rewrite
  *    deck HTML — isolation is the sandbox CSP's job (ADR 012), not a
  *    rewriter's.
@@ -41,7 +45,17 @@ import { formsScriptTag } from './forms-runtime.js';
  *    password-protected) — never with a session. Trust boundaries:
  *    viewer/overlay.ts, viewer/forms-runtime.ts.
  */
-export type EntryTransform = (html: string) => string;
+/**
+ * The EARLY snippet (PRDCT-1334 item 4): a few bytes injected right after the
+ * opening `<head>` so they run BEFORE any deck script. Decks that normalize
+ * their own URL (`history.replaceState(null,'','#slide=1')`) wipe the
+ * respondent's `#slr=` fragment before the end-of-body runtime ever sees it,
+ * silently killing the edit link. This stashes the arrival fragment first.
+ */
+export const FRAGMENT_CAPTURE_MARKER = 'data-slideless-frag';
+
+export const fragmentCaptureTag = (): string =>
+  `<script ${FRAGMENT_CAPTURE_MARKER}>window.__slidelessArrivalHash=location.hash||'';</script>`;
 
 export interface EntryTransformContext {
   token: Pick<ShareTokenRow, 'id' | 'canAnnotate' | 'canSubmitForms' | 'createdAt' | 'expiresAt'>;
@@ -67,12 +81,12 @@ export interface EntryTransformContext {
    */
   placement: string | null;
   /**
-   * Signed respondent assertion (viewer/respondent.ts) when the serving
-   * request carried a live first-party session, else null. Document
-   * navigations only — a cross-site frame never sends the session cookie,
-   * and the server never minted one there.
+   * True when the resolved VERSION actually carries a marked form
+   * (`presentation_versions.has_forms`, stamped at commit — PRDCT-1333). The
+   * forms runtime is injected only then, so a form-less deck keeps the
+   * streaming, ETag-carrying serve path it had before ADR 022.
    */
-  respondentAssertion: string | null;
+  versionHasForms: boolean;
   /** Whether the instance's mail driver delivers (shows the email opt-in). */
   emailAvailable: boolean;
   /**
@@ -112,19 +126,21 @@ export function frameNavigation(c: Context): boolean {
   return dest === 'iframe' || dest === 'frame';
 }
 
-/** Inject a snippet before the LAST `</body>` (case-insensitive); append when absent. */
-export function injectBeforeBodyClose(html: string, snippet: string): string {
-  const idx = html.toLowerCase().lastIndexOf('</body>');
-  if (idx === -1) return html + snippet;
-  return html.slice(0, idx) + snippet + html.slice(idx);
+/** What one document navigation injects: an early stub plus the end-of-body runtimes. */
+export interface InjectionPlan {
+  /** Injected right after `<head>`; '' = nothing to inject early. */
+  head: string;
+  /** Injected before the last `</body>`; never '' when a plan exists. */
+  body: string;
 }
 
-export function entryTransformFor(ctx: EntryTransformContext): EntryTransform | null {
+export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | null {
   if (ctx.rawRequested) return null;
 
-  let snippet = '';
+  let body = '';
+  let head = '';
   if (ctx.token.canAnnotate && ctx.browserEntry) {
-    snippet += overlayScriptTag({
+    body += overlayScriptTag({
       version: ctx.version,
       unlock: ctx.mintUnlockProof(),
       entry: ctx.entryPath,
@@ -134,16 +150,19 @@ export function entryTransformFor(ctx: EntryTransformContext): EntryTransform | 
       linkExpiresAt: ctx.token.expiresAt?.toISOString() ?? null
     });
   }
-  if (ctx.token.canSubmitForms && (ctx.browserEntry || ctx.frameEntry)) {
-    snippet += formsScriptTag({
+  // PRDCT-1333: the capability is necessary but NOT sufficient — the version
+  // must actually carry a marked form. Otherwise every share link of every
+  // deck left the streaming path, because canSubmitForms defaults ON.
+  if (ctx.token.canSubmitForms && ctx.versionHasForms && (ctx.browserEntry || ctx.frameEntry)) {
+    head += fragmentCaptureTag();
+    body += formsScriptTag({
       version: ctx.version,
       unlock: ctx.mintUnlockProof(),
       source: ctx.frameEntry ? 'embed' : 'link',
       placement: ctx.placement,
-      assertion: ctx.respondentAssertion,
       emailAvailable: ctx.emailAvailable
     });
   }
-  if (snippet === '') return null;
-  return (html) => injectBeforeBodyClose(html, snippet);
+  if (body === '') return null;
+  return { head, body };
 }
