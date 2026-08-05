@@ -48,14 +48,57 @@ annotation and collaborator-roster routes already take.
 grant); it is deliberately a separate policy function so a future read-only
 collaborator role can widen reads without widening writes.
 
+The same policy governs the raw blobs behind those decks — see the SL-B1
+amendment at the bottom of this ADR.
+
 ## Deliberate divergence from ADR 006
 
-ADR 006's "files are workspace data" stance is **unchanged for the generic
-`/files` surface** and for GDPR semantics (deck ownership still anonymizes
-to NULL on account deletion; blobs stay with the workspace). What diverges
-is deck-level READ authorization: workspace membership alone is no longer a
-read grant on decks, because membership here is an artifact of collaborator
-onboarding, not a statement of trust across the whole tenant's content.
+ADR 006's "files are workspace data" stance is **unchanged** for GDPR
+semantics (deck ownership still anonymizes to NULL on account deletion;
+blobs stay with the workspace). What diverges is deck-level READ
+authorization: workspace membership alone is no longer a read grant on
+decks, because membership here is an artifact of collaborator onboarding,
+not a statement of trust across the whole tenant's content.
+
+## Amendment (2026-07-26) — the blob surface, SL-B1
+
+The original decision left the generic `/files` surface on ADR 006's
+posture, reasoning that decks were what mattered. That was wrong, and the
+security campaign proved it live: `GET /files` and
+`GET /files/{id}/content` authorized on `workspace_id` alone, so any plain
+member — and any `presentations:read` API key — could enumerate and stream
+the BYTES of every deck in the workspace. Deck ids were private while deck
+content was not, which is the same hole one layer down. A version commit
+then re-bound a foreign sha into a deck of the attacker's own, letting them
+re-publish stolen content anonymously through a share link.
+
+**A blob carries the deck policy.** `blobReadScope`
+(`presentations/service.ts`) is `canReadDeck` expressed as a WHERE
+predicate over a `files` row, and every generic-surface read applies it —
+list, metadata, content (GET + HEAD) and delete:
+
+1. workspace **admin/owner** → the ADR 006 operator view, every blob;
+2. everyone else → blobs they **uploaded**, plus blobs referenced by the
+   manifest of a LIVE version of a deck they can read.
+
+Refusals are **404, never 403**, exactly as for decks. The same predicate
+is the commit guard: `lockAndResolveBlobs` resolves only readable shas, so
+an unreadable one reports as `missing_blobs` (a refusal that does not
+confirm the workspace holds the bytes), and `precheckMissing` is scoped the
+same way so "already present" cannot serve as a whole-workspace existence
+oracle.
+
+Possession is tracked in `file_uploaders` (migration 0034), not in
+`files.created_by`. Blobs are content-addressed and unique per (workspace,
+sha256), so a second uploader of identical bytes deduplicates onto the
+first uploader's row; crediting only `created_by` would lock a member out
+of bytes they demonstrably hold and refuse their commit. Every upload —
+fresh or deduplicated, `/files` or `/presentations/assets` — records its
+uploader.
+
+Guests remain refused the surface outright (`requireNonGuest`). The per-deck
+read they hold is served by `/presentations/{id}/assets/{sha256}`; the
+generic file cabinet of a host tenant is not theirs to browse.
 
 Unchanged, out of this ADR's scope:
 

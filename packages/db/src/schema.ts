@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -375,6 +376,44 @@ export const files = pgTable(
     uniqueIndex('files_workspace_sha_uniq').on(t.workspaceId, t.sha256),
     // Serves the admin API's keyset pagination (workspace_id, created_at DESC, id DESC).
     index('files_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id)
+  ]
+);
+
+/**
+ * Proof of possession: every user who has PUSHED these exact bytes into the
+ * workspace, not just the first one (SL-B1 / ADR 013 on the blob surface).
+ *
+ * `files` is content-addressed and unique per (workspace, sha256), so a
+ * second uploader of identical bytes deduplicates onto the FIRST uploader's
+ * row and `files.created_by` keeps naming that first uploader. Once blob
+ * reads are per-deck authorized, that single column is no longer a truthful
+ * answer to "may this principal see these bytes": a member who uploaded a
+ * shared logo that another member had uploaded first would be locked out of
+ * a blob they demonstrably hold — and their version commit, which must only
+ * bind shas they may read, would be refused. This table records each
+ * distinct uploader so possession survives deduplication.
+ *
+ * `on delete cascade` on both sides: attribution is personal data (it dies
+ * with the account, like the anonymized `files.created_by`) and carries no
+ * value once the file row is gone.
+ */
+export const fileUploaders = pgTable(
+  'file_uploaders',
+  {
+    fileId: uuid('file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    primaryKey({ columns: [t.fileId, t.userId] }),
+    // Serves the per-principal blob visibility probe (file_id + user_id is
+    // the PK, so the lookup is the PK index; this one serves the reverse
+    // "everything this user uploaded" direction the cascade delete walks).
+    index('file_uploaders_user_idx').on(t.userId)
   ]
 );
 
@@ -813,6 +852,7 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
+export type FileUploaderRow = typeof fileUploaders.$inferSelect;
 export type PresentationRow = typeof presentations.$inferSelect;
 export type PresentationVersionRow = typeof presentationVersions.$inferSelect;
 export type ShareTokenRow = typeof shareTokens.$inferSelect;

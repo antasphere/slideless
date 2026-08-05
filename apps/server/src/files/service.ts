@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { and, desc, eq, isNull } from 'drizzle-orm';
-import { files, type Db, type DbConn, type FileRow } from '@slideless/db';
+import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
+import { fileUploaders, files, type Db, type DbConn, type FileRow } from '@slideless/db';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import type { Logger } from '../logger.js';
@@ -80,6 +80,7 @@ export class FileService {
           await this.db.update(files).set({ deletedAt: null }).where(eq(files.id, existing.id));
           existing.deletedAt = null;
         }
+        await this.recordUploader(existing.id, opts.createdBy);
         return { file: existing, deduplicated: true };
       }
 
@@ -98,10 +99,21 @@ export class FileService {
           createdBy: opts.createdBy
         })
         .returning();
+      await this.recordUploader(row!.id, opts.createdBy);
       return { file: row!, deduplicated: false };
     } finally {
       await rm(spoolPath, { force: true });
     }
+  }
+
+  /**
+   * Records that this user pushed these exact bytes — on the fresh-insert AND
+   * the dedupe path. `files.created_by` only ever names the FIRST uploader,
+   * so it cannot answer "does this principal hold these bytes" once blob
+   * reads are per-deck authorized (SL-B1); this join table can. Idempotent.
+   */
+  private async recordUploader(fileId: string, userId: string): Promise<void> {
+    await this.db.insert(fileUploaders).values({ fileId, userId }).onConflictDoNothing();
   }
 
   /** Content-addressed lookup — the presentation asset pull path. */
@@ -115,11 +127,19 @@ export class FileService {
     return row;
   }
 
-  async get(workspaceId: string, id: string): Promise<FileRow | null> {
+  /**
+   * `visibility` is the caller's per-blob authorization predicate over the
+   * `files` row (SL-B1): the files module stays presentation-agnostic, so the
+   * wiring point injects the ADR 013 scope. `undefined` = the operator view
+   * (workspace admin/owner), which sees every blob in the workspace. An
+   * unauthorized blob is indistinguishable from a missing one — the handlers
+   * answer 404, never 403 (ADR 013's not-probeable posture).
+   */
+  async get(workspaceId: string, id: string, visibility?: SQL | undefined): Promise<FileRow | null> {
     const [row] = await this.db
       .select()
       .from(files)
-      .where(and(eq(files.id, id), eq(files.workspaceId, workspaceId)))
+      .where(and(eq(files.id, id), eq(files.workspaceId, workspaceId), ...(visibility ? [visibility] : [])))
       .limit(1);
     if (!row || row.deletedAt) return null;
     return row;
@@ -127,11 +147,12 @@ export class FileService {
 
   async list(
     workspaceId: string,
-    opts: { cursor?: string; limit: number }
+    opts: { cursor?: string; limit: number; visibility?: SQL | undefined }
   ): Promise<{ files: FileRow[]; nextCursor: string | null }> {
     const cursorId = cursorRowId(opts.cursor);
     // The soft-delete filter MUST be SQL-side: a JS filter after the fetch
-    // would shrink pages below the limit and break cursor correctness.
+    // would shrink pages below the limit and break cursor correctness. Same
+    // reason the ADR 013 visibility scope is a WHERE clause, not a post-filter.
     const rows = await this.db
       .select()
       .from(files)
@@ -139,6 +160,7 @@ export class FileService {
         and(
           eq(files.workspaceId, workspaceId),
           isNull(files.deletedAt),
+          ...(opts.visibility ? [opts.visibility] : []),
           ...(cursorId
             ? [
                 keysetBefore({

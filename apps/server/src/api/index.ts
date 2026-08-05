@@ -49,7 +49,7 @@ import { registerFileRoutes } from './files.js';
 import { registerExportRoutes } from './export.js';
 import { registerPresentationRoutes } from './presentations.js';
 import { registerCollaboratorRoutes } from './collaborators.js';
-import { PresentationService } from '../presentations/service.js';
+import { blobReadScope, PresentationService } from '../presentations/service.js';
 import { AnnotationService } from '../annotations/service.js';
 import { ShareTokenViewService } from '../sharing/view-events.js';
 import type { CollaboratorService } from '../collaborators/service.js';
@@ -663,7 +663,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     instanceId,
     // ADR 011 sharp edge closed: a blob referenced by a live deck version
     // manifest is not deletable through the generic files surface.
-    blobInUse: (tx, workspaceId, sha256) => presentationService.blobInUse(tx, workspaceId, sha256)
+    blobInUse: (tx, workspaceId, sha256) => presentationService.blobInUse(tx, workspaceId, sha256),
+    // SL-B1: the generic files surface authorizes per DECK, not per
+    // workspace — the ADR 013 policy expressed as a WHERE predicate.
+    blobReadScope
   });
   registerPresentationRoutes(api, {
     service: presentationService,

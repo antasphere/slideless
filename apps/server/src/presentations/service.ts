@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   collaborators,
   files,
@@ -74,16 +74,33 @@ export class PresentationService {
   // ── Precheck (content-addressed dedupe) ────────────────────────────────────
 
   /**
-   * Which of these hashes have no LIVE blob in the workspace yet. A
-   * soft-deleted files row counts as missing: its blob was removed with it,
-   * and re-uploading revives the row (files/service.ts upload semantics).
+   * Which of these hashes the caller still has to upload. A soft-deleted
+   * files row counts as missing: its blob was removed with it, and
+   * re-uploading revives the row (files/service.ts upload semantics).
+   *
+   * Scoped to the caller's readable blobs (SL-B1), not the whole workspace,
+   * for two reasons. It closes an existence oracle — an unscoped precheck
+   * answers "does the workspace hold these exact bytes" for any sha a member
+   * cares to guess. And it keeps the push protocol coherent with the commit
+   * guard: a sha the caller may not bind must be reported as missing, or the
+   * client would skip the upload and then have its commit refused with no
+   * way out. Re-uploading bytes that already exist costs one PUT and stores
+   * nothing new (content-addressed dedupe), and it registers the uploader.
    */
-  async precheckMissing(workspaceId: string, shas: string[]): Promise<string[]> {
+  async precheckMissing(workspaceId: string, principal: Principal, shas: string[]): Promise<string[]> {
     const unique = [...new Set(shas)];
+    const scope = blobReadScope(principal);
     const present = await this.db
       .select({ sha256: files.sha256 })
       .from(files)
-      .where(and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt)));
+      .where(
+        and(
+          eq(files.workspaceId, workspaceId),
+          inArray(files.sha256, unique),
+          isNull(files.deletedAt),
+          ...(scope ? [scope] : [])
+        )
+      );
     const found = new Set(present.map((r) => r.sha256));
     return unique.filter((sha) => !found.has(sha));
   }
@@ -109,23 +126,41 @@ export class PresentationService {
   }
 
   /**
-   * Every referenced blob must exist LIVE in this workspace. The rows are
-   * locked FOR SHARE for the rest of the commit transaction so a concurrent
-   * DELETE /files/{id} (which locks FOR UPDATE before its in-use check)
-   * serializes against the commit instead of racing it: whichever wins, the
-   * loser sees the winner's state (missing_blobs 400 here, file_in_use 409
-   * there) — never a manifest referencing a deleted blob.
+   * Every referenced blob must exist LIVE in this workspace AND be readable
+   * by the committer. The rows are locked FOR SHARE for the rest of the
+   * commit transaction so a concurrent DELETE /files/{id} (which locks FOR
+   * UPDATE before its in-use check) serializes against the commit instead of
+   * racing it: whichever wins, the loser sees the winner's state
+   * (missing_blobs 400 here, file_in_use 409 there) — never a manifest
+   * referencing a deleted blob.
+   *
+   * The `blobReadScope` predicate is the SL-B1 commit guard: without it a
+   * member who learned a foreign deck's sha could bind those bytes into a
+   * deck of their own and re-publish them anonymously through a share link.
+   * An unreadable sha resolves as MISSING rather than as its own failure
+   * code — the refusal must not confirm that the workspace holds the bytes.
+   * The scope is `undefined` for workspace admins/owners (operator view), so
+   * their commits behave exactly as before.
    */
   private async lockAndResolveBlobs(
     tx: DbConn,
     workspaceId: string,
+    principal: Principal,
     manifest: ManifestEntry[]
   ): Promise<{ missing: string[]; sizeBySha: Map<string, number> }> {
     const unique = [...new Set(manifest.map((e) => e.sha256))];
+    const scope = blobReadScope(principal);
     const present = await tx
       .select({ sha256: files.sha256, sizeBytes: files.sizeBytes })
       .from(files)
-      .where(and(eq(files.workspaceId, workspaceId), inArray(files.sha256, unique), isNull(files.deletedAt)))
+      .where(
+        and(
+          eq(files.workspaceId, workspaceId),
+          inArray(files.sha256, unique),
+          isNull(files.deletedAt),
+          ...(scope ? [scope] : [])
+        )
+      )
       .for('share');
     const sizeBySha = new Map(present.map((r) => [r.sha256, r.sizeBytes]));
     return { missing: unique.filter((sha) => !sizeBySha.has(sha)), sizeBySha };
@@ -194,7 +229,12 @@ export class PresentationService {
         return { ok: false, failure: { code: 'session_expired' } };
       }
 
-      const { missing, sizeBySha } = await this.lockAndResolveBlobs(tx, opts.workspaceId, opts.manifest);
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(
+        tx,
+        opts.workspaceId,
+        opts.principal,
+        opts.manifest
+      );
       if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
       const stamped = this.stampManifest(opts.manifest, sizeBySha);
 
@@ -287,7 +327,12 @@ export class PresentationService {
         return { ok: false, failure: { code: 'version_conflict', currentVersion: deck.currentVersion } };
       }
 
-      const { missing, sizeBySha } = await this.lockAndResolveBlobs(tx, opts.workspaceId, opts.manifest);
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(
+        tx,
+        opts.workspaceId,
+        opts.principal,
+        opts.manifest
+      );
       if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
       const stamped = this.stampManifest(opts.manifest, sizeBySha);
 
@@ -658,4 +703,58 @@ export async function canReadDeck(
 ): Promise<boolean> {
   if (canAdministerDeck(principal, deck)) return true;
   return isActiveDevCollaborator(conn, deck.id, principal.userId);
+}
+
+/**
+ * READ access to a BLOB, as a WHERE predicate over a `files` row (SL-B1).
+ *
+ * ADR 013 made deck reads private but left the generic `/files` surface
+ * authorizing on `workspace_id` alone — so every plain member (and every
+ * `presentations:read` key) could list and stream the bytes of every deck in
+ * the workspace, which is exactly the hole ADR 013 was written to close, one
+ * layer down. The blob surface now carries the same policy:
+ *
+ *  1. a workspace **admin/owner** keeps the ADR 006 operator view (predicate
+ *     `undefined` — no extra WHERE, every blob in the workspace), and
+ *  2. everyone else sees a blob iff they **uploaded** it (`file_uploaders`,
+ *     which unlike `files.created_by` survives content-addressed dedupe) or
+ *     it is referenced by the manifest of a LIVE version of a deck they can
+ *     read (own, or hold an ACTIVE grant on — `canReadDeck` in SQL form).
+ *
+ * Soft-deleted decks stop conferring blob reads, exactly as they stop
+ * resolving. Containment rides the `presentation_versions` manifest GIN
+ * index (the same probe the blob-delete guard uses). Handlers answer 404,
+ * never 403 — a blob a principal cannot read must not be probeable either.
+ *
+ * This predicate is ALSO the commit guard: `lockAndResolveBlobs` resolves
+ * only shas the caller may read, so a manifest naming a foreign deck's blob
+ * cannot bind it (the sha reports as `missing_blobs`, which keeps the
+ * refusal non-probeable too).
+ */
+export function blobReadScope(principal: Principal): SQL | undefined {
+  if (principal.role === 'owner' || principal.role === 'admin') return undefined;
+  const userId = principal.userId;
+  return sql`(
+    EXISTS (
+      SELECT 1 FROM file_uploaders fu
+      WHERE fu.file_id = ${files.id} AND fu.user_id = ${userId}
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM presentation_versions pv
+      JOIN presentations p ON p.id = pv.presentation_id
+      WHERE pv.workspace_id = ${files.workspaceId}
+        AND p.deleted_at IS NULL
+        AND (
+          p.owner_user_id = ${userId}
+          OR EXISTS (
+            SELECT 1 FROM collaborators c
+            WHERE c.presentation_id = p.id
+              AND c.user_id = ${userId}
+              AND c.status = 'active'
+          )
+        )
+        AND pv.manifest @> jsonb_build_array(jsonb_build_object('sha256', ${files.sha256}))
+    )
+  )`;
 }

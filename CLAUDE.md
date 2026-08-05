@@ -55,10 +55,24 @@ deploys) + `dev` (day-to-day work).
   deck. A failed read check answers **404, never 403** (deck existence is not probeable).
   Workspace membership alone is NOT a deck read grant — collaborators are external parties
   invited to one deck, and revoking a grant must cut content access immediately.
+- **The BLOB surface carries the same policy (SL-B1, ADR 013 amendment)**: the generic
+  `/files` routes — list, `GET /files/{id}`, `GET|HEAD /files/{id}/content`, DELETE — apply
+  `blobReadScope` (`presentations/service.ts`), the SQL form of `canReadDeck`: blobs you
+  uploaded, plus blobs referenced by a LIVE version of a deck you can read; workspace
+  admins/owners keep the whole-workspace operator view. 404, never 403. **Never authorize a
+  blob read on `workspace_id` alone** — that was a whole-tenant content channel open to every
+  plain member and every `presentations:read` key. The SAME predicate is the commit guard:
+  `lockAndResolveBlobs` resolves only readable shas (an unreadable one reports as
+  `missing_blobs`, never its own code — the refusal must not confirm the bytes exist), and
+  `precheckMissing` is scoped the same way so "already present" is not an existence oracle.
+  Possession lives in `file_uploaders`, NOT `files.created_by`: content-addressed dedupe
+  means the second uploader of identical bytes lands on the first uploader's row, so every
+  upload path must record its uploader or it locks people out of their own bytes.
 - **Guest origin is a capability boundary (D2, internal/federation.md "Guests")**: a
   `workspace_members.origin='guest'` row exists for principal resolution only. Guests keep
   every ADR 013 per-deck surface their grant opens but are refused deck creation, the generic
-  `/files` surface (reads included — it spans every workspace blob with no per-deck authz),
+  `/files` surface (reads included — the host tenant's file cabinet is a workspace-level
+  surface; the guest's per-deck read is served by `/presentations/{id}/assets/{sha256}`),
   the member roster, and the workspace export on BOTH editions (`requireNonGuest`, 403
   `guest_forbidden`), across sessions, API keys, and OAuth bearers alike. Guest roles are
   locked (`guest_role_locked`); only the claim path writes guest rows; the hub reconcile
