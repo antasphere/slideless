@@ -367,6 +367,28 @@ describe('cloud edition closes the local password-reset surface (P8, ADR 017)', 
     expect(await resetTokenCount()).toBe(0);
   });
 
+  it('refuses the admin change-email-link mint on a cloud-LOCAL workspace (email_change_disabled)', async () => {
+    // AUTH-1 (PRDCT-1354): the sibling mint had NO cloud closure at all, yet
+    // its token is the STRONGER of the two — consuming it signs the target in
+    // AND rewrites the address the hub identity is keyed on, while on cloud
+    // the email is the hub's to own (D10 re-syncs it every login). Same shape
+    // as the reset-link closure above, distinct code.
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      jsonIp({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
+    const { members } = await readJson(await app.app.request('/api/v1/members', { headers: { cookie } }));
+    const minted = await app.app.request(`/api/v1/members/${members[0].id}/change-email-link`, {
+      ...jsonIp({ newEmail: 'hijacked@edreset.test' }, { cookie })
+    });
+    expect(minted.status).toBe(403);
+    const body = await readJson(minted);
+    expect(body.error.code).toBe('email_change_disabled');
+    expect(body.verifyUrl).toBeUndefined();
+  });
+
   it('the operator door survives the closure: /sign-in/email + break-glass need no reset route', async () => {
     // The full recovery chain, reset-free: sign in with the SETUP password
     // (D9 minted the operator emailVerified=true), then claim-ownership and

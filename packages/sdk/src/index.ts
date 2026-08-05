@@ -366,7 +366,11 @@ export class PlatformClient {
     return this.request('DELETE', `/members/${encodeURIComponent(id)}`);
   }
 
-  /** Admin: mint a one-time password reset link for a member (SMTP-free recovery). */
+  /**
+   * Owner: mint a one-time password reset link for a member (SMTP-free
+   * recovery). Refused for a per-deck guest and for anyone who also belongs
+   * to another workspace — the minted credential is global (PRDCT-1354).
+   */
   createMemberResetLink(id: string, opts: IdempotentRequestOptions = {}): Promise<MemberResetLink> {
     return this.request(
       'POST',
@@ -377,9 +381,10 @@ export class PlatformClient {
   }
 
   /**
-   * Admin: mint a one-time email change link for a member (SMTP-free email
+   * Owner: mint a one-time email change link for a member (SMTP-free email
    * change). ⚠️ The link updates the email AND signs the member in — share
-   * it with the target member only.
+   * it with the target member only. Same refusals as the reset link (guest
+   * targets, cross-workspace targets), plus the cloud edition closure.
    */
   createMemberChangeEmailLink(
     id: string,

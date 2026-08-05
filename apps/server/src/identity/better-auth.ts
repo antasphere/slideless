@@ -256,6 +256,56 @@ function isOtpSignInPath(path: string): boolean {
   );
 }
 
+/**
+ * The two Better Auth core routes that hand a caller the PROVIDER GRANT
+ * stored on their own `account` row, in PLAINTEXT (PRDCT-1354, findings
+ * AUTH-3 + AUTH-7; better-auth 1.6.15 `api/routes/account.mjs` — re-verify
+ * the enumeration on ANY bump):
+ *
+ *  - POST /get-access-token → `{ accessToken, idToken, accessTokenExpiresAt,
+ *    scopes }`, refreshing first when the stored token is within 5 s of
+ *    expiry;
+ *  - POST /refresh-token → the same PLUS `refreshToken`, and it ALWAYS
+ *    refreshes.
+ *
+ * Both are closed here, on BOTH editions, because both are pure subtraction:
+ * nothing in this repo, the SDK, the CLI, the dashboard, or the MCP server
+ * calls either one (grep `get-access-token` / `refresh-token`), and no
+ * server-side caller exists either — the hub grant's own refresh is
+ * `HubGrantService.postRefresh`, which posts to the hub's token endpoint
+ * directly and never goes through this route. The plugin-owned OAuth
+ * endpoints this instance DOES serve (`/oauth2/token`, `/oauth2/authorize`,
+ * …) are separate paths and untouched.
+ *
+ * Why they must not exist, even though `resolveUserId` requires a session
+ * for any HTTP caller (so they are not a cross-USER surface):
+ *
+ *  1. The `/auth/*` mount is registered BEFORE `authContext`
+ *     (`api/index.ts`), so neither route sees the fail-closed scope
+ *     allowlist, the per-principal quota, the idempotency claim, or the
+ *     audit middleware. Any session-bearing caller — including a browser
+ *     tricked into a same-site POST, or anything that reaches the cookie —
+ *     reads the grant with no record left behind, which defeats the whole
+ *     point of `encryptOAuthTokens: true` (encryption at rest is worthless
+ *     next to an unlogged plaintext read endpoint).
+ *  2. On cloud the grant in question is the HUB grant, i.e. the credential
+ *     the user-scoped federation is built on (ADR 019). Handing it out in
+ *     plaintext hands out the ability to read that user's hub orgs directly.
+ *  3. `/refresh-token` additionally ROTATES that grant OUTSIDE the
+ *     `pg_advisory_lock(7432004, hashtext(userId))` single-flight ADR 019
+ *     requires. The hub's RFC 9700 reuse detection makes an unserialized
+ *     double-refresh a grant-family-KILLING event, so this route is a
+ *     denial-of-service any logged-in user can trigger from a browser tab.
+ *     (The hub-side half of that hardening is PRDCT-1370.)
+ *
+ * `ctx.path` is the route pattern, and neither route has path params, so an
+ * exact match is enough; startsWith would also swallow future siblings, but
+ * an allowlist-shaped closure should deny exactly what it has verified.
+ */
+function isProviderGrantPath(path: string): boolean {
+  return path === '/get-access-token' || path === '/refresh-token';
+}
+
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   try {
@@ -619,6 +669,17 @@ export function createAuth({
           throw new APIError('FORBIDDEN', {
             code: 'otp_signin_disabled',
             message: 'Email-code sign-in is disabled on this edition — use "Sign in with Antasphere"'
+          });
+        }
+        // BOTH editions: the provider-grant read/rotate routes are closed —
+        // see isProviderGrantPath for the enumeration and the three reasons.
+        // Unconditional (no `ctx.request` escape hatch): nothing server-side
+        // calls them either, so a server-side caller appearing would itself
+        // be the regression this guard exists to catch.
+        if (isProviderGrantPath(ctx.path)) {
+          throw new APIError('FORBIDDEN', {
+            code: 'provider_grant_forbidden',
+            message: 'This endpoint is disabled — provider tokens are never handed to callers'
           });
         }
         // Login-CSRF (session fixation) hardening: Better Auth's own origin

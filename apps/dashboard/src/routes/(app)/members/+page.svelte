@@ -39,6 +39,13 @@
   // (password_reset_disabled — credentials live at the hub), so hide the
   // affordance instead of offering an action that can only toast an error.
   const hasPasswordLogin = $derived(data.instance.auth.methods.includes('password'));
+  // PRDCT-1354 (AUTH-8): minting someone else's reset / change-email link is
+  // sign-in-equivalent, so the API now requires OWNER on both routes — an
+  // admin who clicked either one would only ever get a 403 toast. The
+  // remaining refusals (a guest membership, a target who also belongs to
+  // another workspace) are not visible in the member wire, so those stay a
+  // truthful error toast rather than a hidden affordance.
+  const canMintCredentials = $derived(me.role === 'owner' && hasPasswordLogin);
 
   const list = createPagedList<Member>(async (p) => {
     const { members, nextCursor } = await api.members(p);
@@ -213,9 +220,11 @@
   function rowActions(member: Member) {
     const actions: Array<{ label: string; onclick: () => void; variant?: 'default' | 'destructive' }> = [
       { label: t('members.actionChangeRole'), onclick: () => openRoleDialog(member) },
-      { label: t('members.actionChangeEmail'), onclick: () => openChangeEmailDialog(member) },
-      ...(hasPasswordLogin
-        ? [{ label: t('members.actionResetLink'), onclick: () => void generateResetLink(member) }]
+      ...(canMintCredentials
+        ? [
+            { label: t('members.actionChangeEmail'), onclick: () => openChangeEmailDialog(member) },
+            { label: t('members.actionResetLink'), onclick: () => void generateResetLink(member) }
+          ]
         : [])
     ];
     if (member.userId !== me.user.id) {

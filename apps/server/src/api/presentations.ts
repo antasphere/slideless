@@ -545,22 +545,27 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   // access rides the existing /presentations scope mapping (reads →
   // presentations:read, mutations → presentations:write; middleware/scopes.ts).
 
-  /** Deck + write-surface authorization, or the error response to return. */
+  /**
+   * Deck + write-surface authorization, or the error response to return.
+   *
+   * AUTH-5 (PRDCT-1354): the refusal is a UNIFORM 404, never a 403. A 403
+   * here said "this deck exists, you just cannot manage it" to any
+   * workspace member — an existence oracle over every deck in the tenant,
+   * which is exactly what the ADR 013 read invariant ("a failed read check
+   * answers 404, never 403 — deck existence is not probeable") forbids on
+   * the read side. The WRITE side leaked the same bit and must answer the
+   * same way; the sibling surfaces in this file that already did
+   * (`shareTokenViewsListRoute`, the annotations routes) are the shape this
+   * now matches. A caller who genuinely holds the deck is unaffected.
+   */
   const deckForSharing = async (
     c: HonoContext,
     id: string
-  ): Promise<{ deck: PresentationRow } | { status: 403 | 404; body: ReturnType<typeof err> }> => {
+  ): Promise<{ deck: PresentationRow } | { status: 404; body: ReturnType<typeof err> }> => {
     const principal = c.get('principal')!;
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return { status: 404, body: err('not_found', 'Presentation not found') };
-    if (!(await service.canWrite(principal, deck))) {
-      return {
-        status: 403,
-        body: err(
-          'forbidden',
-          'Only the deck owner, a workspace admin, or an active collaborator can manage its share tokens'
-        )
-      };
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return { status: 404, body: err('not_found', 'Presentation not found') };
     }
     return { deck };
   };

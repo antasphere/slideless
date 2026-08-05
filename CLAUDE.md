@@ -116,6 +116,31 @@ deploys) + `dev` (day-to-day work).
   `PROVIDER_NOT_FOUND`) — by construction, not by leaving the env unset. Rule: no non-SSO
   session entrance on cloud except the break-glass `/sign-in/email`; oss keeps Google social
   when configured.
+- **No route ever hands a caller a PROVIDER GRANT, on either edition (PRDCT-1354, AUTH-3/AUTH-7)**:
+  Better Auth's own `/get-access-token` and `/refresh-token` answer 403 `provider_grant_forbidden`
+  from the same before-hook (`isProviderGrantPath` in `identity/better-auth.ts` — re-verify the
+  enumeration on ANY Better Auth bump). Both returned the caller's stored grant in PLAINTEXT, which
+  makes `encryptOAuthTokens: true` pointless, and the `/auth/*` mount is registered BEFORE
+  `authContext` (`api/index.ts`), so neither saw the scope allowlist, the per-principal quota, the
+  idempotency claim, or the audit log. On cloud that grant IS the hub grant (ADR 019), and
+  `/refresh-token` rotated it OUTSIDE the `pg_advisory_lock(7432004, hashtext(userId))`
+  single-flight, which the hub's RFC 9700 reuse detection turns into a grant-family-killing event
+  any logged-in user could trigger from a browser tab. Pure subtraction: nothing in the server, SDK,
+  CLI, dashboard, or MCP calls either route (the hub grant refreshes via `HubGrantService.postRefresh`,
+  which posts to the hub token endpoint directly). Never reopen them; a new provider-token read
+  surface needs an explicit charter call.
+- **Minting another user's credential is an OWNER act with a cross-tenant refusal (PRDCT-1354,
+  AUTH-1/2/8)**: `POST /members/{id}/reset-link` and `/members/{id}/change-email-link` both mint
+  a SIGN-IN-EQUIVALENT bearer for a target (LESSONS.md M6), and a `user` row is instance-GLOBAL —
+  so the mint's blast radius is every workspace the target belongs to. Both are `requireRole('owner')`,
+  both run `mintRefusal` (`api/members.ts`), and both refuse an `origin='guest'` target
+  (`guest_target` — a per-deck outsider's account is not the host tenant's to recover, D2) and any
+  target holding a membership in ANOTHER workspace (`cross_workspace_target`). Both also carry the
+  cloud closure (`password_reset_disabled` / `email_change_disabled`) and both are idempotency
+  targets. Any new mint route under `/members` must call `mintRefusal` too. Crossing the tenant
+  boundary with a per-deck collaborator invite is likewise admin/owner-only
+  (`external_invite_forbidden`, `api/collaborators.ts`): the claim path mints a real global `user`
+  row, so inviting an outsider is an onboarding act, not a deck act.
 - **Cloud federation is USER-scoped and live (ADR 019, internal/federation.md "Live reconcile +
   grant")**: every hub read between logins is `GET <hub>/orgs` AS THE USER with that user's own
   stored grant (encrypted on the `account` row) — there is NO service key, no cross-tenant

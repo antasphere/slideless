@@ -138,6 +138,47 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     }
 
     const invitee = body.email.toLowerCase().trim();
+
+    // AUTH-6 (PRDCT-1354): inviting an EXTERNAL email is an onboarding act,
+    // not a deck act. `canAdministerDeck` above is satisfied by "I own this
+    // deck", and any plain member can create a deck — so before this gate a
+    // single low-privilege member could pull an arbitrary outsider into the
+    // tenant: the claim path mints them a real `user` row plus an
+    // `origin='guest'` membership, which is the ENTRY step of the
+    // minted-credential takeover chain this ticket closes (the guest row is
+    // then a target for the admin mint routes, whose refusals live in
+    // api/members.ts).
+    //
+    // Inviting a COLLEAGUE — an email that already holds an active
+    // membership of this workspace — is untouched: no new principal is
+    // created, so there is nothing to onboard. Only crossing the tenant
+    // boundary needs workspace-level authority (admin or owner), which is
+    // the same bar `/invitations` already applies to the other way of
+    // adding a person.
+    if (principal.role !== 'admin' && principal.role !== 'owner') {
+      const [colleague] = await db
+        .select({ id: workspaceMembers.id })
+        .from(workspaceMembers)
+        .innerJoin(userTable, eq(workspaceMembers.userId, userTable.id))
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, principal.workspaceId),
+            eq(workspaceMembers.isActive, true),
+            eq(userTable.email, invitee)
+          )
+        )
+        .limit(1);
+      if (!colleague) {
+        return c.json(
+          err(
+            'external_invite_forbidden',
+            'Only a workspace admin or owner can invite someone from outside the workspace'
+          ),
+          403
+        );
+      }
+    }
+
     if (deck.ownerUserId) {
       const [owner] = await db
         .select({ email: userTable.email })
