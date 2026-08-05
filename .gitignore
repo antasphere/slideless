@@ -15,3 +15,10 @@ test-results/
 .tmp/
 data/
 apps/server/var/
+# Legacy BACKUP_DIR. backup.sh now defaults outside the checkout, but an
+# operator can still point it here — and a config archive carries AUTH_SECRET.
+# No trailing slash: the pattern must also match before the directory exists,
+# so `git check-ignore backups` answers correctly on a fresh clone.
+backups
+# Agent scratch (session notes, local settings) — never part of a release.
+.claude

@@ -3,26 +3,67 @@
 # secret) + the local config. Run from cron for dailies:
 #   0 3 * * * /opt/slideless/scripts/backup.sh >> /var/log/slideless-backup.log 2>&1
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Every artifact below holds production data, and the config archive holds
+# AUTH_SECRET. 0600/0700 from the moment of creation, never a window at 0644.
+umask 077
 
-BACKUP_DIR="${BACKUP_DIR:-./backups}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/.."
+# shellcheck source=lib/dr-lib.sh
+. "$SCRIPT_DIR/lib/dr-lib.sh"
+
+# Product slug: drives the default backup dir. Instantiation edits this one
+# line (keep it in sync with PRODUCT.slug in packages/contract/src/product.ts).
+PRODUCT_SLUG="slideless"
+# Default OUTSIDE the checkout: `./backups` inside a git repo is one `git add
+# -A` away from committing AUTH_SECRET, and one `git clean -xdf` away from
+# deleting every backup.
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PRODUCT_SLUG}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
+# Postgres role/database — must match docker-compose.yml (instantiation.md).
+DB_USER="${DB_USER:-slideless}"
+DB_NAME="${DB_NAME:-slideless}"
 STAMP=$(date -u +%Y%m%d-%H%M%S)
 
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR" ||
+  dr_fail "cannot create $BACKUP_DIR — run as root or set BACKUP_DIR to a writable path"
+chmod 700 "$BACKUP_DIR" 2>/dev/null || true
 
-echo "▸ dumping database"
-docker compose exec -T db pg_dump -U slideless slideless | gzip > "$BACKUP_DIR/db-$STAMP.sql.gz"
-[ -s "$BACKUP_DIR/db-$STAMP.sql.gz" ] || { echo "✖ empty dump" >&2; exit 1; }
+dr_info "dumping database"
+docker compose exec -T db pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_DIR/db-$STAMP.sql.gz"
+chmod 600 "$BACKUP_DIR/db-$STAMP.sql.gz"
 
-echo "▸ archiving app data volume (/data: files, secret)"
+dr_info "archiving app data volume (/data: files, secret)"
 docker compose run --rm --no-deps -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint tar app \
   -czf "/backup/data-$STAMP.tar.gz" -C /data .
+# tar ran inside the container under the image's umask, not ours.
+chmod 600 "$BACKUP_DIR/data-$STAMP.tar.gz"
 
-echo "▸ archiving config"
-tar -czf "$BACKUP_DIR/config-$STAMP.tar.gz" .env docker-compose.yml 2>/dev/null
+dr_info "archiving config"
+if [ -f .env ]; then
+  if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
+    # The passphrase is handed over on file descriptor 3, never through argv
+    # or the environment, so it cannot be read out of the process table.
+    tar -czf - .env docker-compose.yml |
+      openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass fd:3 \
+        -out "$BACKUP_DIR/config-$STAMP.tar.gz.enc" 3<<< "$BACKUP_PASSPHRASE"
+    chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz.enc"
+  else
+    tar -czf "$BACKUP_DIR/config-$STAMP.tar.gz" .env docker-compose.yml
+    chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz"
+    dr_warn "BACKUP_PASSPHRASE is unset — config-$STAMP.tar.gz stores AUTH_SECRET in cleartext (mode 600)."
+    dr_warn "Set BACKUP_PASSPHRASE to encrypt it before shipping backups off this machine."
+  fi
+else
+  dr_warn "no .env found — config archive skipped. A restore will NOT recover AUTH_SECRET,"
+  dr_warn "so every existing API key and share link would stop resolving."
+fi
 
-echo "▸ pruning backups older than ${RETENTION_DAYS}d"
-find "$BACKUP_DIR" -name '*.gz' -mtime "+$RETENTION_DAYS" -delete
+dr_info "verifying the archives just written"
+dr_verify_pg_dump "$BACKUP_DIR/db-$STAMP.sql.gz" > /dev/null
+dr_verify_tar "$BACKUP_DIR/data-$STAMP.tar.gz"
 
-echo "✔ backup complete: $BACKUP_DIR/{db,data,config}-$STAMP.*"
+dr_info "pruning backups older than ${RETENTION_DAYS}d"
+find "$BACKUP_DIR" \( -name '*.gz' -o -name '*.gz.enc' \) -mtime "+$RETENTION_DAYS" -delete
+
+dr_success "backup complete: $BACKUP_DIR/{db,data,config}-$STAMP.*"

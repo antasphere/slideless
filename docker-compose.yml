@@ -50,12 +50,22 @@ services:
       - TRUST_PROXY=${TRUST_PROXY:-false}
       # /metrics is disabled (401) until this is set. setup.sh generates one.
       - METRICS_TOKEN=${METRICS_TOKEN:-}
+      # Allow the first-boot wizard over plaintext HTTP on a non-loopback
+      # origin. Default false: the owner password and the setup token would
+      # cross the network in the clear.
+      - ALLOW_INSECURE_SETUP=${ALLOW_INSECURE_SETUP:-false}
       # OTLP/HTTP endpoint for trace export. Unset = no export (zero phone-home).
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     ports:
+      # LOOPBACK BY DEFAULT. Docker publishes ports by writing DNAT rules that
+      # bypass ufw's INPUT chain, so a 0.0.0.0 bind here is reachable from the
+      # internet no matter what the host firewall says — the documented `ufw`
+      # step would be silently useless. Terminate TLS in a reverse proxy on
+      # the host (docs/self-hosting/reverse-proxy.md) and leave this alone.
+      # Deliberate exposure is an explicit opt-in: APP_BIND=0.0.0.0 in .env.
       # APP_PORT changes the HOST port only; in-container the app stays on
       # 3000 (the healthchecks depend on it).
-      - '${APP_PORT:-3000}:3000'
+      - '${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000'
     read_only: true
     volumes:
       - app_data:/data
