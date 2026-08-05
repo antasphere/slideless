@@ -81,7 +81,10 @@ beforeAll(async () => {
   );
   expect(commit.status).toBe(201);
 
-  const token = await app.app.request(`/api/v1/presentations/${deckId}/tokens`, json({ name: 'Embed' }, { cookie }));
+  const token = await app.app.request(
+    `/api/v1/presentations/${deckId}/tokens`,
+    json({ name: 'Embed' }, { cookie })
+  );
   expect(token.status).toBe(201);
   secret = (await readJson(token)).secret;
 }, 120_000);

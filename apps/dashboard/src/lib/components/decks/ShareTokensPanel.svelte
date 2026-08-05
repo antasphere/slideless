@@ -556,8 +556,7 @@
                 </Button>
               </div>
               <!-- Snippets render through escaped {} interpolation — never {@html}. -->
-              <pre
-                class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
+              <pre class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
                   >{embedScriptSnippet}</code
                 ></pre>
               <p class="text-xs text-muted-foreground">{t('tokens.embedScriptHint')}</p>
@@ -575,8 +574,7 @@
                   <Copy class="h-3.5 w-3.5" />
                 </Button>
               </div>
-              <pre
-                class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
+              <pre class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
                   >{embedIframeSnippet}</code
                 ></pre>
               <p class="text-xs text-muted-foreground">{t('tokens.embedIframeHint')}</p>

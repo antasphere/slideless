@@ -676,8 +676,7 @@ export const en = {
   'formResponses.deletedToast': 'Response deleted',
   'formResponses.deleteConfirmTitle': 'Delete response?',
   'formResponses.deleteConfirmDescription': 'The response is removed permanently.',
-  'formResponses.empty':
-    'No responses yet — they appear once viewers submit a form embedded in this deck.',
+  'formResponses.empty': 'No responses yet — they appear once viewers submit a form embedded in this deck.',
   'formResponses.emptyFiltered': 'No responses match these filters.',
   'formResponses.noAccess': 'Form responses are visible to the deck’s writers only.',
   'formResponses.loadFailed': 'Failed to load form responses: {error}',

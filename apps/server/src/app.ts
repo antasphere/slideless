@@ -34,13 +34,11 @@ export interface AppDeps {
   metricsMiddleware?: MiddlewareHandler;
   metricsRoutes?: Hono;
   otelMiddleware?: MiddlewareHandler;
-<<<<<<< HEAD
   /**
    * Live readiness probe for the backing store (routes/health.ts). Omitted =
    * /readyz keeps reporting the boot-time storage result forever.
    */
   probeStorage?: () => Promise<void>;
-=======
   /** `Strict-Transport-Security` value (security-headers.ts `hstsValue`); null/absent = no HSTS. */
   hsts?: string | null;
 }
@@ -53,7 +51,6 @@ export function postgresErrorCode(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code : undefined;
->>>>>>> fix/sec-1374-1375
 }
 
 /**
@@ -73,11 +70,8 @@ export async function createApp({
   metricsMiddleware,
   metricsRoutes,
   otelMiddleware,
-<<<<<<< HEAD
-  probeStorage
-=======
+  probeStorage,
   hsts
->>>>>>> fix/sec-1374-1375
 }: AppDeps): Promise<Hono> {
   const app = new Hono();
 

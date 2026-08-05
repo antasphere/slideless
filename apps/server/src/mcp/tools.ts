@@ -1062,7 +1062,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       description:
         "A deck's embedded-form responses (what viewers submitted through <form " +
         'data-slideless-form> forms), newest first: each row carries the form name, the deck ' +
-        "version the respondent saw, the share link it came through (id + owner-facing name), the " +
+        'version the respondent saw, the share link it came through (id + owner-facing name), the ' +
         "source ('link' for direct share-link opens, 'embed' for official embeds), the ?p= " +
         'placement label, the respondent account (id + email, set ONLY when a signed-in viewer ' +
         'was verified server-side, else null), the submitted payload, and timestamps. Payload ' +
@@ -1084,10 +1084,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           .max(64)
           .optional()
           .describe('Only responses whose serving document carried this ?p= label.'),
-        since: z.iso
-          .datetime()
-          .optional()
-          .describe('Only responses created at or after this ISO instant.'),
+        since: z.iso.datetime().optional().describe('Only responses created at or after this ISO instant.'),
         cursor: cursorInput,
         limit: limitInput,
         summary: z

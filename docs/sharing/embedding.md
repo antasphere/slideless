@@ -13,10 +13,10 @@ Both snippets are offered with copy buttons in the dashboard the moment you crea
 
 The loader finds every `div[data-slideless-embed]` on the page and replaces its contents with a sandboxed, responsive iframe. One script tag serves any number of embeds on the same page. Optional attributes on the div:
 
-| Attribute                   | What it does                                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `data-slideless-placement`  | Labels this spot in the link's [analytics](link-analytics.md) — the loader appends it as the `?p=` placement label |
-| `data-aspect-ratio`         | The frame's shape, e.g. `16/9` (the default) or `4/3`                                                              |
+| Attribute                  | What it does                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `data-slideless-placement` | Labels this spot in the link's [analytics](link-analytics.md) — the loader appends it as the `?p=` placement label |
+| `data-aspect-ratio`        | The frame's shape, e.g. `16/9` (the default) or `4/3`                                                              |
 
 The placement label is what tells your embeds apart: the same link embedded in three places, each with its own `data-slideless-placement`, gives you three distinguishable streams in the link's view activity. This matters doubly for embeds because the frame never sends a referrer (see the security notes below), so the label is the only attribution an embedded view carries.
 

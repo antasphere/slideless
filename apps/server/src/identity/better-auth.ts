@@ -52,10 +52,7 @@ export interface CreateAuthOptions {
   db: Db;
   env: Pick<
     Env,
-    | 'PUBLIC_BASE_URL'
-    | 'GOOGLE_CLIENT_ID'
-    | 'GOOGLE_CLIENT_SECRET'
-    | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
+    'PUBLIC_BASE_URL' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
   >;
   authSecret: string;
   /** When provided (an email driver delivers), the email-OTP login auto-enables. */

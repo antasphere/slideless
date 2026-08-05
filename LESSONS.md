@@ -745,6 +745,7 @@ secret>` and harvested what visitors typed, straight through the official
   browser SSO path's takeover posture.
 
 <<<<<<< HEAD
+
 ## Blob authorization (SL-B1, 2026-07-26)
 
 - **An ACL on the resource is not an ACL on its bytes.** ADR 013 made deck
@@ -772,7 +773,8 @@ secret>` and harvested what visitors typed, straight through the official
   distinct "you may not use this blob" status would confirm that the
   workspace holds those exact bytes — the same reason a deck read answers
   404 and never 403.
-=======
+  \=======
+
 ## Config / HTTP hardening pass (PRDCT-1374 + PRDCT-1375, 2026-07-26)
 
 Ported from the template. The generic rules live in the template's own LESSONS
@@ -823,4 +825,5 @@ entry; these are what THIS repo added or had to do differently.
   way — every numeric knob rides `numeric()`, including the two view-analytics
   ones (`VIEW_EVENTS_RETENTION_DAYS`, `VIEW_DEDUPE_WINDOW_MINUTES`) — because
   the day someone adds `VAR=${VAR:-}` to compose it would go live silently.
->>>>>>> fix/sec-1374-1375
+
+> > > > > > > fix/sec-1374-1375

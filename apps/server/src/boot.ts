@@ -604,14 +604,11 @@ export async function boot(
     metricsMiddleware: metrics.middleware,
     metricsRoutes: metrics.routes(env.METRICS_TOKEN),
     otelMiddleware: otel.middleware,
-<<<<<<< HEAD
     // The boot probe above runs once. /readyz re-runs this one so a store
     // that goes away later (unmounted volume, wiped /data after a failed
     // restore, revoked S3 credentials) stops reporting ready.
-    probeStorage: () => storage.healthcheck()
-=======
+    probeStorage: () => storage.healthcheck(),
     hsts: hstsValue(env)
->>>>>>> fix/sec-1374-1375
   });
   rootApp.current = app;
 

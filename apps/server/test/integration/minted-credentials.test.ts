@@ -203,6 +203,11 @@ beforeAll(async () => {
   // satisfy `canAdministerDeck` on it).
   await uploadAsset(ownerCookie);
   ownerDeck = await createDeck(ownerCookie, 'Owner deck');
+  // PRDCT-1343 scoped the commit guard: a principal may only bind a sha it can
+  // READ, so the plain member re-uploads the same bytes rather than riding the
+  // owner's upload. Content-addressed dedupe means this stores nothing new; it
+  // registers the uploader, which is what the scope check reads.
+  await uploadAsset(plainCookie);
   plainDeck = await createDeck(plainCookie, 'Plain-member deck');
 }, 240_000);
 

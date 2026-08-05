@@ -225,10 +225,7 @@ describe('presentation metadata', () => {
 describe('AGENT.md commit-time detection', () => {
   it('a bundle shipping AGENT.md at the root stamps hasAgentDoc on version AND deck', async () => {
     const { presentation, version } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')]
     });
     expect(version.hasAgentDoc).toBe(true);
     expect(presentation.hasAgentDoc).toBe(true);
@@ -236,10 +233,7 @@ describe('AGENT.md commit-time detection', () => {
 
   it('the reserved name is exact and case-sensitive: agent.md does not count', async () => {
     const { presentation, version } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf('agent.md', AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf('agent.md', AGENT_MD, 'text/markdown')]
     });
     expect(version.hasAgentDoc).toBe(false);
     expect(presentation.hasAgentDoc).toBe(false);
@@ -257,10 +251,7 @@ describe('AGENT.md commit-time detection', () => {
 
   it('a new version without AGENT.md flips the deck mirror; the old version keeps its stamp', async () => {
     const { presentation } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')]
     });
     const commit2 = await readJson(
       await app.app.request(
@@ -302,10 +293,7 @@ describe('AGENT.md commit-time detection', () => {
 describe('GET /presentations/{id}/agent-doc', () => {
   it('streams the briefing as markdown, attachment + nosniff (app-origin safe-serving)', async () => {
     const { presentation } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')]
     });
     const res = await app.app.request(`/api/v1/presentations/${presentation.id}/agent-doc`, {
       headers: { cookie: ownerCookie }
@@ -319,10 +307,7 @@ describe('GET /presentations/{id}/agent-doc', () => {
 
   it('?version pins an older briefing after a later version dropped it; absent = 404 agent_doc_not_found', async () => {
     const { presentation } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')]
     });
     await app.app.request(
       `/api/v1/presentations/${presentation.id}/versions`,
@@ -342,20 +327,16 @@ describe('GET /presentations/{id}/agent-doc', () => {
     expect(latest.status).toBe(404);
     expect((await readJson(latest)).error.code).toBe('agent_doc_not_found');
 
-    const pinned = await app.app.request(
-      `/api/v1/presentations/${presentation.id}/agent-doc?version=1`,
-      { headers: { cookie: ownerCookie } }
-    );
+    const pinned = await app.app.request(`/api/v1/presentations/${presentation.id}/agent-doc?version=1`, {
+      headers: { cookie: ownerCookie }
+    });
     expect(pinned.status).toBe(200);
     expect(await pinned.text()).toBe(AGENT_MD.toString('utf8'));
   });
 
   it('a read-scoped API key reads it; a non-reader member answers 404 (existence not probeable)', async () => {
     const { presentation } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')]
     });
     const viaKey = await app.app.request(`/api/v1/presentations/${presentation.id}/agent-doc`, {
       headers: { authorization: `Bearer ${readOnlyKey}` }
@@ -375,10 +356,7 @@ describe('GET /presentations/{id}/agent-doc', () => {
 describe('the public viewer serves AGENT.md like any manifest path', () => {
   it('/v/{secret}/AGENT.md answers the briefing under the sandbox regime', async () => {
     const { presentation } = await createDeck({
-      manifest: [
-        entryOf('index.html', HTML, 'text/html'),
-        entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')
-      ]
+      manifest: [entryOf('index.html', HTML, 'text/html'), entryOf(AGENT_DOC_PATH, AGENT_MD, 'text/markdown')]
     });
     const created = await readJson(
       await app.app.request(

@@ -3,7 +3,6 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
 import { badgePositionSchema, noControlChars } from '@slideless/contract';
-import type { ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';

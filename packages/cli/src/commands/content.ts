@@ -199,7 +199,10 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           await writeLink(scan.rootDir, { presentationId: existingId, baseUrl: ctx.baseUrl });
           const formNames = await detectFormNames(scan);
           if (ctx.json) {
-            return printJson(io, formNames.length > 0 ? { ...committed, formsDetected: formNames } : committed);
+            return printJson(
+              io,
+              formNames.length > 0 ? { ...committed, formsDetected: formNames } : committed
+            );
           }
           io.out.write(
             `Pushed "${committed.presentation.title}" → version ${committed.version.version} ` +
@@ -246,52 +249,48 @@ export function registerContentCommands(program: Command, io: CliIo): void {
 
   program
     .command('agent-doc [id]')
-    .description(
-      `Print a deck's ${AGENT_DOC_PATH} briefing (id defaults to the ${LINK_FILENAME} link in .)`
-    )
+    .description(`Print a deck's ${AGENT_DOC_PATH} briefing (id defaults to the ${LINK_FILENAME} link in .)`)
     .option('--at <version>', 'read this version instead of the latest', (v: string) => parseInt(v, 10))
     .option('--out <file>', 'write to a file instead of stdout')
-    .action(
-      async (id: string | undefined, opts: { at?: number; out?: string }, cmd: Command) => {
-        const ctx = resolveContext(cmd, io);
-        await requireApiKey(ctx);
+    .action(async (id: string | undefined, opts: { at?: number; out?: string }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
 
-        let deckId = id ?? null;
-        if (!deckId) {
-          const link = await readLink(resolve('.'));
-          if (!link) {
-            throw new CliUsageError(
-              `No deck id given and no ${LINK_FILENAME} found — run \`slideless agent-doc <id>\`.`
-            );
-          }
-          deckId = link.presentationId;
+      let deckId = id ?? null;
+      if (!deckId) {
+        const link = await readLink(resolve('.'));
+        if (!link) {
+          throw new CliUsageError(
+            `No deck id given and no ${LINK_FILENAME} found — run \`slideless agent-doc <id>\`.`
+          );
         }
-
-        let content: string;
-        try {
-          content = await ctx.client.agentDoc(deckId, opts.at);
-        } catch (e) {
-          if (e instanceof PlatformApiError && e.code === 'agent_doc_not_found') {
-            throw new CliUsageError(
-              `This deck ships no ${AGENT_DOC_PATH}` +
-                `${opts.at !== undefined ? ` at version ${opts.at}` : ''} — add one at the bundle root and push.`
-            );
-          }
-          throw e;
-        }
-
-        if (opts.out) {
-          const target = resolve(opts.out);
-          await mkdir(dirname(target), { recursive: true });
-          await writeFile(target, content);
-          if (ctx.json) return printJson(io, { presentationId: deckId, path: target });
-          io.out.write(`Wrote ${AGENT_DOC_PATH} of ${deckId} → ${target}\n`);
-          return;
-        }
-        if (ctx.json) return printJson(io, { presentationId: deckId, content });
-        io.out.write(content.endsWith('\n') ? content : `${content}\n`);
+        deckId = link.presentationId;
       }
-    );
+
+      let content: string;
+      try {
+        content = await ctx.client.agentDoc(deckId, opts.at);
+      } catch (e) {
+        if (e instanceof PlatformApiError && e.code === 'agent_doc_not_found') {
+          throw new CliUsageError(
+            `This deck ships no ${AGENT_DOC_PATH}` +
+              `${opts.at !== undefined ? ` at version ${opts.at}` : ''} — add one at the bundle root and push.`
+          );
+        }
+        throw e;
+      }
+
+      if (opts.out) {
+        const target = resolve(opts.out);
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, content);
+        if (ctx.json) return printJson(io, { presentationId: deckId, path: target });
+        io.out.write(`Wrote ${AGENT_DOC_PATH} of ${deckId} → ${target}\n`);
+        return;
+      }
+      if (ctx.json) return printJson(io, { presentationId: deckId, content });
+      io.out.write(content.endsWith('\n') ? content : `${content}\n`);
+    });
 
   program
     .command('pull [id] [path]')

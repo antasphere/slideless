@@ -80,7 +80,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--name <name>', 'owner-facing recipient label', 'cli')
     .option('--to-version <n>', 'pin the recipient to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let the recipient annotate', false)
-    .option('--no-forms', 'disallow submitting the deck\'s embedded forms through this link')
+    .option('--no-forms', "disallow submitting the deck's embedded forms through this link")
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -114,9 +114,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         const ctx = resolveContext(cmd, io);
         await requireApiKey(ctx);
         if (opts.placement !== undefined && !EMBED_PLACEMENT_RE.test(opts.placement)) {
-          throw new CliUsageError(
-            '--placement must be 1-64 characters of letters, digits, ".", "_" or "-"'
-          );
+          throw new CliUsageError('--placement must be 1-64 characters of letters, digits, ".", "_" or "-"');
         }
         const password = await resolveSharePassword(io, opts);
         const created = await ctx.client.createShareToken(
@@ -189,7 +187,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .requiredOption('--to <email...>', 'recipient email(s)')
     .option('--to-version <n>', 'pin recipients to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let recipients annotate', false)
-    .option('--no-forms', 'disallow submitting the deck\'s embedded forms through these links')
+    .option('--no-forms', "disallow submitting the deck's embedded forms through these links")
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,

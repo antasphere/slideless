@@ -63,8 +63,7 @@ export const PREVIEW_SHARE_TOKEN_NAME = 'Dashboard preview';
  * Surface C) or `allow-top-navigation*` (framebusting). Pinned by
  * decks.test.ts (dashboard) and embed.test.ts (server).
  */
-export const VIEWER_IFRAME_SANDBOX =
-  'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+export const VIEWER_IFRAME_SANDBOX = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
 
 export const shareTokenSchema = z.object({
   id: z.string(),

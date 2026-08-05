@@ -157,9 +157,7 @@ test('official embed: cross-origin loader mounts the Surface D iframe, deck rend
     });
 
     await test.step('the placement label landed on the recorded view event', async () => {
-      const views = await page.request.get(
-        `/api/v1/presentations/${deckId}/tokens/${tokenId}/views`
-      );
+      const views = await page.request.get(`/api/v1/presentations/${deckId}/tokens/${tokenId}/views`);
       expect(views.status()).toBe(200);
       const body = await views.json();
       expect(body.views.length).toBeGreaterThanOrEqual(1);

@@ -6,7 +6,7 @@ A deck can describe itself through two complementary channels:
   the API. Use it to attach whatever your workflow needs (client, stage,
   campaign, tags…) and build your own dashboard or card views on top of the
   API without waiting for Slideless to grow those fields.
-- **`AGENT.md`** — a markdown briefing shipped *inside* the deck bundle, at
+- **`AGENT.md`** — a markdown briefing shipped _inside_ the deck bundle, at
   its root. It travels with the content and is versioned with it: an agent
   can read what a deck is, what data it contains, and how to present it —
   before downloading or rendering anything.
@@ -73,10 +73,10 @@ put in the deck itself.
 
 ## Which one to use
 
-| | `metadata` | `AGENT.md` |
-|---|---|---|
-| Lives | On the presentation record | Inside the bundle, per version |
-| Shape | JSON object (≤16k serialized) | Markdown prose |
-| Changes | Anytime via PATCH, no new version | With the content, on push |
+|          | `metadata`                        | `AGENT.md`                       |
+| -------- | --------------------------------- | -------------------------------- |
+| Lives    | On the presentation record        | Inside the bundle, per version   |
+| Shape    | JSON object (≤16k serialized)     | Markdown prose                   |
+| Changes  | Anytime via PATCH, no new version | With the content, on push        |
 | Audience | Dashboards, filtering, automation | Agents about to present the deck |
-| Public | No (authenticated API only) | Yes, through any share link |
+| Public   | No (authenticated API only)       | Yes, through any share link      |

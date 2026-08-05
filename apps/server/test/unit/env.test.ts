@@ -65,9 +65,9 @@ describe('env schema', () => {
       envSchema.safeParse({ ...minimal, PUBLIC_BASE_URL: 'data:text/html,<script>x</script>' }).success
     ).toBe(false);
     expect(envSchema.safeParse({ ...minimal, PUBLIC_BASE_URL: 'file:///etc/passwd' }).success).toBe(false);
-    expect(
-      envSchema.parse({ ...minimal, PUBLIC_BASE_URL: 'https://app.example.com' }).PUBLIC_BASE_URL
-    ).toBe('https://app.example.com');
+    expect(envSchema.parse({ ...minimal, PUBLIC_BASE_URL: 'https://app.example.com' }).PUBLIC_BASE_URL).toBe(
+      'https://app.example.com'
+    );
     // Same gate on every other parsed-URL knob. This repo has two the others
     // do not: VIEWER_BASE_URL (the isolated user-content origin) and
     // HUB_ISSUER_URL (the Antasphere hub it federates to) — a non-http scheme
@@ -99,8 +99,12 @@ describe('env schema', () => {
     expect(envSchema.parse({ ...minimal, AUDIT_RETENTION_DAYS: '' }).AUDIT_RETENTION_DAYS).toBe(365);
     expect(envSchema.parse({ ...minimal, AUDIT_RETENTION_DAYS: '  ' }).AUDIT_RETENTION_DAYS).toBe(365);
     expect(envSchema.parse(minimal).VIEW_EVENTS_RETENTION_DAYS).toBe(90);
-    expect(envSchema.parse({ ...minimal, VIEW_EVENTS_RETENTION_DAYS: '' }).VIEW_EVENTS_RETENTION_DAYS).toBe(90);
-    expect(envSchema.parse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: '' }).VIEW_DEDUPE_WINDOW_MINUTES).toBe(10);
+    expect(envSchema.parse({ ...minimal, VIEW_EVENTS_RETENTION_DAYS: '' }).VIEW_EVENTS_RETENTION_DAYS).toBe(
+      90
+    );
+    expect(envSchema.parse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: '' }).VIEW_DEDUPE_WINDOW_MINUTES).toBe(
+      10
+    );
     expect(envSchema.parse({ ...minimal, ORPHAN_USER_RETENTION_HOURS: '' }).ORPHAN_USER_RETENTION_HOURS).toBe(
       72
     );
@@ -121,7 +125,6 @@ describe('env schema', () => {
     expect(envSchema.parse({ ...minimal, HSTS_MAX_AGE: '' }).HSTS_MAX_AGE).toBe(15552000);
     expect(envSchema.parse({ ...minimal, HSTS_MAX_AGE: '0' }).HSTS_MAX_AGE).toBe(0);
   });
-
 
   it('treats an empty AUTH_SECRET (VAR= in compose) as unset', () => {
     const env = envSchema.parse({ ...minimal, AUTH_SECRET: '' });

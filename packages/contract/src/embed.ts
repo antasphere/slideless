@@ -43,13 +43,10 @@ export interface EmbedSnippets {
 
 export function buildEmbedSnippets(opts: EmbedSnippetOptions): EmbedSnippets {
   if (opts.placement !== undefined && !EMBED_PLACEMENT_RE.test(opts.placement)) {
-    throw new Error(
-      'invalid placement label: 1-64 characters of letters, digits, ".", "_" or "-"'
-    );
+    throw new Error('invalid placement label: 1-64 characters of letters, digits, ".", "_" or "-"');
   }
   const embedJsUrl = `${opts.appOrigin.replace(/\/+$/, '')}/embed.js`;
-  const placementAttr =
-    opts.placement !== undefined ? ` data-slideless-placement="${opts.placement}"` : '';
+  const placementAttr = opts.placement !== undefined ? ` data-slideless-placement="${opts.placement}"` : '';
   const iframeUrl =
     opts.placement !== undefined
       ? `${opts.viewerUrl}${opts.viewerUrl.includes('?') ? '&' : '?'}p=${opts.placement}`

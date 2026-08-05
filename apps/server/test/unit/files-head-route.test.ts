@@ -69,6 +69,10 @@ function app(): OpenAPIHono {
     env: { MAX_FILE_SIZE_MB: 100, EDITION: 'oss', APP_VERSION: 'test' },
     logger: pino({ level: 'silent' }),
     instanceId: async () => 'inst',
+    // PRDCT-1343 made per-deck scoping a required dep. This suite exercises the
+    // HEAD route shape (PLT-39), not authorization, so it takes the operator
+    // view: undefined = unscoped, exactly what an admin/owner principal gets.
+    blobReadScope: () => undefined,
     blobInUse: async () => false
   });
   return api;
@@ -125,6 +129,10 @@ describe('GET/HEAD /files/:id/content (one registration, verb read off the reque
       env: { MAX_FILE_SIZE_MB: 100, EDITION: 'oss', APP_VERSION: 'test' },
       logger: pino({ level: 'silent' }),
       instanceId: async () => 'inst',
+      // PRDCT-1343 made per-deck scoping a required dep. This suite exercises the
+      // HEAD route shape (PLT-39), not authorization, so it takes the operator
+      // view: undefined = unscoped, exactly what an admin/owner principal gets.
+      blobReadScope: () => undefined,
       blobInUse: async () => false
     });
 

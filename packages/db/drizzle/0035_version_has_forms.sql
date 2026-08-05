@@ -14,3 +14,5 @@
 -- Renumbered 0036 -> 0035 when this branch merged alongside 0034_file_uploaders:
 -- both had been generated against 0033, so their snapshots collided on a shared
 -- parent. Regenerated against the merged schema.
+ALTER TABLE "presentation_versions" ADD COLUMN "has_forms" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "presentations" ADD COLUMN "has_forms" boolean DEFAULT false NOT NULL;

@@ -251,18 +251,13 @@ describe('multi-page overlay injection', () => {
   const PAGE_ONE = Buffer.from(
     '<!doctype html><html><body><h1>Front</h1><a href="guide/page2.html">next</a></body></html>'
   );
-  const PAGE_TWO = Buffer.from(
-    '<!doctype html><html><body><h1>Second page</h1></body></html>'
-  );
+  const PAGE_TWO = Buffer.from('<!doctype html><html><body><h1>Second page</h1></body></html>');
   const STYLES = Buffer.from('body{color:#111}');
 
   let multiDeckId: string;
 
   async function createMultiToken(body: Record<string, unknown>): Promise<{ secret: string }> {
-    const res = await app.app.request(
-      `/api/v1/presentations/${multiDeckId}/tokens`,
-      json(body, { cookie })
-    );
+    const res = await app.app.request(`/api/v1/presentations/${multiDeckId}/tokens`, json(body, { cookie }));
     expect(res.status).toBe(201);
     return { secret: (await readJson(res)).secret };
   }
