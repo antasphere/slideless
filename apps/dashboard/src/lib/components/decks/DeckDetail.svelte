@@ -8,6 +8,7 @@
   import ShareTokensPanel from './ShareTokensPanel.svelte';
   import CollaboratorsPanel from './CollaboratorsPanel.svelte';
   import AnnotationsPanel from './AnnotationsPanel.svelte';
+  import FormResponsesPanel from './FormResponsesPanel.svelte';
   import VersionsPanel from './VersionsPanel.svelte';
   import DeckMetaPanel from './DeckMetaPanel.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
@@ -257,6 +258,8 @@
     <CollaboratorsPanel {deckId} canManage={canManageCollaborators} />
 
     <AnnotationsPanel {deckId} versions={versionsList.items} {resolveUser} />
+
+    <FormResponsesPanel {deckId} />
 
     <VersionsPanel
       list={versionsList}

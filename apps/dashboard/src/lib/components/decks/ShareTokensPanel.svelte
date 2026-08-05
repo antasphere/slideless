@@ -59,6 +59,9 @@
   let versionMode = $state<'latest' | 'pinned'>('latest');
   let pinnedVersion = $state('');
   let canAnnotate = $state(false);
+  // ON by default — a deck's embedded form is its intended interaction
+  // (ADR 022); the toggle is the per-link opt-out.
+  let canSubmitForms = $state(true);
   let badgePosition = $state('default');
   let expiresIn = $state('never');
   let password = $state('');
@@ -105,6 +108,7 @@
     versionMode = 'latest';
     pinnedVersion = versions[0] ? String(versions[0].version) : '';
     canAnnotate = false;
+    canSubmitForms = true;
     badgePosition = 'default';
     expiresIn = 'never';
     password = '';
@@ -119,6 +123,7 @@
         versionMode,
         ...(versionMode === 'pinned' ? { pinnedVersion: Number(pinnedVersion) } : {}),
         canAnnotate,
+        canSubmitForms,
         ...(canAnnotate && badgePosition !== 'default'
           ? { badgePosition: badgePosition as ShareTokenCreate['badgePosition'] }
           : {}),
@@ -273,7 +278,9 @@
             : t('tokens.modePinned', { n: token.pinnedVersion });
         const flags = [
           ...(token.hasPassword ? [t('tokens.badgePassword')] : []),
-          ...(token.canAnnotate ? [t('tokens.badgeAnnotate')] : [])
+          ...(token.canAnnotate ? [t('tokens.badgeAnnotate')] : []),
+          // Forms default ON — flag the exception, not the norm.
+          ...(token.canSubmitForms ? [] : [t('tokens.badgeFormsOff')])
         ];
         return flags.length ? `${mode} · ${flags.join(' · ')}` : mode;
       },
@@ -442,6 +449,13 @@
     <Label for="token-annotate" class="font-normal">
       {t('tokens.annotateLabel')}
       <span class="text-muted-foreground">{t('tokens.annotateHint')}</span>
+    </Label>
+  </div>
+  <div class="flex items-center gap-2">
+    <Checkbox id="token-forms" bind:checked={canSubmitForms} />
+    <Label for="token-forms" class="font-normal">
+      {t('tokens.formsLabel')}
+      <span class="text-muted-foreground">{t('tokens.formsHint')}</span>
     </Label>
   </div>
   {#if canAnnotate}

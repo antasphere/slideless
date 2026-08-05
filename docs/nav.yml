@@ -14,6 +14,7 @@ groups:
   - title: Sharing & review
     pages:
       - sharing/annotations
+      - sharing/forms
       - sharing/embedding
       - sharing/link-analytics
   - title: Self-hosting

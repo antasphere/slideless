@@ -192,6 +192,9 @@ slideless share <id> --to-version 2 --annotator \
                      --expires 2026-12-31T23:59:59Z --password hunter22
 slideless share <id> --annotator --badge-position top-left  # move the notes button (8 slots;
                                                             # remembered as the deck default)
+slideless share <id> --no-forms                           # viewers of this link cannot submit the
+                                                          # deck's embedded forms (default: they can;
+                                                          # also on share-email)
 slideless share <id> --embed                              # also print the website embed snippets
 slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link
@@ -203,6 +206,10 @@ slideless tokens <id> [--all]                             # list links + access 
 slideless views <id> [tokenId] [--all]                    # per-view events of one link: when, referring
                                                           # site, ?p= label, browser family (no IPs, no
                                                           # full URLs — never stored)
+slideless responses <id> [--form name] [--link tokenId] \
+                    [--source link|embed] [--placement label] \
+                    [--since ISO] [--all] [--json|--csv]  # what viewers submitted through the deck's
+                                                          # embedded forms
 ```
 
 Secrets are stored hash-only server-side: the URL printed at creation is
@@ -223,6 +230,19 @@ Access stats count entry loads only, de-duplicated per browser within a
 short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
 open is one count, while cookie-less fetches (CLI, curl) count each time.
 "Last opened" is the last counted open.
+
+**Collecting form responses**: `slideless responses` with no filters prints
+the summary first (responses per form × link × source × placement, with the
+latest activity), then the most recent rows. Filters narrow the row listing:
+`--form` to one named form, `--link` to one share link (token id or link
+name, never a share URL: secrets are hash-only server-side and cannot be
+resolved back to a token), `--source link|embed` and `--placement <label>`
+to one distribution spot, `--since <ISO datetime>` to a time window. `--all`
+follows pagination, `--json` prints the wire shape for agents, and `--csv`
+writes a spreadsheet-safe CSV (cells are guarded against formula injection)
+built client-side from the same rows. Links minted with `--no-forms` refuse
+submissions (`403 forms_disabled`); everything else about them works
+unchanged. Details: the Forms page under Sharing & review.
 
 ## Collaborators
 

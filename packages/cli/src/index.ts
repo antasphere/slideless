@@ -50,7 +50,8 @@ function buildProgram(io: CliIo): Command {
   registerDeckCommands(program, io);
   // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
   registerContentCommands(program, io);
-  // Sharing + collaborators: share, unshare, share-email, pin, tokens, invite, uninvite.
+  // Sharing + collaborators: share, unshare, share-email, pin, tokens, views,
+  // responses, invite, uninvite.
   registerSharingCommands(program, io);
   // Platform substrate (template heritage): instance, export, files *.
   registerFileCommands(program, io);

@@ -76,6 +76,8 @@ export const shareTokenSchema = z.object({
   /** The frozen version — null while versionMode is 'latest'. */
   pinnedVersion: z.number().int().nullable(),
   canAnnotate: z.boolean(),
+  /** Whether viewers of this link may submit the deck's embedded forms. */
+  canSubmitForms: z.boolean(),
   /** Per-link badge slot; null = deck default (then bottom-right). */
   badgePosition: badgePositionSchema.nullable(),
   expiresAt: z.string().nullable(),
@@ -105,6 +107,12 @@ export const shareTokenCreateSchema = z
     /** Required when versionMode is 'pinned'. */
     pinnedVersion: z.number().int().min(1).optional(),
     canAnnotate: z.boolean().default(false),
+    /**
+     * Forms submit ON by default — a deck's embedded form is its intended
+     * interaction (unlike the opt-in annotation layer), so push + share
+     * yields a working form with zero flags. Opt out per link.
+     */
+    canSubmitForms: z.boolean().default(true),
     /**
      * Explicit badge slot for this link. Also becomes the deck's remembered
      * default for future links. Omitted = inherit the deck's remembered
@@ -153,6 +161,7 @@ export const shareTokenUpdateSchema = z
     /** Required alongside versionMode 'pinned'; ignored for 'latest'. */
     pinnedVersion: z.number().int().min(1).optional(),
     canAnnotate: z.boolean().optional(),
+    canSubmitForms: z.boolean().optional(),
     /**
      * Explicit slot (also updates the deck's remembered default) or null to
      * fall back to the deck default again.

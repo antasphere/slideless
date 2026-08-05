@@ -175,7 +175,9 @@ describe('overlay injection', () => {
     expect(viaHeader.status).toBe(200);
     expect(await viaHeader.text()).not.toContain(OVERLAY_MARKER);
 
-    const viewOnly = await createToken({ name: 'View Only', canAnnotate: false });
+    // canSubmitForms off too: since ADR 022 the forms runtime injects for
+    // ANY submit-capable token, so byte-exact streaming needs both flags off.
+    const viewOnly = await createToken({ name: 'View Only', canAnnotate: false, canSubmitForms: false });
     const plain = await fetchEntry(viewOnly.secret);
     expect(plain.status).toBe(200);
     expect(await plain.text()).not.toContain(OVERLAY_MARKER);
@@ -323,7 +325,15 @@ describe('multi-page overlay injection', () => {
   });
 
   it('keeps sub-resource loads byte-exact: iframe dest, ?raw, non-HTML types, view-only tokens', async () => {
-    const { secret } = await createMultiToken({ name: 'Multi Frames', canAnnotate: true });
+    // canSubmitForms off: frames are the FORMS runtime's sanctioned entry
+    // since ADR 022, so proving the OVERLAY's byte-exact frame rule needs a
+    // token that injects nothing (forms frame injection is pinned in
+    // forms.test.ts).
+    const { secret } = await createMultiToken({
+      name: 'Multi Frames',
+      canAnnotate: true,
+      canSubmitForms: false
+    });
 
     // A nested iframe pointing at a deck page is a sub-resource — untouched
     // (the frame participation protocol is deliberately deferred).

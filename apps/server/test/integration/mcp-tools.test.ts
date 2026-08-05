@@ -55,7 +55,8 @@ const EXPECTED_TOOLS = [
   'slideless_invite_collaborator',
   'slideless_uninvite_collaborator',
   'slideless_list_collaborators',
-  'slideless_list_annotations'
+  'slideless_list_annotations',
+  'slideless_list_form_responses'
 ];
 
 let container: StartedPostgreSqlContainer;
@@ -228,7 +229,8 @@ describe('discovery + auth gate', () => {
       'slideless_list_share_tokens',
       'slideless_list_token_views',
       'slideless_list_collaborators',
-      'slideless_list_annotations'
+      'slideless_list_annotations',
+      'slideless_list_form_responses'
     ]) {
       expect(toolOf(name).annotations?.readOnlyHint, ` readOnlyHint`).toBe(true);
     }
@@ -626,6 +628,83 @@ describe('sharing, collaborators, annotations, delete', () => {
 
     const inbox = await callTool(ownerKey, 'slideless_list_annotations', {});
     expect(inbox.data.annotations.map((a: { presentationId: string }) => a.presentationId)).toContain(deckId);
+  });
+
+  it('slideless_list_form_responses lists rows (with filters) and answers summary mode', async () => {
+    // A fresh link (the revoke-all above killed the earlier ones); the
+    // viewer surface then plays the injected runtime's part.
+    const token = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'form-filler'
+    });
+    expect(token.isError, token.text).toBe(false);
+    const submit = await app.app.request(`/api/v1/viewer/${token.data.secret}/forms/rsvp/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({
+        payload: { name: 'MCP Respondent' },
+        source: 'embed',
+        placement: 'mcp-embed'
+      })
+    });
+    expect(submit.status).toBe(201);
+
+    const listed = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId
+    });
+    expect(listed.isError, listed.text).toBe(false);
+    expect(listed.data.responses).toHaveLength(1);
+    expect(listed.data.responses[0]).toMatchObject({
+      formName: 'rsvp',
+      shareTokenId: token.data.shareToken.id,
+      shareTokenName: 'form-filler',
+      source: 'embed',
+      placement: 'mcp-embed',
+      respondentUserId: null,
+      payload: { name: 'MCP Respondent' }
+    });
+    expect(listed.data.nextCursor).toBeNull();
+
+    // Filters ride through to the API.
+    const other = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      form: 'other-form'
+    });
+    expect(other.data.responses).toHaveLength(0);
+    const bySource = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      source: 'embed'
+    });
+    expect(bySource.data.responses).toHaveLength(1);
+
+    // summary: true answers the grouped overview instead of rows.
+    const summary = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      summary: true
+    });
+    expect(summary.isError, summary.text).toBe(false);
+    expect(summary.data.total).toBe(1);
+    expect(summary.data.buckets).toHaveLength(1);
+    expect(summary.data.buckets[0]).toMatchObject({
+      formName: 'rsvp',
+      shareTokenName: 'form-filler',
+      source: 'embed',
+      placement: 'mcp-embed',
+      count: 1
+    });
+    expect(summary.data.responses).toBeUndefined();
+
+    // Read-only keys reach it (readOnlyHint is honest)…
+    const ro = await callTool(readOnlyKey, 'slideless_list_form_responses', {
+      presentationId: deckId
+    });
+    expect(ro.isError, ro.text).toBe(false);
+    // …and the member's key stays walled off the owner's deck (ADR 013).
+    const foreign = await callTool(memberKey, 'slideless_list_form_responses', {
+      presentationId: deckId
+    });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.text).toContain('not_found');
   });
 
   it('slideless_delete_presentation removes the deck; reads answer not_found after', async () => {

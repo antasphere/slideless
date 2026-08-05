@@ -20,7 +20,8 @@ import {
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
 import { embedRoutes } from './embed.js';
-import { docNavigation, entryTransformFor, type EntryTransform } from './inject.js';
+import { docNavigation, entryTransformFor, frameNavigation, type EntryTransform } from './inject.js';
+import { mintRespondentAssertion } from './respondent.js';
 import { mintUnlockValue, unlockCookieName, UNLOCK_TTL_MS, verifyUnlockValue } from './unlock.js';
 import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.js';
 
@@ -88,6 +89,15 @@ export interface ViewerDeps {
    * cookie (viewer/viewed.ts). Operator-set via VIEW_DEDUPE_WINDOW_MINUTES.
    */
   viewDedupeWindowMs: number;
+  /** Whether the instance's mail driver delivers — the forms runtime's email opt-in flag. */
+  emailDelivers: boolean;
+  /**
+   * The signed-in viewer of THIS request, or null (ADR 022 leg 3): resolved
+   * from the first-party session cookie a top-level share-link navigation
+   * carries, validated against the session store (the break-glass posture —
+   * never a claim). Called only when the forms runtime would inject.
+   */
+  resolveSessionUserId: (c: Context) => Promise<string | null>;
 }
 
 /** Everything resolved about one viewer request before bytes are served. */
@@ -383,17 +393,36 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   }
 
   /** The injection seam's inputs for this request (viewer/inject.ts). */
-  function transformContextFor(c: Context, view: ResolvedView) {
+  async function transformContextFor(c: Context, view: ResolvedView) {
     const { token, deck, version } = view;
+    const raw = rawRequested(c);
+    const browserEntry = docNavigation(c);
+    // Leg 3 (ADR 022): only a top-level DOCUMENT navigation can carry the
+    // first-party session cookie (a cross-site embed frame never sends it),
+    // so the session lookup is skipped everywhere else — anonymous viewers
+    // cost nothing extra.
+    let respondentAssertion: string | null = null;
+    if (browserEntry && !raw && token.canSubmitForms) {
+      const userId = await deps.resolveSessionUserId(c);
+      if (userId !== null) {
+        respondentAssertion = mintRespondentAssertion(deps.authSecret, token.id, userId);
+      }
+    }
     return {
       token,
-      rawRequested: rawRequested(c),
-      browserEntry: docNavigation(c),
+      rawRequested: raw,
+      browserEntry,
+      frameEntry: frameNavigation(c),
       version: version.version,
       entryPath: version.entryPath,
       // Badge slot resolution: per-link override → the deck's remembered
       // default (last explicit choice) → the overlay's own bottom-right.
       badgePosition: token.badgePosition ?? deck.annotationBadgePosition,
+      // Submission attribution (ADR 022): the ?p= label of THIS navigation,
+      // sanitized exactly like the view event's.
+      placement: viewPlacement(c.req.query('p')),
+      respondentAssertion,
+      emailAvailable: deps.emailDelivers,
       mintUnlockProof: () =>
         token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
     };
@@ -519,10 +548,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       );
     }
 
-    // The annotation-injection seam (Phase 5). null = stream untouched;
-    // docNavigation (inject.ts) keeps the overlay away from agents, raw
-    // pulls, and sub-resource loads — those get the exact authored bytes.
-    const transform = entryTransformFor(transformContextFor(c, resolved.view));
+    // The injection seam (Phase 5 overlay + ADR 022 forms). null = stream
+    // untouched; the per-runtime gates (inject.ts) keep agents, raw pulls,
+    // and non-frame sub-resources byte-exact.
+    const transform = entryTransformFor(await transformContextFor(c, resolved.view));
     if (transform) {
       const served = await serveTransformed(c, token.workspaceId, entry.sha256, transform, entryHeaders);
       if (!served) {
@@ -599,7 +628,9 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     // below. Transformed sub-pages are no-store like the entry — with the
     // ETag gone there is no validator, so no-cache would just refetch.
     const isHtmlDoc = entry.contentType.toLowerCase().startsWith('text/html');
-    const transform = isHtmlDoc ? entryTransformFor(transformContextFor(c, resolved.view)) : null;
+    const transform = isHtmlDoc
+      ? entryTransformFor(await transformContextFor(c, resolved.view))
+      : null;
     if (transform) {
       const served = await serveTransformed(c, token.workspaceId, entry.sha256, transform, {
         ...VIEWER_CONTENT_HEADERS,

@@ -1,10 +1,11 @@
 import type { Command } from 'commander';
-import type { ListParams } from '@slideless/sdk';
+import type { FormResponseListParams, ListParams } from '@slideless/sdk';
 import {
   badgePositionSchema,
   buildEmbedSnippets,
   EMBED_PLACEMENT_RE,
   type BadgePositionValue,
+  type FormResponse,
   type ShareTokenCreate
 } from '@slideless/contract';
 import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
@@ -29,6 +30,8 @@ function shareOptionsOf(opts: {
   name?: string;
   toVersion?: number;
   annotator: boolean;
+  /** Commander --no-forms negation: true by default, false when passed. */
+  forms: boolean;
   badgePosition?: BadgePositionValue;
   expires?: string;
   password?: string;
@@ -41,6 +44,7 @@ function shareOptionsOf(opts: {
     versionMode: opts.toVersion !== undefined ? 'pinned' : 'latest',
     ...(opts.toVersion !== undefined ? { pinnedVersion: opts.toVersion } : {}),
     canAnnotate: opts.annotator,
+    canSubmitForms: opts.forms,
     ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
     ...(opts.password ? { password: opts.password } : {})
@@ -54,6 +58,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--name <name>', 'owner-facing recipient label', 'cli')
     .option('--to-version <n>', 'pin the recipient to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let the recipient annotate', false)
+    .option('--no-forms', 'disallow submitting the deck\'s embedded forms through this link')
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -73,6 +78,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           name: string;
           toVersion?: number;
           annotator: boolean;
+          forms: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -155,6 +161,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .requiredOption('--to <email...>', 'recipient email(s)')
     .option('--to-version <n>', 'pin recipients to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let recipients annotate', false)
+    .option('--no-forms', 'disallow submitting the deck\'s embedded forms through these links')
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -170,6 +177,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           to: string[];
           toVersion?: number;
           annotator: boolean;
+          forms: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -357,6 +365,134 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     );
 
   program
+    .command('responses <id>')
+    .description(
+      "A deck's embedded-form responses: what viewers submitted through share links and embeds, " +
+        'newest first. With no filters, prints the per-form summary (form, link, source, ' +
+        'placement, count, last activity), then the most recent rows. Payload cells are the ' +
+        "respondent's raw input."
+    )
+    .option('--form <name>', 'only this form (the data-slideless-form name)')
+    .option('--link <tokenId>', 'only responses that came through this share token')
+    .option('--source <source>', 'only direct-link or embedded submissions (link | embed)')
+    .option('--placement <label>', 'only responses whose serving document carried this ?p= label')
+    .option('--since <datetime>', 'only responses created at or after this ISO instant')
+    .option('--csv', 'output the listed rows as CSV (one column per payload field)', false)
+    .option('--cursor <cursor>', 'resume from a previous nextCursor')
+    .option('--limit <n>', 'page size (1-100)', (v: string) => parseInt(v, 10))
+    .option('--all', 'follow nextCursor until every page is fetched', false)
+    .action(
+      async (
+        id: string,
+        opts: {
+          form?: string;
+          link?: string;
+          source?: string;
+          placement?: string;
+          since?: string;
+          csv: boolean;
+          cursor?: string;
+          limit?: number;
+          all: boolean;
+        },
+        cmd: Command
+      ) => {
+        const ctx = resolveContext(cmd, io);
+        await requireApiKey(ctx);
+        if (ctx.json && opts.csv) {
+          throw new CliUsageError('Pass either --json or --csv, not both.');
+        }
+        const params: FormResponseListParams = {};
+        if (opts.cursor) params.cursor = opts.cursor;
+        if (opts.limit !== undefined) params.limit = opts.limit;
+        if (opts.form) params.form = opts.form;
+        if (opts.link) params.token = opts.link;
+        if (opts.source !== undefined) {
+          if (opts.source !== 'link' && opts.source !== 'embed') {
+            throw new CliUsageError('--source must be link or embed');
+          }
+          params.source = opts.source;
+        }
+        if (opts.placement) params.placement = opts.placement;
+        if (opts.since) {
+          if (Number.isNaN(Date.parse(opts.since))) {
+            throw new CliUsageError('--since must be an ISO datetime, e.g. 2026-01-31T00:00:00Z');
+          }
+          params.since = new Date(opts.since).toISOString();
+        }
+        const filtered = Boolean(opts.form || opts.link || opts.source || opts.placement || opts.since);
+
+        const fetchRows = async (): Promise<{ rows: FormResponse[]; nextCursor: string | null }> => {
+          const first = await ctx.client.formResponses(id, params);
+          const rows = [...first.responses];
+          if (opts.all) {
+            let cursor = first.nextCursor;
+            while (cursor) {
+              const page = await ctx.client.formResponses(id, { ...params, cursor });
+              rows.push(...page.responses);
+              cursor = page.nextCursor;
+            }
+          }
+          return { rows, nextCursor: opts.all ? null : first.nextCursor };
+        };
+
+        if (opts.csv) {
+          const { rows, nextCursor } = await fetchRows();
+          io.out.write(responsesCsv(rows));
+          // The hint goes to stderr so it never corrupts a piped CSV.
+          if (nextCursor) io.err.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
+          return;
+        }
+
+        if (filtered) {
+          const { rows, nextCursor } = await fetchRows();
+          if (ctx.json) return printJson(io, { responses: rows, nextCursor });
+          if (rows.length === 0) {
+            io.out.write('No matching responses.\n');
+            return;
+          }
+          io.out.write(table(rows.map(responseRow)));
+          if (nextCursor) io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
+          return;
+        }
+
+        // No filters: the grouped overview first ("what came in, from
+        // where"), then the most recent rows, then the drill-in hint.
+        const summary = await ctx.client.formResponsesSummary(id);
+        if (summary.total === 0 && !ctx.json) {
+          io.out.write(
+            'No form responses yet. Forms are <form data-slideless-form="name"> elements in the deck HTML.\n'
+          );
+          return;
+        }
+        const { rows, nextCursor } = await fetchRows();
+        if (ctx.json) return printJson(io, { summary, responses: rows, nextCursor });
+        io.out.write(
+          table(
+            summary.buckets.map((b) => [
+              b.formName,
+              b.shareTokenName ?? '-',
+              b.source,
+              b.placement ? `p:${b.placement}` : '-',
+              `${b.count} response${b.count === 1 ? '' : 's'}`,
+              b.lastResponseAt
+            ])
+          )
+        );
+        io.out.write(`Total: ${summary.total} response${summary.total === 1 ? '' : 's'}\n`);
+        if (rows.length > 0) {
+          io.out.write('\nRecent responses:\n');
+          io.out.write(table(rows.map(responseRow)));
+          if (nextCursor) io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
+        }
+        io.out.write(
+          `\nSlice: slideless responses ${id} --form <name> [--link <tokenId>] [--source link|embed] ` +
+            '[--placement <label>] [--since <ISO>]; export with --csv\n'
+        );
+      }
+    );
+
+  program
     .command('invite <id>')
     .description('Invite a dev collaborator to one deck (prints the claim link)')
     .requiredOption('--email <email>', 'invitee email')
@@ -382,4 +518,64 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
       if (ctx.json) return printJson(io, revoked);
       io.out.write(`Revoked collaborator grant ${revoked.id} (${revoked.email}).\n`);
     });
+}
+
+// ── Form responses rendering ─────────────────────────────────────────────────
+
+/** One human table row per response; the payload preview stays plain text. */
+function responseRow(r: FormResponse): string[] {
+  const preview = JSON.stringify(r.payload);
+  return [
+    r.createdAt,
+    r.formName,
+    r.shareTokenName ?? r.shareTokenId ?? '-',
+    r.source,
+    r.placement ? `p:${r.placement}` : '-',
+    preview.length > 60 ? `${preview.slice(0, 57)}...` : preview
+  ];
+}
+
+/**
+ * CSV of the listed rows: the attribution columns plus one column per
+ * payload field (union across rows, in first-seen order). Repeated-input
+ * array values are joined with "; ".
+ */
+function responsesCsv(rows: FormResponse[]): string {
+  const payloadKeys: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    for (const key of Object.keys(r.payload)) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        payloadKeys.push(key);
+      }
+    }
+  }
+  const header = ['formName', 'source', 'placement', 'link', 'createdAt', ...payloadKeys];
+  const lines = [header.map(csvCell).join(',')];
+  for (const r of rows) {
+    const cells = [
+      r.formName,
+      r.source,
+      r.placement ?? '',
+      r.shareTokenName ?? r.shareTokenId ?? '',
+      r.createdAt,
+      ...payloadKeys.map((key) => {
+        const value = r.payload[key];
+        return value === undefined ? '' : Array.isArray(value) ? value.join('; ') : value;
+      })
+    ];
+    lines.push(cells.map(csvCell).join(','));
+  }
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+/**
+ * RFC 4180 quoting plus the formula-injection guard: payload values are RAW
+ * respondent input, so any cell starting with '=', '+', '-' or '@' gets a
+ * leading apostrophe before it can reach a spreadsheet as a formula.
+ */
+function csvCell(raw: string): string {
+  const guarded = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
 }

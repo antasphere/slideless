@@ -64,6 +64,8 @@ privacy apply unchanged (a tool can never read a deck the caller can't).
 | `slideless_whoami`                    | read  | The connected user, workspace, role, scopes (`get_me` is the chassis alias)                                                                              |
 | `slideless_list_presentations`        | read  | Cursor-paginated deck list, scoped by per-deck read privacy                                                                                              |
 | `slideless_get_presentation`          | read  | One deck's metadata                                                                                                                                      |
+| `slideless_update_presentation`       | write | Rename a deck / replace its `metadata` object (full replace, no version push)                                                                            |
+| `slideless_get_agent_doc`             | read  | The deck's `AGENT.md` briefing as markdown (omit `version` = latest)                                                                                     |
 | `slideless_list_versions`             | read  | Version history (metadata only)                                                                                                                          |
 | `slideless_get_version`               | read  | One version incl. its full manifest (omit `version` = latest)                                                                                            |
 | `slideless_download_version`          | read  | Manifest + text-file contents inlined (≤256 KiB/file, ≤1 MiB total); binary/oversized → CLI note                                                         |
@@ -72,6 +74,7 @@ privacy apply unchanged (a tool can never read a deck the caller can't).
 | `slideless_delete_presentation`       | write | Soft delete (destructive, confirm-first)                                                                                                                 |
 | `slideless_add_share_token`           | write | Mint a share link (name/pin/annotate/expiry/password); returns the viewer URL once                                                                       |
 | `slideless_list_share_tokens`         | read  | A deck's tokens with access stats (secrets never retrievable)                                                                                            |
+| `slideless_list_token_views`          | read  | One token's per-view events: time, referrer host, `?p=` label, browser family (no IPs)                                                                   |
 | `slideless_set_token_version_mode`    | write | Pin a token to a version / follow latest                                                                                                                 |
 | `slideless_unshare_presentation`      | write | Revoke one token, or ALL active tokens when `tokenId` is omitted (destructive)                                                                           |
 | `slideless_share_via_email`           | write | Email a token's link (delivered sends ROTATE the secret)                                                                                                 |
@@ -79,6 +82,7 @@ privacy apply unchanged (a tool can never read a deck the caller can't).
 | `slideless_uninvite_collaborator`     | write | Revoke a grant (destructive, immediate)                                                                                                                  |
 | `slideless_list_collaborators`        | read  | A deck's grant roster                                                                                                                                    |
 | `slideless_list_annotations`          | read  | Per-deck notes, or the workspace inbox when `presentationId` is omitted; filters `version`/`status`                                                      |
+| `slideless_list_form_responses`       | read  | A deck's form responses (filters `form`/`token`/`source`/`placement`/`since`), or the grouped per-form × link × source × placement overview with `summary: true` |
 
 The `/mcp` transport caps request bodies at 1 MiB, so inline uploads are
 bounded at 768 KiB of decoded content (base64 inflation means anything larger

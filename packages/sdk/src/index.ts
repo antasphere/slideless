@@ -25,6 +25,9 @@ import type {
   CollaboratorInvited,
   CollaboratorLookup,
   FileInfo,
+  FormResponse,
+  FormResponseSourceValue,
+  FormResponsesSummary,
   InstanceInfo,
   InvitationAccept,
   InvitationCreate,
@@ -124,6 +127,20 @@ export interface AnnotationListParams extends ListParams {
   /** Only notes anchored to this deck version. */
   version?: number;
   status?: AnnotationStatus;
+}
+
+/** Cursor pagination + every form-response attribution filter (ADR 022). */
+export interface FormResponseListParams extends ListParams {
+  /** Only this form's responses (the data-slideless-form name). */
+  form?: string;
+  /** Only responses that came through this share link (token id). */
+  token?: string;
+  /** Only direct-link or embedded submissions. */
+  source?: FormResponseSourceValue;
+  /** Only responses whose serving document carried this ?p= label. */
+  placement?: string;
+  /** ISO datetime — only responses created at or after this instant. */
+  since?: string;
 }
 
 /**
@@ -758,6 +775,49 @@ export class PlatformClient {
     return this.request(
       'DELETE',
       `/presentations/${encodeURIComponent(id)}/annotations/${encodeURIComponent(annotationId)}`
+    );
+  }
+
+  // ── Form responses (ADR 022) ──────────────────────────────────────────────
+
+  private pathWithFormResponseQuery(base: string, params: FormResponseListParams): string {
+    const query = new URLSearchParams();
+    if (params.cursor) query.set('cursor', params.cursor);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.form) query.set('form', params.form);
+    if (params.token) query.set('token', params.token);
+    if (params.source) query.set('source', params.source);
+    if (params.placement) query.set('placement', params.placement);
+    if (params.since) query.set('since', params.since);
+    const qs = query.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
+
+  /**
+   * A deck's form responses, newest first (cursor-paginated), sliceable by
+   * form, share link, source (link/embed), placement label, and time.
+   * Payload values are the respondent's RAW input — escape before rendering.
+   */
+  formResponses(
+    id: string,
+    params: FormResponseListParams = {}
+  ): Promise<{ responses: FormResponse[]; nextCursor: string | null }> {
+    return this.request(
+      'GET',
+      this.pathWithFormResponseQuery(`/presentations/${encodeURIComponent(id)}/responses`, params)
+    );
+  }
+
+  /** Grouped counts per form × link × source × placement, plus the deck total. */
+  formResponsesSummary(id: string): Promise<FormResponsesSummary> {
+    return this.request('GET', `/presentations/${encodeURIComponent(id)}/responses/summary`);
+  }
+
+  /** Owner moderation: delete one response (audited server-side). */
+  deleteFormResponse(id: string, responseId: string): Promise<FormResponse> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/responses/${encodeURIComponent(responseId)}`
     );
   }
 

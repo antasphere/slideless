@@ -53,6 +53,8 @@ import { PresentationService } from '../presentations/service.js';
 import { AnnotationService } from '../annotations/service.js';
 import { ShareTokenViewService } from '../sharing/view-events.js';
 import type { CollaboratorService } from '../collaborators/service.js';
+import type { FormResponseService } from '../forms/service.js';
+import { registerViewerFormRoutes } from '../viewer/forms-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import type { AccountDeletionService } from '../accounts/deletion.js';
@@ -80,6 +82,7 @@ export interface ApiDeps {
   accountDeletion: AccountDeletionService;
   /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
   sharing: ShareTokenService;
+  forms: FormResponseService;
   /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
   collaborators: CollaboratorService;
   /**
@@ -667,6 +670,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     sharing: deps.sharing,
     views: new ShareTokenViewService(db, logger),
     annotations: annotationService,
+    forms: deps.forms,
     fileService: deps.fileService,
     storage: deps.storage,
     registry,
@@ -702,6 +706,21 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     logger,
     authSecret: deps.authSecret,
     annotateLimiter: limiters.viewerAnnotate,
+    passwordLimiter: limiters.viewerPassword,
+    clientIp
+  });
+  // The PUBLIC viewer-token form surface (ADR 022): the annotation surface's
+  // sibling — same containment story, same shared token-session resolver.
+  registerViewerFormRoutes(api, {
+    sharing: deps.sharing,
+    presentations: presentationService,
+    forms: deps.forms,
+    logger,
+    authSecret: deps.authSecret,
+    email,
+    env,
+    formSubmitLimiter: limiters.viewerFormSubmit,
+    formEmailLimiter: limiters.viewerFormEmail,
     passwordLimiter: limiters.viewerPassword,
     clientIp
   });

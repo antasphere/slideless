@@ -47,6 +47,18 @@ export interface RateLimiters {
    */
   viewerAnnotate: RateLimiterAbstract;
   /**
+   * Public token-authed form submissions (ADR 022) — same keying as
+   * viewerAnnotate (per IP + token; invalid share secrets and failed
+   * edit-secret lookups burn points too), so a broadcast link can be spammed
+   * only as fast as this bucket refills; the per-deck response cap backstops.
+   */
+  viewerFormSubmit: RateLimiterAbstract;
+  /**
+   * The form edit-link email leg — a PUBLIC endpoint that sends mail is a
+   * spam vector, so tight, keyed per IP + token AND per target address.
+   */
+  viewerFormEmail: RateLimiterAbstract;
+  /**
    * Shared factory riding the same backend (Redis when REDIS_URL is set,
    * memory otherwise) for buckets sized at runtime — the per-principal
    * request quota creates one limiter per distinct quota tier through this.
@@ -90,6 +102,8 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     breakGlass: make('break-glass', 10, 60 * 60),
     viewerPassword: make('viewer-pw', 10, 15 * 60),
     viewerAnnotate: make('viewer-annot', 60, 10 * 60),
+    viewerFormSubmit: make('viewer-form', 30, 10 * 60),
+    viewerFormEmail: make('viewer-form-mail', 5, 15 * 60),
     make
   };
 }

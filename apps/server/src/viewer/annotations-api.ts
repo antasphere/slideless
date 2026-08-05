@@ -3,14 +3,12 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
 import { badgePositionSchema } from '@slideless/contract';
-import type { ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
-import { verifyViewerPassword } from '../sharing/password.js';
 import { annotationToReviewerWire, type AnnotationService } from '../annotations/service.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
-import { verifyUnlockValue } from './unlock.js';
+import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 /**
  * THE TOKEN-SESSION ANNOTATION SURFACE (Phase 5) — the reserved
@@ -55,7 +53,7 @@ import { verifyUnlockValue } from './unlock.js';
 export const VIEWER_API_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Viewer-Password, X-Slideless-Unlock',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Viewer-Password, X-Slideless-Unlock, X-Slideless-Response',
   'Access-Control-Max-Age': '86400'
 } as const;
 
@@ -111,92 +109,31 @@ const err = (code: string, message: string) => ({ error: { code, message } });
 export function registerViewerAnnotationRoutes(api: OpenAPIHono, deps: ViewerAnnotationDeps): void {
   const { sharing, presentations, annotations, authSecret, clientIp } = deps;
 
-  interface Resolved {
-    token: ShareTokenRow;
-    version: number;
-    presentationId: string;
-  }
-
   /**
    * Secret → live annotator token → live deck → resolved version, or the
-   * error response. Mirrors the viewer's status mapping (404/403/410) plus
-   * the annotator requirement and the password proof.
+   * error response — the shared token-session resolver (viewer/
+   * token-session.ts) with the annotator capability. Unknown-secret probes
+   * burn a point from the annotate bucket (this surface's write bucket).
    */
   async function resolveAnnotator(
     c: Context
-  ): Promise<{ ok: true; view: Resolved } | { ok: false; res: Response }> {
-    const secret = c.req.param('secret') ?? '';
-    const token = await sharing.resolveBySecret(secret);
-    if (!token) {
-      // Unknown secrets burn a per-IP point: no cheaper an oracle than /v.
-      await deps.annotateLimiter.consume(`${clientIp(c)}:invalid`).catch(() => {});
-      return {
-        ok: false,
-        res: c.json(err('not_found', 'This share link does not exist or is no longer available.'), 404)
-      };
-    }
-    if (token.revokedAt) {
-      return { ok: false, res: c.json(err('revoked', 'This share link has been revoked.'), 403) };
-    }
-    if (token.expiresAt && token.expiresAt.getTime() <= Date.now()) {
-      return { ok: false, res: c.json(err('expired', 'This share link has expired.'), 410) };
-    }
-    if (!token.canAnnotate) {
-      return {
-        ok: false,
-        res: c.json(err('not_annotator', 'This share link does not allow annotations.'), 403)
-      };
-    }
-
-    // Password proof: the injected unlock MAC, or the raw password header.
-    if (token.passwordHash) {
-      const unlock = c.req.header('x-slideless-unlock');
-      const unlocked =
-        unlock !== undefined && verifyUnlockValue(authSecret, token.id, token.passwordHash, unlock);
-      if (!unlocked) {
-        const password = c.req.header('x-viewer-password');
-        if (password === undefined) {
-          return {
-            ok: false,
-            res: c.json(
-              err(
-                'password_required',
-                'This share link is password protected — present x-slideless-unlock or x-viewer-password.'
-              ),
-              401
-            )
-          };
-        }
-        const bucket = `${clientIp(c)}:${token.id}`;
-        const state = await deps.passwordLimiter.get(bucket).catch(() => null);
-        if (state !== null && state.remainingPoints <= 0) {
-          return {
-            ok: false,
-            res: c.json(err('rate_limited', 'Too many password attempts — try again later.'), 429)
-          };
-        }
-        if (!(await verifyViewerPassword(password, token.passwordHash))) {
-          await deps.passwordLimiter.consume(bucket).catch(() => {});
-          return {
-            ok: false,
-            res: c.json(err('password_invalid', 'The x-viewer-password value is not correct.'), 401)
-          };
-        }
+  ): Promise<{ ok: true; view: TokenSessionView } | { ok: false; res: Response }> {
+    return resolveTokenSession(
+      c,
+      {
+        sharing,
+        presentations,
+        authSecret,
+        invalidSecretLimiter: deps.annotateLimiter,
+        passwordLimiter: deps.passwordLimiter,
+        clientIp
+      },
+      {
+        allows: (token) => token.canAnnotate,
+        errorCode: 'not_annotator',
+        errorMessage: 'This share link does not allow annotations.'
       }
-    }
-
-    const deck = await presentations.get(token.workspaceId, token.presentationId);
-    if (!deck) {
-      return {
-        ok: false,
-        res: c.json(err('not_found', 'This share link does not exist or is no longer available.'), 404)
-      };
-    }
-    const version = token.pinnedVersion ?? deck.currentVersion;
-    if (version < 1) {
-      return { ok: false, res: c.json(err('not_found', 'This deck has no published version.'), 404) };
-    }
-    return { ok: true, view: { token, version, presentationId: deck.id } };
+    );
   }
 
   // ── GET: this token's notes on the resolved version (overlay bootstrap) ──

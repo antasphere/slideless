@@ -52,6 +52,7 @@ import { NoopUsageSink } from './platform/usage.js';
 import { WorkspaceService } from './platform/workspaces.js';
 import { resolveAuthSecret } from './secret.js';
 import { ShareTokenService } from './sharing/service.js';
+import { FormResponseService } from './forms/service.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
 import { PresentationService } from './presentations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
@@ -472,6 +473,9 @@ export async function boot(
   // Share-token secrets ride the SAME versioned pepper registry as API keys
   // (ADR 008): sha256(secret + pepper), fail-closed across rotations.
   const sharing = new ShareTokenService(db.db, pepperRegistry);
+  // Form-response edit secrets: the same credential pattern one level down
+  // (ADR 022) — one registry, one rotation story for every peppered secret.
+  const forms = new FormResponseService(db.db, pepperRegistry);
   const limiters = await createRateLimiters(env, logger);
 
   // Per-deck collaborators (Phase 5). Claim-at-signup: user creation is the
@@ -514,6 +518,7 @@ export async function boot(
     authSecret,
     accountDeletion,
     sharing,
+    forms,
     collaborators: collaboratorService,
     hubSso,
     // Cloud only: /sso/cli-connect stores the H3 offline grant through it.
@@ -539,7 +544,23 @@ export async function boot(
     passwordLimiter: limiters.viewerPassword,
     clientIp: makeClientIp(env.TRUST_PROXY),
     secureCookies: env.PUBLIC_BASE_URL.startsWith('https://'),
-    viewDedupeWindowMs: env.VIEW_DEDUPE_WINDOW_MINUTES * 60_000
+    viewDedupeWindowMs: env.VIEW_DEDUPE_WINDOW_MINUTES * 60_000,
+    emailDelivers: email.delivers,
+    // ADR 022 leg 3: the signed-in viewer of a top-level share-link
+    // navigation, validated against the session store (never a claim). The
+    // cookie-name sniff is a cheap pre-filter — Better Auth session cookies
+    // all carry 'session_token' — so anonymous viewers (and unlock/viewed
+    // cookie holders) skip the lookup; getSession stays the validator.
+    resolveSessionUserId: async (c) => {
+      const cookie = c.req.header('cookie');
+      if (!cookie || !cookie.includes('session_token')) return null;
+      try {
+        const session = await auth.api.getSession({ headers: c.req.raw.headers });
+        return session?.user.id ?? null;
+      } catch {
+        return null;
+      }
+    }
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.

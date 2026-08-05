@@ -70,6 +70,16 @@ snippet from one shared builder, sandbox attributes included. Placement
 labels are slugs (letters, digits, `.`, `_`, `-`, max 64); each embedded
 view then shows its label in `slideless views <deckId> <tokenId>`.
 
+## Forms inside embeds
+
+If the deck carries [forms](forms.md), they are fully functional inside an embed: viewers fill them in and submit without leaving your page. Attribution flows through the same placement mechanism as views: an embedded submission is recorded with source `embed` (a direct link records `link`) plus the embed's `data-slideless-placement` label, so
+
+```bash
+slideless responses DECK_ID --source embed --placement pricing-page
+```
+
+lists exactly what the pricing page's embed collected. Every embedded respondent still gets their personal edit link from the confirmation card, including the option to receive it by email. Two boundaries to know: password-protected links remain unusable in embeds (their forms included), and signed-in viewers are never auto-recognized inside a frame. The [forms page](forms.md) has the full story.
+
 ## Why this is safe — for your site and for the deck
 
 Slideless decks are user-authored HTML, so the embed is built to guarantee that a deck can never touch the page that embeds it:
@@ -84,7 +94,7 @@ Never add `allow-same-origin` to the sandbox. It would collapse the isolation be
 ## Limitations, honestly
 
 - **Password-protected links don't work in embeds.** The password gate refuses to render inside a frame, by design: a first-party credential form has no business appearing on a third-party page. Embed links without a password (the secret URL is itself the credential).
-- **Annotations never appear in embeds.** The notes overlay and its badge only mount when the deck is the top-level page — an embedded deck is view-only, even on a link that allows annotations. Recipients who should annotate need the direct link.
+- **Annotations never appear in embeds.** The notes overlay and its badge only mount when the deck is the top-level page, even on a link that allows annotations. Recipients who should annotate need the direct link. [Forms](forms.md) are the deliberate exception to embedded interactivity (see above).
 - **View counting is coarser across sites.** The de-dupe cookie that collapses reloads into one view is scoped to the viewer and third-party cookie rules vary by browser, so embedded opens may count somewhat more often than direct opens.
 
 ## Self-hosting note
