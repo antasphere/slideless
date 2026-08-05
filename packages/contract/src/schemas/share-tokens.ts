@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plainText } from './common.js';
 
 /**
  * Per-recipient share tokens: each recipient gets their own 48-byte secret
@@ -102,7 +103,7 @@ const pinnedVersionConsistent = (v: {
 
 export const shareTokenCreateSchema = z
   .object({
-    name: z.string().min(1).max(200),
+    name: plainText(1, 200),
     versionMode: shareTokenVersionModeSchema.default('latest'),
     /** Required when versionMode is 'pinned'. */
     pinnedVersion: z.number().int().min(1).optional(),
@@ -156,7 +157,7 @@ export type ShareTokenCreated = z.infer<typeof shareTokenCreatedSchema>;
 /** Patch semantics: omitted = unchanged; explicit null clears (expiry/password). */
 export const shareTokenUpdateSchema = z
   .object({
-    name: z.string().min(1).max(200).optional(),
+    name: plainText(1, 200).optional(),
     versionMode: shareTokenVersionModeSchema.optional(),
     /** Required alongside versionMode 'pinned'; ignored for 'latest'. */
     pinnedVersion: z.number().int().min(1).optional(),

@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
+import { registerOpenApiDoc } from './openapi-doc.js';
 import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
@@ -25,6 +26,9 @@ import { constantTimeEquals } from '../constant-time.js';
 import { isSecureSetupOrigin } from '../setup-transport.js';
 import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
+import { crossSiteGuard } from '../middleware/cross-site.js';
+import { jsonDepthLimit } from '../middleware/json-depth.js';
+import { noStoreAuthenticated } from '../middleware/no-store.js';
 import { oauthPublicEndpoints } from '../middleware/oauth-public.js';
 import {
   createRequestQuota,
@@ -159,6 +163,40 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // ── Public OAuth endpoints first: wildcard CORS + OPTIONS 204 + no-store
   // on token responses. Before the rate limits so preflights cost nothing.
   api.use('/auth/*', oauthPublicEndpoints());
+
+  // ── Cross-site (CSRF) gate, before ANY other work: an unsafe method driven
+  // from another origin is refused before a body is buffered, before a
+  // limiter bucket is touched, and before a credential resolves. Sessions are
+  // ambient credentials — every business route below (presentations, share
+  // tokens, collaborators, annotations, api-keys) would otherwise be drivable
+  // from any page the user happens to have open.
+  //
+  // SCOPED TO /api/v1 ON PURPOSE. The public viewer (`/v/:secret`) is mounted
+  // on the root app and is DELIBERATELY embeddable cross-origin (ADR 021 +
+  // /embed.js), including its password-form POST — mounting this guard there
+  // would break every legitimate embed. The viewer authenticates on the share
+  // secret and its own scoped cookie, not on the dashboard session, so it is
+  // not the ambient-credential surface this closes.
+  api.use(
+    '*',
+    crossSiteGuard({
+      publicBaseUrl: env.PUBLIC_BASE_URL,
+      // `/api/v1/viewer/*` is the share-token annotation API, and it is a
+      // DELIBERATE wildcard-CORS surface (viewer/annotations-api.ts): it is
+      // called by the overlay client running inside the sandboxed viewer
+      // iframe, whose origin is the opaque `null`. Nothing there is
+      // cookie-authenticated — the share token in the path is the credential —
+      // so it is not the ambient-credential class this guard closes, and
+      // refusing `Origin: null` would break annotations outright.
+      isExempt: (path) => path.startsWith('/api/v1/viewer/')
+    })
+  );
+
+  // ── Authenticated responses are never cached. Registered ABOVE the
+  // credential middleware so it wraps every route under /api/v1, and it reads
+  // the principal AFTER the inner chain has resolved it. Routes that set their
+  // own Cache-Control (public discovery, the OpenAPI document) keep it.
+  api.use('*', noStoreAuthenticated());
   // The public viewer-token annotation surface (Phase 5): same posture — the
   // overlay calls cross-origin from the sandboxed opaque origin (Origin:
   // null), token-authed, never cookie-authed, so wildcard CORS is safe.
@@ -195,13 +233,26 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     return jsonBodyLimit(c, next);
   });
 
+  // ── JSON nesting cap, right after the size cap (so the scan is bounded by
+  // it): `JSON.parse` accepts any depth but `JSON.stringify` is recursive, so
+  // a small body of nothing but `[` turns any echo/audit/log of it into a
+  // RangeError 500 inside the shipped node:22-alpine image.
+  api.use('*', jsonDepthLimit());
+
   // ── Auth-surface rate limits: registered FIRST so they run before auth
   // resolution — abusive traffic is rejected before it costs a DB query.
   const clientIp = makeClientIp(env.TRUST_PROXY);
   // Login keys by IP AND email: Docker NAT (or a rotating attacker) can
   // collapse/expand the IP dimension, so per-account protection must not
   // depend on it. emailKeyOf returns [] for bodyless social sign-in.
-  api.use('/auth/sign-in/*', rateLimit(limiters.login, clientIp, emailKeyOf));
+  //
+  // consumeOn: 'failure' — see rate-limit.ts. The email key is derived from
+  // the REQUEST BODY, i.e. from an address anyone can type, so consuming it on
+  // arrival made the wall an account-lockout tool: ten POSTs naming a victim
+  // emptied that account's bucket for the window. Consuming only when the
+  // credential was actually refused keeps the brute-force budget identical and
+  // makes the owner's own successful sign-ins free.
+  api.use('/auth/sign-in/*', rateLimit(limiters.login, clientIp, emailKeyOf, { consumeOn: 'failure' }));
   api.use('/auth/email-otp/*', rateLimit(limiters.otp, clientIp, emailKeyOf));
   api.use('/auth/sign-up/*', rateLimit(limiters.login, clientIp));
   // Password reset: request keys by IP AND email (tight); reset + change key
@@ -237,7 +288,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // wall, per IP + email); complete = a credential guess (the login wall,
   // per IP + email) on top of better-auth's own 3-attempts-per-code limit.
   api.use('/cli/auth/request', rateLimit(limiters.otp, clientIp, emailKeyOf));
-  api.use('/cli/auth/complete', rateLimit(limiters.login, clientIp, emailKeyOf));
+  api.use('/cli/auth/complete', rateLimit(limiters.login, clientIp, emailKeyOf, { consumeOn: 'failure' }));
+  // The OpenAPI document is unauthenticated (PUBLIC_API_PATHS) so it never
+  // reaches the per-principal quota; the buffer is generated once at boot
+  // (openapi-doc.ts) and this wall is the defence in depth on top.
+  api.use('/openapi.json', rateLimit(limiters.openapiDoc, clientIp));
   // CLI cross-tool connect (cloud only, api/sso-connect.ts): presenting an
   // exchange token is a credential presentation — the same login wall as
   // /cli/auth/complete (per IP; no email dimension exists pre-verification).
@@ -746,7 +801,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     clientIp
   });
 
-  api.doc('/openapi.json', {
+  // Generated ONCE here, at the end of route registration — never per
+  // request (api/openapi-doc.ts explains why that mattered).
+  registerOpenApiDoc(api, {
     openapi: '3.1.0',
     info: {
       title: 'Platform API',

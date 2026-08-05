@@ -41,6 +41,7 @@ import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
 import { createLogger, type Logger } from './logger.js';
 import { createStorageDriver } from './storage/factory.js';
 import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-limit.js';
+import { hstsValue } from './middleware/security-headers.js';
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from './observability/otel.js';
 import { bindEditionSeams } from './platform/edition.js';
@@ -603,10 +604,14 @@ export async function boot(
     metricsMiddleware: metrics.middleware,
     metricsRoutes: metrics.routes(env.METRICS_TOKEN),
     otelMiddleware: otel.middleware,
+<<<<<<< HEAD
     // The boot probe above runs once. /readyz re-runs this one so a store
     // that goes away later (unmounted volume, wiped /data after a failed
     // restore, revoked S3 credentials) stops reporting ready.
     probeStorage: () => storage.healthcheck()
+=======
+    hsts: hstsValue(env)
+>>>>>>> fix/sec-1374-1375
   });
   rootApp.current = app;
 

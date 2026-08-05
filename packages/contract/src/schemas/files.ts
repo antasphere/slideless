@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plainText } from './common.js';
 
 export const fileSchema = z.object({
   id: z.string(),
@@ -25,5 +26,5 @@ export const fileUploadedSchema = z.object({
 
 export const fileUploadQuerySchema = z.object({
   /** Original filename (the body is the raw bytes). */
-  name: z.string().min(1).max(255)
+  name: plainText(1, 255)
 });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { scopeSchema } from './common.js';
+import { plainText, scopeSchema } from './common.js';
 
 export const apiKeySchema = z.object({
   id: z.string(),
@@ -27,7 +27,7 @@ export const apiKeysListSchema = z.object({
 });
 
 export const apiKeyCreateSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: plainText(1, 120),
   scopes: z.array(scopeSchema).min(1),
   /** TTL at mint; the server computes the absolute expiry. Omit = never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),

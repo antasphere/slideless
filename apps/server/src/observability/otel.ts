@@ -5,6 +5,7 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
+import { routeLabel } from '../route-label.js';
 
 /**
  * Tracing with the zero-phone-home default: spans are recorded ONLY when an
@@ -49,16 +50,19 @@ export async function createOtel(
     await tracer.startActiveSpan(`HTTP ${c.req.method}`, async (span) => {
       span.setAttributes({
         'http.request.method': c.req.method,
-        'url.path': c.req.path,
         'request.id': c.get('requestId')
       });
       try {
         await next();
       } finally {
-        const route = c.req.routePath ?? c.req.path;
+        // The MATCHED ROUTE PATTERN, never the raw path (route-label.ts): a
+        // span attribute is exported OFF-INSTANCE, so a `/v/<share secret>`
+        // there hands a working capability to the trace backend.
+        const route = routeLabel(c);
         span.updateName(`${c.req.method} ${route}`);
         span.setAttributes({
           'http.route': route,
+          'url.path': route,
           'http.response.status_code': c.error ? 500 : c.res.status
         });
         span.end();

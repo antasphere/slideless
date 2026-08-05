@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plainText } from './common.js';
 
 /**
  * Per-deck dev grants: an email is invited to develop one deck. The grant
@@ -60,7 +61,7 @@ export type CollaboratorLookup = z.infer<typeof collaboratorLookupSchema>;
 export const collaboratorClaimSchema = z.object({
   token: z.string().min(16),
   /** Required when the invited email has no account yet. */
-  name: z.string().min(1).max(120).optional(),
+  name: plainText(1, 120).optional(),
   password: z.string().min(12).max(256).optional()
 });
 export type CollaboratorClaim = z.infer<typeof collaboratorClaimSchema>;

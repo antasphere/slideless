@@ -50,7 +50,13 @@ export type AccountEvent =
 
 export interface CreateAuthOptions {
   db: Db;
-  env: Pick<Env, 'PUBLIC_BASE_URL' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET'>;
+  env: Pick<
+    Env,
+    | 'PUBLIC_BASE_URL'
+    | 'GOOGLE_CLIENT_ID'
+    | 'GOOGLE_CLIENT_SECRET'
+    | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
+  >;
   authSecret: string;
   /** When provided (an email driver delivers), the email-OTP login auto-enables. */
   sendOtp?: (params: { email: string; otp: string; type: string }) => Promise<void>;
@@ -427,8 +433,18 @@ export function createAuth({
         // RFC 7591 without a session. Registration alone grants nothing —
         // tokens still require login + consent + an active membership — and
         // the register endpoint is rate-limited in api/index.ts.
-        allowDynamicClientRegistration: true,
-        allowUnauthenticatedClientRegistration: true,
+        //
+        // PLT-29: it is still an anonymous write to the authorization server's
+        // client table, so an operator gets a switch rather than a hardcoded
+        // posture. OAUTH_DYNAMIC_CLIENT_REGISTRATION=false turns BOTH flags
+        // off and /oauth2/register refuses everyone.
+        //
+        // THE DEFAULT IS DELIBERATELY UNCHANGED (true): the MCP connector
+        // story depends on open registration, and the fleet-wide decision on
+        // whether that posture should change belongs to the OIDC audit, not to
+        // this hardening pass. This adds the control and nothing else.
+        allowDynamicClientRegistration: env.OAUTH_DYNAMIC_CLIENT_REGISTRATION,
+        allowUnauthenticatedClientRegistration: env.OAUTH_DYNAMIC_CLIENT_REGISTRATION,
         clientRegistrationDefaultScopes: [...OAUTH_SCOPES],
         clientRegistrationAllowedScopes: [...OAUTH_SCOPES],
         // Short access tokens: stateless JWTs can't be revoked, so revocation

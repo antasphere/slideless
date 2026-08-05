@@ -25,15 +25,98 @@ const booleanish = z.preprocess(
 /** Optional string where an empty value (e.g. `VAR=` in compose) means unset. */
 const optionalString = (inner: z.ZodString) => z.preprocess(blankToUndefined, inner.optional());
 
+/**
+ * Numeric knob where blank/whitespace means "use the default". EVERY numeric
+ * var goes through this: `Number('')` is 0, so an unwrapped `min(0)` knob
+ * (retention, quotas, sweeps) silently resolves to its 0/disabled meaning when
+ * compose passes `VAR=${VAR:-}`. `min(1)` knobs would merely fail the boot,
+ * but they ride the same preprocessor so a later `min(0)` cannot be added
+ * without it.
+ */
+const numeric = <T extends z.ZodType>(inner: T) => z.preprocess(blankToUndefined, inner);
+
+/**
+ * URL where only http(s) is acceptable. `z.url()` alone delegates to the WHATWG
+ * parser, which happily accepts `javascript:alert(1)` and `data:…` (verified
+ * against the pinned zod 4.4.3) — and PUBLIC_BASE_URL becomes the OIDC issuer,
+ * the Better Auth baseURL, and the base of every link we mint, so a non-http
+ * scheme there is a stored-XSS/redirect primitive rather than a typo.
+ */
+const httpUrl = () => z.url({ protocol: /^https?$/ });
+
+/**
+ * Cheap, deterministic quality floor for operator-supplied secrets. `min(32)`
+ * on its own accepts `'x'.repeat(32)` and `'changeme'.repeat(4)` — 32 bytes of
+ * length with a handful of bits of entropy, which for AUTH_SECRET is forgeable
+ * session/JWKS material. Three independent smells, all cheap:
+ *
+ *  - Shannon entropy of the observed character distribution, in bits over the
+ *    whole string (a 32-char hex secret scores ~123 bits; `'x'.repeat(32)`
+ *    scores 0).
+ *  - distinct characters (a keyboard-mashed word list scores badly here even
+ *    when its entropy estimate looks acceptable).
+ *  - a short repeated pattern (`abcdefgh` × 4 passes both checks above).
+ *
+ * This is a floor, NOT a strength meter: it rejects the obviously-typed, it
+ * cannot bless the merely-random-looking. `openssl rand -hex 32` always passes.
+ */
+export function shannonEntropyBits(value: string): number {
+  if (value.length === 0) return 0;
+  const counts = new Map<string, number>();
+  for (const ch of value) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  let perChar = 0;
+  for (const n of counts.values()) {
+    const p = n / value.length;
+    perChar -= p * Math.log2(p);
+  }
+  return perChar * value.length;
+}
+
+const MIN_SECRET_ENTROPY_BITS = 64;
+const MIN_SECRET_DISTINCT_CHARS = 8;
+
+/** True when the whole string is one short block repeated (`'ab'.repeat(16)`). */
+function isRepeatedPattern(value: string): boolean {
+  for (let len = 1; len < 16 && len <= value.length / 2; len++) {
+    if (value.length % len !== 0) continue;
+    if (value === value.slice(0, len).repeat(value.length / len)) return true;
+  }
+  return false;
+}
+
+/** Human-readable reason a secret is too predictable, or null when acceptable. */
+export function weakSecretReason(value: string): string | null {
+  if (new Set(value).size < MIN_SECRET_DISTINCT_CHARS) {
+    return `too predictable (fewer than ${MIN_SECRET_DISTINCT_CHARS} distinct characters) — generate one with \`openssl rand -hex 32\``;
+  }
+  if (isRepeatedPattern(value)) {
+    return 'too predictable (a short pattern repeated) — generate one with `openssl rand -hex 32`';
+  }
+  if (shannonEntropyBits(value) < MIN_SECRET_ENTROPY_BITS) {
+    return `too predictable (below ${MIN_SECRET_ENTROPY_BITS} bits of entropy) — generate one with \`openssl rand -hex 32\``;
+  }
+  return null;
+}
+
+/** A >=`min`-char secret that also has to look random (see weakSecretReason). */
+const highEntropySecret = (min: number) =>
+  z
+    .string()
+    .min(min)
+    .superRefine((raw, ctx) => {
+      const reason = weakSecretReason(raw);
+      if (reason) ctx.addIssue({ code: 'custom', message: reason });
+    });
+
 const envObjectSchema = z.object({
   /** Postgres connection string. The only required variable. */
   DATABASE_URL: z.string().min(1, 'required — postgres://user:pass@host:5432/db'),
   /** Port the single HTTP listener binds. */
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  PORT: numeric(z.coerce.number().int().min(1).max(65535).default(3000)),
   /** Bind address. */
   HOST: z.string().default('0.0.0.0'),
   /** Public origin of this instance (scheme matters: https => Secure cookies). */
-  PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
+  PUBLIC_BASE_URL: httpUrl().default('http://localhost:3000'),
   /**
    * Base URL share links point at (the `/v/{secret}` viewer). Unset (default)
    * = same origin as PUBLIC_BASE_URL — the proven-safe default: user HTML
@@ -45,17 +128,21 @@ const envObjectSchema = z.object({
    * then built on that origin, and a header regression can no longer expose
    * the dashboard session across a real origin boundary.
    */
-  VIEWER_BASE_URL: z.preprocess(blankToUndefined, z.url().optional()),
+  VIEWER_BASE_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
   /** De-dupe window (minutes) for share-link view counting: repeat opens of the same link from one browser inside this window count once, so browser prefetch/prerender, reloads, and mail-scanner hits no longer inflate a token's accessCount. Enforced with a signed, token-scoped HttpOnly cookie; cookie-less clients (SDKs, curl) count every fetch. Large values shift the metric toward "unique browsers" rather than "opens". 0 disables de-dupe: every entry GET counts and no cookie is set. */
-  VIEW_DEDUPE_WINDOW_MINUTES: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).default(10)),
+  VIEW_DEDUPE_WINDOW_MINUTES: numeric(z.coerce.number().int().min(0).default(10)),
   /** Writable data directory (auto-generated secret, local file storage). */
-  DATA_DIR: z.string().default('/data'),
+  DATA_DIR: z
+    .string()
+    .trim()
+    .min(1, 'must not be empty — the app needs a writable directory')
+    .default('/data'),
   /** Apply pending migrations at boot. When false the app only checks and refuses readiness while behind. */
   AUTO_MIGRATE: booleanish.default(true),
   /** all = API + workers in one process; api = HTTP only; worker = jobs only. */
   SERVICE_ROLE: z.enum(['all', 'api', 'worker']).default('all'),
   /** Session/JWKS encryption secret. Auto-generated into DATA_DIR/secret when unset or empty. */
-  AUTH_SECRET: optionalString(z.string().min(32)),
+  AUTH_SECRET: optionalString(highEntropySecret(32)),
   /** Versioned API-key peppers for secret rotation: `<version>:<secret>` entries joined by `;` (e.g. `1:<historical AUTH_SECRET>;2:<new pepper>`, secrets >=32 chars). Version 1 defaults to AUTH_SECRET and, when pinned here, MUST keep the historical AUTH_SECRET-derived value or every existing key stops resolving; new keys mint under the highest version. Rotation runbook: internal/security-runbooks.md. */
   API_KEY_PEPPERS: optionalString(
     z.string().superRefine((raw, ctx) => {
@@ -86,7 +173,7 @@ const envObjectSchema = z.object({
   /** Edition selector (internal/federation.md): `oss` (default, self-host — zero hub surface at runtime) or `cloud` (federates human login + entitlements to the Antasphere hub; requires the HUB_* block). Any other value refuses to boot — the selector decides the identity binding, so a typo must fail loudly, never silently bind `oss`. Also surfaced in discovery + usage events. */
   EDITION: z.preprocess(blankToUndefined, z.enum(['oss', 'cloud']).default('oss')),
   /** Hub OIDC issuer, e.g. https://account.antasphere.com — discovery, JWKS, and the authorize/token endpoints all derive from it. Required when EDITION=cloud; never read when EDITION=oss. */
-  HUB_ISSUER_URL: z.preprocess(blankToUndefined, z.url().optional()),
+  HUB_ISSUER_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
   /** OAuth client id from this tool's entry in the hub TOOL_REGISTRY (e.g. tool-slideless-cloud). Required when EDITION=cloud. */
   HUB_CLIENT_ID: optionalString(z.string().min(4)),
   /** OAuth client secret matching the hub registry entry (confidential client; PKCE stays on regardless). Also authenticates the per-user refresh grant — there is NO service key: every hub read between logins presents the USER's own grant (internal/federation.md). Required when EDITION=cloud. */
@@ -99,12 +186,16 @@ const envObjectSchema = z.object({
   EDITION_CHANGE_ALLOWED: booleanish.default(false),
   /** Build version stamped by CI (Docker ARG); 'dev' locally. */
   APP_VERSION: z.string().default('dev'),
+  /** RFC 7591 dynamic client registration on the built-in authorization server: unauthenticated `POST /api/v1/auth/oauth2/register`, which is how MCP clients self-register. Default true (the connector-friendly posture, rate-limited in api/index.ts). Set false on an instance whose OAuth clients are provisioned by hand — the endpoint then refuses every caller instead of minting client records for anyone who asks. */
+  OAUTH_DYNAMIC_CLIENT_REGISTRATION: booleanish.default(true),
+  /** `Strict-Transport-Security` max-age in seconds, sent on every response when PUBLIC_BASE_URL is https (browsers ignore HSTS over plain http per RFC 6797 §7.2, so an http instance is unaffected). Default 180 days; 0 disables the header — the escape hatch for an operator who is not yet certain every subdomain can serve TLS. */
+  HSTS_MAX_AGE: numeric(z.coerce.number().int().min(0).default(15552000)),
   /** Instance-level cap read by the default AllowAllEntitlements. */
-  MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).default(100),
+  MAX_FILE_SIZE_MB: numeric(z.coerce.number().int().min(1).default(100)),
   /** General per-principal API quota: sustained requests/minute allowed to every authenticated /api/v1 principal (API key, OAuth token, session). 0 disables the general limiter. */
-  API_RATE_LIMIT_PER_MINUTE: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).default(600)),
+  API_RATE_LIMIT_PER_MINUTE: numeric(z.coerce.number().int().min(0).default(600)),
   /** Spike cap for the general API quota: max requests per principal in any 1-second burst. 0 disables burst smoothing (the per-minute window still applies). */
-  API_RATE_LIMIT_BURST: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).default(100)),
+  API_RATE_LIMIT_BURST: numeric(z.coerce.number().int().min(0).default(100)),
   /** Email delivery. `none` (default) never blocks a flow: links stay copyable. */
   EMAIL_DRIVER: z.preprocess(blankToUndefined, z.enum(['none', 'smtp', 'resend']).default('none')),
   /** smtp(s)://user:pass@host:port — required when EMAIL_DRIVER=smtp. */
@@ -120,7 +211,7 @@ const envObjectSchema = z.object({
   S3_BUCKET: optionalString(z.string().min(1)),
   S3_REGION: optionalString(z.string().min(1)),
   /** Endpoint override for MinIO/R2; leave unset for AWS. */
-  S3_ENDPOINT: z.preprocess(blankToUndefined, z.url().optional()),
+  S3_ENDPOINT: z.preprocess(blankToUndefined, httpUrl().optional()),
   S3_ACCESS_KEY_ID: optionalString(z.string().min(1)),
   S3_SECRET_ACCESS_KEY: optionalString(z.string().min(1)),
   /** Path-style addressing — required by MinIO and most S3-compatibles. */
@@ -134,15 +225,15 @@ const envObjectSchema = z.object({
    */
   TRUST_PROXY: booleanish.default(false),
   /** OTLP/HTTP endpoint for trace export. Unset (default) = no export, zero phone-home. */
-  OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess(blankToUndefined, z.url().optional()),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess(blankToUndefined, httpUrl().optional()),
   /** GET /metrics requires `Authorization: Bearer <token>`; unset = /metrics disabled (401). */
   METRICS_TOKEN: optionalString(z.string().min(8)),
   /** Days of audit_log to keep (nightly purge at 03:00). 0 = keep forever. */
-  AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).default(365),
+  AUDIT_RETENTION_DAYS: numeric(z.coerce.number().int().min(0).default(365)),
   /** Days of per-view share-link analytics events (share_token_views: when a link was opened, referring site host, placement label, browser family — never IPs or full URLs) to keep. Nightly purge at 03:00; 0 = keep forever. */
-  VIEW_EVENTS_RETENTION_DAYS: z.coerce.number().int().min(0).default(90),
+  VIEW_EVENTS_RETENTION_DAYS: numeric(z.coerce.number().int().min(0).default(90)),
   /** Grace period for orphaned users (accounts with ZERO workspace memberships, e.g. setup-race losers): the nightly 03:00 sweep deletes them once older than this many hours. A user with ANY membership row — even deactivated — is never touched. 0 = sweep disabled. */
-  ORPHAN_USER_RETENTION_HOURS: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).default(72)),
+  ORPHAN_USER_RETENTION_HOURS: numeric(z.coerce.number().int().min(0).default(72)),
   /** pino level. */
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('production')

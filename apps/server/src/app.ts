@@ -34,11 +34,26 @@ export interface AppDeps {
   metricsMiddleware?: MiddlewareHandler;
   metricsRoutes?: Hono;
   otelMiddleware?: MiddlewareHandler;
+<<<<<<< HEAD
   /**
    * Live readiness probe for the backing store (routes/health.ts). Omitted =
    * /readyz keeps reporting the boot-time storage result forever.
    */
   probeStorage?: () => Promise<void>;
+=======
+  /** `Strict-Transport-Security` value (security-headers.ts `hstsValue`); null/absent = no HSTS. */
+  hsts?: string | null;
+}
+
+/**
+ * The SQLSTATE of a thrown Postgres error, when it is one. node-postgres puts
+ * it on `.code`; drizzle re-throws the same object untouched.
+ */
+export function postgresErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+>>>>>>> fix/sec-1374-1375
 }
 
 /**
@@ -58,7 +73,11 @@ export async function createApp({
   metricsMiddleware,
   metricsRoutes,
   otelMiddleware,
+<<<<<<< HEAD
   probeStorage
+=======
+  hsts
+>>>>>>> fix/sec-1374-1375
 }: AppDeps): Promise<Hono> {
   const app = new Hono();
 
@@ -73,7 +92,7 @@ export async function createApp({
   const csp = buildCsp(indexHtml ? inlineScriptHashes(indexHtml) : []);
 
   app.use('*', requestId(logger));
-  app.use('*', securityHeaders({ csp, state }));
+  app.use('*', securityHeaders({ csp, state, hsts: hsts ?? null }));
   if (otelMiddleware) app.use('*', otelMiddleware);
   if (metricsMiddleware) app.use('*', metricsMiddleware);
 
@@ -98,6 +117,41 @@ export async function createApp({
             message: isJson ? 'Request body is not valid JSON' : 'Malformed request body'
           }
         },
+        400
+      );
+    }
+    // A NUL byte (or any byte the server encoding cannot represent) that
+    // reaches Postgres inside a text value raises 22021 / 22P05. It is a
+    // CLIENT mistake, anonymously drivable on every free-text sink, but the
+    // pg error object carries the offending statement AND its bound
+    // parameters — so left alone it becomes a 500 whose error-level log line
+    // prints the SQL and the values. Contract-level `noNulString` rejects the
+    // known sinks at validation time; this is the backstop for the ones a
+    // product forgets, and it must answer 400 with no log.
+    const pgCode = postgresErrorCode(error);
+    if (pgCode === '22021' || pgCode === '22P05') {
+      return c.json(
+        {
+          error: {
+            code: 'invalid_characters',
+            message: 'Request contains characters that cannot be stored (e.g. a NUL byte)'
+          }
+        },
+        400
+      );
+    }
+    // JSON.stringify is recursive: a deeply nested body blows the V8 stack
+    // (`RangeError`) or exceeds the maximum string length. Both are client
+    // input, not server faults. middleware/json-depth.ts rejects these at the
+    // edge; this is the backstop for anything that builds a deep structure
+    // downstream. Narrow on the two known messages — a RangeError from
+    // anywhere else is a real bug and must stay a 500.
+    if (
+      error instanceof RangeError &&
+      /maximum call stack size exceeded|invalid string length/i.test(error.message)
+    ) {
+      return c.json(
+        { error: { code: 'payload_too_deep', message: 'Request payload is nested too deeply' } },
         400
       );
     }

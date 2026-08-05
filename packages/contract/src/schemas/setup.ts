@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plainText } from './common.js';
 
 /**
  * POST /api/v1/setup — one-shot first-boot wizard: creates the owner user
@@ -10,10 +11,10 @@ import { z } from 'zod';
  * capable USER only (internal/federation.md, user-scoped federation).
  */
 export const setupRequestSchema = z.object({
-  instanceName: z.string().min(1).max(120),
+  instanceName: plainText(1, 120),
   owner: z.object({
     email: z.email(),
-    name: z.string().min(1).max(120),
+    name: plainText(1, 120),
     password: z.string().min(12).max(256)
   }),
   setupToken: z.string().optional()

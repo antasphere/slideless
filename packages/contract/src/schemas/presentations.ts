@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { plainText } from './common.js';
 
 /**
  * Presentation domain wire schemas (ADR 011). A deck is a set of static
@@ -156,7 +157,7 @@ export const manifestEntrySchema = z.object({
   path: assetPathSchema,
   sha256: sha256Schema,
   sizeBytes: z.number().int().min(0),
-  contentType: z.string().min(1).max(255)
+  contentType: plainText(1, 255)
 });
 export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
 
@@ -233,7 +234,7 @@ export type AssetUploaded = z.infer<typeof assetUploadedSchema>;
 
 /** Commit an upload session: creates the deck and its version 1. */
 export const uploadSessionCommitSchema = z.object({
-  title: z.string().min(1).max(300),
+  title: plainText(1, 300),
   kind: presentationKindSchema.default('presentation'),
   interactive: z.boolean().default(false),
   metadata: presentationMetadataSchema.optional(),
@@ -249,7 +250,7 @@ export type UploadSessionCommit = z.infer<typeof uploadSessionCommitSchema>;
  */
 export const presentationUpdateSchema = z
   .object({
-    title: z.string().min(1).max(300).optional(),
+    title: plainText(1, 300).optional(),
     metadata: presentationMetadataSchema.optional()
   })
   .refine((v) => v.title !== undefined || v.metadata !== undefined, 'at least one field required');
