@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
+import { isSafeAssetPath, RESERVED_ASSET_FILENAMES } from '@slideless/contract';
 
 /**
  * Deck folder scanning for `slideless push`: walk a folder (or take a single
@@ -28,8 +29,26 @@ export interface DeckScan {
 export const LINK_FILENAME = '.slideless.json';
 export const IGNORE_FILENAME = '.slidelessignore';
 
-/** Always excluded, whatever the ignore file says. */
-const DEFAULT_IGNORES = ['.git', 'node_modules', '.DS_Store', 'Thumbs.db', LINK_FILENAME, IGNORE_FILENAME];
+/**
+ * Always excluded, whatever the ignore file says. Beyond the noise entries,
+ * this is where the manifest-path contract is honoured on the way OUT: a
+ * bundle may carry no dot-prefixed segment (`.git/**`, `.env`, `.npmrc`, …)
+ * and no reserved filename (`package.json`, the lockfiles) — see
+ * `isSafeAssetPath` in @slideless/contract for why. Skipping them here
+ * keeps `push` from uploading blobs the commit would then refuse.
+ */
+const DEFAULT_IGNORES = [
+  'node_modules',
+  'Thumbs.db',
+  LINK_FILENAME,
+  IGNORE_FILENAME,
+  ...RESERVED_ASSET_FILENAMES
+];
+
+/** Excluded by the contract itself: dotfiles and the reserved filenames. */
+function excludedByContract(name: string): boolean {
+  return !isSafeAssetPath(name);
+}
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -94,6 +113,31 @@ export interface IgnoreRule {
   anchored: boolean;
 }
 
+/**
+ * Ceilings that keep the compiled matcher linear-ish. A `**` compiles to an
+ * unbounded wildcard, and a pattern full of them is the classic
+ * catastrophic-backtracking shape: a line of fifty repeated double-star
+ * segments used to compile to a chain of fifty optional any-depth groups,
+ * which hangs the process for minutes on one non-matching path (proven
+ * live: still running after 120 s). Consecutive stars now collapse (below),
+ * and whatever survives is capped — a real `.slidelessignore` never comes
+ * close to either ceiling.
+ */
+export const IGNORE_PATTERN_MAX_LENGTH = 256;
+export const IGNORE_PATTERN_MAX_WILDCARDS = 8;
+
+/**
+ * Collapse star runs so no two unbounded quantifiers can end up adjacent:
+ * three-or-more stars become two, and a run of repeated double-star path
+ * segments becomes a single one.
+ */
+function collapseStars(glob: string): string {
+  let out = glob.replace(/\*{2,}/g, '**');
+  out = out.replace(/(?:\*\*\/)+/g, '**/');
+  out = out.replace(/(?:\/\*\*)+/g, '/**');
+  return out;
+}
+
 function globToRegex(glob: string): string {
   let out = '';
   for (let i = 0; i < glob.length; i++) {
@@ -124,11 +168,24 @@ export function parseIgnoreFile(content: string): IgnoreRule[] {
   for (const rawLine of content.split('\n')) {
     const line = rawLine.trim();
     if (line === '' || line.startsWith('#')) continue;
-    let pattern = line;
+    if (line.length > IGNORE_PATTERN_MAX_LENGTH) {
+      throw new Error(
+        `${IGNORE_FILENAME}: pattern longer than ${IGNORE_PATTERN_MAX_LENGTH} characters — ` +
+          `refusing to compile it (${line.slice(0, 40)}…)`
+      );
+    }
+    let pattern = collapseStars(line);
     const dirOnly = pattern.endsWith('/');
     if (dirOnly) pattern = pattern.slice(0, -1);
     const anchored = pattern.includes('/');
     if (pattern.startsWith('/')) pattern = pattern.slice(1);
+    const wildcards = (pattern.match(/\*\*/g) ?? []).length;
+    if (wildcards > IGNORE_PATTERN_MAX_WILDCARDS) {
+      throw new Error(
+        `${IGNORE_FILENAME}: pattern uses ${wildcards} "**" wildcards (max ` +
+          `${IGNORE_PATTERN_MAX_WILDCARDS}) — refusing to compile it (${line.slice(0, 40)})`
+      );
+    }
     rules.push({ regex: new RegExp(`^${globToRegex(pattern)}$`), dirOnly, anchored });
   }
   return rules;
@@ -138,6 +195,7 @@ export function parseIgnoreFile(content: string): IgnoreRule[] {
 export function isIgnored(relPath: string, isDir: boolean, rules: IgnoreRule[]): boolean {
   const base = relPath.split('/').pop() ?? relPath;
   if (DEFAULT_IGNORES.includes(base)) return true;
+  if (excludedByContract(base)) return true;
   for (const rule of rules) {
     if (rule.dirOnly && !isDir) continue;
     const subject = rule.anchored ? relPath : base;
@@ -185,6 +243,12 @@ export async function scanDeck(target: string): Promise<DeckScan> {
   let listed: Array<{ path: string; absPath: string }>;
   if (info.isFile()) {
     rootDir = dirname(abs);
+    if (!isSafeAssetPath(basename(abs))) {
+      throw new Error(
+        `Refusing to push ${basename(abs)}: a deck bundle carries no dot-prefixed file and no ` +
+          `reserved filename (${RESERVED_ASSET_FILENAMES.join(', ')}).`
+      );
+    }
     listed = [{ path: basename(abs), absPath: abs }];
   } else {
     rootDir = abs;

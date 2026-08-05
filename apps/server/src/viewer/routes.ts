@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import type { ManifestEntry } from '@slideless/contract';
+import { isTraversalSafeAssetPath, type ManifestEntry } from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { FileService } from '../files/service.js';
@@ -604,8 +604,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     } catch {
       return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
     }
-    const shape = assetPathSchemaCheck(assetPath);
-    if (!shape) {
+    // Traversal shape only: the manifest lookup below is an exact match, so
+    // the stricter commit-time rule (isSafeAssetPath) would only change what
+    // ALREADY-COMMITTED decks can serve, never what can escape.
+    if (!isTraversalSafeAssetPath(assetPath)) {
       return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
     }
 
@@ -667,15 +669,4 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   });
 
   return app;
-}
-
-/** The contract's assetPath rules (packages/contract), inlined for the decoded path. */
-function assetPathSchemaCheck(p: string): boolean {
-  return (
-    p.length >= 1 &&
-    p.length <= 1024 &&
-    !p.startsWith('/') &&
-    !p.includes('\\') &&
-    p.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..')
-  );
 }

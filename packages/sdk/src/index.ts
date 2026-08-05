@@ -96,6 +96,19 @@ export interface ClientOptions {
    */
   workspaceId?: string;
   fetch?: typeof globalThis.fetch;
+  /**
+   * Deadline for the JSON API calls, in milliseconds (default 30 000; 0
+   * disables). Without one, a hung or throttling instance parks a CLI
+   * invocation — or a dashboard request — forever: `fetch` has no default
+   * timeout in Node or the browser.
+   */
+  timeoutMs?: number;
+  /**
+   * Deadline for the byte-streaming calls — deck assets, file content, the
+   * workspace export (default 600 000; 0 disables). Separate because it
+   * covers the whole body transfer, and an export is legitimately slow.
+   */
+  downloadTimeoutMs?: number;
 }
 
 /** Cursor-pagination params shared by every list endpoint. */
@@ -156,17 +169,36 @@ function idempotencyHeader(opts: IdempotentRequestOptions): Record<string, strin
   return opts.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : undefined;
 }
 
+/** Default deadline for the JSON API calls (ms). */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+/** Default deadline for the streaming download calls (ms). */
+export const DEFAULT_DOWNLOAD_TIMEOUT_MS = 600_000;
+
 export class PlatformClient {
   private readonly baseUrl: string;
   private readonly apiKey: string | undefined;
   private workspaceId: string | undefined;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly timeoutMs: number;
+  private readonly downloadTimeoutMs: number;
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? '';
     this.apiKey = options.apiKey;
     this.workspaceId = options.workspaceId;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.downloadTimeoutMs = options.downloadTimeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS;
+  }
+
+  /**
+   * The abort signal every call carries. `fetch` never times out on its
+   * own, so a silent peer (or a hostile one holding the socket open) would
+   * otherwise hang the caller indefinitely.
+   */
+  private signal(kind: 'api' | 'download'): AbortSignal | undefined {
+    const ms = kind === 'download' ? this.downloadTimeoutMs : this.timeoutMs;
+    return ms > 0 ? AbortSignal.timeout(ms) : undefined;
   }
 
   /** Set (or clear) the active workspace all subsequent requests target. */
@@ -222,6 +254,7 @@ export class PlatformClient {
       method,
       headers,
       credentials: 'same-origin',
+      signal: this.signal('api'),
       // Always see live state: /instance flips setupRequired the moment the
       // wizard completes but is served with public max-age for CLI/MCP
       // discovery — the browser HTTP cache must not answer for the app.
@@ -450,6 +483,7 @@ export class PlatformClient {
       method: 'POST',
       headers,
       credentials: 'same-origin',
+      signal: this.signal('download'),
       body: body as unknown as RequestInit['body']
     } as RequestInit);
     return this.parse<FileUploaded>(res);
@@ -524,6 +558,7 @@ export class PlatformClient {
       method: 'POST',
       headers, // content-type comes from FormData (boundary included)
       credentials: 'same-origin',
+      signal: this.signal('download'),
       body: form as unknown as RequestInit['body']
     } as RequestInit);
     return this.parse<AssetUploaded>(res);
@@ -574,6 +609,7 @@ export class PlatformClient {
       method: 'GET',
       headers,
       credentials: 'same-origin',
+      signal: this.signal('download'),
       // Browser-only field; cast keeps this isomorphic under a Node lib.
       cache: 'no-store'
     } as RequestInit);
@@ -599,6 +635,7 @@ export class PlatformClient {
       method: 'GET',
       headers,
       credentials: 'same-origin',
+      signal: this.signal('download'),
       // Browser-only field; cast keeps this isomorphic under a Node lib.
       cache: 'no-store'
     } as RequestInit);
@@ -839,6 +876,7 @@ export class PlatformClient {
       method: 'GET',
       headers,
       credentials: 'same-origin',
+      signal: this.signal('download'),
       // Browser-only field; cast keeps this isomorphic under a Node lib.
       cache: 'no-store'
     } as RequestInit);

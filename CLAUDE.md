@@ -47,6 +47,18 @@ deploys) + `dev` (day-to-day work).
 - **Auth schema drift guard**: any Better Auth config change that alters the schema must regenerate
   `packages/db/src/auth-schema.ts` + the snapshot via the pinned CLI, plus an additive drizzle
   migration. CI's `drift:check` gates it.
+- **A deck bundle is untrusted input on the CLIENT side too (PRDCT-1353)**: manifest paths are
+  the names `slideless pull` writes onto a developer's disk, so `assetPathSchema`
+  (`packages/contract`) refuses dot-prefixed segments and `package.json`/lockfiles at COMMIT —
+  never loosen it back to "traversal-safe" alone (`isTraversalSafeAssetPath` is the separate,
+  weaker rule the viewer's manifest LOOKUP uses, where no filesystem is involved). The CLI then
+  re-checks every path at PULL, caps each blob at the manifest's `sizeBytes`, verifies its sha256
+  before writing, and writes through `safe-write.ts` only: lexical containment + a `realpath`
+  parent check + `O_NOFOLLOW` + a forced 0644 (an `O_TRUNC` write PRESERVES an existing file's
+  mode). `files download` uses the BASENAME of the server-chosen name inside a chosen directory.
+  `slideless dev` is a real containment boundary: `realpath` re-check, dotfile paths 404, and a
+  `Host` allowlist (the DNS-rebinding guard). Every non-`--json` sink goes through
+  `sanitizeForTty` — `--json` stays byte-exact and must never be routed through it.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **Deck reads are private, never workspace-wide (ADR 013)**: every presentation read (get,

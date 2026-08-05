@@ -128,6 +128,21 @@ responsible for, and the rules that govern rendering user content.
   symmetry check) — every current browser blocks cross-site POSTs with Lax
   cookies; adding Origin symmetry there is a known defense-in-depth item.
 
+- **The client side is treated as a target too.** A deck bundle is content
+  someone else authored, and the CLI materializes it on a developer's
+  machine, so the manifest-path contract refuses dot-prefixed segments
+  (`.git/**`, `.env`, `.npmrc`, `.github/**`) and `package.json` /
+  the lockfiles at COMMIT, and `slideless pull` re-checks every path, caps
+  each blob at its declared size, verifies its sha256 before writing,
+  refuses to follow a symlink (file or directory), and never leaves a
+  written file executable. `slideless files download` writes only the
+  BASENAME of the server-chosen stored name, inside the directory the caller
+  chose. `slideless dev` resolves through `realpath` and validates the
+  `Host` header, so neither a symlink in the deck folder nor a
+  DNS-rebinding page turns the preview server into a filesystem reader. Any
+  content the CLI prints in human mode is stripped of terminal control
+  sequences (`--json` stays byte-exact).
+
 ## Operator responsibilities
 
 - **`/metrics` is closed by default.** It exposes route names, queue depth,

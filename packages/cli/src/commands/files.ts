@@ -1,17 +1,39 @@
 import { createWriteStream } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { basename, resolve, win32 } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Command } from 'commander';
-import { PlatformApiError, type ListParams } from '@slideless/sdk';
-import { fmtBytes, printJson, requireApiKey, resolveContext, type CliIo } from '../context.js';
+import { DEFAULT_DOWNLOAD_TIMEOUT_MS, PlatformApiError, type ListParams } from '@slideless/sdk';
+import { CliUsageError, fmtBytes, printJson, requireApiKey, resolveContext, type CliIo } from '../context.js';
+import { writeContained } from '../safe-write.js';
 
 /**
  * The platform substrate commands inherited from the template: instance
  * discovery, the raw workspace-files surface, and the full export download.
  */
+
+/**
+ * Turn a server-chosen `originalName` into a plain filename, or refuse.
+ *
+ * The stored name is whatever the uploader (possibly a collaborator, on a
+ * shared instance) typed: `../../.bashrc`, `/etc/cron.d/x`, `.npmrc`, and
+ * on Windows `..\\..\\x` are all valid under the wire schema. Both POSIX
+ * and Windows separators are stripped, then anything that is not an inert
+ * plain filename is refused rather than silently rewritten — the caller
+ * always has `--out <path>` to name the destination themselves.
+ */
+export function safeDownloadName(originalName: string): string {
+  const name = basename(win32.basename(originalName));
+  if (name === '' || name === '.' || name === '..' || name.startsWith('.')) {
+    throw new CliUsageError(
+      `Refusing to derive a filename from the stored name ${JSON.stringify(originalName)} — ` +
+        'pass --out <path> to choose where it goes.'
+    );
+  }
+  return name;
+}
 
 export function registerFileCommands(program: Command, io: CliIo): void {
   program
@@ -107,21 +129,41 @@ export function registerFileCommands(program: Command, io: CliIo): void {
   files
     .command('download <id>')
     .description('Download a file by id')
-    .option('--out <path>', 'write to this path (defaults to the stored name)')
-    .action(async (id: string, opts: { out?: string }, cmd: Command) => {
+    .option('--out <path>', 'write to this exact path (your path, used verbatim)')
+    .option('--dir <path>', 'directory to write the stored name into (default: .)')
+    .action(async (id: string, opts: { out?: string; dir?: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
       const apiKey = await requireApiKey(ctx);
+      if (opts.out && opts.dir) {
+        throw new CliUsageError('Pass either --out <path> or --dir <path>, not both.');
+      }
       const meta = await ctx.client.file(id);
       const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
       const res = await fetchImpl(ctx.client.fileContentUrl(id), {
-        headers: { authorization: `Bearer ${apiKey}` }
+        headers: { authorization: `Bearer ${apiKey}` },
+        // This one bypasses the SDK, so it carries the SDK's deadline itself.
+        signal: AbortSignal.timeout(DEFAULT_DOWNLOAD_TIMEOUT_MS)
       });
       if (!res.ok) {
         throw new PlatformApiError(res.status, 'download_failed', `Download failed with ${res.status}`);
       }
       const buf = Buffer.from(await res.arrayBuffer());
-      const out = opts.out ?? meta.originalName;
-      await writeFile(out, buf);
+      let out: string;
+      if (opts.out) {
+        // The caller typed this path — honour it verbatim.
+        out = opts.out;
+        await writeFile(out, buf);
+      } else {
+        // `originalName` is SERVER-controlled and unconstrained beyond
+        // 1-255 chars: it may be `../../.ssh/authorized_keys` or an
+        // absolute path. Never join it — take its basename, refuse the
+        // names that are not a plain filename, and write it contained
+        // inside the chosen directory (symlinks refused, mode forced).
+        const dir = resolve(opts.dir ?? '.');
+        const name = safeDownloadName(meta.originalName);
+        await mkdir(dir, { recursive: true });
+        out = await writeContained(dir, name, buf);
+      }
       io.out.write(`Downloaded ${meta.originalName} → ${out} (${fmtBytes(buf.length)})\n`);
     });
 
