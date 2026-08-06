@@ -47,7 +47,7 @@ name: slideless-federation
 services:
   hub:
     image: antasphere-hub:federation-dev
-    build: ${FEDERATION_HUB_DIR:-../../../platform/hub}
+    build: ${FEDERATION_HUB_DIR:-../../../hub}
     restart: unless-stopped
     stop_grace_period: 60s
     depends_on:
