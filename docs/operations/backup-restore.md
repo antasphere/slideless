@@ -100,7 +100,14 @@ The restore is staged, so a bad backup cannot take the instance down:
 
 Any failure rolls the swaps back — the database, `/data` **and** the `.env`,
 because the pepper and the database are one unit — and brings the previous
-instance back up.
+instance back up. Before renaming the databases back, the rollback quiesces
+exactly as the forward swap did: it stops the app (the script itself started
+it for the live verification) and terminates any remaining backends —
+Postgres refuses to rename a database that is being accessed. If the rollback
+itself cannot complete, the script does **not** pretend it did: it reports the
+reason on stderr, exits non-zero and leaves the app **stopped**, because
+starting it on half-rolled-back data would put the wrong database live under
+the wrong pepper.
 
 Flags: `--yes` skips the prompt (drills, automation); `--no-config` accepts
 running without a pepper root, i.e. deliberately accepts losing

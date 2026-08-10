@@ -23,7 +23,9 @@
 #      silently invalidates every credential while reporting success. Only
 #      pepper material is copied: the live POSTGRES_PASSWORD stays.
 #   4. On ANY failure, roll the swaps back and bring the previous instance
-#      back up.
+#      back up. If the rollback itself cannot complete, fail LOUDLY and leave
+#      the app stopped: starting it on half-rolled-back data is the split
+#      brain this script exists to prevent.
 set -euo pipefail
 umask 077
 
@@ -102,14 +104,35 @@ on_exit() {
   # with the wrong secret, and every API key, share link and edit secret that
   # worked five minutes ago would stop resolving. The pepper and the database
   # are one unit; they roll back together.
+  ROLLBACK_BROKEN=0
   if [ "$ENV_MERGED" = 1 ] && [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
     dr_warn "restoring the pre-restore .env (its pepper belongs to the database being rolled back)"
-    cat "$ENV_BACKUP" > .env && chmod 600 .env
+    cat "$ENV_BACKUP" > .env && chmod 600 .env || {
+      ROLLBACK_BROKEN=1
+      dr_warn "ROLLBACK INCOMPLETE: could not restore the pre-restore .env from $ENV_BACKUP"
+    }
   fi
   if [ "$DB_SWAPPED" = 1 ]; then
     dr_warn "rolling the database swap back"
-    psql_admin -c "ALTER DATABASE \"$DB_NAME\" RENAME TO \"$SCRATCH_DB\";" > /dev/null 2>&1
-    psql_admin -c "ALTER DATABASE \"$PREV_DB\" RENAME TO \"$DB_NAME\";" > /dev/null 2>&1
+    # Postgres refuses to rename a database that has live backends, and for a
+    # failure at start-app or verify-live the app THIS script started is
+    # holding them (pg-boss keeps sessions open). Quiesce exactly as the
+    # forward swap does — stop the app, then terminate whatever is left — and
+    # let the rename errors through to stderr: swallowed, they once made this
+    # handler report a rollback it had not performed, bringing the instance
+    # back up on the RESTORED database under the pre-restore pepper
+    # (PRDCT-1392).
+    docker compose stop app
+    psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+      WHERE datname IN ('$DB_NAME', '$PREV_DB') AND pid <> pg_backend_pid();" > /dev/null
+    if psql_admin -c "ALTER DATABASE \"$DB_NAME\" RENAME TO \"$SCRATCH_DB\";" > /dev/null &&
+      psql_admin -c "ALTER DATABASE \"$PREV_DB\" RENAME TO \"$DB_NAME\";" > /dev/null; then
+      dr_warn "database rolled back: \"$DB_NAME\" is the pre-restore database again"
+    else
+      ROLLBACK_BROKEN=1
+      dr_warn "ROLLBACK INCOMPLETE: could not rename the databases back (psql error above)."
+      dr_warn "\"$DB_NAME\" may still hold the RESTORED data; the pre-restore database is \"$PREV_DB\"."
+    fi
   fi
   if [ "$DATA_SWAPPED" = 1 ]; then
     dr_warn "rolling the /data swap back"
@@ -119,9 +142,23 @@ on_exit() {
       find /data -mindepth 1 -maxdepth 1 ! -name .restore-old -exec rm -rf {} \;
       find /data/.restore-old -mindepth 1 -maxdepth 1 -exec mv {} /data/ \;
       rmdir /data/.restore-old
-    ' > /dev/null
+    ' > /dev/null || {
+      ROLLBACK_BROKEN=1
+      dr_warn "ROLLBACK INCOMPLETE: could not roll /data back; the pre-restore tree is kept in /data/.restore-old"
+    }
   fi
-  psql_admin -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\" WITH (FORCE);" > /dev/null 2>&1
+  if [ "$ROLLBACK_BROKEN" = 1 ]; then
+    # Do NOT drop the scratch database and do NOT start the app: with the
+    # rollback half-done, either would turn a recoverable state into the
+    # exact split brain this handler exists to prevent. Leave everything for
+    # the operator, loudly.
+    dr_warn "the rollback could NOT complete — the app was left STOPPED rather than started on the wrong data."
+    dr_warn "Inspect with: docker compose exec -T db psql -v ON_ERROR_STOP=1 -U $DB_USER -d postgres -c '\\l'"
+    dr_warn "Finish the rollback by hand (rename \"$PREV_DB\" back to \"$DB_NAME\"), then start the app: docker compose up -d app"
+    [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"
+    exit "$code"
+  fi
+  psql_admin -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\" WITH (FORCE);" > /dev/null
   if [ "$APP_STOPPED" = 1 ]; then
     dr_warn "bringing the previous instance back up"
     docker compose up -d app ||
