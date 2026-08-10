@@ -66,9 +66,12 @@ export function createMetrics(db: Db, boss: PgBoss): Metrics {
       httpDuration.observe(
         {
           method: c.req.method,
-          // routeLabel, same as the log line and the span (PRIV-1): the old
-          // `?? c.req.path` fallback put the RAW path — `/v/<share secret>`
-          // — into a Prometheus label whenever routing hadn't resolved.
+          // routeLabel, same as the log line and the span: on the pinned
+          // Hono the previous `?? c.req.path` fallback was unreachable
+          // (routePath always answers a string here), but a raw-path
+          // expression in a label position is exactly what must not come
+          // back to life on a version bump — one shared, secret-free
+          // label instead (PRIV-1).
           route: routeLabel(c),
           status: String(c.error ? 500 : c.res.status)
         },
