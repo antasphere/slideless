@@ -280,6 +280,34 @@ describe('AUTH-6: a plain member cannot pull an outsider into the tenant', () =>
     );
     expect(rows[0]!.n).toBe(0);
   });
+
+  it('refuses a DEACTIVATED colleague — a member must not reverse an admin cutoff (403)', async () => {
+    // The isActive filter is the OTHER load-bearing half of the colleague
+    // lookup: a deactivated member's grant claim REACTIVATES their
+    // membership (the claim path's rejoin branch), so treating them as a
+    // colleague would let any plain member undo an admin's cutoff. Only
+    // admin/owner authority may re-onboard them.
+    const PAUSED = { email: 'paused@mint.test', name: 'A Paused', password: 'mint-paused-password-1' };
+    await addMember(PAUSED);
+    await refreshRowIds();
+    const off = await app.app.request(`/api/v1/members/${rowId[PAUSED.email]}`, {
+      ...json({ isActive: false }, { cookie: ownerCookie }),
+      method: 'PATCH'
+    });
+    expect(off.status).toBe(200);
+
+    const res = await app.app.request(
+      `/api/v1/presentations/${plainDeck}/collaborators`,
+      json({ email: PAUSED.email }, { cookie: plainCookie })
+    );
+    expect(res.status).toBe(403);
+    expect((await readJson(res)).error.code).toBe('external_invite_forbidden');
+    const { rows } = await app.db.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM collaborators WHERE email = $1`,
+      [PAUSED.email]
+    );
+    expect(rows[0]!.n).toBe(0);
+  });
 });
 
 // ═══ AUTH-1 / AUTH-2 — the mint routes ═══════════════════════════════════════
