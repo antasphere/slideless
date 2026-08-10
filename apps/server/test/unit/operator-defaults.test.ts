@@ -283,6 +283,49 @@ describe('PLT-12 — restore.sh verifies before it destroys', () => {
     );
     expect(sh).toContain('/data/.restore-new');
   });
+
+  /**
+   * PRDCT-1392 — the rollback renames used to run with their errors
+   * discarded and, unlike the forward swap, without terminating the live
+   * backends or stopping the app the script itself had started at
+   * start-app. Postgres refused the rename ("database is being accessed by
+   * other users"), the error was swallowed, and the handler brought the
+   * instance back up on the RESTORED database under the pre-restore pepper —
+   * while printing that it had rolled back.
+   */
+  it('quiesces before the rollback renames, exactly like the forward swap (PRDCT-1392)', () => {
+    const handler = sh.slice(sh.indexOf('on_exit() {'), sh.indexOf('trap on_exit EXIT'));
+    const stop = handler.search(/^\s*docker compose stop app\b/m);
+    expect(stop, 'the handler must RUN the stop, not merely mention it').toBeGreaterThan(-1);
+    const terminate = handler.indexOf('pg_terminate_backend');
+    expect(terminate, 'the handler must terminate lingering backends').toBeGreaterThan(-1);
+    const rename = handler.indexOf('RENAME TO');
+    expect(rename).toBeGreaterThan(-1);
+    expect(stop, 'stop the app before terminating backends').toBeLessThan(terminate);
+    expect(terminate, 'terminate backends before renaming').toBeLessThan(rename);
+  });
+
+  it('lets the rollback rename errors reach stderr instead of swallowing them (PRDCT-1392)', () => {
+    const handler = sh.slice(sh.indexOf('on_exit() {'), sh.indexOf('trap on_exit EXIT'));
+    const renames = handler.match(/ALTER DATABASE[^\n]*/g) ?? [];
+    expect(renames.length, 'both rollback renames must be present').toBeGreaterThanOrEqual(2);
+    for (const line of renames) expect(line, line).not.toContain('2>&1');
+  });
+
+  it('leaves the app STOPPED and exits before the restart when the rollback cannot complete (PRDCT-1392)', () => {
+    const handler = sh.slice(sh.indexOf('on_exit() {'), sh.indexOf('trap on_exit EXIT'));
+    const broken = handler.indexOf('if [ "$ROLLBACK_BROKEN" = 1 ]');
+    expect(broken, 'the handler must track a rollback it could not complete').toBeGreaterThan(-1);
+    // The restart COMMAND, not a mention of it inside an operator hint —
+    // the same false-green trap as the restart assertion above.
+    const restart = handler.search(/^\s*docker compose up -d app\b/m);
+    expect(restart, 'the handler must still restart on a clean rollback').toBeGreaterThan(-1);
+    expect(broken, 'the broken-rollback gate must come before the restart').toBeLessThan(restart);
+    const gate = handler.slice(broken, restart);
+    expect(gate, 'a broken rollback must exit non-zero, not fall through to the restart').toMatch(
+      /exit "\$code"/
+    );
+  });
 });
 
 describe('OPS-5 — a custom APP_PORT survives setup and upgrade', () => {
