@@ -832,7 +832,8 @@ export const versionCommitRoute = createRoute({
     201: jsonBody(versionCommittedSchema, 'Version committed; currentVersion advanced'),
     400: jsonBody(apiErrorSchema, 'Validation error or manifest references missing blobs'),
     401: errorResponses[401],
-    403: errorResponses[403],
+    // Deliberately NO 403 (AUTH-5, PRDCT-1393): an unauthorized push gets
+    // the same 404 a nonexistent deck does — existence is not probeable.
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'version_conflict: expectedBaseVersion is stale — pull and retry')
   }
@@ -1153,7 +1154,8 @@ export const annotationUpdateRoute = createRoute({
     200: jsonBody(annotationSchema, 'Updated annotation'),
     400: errorResponses[400],
     401: errorResponses[401],
-    403: errorResponses[403],
+    // Deliberately NO 403 (the annotations-list posture, PRDCT-1393): an
+    // ordinary member gets the same 404 an outsider would.
     404: errorResponses[404]
   }
 });
@@ -1167,7 +1169,7 @@ export const annotationDeleteRoute = createRoute({
   responses: {
     200: jsonBody(annotationSchema, 'Deleted annotation (final snapshot)'),
     401: errorResponses[401],
-    403: errorResponses[403],
+    // Deliberately NO 403 (the annotations-list posture, PRDCT-1393).
     404: errorResponses[404]
   }
 });
@@ -1228,7 +1230,8 @@ export const formResponseDeleteRoute = createRoute({
   responses: {
     200: jsonBody(formResponseSchema, 'Deleted response (final snapshot)'),
     401: errorResponses[401],
-    403: errorResponses[403],
+    // Deliberately NO 403 (the responses-list posture, PRDCT-1393): an
+    // ordinary member gets the same 404 an outsider would.
     404: errorResponses[404]
   }
 });

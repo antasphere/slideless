@@ -320,12 +320,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       const f = result.failure;
       switch (f.code) {
         case 'not_found':
+          // Covers the unauthorized case too (AUTH-5, PRDCT-1393): the
+          // service answers not_found for a deck the principal cannot
+          // write, so a push probe never confirms a foreign deck exists.
           return c.json(err('not_found', 'Presentation not found'), 404);
-        case 'forbidden':
-          return c.json(
-            err('forbidden', 'Only the deck owner, a workspace admin, or an active collaborator can commit'),
-            403
-          );
         case 'invalid_manifest':
           return c.json(err('invalid_manifest', f.message), 400);
         case 'missing_blobs':
@@ -428,9 +426,16 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    // AUTH-5 (PRDCT-1393): a deck the caller cannot read answers the same
+    // 404 a missing one does — a delete probe is free and must not confirm
+    // a foreign deck id exists (ADR 013's 404 posture).
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     // Owner-level only — a dev collaborator can push to a deck but never
     // destroy it (canAdministerDeck, not the collaborator-aware canWrite).
+    // The 403 leaks nothing: the caller passed canRead, so the deck's
+    // existence is already legitimately theirs to see.
     if (!canAdministerDeck(principal, deck)) {
       return c.json(err('forbidden', 'Only the deck owner or a workspace admin can delete it'), 403);
     }
@@ -548,15 +553,19 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   /**
    * Deck + write-surface authorization, or the error response to return.
    *
-   * AUTH-5 (PRDCT-1354): the refusal is a UNIFORM 404, never a 403. A 403
-   * here said "this deck exists, you just cannot manage it" to any
-   * workspace member — an existence oracle over every deck in the tenant,
-   * which is exactly what the ADR 013 read invariant ("a failed read check
-   * answers 404, never 403 — deck existence is not probeable") forbids on
-   * the read side. The WRITE side leaked the same bit and must answer the
-   * same way; the sibling surfaces in this file that already did
-   * (`shareTokenViewsListRoute`, the annotations routes) are the shape this
-   * now matches. A caller who genuinely holds the deck is unaffected.
+   * AUTH-5 (PRDCT-1354, completed by PRDCT-1393): the refusal is a UNIFORM
+   * 404, never a 403. A 403 here said "this deck exists, you just cannot
+   * manage it" to any workspace member — an existence oracle over every
+   * deck in the tenant, which is exactly what the ADR 013 read invariant
+   * ("a failed read check answers 404, never 403 — deck existence is not
+   * probeable") forbids on the read side. The WRITE side leaked the same
+   * bit and answers the same way — since PRDCT-1393 on EVERY per-deck
+   * route, not just this resolver: deck delete, annotation update/delete,
+   * response delete, version commit, preview-token mint, and the
+   * collaborator invite/remove all 404 a caller who fails the deck read
+   * check. A 403 appears only AFTER a passed read check (the owner-level
+   * refusals to an active dev collaborator), where it confirms nothing the
+   * caller does not already legitimately see.
    */
   const deckForSharing = async (
     c: HonoContext,
@@ -682,7 +691,12 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    // AUTH-5 (PRDCT-1393): the failed deck check answers 404 — the mint
+    // probe must not confirm the deck exists to a caller who cannot read
+    // it. The 403 below is reserved for proven readers (dev collaborators).
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     if (!canAdministerDeck(principal, deck)) {
       return c.json(
         err('forbidden', 'Only the deck owner or a workspace admin can mint preview tokens'),
@@ -896,8 +910,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   // Reading a deck's annotation stream is gated like share tokens: the deck
   // owner, a workspace admin, or an active dev collaborator (reviewer notes
   // are feedback addressed to the deck's writers, not workspace-public).
-  // The list/create contracts declare no 403, so an ordinary member gets the
-  // same 404 an outsider would — the stream's existence is not advertised.
+  // None of the four contracts declares a 403 (update/delete aligned by
+  // PRDCT-1393), so an ordinary member gets the same 404 an outsider would —
+  // neither the stream's nor the deck's existence is advertised.
   // The anonymous reviewer surface lives in viewer/annotations-api.ts.
 
   api.openapi(annotationsListRoute, async (c) => {
@@ -955,15 +970,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id, annotationId } = c.req.valid('param');
     const patch = c.req.valid('json');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
-    if (!(await service.canWrite(principal, deck))) {
-      return c.json(
-        err(
-          'forbidden',
-          'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'
-        ),
-        403
-      );
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
     }
     const existing = await annotations.get(principal.workspaceId, id, annotationId);
     if (!existing) return c.json(err('not_found', 'Annotation not found'), 404);
@@ -981,15 +989,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const { id, annotationId } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
-    if (!(await service.canWrite(principal, deck))) {
-      return c.json(
-        err(
-          'forbidden',
-          'Only the deck owner, a workspace admin, or an active collaborator can manage annotations'
-        ),
-        403
-      );
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
     }
     const existing = await annotations.get(principal.workspaceId, id, annotationId);
     if (!existing) return c.json(err('not_found', 'Annotation not found'), 404);
@@ -1005,10 +1006,11 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
 
   // ── Form responses (ADR 022, owner/dev management surface) ───────────────
   // Gated exactly like annotations: responses are addressed to the deck's
-  // WRITERS (owner, workspace admin, active dev collaborator). The list and
-  // summary contracts declare no 403, so an ordinary member gets the same
-  // 404 an outsider would — the response stream's existence is not
-  // advertised. The anonymous submit surface lives in viewer/forms-api.ts.
+  // WRITERS (owner, workspace admin, active dev collaborator). None of the
+  // contracts declares a 403 (delete aligned by PRDCT-1393), so an ordinary
+  // member gets the same 404 an outsider would — the response stream's
+  // existence is not advertised. The anonymous submit surface lives in
+  // viewer/forms-api.ts.
   // NOTE: the literal `/responses/summary` handler registers BEFORE the
   // `{responseId}` param handler (the literal-segment trap, LESSONS.md).
 
@@ -1053,15 +1055,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const principal = c.get('principal')!;
     const { id, responseId } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
-    if (!(await service.canWrite(principal, deck))) {
-      return c.json(
-        err(
-          'forbidden',
-          'Only the deck owner, a workspace admin, or an active collaborator can manage responses'
-        ),
-        403
-      );
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
     }
     const existing = await forms.get(principal.workspaceId, id, responseId);
     if (!existing) return c.json(err('not_found', 'Response not found'), 404);

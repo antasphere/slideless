@@ -50,10 +50,26 @@ share-token management routes, used to distinguish 404 (no such deck) from
 403 (exists, you cannot manage it). That 403 was the same existence oracle
 this section forbids, reachable by any workspace member against every deck
 in the tenant — hiding a deck from a principal's READS while confirming it
-to their WRITES leaks the identical bit. The refusal is now a uniform 404,
-matching the sibling surfaces in that file (`shareTokenViewsListRoute`, the
-annotation routes) that already answered that way. Rule going forward: any
-per-deck surface, read or write, answers 404 when the deck check fails.
+to their WRITES leaks the identical bit. The refusal became a uniform 404.
+
+**Amendment 2026-08-10 (PRDCT-1393): the rest of the write surface caught
+up.** The 2026-07-26 amendment shipped with only `deckForSharing` fixed and
+overstated its own reach: eight sibling per-deck write routes kept leaking
+the same bit to any workspace member (403 for a real deck, 404 for a
+nonexistent one, and the probe is free) — deck DELETE, annotation
+PATCH/DELETE, form-response DELETE, collaborator invite AND remove, the
+version commit, and the preview-token mint. All now answer 404 on a failed
+deck check, asserted per route in
+`test/integration/minted-credentials.test.ts`.
+
+The rule, stated precisely this time, which the code now satisfies on every
+route: **a per-deck surface, read or write, answers 404 whenever the caller
+fails the deck READ check** (`canReadDeck`) — deck existence is never
+confirmed to a principal who cannot read the deck. A 403 is permitted only
+AFTER a passed read check, where it confirms nothing the caller does not
+already legitimately see: the owner-level refusals to an active dev
+collaborator (deck delete, collaborator invite/remove, preview-token
+mint/revoke) and the invite route's `external_invite_forbidden` gate.
 
 `canReadDeck` today coincides with `canWriteDeck` (owner-level OR active dev
 grant); it is deliberately a separate policy function so a future read-only

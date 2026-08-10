@@ -481,6 +481,128 @@ describe('AUTH-5: the share-token surface never confirms a deck exists', () => {
   });
 });
 
+// ═══ AUTH-5, second wave (PRDCT-1393) — the leftover per-deck WRITE routes ═══
+
+describe('AUTH-5 (PRDCT-1393): no per-deck WRITE route confirms a deck exists', () => {
+  const unknownDeck = '00000000-0000-4000-8000-000000000000';
+  const unknownChild = '11111111-1111-4111-8111-111111111111';
+
+  /**
+   * Both halves of the oracle, per route: to a plain member holding no
+   * grant, a real deck and a missing one must be indistinguishable — 404
+   * with the same error code, and the probe is free (nothing written).
+   */
+  const bothWays = (probe: (deck: string) => Response | Promise<Response>) => async () => {
+    for (const [label, deck] of [
+      ['a real deck they cannot read', ownerDeck],
+      ['a deck that does not exist', unknownDeck]
+    ] as const) {
+      const res = await probe(deck);
+      expect(res.status, label).toBe(404);
+      expect((await readJson(res)).error.code, label).toBe('not_found');
+    }
+  };
+
+  it(
+    'DELETE /presentations/{id}',
+    bothWays((deck) =>
+      app.app.request(`/api/v1/presentations/${deck}`, {
+        method: 'DELETE',
+        headers: { cookie: plainCookie, 'x-forwarded-for': nextIp() }
+      })
+    )
+  );
+
+  it('…and the probed deck was NOT soft-deleted by the refused DELETE', async () => {
+    const res = await app.app.request(`/api/v1/presentations/${ownerDeck}`, {
+      headers: { cookie: ownerCookie, 'x-forwarded-for': nextIp() }
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it(
+    'PATCH /presentations/{id}/annotations/{annotationId}',
+    bothWays((deck) =>
+      app.app.request(`/api/v1/presentations/${deck}/annotations/${unknownChild}`, {
+        ...json({ status: 'resolved' }, { cookie: plainCookie }),
+        method: 'PATCH'
+      })
+    )
+  );
+
+  it(
+    'DELETE /presentations/{id}/annotations/{annotationId}',
+    bothWays((deck) =>
+      app.app.request(`/api/v1/presentations/${deck}/annotations/${unknownChild}`, {
+        method: 'DELETE',
+        headers: { cookie: plainCookie, 'x-forwarded-for': nextIp() }
+      })
+    )
+  );
+
+  it(
+    'DELETE /presentations/{id}/responses/{responseId}',
+    bothWays((deck) =>
+      app.app.request(`/api/v1/presentations/${deck}/responses/${unknownChild}`, {
+        method: 'DELETE',
+        headers: { cookie: plainCookie, 'x-forwarded-for': nextIp() }
+      })
+    )
+  );
+
+  it('POST /presentations/{id}/collaborators — and no grant row appears', async () => {
+    await bothWays((deck) =>
+      app.app.request(
+        `/api/v1/presentations/${deck}/collaborators`,
+        json({ email: SOLO.email }, { cookie: plainCookie })
+      )
+    )();
+    // SOLO's only grant stays the one PLAIN minted on their OWN deck above —
+    // the refused probe on the owner's deck wrote nothing.
+    const { rows } = await app.db.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM collaborators WHERE email = $1 AND presentation_id = $2`,
+      [SOLO.email, ownerDeck]
+    );
+    expect(rows[0]!.n).toBe(0);
+  });
+
+  it(
+    'DELETE /presentations/{id}/collaborators/{collaboratorId}',
+    bothWays((deck) =>
+      app.app.request(`/api/v1/presentations/${deck}/collaborators/${unknownChild}`, {
+        method: 'DELETE',
+        headers: { cookie: plainCookie, 'x-forwarded-for': nextIp() }
+      })
+    )
+  );
+
+  it(
+    'POST /presentations/{id}/versions — the push probe (aligned with the routes above)',
+    bothWays((deck) =>
+      app.app.request(
+        `/api/v1/presentations/${deck}/versions`,
+        json(
+          {
+            expectedBaseVersion: 1,
+            entryPath: 'index.html',
+            manifest: [
+              { path: 'index.html', sha256: shaOf(HTML), sizeBytes: HTML.length, contentType: 'text/html' }
+            ]
+          },
+          { cookie: plainCookie }
+        )
+      )
+    )
+  );
+
+  it(
+    'POST /presentations/{id}/preview-token',
+    bothWays((deck) =>
+      app.app.request(`/api/v1/presentations/${deck}/preview-token`, json({}, { cookie: plainCookie }))
+    )
+  );
+});
+
 // ═══ RACE-7 — the email_taken pre-check is advisory, the UNIQUE index is not ══
 
 /**
