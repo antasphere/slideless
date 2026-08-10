@@ -41,15 +41,26 @@ Every artifact is written under `umask 077` and chmod'd to 0600, and
 `BACKUP_DIR` defaults **outside** the checkout: a config archive sitting in
 the repo is one `git add -A` away from committing `AUTH_SECRET`.
 
-### Encrypt the config archive
+### The config archive is only ever written encrypted
 
 The config archive holds `.env` — `AUTH_SECRET`, `SETUP_TOKEN`,
-`METRICS_TOKEN` — in cleartext. Set `BACKUP_PASSPHRASE` and `backup.sh`
-writes `config-<stamp>.tar.gz.enc` instead (AES-256-CBC, PBKDF2, 600k
-iterations; the passphrase is handed over on a file descriptor, never in
-argv). `restore.sh` accepts either form. Without a passphrase you get a loud
-warning and a cleartext archive at mode 0600 — tolerable on the box itself,
-not tolerable in off-site storage.
+`METRICS_TOKEN` — so `backup.sh` never writes it in cleartext. Set
+`BACKUP_PASSPHRASE` and it writes `config-<stamp>.tar.gz.enc` (AES-256-CBC,
+PBKDF2, 600k iterations; the passphrase is handed over on a file
+descriptor, never in argv). Keep the passphrase somewhere that survives the
+machine — a password manager or secret manager — because it **is** the
+recovery path for `AUTH_SECRET`.
+
+Without `BACKUP_PASSPHRASE` the config archive is **skipped**, with a loud
+warning: the backup then carries no `.env` at all. Restoring such a backup
+needs `--no-config`, and `AUTH_SECRET` survives only if the server
+auto-generated it into `/data/secret` (the data tarball carries that file).
+An `AUTH_SECRET` written into `.env` — what `setup.sh` does — is **not** in
+a passphrase-less backup, so treat one as incomplete: it protects your data,
+not your credentials.
+
+`restore.sh` accepts the encrypted form and, for backups made by older
+versions of `backup.sh`, the legacy cleartext `config-<stamp>.tar.gz`.
 
 ## Restore
 

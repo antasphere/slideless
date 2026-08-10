@@ -40,23 +40,27 @@ docker compose run --rm --no-deps -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entr
 chmod 600 "$BACKUP_DIR/data-$STAMP.tar.gz"
 
 dr_info "archiving config"
-if [ -f .env ]; then
-  if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
-    # The passphrase is handed over on file descriptor 3, never through argv
-    # or the environment, so it cannot be read out of the process table.
-    tar -czf - .env docker-compose.yml |
-      openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass fd:3 \
-        -out "$BACKUP_DIR/config-$STAMP.tar.gz.enc" 3<<< "$BACKUP_PASSPHRASE"
-    chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz.enc"
-  else
-    tar -czf "$BACKUP_DIR/config-$STAMP.tar.gz" .env docker-compose.yml
-    chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz"
-    dr_warn "BACKUP_PASSPHRASE is unset — config-$STAMP.tar.gz stores AUTH_SECRET in cleartext (mode 600)."
-    dr_warn "Set BACKUP_PASSPHRASE to encrypt it before shipping backups off this machine."
-  fi
-else
+CONFIG_ARTIFACT=""
+if [ ! -f .env ]; then
   dr_warn "no .env found — config archive skipped. A restore will NOT recover AUTH_SECRET,"
   dr_warn "so every existing API key and share link would stop resolving."
+elif [ -n "${BACKUP_PASSPHRASE:-}" ]; then
+  # The passphrase is handed over on file descriptor 3, never through argv
+  # or the environment, so it cannot be read out of the process table.
+  tar -czf - .env docker-compose.yml |
+    openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass fd:3 \
+      -out "$BACKUP_DIR/config-$STAMP.tar.gz.enc" 3<<< "$BACKUP_PASSPHRASE"
+  chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz.enc"
+  CONFIG_ARTIFACT="config-$STAMP.tar.gz.enc"
+else
+  # .env holds AUTH_SECRET, POSTGRES_PASSWORD, SETUP_TOKEN and METRICS_TOKEN,
+  # and backup artifacts are what gets shipped OFF this machine — so it is
+  # never written into a backup in cleartext, not even at mode 0600.
+  dr_warn "BACKUP_PASSPHRASE is unset — config archive SKIPPED: .env is never backed up in cleartext."
+  dr_warn "This backup carries no .env: restoring it needs --no-config, and AUTH_SECRET survives only"
+  dr_warn "if the server auto-generated it into /data/secret. An AUTH_SECRET set in .env (what"
+  dr_warn "setup.sh writes) is NOT in this backup. Set BACKUP_PASSPHRASE to get the encrypted"
+  dr_warn "config archive — see docs/operations/backup-restore.md."
 fi
 
 dr_info "verifying the archives just written"
@@ -66,4 +70,8 @@ dr_verify_tar "$BACKUP_DIR/data-$STAMP.tar.gz"
 dr_info "pruning backups older than ${RETENTION_DAYS}d"
 find "$BACKUP_DIR" \( -name '*.gz' -o -name '*.gz.enc' \) -mtime "+$RETENTION_DAYS" -delete
 
-dr_success "backup complete: $BACKUP_DIR/{db,data,config}-$STAMP.*"
+if [ -n "$CONFIG_ARTIFACT" ]; then
+  dr_success "backup complete: $BACKUP_DIR/{db-$STAMP.sql.gz,data-$STAMP.tar.gz,$CONFIG_ARTIFACT}"
+else
+  dr_success "backup complete: $BACKUP_DIR/{db,data}-$STAMP.* (no config archive — see warnings above)"
+fi

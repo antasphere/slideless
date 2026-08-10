@@ -115,9 +115,17 @@ describe('A8/PLT-11 — backup artifacts are not committable and not world-reada
 
   it('backup.sh chmods every artifact it produces (the tar runs under the image umask)', () => {
     const sh = read('scripts/backup.sh');
-    for (const artifact of ['db-$STAMP.sql.gz', 'data-$STAMP.tar.gz', 'config-$STAMP.tar.gz']) {
+    for (const artifact of ['db-$STAMP.sql.gz', 'data-$STAMP.tar.gz', 'config-$STAMP.tar.gz.enc']) {
       expect(sh, artifact).toContain(`chmod 600 "$BACKUP_DIR/${artifact}"`);
     }
+  });
+
+  it('backup.sh never writes a cleartext config archive (PRDCT-1348)', () => {
+    const sh = read('scripts/backup.sh');
+    // The ONLY tar writing .env pipes into openssl; a plaintext
+    // `tar -czf <file> .env` fallback is the regression this pins shut.
+    expect(sh).not.toMatch(/tar -czf "[^"]*config[^"]*\.tar\.gz" \.env/);
+    expect(sh).not.toContain('chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz"');
   });
 
   it('BACKUP_DIR defaults outside the checkout in both DR scripts', () => {
