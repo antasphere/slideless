@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Backup: Postgres dump + the app data volume (uploaded files, generated
-# secret) + the local config. Run from cron for dailies:
+# secret) + the local config, encrypted (BACKUP_PASSPHRASE is REQUIRED —
+# a backup without the encrypted .env cannot restore to a working instance;
+# pass --allow-unencrypted to consciously take a db+data-only backup).
+# Run from cron for dailies:
+#   BACKUP_PASSPHRASE=…
 #   0 3 * * * /opt/slideless/scripts/backup.sh >> /var/log/slideless-backup.log 2>&1
 set -euo pipefail
 # Every artifact below holds production data, and the config archive holds
@@ -24,6 +28,25 @@ RETENTION_DAYS="${RETENTION_DAYS:-30}"
 DB_USER="${DB_USER:-slideless}"
 DB_NAME="${DB_NAME:-slideless}"
 STAMP=$(date -u +%Y%m%d-%H%M%S)
+
+ALLOW_UNENCRYPTED=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --allow-unencrypted) ALLOW_UNENCRYPTED=1; shift ;;
+    *) dr_fail "unknown flag: $1  (usage: backup.sh [--allow-unencrypted])" ;;
+  esac
+done
+
+# Fail LOUD, and before anything is written: a passphrase-less backup holds
+# no .env, so unless the pepper root happens to live in /data/secret it
+# cannot restore to a working instance — every API key and share link would
+# stop resolving. That must be a conscious choice, not a cron default.
+if [ -z "${BACKUP_PASSPHRASE:-}" ] && [ "$ALLOW_UNENCRYPTED" != 1 ]; then
+  dr_warn "BACKUP_PASSPHRASE is unset. Without it the config archive (.env — AUTH_SECRET,"
+  dr_warn "the pepper root) cannot be written, and a restore from this backup would resolve"
+  dr_warn "none of the existing API keys, share links or edit secrets."
+  dr_fail "set BACKUP_PASSPHRASE, or pass --allow-unencrypted to take a db+data-only backup"
+fi
 
 mkdir -p "$BACKUP_DIR" ||
   dr_fail "cannot create $BACKUP_DIR — run as root or set BACKUP_DIR to a writable path"
@@ -53,10 +76,12 @@ elif [ -n "${BACKUP_PASSPHRASE:-}" ]; then
   chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz.enc"
   CONFIG_ARTIFACT="config-$STAMP.tar.gz.enc"
 else
-  # .env holds AUTH_SECRET, POSTGRES_PASSWORD, SETUP_TOKEN and METRICS_TOKEN,
-  # and backup artifacts are what gets shipped OFF this machine — so it is
-  # never written into a backup in cleartext, not even at mode 0600.
-  dr_warn "BACKUP_PASSPHRASE is unset — config archive SKIPPED: .env is never backed up in cleartext."
+  # Reachable only via --allow-unencrypted (the up-front gate refuses
+  # otherwise). .env holds AUTH_SECRET, POSTGRES_PASSWORD, SETUP_TOKEN and
+  # METRICS_TOKEN, and backup artifacts are what gets shipped OFF this
+  # machine — so it is never written into a backup in cleartext, not even
+  # at mode 0600.
+  dr_warn "--allow-unencrypted: config archive SKIPPED — .env is never backed up in cleartext."
   dr_warn "This backup carries no .env: restoring it needs --no-config, and AUTH_SECRET survives only"
   dr_warn "if the server auto-generated it into /data/secret. An AUTH_SECRET set in .env (what"
   dr_warn "setup.sh writes) is NOT in this backup. Set BACKUP_PASSPHRASE to get the encrypted"

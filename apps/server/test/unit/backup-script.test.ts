@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -25,7 +26,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
  * into an artifact in cleartext, the canary scan finds it in the bytes.
  *
  * The contract pinned here:
- *   - without BACKUP_PASSPHRASE: db + data artifacts only, no config
+ *   - without BACKUP_PASSPHRASE and without --allow-unencrypted: the run
+ *     REFUSES (non-zero exit) before writing anything at all — a backup
+ *     that cannot restore to a working instance must be a conscious
+ *     choice, not a cron default;
+ *   - with --allow-unencrypted: db + data artifacts only, no config
  *     archive of any kind, no canary anywhere (raw or decompressed);
  *   - with BACKUP_PASSPHRASE: config-<stamp>.tar.gz.enc appears, its raw
  *     bytes carry no canary, and the passphrase decrypts it back to the
@@ -122,7 +127,7 @@ afterEach(() => {
   rmSync(work, { recursive: true, force: true });
 });
 
-function runBackup(passphrase?: string): { status: number; output: string } {
+function runBackup(passphrase?: string, args: string[] = []): { status: number; output: string } {
   const env: Record<string, string | undefined> = {
     ...process.env,
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -133,7 +138,7 @@ function runBackup(passphrase?: string): { status: number; output: string } {
   if (passphrase !== undefined) env.BACKUP_PASSPHRASE = passphrase;
   // spawnSync, not execFileSync: dr_warn writes to stderr, and the skip
   // warning this suite asserts on must be visible on the SUCCESS path too.
-  const r = spawnSync('bash', [join(checkout, 'scripts/backup.sh')], {
+  const r = spawnSync('bash', [join(checkout, 'scripts/backup.sh'), ...args], {
     env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe']
@@ -163,8 +168,18 @@ function expectNoCanary(scope: Array<{ name: string; bytes: string }>) {
 }
 
 describe('backup.sh never lets .env material reach a backup in cleartext (PRDCT-1348)', () => {
-  it('without BACKUP_PASSPHRASE: db+data only, no config archive, no canary in any byte', () => {
+  it('without BACKUP_PASSPHRASE and no flag: refuses with a non-zero exit and writes nothing', () => {
     const r = runBackup();
+    expect(r.status, r.output).not.toBe(0);
+    expect(r.output).toContain('BACKUP_PASSPHRASE');
+    expect(r.output).toContain('--allow-unencrypted');
+    // The gate sits before the first write — not even the backup dir exists.
+    const produced = existsSync(backupDir) ? readdirSync(backupDir) : [];
+    expect(produced).toHaveLength(0);
+  }, 30000);
+
+  it('--allow-unencrypted: db+data only, no config archive, no canary in any byte', () => {
+    const r = runBackup(undefined, ['--allow-unencrypted']);
     expect(r.status, r.output).toBe(0);
     expect(r.output).toContain('config archive SKIPPED');
 
