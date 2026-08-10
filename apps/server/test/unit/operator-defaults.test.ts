@@ -115,10 +115,16 @@ describe('A8/PLT-11 — backup artifacts are not committable and not world-reada
 
   it('backup.sh chmods every artifact it produces (the tar runs under the image umask)', () => {
     const sh = read('scripts/backup.sh');
-    for (const artifact of ['db-$STAMP.sql.gz', 'data-$STAMP.tar.gz', 'config-$STAMP.tar.gz']) {
+    for (const artifact of ['db-$STAMP.sql.gz', 'data-$STAMP.tar.gz', 'config-$STAMP.tar.gz.enc']) {
       expect(sh, artifact).toContain(`chmod 600 "$BACKUP_DIR/${artifact}"`);
     }
   });
+
+  // "No cleartext .env in any produced backup" (PRDCT-1348) is pinned
+  // BEHAVIORALLY — a real backup.sh run under a stubbed docker, scanned for
+  // secret canaries — in backup-script.test.ts, not as a string assertion
+  // here: a string can stay green through a behaviorally identical
+  // regression (different tar spelling, cp, another extension).
 
   it('BACKUP_DIR defaults outside the checkout in both DR scripts', () => {
     for (const script of ['scripts/backup.sh', 'scripts/restore.sh']) {

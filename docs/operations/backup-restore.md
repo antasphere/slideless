@@ -13,23 +13,28 @@ restore — and the drill that proves your backups actually work.
 With `STORAGE_DRIVER=s3`, blobs live in the bucket; use the bucket's own
 replication/versioning and back up only 1 + 3.
 
-**3 is not optional.** `AUTH_SECRET` is the pepper root: API-key hashes,
-share-link and edit-secret hashes, and the idempotency cipher all derive from
-it, and `setup.sh` generates a fresh one on a clean host. A restore that
-brings back the database without it produces an instance where every
-pre-existing API key and share link resolves to nothing — a "successful"
-restore that silently threw the credentials away.
+**3 is not optional — and it happens only with `BACKUP_PASSPHRASE` set.**
+`AUTH_SECRET` is the pepper root: API-key hashes, share-link and edit-secret
+hashes, and the idempotency cipher all derive from it, and `setup.sh`
+generates a fresh one on a clean host. A restore that brings back the
+database without it produces an instance where every pre-existing API key
+and share link resolves to nothing — a "successful" restore that silently
+threw the credentials away. Because `backup.sh` never writes `.env` in
+cleartext, it **refuses to run** without `BACKUP_PASSPHRASE`;
+`--allow-unencrypted` overrides that consciously, backing up 1 + 2 only.
 
 ## Backup
 
 ```bash
-./scripts/backup.sh                         # → /var/backups/slideless/{db,data,config}-<stamp>.*
-BACKUP_DIR=/mnt/backups ./scripts/backup.sh # elsewhere
+BACKUP_PASSPHRASE=… ./scripts/backup.sh  # → /var/backups/slideless/{db,data}-<stamp>.* + config-<stamp>.tar.gz.enc
+./scripts/backup.sh --allow-unencrypted  # db+data only — a conscious, credential-less backup
+BACKUP_DIR=/mnt/backups BACKUP_PASSPHRASE=… ./scripts/backup.sh  # elsewhere
 ```
 
 Dailies via cron:
 
 ```cron
+BACKUP_PASSPHRASE=your-backup-passphrase
 0 3 * * * /opt/slideless/scripts/backup.sh >> /var/log/slideless-backup.log 2>&1
 ```
 
@@ -41,15 +46,28 @@ Every artifact is written under `umask 077` and chmod'd to 0600, and
 `BACKUP_DIR` defaults **outside** the checkout: a config archive sitting in
 the repo is one `git add -A` away from committing `AUTH_SECRET`.
 
-### Encrypt the config archive
+### The config archive is only ever written encrypted
 
 The config archive holds `.env` — `AUTH_SECRET`, `SETUP_TOKEN`,
-`METRICS_TOKEN` — in cleartext. Set `BACKUP_PASSPHRASE` and `backup.sh`
-writes `config-<stamp>.tar.gz.enc` instead (AES-256-CBC, PBKDF2, 600k
-iterations; the passphrase is handed over on a file descriptor, never in
-argv). `restore.sh` accepts either form. Without a passphrase you get a loud
-warning and a cleartext archive at mode 0600 — tolerable on the box itself,
-not tolerable in off-site storage.
+`METRICS_TOKEN` — so `backup.sh` never writes it in cleartext. Set
+`BACKUP_PASSPHRASE` and it writes `config-<stamp>.tar.gz.enc` (AES-256-CBC,
+PBKDF2, 600k iterations; the passphrase is handed over on a file
+descriptor, never in argv). Keep the passphrase somewhere that survives the
+machine — a password manager or secret manager — because it **is** the
+recovery path for `AUTH_SECRET`.
+
+Without `BACKUP_PASSPHRASE` the run **refuses to start** — a backup that
+cannot restore to a working instance should be a conscious choice, not a
+cron default. `--allow-unencrypted` is that choice: the run then skips the
+config archive (`.env` is never written in cleartext) and produces db+data
+only. Restoring such a backup needs `--no-config`, and `AUTH_SECRET`
+survives only if the server auto-generated it into `/data/secret` (the data
+tarball carries that file). An `AUTH_SECRET` written into `.env` — what
+`setup.sh` does — is **not** in it: such a backup protects your data, not
+your credentials.
+
+`restore.sh` accepts the encrypted form and, for backups made by older
+versions of `backup.sh`, the legacy cleartext `config-<stamp>.tar.gz`.
 
 ## Restore
 

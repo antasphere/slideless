@@ -1097,3 +1097,12 @@ calls for Romain, not template bugs. Nothing here is silently fixed.
    secret distinguish "this link once existed" from "never existed". Decide:
    keep the differentiated UX or collapse dead tokens to a uniform 404
    (live-link secrecy is unaffected either way — 384-bit secrets).
+5. **`route-label.ts`'s `(unmatched)` branch is dead on the pinned Hono.**
+   On hono 4.12.27 `c.req.routePath` always answers a string once any
+   handler runs (a non-match reports `/*`), so `if (!matched) return
+'(unmatched)'` is unreachable. Harmless belt-and-suspenders — worth
+   keeping only if the comment stops implying it fires today; the same
+   dead-fallback shape existed in metrics.ts (`?? c.req.path`), which was
+   worse because ITS fallback expression was the raw path. Template could
+   route every consumer (log line, span, metrics label) through the one
+   helper and say clearly the guard is for future Hono versions.

@@ -22,3 +22,7 @@ apps/server/var/
 backups
 # Agent scratch (session notes, local settings) — never part of a release.
 .claude
+# Editor / per-machine local state: only the user's GLOBAL ignore file kept
+# these out so far, which protects nobody else's clone.
+.vscode
+*.local.json

@@ -172,8 +172,10 @@ deploys) + `dev` (day-to-day work).
 
 ```bash
 pnpm install
-pnpm turbo lint typecheck test build   # the CI gate
-pnpm turbo test:integration            # real Postgres via testcontainers; needs Docker
+pnpm turbo lint typecheck test build         # the CI gate, part 1
+pnpm format:check                            # part 2 — CI runs this too; `pnpm format` fixes
+pnpm --filter @slideless/server drift:check  # part 3 — the auth-schema drift guard
+pnpm turbo test:integration                  # real Postgres via testcontainers; needs Docker
 ```
 
 Local dev mail: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d` runs Mailpit

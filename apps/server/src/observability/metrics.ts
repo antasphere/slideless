@@ -6,6 +6,7 @@ import { files, type Db } from '@slideless/db';
 import type PgBoss from 'pg-boss';
 import { constantTimeEquals } from '../constant-time.js';
 import { USAGE_QUEUE } from '../jobs/pgboss.js';
+import { routeLabel } from '../route-label.js';
 
 /**
  * Prometheus surface. Route labels use the MATCHED pattern (not the raw
@@ -65,7 +66,13 @@ export function createMetrics(db: Db, boss: PgBoss): Metrics {
       httpDuration.observe(
         {
           method: c.req.method,
-          route: c.req.routePath ?? c.req.path,
+          // routeLabel, same as the log line and the span: on the pinned
+          // Hono the previous `?? c.req.path` fallback was unreachable
+          // (routePath always answers a string here), but a raw-path
+          // expression in a label position is exactly what must not come
+          // back to life on a version bump — one shared, secret-free
+          // label instead (PRIV-1).
+          route: routeLabel(c),
           status: String(c.error ? 500 : c.res.status)
         },
         seconds
