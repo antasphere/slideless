@@ -81,6 +81,13 @@ function isAuditExempt(path: string): boolean {
     path.startsWith('/api/v1/auth/') ||
     path === '/api/v1/setup' ||
     path === '/api/v1/invitations/accept' ||
+    // Share-token viewer surface (annotations/forms/badge): the SECRET rides
+    // the path, and these writes are documented as unaudited — token
+    // recipients are not principals. Without this exemption a visitor who
+    // ALSO holds a session cookie lands a fallback row whose action embeds
+    // the live share secret (PRIV-1). Owner-side moderation lives under
+    // /presentations/ and stays audited.
+    path.startsWith('/api/v1/viewer/') ||
     // Break-glass self-audits with before/after detail — and its callers may
     // hold a session WITHOUT a membership (principal null), which this
     // middleware could not attribute anyway.

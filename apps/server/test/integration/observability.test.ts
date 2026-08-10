@@ -88,6 +88,18 @@ describe('metrics', () => {
     expect(body).toContain('process_cpu_user_seconds_total');
   });
 
+  it('labels viewer traffic with the route pattern, never the share secret (PRIV-1)', async () => {
+    const secret = 'Zq7-LIVE-SHARE-SECRET-metrics';
+    await app.app.request(`/v/${secret}`);
+    const res = await app.app.request('/metrics', {
+      headers: { authorization: 'Bearer obs-metrics-token' }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('/v/:secret');
+    expect(body).not.toContain(secret);
+  });
+
   it('enforces METRICS_TOKEN when configured', async () => {
     const denied = await app.app.request('/metrics');
     expect(denied.status).toBe(401);
