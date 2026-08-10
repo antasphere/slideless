@@ -50,6 +50,7 @@ const SOLO = { email: 'solo@mint.test', name: 'A Solo', password: 'mint-solo-pas
 const DUAL = { email: 'dual@mint.test', name: 'Dual Tenant', password: 'mint-dual-password-1234' };
 const GUEST = { email: 'guest@outsider.test', name: 'Outside Guest', password: 'mint-guest-password-12' };
 const OUTSIDER = 'stranger@outsider.test';
+const FOREIGN = 'foreign@other-tenant.test';
 
 const HTML = Buffer.from('<!doctype html><html><body><h1>mint</h1></body></html>');
 const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -62,6 +63,7 @@ let adminCookie = '';
 let plainCookie = '';
 
 let wA = '';
+let wB = ''; // DUAL's second, unrelated tenant
 let ownerDeck = ''; // owned by OWNER, in wA
 let plainDeck = ''; // owned by PLAIN (a plain member), in wA
 
@@ -195,7 +197,7 @@ beforeAll(async () => {
     .from(workspaceMembers)
     .where(eq(workspaceMembers.id, rowId[DUAL.email]!))
     .limit(1);
-  const wB = (await app.registry.workspaces.create('Mint B', dualUser[0]!.userId)).workspaceId;
+  wB = (await app.registry.workspaces.create('Mint B', dualUser[0]!.userId)).workspaceId;
   expect(wB).not.toBe(wA);
 
   // Decks: one owned by the workspace owner, one owned by a PLAIN member
@@ -249,6 +251,34 @@ describe('AUTH-6: a plain member cannot pull an outsider into the tenant', () =>
       json({ email: OUTSIDER }, { cookie: adminCookie })
     );
     expect(res.status).toBe(201);
+  });
+
+  it('refuses an email that EXISTS on the instance but only in ANOTHER tenant (403, no grant)', async () => {
+    // The colleague lookup's workspace scope is the load-bearing filter: an
+    // account living only in wB must read as an OUTSIDER to wA. Dropping the
+    // scope (the AUTH-6 mutation the PRDCT-1354 verifier found survives the
+    // suite) turns "exists anywhere on the instance" into "colleague here"
+    // and reopens cross-tenant onboarding to every plain member.
+    const foreign = await app.auth.api.signUpEmail({
+      body: { email: FOREIGN, password: 'mint-foreign-pass-123', name: 'Foreign Tenant' }
+    });
+    await app.db.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: wB, userId: foreign.user.id, role: 'member' });
+
+    const res = await app.app.request(
+      `/api/v1/presentations/${plainDeck}/collaborators`,
+      json({ email: FOREIGN }, { cookie: plainCookie })
+    );
+    expect(res.status).toBe(403);
+    expect((await readJson(res)).error.code).toBe('external_invite_forbidden');
+
+    // Nothing was written — no grant, so no future claim, no guest row.
+    const { rows } = await app.db.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM collaborators WHERE email = $1`,
+      [FOREIGN]
+    );
+    expect(rows[0]!.n).toBe(0);
   });
 });
 
