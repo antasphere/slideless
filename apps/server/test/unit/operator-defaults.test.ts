@@ -120,13 +120,11 @@ describe('A8/PLT-11 — backup artifacts are not committable and not world-reada
     }
   });
 
-  it('backup.sh never writes a cleartext config archive (PRDCT-1348)', () => {
-    const sh = read('scripts/backup.sh');
-    // The ONLY tar writing .env pipes into openssl; a plaintext
-    // `tar -czf <file> .env` fallback is the regression this pins shut.
-    expect(sh).not.toMatch(/tar -czf "[^"]*config[^"]*\.tar\.gz" \.env/);
-    expect(sh).not.toContain('chmod 600 "$BACKUP_DIR/config-$STAMP.tar.gz"');
-  });
+  // "No cleartext .env in any produced backup" (PRDCT-1348) is pinned
+  // BEHAVIORALLY — a real backup.sh run under a stubbed docker, scanned for
+  // secret canaries — in backup-script.test.ts, not as a string assertion
+  // here: a string can stay green through a behaviorally identical
+  // regression (different tar spelling, cp, another extension).
 
   it('BACKUP_DIR defaults outside the checkout in both DR scripts', () => {
     for (const script of ['scripts/backup.sh', 'scripts/restore.sh']) {

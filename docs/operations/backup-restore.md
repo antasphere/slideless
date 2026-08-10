@@ -13,18 +13,22 @@ restore — and the drill that proves your backups actually work.
 With `STORAGE_DRIVER=s3`, blobs live in the bucket; use the bucket's own
 replication/versioning and back up only 1 + 3.
 
-**3 is not optional.** `AUTH_SECRET` is the pepper root: API-key hashes,
-share-link and edit-secret hashes, and the idempotency cipher all derive from
-it, and `setup.sh` generates a fresh one on a clean host. A restore that
-brings back the database without it produces an instance where every
-pre-existing API key and share link resolves to nothing — a "successful"
-restore that silently threw the credentials away.
+**3 is not optional — and it happens only with `BACKUP_PASSPHRASE` set.**
+`AUTH_SECRET` is the pepper root: API-key hashes, share-link and edit-secret
+hashes, and the idempotency cipher all derive from it, and `setup.sh`
+generates a fresh one on a clean host. A restore that brings back the
+database without it produces an instance where every pre-existing API key
+and share link resolves to nothing — a "successful" restore that silently
+threw the credentials away. Because `backup.sh` never writes `.env` in
+cleartext, a passphrase-less run backs up 1 + 2 only; set
+`BACKUP_PASSPHRASE` (next section) to make the backup complete.
 
 ## Backup
 
 ```bash
-./scripts/backup.sh                         # → /var/backups/slideless/{db,data,config}-<stamp>.*
-BACKUP_DIR=/mnt/backups ./scripts/backup.sh # elsewhere
+./scripts/backup.sh                          # → /var/backups/slideless/{db,data}-<stamp>.*
+BACKUP_PASSPHRASE=… ./scripts/backup.sh      # …plus config-<stamp>.tar.gz.enc (the encrypted .env)
+BACKUP_DIR=/mnt/backups ./scripts/backup.sh  # elsewhere
 ```
 
 Dailies via cron:
