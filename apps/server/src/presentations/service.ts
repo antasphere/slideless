@@ -22,7 +22,7 @@ export const UPLOAD_SESSION_TTL_MS = 60 * 60 * 1000;
 
 /**
  * Commit failures as data, not exceptions — the handlers map each variant to
- * its contract status (400/403/404/409/410) without string matching. The two
+ * its contract status (400/404/409/410) without string matching. The two
  * commit paths get separate unions so each handler's switch stays exhaustive
  * against exactly the statuses its route declares.
  */
@@ -35,7 +35,6 @@ export type SessionCommitFailure =
 export type VersionCommitFailure =
   | ManifestFailure
   | { code: 'not_found' }
-  | { code: 'forbidden' }
   | { code: 'version_conflict'; currentVersion: number };
 
 export interface CommitSuccess {
@@ -324,14 +323,17 @@ export class PresentationService {
       // Who may commit, and as which role (Phase 5): the deck owner and
       // workspace admins/owners commit as 'owner'; an ACTIVE per-deck dev
       // collaborator commits as 'dev' (checked inside the transaction so a
-      // concurrent revoke serializes against the commit). Anyone else: 403.
+      // concurrent revoke serializes against the commit). Anyone else gets
+      // the SAME not_found a missing deck answers (AUTH-5, PRDCT-1393): a
+      // refused principal cannot read the deck either (canWrite coincides
+      // with canRead), so a push probe must not confirm the deck exists.
       let authorRole: VersionAuthorRole;
       if (canAdministerDeck(opts.principal, deck)) {
         authorRole = 'owner';
       } else if (await isActiveDevCollaborator(tx, deck.id, opts.principal.userId)) {
         authorRole = 'dev';
       } else {
-        return { ok: false, failure: { code: 'forbidden' } };
+        return { ok: false, failure: { code: 'not_found' } };
       }
       if (deck.currentVersion !== opts.expectedBaseVersion) {
         return { ok: false, failure: { code: 'version_conflict', currentVersion: deck.currentVersion } };

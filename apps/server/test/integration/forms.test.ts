@@ -1273,7 +1273,7 @@ describe('owner responses surface (list / summary / delete)', () => {
     }
   });
 
-  it('hides the surface from a plain member: reads 404, delete 403 forbidden', async () => {
+  it('hides the surface from a plain member: reads AND delete answer 404', async () => {
     const invited = await readJson(
       await app.app.request(
         '/api/v1/invitations',
@@ -1307,8 +1307,10 @@ describe('owner responses surface (list / summary / delete)', () => {
       method: 'DELETE',
       headers: { cookie: memberCookie }
     });
-    expect(del.status).toBe(403);
-    expect((await readJson(del)).error.code).toBe('forbidden');
+    // Same 404 as the reads (AUTH-5, PRDCT-1393): the delete probe must not
+    // confirm the deck exists either.
+    expect(del.status).toBe(404);
+    expect((await readJson(del)).error.code).toBe('not_found');
   });
 
   it('deletes a response (audited); repeats 404; malformed ids 400', async () => {

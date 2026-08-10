@@ -196,12 +196,14 @@ describe('the covert channel is closed', () => {
     expect(previews).toHaveLength(0);
   });
 
-  it('a plain member cannot mint one either (403)', async () => {
+  it('a plain member cannot mint one either (404 — the deck is not even confirmed)', async () => {
     const res = await app.app.request(
       `/api/v1/presentations/${deckId}/preview-token`,
       json({}, { cookie: memberCookie })
     );
-    expect(res.status).toBe(403);
+    // The member holds no grant on the deck, so unlike the dev above they
+    // get the AUTH-5 404 (PRDCT-1393), not a 403 that proves the deck id.
+    expect(res.status).toBe(404);
   });
 
   it('the public create endpoint strips a smuggled purpose field', async () => {

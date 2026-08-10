@@ -375,7 +375,9 @@ describe('claim-at-signup → active dev', () => {
         { cookie: memberCookie }
       )
     );
-    expect(res.status).toBe(403);
+    // 404, not 403 (AUTH-5, PRDCT-1393): a member without the deck must not
+    // learn the deck id resolves at all.
+    expect(res.status).toBe(404);
     // And the collaborator roster is hidden from them (contract has no 403 on list).
     const roster = await app.app.request(`/api/v1/presentations/${deckId}/collaborators`, {
       headers: { cookie: memberCookie }
@@ -383,7 +385,7 @@ describe('claim-at-signup → active dev', () => {
     expect(roster.status).toBe(404);
   });
 
-  it('owner revokes the dev → grant revoked, pushes 403 immediately', async () => {
+  it('owner revokes the dev → grant revoked, pushes 404 immediately (the deck vanishes for them)', async () => {
     const res = await app.app.request(`/api/v1/presentations/${deckId}/collaborators/${collaboratorId}`, {
       method: 'DELETE',
       headers: { cookie: ownerCookie }
@@ -398,7 +400,8 @@ describe('claim-at-signup → active dev', () => {
         { cookie: devCookie }
       )
     );
-    expect(push.status).toBe(403);
+    // Revocation drops them to outsider status: 404, never 403 (AUTH-5).
+    expect(push.status).toBe(404);
   });
 });
 

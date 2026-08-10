@@ -129,7 +129,13 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
     const deck = await presentations.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    // AUTH-5 (PRDCT-1393): the failed deck check answers 404 like the
+    // roster list above — the invite probe must not confirm a foreign deck
+    // id exists (ADR 013). The 403s below are reserved for callers who
+    // passed canRead and so already legitimately see the deck.
+    if (!deck || !(await presentations.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     if (!canAdministerDeck(principal, deck)) {
       return c.json(
         err('forbidden', 'Only the deck owner or a workspace admin can invite collaborators'),
@@ -242,7 +248,10 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     const principal = c.get('principal')!;
     const { id, collaboratorId } = c.req.valid('param');
     const deck = await presentations.get(principal.workspaceId, id);
-    if (!deck) return c.json(err('not_found', 'Presentation not found'), 404);
+    // AUTH-5 (PRDCT-1393): same 404 posture as the invite route above.
+    if (!deck || !(await presentations.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
     if (!canAdministerDeck(principal, deck)) {
       return c.json(
         err('forbidden', 'Only the deck owner or a workspace admin can revoke collaborators'),

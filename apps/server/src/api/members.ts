@@ -497,14 +497,17 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     // UNIQUE constraint at CONSUMPTION time: whichever link is consumed
     // first wins the address and the loser's link fails, leaving exactly one
     // account on that email (asserted in test/integration/minted-credentials
-    // .test.ts). Never promote this pre-check to a uniqueness guarantee, and
-    // never widen it into an existence oracle beyond the workspace-owner
-    // audience it already has.
+    // .test.ts). Never promote this pre-check to a uniqueness guarantee.
+    // RACE-7 scope choice: joined on THIS workspace's membership rows — an
+    // unscoped user lookup made the 409-vs-200 an instance-global account
+    // oracle; the owner already sees these emails on the roster, and the
+    // cross-tenant case is caught by the unique constraint at consumption.
     const newEmail = body.newEmail.toLowerCase();
     const [existing] = await db
       .select({ id: userTable.id })
       .from(userTable)
-      .where(eq(userTable.email, newEmail))
+      .innerJoin(workspaceMembers, eq(workspaceMembers.userId, userTable.id))
+      .where(and(eq(userTable.email, newEmail), eq(workspaceMembers.workspaceId, principal.workspaceId)))
       .limit(1);
     if (existing) {
       return c.json(err('email_taken', 'That email is already in use'), 409);
