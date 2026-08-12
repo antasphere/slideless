@@ -33,9 +33,7 @@ export type SessionCommitFailure =
   ManifestFailure | { code: 'not_found' } | { code: 'session_consumed' } | { code: 'session_expired' };
 
 export type VersionCommitFailure =
-  | ManifestFailure
-  | { code: 'not_found' }
-  | { code: 'version_conflict'; currentVersion: number };
+  ManifestFailure | { code: 'not_found' } | { code: 'version_conflict'; currentVersion: number };
 
 export interface CommitSuccess {
   ok: true;

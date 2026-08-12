@@ -109,9 +109,14 @@ everything still unchecked remains genuinely open.
       an unknown version with the same 401 as a revoked key. The rotation
       runbook in security.md is proven end to end by
       `test/integration/apikey-pepper-rotation.test.ts`: keys minted under
-      v1 and v2 both authenticate after a real AUTH_SECRET change. Honest
-      residue: sessions and OAuth JWTs still ride AUTH_SECRET, so rotating
-      it still signs users out — expected and deliberately separate.)
+      v1 and v2 both authenticate after a real AUTH_SECRET change. The OAuth
+      signing key also rode AUTH_SECRET — encrypted in the `jwks` table with
+      no expiry, so a rotation silently broke every token mint; ADR 023
+      closed that with a boot preflight that refuses a mis-rotated boot and
+      a `rotate-signing-key` re-key command with a publish-overlap window,
+      proven by `test/integration/signing-key-rotation.test.ts`. Honest
+      residue: sessions still ride AUTH_SECRET, so rotating it still signs
+      users out — expected and deliberately separate.)
 
 ## Security hardening (P1)
 

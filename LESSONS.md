@@ -775,6 +775,21 @@ secret>` and harvested what visitors typed, straight through the official
   404 and never 403.
   \=======
 
+## Signing-key durability (PRDCT-1379 port, 2026-08-12)
+
+- **A fresh instance's FIRST token issuance can mint TWO jwks rows.** On the
+  pinned 1.6.15 the id_token and access-token signs run concurrently and both
+  can hit `createJwk` when no key exists yet (sign.mjs has no lock around the
+  get-or-create). Harmless in production (newest key signs, every key is
+  published and verifies) but tests must never assert `jwks` row counts, and
+  row count is not a health signal (ADR 023).
+- **jose's local JWK set throws `JWKSNoMatchingKey` for an unknown kid, not
+  `JWSSignatureVerificationFailed`.** A refetch-on-failure JWKS cache keyed
+  to the latter alone never picks up a NEWLY minted signing key until its
+  TTL — a live rotation would answer 401 for 10 minutes. The verifier
+  (`identity/oauth-jwt.ts`) retries on both names; pinned by the mid-cache
+  rotation test.
+
 ## Config / HTTP hardening pass (PRDCT-1374 + PRDCT-1375, 2026-07-26)
 
 Ported from the template. The generic rules live in the template's own LESSONS

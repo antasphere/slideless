@@ -31,6 +31,7 @@ import {
   type HubFederationDials
 } from './identity/hub-reconcile.js';
 import { OauthJwtVerifier } from './identity/oauth-jwt.js';
+import { preflightSigningKey } from './identity/signing-key.js';
 import type { OnWorkspaceMiss } from './identity/resolve-membership.js';
 import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
@@ -198,6 +199,26 @@ export async function boot(
         'set, the R7 edition-flip guard is disarmed and a future EDITION change re-stamps ' +
         'without refusal (internal/federation.md)'
     );
+  }
+
+  // OAuth signing-key preflight (ADR 023): one decrypt of the key the jwt
+  // plugin would sign with. A rotated AUTH_SECRET leaves the stored JWKS
+  // private key undecryptable and — with no rotationInterval — never
+  // replaced, so every token mint would 500 while authorize still 302s.
+  // Refuse to boot instead, with the remedies in the message. Skipped only
+  // while migrations are pending (the jwks table may not exist yet, and the
+  // instance already refuses readiness in that state).
+  if (!migrationsPending) {
+    state.reason = 'verifying OAuth signing key';
+    const preflight = await preflightSigningKey(db.db, authSecret);
+    if (!preflight.ok) {
+      logger.fatal({ kid: preflight.kid }, preflight.reason);
+      // Fail-fast means clean-fast: release the pool this boot opened so the
+      // refusing process (and the integration test that pins it) never
+      // strands an open connection.
+      await db.pool.end().catch(() => {});
+      throw new Error('OAuth signing-key preflight failed — see the preceding log line');
+    }
   }
 
   // Email first: whether it delivers decides whether email-OTP login,
