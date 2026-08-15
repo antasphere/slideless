@@ -99,13 +99,56 @@ warning when `API_KEY_PEPPERS` is set without pinning version 1, because
 those version-1 keys still silently depend on the live `AUTH_SECRET`.
 Design: [ADR 008](decisions/008-api-key-pepper-versioning.md).
 
-To rotate `AUTH_SECRET` (keys keep working, sessions restart):
+⚠️ **`AUTH_SECRET` also wraps the OAuth signing key.** The jwt plugin stores
+the RS256 private key that signs every access token and id_token in the
+`jwks` table, encrypted under `AUTH_SECRET`, with no expiry — so the plugin
+never replaces it on its own. Rotating the secret without re-keying token
+signing therefore breaks the instance's own OAuth surface: a boot on the
+new secret cannot decrypt the stored key, so every `POST /oauth2/token`
+would answer **500** while authorize still redirects (ADR 023). Since the
+fix, such a boot REFUSES at the signing-key preflight instead of serving a
+broken authorize endpoint — the fatal log names this procedure.
+
+To rotate `AUTH_SECRET` (ordered; steps 3 and 5 are what keep OAuth up):
 
 1. Pin version 1 to the current secret: `API_KEY_PEPPERS=1:<current AUTH_SECRET>`.
    Deploy. Key verification now reads the pinned value, not the live secret.
-2. Change `AUTH_SECRET` to the new value. Deploy. Sessions and OAuth JWTs
-   are invalidated (users sign in again — expected); every API key keeps
-   authenticating via its pinned pepper.
+2. Change `AUTH_SECRET` to the new value in `.env`. Do NOT start the app yet
+   — it would refuse the preflight.
+3. Re-key token signing under the NEW secret:
+   `docker compose run --rm app node dist/index.js rotate-signing-key`.
+   This mints a fresh signing key (the newest key always signs). Every
+   retired key stays PUBLISHED on `/jwks`, so tokens issued before the
+   rotation keep verifying — the overlap window.
+4. `docker compose up -d`. The boot preflight confirms the new key decrypts.
+5. After the overlap window (outstanding access tokens live 15 min; allow
+   for any external JWKS caches), retire each old key:
+   `docker compose exec app node dist/index.js rotate-signing-key --retire <kid>`
+   (step 3 printed the retired kids; `SELECT id FROM jwks;` recovers them —
+   the command refuses to delete the active signer).
+
+Effects, stated honestly: sessions are invalidated (users sign in again —
+expected); API keys keep authenticating via the pinned pepper; token
+signing keeps working via the re-key. Two-factor enrollments do NOT
+survive — TOTP secrets and backup codes are encrypted under the live
+secret, so enrolled users must re-enroll (or use the 2FA-lockout runbook
+above). Plan the rotation with that in mind.
+
+## Rotating the OAuth signing key (compromise drill)
+
+The same command, against a RUNNING instance with an unchanged
+`AUTH_SECRET` — the rehearsed answer to a suspected signing-key compromise:
+
+1. `docker compose exec app node dist/index.js rotate-signing-key` — mints
+   the replacement; the plugin signs with it from the next token mint, no
+   restart needed. The instance's own verifier picks the new key up
+   immediately (it refetches `/jwks` once on an unknown `kid`); external
+   caches follow within their window.
+2. For a COMPROMISE (not a routine rotation), retire the suspect key
+   immediately rather than waiting out the overlap:
+   `... rotate-signing-key --retire <kid>`. Tokens it signed stop verifying
+   as caches roll over — that is the point; users re-authorize.
+3. For a routine rotation, wait out the overlap window first (step 5 above).
 
 To rotate the pepper itself (e.g. after a suspected leak of the old secret):
 

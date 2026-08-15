@@ -165,8 +165,7 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
     'post /presentations/{id}/preview-token': () => shot(`${P}/preview-token`, 'POST', cookie, {}),
     'patch /presentations/{id}/tokens/{tokenId}': () =>
       shot(`${P}/tokens/${realTokenId}`, 'PATCH', cookie, { name: 'oracle rename' }),
-    'delete /presentations/{id}/tokens/{tokenId}': () =>
-      shot(`${P}/tokens/${realTokenId}`, 'DELETE', cookie),
+    'delete /presentations/{id}/tokens/{tokenId}': () => shot(`${P}/tokens/${realTokenId}`, 'DELETE', cookie),
     'get /presentations/{id}/tokens/{tokenId}/views': () =>
       shot(`${P}/tokens/${realTokenId}/views`, 'GET', cookie),
     'post /presentations/{id}/tokens/{tokenId}/send': () =>
@@ -217,7 +216,10 @@ beforeAll(async () => {
 
   // A real preview token (for the dev-collaborator revoke 403 below).
   const prev = await readJson(
-    await app.app.request(`/api/v1/presentations/${ownerDeck}/preview-token`, json({}, { cookie: ownerCookie }))
+    await app.app.request(
+      `/api/v1/presentations/${ownerDeck}/preview-token`,
+      json({}, { cookie: ownerCookie })
+    )
   );
   previewTokenId = prev.shareToken.id;
 
@@ -238,7 +240,9 @@ beforeAll(async () => {
   });
   expect([200, 201]).toContain(sub.status);
   const list = await readJson(
-    await app.app.request(`/api/v1/presentations/${ownerDeck}/responses`, { headers: { cookie: ownerCookie } })
+    await app.app.request(`/api/v1/presentations/${ownerDeck}/responses`, {
+      headers: { cookie: ownerCookie }
+    })
   );
   realResponseId = list.responses[0].id;
 

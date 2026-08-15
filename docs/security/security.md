@@ -71,8 +71,11 @@ responsible for, and the rules that govern rendering user content.
 - **Secrets hygiene.** One zod env schema is the only secrets entry point;
   the auto-generated secret lands in `/data` mode 0600; pino redacts
   passwords, tokens, cookies, and connection strings. Rotating `AUTH_SECRET`
-  invalidates sessions and OAuth JWTs (sign in again); API keys survive it
-  through versioned peppers (next item).
+  invalidates sessions (sign in again); API keys survive it through
+  versioned peppers (next item), and OAuth token signing survives it
+  through the `rotate-signing-key` re-key step in the rotation procedure —
+  skipping that step fails loudly at the boot preflight instead of 500ing
+  in production.
 - **Versioned API-key peppers.** Key secrets are stored as
   `sha256(secret + pepper)` and each row records the pepper version that
   hashed it. Version 1 is always the `AUTH_SECRET`-derived pepper (with no
@@ -229,11 +232,16 @@ responsible for, and the rules that govern rendering user content.
   lands a `break_glass.*` audit row behind a tight per-IP wall. Treat listed
   accounts as instance-takeover-capable: keep the list empty except while
   needed, and unset it (with a redeploy) when done.
-- **Secret rotation is supported without breaking API keys.** Rotating
-  `AUTH_SECRET` invalidates sessions and OAuth JWTs (users sign in again);
+- **Secret rotation is supported without breaking API keys or OAuth.**
+  Rotating `AUTH_SECRET` invalidates sessions (users sign in again);
   existing API keys keep resolving as long as their pepper version is pinned
-  in `API_KEY_PEPPERS` — pin version 1 to the historical secret first, then
-  change `AUTH_SECRET`.
+  in `API_KEY_PEPPERS`, and token signing keeps working when the ordered
+  procedure is followed: pin version 1 to the historical secret, change
+  `AUTH_SECRET`, re-key signing with
+  `docker compose run --rm app node dist/index.js rotate-signing-key`, then
+  start. A boot whose stored signing key no longer decrypts under the
+  current secret is refused at a preflight with the remedy in the message —
+  never a booted instance that 500s on every token mint.
 
 ## The rule for products built on this template
 

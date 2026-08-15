@@ -14,6 +14,33 @@ if (process.argv.includes('--boot-check')) {
   process.exit(0);
 }
 
+// Operator command (internal/security-runbooks.md, ADR 023): mint or retire
+// an OAuth signing key without booting the server — `docker compose run --rm
+// app node dist/index.js rotate-signing-key [--retire <kid>]`. Runs against
+// the container's own env, so it works exactly in the state a failed
+// signing-key preflight leaves the instance in.
+if (process.argv[2] === 'rotate-signing-key') {
+  const [{ parseEnv }, { createDb }, { resolveAuthSecret }, { createLogger }, { runSigningKeyCli }] =
+    await Promise.all([
+      import('./env.js'),
+      import('@slideless/db'),
+      import('./secret.js'),
+      import('./logger.js'),
+      import('./identity/signing-key.js')
+    ]);
+  const env = parseEnv(process.env);
+  const db = createDb(env.DATABASE_URL);
+  let code = 1;
+  try {
+    const authSecret = await resolveAuthSecret(env.AUTH_SECRET, env.DATA_DIR, createLogger(env));
+    code = await runSigningKeyCli(db.db, authSecret, process.argv.slice(3), (line) => console.log(line));
+  } catch (cause) {
+    console.error(cause instanceof Error ? cause.message : String(cause));
+  }
+  await db.pool.end().catch(() => {});
+  process.exit(code);
+}
+
 const { app, env, logger, state, db, jobs, otel } = await boot();
 
 const server = serve({ fetch: app.fetch, port: env.PORT, hostname: env.HOST }, (info) => {

@@ -62,8 +62,15 @@ export class OauthJwtVerifier {
     try {
       return await jwtVerify(token, await this.keySet(), options);
     } catch (err) {
-      // One retry with fresh keys covers signing-key rotation mid-cache.
-      if (err instanceof Error && err.name === 'JWSSignatureVerificationFailed') {
+      // One retry with fresh keys covers signing-key rotation mid-cache —
+      // both directions: a token signed by a key the cache no longer trusts
+      // (JWSSignatureVerificationFailed) and a token signed by a key MINTED
+      // after the cache was warmed (JWKSNoMatchingKey — the rotate-signing-key
+      // drill would otherwise answer 401 for up to JWKS_TTL_MS, ADR 023).
+      if (
+        err instanceof Error &&
+        (err.name === 'JWSSignatureVerificationFailed' || err.name === 'JWKSNoMatchingKey')
+      ) {
         return await jwtVerify(token, await this.keySet(true), options);
       }
       throw err;
