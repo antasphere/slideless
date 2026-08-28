@@ -129,7 +129,9 @@ export class FakeHub {
   /** How long a `hang` / `commit_then_hang` request is parked before the fake gives up on it. */
   tokenHangMs = 30_000;
   /** Introspection endpoint behavior. */
-  introspectMode: 'ok' | 'http500' | 'network' = 'ok';
+  introspectMode: 'ok' | 'http500' | 'network' | 'invalid_client' | 'malformed' = 'ok';
+  /** Hold every introspection answer this long (lock-hold tests). */
+  introspectDelayMs = 0;
   /** Lifetime of newly minted access tokens (seconds). */
   accessTokenTtlSeconds = 900;
 
@@ -485,6 +487,11 @@ export class FakeHub {
     const token = body.get('token') ?? '';
     const clientId = body.get('client_id');
     this.introspectRequests.push({ token, hint: body.get('token_type_hint'), clientId });
+    if (this.introspectDelayMs > 0) await new Promise((r) => setTimeout(r, this.introspectDelayMs));
+    if (this.introspectMode === 'invalid_client') {
+      return sendJson(res, 401, { error: 'invalid_client', error_description: 'injected' });
+    }
+    if (this.introspectMode === 'malformed') return sendJson(res, 200, { hello: 'world' });
     if (this.introspectMode === 'network') {
       req.destroy();
       return;

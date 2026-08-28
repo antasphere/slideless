@@ -79,6 +79,8 @@ import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 
 /** Advisory-lock classid for the per-user refresh lock (two-int form). */
 const GRANT_REFRESH_LOCK_KEY = 7_432_004;
+/** Headroom the lock watchdog keeps beyond probe + presentation (row reads/writes, lock latency). */
+export const LOCK_WATCHDOG_HEADROOM_MS = 2_000;
 
 export interface HubGrantDials {
   /** Serve cached/stored access tokens only while exp − now exceeds this. */
@@ -95,7 +97,9 @@ export const DEFAULT_GRANT_DIALS: HubGrantDials = {
   accessSkewMs: 60_000,
   tokenTimeoutMs: 5_000,
   introspectTimeoutMs: 5_000,
-  lockWatchdogMs: 10_000
+  // ≥ tokenTimeoutMs + introspectTimeoutMs + LOCK_WATCHDOG_HEADROOM_MS; the
+  // constructor clamps anything smaller (see there).
+  lockWatchdogMs: 12_000
 };
 
 /**
@@ -198,7 +202,22 @@ export class HubGrantService {
     this.introspectUrl = opts.issuerUrl.replace(/\/+$/, '') + '/api/v1/auth/oauth2/introspect';
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.now = opts.now ?? Date.now;
-    this.dials = opts.dials;
+    // THE WATCHDOG MUST OUTLIVE THE LONGEST HOLD (PRDCT-1370 verifier
+    // finding): under the lock a refresh may now run the probe AND the
+    // presentation back to back, each up to its own timeout, plus the
+    // row reads and writes around them. A watchdog shorter than that cuts
+    // the lock mid-refresh, a sibling replica takes it and presents the
+    // SAME token — the double presentation the lock exists to prevent, and
+    // a family teardown at the hub. Clamped here, at the one place the
+    // dials are read, so no caller can under-size it.
+    const floor = opts.dials.tokenTimeoutMs + opts.dials.introspectTimeoutMs + LOCK_WATCHDOG_HEADROOM_MS;
+    this.dials = opts.dials.lockWatchdogMs >= floor ? opts.dials : { ...opts.dials, lockWatchdogMs: floor };
+    if (this.dials !== opts.dials) {
+      opts.logger.warn(
+        { requested: opts.dials.lockWatchdogMs, effective: floor },
+        'hub grant: lockWatchdogMs raised to cover probe + presentation under the lock'
+      );
+    }
     // registers: [] — boot attaches this to the app registry on cloud; an
     // oss boot never constructs this class, so the metric never exists there.
     this.refreshes = new Counter({

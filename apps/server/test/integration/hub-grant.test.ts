@@ -4,7 +4,11 @@ import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import { createDatabase, createTestApp, startPostgres, type TestApp } from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
-import { DEFAULT_GRANT_DIALS, HubGrantService } from '../../src/identity/hub-grant.js';
+import {
+  DEFAULT_GRANT_DIALS,
+  HubGrantService,
+  LOCK_WATCHDOG_HEADROOM_MS
+} from '../../src/identity/hub-grant.js';
 
 /**
  * The per-user hub grant (identity/hub-grant.ts) against the FakeHub's
@@ -426,6 +430,62 @@ describe('ambiguous outcomes: the presentation record + the RFC 7662 probe (PRDC
     expect((await makeService(FAST).accessToken(aliceId)).kind).toBe('ok');
     expect(hub.introspectRequests.length).toBe(probes);
     expect(await presentationRow()).toBeNull();
+  });
+
+  it('a probe answered 401 or a 200 without a boolean `active` is inconclusive — a probe is never the reason a grant dies', async () => {
+    await staleStoredAccess();
+    const before = await grantRow();
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    for (const mode of ['invalid_client', 'malformed'] as const) {
+      hub.introspectMode = mode;
+      try {
+        expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+      } finally {
+        hub.introspectMode = 'ok';
+      }
+      expect((await grantRow()).refresh_token).toBe(before.refresh_token);
+      expect((await presentationRow())?.refresh_token).toBe(before.refresh_token);
+    }
+    expect((await makeService(FAST).accessToken(aliceId)).kind).toBe('ok');
+  });
+
+  it('the lock watchdog outlives probe + presentation: a sibling replica never presents the same token', async () => {
+    // The verifier's reproduction (PRDCT-1370): a short watchdog, a slow
+    // probe and a slow presentation. Without the clamp the watchdog cut the
+    // lock mid-refresh and replica B presented the token a second time —
+    // reuse detection, family dead. With it, exactly one presentation.
+    await staleStoredAccess();
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    const presentations = hub.refreshCount();
+    const dials = { tokenTimeoutMs: 3_000, introspectTimeoutMs: 3_000, lockWatchdogMs: 600 };
+    const a = makeService(dials);
+    const b = makeService(dials);
+    expect(a.dials.lockWatchdogMs).toBe(3_000 + 3_000 + LOCK_WATCHDOG_HEADROOM_MS);
+    hub.introspectDelayMs = 400;
+    hub.tokenDelayMs = 500;
+    try {
+      const first = a.accessToken(aliceId);
+      await new Promise((r) => setTimeout(r, 100));
+      const second = b.accessToken(aliceId);
+      const [ra, rb] = await Promise.all([first, second]);
+      expect(ra.kind).toBe('ok');
+      expect(rb.kind).toBe('ok');
+    } finally {
+      hub.introspectDelayMs = 0;
+      hub.tokenDelayMs = 0;
+    }
+    expect(hub.refreshCount()).toBe(presentations + 1);
+    expect(hub.isFamilyDead(alice.sub)).toBe(false);
   });
 
   it('invalid_client clears the record — the hub refused the client before consuming the token', async () => {
