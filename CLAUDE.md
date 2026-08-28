@@ -151,7 +151,12 @@ deploys) + `dev` (day-to-day work).
   identity + fail-closed reconcile; connect = the same), and grant refreshes MUST stay
   single-flighted per user (in-process + `pg_advisory_lock(7432004, hashtext(userId))`,
   re-read-after-lock) — the hub's RFC 9700 reuse detection makes an unserialized double-refresh
-  a grant-family-killing event. Gate verdicts: dead grant → 401 `hub_grant_expired` (immediate;
+  a grant-family-killing event. **An unanswered refresh is never re-presented blindly
+  (PRDCT-1370)**: the hub rotates before it answers, so a timed-out presentation may already be
+  rotated out; `HubGrantService` records every presentation (`hub_grant_presentations`) before
+  the fetch and, while the record survives, PROBES the token through the hub's RFC 7662
+  introspection (read-only) — `active:false` marks the grant dead without presenting, so the
+  family (the CLI grant included) survives. Never remove the record write or the probe. Gate verdicts: dead grant → 401 `hub_grant_expired` (immediate;
   a browser SSO re-login heals), stale-beyond-15-min + failing hub → 403 `hub_unavailable`,
   swept membership → 401 `membership_revoked`, `hub_status='suspended'` → 403
   `account_suspended` (GET /me exempt — visible-but-blocked). **Orphan-purge HARD CONSTRAINT**

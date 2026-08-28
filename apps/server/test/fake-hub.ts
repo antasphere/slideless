@@ -23,8 +23,15 @@ import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
  *    token is refused 401. The answer is the token's SUBJECT's org list
  *    (`setUserOrg`/`removeUserOrg`; a `mintCode` fixture seeds its own org).
  *    There is NO target-user parameter anywhere.
+ *  - `POST /api/v1/auth/oauth2/introspect` (RFC 7662, client-credentialed)
+ *    answers `active` for a refresh token exactly like the pinned plugin:
+ *    unknown / rotated-out / torn-down → `active:false`, and — the property
+ *    the grant service's probe relies on — introspection is READ-ONLY: it
+ *    never rotates and never tears a family down.
  *  - failure injection per surface: `orgsMode`/`tokenMode` ∈ ok | http500 |
- *    network (+ token-only: invalid_grant | invalid_client), plus delays.
+ *    network (+ token-only: invalid_grant | invalid_client | hang |
+ *    commit_then_hang — the latter ROTATES, then never answers: the
+ *    slow-but-alive hub of PRDCT-1370), `introspectMode`, plus delays.
  *
  * Access tokens still carry the TRANSITIONAL advisory org claims the real
  * hub emits through the compat window ({role, workspace_id, …}) — Slideless
@@ -110,10 +117,19 @@ export class FakeHub {
   orgsMode: 'ok' | 'http500' | 'network' = 'ok';
   /** Hold every /orgs answer this long (single-flight/race tests). */
   orgsDelayMs = 0;
-  /** Token endpoint behavior (both grants). */
-  tokenMode: 'ok' | 'http500' | 'network' | 'invalid_grant' | 'invalid_client' = 'ok';
+  /**
+   * Token endpoint behavior (both grants). `hang` never answers (the request
+   * is parked, nothing consumed); `commit_then_hang` consumes the presented
+   * refresh token — rotation committed hub-side — and THEN never answers.
+   */
+  tokenMode: 'ok' | 'http500' | 'network' | 'invalid_grant' | 'invalid_client' | 'hang' | 'commit_then_hang' =
+    'ok';
   /** Hold every token answer this long (refresh-race tests). */
   tokenDelayMs = 0;
+  /** How long a `hang` / `commit_then_hang` request is parked before the fake gives up on it. */
+  tokenHangMs = 30_000;
+  /** Introspection endpoint behavior. */
+  introspectMode: 'ok' | 'http500' | 'network' = 'ok';
   /** Lifetime of newly minted access tokens (seconds). */
   accessTokenTtlSeconds = 900;
 
@@ -125,6 +141,8 @@ export class FakeHub {
     resource: string | null;
     clientId: string | null;
   }> = [];
+  /** Every introspection call (the grant service's probe pins). */
+  readonly introspectRequests: Array<{ token: string; hint: string | null; clientId: string | null }> = [];
 
   private constructor(
     private readonly server: Server,
@@ -191,6 +209,11 @@ export class FakeHub {
   }
 
   /** Number of refresh-grant presentations seen so far (single-flight pins). */
+  /** Whether reuse detection (or `revokeGrants`) tore this (sub, client) family down. */
+  isFamilyDead(sub: string, clientId = 'tool-slideless-cloud'): boolean {
+    return this.deadFamilies.has(`${sub}:${clientId}`);
+  }
+
   refreshCount(): number {
     return this.refreshRequests.length;
   }
@@ -298,6 +321,9 @@ export class FakeHub {
     if (req.method === 'POST' && url.pathname === '/api/v1/auth/oauth2/token') {
       return this.handleToken(req, res);
     }
+    if (req.method === 'POST' && url.pathname === '/api/v1/auth/oauth2/introspect') {
+      return this.handleIntrospect(req, res);
+    }
     sendJson(res, 404, { error: 'not_found' });
   }
 
@@ -348,6 +374,7 @@ export class FakeHub {
     if (this.tokenMode === 'invalid_client') {
       return sendJson(res, 401, { error: 'invalid_client', error_description: 'injected' });
     }
+    if (this.tokenMode === 'hang') return this.park(res);
 
     const grantType = body.get('grant_type') ?? (body.get('code') ? 'authorization_code' : '');
     if (grantType === 'refresh_token') return this.handleRefreshGrant(body, res);
@@ -421,6 +448,10 @@ export class FakeHub {
     }
     record.rotatedOut = true;
     const rotated = this.mintRefreshToken(record.sub, record.clientId);
+    // The slow-but-alive hub: the rotation above is committed and the
+    // answer never leaves. Whoever presented `presented` now holds a
+    // rotated-out token without knowing it.
+    if (this.tokenMode === 'commit_then_hang') return this.park(res);
     const resource = body.get('resource');
     const respond = async () => {
       const accessToken = resource
@@ -438,6 +469,47 @@ export class FakeHub {
       });
     };
     void respond();
+  }
+
+  /** Never answer; give up with a 504 long after any client timeout (nothing observes it). */
+  private park(res: ServerResponse): void {
+    const t = setTimeout(() => {
+      if (!res.writableEnded) sendJson(res, 504, { error: 'parked' });
+    }, this.tokenHangMs);
+    t.unref();
+  }
+
+  // ── POST /api/v1/auth/oauth2/introspect: RFC 7662, read-only ──────────
+  private async handleIntrospect(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = new URLSearchParams(await readBody(req));
+    const token = body.get('token') ?? '';
+    const clientId = body.get('client_id');
+    this.introspectRequests.push({ token, hint: body.get('token_type_hint'), clientId });
+    if (this.introspectMode === 'network') {
+      req.destroy();
+      return;
+    }
+    if (this.introspectMode === 'http500') return sendJson(res, 500, { error: { code: 'internal' } });
+    if (!clientId || !body.get('client_secret')) {
+      return sendJson(res, 401, { error: 'invalid_client', error_description: 'client auth required' });
+    }
+    // Refresh tokens only (the grant service's probe always hints it); an
+    // access token is out of scope for this fake's introspection.
+    const record = this.refreshTokens.get(token);
+    if (
+      !record ||
+      record.clientId !== clientId ||
+      record.rotatedOut ||
+      this.deadFamilies.has(record.family)
+    ) {
+      return sendJson(res, 200, { active: false });
+    }
+    return sendJson(res, 200, {
+      active: true,
+      client_id: clientId,
+      sub: record.sub,
+      token_type: 'refresh_token'
+    });
   }
 
   private mintRefreshToken(sub: string, clientId: string): string {

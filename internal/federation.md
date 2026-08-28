@@ -257,6 +257,26 @@ account:read` refresh token from SSO login, persisted ENCRYPTED on the
   (tokens nulled on the row; a browser re-login heals); `invalid_client`
   (our misconfiguration) and network/5xx are loud transients that never
   kill grants.
+- **Ambiguous refresh outcomes probe, never re-present (PRDCT-1370)**:
+  the hub rotates BEFORE it answers and cannot roll back, so a refresh
+  whose answer never arrived (the 5 s client timeout, a lost response, a
+  5xx after the commit) leaves Slideless holding a token the hub may
+  already have rotated out — and presenting it again IS the reuse
+  teardown above, reachable with no attacker, only a hub that is slow but
+  alive (and it kills the user's CLI grant too, same client id). So every
+  presentation is recorded first (`hub_grant_presentations`: the account
+  row + the ciphertext presented) and cleared only once the hub's answer
+  is known. A surviving record makes the next refresh PROBE the token
+  through the hub's RFC 7662 `/oauth2/introspect`
+  (`token_type_hint=refresh_token`; read-only — the pinned plugin answers
+  `active:false` for a rotated-out token without touching the family)
+  and present it only if the hub still calls it active; `active:false`
+  marks the grant dead WITHOUT presenting (the family lives on; a browser
+  re-login heals this user); a failed probe is transient and keeps the
+  record. `invalid_client` clears the record: the hub validates the
+  client before it rotates, so that token was not consumed. The record is
+  inert by construction after a browser re-login (different ciphertext).
+  Counter outcomes: `probe_live`, `probe_dead`, `probe_transient`.
 - **The reader** (`identity/hub-user-client.ts`): `GET <hub>/api/v1/orgs`
   with the user's token — the hub's caller-scoped list (`status` +
   `isDefault` included). There is NO target-user parameter anywhere: a
@@ -681,7 +701,19 @@ docker compose -f docker-compose.federation.yml down -v
   signed-in user (their own grant), so the two client credentials are the
   entire glue.
 - The hub builds from a sibling checkout
-  (`FEDERATION_HUB_DIR`, default `../../../../platform/hub`).
+  (`FEDERATION_HUB_DIR`, default `../../../hub` — the workspace's
+  `labs/products/antasphere/hub` as seen from
+  `labs/products/antasphere/tools/slideless/<checkout>`; a worktree of the
+  hub is pointed at with the variable).
+- **The federation drill** ([`scripts/federation-drill.sh`](../scripts/federation-drill.sh),
+  PRDCT-1370) is the harness's automated use: it boots this stack plus the
+  [`docker-compose.federation.drill.yml`](../docker-compose.federation.drill.yml)
+  overlay (a Toxiproxy hop between Slideless and the hub, so the hub can be
+  made slow-but-alive on demand), runs both setups and a headless SSO
+  login (registry tools skip the hub's consent screen, so the whole dance
+  is `curl`), and asserts on the HUB's database — the only place the
+  grant-family consequences are visible. CI runs it on both repos
+  (`federation-drill` jobs); locally: `./scripts/federation-drill.sh`.
 
 ## What the later phases plug into this
 
