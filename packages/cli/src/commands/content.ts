@@ -41,7 +41,9 @@ const AGENT_DOC_HINT =
 const FORM_NAME_RE = /data-slideless-form\s*=\s*["']?([A-Za-z0-9._-]{1,64})/gi;
 
 /**
- * Best-effort local scan of the pushed HTML for embedded forms (ADR 022):
+ * Best-effort local scan of the pushed HTML and scripts for embedded forms
+ * (ADR 022; scripts too, mirroring the server's commit-time detection —
+ * a bundled deck injects its form from `app.js`):
  * the CLI reads the bytes it just pushed and collects the form names so the
  * push output can point at `slideless responses`. Purely a hint; any
  * failure yields an empty list and never breaks the push.
@@ -50,7 +52,7 @@ async function detectFormNames(scan: DeckScan): Promise<string[]> {
   try {
     const names = new Set<string>();
     for (const file of scan.files) {
-      if (file.contentType !== 'text/html') continue;
+      if (file.contentType !== 'text/html' && file.contentType !== 'text/javascript') continue;
       const html = await readFile(file.absPath, 'utf8');
       for (const match of html.matchAll(FORM_NAME_RE)) names.add(match[1]!);
     }

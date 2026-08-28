@@ -145,6 +145,44 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
   }
 
   /**
+   * The respondent's own row for THIS deck and THIS token, by edit secret —
+   * form-agnostic. Any mismatch answers the same 404 as a missing secret
+   * (no foreign-row oracle).
+   *
+   * Bucket policy: an unresolvable or foreign-deck/foreign-token secret
+   * burns the submit bucket like an invalid share secret would. The runtime
+   * resolves an arriving fragment secret ONCE per page load through the
+   * form-agnostic GET below, so a bogus fragment costs one point per page
+   * load — the pre-remediation cost. It used to probe once PER FORM through
+   * the form-bound route: a two-form deck reloaded ten times locked the
+   * bucket, and because the key is IP + token, every respondent behind one
+   * NAT was then refused for ten minutes (PRDCT-1331/1334 residual).
+   */
+  async function lookupOwnRow(
+    c: Context,
+    view: TokenSessionView
+  ): Promise<{ ok: true; view: TokenSessionView; row: FormResponseRow } | { ok: false; res: Response }> {
+    const secret = c.req.header(RESPONSE_SECRET_HEADER);
+    const row = secret === undefined ? null : await forms.resolveByEditSecret(secret);
+    if (!row || row.presentationId !== view.presentationId || row.shareTokenId !== view.token.id) {
+      await deps.formSubmitLimiter.consume(`${clientIp(c)}:${view.token.id}`).catch(() => {});
+      return {
+        ok: false,
+        res: c.json(err('not_found', 'No response matches this link and edit secret.'), 404)
+      };
+    }
+    return { ok: true, view, row };
+  }
+
+  async function resolveOwnRow(
+    c: Context
+  ): Promise<{ ok: true; view: TokenSessionView; row: FormResponseRow } | { ok: false; res: Response }> {
+    const resolved = await resolveSubmitter(c);
+    if (!resolved.ok) return resolved;
+    return lookupOwnRow(c, resolved.view);
+  }
+
+  /**
    * The respondent's own row: token session + edit secret + FORM NAME, bound
    * together — the row must belong to THIS deck, THIS token and THIS form.
    * Any mismatch answers the same 404 as a missing secret (no foreign-row
@@ -157,30 +195,29 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
    * respondent's `feedback` answer and the card said "updated". Now the
    * server refuses it whatever the client does.
    *
-   * Bucket policy: an unresolvable or foreign-deck/foreign-token secret
-   * burns the submit bucket like an invalid share secret would. A secret
+   * Order, the same as the create route: the token session FIRST (an invalid
+   * share secret answers 404 and burns its bucket whatever the rest of the
+   * path says), then the form name (400), then the secret lookup. A secret
    * that IS valid for this deck+token but names another form does NOT burn:
    * the caller already holds that capability, so the answer is not an
-   * oracle, and the runtime legitimately probes one own-row route per form
-   * on the page when it arrives with a fragment.
+   * oracle.
    */
   async function resolveOwnResponse(
     c: Context
   ): Promise<{ ok: true; view: TokenSessionView; row: FormResponseRow } | { ok: false; res: Response }> {
     const resolved = await resolveSubmitter(c);
     if (!resolved.ok) return resolved;
-    const { view } = resolved;
     const formName = parseFormName(c);
     if (!formName.ok) return { ok: false, res: formName.res };
-    const notFound = () => c.json(err('not_found', 'No response matches this link and edit secret.'), 404);
-    const secret = c.req.header(RESPONSE_SECRET_HEADER);
-    const row = secret === undefined ? null : await forms.resolveByEditSecret(secret);
-    if (!row || row.presentationId !== view.presentationId || row.shareTokenId !== view.token.id) {
-      await deps.formSubmitLimiter.consume(`${clientIp(c)}:${view.token.id}`).catch(() => {});
-      return { ok: false, res: notFound() };
+    const found = await lookupOwnRow(c, resolved.view);
+    if (!found.ok) return found;
+    if (found.row.formName !== formName.name) {
+      return {
+        ok: false,
+        res: c.json(err('not_found', 'No response matches this link and edit secret.'), 404)
+      };
     }
-    if (row.formName !== formName.name) return { ok: false, res: notFound() };
-    return { ok: true, view, row };
+    return found;
   }
 
   /**
@@ -307,6 +344,17 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     // — it bypassed the email limiter entirely and turned every replayed
     // submit into a mail to a stranger's real address (PRDCT-1331).
     return c.json({ response: formResponseToRespondentWire(row), editSecret, emailSent: false }, 201);
+  });
+
+  // ── GET (form-agnostic): resolve an arriving edit secret ONCE per page ───
+  // The runtime calls this a single time when a page arrives with an
+  // `#slr=` fragment, whatever the number of forms on the page, and offers
+  // the resume prompt only on the form the row names. Same capability, same
+  // bucket policy as the form-bound read below; one request instead of N.
+  api.get('/viewer/:secret/forms/responses/me', async (c) => {
+    const resolved = await resolveOwnRow(c);
+    if (!resolved.ok) return resolved.res;
+    return c.json({ response: formResponseToRespondentWire(resolved.row) }, 200);
   });
 
   // ── GET: the respondent's own row (prefill on return visits) ─────────────
