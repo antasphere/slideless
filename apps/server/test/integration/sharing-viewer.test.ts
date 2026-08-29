@@ -115,7 +115,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'sharing_viewer'), {}, { email: mail });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Sharing', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Sharing', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })
@@ -810,7 +813,10 @@ describe('view counting with de-dupe disabled', () => {
     offApp = await createTestApp(await createDatabase(container, 'view_dedupe_off'), {
       VIEW_DEDUPE_WINDOW_MINUTES: '0'
     });
-    await offApp.app.request('/api/v1/setup', json({ instanceName: 'Dedupe Off', owner: OWNER }));
+    await offApp.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Dedupe Off', owner: OWNER })
+    );
     const signIn = await offApp.app.request(
       '/api/v1/auth/sign-in/email',
       json({ email: OWNER.email, password: OWNER.password })

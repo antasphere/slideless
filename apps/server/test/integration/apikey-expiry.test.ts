@@ -58,7 +58,10 @@ async function revokedAtOf(keyId: string): Promise<Date | null> {
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'apikeyexpiry'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Expiry', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Expiry', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

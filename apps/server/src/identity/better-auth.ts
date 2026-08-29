@@ -9,6 +9,7 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { and, eq } from 'drizzle-orm';
 import {
   account,
+  instanceSettings,
   jwks,
   oauthAccessToken,
   oauthClient,
@@ -23,6 +24,7 @@ import {
 } from '@slideless/db';
 import type { Env } from '../env.js';
 import { HUB_SSO_PROVIDER_ID, HubSsoLoginError, type HubSsoService } from './hub-sso.js';
+import { parseSuperadminEmails } from '../accounts/superadmin.js';
 
 /**
  * The only file that touches better-auth's constructor. Everything else goes
@@ -52,7 +54,11 @@ export interface CreateAuthOptions {
   db: Db;
   env: Pick<
     Env,
-    'PUBLIC_BASE_URL' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
+    | 'PUBLIC_BASE_URL'
+    | 'GOOGLE_CLIENT_ID'
+    | 'GOOGLE_CLIENT_SECRET'
+    | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
+    | 'SUPERADMIN_EMAILS'
   >;
   authSecret: string;
   /** When provided (an email driver delivers), the email-OTP login auto-enables. */
@@ -335,6 +341,21 @@ export function createAuth({
 }: CreateAuthOptions) {
   const isHttps = env.PUBLIC_BASE_URL.startsWith('https://');
   const resource = mcpResourceUrl(env.PUBLIC_BASE_URL);
+
+  /**
+   * Cloud only: may this email take the local password door? The setup
+   * operator (instance_settings.operator_user_id — the durable record,
+   * CLOUD-3) and the SUPERADMIN_EMAILS allowlist; nobody else.
+   */
+  const isLocalSignInAllowed = async (email: string): Promise<boolean> => {
+    if (parseSuperadminEmails(env.SUPERADMIN_EMAILS).has(email)) return true;
+    const [row] = await db
+      .select({ email: user.email })
+      .from(instanceSettings)
+      .innerJoin(user, eq(user.id, instanceSettings.operatorUserId))
+      .limit(1);
+    return row?.email?.toLowerCase() === email;
+  };
 
   /**
    * The JWT issuance gate (user-scoped credential model): a grant is the
@@ -689,6 +710,42 @@ export function createAuth({
         // Unconditional (no `ctx.request` escape hatch): nothing server-side
         // calls them either, so a server-side caller appearing would itself
         // be the regression this guard exists to catch.
+        // Cloud edition (CLOUD-1 / AUTH-13, PRDCT-1356): unlinking the
+        // `antasphere` provider is refused. The /auth/* mount sits BEFORE
+        // authContext (isPublicApiPath), so the principal gate never saw
+        // this route; a hub user who unlinked kept their origin='hub'
+        // memberships while every later reconcile took the `no_link` branch
+        // — the one fail-open outcome — cached like a success. Enforcement
+        // must not be switchable by its subject. (The reconciler now also
+        // fails CLOSED on no_link for a principal holding hub-origin rows.)
+        if (hubSso && ctx.path === '/unlink-account') {
+          const providerId = (ctx.body as { providerId?: unknown } | undefined)?.providerId;
+          if (providerId === 'antasphere') {
+            throw new APIError('FORBIDDEN', {
+              code: 'hub_unlink_forbidden',
+              message: 'The Antasphere link cannot be removed on this edition — it is the identity itself'
+            });
+          }
+        }
+        // Cloud edition (EDIT-2, PRDCT-1356): /sign-in/email stays WIRED as
+        // the break-glass door, but it is a door for the OPERATOR and the
+        // SUPERADMIN_EMAILS allowlist only. Every other local credential on
+        // a cloud instance (pre-flip users, a leftover invitation account)
+        // would otherwise be a permanent non-SSO entrance that never sees
+        // the hub's audit log. Decided on the presented email; unknown
+        // addresses answer the same 403 (no account oracle).
+        if (hubSso && ctx.path === '/sign-in/email' && ctx.request) {
+          const email = String((ctx.body as { email?: unknown } | undefined)?.email ?? '')
+            .trim()
+            .toLowerCase();
+          if (!email || !(await isLocalSignInAllowed(email))) {
+            throw new APIError('FORBIDDEN', {
+              code: 'local_signin_disabled',
+              message:
+                'Password sign-in is reserved for the instance operator on this edition — use "Sign in with Antasphere"'
+            });
+          }
+        }
         if (isProviderGrantPath(ctx.path)) {
           throw new APIError('FORBIDDEN', {
             code: 'provider_grant_forbidden',

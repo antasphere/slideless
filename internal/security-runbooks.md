@@ -68,11 +68,24 @@ exposed to users):
    ```
 
    The call creates/reactivates/promotes the membership to an ACTIVE OWNER
-   (it only ever ADDS an owner, so the last-owner trigger is never at risk).
-   Do this PROMPTLY: until it runs, the operator account has no membership and
-   is therefore an orphaned-user-cleanup candidate — the nightly sweep would
-   delete it once it ages past `ORPHAN_USER_RETENTION_HOURS` (72h default).
-   Claiming ownership gives it a membership and takes it out of scope.
+   (it only ever ADDS an owner, so the last-owner trigger is never at risk),
+   stamped `origin='local'` on both the insert and the conflict path — a
+   break-glass owner is the tool's own business, never hub truth, so the
+   cloud reconciler's sweep leaves it alone (PRDCT-1356 BG-1).
+   The account that ran first-boot setup is recorded on the instance row
+   (`instance_settings.operator_user_id`) and is **never** an orphan-cleanup
+   candidate, allowlist or not (CLOUD-3). Migration 0036 backfills that id on
+   instances set up before the column existed, from the `instance.setup`
+   audit row; if it is still NULL afterwards (audit row purged), set it by
+   hand — `UPDATE instance_settings SET operator_user_id = '<user id>'` — or
+   the cloud local sign-in door stays closed to the operator. Any OTHER membershipless account
+   is: the sweep deletes it once it ages past `ORPHAN_USER_RETENTION_HOURS`
+   (72h default) unless its VERIFIED email is on `SUPERADMIN_EMAILS` — an
+   unverified match gets no shelter, exactly as break-glass would not accept
+   it (BG-2). Claiming ownership gives it a membership and takes it out of
+   scope. On cloud, `/sign-in/email` is reserved for the operator and the
+   allowlist (403 `local_signin_disabled` for everyone else), and the
+   `antasphere` provider link cannot be removed (403 `hub_unlink_forbidden`).
 
 4. For a 2FA lockout, clear the member's factor:
 

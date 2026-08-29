@@ -14,10 +14,12 @@
 #      by rename. psql without ON_ERROR_STOP replays a partial dump and still
 #      exits 0; that is how you get a half-restored instance reported as a
 #      success.
-#   3. Put the PEPPER ROOT back, from whichever of its two homes the backup
-#      carries it in: AUTH_SECRET in the archived .env, or $DATA_DIR/secret
-#      inside the data volume (the server generates one there when
-#      AUTH_SECRET is unset). It is the root for API keys, share-link hashes
+#   3. Put the PEPPER ROOT back, from whichever of its three homes the backup
+#      carries it in: AUTH_SECRET in the archived .env, $DATA_DIR/secret
+#      inside the data volume (older backups; the server generates one there
+#      when AUTH_SECRET is unset), or `data-secret` inside the ENCRYPTED
+#      config archive (backup.sh moves it there when a passphrase is set,
+#      PRDCT-1440). It is the root for API keys, share-link hashes
 #      and edit secrets, setup.sh generates a fresh one on a clean host, and
 #      an env value SHADOWS the file — so a restore that gets this wrong
 #      silently invalidates every credential while reporting success. Only
@@ -80,9 +82,18 @@ psql_scratch() { docker compose exec -T db psql -v ON_ERROR_STOP=1 -q -U "$DB_US
 
 # Run a script inside a throwaway app container with the data volume and the
 # backup directory mounted. --no-deps so it never resurrects the stopped app.
+# WORKDIR (the decrypted config archive) is mounted read-only at
+# /restore-config once it exists, so the pepper root can be written back into
+# the volume without ever touching the backup directory in cleartext.
 in_data_container() {
-  docker compose run --rm --no-deps \
-    -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint sh app -c "$1"
+  if [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ]; then
+    docker compose run --rm --no-deps \
+      -v "$(cd "$BACKUP_DIR" && pwd)":/backup -v "$WORKDIR":/restore-config:ro \
+      --entrypoint sh app -c "$1"
+  else
+    docker compose run --rm --no-deps \
+      -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint sh app -c "$1"
+  fi
 }
 
 on_exit() {
@@ -189,20 +200,26 @@ elif [ "$REQUIRE_CONFIG" = 1 ]; then
   dr_fail "no config archive for $STAMP. Without it AUTH_SECRET is lost and every existing
   API key, share link and edit secret stops resolving. Pass --no-config to accept that."
 fi
-[ "$REQUIRE_CONFIG" = 0 ] || [ -f "$WORKDIR/.env" ] ||
-  dr_fail "the config archive for $STAMP holds no .env — pass --no-config to accept losing AUTH_SECRET"
+# A `data-secret`-only archive (a generated-secret host with no .env) is a
+# complete pepper root too (PRDCT-1440).
+[ "$REQUIRE_CONFIG" = 0 ] || [ -f "$WORKDIR/.env" ] || [ -s "$WORKDIR/data-secret" ] ||
+  dr_fail "the config archive for $STAMP holds neither .env nor data-secret — pass --no-config to accept losing AUTH_SECRET"
 
 # ── pepper-root provenance — decided BEFORE anything is destroyed ────────────
 #
 # AUTH_SECRET is OPTIONAL (apps/server/src/env.ts). Unset, the server generates
 # one into $DATA_DIR/secret and reuses it forever (apps/server/src/secret.ts),
-# so the pepper root lives in one of TWO places and the restore has to put it
-# back differently depending on which:
+# so the pepper root lives in one of THREE places and the restore has to put
+# it back differently depending on which:
 #
 #   archived .env carries AUTH_SECRET → merge it into the live .env.
 #   only the data volume carries it   → the live .env must not SHADOW the
-#                                       restored file, so AUTH_SECRET is
+#     (older backups)                   restored file, so AUTH_SECRET is
 #                                       removed from it.
+#   the encrypted config archive      → write it to /data/secret AFTER the
+#     carries `data-secret`             volume swap (PRDCT-1440: backup.sh
+#     (PRDCT-1440)                      excludes it from the data tarball),
+#                                       and un-shadow it the same way.
 #
 # Getting this wrong is silent, and it is the DEFAULT path that gets it wrong:
 # setup.sh writes a fresh AUTH_SECRET into .env on a clean host, and an env
@@ -218,11 +235,14 @@ if [ -n "$ARCHIVED_AUTH_SECRET" ]; then
   PEPPER_SOURCE=config_env
 elif dr_tar_has_entry "$DATA_TAR" secret; then
   PEPPER_SOURCE=data_volume
+elif [ -s "$WORKDIR/data-secret" ]; then
+  PEPPER_SOURCE=config_secret
 fi
 if [ "$PEPPER_SOURCE" = none ] && [ "$REQUIRE_CONFIG" = 1 ]; then
-  dr_fail "backup $STAMP carries no pepper root: no AUTH_SECRET in the archived .env and no
-  'secret' entry in data-$STAMP.tar.gz. Restoring it would produce an instance whose every
-  API key, share link and edit secret silently stops resolving. Pass --no-config to accept that."
+  dr_fail "backup $STAMP carries no pepper root: no AUTH_SECRET in the archived .env, no
+  'secret' entry in data-$STAMP.tar.gz and no 'data-secret' in the config archive. Restoring it
+  would produce an instance whose every API key, share link and edit secret silently stops
+  resolving. Pass --no-config to accept that."
 fi
 dr_info "pepper root comes from: $PEPPER_SOURCE"
 dr_success "archives verified"
@@ -294,8 +314,27 @@ in_data_container "
   find /data -mindepth 1 -maxdepth 1 ! -name .restore-new ! -name .restore-old -exec mv {} /data/.restore-old/ \;
   find /data/.restore-new -mindepth 1 -maxdepth 1 -exec mv {} /data/ \;
   rmdir /data/.restore-new
+  # OPS-3 (PRDCT-1357): the erasure tombstone is append-only and lives
+  # OUTSIDE the dump precisely so a restore cannot undo a GDPR erasure. The
+  # live volume's tombstones are carried forward into the restored tree;
+  # the server replays them at boot (apps/server/src/accounts/erasure-log.ts).
+  if [ -f /data/.restore-old/erasures.jsonl ]; then
+    cat /data/.restore-old/erasures.jsonl >> /data/erasures.jsonl
+    chmod 600 /data/erasures.jsonl
+  fi
 "
 DATA_SWAPPED=1
+
+if [ "$PEPPER_SOURCE" = config_secret ]; then
+  STAGE="restore-pepper-file"
+  dr_info "writing the pepper root from the config archive into the data volume"
+  in_data_container '
+    set -e
+    umask 077
+    cp /restore-config/data-secret /data/secret
+    chmod 600 /data/secret
+  '
+fi
 
 STAGE="swap-db"
 dr_info "swapping $SCRATCH_DB into place"
@@ -328,13 +367,13 @@ if [ -f "$WORKDIR/.env" ]; then
 fi
 
 case "$PEPPER_SOURCE" in
-  data_volume)
+  data_volume | config_secret)
     # The restored /data/secret IS the pepper root. A fresh AUTH_SECRET in the
     # live .env would shadow it (env beats file) and every existing credential
     # would stop resolving — the failure this whole script exists to prevent.
     if [ -n "$(dr_env_get .env AUTH_SECRET)" ]; then
       dr_env_unset .env AUTH_SECRET
-      dr_success "removed AUTH_SECRET from .env — the restored data volume carries the pepper root"
+      dr_success "removed AUTH_SECRET from .env — the restored /data/secret carries the pepper root"
     else
       dr_info "AUTH_SECRET is unset in .env, so the restored /data/secret is the pepper root"
     fi
@@ -354,8 +393,12 @@ STAGE="verify-live"
 # the data volume unwritable is caught here instead of after the drill.
 APP_PORT=$(dr_env_get .env APP_PORT)
 APP_PORT="${APP_PORT:-3000}"
+# Default BEFORE the case: `case "${APP_BIND:-127.0.0.1}"` matched the
+# default value against the `*` branch and probed "http://:3000" whenever
+# .env predates the APP_BIND backfill (verifier finding F3, PRDCT-1440).
 APP_BIND=$(dr_env_get .env APP_BIND)
-case "${APP_BIND:-127.0.0.1}" in
+APP_BIND="${APP_BIND:-127.0.0.1}"
+case "$APP_BIND" in
   '' | 0.0.0.0 | '::' | localhost) PROBE_HOST=127.0.0.1 ;;
   *) PROBE_HOST="$APP_BIND" ;;
 esac

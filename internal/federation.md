@@ -72,6 +72,15 @@ fresh database.
 
 If a flip is truly intended, set `EDITION_CHANGE_ALLOWED=true` for **one
 boot** — it re-stamps the new edition and proceeds; unset it again after.
+The acknowledgement is not the whole story (PRDCT-1356): the oss→cloud flip
+**pre-flights** and refuses while any workspace has no hub projection
+(`central_account_id IS NULL` — the hub gate never applies to it, so cloud
+enforcement would not cover pre-flip data, EDIT-1) or any user has an
+unverified email (hub-only login links the trusted provider onto verified
+local emails only; they would be locked out, EDIT-3). The reverse flip
+(cloud→oss) is refused outright: hub-minted sessions, grants and hub-origin
+memberships would become unrevocable local credentials (EDIT-4) — rebuild an
+oss instance from a fresh database and restore data into it instead.
 Leaving it set disarms the guard (a future `EDITION` change would re-stamp
 without refusing), so the boot logs a warning on every start where the flag
 is set but no flip is pending. A fresh database (pre-setup) boots under any

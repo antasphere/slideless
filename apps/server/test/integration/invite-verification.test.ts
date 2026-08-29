@@ -65,7 +65,10 @@ describe('with a delivering email driver', () => {
   beforeAll(async () => {
     mailer = new RecordingEmailDriver();
     app = await createTestApp(await createDatabase(container, 'iv_rec'), {}, { email: mailer });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'Iv', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Iv', owner: OWNER })
+    );
     ownerCookie = extractCookie(
       await app.app.request(
         '/api/v1/auth/sign-in/email',
@@ -172,7 +175,10 @@ describe('with no email driver', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'iv_none'));
-    await app.app.request('/api/v1/setup', json({ instanceName: 'IvNone', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'IvNone', owner: OWNER })
+    );
     ownerCookie = extractCookie(
       await app.app.request(
         '/api/v1/auth/sign-in/email',

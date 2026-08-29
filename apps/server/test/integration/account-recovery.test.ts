@@ -49,7 +49,10 @@ describe('no email driver (default)', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'rec_none'));
-    await app.app.request('/api/v1/setup', json({ instanceName: 'Rec', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Rec', owner: OWNER })
+    );
     ownerCookie = extractCookie(await signIn(app, OWNER.email, OWNER.password));
 
     // Add a member (invite → accept) and a separate admin.
@@ -172,7 +175,10 @@ describe('with an email driver', () => {
       SMTP_URL: 'smtp://127.0.0.1:1',
       EMAIL_FROM: 'Rec <noreply@rec.test>'
     });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'RecSmtp', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'RecSmtp', owner: OWNER })
+    );
   });
 
   afterAll(async () => {

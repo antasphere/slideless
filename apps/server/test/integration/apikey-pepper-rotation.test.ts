@@ -99,7 +99,10 @@ beforeAll(async () => {
   container = await startPostgres();
   connectionString = await createDatabase(container, 'pepperrotation');
   app = await createTestApp(connectionString, { AUTH_SECRET: SECRET_OLD });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Pepper', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Pepper', owner: OWNER })
+  );
 }, 240_000);
 
 afterAll(async () => {

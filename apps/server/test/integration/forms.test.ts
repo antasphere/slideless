@@ -60,12 +60,28 @@ const HTML_TWO_FORMS = Buffer.from(
     '<form data-slideless-form="feedback"><input name="note"></form>' +
     '</body></html>'
 );
+/**
+ * The external-bundle shape (PRDCT-1331/1334 residual): the page carries NO
+ * marker, the bundled script injects the form at load. Detection that read
+ * only HTML stamped this deck form-less and every submit stored nothing.
+ */
+const HTML_SHELL = Buffer.from(
+  '<!doctype html><html><head><title>Shell</title></head><body><div id="deck"></div>' +
+    '<script src="app.js"></script></body></html>'
+);
+const JS_BUNDLE = Buffer.from(
+  "document.addEventListener('DOMContentLoaded',function(){" +
+    'document.getElementById(\'deck\').innerHTML=\'<form data-slideless-form="bundled"><input name="note"></form>\';' +
+    '});'
+);
+/** The marker's TEXT in a stylesheet: a stylesheet cannot author a form, so it must not arm the runtime. */
+const CSS_DECOY = Buffer.from('/* data-slideless-form="decoy" */ body{margin:0}');
 const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
-const entryOf = (path: string, bytes: Buffer) => ({
+const entryOf = (path: string, bytes: Buffer, contentType = 'text/html') => ({
   path,
   sha256: shaOf(bytes),
   sizeBytes: bytes.length,
-  contentType: 'text/html'
+  contentType
 });
 
 let container: StartedPostgreSqlContainer;
@@ -102,6 +118,12 @@ const submit = (secret: string, form: string, body: unknown, headers: Record<str
 
 const getMe = (secret: string, form: string, headers: Record<string, string> = {}) =>
   app.app.request(`/api/v1/viewer/${secret}/forms/${form}/responses/me`, {
+    headers: { origin: 'null', 'x-forwarded-for': nextIp(), ...headers }
+  });
+
+/** The form-agnostic resolve the runtime calls ONCE per page load with an arriving fragment secret. */
+const resolveMe = (secret: string, headers: Record<string, string> = {}) =>
+  app.app.request(`/api/v1/viewer/${secret}/forms/responses/me`, {
     headers: { origin: 'null', 'x-forwarded-for': nextIp(), ...headers }
   });
 
@@ -167,7 +189,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'forms_adr022'), {}, { email: mail });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Forms', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Forms', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })
@@ -190,6 +215,9 @@ beforeAll(async () => {
   await upload(HTML_V2);
   await upload(HTML_NO_FORM);
   await upload(HTML_TWO_FORMS);
+  await upload(HTML_SHELL);
+  await upload(JS_BUNDLE);
+  await upload(CSS_DECOY);
 
   deckId = await uploadDeck('Forms Deck', [
     entryOf('index.html', HTML_V1),
@@ -383,6 +411,48 @@ describe('forms runtime injection', () => {
       headers: { accept: 'text/html' }
     });
     expect(await page2.text()).toContain(FORMS_MARKER);
+  });
+
+  it('PRDCT-1331/1334 residual: a form injected by an EXTERNAL script bundle is detected at commit', async () => {
+    // The page has no marker; app.js renders the form on load. Read only
+    // the HTML and this deck is stamped form-less: no runtime, and its
+    // native submit garbage-navigates the sandbox storing nothing. The
+    // shape worked before detection existed, so it must work with it.
+    const bundled = await uploadDeck('Bundled Deck', [
+      entryOf('index.html', HTML_SHELL),
+      entryOf('app.js', JS_BUNDLE, 'text/javascript')
+    ]);
+    const [row] = await app.db.db.select().from(presentations).where(eq(presentations.id, bundled));
+    expect(row!.hasForms).toBe(true);
+    const { secret } = await createToken({ name: 'Bundled' }, bundled);
+    expect(await (await fetchEntry(secret)).text()).toContain(FORMS_MARKER);
+
+    // The manifest's contentType is client-supplied: a mislabelled bundle
+    // is still a script by extension (case-insensitively).
+    const mislabelled = await uploadDeck('Mislabelled Bundle', [
+      entryOf('index.html', HTML_SHELL),
+      entryOf('APP.JS', JS_BUNDLE, 'application/octet-stream')
+    ]);
+    const [row2] = await app.db.db.select().from(presentations).where(eq(presentations.id, mislabelled));
+    expect(row2!.hasForms).toBe(true);
+
+    // A parameterized type is still a script (the contract allows any
+    // plain-text contentType, so `; charset=` is a legal manifest value).
+    const parameterized = await uploadDeck('Parameterized Bundle', [
+      entryOf('index.html', HTML_SHELL),
+      entryOf('bundle.txt', JS_BUNDLE, 'text/javascript; charset=utf-8')
+    ]);
+    const [row4] = await app.db.db.select().from(presentations).where(eq(presentations.id, parameterized));
+    expect(row4!.hasForms).toBe(true);
+
+    // A stylesheet carrying the marker's text cannot author a form: the
+    // form-less streaming path (PRDCT-1333) is kept for it.
+    const decoy = await uploadDeck('CSS Decoy', [
+      entryOf('index.html', HTML_NO_FORM),
+      entryOf('theme.css', CSS_DECOY, 'text/css')
+    ]);
+    const [row3] = await app.db.db.select().from(presentations).where(eq(presentations.id, decoy));
+    expect(row3!.hasForms).toBe(false);
   });
 });
 
@@ -710,10 +780,68 @@ describe('own-row read/update via the edit secret', () => {
     );
   });
 
+  it('an invalid share secret answers 404 before the form name is even looked at', async () => {
+    // Same order as the create route: token session first. A bad share
+    // secret must never learn that its form name was malformed (400).
+    const bad = 'A'.repeat(64);
+    expect((await getMe(bad, 'not a name!', { 'x-slideless-response': editSecret })).status).toBe(404);
+    expect(
+      (await putMe(bad, 'not a name!', { payload: {} }, { 'x-slideless-response': editSecret })).status
+    ).toBe(404);
+    // …and with a valid share secret, the malformed name is the 400 it always was.
+    expect((await getMe(secretA, 'not a name!', { 'x-slideless-response': editSecret })).status).toBe(400);
+  });
+
   it('404s a missing, malformed, or unknown edit secret', async () => {
     expect((await getMe(secretA, 'rsvp')).status).toBe(404);
     expect((await getMe(secretA, 'rsvp', { 'x-slideless-response': 'short' })).status).toBe(404);
     expect((await getMe(secretA, 'rsvp', { 'x-slideless-response': 'A'.repeat(64) })).status).toBe(404);
+  });
+
+  it("PRDCT-1331/1334 residual: the form-agnostic resolve route names the row's form, once per page load", async () => {
+    // The runtime resolves an arriving #slr= ONCE through this route and
+    // offers the resume prompt only on the form the row names — instead of
+    // probing the form-bound route once PER FORM, which burned the submit
+    // bucket N times per page load on a bogus fragment.
+    const res = await resolveMe(secretA, { 'x-slideless-response': editSecret });
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    expect(body.response).toMatchObject({
+      id: responseId,
+      formName: 'rsvp',
+      payload: { name: 'Eve', dish: 'pie' }
+    });
+    // Same wire shape as the form-bound read: nothing extra leaks here.
+    expect(Object.keys(body.response).sort()).toEqual(
+      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
+    );
+    // Missing / malformed / unknown / foreign-token secrets: the same 404.
+    expect((await resolveMe(secretA)).status).toBe(404);
+    expect((await resolveMe(secretA, { 'x-slideless-response': 'short' })).status).toBe(404);
+    expect((await resolveMe(secretA, { 'x-slideless-response': 'A'.repeat(64) })).status).toBe(404);
+    expect((await resolveMe(secretB, { 'x-slideless-response': editSecret })).status).toBe(404);
+    // And it is a read: the row is untouched.
+    const again = await readJson(await getMe(secretA, 'rsvp', { 'x-slideless-response': editSecret }));
+    expect(again.response.updatedAt).toBe(createdUpdatedAt);
+  });
+
+  it('PRDCT-1331/1334 residual: an unresolvable resolve probe still burns the submit bucket (guessing stays expensive)', async () => {
+    // One probe per page load is the CLIENT's discipline; the server keeps
+    // charging a bogus secret so the route is no free oracle. 30 bogus
+    // probes from one IP drain the bucket; the next submit from it is 429.
+    const { secret } = await createToken({ name: 'Probe Drain' });
+    const ip = nextIp();
+    for (let i = 0; i < 30; i++) {
+      const probe = await resolveMe(secret, {
+        'x-slideless-response': 'B'.repeat(48),
+        'x-forwarded-for': ip
+      });
+      expect(probe.status).toBe(404);
+    }
+    const limited = await submit(secret, 'rsvp', { payload: { who: 'late' } }, { 'x-forwarded-for': ip });
+    expect(limited.status).toBe(429);
+    // A different IP on the same link is unaffected.
+    expect((await submit(secret, 'rsvp', { payload: { who: 'other' } })).status).toBe(201);
   });
 
   it('PRDCT-1334: the own-row routes are FORM-SCOPED — a valid secret cannot reach another form', async () => {
@@ -730,6 +858,19 @@ describe('own-row read/update via the edit secret', () => {
     // The rsvp secret on the feedback route: 404, and nothing is written.
     const crossGet = await getMe(secret, 'feedback', { 'x-slideless-response': rsvp.editSecret });
     expect(crossGet.status).toBe(404);
+    // …and it does NOT burn the submit bucket: the caller already holds the
+    // capability, so the mismatch is no oracle. 31 of them from one IP would
+    // exhaust a 30-point bucket if they charged; the submit still lands.
+    const ip = nextIp();
+    for (let i = 0; i < 31; i++) {
+      expect(
+        (await getMe(secret, 'feedback', { 'x-slideless-response': rsvp.editSecret, 'x-forwarded-for': ip }))
+          .status
+      ).toBe(404);
+    }
+    expect(
+      (await submit(secret, 'rsvp', { payload: { who: 'Bob' } }, { 'x-forwarded-for': ip })).status
+    ).toBe(201);
     const crossPut = await putMe(
       secret,
       'feedback',
@@ -916,7 +1057,10 @@ describe("mail driver 'none'", () => {
   beforeAll(async () => {
     // No email override: EMAIL_DRIVER defaults to the non-delivering driver.
     app2 = await createTestApp(await createDatabase(container, 'forms_nomail'));
-    await app2.app.request('/api/v1/setup', json({ instanceName: 'NoMail', owner: OWNER }));
+    await app2.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'NoMail', owner: OWNER })
+    );
     cookie2 = extractCookie(
       await app2.app.request(
         '/api/v1/auth/sign-in/email',

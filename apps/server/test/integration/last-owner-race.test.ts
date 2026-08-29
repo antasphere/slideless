@@ -129,7 +129,10 @@ async function assertOneWinner(results: Response[]): Promise<void> {
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'race'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Race', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Race', owner: OWNER })
+  );
   const cookie = await signIn(OWNER.email, OWNER.password, nextIp());
   const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie } }));
   workspaceId = me.workspace.id;

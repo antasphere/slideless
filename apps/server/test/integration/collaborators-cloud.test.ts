@@ -122,7 +122,10 @@ beforeAll(async () => {
     HUB_CLIENT_ID: 'tool-slideless-cloud',
     HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
   });
-  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'CloudCollab', owner: OWNER }));
+  const setup = await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'CloudCollab', owner: OWNER })
+  );
   expect(setup.status).toBe(201);
   // Cloud setup mints NO workspace (user-scoped federation) — the deck-guest
   // HOST workspace fixture is seeded directly (a cloud-LOCAL workspace,

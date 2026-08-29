@@ -19,8 +19,13 @@ import { blobKey, type StorageDriver } from '../storage/driver.js';
  * enforces the capability on every submit.
  *
  * Cost shape: authenticated, once per commit, streaming with a fixed-size
- * carry so memory never scales with the document. Only `text/html` entries
- * are read.
+ * carry so memory never scales with the document. HTML entries AND script
+ * entries are read: a deck whose page carries no marker and whose bundled
+ * `app.js` injects the form on load is a form deck too, and reading only
+ * HTML stamped it form-less — the runtime never arrived and every submit
+ * native-navigated the sandbox, storing nothing (PRDCT-1331/1334 residual;
+ * the shape worked before detection existed). Fonts, images and styles are
+ * never read: a marker cannot be born from them.
  */
 
 /** The authoring marker. Matching is case-insensitive: HTML attributes are. */
@@ -29,8 +34,26 @@ export const FORM_MARKER_ATTRIBUTE = 'data-slideless-form';
 /** Bytes carried between chunks so a marker split across chunks still matches. */
 const CARRY = FORM_MARKER_ATTRIBUTE.length - 1;
 
-function isHtml(entry: ManifestEntry): boolean {
-  return entry.contentType.toLowerCase().startsWith('text/html');
+const SCRIPT_TYPES = [
+  'text/javascript',
+  'application/javascript',
+  'application/x-javascript',
+  'text/ecmascript',
+  'application/ecmascript'
+];
+const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs'];
+
+/**
+ * Entries that can carry the marker: HTML, and scripts by declared type OR
+ * by extension (the manifest's `contentType` is client-supplied; a bundler
+ * or a hand-written manifest may label `app.js` as octet-stream).
+ */
+export function isScannable(entry: ManifestEntry): boolean {
+  const type = entry.contentType.toLowerCase().split(';')[0]!.trim();
+  if (type.startsWith('text/html')) return true;
+  if (SCRIPT_TYPES.includes(type)) return true;
+  const path = entry.path.toLowerCase();
+  return SCRIPT_EXTENSIONS.some((ext) => path.endsWith(ext));
 }
 
 /** ASCII-only lowercase — leaves multi-byte UTF-8 sequences untouched. */
@@ -59,7 +82,7 @@ async function blobHasMarker(storage: StorageDriver, key: string): Promise<boole
 }
 
 /**
- * True when ANY `text/html` entry of the manifest carries the marker.
+ * True when ANY HTML or script entry of the manifest carries the marker.
  * Storage failures resolve to `false` rather than failing the commit: the
  * flag is a serving optimization, and a blob that cannot be read here is
  * about to fail the commit's own missing-blob check anyway.
@@ -71,7 +94,7 @@ export async function manifestHasForms(
 ): Promise<boolean> {
   const seen = new Set<string>();
   for (const entry of manifest) {
-    if (!isHtml(entry) || seen.has(entry.sha256)) continue;
+    if (!isScannable(entry) || seen.has(entry.sha256)) continue;
     seen.add(entry.sha256);
     try {
       if (await blobHasMarker(storage, blobKey(workspaceId, entry.sha256))) return true;

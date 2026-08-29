@@ -203,8 +203,31 @@ export class HubOrgReconciler {
       const result = await this.deps.client.orgs(localUserId, login);
       if (result.kind === 'no_link') {
         // A purely local user: the hub asserts nothing about them, and that
-        // IS the definitive answer. Nothing is swept (residue hub rows of a
-        // linkless user are unreachable truth — fail open, as before).
+        // IS the definitive answer. Nothing is swept.
+        //
+        // EXCEPT (CLOUD-1, PRDCT-1356) when the user HOLDS origin='hub'
+        // membership rows: those rows exist only because a hub link once
+        // projected them, so "no link" means the link was SEVERED (an
+        // unlinked account row, a partial cleanup) — and treating that as
+        // the fail-open definitive answer, cached like a success, was the
+        // one way to switch cloud enforcement off permanently. It fails
+        // CLOSED instead, as a dead grant: the gate answers 401
+        // hub_grant_expired, and a browser SSO re-login (which re-links)
+        // heals it. Local/guest rows are untouched — they never reconcile.
+        const [hubRow] = await this.deps.db
+          .select({ id: workspaceMembers.id })
+          .from(workspaceMembers)
+          .where(and(eq(workspaceMembers.userId, localUserId), eq(workspaceMembers.origin, 'hub')))
+          .limit(1);
+        if (hubRow) {
+          this.deps.logger.warn(
+            { userId: localUserId },
+            'hub org reconcile: no hub link but hub-origin memberships exist — link severed; failing CLOSED'
+          );
+          this.remember(localUserId, 'grant_dead');
+          this.passes.inc({ outcome: 'link_severed' });
+          return 'grant_dead';
+        }
         this.remember(localUserId, 'no_link');
         this.passes.inc({ outcome: 'no_link' });
         return 'no_link';

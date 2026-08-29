@@ -115,7 +115,10 @@ beforeAll(async () => {
     HUB_CLIENT_ID: 'tool-slideless-cloud',
     HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
   });
-  const res = await app.app.request('/api/v1/setup', json({ instanceName: 'Grant', owner: OWNER }));
+  const res = await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Grant', owner: OWNER })
+  );
   expect(res.status).toBe(201);
   // A real browser SSO login writes the grant onto the account row — the
   // exact rows (and ciphertext) production sees.

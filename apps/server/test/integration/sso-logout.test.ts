@@ -72,7 +72,10 @@ describe('cloud: POST /sso/logout + the prompt=none authorize seam', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'sso_logout'), cloudEnv());
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'Logout', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Logout', owner: OWNER })
+    );
     expect(res.status).toBe(201);
   });
 
@@ -234,7 +237,10 @@ describe('cloud: logout degrades to local-only when hub discovery is down', () =
       cloudEnv(hub2.issuer)
     );
     try {
-      const setup = await app2.app.request('/api/v1/setup', json({ instanceName: 'Down', owner: OWNER }));
+      const setup = await app2.app.request(
+        '/api/v1/setup',
+        json({ setupToken: 'integration-test-setup-token', instanceName: 'Down', owner: OWNER })
+      );
       expect(setup.status).toBe(201);
       const cookie = await sso.ssoLogin(app2, hub2, {
         sub: 'hub-carol',

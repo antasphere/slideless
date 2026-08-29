@@ -1,6 +1,6 @@
 {
-  "id": "d3510847-c1e4-42c3-b18b-348a14785bc8",
-  "prevId": "96d6dfd3-1328-4894-83cc-13e6dfffc2ef",
+  "id": "9d5d7647-5f69-4bd9-b614-4aaa7b9aca0a",
+  "prevId": "d3510847-c1e4-42c3-b18b-348a14785bc8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1281,6 +1281,52 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_grant_presentations": {
+      "name": "hub_grant_presentations",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "presented_at": {
+          "name": "presented_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hub_grant_presentations_account_id_account_id_fk": {
+          "name": "hub_grant_presentations_account_id_account_id_fk",
+          "tableFrom": "hub_grant_presentations",
+          "tableTo": "account",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

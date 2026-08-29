@@ -48,7 +48,10 @@ beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'presentations_phase2'));
   const setup = await readJson(
-    await app.app.request('/api/v1/setup', json({ instanceName: 'Decks', owner: OWNER }))
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Decks', owner: OWNER })
+    )
   );
   workspaceId = setup.workspaceId;
   ownerUserId = setup.ownerUserId;

@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { OWNER } from './accounts';
 import {
   ARCHITECTURE_DECK_HTML,
+  BUNDLE_DECK_APP_JS,
+  BUNDLE_DECK_INDEX_HTML,
   HASH_DECK_HTML,
   LATE_DECK_HTML,
   REALDECK_SUCCESS,
@@ -40,34 +42,40 @@ async function signIn(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
 }
 
-/** Push a one-file deck and mint a default share link (forms ON by default). */
-async function seedDeck(
+interface DeckFile {
+  path: string;
+  body: string;
+  contentType: string;
+}
+
+/** Push a deck of one or more files and mint a default share link (forms ON by default). */
+async function seedDeckFiles(
   page: Page,
   title: string,
-  html: string
+  files: DeckFile[]
 ): Promise<{ deckId: string; secret: string }> {
   const reserve = await page.request.post('/api/v1/presentations/uploads');
   expect(reserve.status()).toBe(201);
   const { uploadSession } = await reserve.json();
-  const upload = await page.request.post('/api/v1/presentations/assets', {
-    multipart: {
-      sha256: shaOf(html),
-      file: { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(html) }
-    }
-  });
-  expect(upload.status()).toBe(201);
+  for (const f of files) {
+    const upload = await page.request.post('/api/v1/presentations/assets', {
+      multipart: {
+        sha256: shaOf(f.body),
+        file: { name: f.path.split('/').pop()!, mimeType: f.contentType, buffer: Buffer.from(f.body) }
+      }
+    });
+    expect(upload.status()).toBe(201);
+  }
   const commit = await page.request.post(`/api/v1/presentations/uploads/${uploadSession.id}/commit`, {
     data: {
       title,
       entryPath: 'index.html',
-      manifest: [
-        {
-          path: 'index.html',
-          sha256: shaOf(html),
-          sizeBytes: Buffer.byteLength(html),
-          contentType: 'text/html'
-        }
-      ]
+      manifest: files.map((f) => ({
+        path: f.path,
+        sha256: shaOf(f.body),
+        sizeBytes: Buffer.byteLength(f.body),
+        contentType: f.contentType
+      }))
     }
   });
   expect(commit.status()).toBe(201);
@@ -77,6 +85,11 @@ async function seedDeck(
   });
   expect(token.status()).toBe(201);
   return { deckId, secret: (await token.json()).secret };
+}
+
+/** Push a one-file deck and mint a default share link (forms ON by default). */
+function seedDeck(page: Page, title: string, html: string): Promise<{ deckId: string; secret: string }> {
+  return seedDeckFiles(page, title, [{ path: 'index.html', body: html, contentType: 'text/html' }]);
 }
 
 async function listResponses(page: Page, deckId: string): Promise<ResponseRow[]> {
@@ -339,6 +352,97 @@ test.describe('forms runtime in a real slide deck', () => {
     expect((await readBack.json()).response.payload).toEqual({ name: '', email: '' });
 
     await victim.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+  test('residual 1: a form authored from an EXTERNAL JS bundle is detected and wired', async ({
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeckFiles(page, 'BundleDeck', [
+      { path: 'index.html', body: BUNDLE_DECK_INDEX_HTML, contentType: 'text/html' },
+      { path: 'app.js', body: BUNDLE_DECK_APP_JS, contentType: 'text/javascript' }
+    ]);
+    const visitor = await (await browser.newContext()).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+
+    // The runtime is present at all — the failure mode was its ABSENCE.
+    await expect(visitor.locator('script[data-slideless-forms]')).toHaveCount(1);
+    await expect(visitor.locator('form[data-slideless-form="bundled"]')).toBeVisible();
+    await visitor.locator('#f-note').fill('from the bundle');
+    await visitor.locator('#f-send').click();
+
+    await expect(visitor.locator('[data-slideless-card="bundled"]')).toBeVisible();
+    expect(new URL(visitor.url()).search).toBe('');
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ formName: 'bundled', payload: { note: 'from the bundle' } });
+
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('residual 2: a planted bogus #slr= costs ONE probe per page load on a two-form deck, and nobody gets locked out', async ({
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'ProbeDeck', TWO_FORMS_DECK_HTML);
+    const origin = new URL(page.url()).origin;
+    const bogus = 'x'.repeat(48);
+
+    // Ten page loads with a bogus fragment. It used to cost one probe PER
+    // FORM per load (20 here) against a 30-point submit bucket keyed IP +
+    // link — the 11th load locked every respondent behind that IP out.
+    const visitor = await (await browser.newContext()).newPage();
+    let probes = 0;
+    visitor.on('request', (req) => {
+      if (req.method() === 'GET' && /\/forms\/(?:[^/]+\/)?responses\/me$/.test(new URL(req.url()).pathname))
+        probes++;
+    });
+    for (let i = 0; i < 10; i++) {
+      // A goto whose URL differs only by fragment is a same-document
+      // navigation: reload() is what makes each iteration a real page load.
+      if (i === 0) await visitor.goto(`${origin}/v/${secret}/#slr=${bogus}`);
+      else await visitor.reload();
+      await visitor.locator('body').press('ArrowRight');
+      await expect(visitor.locator('form[data-slideless-form="public"]')).toBeVisible();
+      // Give a per-form probe every chance to fire before counting.
+      await visitor.waitForTimeout(150);
+    }
+    expect(probes).toBe(10);
+    // No resume prompt for a secret that resolves to nothing.
+    await expect(visitor.locator('[data-slideless-resume]')).toHaveCount(0);
+
+    // The bucket is still healthy: a submit from this same IP succeeds.
+    await visitor.locator('#pub-note').fill('still allowed');
+    await visitor.locator('#pub-send').click();
+    await expect(visitor.locator('[data-slideless-card="public"]')).toBeVisible();
+    await visitor.context().close();
+
+    // A REAL secret resolves once too, and the prompt lands on the form the
+    // row names — not on its neighbour.
+    const first = await (await browser.newContext()).newPage();
+    await first.goto(`${origin}/v/${secret}/`);
+    await first.locator('body').press('ArrowRight');
+    await first.locator('#sal-amount').fill('4200');
+    await first.locator('#sal-send').click();
+    const link = (await first.locator('[data-slideless-card="salary"] .sl-forms-link').textContent()) ?? '';
+    expect(link).toContain('#slr=');
+    await first.context().close();
+
+    const returning = await (await browser.newContext()).newPage();
+    let realProbes = 0;
+    returning.on('request', (req) => {
+      if (req.method() === 'GET' && /\/forms\/(?:[^/]+\/)?responses\/me$/.test(new URL(req.url()).pathname))
+        realProbes++;
+    });
+    await returning.goto(link);
+    await returning.locator('body').press('ArrowRight');
+    await expect(returning.locator('[data-slideless-resume="salary"]')).toBeVisible();
+    await expect(returning.locator('[data-slideless-resume="public"]')).toHaveCount(0);
+    expect(realProbes).toBe(1);
+    await returning.context().close();
+
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(2);
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
 });

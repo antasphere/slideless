@@ -193,7 +193,10 @@ beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'deck_oracle'));
 
-  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'Oracle WS', owner: OWNER }));
+  const setup = await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Oracle WS', owner: OWNER })
+  );
   expect(setup.status).toBe(201);
   ownerCookie = await signIn(OWNER.email, OWNER.password);
 

@@ -1,12 +1,13 @@
 import { createDb, type DbHandle } from '@slideless/db';
 import { migrationStatus, runMigrations } from '@slideless/db/migrate';
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq, isNull } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APIError } from 'better-auth/api';
 import { AccountDeletionService, LastOwnerError } from './accounts/deletion.js';
+import { ErasureLog } from './accounts/erasure-log.js';
 import { createApiApp } from './api/index.js';
 import { buildPepperRegistry } from './apikeys/peppers.js';
 import { ApiKeyService } from './apikeys/service.js';
@@ -36,7 +37,7 @@ import type { OnWorkspaceMiss } from './identity/resolve-membership.js';
 import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
 import { wellKnownRoutes } from './routes/wellknown.js';
-import { instanceSettings, workspaceMembers } from '@slideless/db';
+import { instanceSettings, user as userTable, workspaceMembers, workspaces } from '@slideless/db';
 import { FileService } from './files/service.js';
 import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
 import { createLogger, type Logger } from './logger.js';
@@ -52,7 +53,7 @@ import { LocalIdentityProvider } from './platform/local-identity.js';
 import { createRegistry, type PlatformRegistry } from './platform/registry.js';
 import { NoopUsageSink } from './platform/usage.js';
 import { WorkspaceService } from './platform/workspaces.js';
-import { resolveAuthSecret } from './secret.js';
+import { clearGeneratedSetupToken, resolveAuthSecret, resolveSetupToken } from './secret.js';
 import { ShareTokenService } from './sharing/service.js';
 import { FormResponseService } from './forms/service.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
@@ -131,7 +132,24 @@ export async function boot(
 
   const migrationsFolder = findMigrationsFolder();
   let migrationsPending = false;
-  if (env.AUTO_MIGRATE) {
+  /** The migration-stage reason /readyz must keep reporting (later stages overwrite state.reason). */
+  let readinessRefusal: string | null = null;
+  // Hash-based status FIRST, on every boot (OPS-6, PRDCT-1357): a database
+  // carrying migrations this image does not ship was migrated by a NEWER
+  // image — a rollback / `:next` behind `:latest`. drizzle's migrator would
+  // happily consider it up to date (it compares timestamps), and a
+  // count-based status called it "current". Refuse readiness instead: the
+  // schema is ahead of the code, and the newer version's share links and
+  // rows are exactly what the older code would corrupt.
+  const preStatus = await migrationStatus({ connectionString: env.DATABASE_URL, migrationsFolder });
+  if (preStatus.downgrade) {
+    migrationsPending = true;
+    state.reason =
+      `database is AHEAD of this image: ${preStatus.unknownApplied} applied migration(s) this ` +
+      `version does not ship (a downgrade, or edited migration files) — deploy the version that applied them`;
+    readinessRefusal = state.reason;
+    logger.error({ status: preStatus }, 'refusing readiness: ' + state.reason);
+  } else if (env.AUTO_MIGRATE) {
     state.reason = 'applying migrations';
     await runMigrations({
       connectionString: env.DATABASE_URL,
@@ -139,10 +157,11 @@ export async function boot(
       log: (msg) => logger.info({ scope: 'migrate' }, msg)
     });
   } else {
-    const status = await migrationStatus({ connectionString: env.DATABASE_URL, migrationsFolder });
+    const status = preStatus;
     migrationsPending = status.pending;
     if (status.pending) {
       state.reason = `migrations pending (${status.applied}/${status.onDisk} applied) and AUTO_MIGRATE=false`;
+      readinessRefusal = state.reason;
       logger.error({ status }, 'refusing readiness: run migrations manually or set AUTO_MIGRATE=true');
       // The process stays up (healthz green) but /readyz keeps failing.
     } else {
@@ -185,6 +204,54 @@ export async function boot(
       await db.pool.end(); // clean refusal — no leaked pool for the caller
       throw new Error(message);
     }
+    // Pre-flight (EDIT-1/3/4, PRDCT-1356): the acknowledgement alone is not
+    // enough — a flip that migrates nothing leaves the cloud enforcement
+    // model not applying to pre-flip data, so the flip is REFUSED unless the
+    // instance is already in the shape the target edition requires.
+    const refuseFlip = async (reason: string) => {
+      const message =
+        `refusing the edition flip '${stampedEdition}' → '${env.EDITION}' (EDITION_CHANGE_ALLOWED=true): ` +
+        reason;
+      logger.error({ stamped: stampedEdition, env: env.EDITION }, message);
+      await db.pool.end();
+      throw new Error(message);
+    };
+    if (stampedEdition === 'cloud' && env.EDITION === 'oss') {
+      // The reverse flip would leave every hub-minted session, OAuth grant
+      // and hub-origin membership behind as unrevocable LOCAL credentials
+      // (EDIT-4). Rebuild from a fresh database instead.
+      await refuseFlip(
+        'a cloud instance cannot be flipped back to oss — hub-minted credentials would become ' +
+          'unrevocable local ones (internal/federation.md). Set up a fresh oss instance and restore data into it.'
+      );
+    }
+    if (env.EDITION === 'cloud') {
+      const [legacy] = await db.db
+        .select({ n: count() })
+        .from(workspaces)
+        .where(isNull(workspaces.centralAccountId));
+      if ((legacy?.n ?? 0) > 0) {
+        // EDIT-1: a workspace without a hub projection is outside every
+        // hub gate (HubLiveGate returns ok before any hub read) — the whole
+        // cloud enforcement model would never apply to it.
+        await refuseFlip(
+          `${legacy?.n} workspace(s) carry no hub projection (central_account_id IS NULL). ` +
+            'Project each one at the hub (or delete it) before flipping — cloud enforcement cannot cover an unprojected workspace.'
+        );
+      }
+      const [unverified] = await db.db
+        .select({ n: count() })
+        .from(userTable)
+        .where(eq(userTable.emailVerified, false));
+      if ((unverified?.n ?? 0) > 0) {
+        // EDIT-3: hub-only login links the trusted provider onto a VERIFIED
+        // local email only; every unverified user would be locked out.
+        await refuseFlip(
+          `${unverified?.n} user(s) have an unverified email and would be locked out under hub-only login. ` +
+            'Have them verify (or remove them) before flipping.'
+        );
+      }
+    }
     await db.db.update(instanceSettings).set({ edition: env.EDITION });
     logger.warn(
       { from: stampedEdition, to: env.EDITION },
@@ -200,6 +267,18 @@ export async function boot(
         'without refusal (internal/federation.md)'
     );
   }
+
+  // The first-boot claim credential (PRDCT-1347): SETUP_TOKEN, or a token
+  // generated into the data volume while the instance is unclaimed. A boot
+  // that cannot read the stamp (pending migrations, pre-stamp schema) is
+  // treated as unclaimed — generating a token an already-set-up instance
+  // never needs is harmless; skipping it on an unclaimed one is the hole.
+  const setupToken = await resolveSetupToken(
+    env.SETUP_TOKEN,
+    env.DATA_DIR,
+    stampedEdition !== undefined,
+    logger
+  );
 
   // OAuth signing-key preflight (ADR 023): one decrypt of the key the jwt
   // plugin would sign with. A rotated AUTH_SECRET leaves the stored JWKS
@@ -258,7 +337,8 @@ export async function boot(
   // workspace data and survive the delete (ADR 006). The connection string
   // feeds the dedicated advisory-lock clients that serialize last-owner
   // removals (the migration-lock pattern).
-  const accountDeletion = new AccountDeletionService(db.db, audit, logger, env.DATABASE_URL);
+  const erasureLog = new ErasureLog(env.DATA_DIR, logger);
+  const accountDeletion = new AccountDeletionService(db.db, audit, logger, env.DATABASE_URL, erasureLog);
 
   // The event bus exists before auth so identity-layer hooks can publish:
   // `user.created` fires from Better Auth's databaseHooks.user.create.after,
@@ -366,6 +446,42 @@ export async function boot(
         }
       : {})
   });
+
+  // OPS-3 (PRDCT-1357): replay the erasure tombstone before the app serves.
+  // A restore from an older dump brings erased users back; the tombstone
+  // (kept outside the dump, carried forward by restore.sh) says who must
+  // stay gone. Runs through the same Better Auth cascade every GDPR surface
+  // uses (memberships, sessions, accounts go with the user) and lands an
+  // instance-level audit row per replay. Skipped while migrations are
+  // pending (the tables may not exist; readiness is red anyway).
+  if (!migrationsPending) {
+    state.reason = 'replaying erasure tombstones';
+    const authCtx = await auth.$context;
+    const replayed = await erasureLog.replay(
+      async (userId) => {
+        const [row] = await db.db
+          .select({ id: userTable.id })
+          .from(userTable)
+          .where(eq(userTable.id, userId))
+          .limit(1);
+        return row !== undefined;
+      },
+      async (userId) => {
+        await authCtx.internalAdapter.deleteUser(userId);
+        await authCtx.internalAdapter.deleteUserSessions(userId);
+      }
+    );
+    for (const userId of replayed) {
+      await audit.write({
+        workspaceId: null,
+        principal: null, // → actorVia 'system'
+        action: 'user.erasure_replayed',
+        resourceType: 'user',
+        resourceId: userId,
+        metadata: { reason: 'tombstoned user present after boot (restore from an older backup)' }
+      });
+    }
+  }
 
   // The live user-scoped federation stack (cloud only, internal/federation.md):
   // each user's OWN hub grant (offline_access refresh token on the account
@@ -541,6 +657,8 @@ export async function boot(
     fileService,
     oauthJwt,
     authSecret,
+    setupToken,
+    clearGeneratedSetupToken: () => clearGeneratedSetupToken(env.DATA_DIR),
     accountDeletion,
     sharing,
     forms,
@@ -639,6 +757,9 @@ export async function boot(
   if (!migrationsPending) {
     state.ready = true;
     state.reason = '';
+  } else if (readinessRefusal) {
+    // Keep the migration-stage verdict on /readyz, not the last probe's label.
+    state.reason = readinessRefusal;
   }
 
   return { app, env, logger, state, db, auth, registry, jobs, email, otel, authSecret };

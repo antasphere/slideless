@@ -90,7 +90,10 @@ async function uploadAsset(
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'presentations_phase3'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Uploads', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Uploads', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

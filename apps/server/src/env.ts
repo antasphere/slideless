@@ -153,7 +153,7 @@ const envObjectSchema = z.object({
       }
     })
   ),
-  /** When set, POST /api/v1/setup requires this token (constant-time compared). */
+  /** The credential POST /api/v1/setup requires (constant-time compared). setup.sh generates one into .env. Unset, the server generates a token into `$DATA_DIR/setup-token` at first boot and prints it to the container log — the first-boot claim is never free (PRDCT-1347). */
   SETUP_TOKEN: optionalString(z.string().min(8)),
   /** Allow POST /api/v1/setup over plaintext HTTP on a non-loopback PUBLIC_BASE_URL. Default false: the wizard 403s, because the owner password and the setup token would cross the network in the clear on the one request that decides who owns the instance. Reach a TLS-less server through an SSH tunnel (`ssh -L`) instead; set this true only on a trusted private network. */
   ALLOW_INSECURE_SETUP: booleanish.default(false),

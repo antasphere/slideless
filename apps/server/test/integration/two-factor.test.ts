@@ -109,7 +109,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mailer = new RecordingEmailDriver(); // delivering driver → email-OTP login is on
   app = await createTestApp(await createDatabase(container, 'twofactor'), {}, { email: mailer });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Tf', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Tf', owner: OWNER })
+  );
   ownerCookie = extractCookie(await signIn(OWNER.email, OWNER.password));
 }, 120_000);
 

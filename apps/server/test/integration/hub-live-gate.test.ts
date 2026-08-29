@@ -69,7 +69,10 @@ beforeAll(async () => {
     },
     { hubDials: DIALS }
   );
-  const res = await app.app.request('/api/v1/setup', sso.json({ instanceName: 'Gate', owner: OWNER }));
+  const res = await app.app.request(
+    '/api/v1/setup',
+    sso.json({ setupToken: 'integration-test-setup-token', instanceName: 'Gate', owner: OWNER })
+  );
   expect(res.status).toBe(201);
 }, 240_000);
 

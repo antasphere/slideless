@@ -13,8 +13,12 @@ cd "$SCRIPT_DIR"
 # custom APP_PORT and report a healthy upgrade as "not ready".
 APP_PORT=$(dr_env_get .env APP_PORT)
 APP_PORT="${APP_PORT:-3000}"
+# Default BEFORE the case: `case "${APP_BIND:-127.0.0.1}"` matched the
+# default value against the `*` branch and probed "http://:3000" whenever
+# .env predates the APP_BIND backfill (verifier finding F3, PRDCT-1440).
 APP_BIND=$(dr_env_get .env APP_BIND)
-case "${APP_BIND:-127.0.0.1}" in
+APP_BIND="${APP_BIND:-127.0.0.1}"
+case "$APP_BIND" in
   '' | 0.0.0.0 | '::' | localhost) PROBE_HOST=127.0.0.1 ;;
   *) PROBE_HOST="$APP_BIND" ;;
 esac

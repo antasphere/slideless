@@ -31,7 +31,7 @@ That is the whole authoring contract:
 - **The markup stays yours.** The viewer wires submission behavior onto your form; it never restyles or rewrites it.
 - **Custom confirmation.** `data-slideless-success="Thanks, see you there!"` replaces the default "Your response has been recorded."
 
-`slideless push` needs no flags and no manifest entry: pushing a deck that contains a marked form is all it takes, and the push output lists the detected form names as a reminder. Any share link then serves it working (see per-link control below).
+`slideless push` needs no flags and no manifest entry: pushing a deck that contains a marked form — in its HTML or in a script file that renders the form at load time — is all it takes, and the push output lists the detected form names as a reminder. Any share link then serves it working (see per-link control below).
 
 ## What a viewer experiences
 

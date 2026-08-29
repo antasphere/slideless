@@ -72,7 +72,10 @@ beforeAll(async () => {
     },
     { hubDials: DIALS }
   );
-  const res = await app.app.request('/api/v1/setup', sso.json({ instanceName: 'Reconcile', owner: OWNER }));
+  const res = await app.app.request(
+    '/api/v1/setup',
+    sso.json({ setupToken: 'integration-test-setup-token', instanceName: 'Reconcile', owner: OWNER })
+  );
   expect(res.status).toBe(201);
 }, 240_000);
 
@@ -565,5 +568,78 @@ describe('break-glass claim on a PROJECTED workspace: the origin=local lifeboat 
       [wsBg, OWNER.email]
     );
     expect(rows).toEqual([{ is_active: true }]);
+  });
+});
+
+describe('a severed hub link fails CLOSED for a hub-origin principal (CLOUD-1, PRDCT-1356)', () => {
+  const ORG_SEV = '33333333-aaaa-4bbb-8ccc-00000000000d';
+  const sev: HubUserFixture = {
+    sub: 'hub-sev',
+    email: 'sev@reconcile.test',
+    name: 'Sev Ered',
+    workspaceId: ORG_SEV,
+    role: 'member',
+    workspaceName: 'Sev Org'
+  };
+  const SEV_ENV = {
+    EDITION: 'cloud',
+    HUB_CLIENT_ID: 'tool-slideless-cloud',
+    HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
+  };
+
+  it('no account row + hub-origin memberships → 401 hub_grant_expired, never the fail-open no_link', async () => {
+    // Own database + own boots: the grant store caches the hub access token
+    // in PROCESS memory, so the severed row is only observed by a fresh
+    // process — which is the honest shape anyway (a replica restart, the
+    // next deploy).
+    const url = await createDatabase(container, 'hub_severed');
+    const first = await createTestApp(url, { ...SEV_ENV, HUB_ISSUER_URL: hub.issuer }, { hubDials: DIALS });
+    let cookie: string;
+    let userId: string;
+    try {
+      const setup = await first.app.request(
+        '/api/v1/setup',
+        sso.json({ setupToken: 'integration-test-setup-token', instanceName: 'Severed', owner: OWNER })
+      );
+      expect(setup.status).toBe(201);
+      cookie = await sso.ssoLogin(first, hub, sev);
+      const ws = await first.db.pool.query(`SELECT id FROM workspaces WHERE central_account_id = $1`, [
+        ORG_SEV
+      ]);
+      expect(ws.rows).toHaveLength(1);
+      const ok = await first.app.request('/api/v1/me', {
+        headers: { cookie, 'x-workspace-id': ws.rows[0].id }
+      });
+      expect(ok.status).toBe(200);
+      const u = await first.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [sev.email]);
+      userId = u.rows[0].id as string;
+      // Sever the link the way an unlink (now refused) or a partial cleanup
+      // would: the account row goes, the hub-origin membership stays.
+      await first.db.pool.query(`DELETE FROM account WHERE user_id = $1 AND provider_id = 'antasphere'`, [
+        userId
+      ]);
+    } finally {
+      await first.stop();
+    }
+
+    const second = await createTestApp(url, { ...SEV_ENV, HUB_ISSUER_URL: hub.issuer }, { hubDials: DIALS });
+    try {
+      const ws = await second.db.pool.query(`SELECT id FROM workspaces WHERE central_account_id = $1`, [
+        ORG_SEV
+      ]);
+      const res = await second.app.request('/api/v1/me', {
+        headers: { cookie, 'x-workspace-id': ws.rows[0].id }
+      });
+      expect(res.status).toBe(401);
+      expect((await readJson(res)).error.code).toBe('hub_grant_expired');
+      // The membership row itself was NOT swept (no org truth was read).
+      const rows = await second.db.pool.query(
+        `SELECT origin, is_active FROM workspace_members WHERE user_id = $1`,
+        [userId]
+      );
+      expect(rows.rows).toEqual([{ origin: 'hub', is_active: true }]);
+    } finally {
+      await second.stop();
+    }
   });
 });

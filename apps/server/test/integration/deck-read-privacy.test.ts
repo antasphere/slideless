@@ -153,7 +153,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'deck_read_privacy'), {}, { email: mail });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Privacy', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Privacy', owner: OWNER })
+  );
   ownerCookie = await signIn(OWNER);
 
   await uploadAsset(HTML_A, ownerCookie);

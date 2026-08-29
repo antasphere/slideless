@@ -52,7 +52,7 @@ beforeAll(async () => {
   app = await createTestApp(await createDatabase(container, 'body_validation'));
   const setup = await post(
     '/api/v1/setup',
-    JSON.stringify({ instanceName: 'BodyVal', owner: OWNER }),
+    JSON.stringify({ setupToken: 'integration-test-setup-token', instanceName: 'BodyVal', owner: OWNER }),
     JSON_CT
   );
   expect(setup.status).toBe(201);
