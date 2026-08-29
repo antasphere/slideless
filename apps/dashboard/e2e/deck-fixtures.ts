@@ -198,3 +198,28 @@ export const LATE_DECK_HTML = [
   '</script>',
   '</body></html>'
 ].join('\n');
+
+/**
+ * Fixture 5 — the EXTERNAL BUNDLE (PRDCT-1331/1334 residual): the page
+ * carries no marker at all; `app.js` renders the slides, the form included,
+ * on `DOMContentLoaded`, the way a build tool outputs a deck. Commit-time
+ * detection that read only HTML entries stamped this deck form-less: the
+ * runtime never arrived and the native submit stored nothing. Fixture 4
+ * could not catch it because its late-render script is INLINE.
+ */
+export const BUNDLE_DECK_INDEX_HTML = [
+  '<!doctype html><html><head><meta charset="utf-8"><title>Bundled deck (e2e)</title>',
+  `<style>${DECK_CSS}</style></head><body>`,
+  '<div id="count">1</div><div id="deck"></div>',
+  '<script src="app.js"></script>',
+  '</body></html>'
+].join('\n');
+
+export const BUNDLE_DECK_APP_JS = [
+  "document.addEventListener('DOMContentLoaded', function () {",
+  "  document.getElementById('deck').innerHTML =",
+  '    \'<section class="slide active"><h2>Bundled</h2>\' +',
+  '    \'<form data-slideless-form="bundled"><input id="f-note" name="note">\' +',
+  '    \'<button id="f-send" type="submit">Send</button></form></section>\';',
+  '});'
+].join('\n');

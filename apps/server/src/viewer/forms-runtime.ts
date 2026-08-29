@@ -62,7 +62,10 @@
  *    mode. A framer or a link author controls the fragment, so an attacker
  *    could plant their own empty response's secret and harvest the answers
  *    a stranger typed (PRDCT-1332, audit §2). The runtime shows an explicit
- *    resume prompt and defaults to CREATE.
+ *    resume prompt and defaults to CREATE. The fragment is resolved ONCE
+ *    per page load (form-agnostic own-row GET), never once per form: each
+ *    unresolvable probe burns the submit bucket, and N forms × reloads was
+ *    a lockout for everyone behind one NAT (PRDCT-1331/1334 residual).
  *
  * The config JSON is server-controlled; it is serialized with `<` escaped
  * so a `</script>` sequence can never break out.
@@ -471,26 +474,45 @@ if (typeof MutationObserver === 'function') {
 // would overwrite the attacker's row, readable by the attacker
 // (PRDCT-1332). The respondent is shown what is happening and CREATE stays
 // the default.
-// The own-row routes carry the FORM NAME (PRDCT-1334 item 2), so the server
-// answers 404 for a secret whose row belongs to a different form: the match
-// is enforced there, not guessed here.
-function offerResume(form) {
-  if (form.__slResumeAsked) return;
-  form.__slResumeAsked = true;
-  fetchFn(formApi(form, '/responses/me'), {
+// ONE probe per page load, whatever the number of forms: the candidate is
+// resolved through the form-agnostic own-row route and the answer (a row
+// naming its form, or nothing) is shared by every form wired now or later.
+// Probing once PER FORM through the form-bound route burned the submit
+// bucket N times per page load on a bogus fragment — a two-form deck
+// reloaded ten times locked every respondent behind the same NAT out for
+// ten minutes (PRDCT-1331/1334 residual). The own-row routes still carry
+// the FORM NAME on edit (PRDCT-1334 item 2): the resume prompt is offered
+// only on the form the resolved row names, and the server enforces the
+// match on the PUT regardless.
+// A failed probe (network blip, non-2xx) settles to null for the whole page
+// load — deliberately: retrying per late-wired form is the per-form cost
+// again. The respondent still holds their link; a reload probes once more.
+var resumeProbe = null;
+function probeCandidate() {
+  if (resumeProbe) return resumeProbe;
+  resumeProbe = fetchFn(apiBase + '/responses/me', {
     method: 'GET',
     mode: 'cors',
     credentials: 'omit',
     headers: headers(candidateSecret)
   }).then(function (res) {
-    if (!res.ok) return;
+    if (!res.ok) return null;
     return res.json().then(function (data) {
-      var row = data && data.response ? data.response : null;
-      // Anything already happening on this form wins over the prompt.
-      if (!row || form.__slOwn || form.__slBusy || form.__slCard) return;
-      renderResume(form, row);
-    }, function () {});
-  }, function () {});
+      return data && data.response ? data.response : null;
+    }, function () { return null; });
+  }, function () { return null; });
+  return resumeProbe;
+}
+
+function offerResume(form) {
+  if (form.__slResumeAsked) return;
+  form.__slResumeAsked = true;
+  probeCandidate().then(function (row) {
+    if (!row || row.formName !== form.getAttribute('data-slideless-form')) return;
+    // Anything already happening on this form wins over the prompt.
+    if (form.__slOwn || form.__slBusy || form.__slCard || form.__slResume) return;
+    renderResume(form, row);
+  });
 }
 
 function renderResume(form, row) {
