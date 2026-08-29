@@ -14,7 +14,8 @@ import {
   extractCookie,
   readJson,
   startPostgres,
-  type TestApp
+  type TestApp,
+  SETUP_TOKEN
 } from './helpers.js';
 
 /**
@@ -77,7 +78,7 @@ beforeAll(async () => {
   const setup = await fetch(`${base}/api/v1/setup`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceName: 'Dance Instance', owner: OWNER })
+    body: JSON.stringify({ setupToken: SETUP_TOKEN, instanceName: 'Dance Instance', owner: OWNER })
   });
   expect(setup.status).toBe(201);
 

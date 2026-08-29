@@ -13,7 +13,8 @@ import {
   extractCookie,
   readJson,
   startPostgres,
-  type TestApp
+  type TestApp,
+  SETUP_TOKEN
 } from './helpers.js';
 
 /**
@@ -67,7 +68,7 @@ beforeAll(async () => {
   await fetch(`${base}/api/v1/setup`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceName: 'CLI Instance', owner: OWNER })
+    body: JSON.stringify({ setupToken: SETUP_TOKEN, instanceName: 'CLI Instance', owner: OWNER })
   });
   const signIn = await fetch(`${base}/api/v1/auth/sign-in/email`, {
     method: 'POST',
