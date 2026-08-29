@@ -67,9 +67,13 @@ if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
   # is NOT encrypted — the off-site copy the runbook asks for would carry it
   # in cleartext), so the tarball EXCLUDES it and the encrypted config
   # archive below carries it instead. restore.sh knows this third home.
+  # PRDCT-1811: the first-boot claim token (/data/setup-token, PRDCT-1347) is
+  # excluded from EVERY data tarball — an unclaimed instance's backup must not
+  # hand the claim to whoever holds the artifact; the server mints a fresh
+  # one on the next unclaimed boot.
   dr_info "archiving app data volume (/data: files; the pepper root goes into the encrypted config archive)"
   docker compose run --rm --no-deps -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint tar app \
-    -czf "/backup/data-$STAMP.tar.gz" --exclude=./secret -C /data .
+    -czf "/backup/data-$STAMP.tar.gz" --exclude=./secret --exclude=./setup-token -C /data .
   # The file is read out through stdout into a 0600 scratch file — never
   # through argv or the environment. -T: no pseudo-TTY even when an operator
   # runs this interactively — a TTY would turn the bytes into CRLF/progress
@@ -81,7 +85,7 @@ if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
 else
   dr_info "archiving app data volume (/data: files, secret)"
   docker compose run --rm --no-deps -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint tar app \
-    -czf "/backup/data-$STAMP.tar.gz" -C /data .
+    -czf "/backup/data-$STAMP.tar.gz" --exclude=./setup-token -C /data .
 fi
 # tar ran inside the container under the image's umask, not ours.
 chmod 600 "$BACKUP_DIR/data-$STAMP.tar.gz"

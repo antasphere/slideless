@@ -46,7 +46,10 @@ const CANARIES = {
   DATA_SECRET: 'stub-data-secret',
   POSTGRES_PASSWORD: 'canary-pg-password-7b2e4d',
   SETUP_TOKEN: 'canary-setup-token-9c6f0a',
-  METRICS_TOKEN: 'canary-metrics-token-1d8b5e'
+  METRICS_TOKEN: 'canary-metrics-token-1d8b5e',
+  // The first-boot claim token FILE the docker stub serves as /data/setup-token
+  // (PRDCT-1811): a pre-claim data backup must not hand the claim over.
+  SETUP_TOKEN_FILE: 'stub-setup-token-file'
 } as const;
 
 /** A structurally valid plain-text pg_dump, as dr_verify_pg_dump requires. */
@@ -80,7 +83,7 @@ const DOCKER_STUB = [
   `    cat "$STUB_DUMP"`,
   '    ;;',
   '  run)',
-  '    hostdir="" out="" prev="" entrypoint="" excl_secret=0',
+  '    hostdir="" out="" prev="" entrypoint="" excl_secret=0 excl_token=0',
   '    for a in "$@"; do',
   '      case "$prev" in',
   '        -v) hostdir="${a%%:*}" ;;',
@@ -88,6 +91,7 @@ const DOCKER_STUB = [
   '        --entrypoint) entrypoint="$a" ;;',
   '      esac',
   '      [ "$a" = --exclude=./secret ] && excl_secret=1',
+  '      [ "$a" = --exclude=./setup-token ] && excl_token=1',
   '      prev="$a"',
   '    done',
   // The PRDCT-1440 read-out of /data/secret (`--entrypoint sh app -c "cat /data/secret …"`).
@@ -96,6 +100,9 @@ const DOCKER_STUB = [
   '    mkdir -p "$tmpd/files"',
   // A real `tar --exclude=./secret` leaves the entry out; the stub mirrors that.
   '    [ "$excl_secret" = 1 ] || printf \'stub-data-secret\\n\' > "$tmpd/secret"',
+  // PRDCT-1811: the first-boot claim token lives in /data on an unclaimed
+  // instance; a real `tar --exclude=./setup-token` leaves it out.
+  '    [ "$excl_token" = 1 ] || printf \'stub-setup-token-file\\n\' > "$tmpd/setup-token"',
   '    printf \'blob\\n\' > "$tmpd/files/blob1"',
   '    tar -czf "$hostdir/$(basename "$out")" -C "$tmpd" .',
   '    rm -rf "$tmpd"',

@@ -196,8 +196,12 @@ pass "SSO login through the proxy hop: Slideless session + encrypted grant; hub 
 # ── Phase 4 — AUTH-3: the provider grant is never handed out ────────────────
 say "Phase 4 — AUTH-3: the provider-grant routes are closed on cloud"
 for path in get-access-token refresh-token; do
+  # PRDCT-1812: Better Auth's origin guard (origin trust, PRDCT-1377/1378)
+  # runs BEFORE the provider-grant hook and answers MISSING_OR_NULL_ORIGIN to a
+  # cookie-bearing POST without an Origin. Send the instance's own origin so
+  # the request reaches the closure this leg exists to test.
   code=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/pg.json" -w '%{http_code}' -X POST "$SL/api/v1/auth/$path" \
-    -H 'content-type: application/json' -d '{"providerId":"antasphere"}')
+    -H "Origin: $SL" -H 'content-type: application/json' -d '{"providerId":"antasphere"}')
   [ "$code" = 403 ] || fail "/auth/$path answered $code (expected 403)"
   grep -q provider_grant_forbidden "$SCRATCH/pg.json" || fail "/auth/$path 403 lacks provider_grant_forbidden"
   ! grep -qE 'accessToken|refreshToken|access_token' "$SCRATCH/pg.json" || fail "/auth/$path leaked token material"

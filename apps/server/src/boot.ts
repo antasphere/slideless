@@ -337,7 +337,7 @@ export async function boot(
   // workspace data and survive the delete (ADR 006). The connection string
   // feeds the dedicated advisory-lock clients that serialize last-owner
   // removals (the migration-lock pattern).
-  const erasureLog = new ErasureLog(env.DATA_DIR, logger);
+  const erasureLog = new ErasureLog(env.DATA_DIR, logger, authSecret);
   const accountDeletion = new AccountDeletionService(db.db, audit, logger, env.DATABASE_URL, erasureLog);
 
   // The event bus exists before auth so identity-layer hooks can publish:
@@ -454,10 +454,23 @@ export async function boot(
   // uses (memberships, sessions, accounts go with the user) and lands an
   // instance-level audit row per replay. Skipped while migrations are
   // pending (the tables may not exist; readiness is red anyway).
+  //
+  // PRDCT-1809: the replay runs under EVERY last-owner guard the subject is
+  // subject to (the same locks + re-check the HTTP surfaces use; the 0009
+  // trigger backstops), so a sole-owner subject is refused BEFORE any row is
+  // touched — Better Auth's cascade drops the account rows before the user
+  // row, and an unguarded refusal left a half-erased owner. A refused
+  // tombstone is a FAIL-CLOSED verdict: the subject asked to be forgotten
+  // and the product cannot decide who inherits their workspace, so the boot
+  // audits the refusal, keeps /readyz red with the reason, and CLOSES the
+  // service surface (state.closed → 503 everywhere but the probes) until an
+  // operator promotes another owner and restarts (docs/operations/
+  // backup-restore.md "Erasures hold across a restore"). Readiness alone is
+  // not a closure: the API keeps serving under a red /readyz.
   if (!migrationsPending) {
     state.reason = 'replaying erasure tombstones';
     const authCtx = await auth.$context;
-    const replayed = await erasureLog.replay(
+    const { replayed, refused } = await erasureLog.replay(
       async (userId) => {
         const [row] = await db.db
           .select({ id: userTable.id })
@@ -466,10 +479,11 @@ export async function boot(
           .limit(1);
         return row !== undefined;
       },
-      async (userId) => {
-        await authCtx.internalAdapter.deleteUser(userId);
-        await authCtx.internalAdapter.deleteUserSessions(userId);
-      }
+      (userId) =>
+        accountDeletion.withAllLastOwnerGuards(userId, async () => {
+          await authCtx.internalAdapter.deleteUser(userId);
+          await authCtx.internalAdapter.deleteUserSessions(userId);
+        })
     );
     for (const userId of replayed) {
       await audit.write({
@@ -480,6 +494,32 @@ export async function boot(
         resourceId: userId,
         metadata: { reason: 'tombstoned user present after boot (restore from an older backup)' }
       });
+    }
+    for (const r of refused) {
+      const lastOwner = r.cause instanceof LastOwnerError;
+      await audit.write({
+        workspaceId: null,
+        principal: null, // → actorVia 'system'
+        action: 'user.erasure_replay_refused',
+        resourceType: 'user',
+        resourceId: r.userId,
+        metadata: {
+          reason: lastOwner
+            ? 'tombstoned user is the last active owner of a workspace; the instance refuses to serve until another owner is promoted'
+            : 'tombstoned user could not be re-erased; the instance refuses to serve',
+          erasedAt: r.erasedAt
+        }
+      });
+    }
+    if (refused.length > 0) {
+      const ids = refused.map((r) => r.userId).join(', ');
+      state.reason =
+        `refusing to serve: ${refused.length} erasure tombstone(s) could not be replayed (user ${ids}) — ` +
+        'the subject is present again after a restore and is the last active owner of a workspace; ' +
+        'promote another member to owner, then restart (docs/operations/backup-restore.md)';
+      readinessRefusal = state.reason;
+      state.closed = state.reason;
+      logger.error({ refused: refused.map((r) => r.userId) }, state.reason);
     }
   }
 
@@ -754,7 +794,7 @@ export async function boot(
   });
   rootApp.current = app;
 
-  if (!migrationsPending) {
+  if (!migrationsPending && !readinessRefusal) {
     state.ready = true;
     state.reason = '';
   } else if (readinessRefusal) {
