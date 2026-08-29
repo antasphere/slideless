@@ -9,7 +9,7 @@
 #
 #   1. AUTH-3 — Slideless never hands a caller its provider grant: the
 #      provider-grant routes answer 403 on the cloud edition.
-#   2. CLOUD-2 — a hub that is SLOW BUT ALIVE (Toxiproxy latency past
+#   2. CLOUD-2 — a hub that is SLOW BUT ALIVE (a delay hop past
 #      Slideless's 5 s token timeout) commits a rotation Slideless never
 #      hears about; the next Slideless demand PROBES (RFC 7662) instead of
 #      re-presenting, marks its own grant dead, and the hub-side family —
@@ -36,7 +36,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT=slideless-federation
 HUB=http://hub.localhost:3300
 SL=http://slideless.localhost:3310
-TOXI=http://127.0.0.1:8474
+HOP=http://127.0.0.1:8474
 SL_CLIENT_ID=tool-slideless-cloud
 SL_CLIENT_SECRET=federation-dev-client-secret-0001
 SECOND_CLIENT_ID=tool-drill-second
@@ -75,7 +75,7 @@ dc() {
     -f "$REPO/docker-compose.federation.yml" -f "$REPO/docker-compose.federation.drill.yml" "$@"
 }
 # *.localhost resolves in browsers by RFC 6761 but not in every curl: pin both names.
-CURL=(curl -sS --max-time 20 --resolve hub.localhost:3300:127.0.0.1 --resolve slideless.localhost:3310:127.0.0.1)
+CURL=(curl -sS --max-time 60 --resolve hub.localhost:3300:127.0.0.1 --resolve slideless.localhost:3310:127.0.0.1)
 hubdb() { dc exec -T hub-db psql -U antasphere -d antasphere -v ON_ERROR_STOP=1 -Atc "$1"; }
 sldb() { dc exec -T db psql -U slideless -d slideless -v ON_ERROR_STOP=1 -Atc "$1"; }
 applogs() { dc logs --no-log-prefix "$1" 2>/dev/null || true; }
@@ -94,7 +94,7 @@ wait_ready() { # service url timeout_s
 }
 
 dump_logs() {
-  for svc in hub app toxiproxy; do
+  for svc in hub app hubhop; do
     echo "── logs: $svc ──────────────────────────────────────────────" >&2
     applogs "$svc" | tail -40 >&2
   done
@@ -142,14 +142,10 @@ fi
 say "Phase 1 — bring the two-instance stack up"
 dc down -v --remove-orphans >/dev/null 2>&1 || true
 dc up -d --no-build
-wait_ready toxiproxy "$TOXI/version" 60
-# The hop Slideless's hub calls cross. Created before Slideless talks to the
-# hub at all (discovery is fetched lazily on the first SSO initiate).
-"${CURL[@]}" -f -o /dev/null -X POST "$TOXI/proxies" -H 'content-type: application/json' \
-  -d '{"name":"hub","listen":"0.0.0.0:3300","upstream":"hub:3300","enabled":true}'
-wait_ready hub "$HUB/healthz" 120
-wait_ready app "$SL/healthz" 120
-pass "hub, Slideless (cloud) and the Toxiproxy hop are up"
+wait_ready hubhop "$HOP/version" 60
+wait_ready hub "$HUB/healthz" 300
+wait_ready app "$SL/healthz" 300
+pass "hub, Slideless (cloud) and the delay hop are up"
 
 # ── Phase 2 — setups ─────────────────────────────────────────────────────────
 say "Phase 2 — both setups"
@@ -214,15 +210,14 @@ say "Phase 5 — CLOUD-2: a refresh that times out AFTER the hub rotated"
 # so the next authenticated request must refresh through the hop.
 sldb "UPDATE account SET access_token_expires_at = now() - interval '1 hour' WHERE provider_id = 'antasphere' AND user_id = '$SL_USER_ID'" >/dev/null
 dc restart app >/dev/null 2>&1
-wait_ready app "$SL/healthz" 120
+wait_ready app "$SL/healthz" 300
 # Latency past Slideless's 5 s token timeout — the request still completes at the hub.
-"${CURL[@]}" -f -o /dev/null -X POST "$TOXI/proxies/hub/toxics" -H 'content-type: application/json' \
-  -d '{"name":"slow","type":"latency","stream":"downstream","attributes":{"latency":7000,"jitter":0}}'
+"${CURL[@]}" -f -o /dev/null -X POST "$HOP/latency" -H 'content-type: application/json' -d '{"ms":7000}'
 t0=$(date +%s)
 slow_status=$("${CURL[@]}" --max-time 40 -b "$SL_JAR" -o "$SCRATCH/slow.json" -w '%{http_code}' "$SL/api/v1/me")
 elapsed=$(( $(date +%s) - t0 ))
 note "GET /me during the slow window: $slow_status after ${elapsed}s"
-"${CURL[@]}" -f -o /dev/null -X DELETE "$TOXI/proxies/hub/toxics/slow"
+"${CURL[@]}" -f -o /dev/null -X DELETE "$HOP/latency"
 # Give the hub's side of the aborted request time to commit its rotation.
 sleep 3
 read -r fam_total fam_live _ <<<"$(family "$SL_CLIENT_ID" "$HUB_USER_ID")"

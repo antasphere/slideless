@@ -708,8 +708,8 @@ docker compose -f docker-compose.federation.yml down -v
 - **The federation drill** ([`scripts/federation-drill.sh`](../scripts/federation-drill.sh),
   PRDCT-1370) is the harness's automated use: it boots this stack plus the
   [`docker-compose.federation.drill.yml`](../docker-compose.federation.drill.yml)
-  overlay (a Toxiproxy hop between Slideless and the hub, so the hub can be
-  made slow-but-alive on demand), runs both setups and a headless SSO
+  overlay (a delay hop between Slideless and the hub, run from the Slideless
+  image itself, so the hub can be made slow-but-alive on demand), runs both setups and a headless SSO
   login (registry tools skip the hub's consent screen, so the whole dance
   is `curl`), and asserts on the HUB's database — the only place the
   grant-family consequences are visible. CI runs it on both repos
