@@ -14,7 +14,7 @@
   "dependencies": {
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
-    "better-auth": "1.6.15"
+    "better-auth": "1.6.22"
   },
   "devDependencies": {
     "@lucide/svelte": "^0.482.0",

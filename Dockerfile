@@ -48,11 +48,17 @@ RUN node scripts/prune-runtime-deps.mjs /out
 
 # ---- runtime ---------------------------------------------------------------
 FROM node:22-alpine
-# The runtime runs `node dist/index.js` and never invokes npm — remove the
-# npm that ships bundled in the base image (its vendored deps carry CVEs and
-# add weight). tini + wget are the only OS additions we keep.
-RUN apk add --no-cache tini wget \
+# The runtime runs `node dist/index.js` and never invokes a package manager —
+# remove npm, yarn and corepack that ship bundled in the base image (their
+# vendored deps carry CVEs and add weight; PLT-35 + PRDCT-1346). tini + wget
+# are the only OS additions we keep. `apk upgrade` first pulls the base
+# image's OS packages up to Alpine's current fixes: the Trivy HIGH gate in
+# release.yml scans this final stage, and the node:22-alpine tag lags the
+# Alpine security feed (same pattern as the hub, 2026-08-28).
+RUN apk upgrade --no-cache && apk add --no-cache tini wget \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+           /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
+           /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v* \
  && mkdir -p /data && chown node:node /data
 WORKDIR /app
 ENV NODE_ENV=production

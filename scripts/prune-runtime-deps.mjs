@@ -12,9 +12,14 @@
  * verification share ONE deny-list, so they cannot drift:
  *
  *   1. prune   — delete deny-listed packages from node_modules/.pnpm
+ *   1b. orphans — delete every store dir no symlink chain from the deployed
+ *                package's node_modules reaches any more (the pruned
+ *                packages' own dependency subtrees); unreachable = Node
+ *                cannot resolve it, so this cannot change what loads
  *   2. sweep   — walk ALL of node_modules: every dangling symlink must be
- *                attributable to the deny-list (then it is unlinked, so the
- *                image ships zero dangling links); anything else fails
+ *                attributable to the deny-list or to the orphan pass (then it
+ *                is unlinked, so the image ships zero dangling links);
+ *                anything else fails
  *   3. absence — no deny-listed package may survive anywhere (a pnpm store
  *                layout change or a vendored nested copy fails the build)
  *   4. deps    — every `dependencies` entry of the deployed package must
@@ -45,12 +50,30 @@ import { dirname, join, resolve } from 'node:path';
 /**
  * Build-time-only packages to strip from the shipped image. drizzle-kit
  * (migrations ship pre-generated and are applied via drizzle-orm) drags in
- * the esbuild Go binaries — the CVE source — plus typescript. Entries are
- * exact package names, or a scope glob like `@esbuild/*`.
+ * the esbuild Go binaries — the CVE source — plus typescript. The second
+ * group is better-auth's OPTIONAL peer set (its framework/test/driver
+ * integrations, declared as optionalDependencies so `pnpm deploy --prod`
+ * resolves them): the SvelteKit toolchain, vitest, better-sqlite3 and the
+ * Prisma client — none of which the server imports (the runtime adapter is
+ * drizzle; the dashboard is a prebuilt static bundle). Entries are exact
+ * package names, or a scope glob like `@esbuild/*`.
  * NEVER add anything here without understanding LESSONS.md: better-auth
  * statically imports kysely, and pino/pg/pg-boss load files dynamically.
  */
-const DENY_LIST = ['drizzle-kit', 'esbuild', '@esbuild/*', '@esbuild-kit/*', 'typescript'];
+const DENY_LIST = [
+  'drizzle-kit',
+  'esbuild',
+  '@esbuild/*',
+  '@esbuild-kit/*',
+  'typescript',
+  // better-auth optional peers (PRDCT-1346)
+  'svelte',
+  '@sveltejs/*',
+  'vite',
+  'vitest',
+  'better-sqlite3',
+  '@prisma/*'
+];
 
 const root = process.argv[2];
 if (!root) {
@@ -112,6 +135,80 @@ if (removedDirs === 0) {
   console.log('prune: nothing matched the deny-list (fine — nothing to strip)');
 }
 
+// ── 1b. orphans: store dirs nothing reachable links to any more ────────────
+// Removing a deny-listed package strands its own dependency subtree in the
+// store (vite's rollup/postcss, vitest's tinypool, …): real directories, so
+// the dangling-symlink sweep never sees them, yet they ship as scanner
+// surface. Node resolves ONLY through node_modules symlinks, so a store dir
+// no symlink chain reaches from the deployed package's node_modules is
+// unresolvable by construction — deleting it cannot change what loads
+// (steps 4 and 5 still prove that). Walk from the top-level entries,
+// following every `node_modules/*` symlink into the store, and drop the rest.
+// Compare against the store's REAL path: realpathSync answers canonical
+// paths, and the deploy dir itself may sit behind a symlink (macOS /var →
+// /private/var in the unit test; a bind mount in some CI runners).
+const storeReal = realpathSync(store);
+function storeDirOf(target) {
+  // a realpath'd target carries the canonical prefix; a DANGLING link's
+  // lexically resolved target carries the store path as spelled
+  const base = [storeReal, store].find((b) => target.startsWith(b + '/'));
+  return base ? target.slice(base.length + 1).split('/')[0] : null;
+}
+function linkTargetsOf(nmDir) {
+  const out = [];
+  if (!existsSync(nmDir)) return out;
+  for (const e of readdirSync(nmDir, { withFileTypes: true })) {
+    if (e.name.startsWith('.')) continue;
+    const p = join(nmDir, e.name);
+    if (e.isSymbolicLink()) out.push(p);
+    else if (e.isDirectory() && e.name.startsWith('@')) {
+      for (const s of readdirSync(p, { withFileTypes: true })) {
+        if (s.isSymbolicLink()) out.push(join(p, s.name));
+      }
+    }
+  }
+  return out;
+}
+const reachable = new Set();
+const queue = linkTargetsOf(nodeModules);
+while (queue.length > 0) {
+  const link = queue.pop();
+  let real;
+  try {
+    real = realpathSync(link);
+  } catch {
+    continue; // dangling — step 2 adjudicates it
+  }
+  const dir = storeDirOf(real);
+  if (!dir || reachable.has(dir)) continue;
+  reachable.add(dir);
+  // every package dir inside this store entry can resolve through the entry's
+  // shared node_modules (pnpm's flat-per-entry layout)
+  queue.push(...linkTargetsOf(join(store, dir, 'node_modules')));
+}
+const removedOrphans = new Set();
+for (const entry of readdirSync(store, { withFileTypes: true })) {
+  if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+  if (!reachable.has(entry.name)) {
+    rmSync(join(store, entry.name), { recursive: true, force: true });
+    console.log(`orphans: removed unreachable .pnpm/${entry.name}`);
+    removedOrphans.add(entry.name);
+  }
+}
+console.log(`orphans: ${reachable.size} store entries reachable, ${removedOrphans.size} removed`);
+
+/** Does a symlink's TARGET point into a store dir the orphan pass removed (the `.pnpm/node_modules` hoist links)? */
+function targetOrphaned(linkPath) {
+  let raw;
+  try {
+    raw = readlinkSync(linkPath);
+  } catch {
+    return false;
+  }
+  const dir = storeDirOf(resolve(dirname(linkPath), raw));
+  return dir !== null && removedOrphans.has(dir);
+}
+
 // ── 2+3. sweep node_modules: dangling symlinks + surviving denied copies ───
 // `kind` says how entries of `dir` should be read: 'nm' = children are
 // package entries (or @scopes), 'scope' = children are scoped packages,
@@ -132,7 +229,7 @@ function sweep(dir, kind, scope = '') {
         resolves = false;
       }
       if (!resolves) {
-        if ((pkgName && denied(pkgName)) || targetDenied(p)) {
+        if ((pkgName && denied(pkgName)) || targetDenied(p) || targetOrphaned(p)) {
           unlinkSync(p);
           unlinkedDangling++;
         } else {
@@ -153,7 +250,7 @@ function sweep(dir, kind, scope = '') {
   }
 }
 sweep(nodeModules, 'nm');
-console.log(`sweep: removed ${unlinkedDangling} dangling symlink(s) left by the prune`);
+console.log(`sweep: removed ${unlinkedDangling} dangling symlink(s) left by the prune and the orphan pass`);
 
 // ── 4. every declared prod dependency must still resolve ───────────────────
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
