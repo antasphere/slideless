@@ -30,9 +30,11 @@ jobs:
           set -euo pipefail
           export APP_IMAGE=slideless-smoke:test
           METRICS_TOKEN="$(openssl rand -hex 16)"
+          SETUP_TOKEN="$(openssl rand -hex 16)"
           {
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
             echo "METRICS_TOKEN=$METRICS_TOKEN"
+            echo "SETUP_TOKEN=$SETUP_TOKEN"
           } > .env
           docker compose up -d --no-build --wait --wait-timeout 120
 
@@ -42,9 +44,9 @@ jobs:
 
           # setup → 201, second → 410
           curl -sf -X POST "$BASE/api/v1/setup" -H 'content-type: application/json' \
-            -d '{"instanceName":"Smoke","owner":{"email":"smoke@test.io","name":"Smoke","password":"smoke-password-1234"}}' >/dev/null
+            -d '{"instanceName":"Smoke","owner":{"email":"smoke@test.io","name":"Smoke","password":"smoke-password-1234"},"setupToken":"'"$SETUP_TOKEN"'"}' >/dev/null
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/setup" -H 'content-type: application/json' \
-            -d '{"instanceName":"X","owner":{"email":"x@test.io","name":"X","password":"xxxxxxxxxxxxxx"}}')
+            -d '{"instanceName":"X","owner":{"email":"x@test.io","name":"X","password":"xxxxxxxxxxxxxx"},"setupToken":"'"$SETUP_TOKEN"'"}')
           [ "$code" = "410" ]
 
           # sign in → mint key → Bearer curl → audit shows the key identity
