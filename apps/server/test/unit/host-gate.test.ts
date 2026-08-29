@@ -58,6 +58,9 @@ describe('hostGate — the viewer hostname', () => {
       '/api/v1/viewer', // the bare prefix, not the API under it
       '/v', // the bare deck prefix routes nothing — the SPA shell must not answer here
       '/v/',
+      '/v//', // an empty secret segment routes nothing either (round-2 F7)
+      '/v///',
+      '/v//x',
       '/api/v1/viewerish/x', // a prefix must match on the path boundary
       '/mcp',
       '/embed.js',
@@ -126,6 +129,9 @@ describe('isViewerHostPath', () => {
   it('is a boundary-aware prefix match', () => {
     expect(isViewerHostPath('/v')).toBe(false); // routes nothing; the SPA fallback would answer
     expect(isViewerHostPath('/v/')).toBe(false);
+    expect(isViewerHostPath('/v//')).toBe(false);
+    expect(isViewerHostPath('/v//x')).toBe(false);
+    expect(isViewerHostPath('/v/x/')).toBe(true);
     expect(isViewerHostPath('/v/x')).toBe(true);
     expect(isViewerHostPath('/vx')).toBe(false);
     expect(isViewerHostPath('/api/v1/viewer/x/forms/f/responses')).toBe(true);

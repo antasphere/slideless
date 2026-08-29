@@ -183,6 +183,33 @@ describe('split origin: the app API refuses the viewer origin and any foreign or
     expect(res.status).toBe(403);
   });
 
+  it('the sign-in hook itself refuses a foreign or viewer Origin when the cross-site guard is not in the way (verifier F8)', async () => {
+    // The guard skips Authorization-bearing requests (not ambient credentials),
+    // and Better Auth's own origin check skips cookie-less, metadata-less
+    // requests — so a bearer-carrying, cookie-less sign-in with a foreign Origin
+    // reaches the hook with nothing else standing in front of it.
+    for (const origin of [EVIL, VIEWER]) {
+      const res = await split.app.app.request(
+        `${APP}/api/v1/auth/sign-in/email`,
+        json(
+          { email: OWNER.email, password: OWNER.password },
+          { origin, authorization: 'Bearer not-a-token' }
+        )
+      );
+      expect(res.status, origin).toBe(403);
+      expect(res.headers.get('set-cookie'), origin).toBeNull();
+    }
+    // The same request with the app Origin signs in: the hook, not the bearer, decided.
+    const ok = await split.app.app.request(
+      `${APP}/api/v1/auth/sign-in/email`,
+      json(
+        { email: OWNER.email, password: OWNER.password },
+        { origin: APP, authorization: 'Bearer not-a-token' }
+      )
+    );
+    expect(ok.status).toBe(200);
+  });
+
   it('refuses a sign-in POST carrying the viewer Origin (no session can be minted for deck script)', async () => {
     const res = await split.app.app.request(
       `${APP}/api/v1/auth/sign-in/email`,
@@ -287,8 +314,8 @@ describe('split origin: the viewer hostname serves decks — and nothing else', 
     }
   });
 
-  it('never serves the app HTML shell at the bare /v or /v/ (verifier F1)', async () => {
-    for (const path of ['/v', '/v/']) {
+  it('never serves the app HTML shell at the bare /v, /v/ or an empty secret segment (verifier F1, F7)', async () => {
+    for (const path of ['/v', '/v/', '/v//', '/v///', '/v//index.html']) {
       const res = await split.app.app.request(`${VIEWER}${path}`, { headers: { accept: 'text/html' } });
       expect(res.status, path).toBe(404);
       expect(res.headers.get('content-type') ?? '', path).toContain('application/json');

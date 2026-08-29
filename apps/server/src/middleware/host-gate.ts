@@ -53,9 +53,14 @@ export interface HostGateOptions {
 const PROBES = new Set(['/healthz', '/readyz']);
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
 
-/** `/v/<something>`: a deck route. The bare `/v` and `/v/` route NOTHING in the viewer. */
+/**
+ * `/v/<secret>…`: a deck route, i.e. a NON-EMPTY first segment. The bare `/v`,
+ * `/v/` and an empty segment (`/v//`, `/v///x`) route nothing in the viewer
+ * and would fall through to the SPA fallback (verifier round 2, F7).
+ */
+const DECK_PATH = /^\/v\/[^/]+/;
 function isDeckPath(path: string): boolean {
-  return path.startsWith('/v/') && path.length > '/v/'.length;
+  return DECK_PATH.test(path);
 }
 
 /**
