@@ -105,6 +105,9 @@ describe('PRDCT-1809: tombstone replay when the erased subject is the sole activ
       // Coarse on purpose: the probe is unauthenticated and the subject asked to be forgotten.
       expect(JSON.stringify(readyBody)).not.toContain(ownerUserId);
       expect(JSON.stringify(readyBody)).not.toContain(OWNER.email);
+      // …but the remedy names the cause the operator faces: a last-owner refusal, not a generic failure.
+      expect(readyBody.reason).toContain('promote another member to owner');
+      expect(readyBody.reason).not.toContain('re-erasure(s) failed');
       expect((await app.app.request('/healthz')).status).toBe(200);
 
       // The surface is CLOSED: the resurrected owner cannot sign in, nothing else serves either.
