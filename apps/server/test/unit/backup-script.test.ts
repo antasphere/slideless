@@ -202,6 +202,11 @@ describe('backup.sh never lets .env material reach a backup in cleartext (PRDCT-
     expectNoCanary(producedBytes(), ['DATA_SECRET']);
     expect(r.output).toContain('rides INSIDE');
     expect(r.output).toContain('CLEARTEXT');
+    // …and it genuinely IS there: on this path the tarball is the pepper
+    // root's only home, so an "exclude always" regression would produce a
+    // backup with no root anywhere (verifier mutation M5).
+    const data = producedBytes().find((p) => /^data-.*\.tar\.gz \(decompressed\)$/.test(p.name));
+    expect(data?.bytes.includes(CANARIES.DATA_SECRET), 'pepper root inside the cleartext tarball').toBe(true);
 
     for (const name of names) {
       expect(statSync(join(backupDir, name)).mode & 0o777, `${name} must be 0600`).toBe(0o600);

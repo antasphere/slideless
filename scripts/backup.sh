@@ -71,8 +71,10 @@ if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
   docker compose run --rm --no-deps -v "$(cd "$BACKUP_DIR" && pwd)":/backup --entrypoint tar app \
     -czf "/backup/data-$STAMP.tar.gz" --exclude=./secret -C /data .
   # The file is read out through stdout into a 0600 scratch file — never
-  # through argv or the environment.
-  docker compose run --rm --no-deps --entrypoint sh app -c 'cat /data/secret 2>/dev/null || true' \
+  # through argv or the environment. -T: no pseudo-TTY even when an operator
+  # runs this interactively — a TTY would turn the bytes into CRLF/progress
+  # noise and corrupt the root.
+  docker compose run --rm --no-deps -T --entrypoint sh app -c 'cat /data/secret 2>/dev/null || true' \
     > "$WORKDIR/data-secret"
   chmod 600 "$WORKDIR/data-secret"
   [ -s "$WORKDIR/data-secret" ] || rm -f "$WORKDIR/data-secret"

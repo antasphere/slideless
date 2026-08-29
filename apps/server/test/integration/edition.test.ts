@@ -3,6 +3,7 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import {
   createDatabase,
   createTestApp,
+  expectBootRefusal,
   extractCookie,
   readJson,
   RecordingEmailDriver,
@@ -71,7 +72,8 @@ describe('R7 edition-flip boot guard', () => {
   });
 
   it('refuses to boot EDITION=cloud on the populated oss instance', async () => {
-    await expect(createTestApp(connectionString, HUB_ENV)).rejects.toThrow(
+    await expectBootRefusal(
+      createTestApp(connectionString, HUB_ENV),
       /refusing to boot: EDITION=cloud but this instance was set up as 'oss'/
     );
   });
@@ -97,7 +99,8 @@ describe('R7 edition-flip boot guard', () => {
     // is refused even with the flag (EDIT-4, cloud-lifecycle.test.ts).
     const cloudAgain = await createTestApp(connectionString, HUB_ENV);
     await cloudAgain.stop();
-    await expect(createTestApp(connectionString)).rejects.toThrow(
+    await expectBootRefusal(
+      createTestApp(connectionString),
       /refusing to boot: EDITION=oss but this instance was set up as 'cloud'/
     );
   });

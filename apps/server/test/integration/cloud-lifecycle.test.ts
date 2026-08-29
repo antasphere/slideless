@@ -3,6 +3,7 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import {
   createDatabase,
   createTestApp,
+  expectBootRefusal,
   extractCookie,
   readJson,
   startPostgres,
@@ -10,6 +11,11 @@ import {
   type TestApp
 } from './helpers.js';
 import { seedLocalWorkspace } from './sso-helpers.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 /**
  * PRDCT-1356 — cloud lifecycle & recovery, the server-side members:
@@ -85,6 +91,31 @@ describe("cloud edition: the local doors are the operator's only", () => {
     expect(rows[0]!.email).toBe(OWNER.email);
   });
 
+  it('migration 0036 backfills operator_user_id from the setup audit row on pre-existing instances (F2)', async () => {
+    // A cloud instance set up BEFORE the column existed: NULL — which would
+    // close the operator's local sign-in door after the upgrade.
+    await app.db.pool.query(`UPDATE instance_settings SET operator_user_id = NULL`);
+    const shut = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(shut.status).toBe(403);
+    // Run the migration's backfill statement (everything after the ALTER).
+    const sql = readFileSync(join(repoRoot, 'packages/db/drizzle/0036_operator_user_id.sql'), 'utf8');
+    const backfill = sql.split('--> statement-breakpoint').slice(1).join('\n');
+    expect(backfill).toMatch(/UPDATE "instance_settings"/);
+    await app.db.pool.query(backfill);
+    const { rows } = await app.db.pool.query<{ email: string }>(
+      `SELECT u.email FROM instance_settings s JOIN "user" u ON u.id = s.operator_user_id`
+    );
+    expect(rows).toEqual([{ email: OWNER.email }]);
+    const open = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(open.status).toBe(200);
+  });
+
   it('refuses to unlink the antasphere provider (403 hub_unlink_forbidden), even for a signed-in caller', async () => {
     const res = await app.app.request(
       '/api/v1/auth/unlink-account',
@@ -149,9 +180,10 @@ describe('the edition flip pre-flights (EDIT-1/3) and the reverse flip is refuse
   });
 
   it('oss→cloud with the flag is REFUSED while a workspace has no hub projection', async () => {
-    await expect(
-      createTestApp(connectionString, { ...HUB_ENV, EDITION_CHANGE_ALLOWED: 'true' })
-    ).rejects.toThrow(/refusing the edition flip 'oss' → 'cloud'.*no hub projection/);
+    await expectBootRefusal(
+      createTestApp(connectionString, { ...HUB_ENV, EDITION_CHANGE_ALLOWED: 'true' }),
+      /refusing the edition flip 'oss' → 'cloud'.*no hub projection/
+    );
     // Nothing moved: the stamp is still oss and a plain oss boot still works.
     const still = await createTestApp(connectionString);
     const { rows } = await still.db.pool.query<{ edition: string }>(`SELECT edition FROM instance_settings`);
@@ -171,9 +203,10 @@ describe('the edition flip pre-flights (EDIT-1/3) and the reverse flip is refuse
        VALUES ('u-unverified', 'Unverified', 'unverified@lifecycle.test', false, now(), now())`
     );
     await app.stop();
-    await expect(
-      createTestApp(connectionString, { ...HUB_ENV, EDITION_CHANGE_ALLOWED: 'true' })
-    ).rejects.toThrow(/refusing the edition flip 'oss' → 'cloud'.*unverified email/);
+    await expectBootRefusal(
+      createTestApp(connectionString, { ...HUB_ENV, EDITION_CHANGE_ALLOWED: 'true' }),
+      /refusing the edition flip 'oss' → 'cloud'.*unverified email/
+    );
   });
 
   it('flips once the instance is in shape, then refuses the reverse flip even with the flag', async () => {
@@ -186,7 +219,8 @@ describe('the edition flip pre-flights (EDIT-1/3) and the reverse flip is refuse
     );
     expect(rows).toEqual([{ edition: 'cloud' }]);
     await flipped.stop();
-    await expect(createTestApp(connectionString, { EDITION_CHANGE_ALLOWED: 'true' })).rejects.toThrow(
+    await expectBootRefusal(
+      createTestApp(connectionString, { EDITION_CHANGE_ALLOWED: 'true' }),
       /refusing the edition flip 'cloud' → 'oss'/
     );
     // …and still stamped cloud.

@@ -836,6 +836,12 @@ secret>` and harvested what visitors typed, straight through the official
   same before-hook as reset/OTP. `/sign-in/email` on cloud is the operator's
   (`instance_settings.operator_user_id`, the durable record that also keeps
   them out of the orphan purge) and the allowlist's door only.
+- **`case "${VAR:-default}"` with a `*)` fallthrough that re-reads `$VAR`
+  loses the default.** `restore.sh`/`update.sh` probed `http://:3000` on
+  every `.env` without `APP_BIND` (the `127.0.0.1` default matched `*`,
+  which assigned the EMPTY variable). Default into the variable first, then
+  `case "$VAR"`. Also: `docker compose run` allocates a pseudo-TTY when
+  stdin is one — pass `-T` whenever stdout carries bytes you will store.
 - **The break-glass upsert must stamp `origin='local'` on the conflict
   path too** — an `onConflictDoUpdate` `set` that omits a column keeps the
   row's old value, so a hub-projected row promoted by break-glass stayed

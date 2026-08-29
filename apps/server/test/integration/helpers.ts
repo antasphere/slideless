@@ -76,6 +76,25 @@ export async function createTestApp(
   };
 }
 
+/**
+ * Assert a boot REFUSES with a message matching `re`. Never `expect(boot)
+ * .rejects.toThrow(...)` directly: when the refusal is missing the promise
+ * resolves with a live BootResult, vitest tries to serialise it for the
+ * failure message (OOM, worker crash), and the app is never stopped.
+ */
+export async function expectBootRefusal(boot: Promise<TestApp>, re: RegExp): Promise<void> {
+  let app: TestApp | undefined;
+  try {
+    app = await boot;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!re.test(message)) throw new Error(`boot refused for the wrong reason: ${message}`);
+    return;
+  }
+  await app.stop();
+  throw new Error(`boot succeeded but a refusal matching ${re} was expected`);
+}
+
 /** Create an extra empty database inside the shared container. */
 export async function createDatabase(container: StartedPostgreSqlContainer, name: string): Promise<string> {
   const client = new pg.Client({ connectionString: container.getConnectionUri() });

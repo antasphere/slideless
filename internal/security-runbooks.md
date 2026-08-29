@@ -74,7 +74,11 @@ exposed to users):
    cloud reconciler's sweep leaves it alone (PRDCT-1356 BG-1).
    The account that ran first-boot setup is recorded on the instance row
    (`instance_settings.operator_user_id`) and is **never** an orphan-cleanup
-   candidate, allowlist or not (CLOUD-3). Any OTHER membershipless account
+   candidate, allowlist or not (CLOUD-3). Migration 0036 backfills that id on
+   instances set up before the column existed, from the `instance.setup`
+   audit row; if it is still NULL afterwards (audit row purged), set it by
+   hand — `UPDATE instance_settings SET operator_user_id = '<user id>'` — or
+   the cloud local sign-in door stays closed to the operator. Any OTHER membershipless account
    is: the sweep deletes it once it ages past `ORPHAN_USER_RETENTION_HOURS`
    (72h default) unless its VERIFIED email is on `SUPERADMIN_EMAILS` — an
    unverified match gets no shelter, exactly as break-glass would not accept

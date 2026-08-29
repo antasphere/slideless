@@ -467,6 +467,38 @@ describe("PRDCT-1440 — restore.sh knows the pepper root's third home (the encr
   });
 });
 
+describe('verifier round 1 residuals (PRDCT-1440)', () => {
+  it('restore.sh and update.sh default APP_BIND BEFORE the case, so the probe host is never empty (F3)', () => {
+    for (const rel of ['scripts/restore.sh', 'update.sh']) {
+      const sh = read(rel);
+      const def = sh.indexOf('APP_BIND="${APP_BIND:-127.0.0.1}"');
+      expect(def, `${rel} defaults APP_BIND`).toBeGreaterThan(0);
+      expect(sh.indexOf('case "$APP_BIND" in')).toBeGreaterThan(def);
+      expect(sh).not.toContain('case "${APP_BIND:-127.0.0.1}" in');
+    }
+  });
+
+  it('restore.sh accepts a data-secret-only config archive without --no-config (F4)', () => {
+    const sh = read('scripts/restore.sh');
+    expect(sh).toMatch(/\[ -f "\$WORKDIR\/\.env" \] \|\| \[ -s "\$WORKDIR\/data-secret" \] \|\|/);
+  });
+
+  it('backup.sh reads the pepper root out without a pseudo-TTY (F9)', () => {
+    const line = read('scripts/backup.sh')
+      .split('\n')
+      .find((l) => l.includes("-c 'cat /data/secret"));
+    expect(line).toBeDefined();
+    expect(line).toMatch(/docker compose run .*-T .*--entrypoint sh/);
+  });
+
+  it('migration 0036 backfills operator_user_id from the instance.setup audit row (F2)', () => {
+    const sql = read('packages/db/drizzle/0036_operator_user_id.sql');
+    expect(sql).toMatch(/UPDATE "instance_settings"/);
+    expect(sql).toMatch(/action = 'instance\.setup'/);
+    expect(sql).toMatch(/metadata->>'ownerUserId'/);
+  });
+});
+
 describe('OPS-3 (PRDCT-1357) — the erasure tombstone survives a restore', () => {
   it("restore.sh carries the LIVE volume's erasures.jsonl forward into the restored tree", () => {
     const sh = read('scripts/restore.sh');

@@ -200,8 +200,10 @@ elif [ "$REQUIRE_CONFIG" = 1 ]; then
   dr_fail "no config archive for $STAMP. Without it AUTH_SECRET is lost and every existing
   API key, share link and edit secret stops resolving. Pass --no-config to accept that."
 fi
-[ "$REQUIRE_CONFIG" = 0 ] || [ -f "$WORKDIR/.env" ] ||
-  dr_fail "the config archive for $STAMP holds no .env — pass --no-config to accept losing AUTH_SECRET"
+# A `data-secret`-only archive (a generated-secret host with no .env) is a
+# complete pepper root too (PRDCT-1440).
+[ "$REQUIRE_CONFIG" = 0 ] || [ -f "$WORKDIR/.env" ] || [ -s "$WORKDIR/data-secret" ] ||
+  dr_fail "the config archive for $STAMP holds neither .env nor data-secret — pass --no-config to accept losing AUTH_SECRET"
 
 # ── pepper-root provenance — decided BEFORE anything is destroyed ────────────
 #
@@ -391,8 +393,12 @@ STAGE="verify-live"
 # the data volume unwritable is caught here instead of after the drill.
 APP_PORT=$(dr_env_get .env APP_PORT)
 APP_PORT="${APP_PORT:-3000}"
+# Default BEFORE the case: `case "${APP_BIND:-127.0.0.1}"` matched the
+# default value against the `*` branch and probed "http://:3000" whenever
+# .env predates the APP_BIND backfill (verifier finding F3, PRDCT-1440).
 APP_BIND=$(dr_env_get .env APP_BIND)
-case "${APP_BIND:-127.0.0.1}" in
+APP_BIND="${APP_BIND:-127.0.0.1}"
+case "$APP_BIND" in
   '' | 0.0.0.0 | '::' | localhost) PROBE_HOST=127.0.0.1 ;;
   *) PROBE_HOST="$APP_BIND" ;;
 esac

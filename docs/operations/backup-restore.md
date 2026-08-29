@@ -184,6 +184,11 @@ was migrated by a newer image (a rollback to an older tag, `:next` behind
 `:latest`) carries hashes this image does not know: the instance boots but
 refuses readiness (`/readyz` 503, the reason in the log) instead of running
 older code against a newer schema. Deploy the version that applied them.
+The same verdict fires if a migration file was **edited after it ran** on
+that database (a development-branch database that applied an earlier draft
+of a file): there the remedy is to fix the recorded hash by hand in
+`drizzle.__drizzle_migrations` (`UPDATE … SET hash = '<sha256 of the file>'`),
+never to loosen the check.
 
 ## Disaster recovery drill
 
