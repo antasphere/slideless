@@ -58,7 +58,9 @@ export const DEFAULT_FEDERATION_DIALS: HubFederationDials = {
   orgsTimeoutMs: 1_500,
   tokenTimeoutMs: 5_000,
   accessSkewMs: 60_000,
-  lockWatchdogMs: 10_000
+  // Must cover probe + presentation under the refresh lock (hub-grant.ts
+  // clamps it up if not): 5 s + 5 s + 2 s headroom.
+  lockWatchdogMs: 12_000
 };
 
 /**

@@ -2,7 +2,7 @@ import pg from 'pg';
 import { Counter } from 'prom-client';
 import { and, eq } from 'drizzle-orm';
 import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
-import { account, type Db } from '@slideless/db';
+import { account, hubGrantPresentations, type Db } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 
@@ -43,7 +43,23 @@ import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
  *     means we consume ITS result instead of presenting the stale token;
  *  4. a ~10 s watchdog cuts the dedicated connection so a wedged refresh
  *     can never park the lock forever (a session lock dies with its
- *     session).
+ *     session);
+ *  5. AMBIGUOUS OUTCOMES NEVER RE-PRESENT BLINDLY (PRDCT-1370). The hub
+ *     rotates BEFORE it answers and cannot roll back, so a client-side
+ *     timeout (or a lost response, or a 5xx after the commit) leaves us
+ *     holding a token the hub may already have rotated out — and presenting
+ *     it again is exactly the reuse-detection teardown above, reachable
+ *     with no attacker, only a hub that is slow but alive. Every
+ *     presentation is therefore recorded FIRST (`hub_grant_presentations`,
+ *     keyed by the account row, carrying the ciphertext presented) and the
+ *     record is cleared only once the hub's answer is known. A surviving
+ *     record makes the next refresh PROBE the token through the hub's
+ *     RFC 7662 introspection endpoint (`token_type_hint=refresh_token`,
+ *     read-only: the pinned plugin answers `active:false` for a rotated-out
+ *     token WITHOUT tearing the family down) and present it only when the
+ *     hub still calls it active; an inactive answer marks the grant dead
+ *     without ever presenting — the family, the CLI grant included, lives
+ *     on at the hub and a browser SSO login heals this user.
  *
  * Failure taxonomy (the token endpoint's answer decides):
  *  - `invalid_grant` (expired / revoked / reuse-detected) → the grant is
@@ -63,12 +79,16 @@ import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 
 /** Advisory-lock classid for the per-user refresh lock (two-int form). */
 const GRANT_REFRESH_LOCK_KEY = 7_432_004;
+/** Headroom the lock watchdog keeps beyond probe + presentation (row reads/writes, lock latency). */
+export const LOCK_WATCHDOG_HEADROOM_MS = 2_000;
 
 export interface HubGrantDials {
   /** Serve cached/stored access tokens only while exp − now exceeds this. */
   accessSkewMs: number;
   /** Token-endpoint fetch timeout. */
   tokenTimeoutMs: number;
+  /** Introspection-probe fetch timeout (the unanswered-presentation path). */
+  introspectTimeoutMs: number;
   /** Watchdog cutting the dedicated lock connection (wedged-refresh bound). */
   lockWatchdogMs: number;
 }
@@ -76,7 +96,10 @@ export interface HubGrantDials {
 export const DEFAULT_GRANT_DIALS: HubGrantDials = {
   accessSkewMs: 60_000,
   tokenTimeoutMs: 5_000,
-  lockWatchdogMs: 10_000
+  introspectTimeoutMs: 5_000,
+  // ≥ tokenTimeoutMs + introspectTimeoutMs + LOCK_WATCHDOG_HEADROOM_MS; the
+  // constructor clamps anything smaller (see there).
+  lockWatchdogMs: 12_000
 };
 
 /**
@@ -157,11 +180,15 @@ type RefreshOutcome =
   | { kind: 'invalid_client' }
   | { kind: 'transient' };
 
+/** The RFC 7662 probe's answer about a refresh token the hub never confirmed consuming. */
+type ProbeOutcome = 'active' | 'inactive' | 'transient';
+
 export class HubGrantService {
   /** userId → fresh access token (in-memory only; the row is the durable store). */
   private readonly cache = new Map<string, { token: string; expiresAtMs: number }>();
   private readonly inFlight = new Map<string, Promise<GrantAccess>>();
   private readonly tokenUrl: string;
+  private readonly introspectUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
   readonly dials: HubGrantDials;
@@ -172,9 +199,25 @@ export class HubGrantService {
 
   constructor(private readonly opts: HubGrantServiceOptions) {
     this.tokenUrl = opts.issuerUrl.replace(/\/+$/, '') + '/api/v1/auth/oauth2/token';
+    this.introspectUrl = opts.issuerUrl.replace(/\/+$/, '') + '/api/v1/auth/oauth2/introspect';
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.now = opts.now ?? Date.now;
-    this.dials = opts.dials;
+    // THE WATCHDOG MUST OUTLIVE THE LONGEST HOLD (PRDCT-1370 verifier
+    // finding): under the lock a refresh may now run the probe AND the
+    // presentation back to back, each up to its own timeout, plus the
+    // row reads and writes around them. A watchdog shorter than that cuts
+    // the lock mid-refresh, a sibling replica takes it and presents the
+    // SAME token — the double presentation the lock exists to prevent, and
+    // a family teardown at the hub. Clamped here, at the one place the
+    // dials are read, so no caller can under-size it.
+    const floor = opts.dials.tokenTimeoutMs + opts.dials.introspectTimeoutMs + LOCK_WATCHDOG_HEADROOM_MS;
+    this.dials = opts.dials.lockWatchdogMs >= floor ? opts.dials : { ...opts.dials, lockWatchdogMs: floor };
+    if (this.dials !== opts.dials) {
+      opts.logger.warn(
+        { requested: opts.dials.lockWatchdogMs, effective: floor },
+        'hub grant: lockWatchdogMs raised to cover probe + presentation under the lock'
+      );
+    }
     // registers: [] — boot attaches this to the app registry on cloud; an
     // oss boot never constructs this class, so the metric never exists there.
     this.refreshes = new Counter({
@@ -329,28 +372,46 @@ export class HubGrantService {
           return { kind: 'inconclusive' };
         }
 
+        // An UNANSWERED earlier presentation of this very ciphertext (layer
+        // 5): the hub may have rotated it out already. Probe, never guess.
+        if (await this.hasUnansweredPresentation(row)) {
+          const probe = await this.introspect(refreshToken);
+          if (probe === 'inactive') {
+            await this.markDead(row);
+            await this.clearPresentation(row.id);
+            this.cache.delete(userId);
+            this.refreshes.inc({ outcome: 'probe_dead' });
+            this.opts.logger.warn(
+              { userId },
+              'hub grant: an earlier refresh went unanswered and the hub now reports the token inactive — ' +
+                'grant marked dead WITHOUT re-presenting (the family survives at the hub); a browser SSO login heals it'
+            );
+            return { kind: 'grant_dead' };
+          }
+          if (probe === 'transient') {
+            this.refreshes.inc({ outcome: 'probe_transient' });
+            return { kind: 'inconclusive' };
+          }
+          this.refreshes.inc({ outcome: 'probe_live' });
+          // active: the unanswered presentation never reached the hub —
+          // presenting again is safe, and the record below is renewed.
+        }
+
+        // Record the presentation BEFORE the fetch: if the answer never
+        // arrives, this row is what makes the next attempt probe first.
+        await this.recordPresentation(row);
         const outcome = await this.postRefresh(refreshToken);
         if (outcome.kind === 'ok') {
           await this.writeRotation(row, outcome);
+          await this.clearPresentation(row.id);
           this.cache.set(userId, { token: outcome.accessToken, expiresAtMs: outcome.expiresAt.getTime() });
           this.refreshes.inc({ outcome: 'ok' });
           return { kind: 'ok', accessToken: outcome.accessToken };
         }
         if (outcome.kind === 'invalid_grant') {
-          // Definitive: expired, revoked, or reuse-torn-down. Null the
-          // tokens (dead marker = refreshToken IS NULL) — CONDITIONAL on
-          // the ciphertext we presented, so a browser login that re-seeded
-          // the row mid-flight is never wiped.
-          await this.opts.db
-            .update(account)
-            .set({
-              accessToken: null,
-              refreshToken: null,
-              accessTokenExpiresAt: null,
-              refreshTokenExpiresAt: null,
-              updatedAt: new Date()
-            })
-            .where(and(eq(account.id, row.id), eq(account.refreshToken, row.refreshToken)));
+          // Definitive: expired, revoked, or reuse-torn-down.
+          await this.markDead(row);
+          await this.clearPresentation(row.id);
           this.cache.delete(userId);
           this.refreshes.inc({ outcome: 'invalid_grant' });
           this.opts.logger.warn(
@@ -360,6 +421,11 @@ export class HubGrantService {
           return { kind: 'grant_dead' };
         }
         if (outcome.kind === 'invalid_client') {
+          // The hub answered, and it refused the CLIENT before touching the
+          // token (the pinned plugin validates client credentials before it
+          // rotates), so the presented token was not consumed: the record
+          // is cleared, not kept.
+          await this.clearPresentation(row.id);
           this.refreshes.inc({ outcome: 'invalid_client' });
           this.opts.logger.error(
             'hub grant: token endpoint answered invalid_client — HUB_CLIENT_ID/HUB_CLIENT_SECRET are broken; ' +
@@ -367,6 +433,9 @@ export class HubGrantService {
           );
           return { kind: 'inconclusive' };
         }
+        // Transient (timeout / network / 5xx / malformed): the answer is
+        // UNKNOWN, so the presentation record deliberately survives — the
+        // next attempt probes before it presents.
         this.refreshes.inc({ outcome: 'error' });
         return { kind: 'inconclusive' };
       } finally {
@@ -380,6 +449,105 @@ export class HubGrantService {
   }
 
   /** The user's hub account link, tokens as stored (possibly encrypted). */
+  /**
+   * Null the tokens (dead marker = refreshToken IS NULL) — CONDITIONAL on
+   * the ciphertext we hold, so a browser login that re-seeded the row
+   * mid-flight is never wiped.
+   */
+  private async markDead(row: GrantRow): Promise<void> {
+    await this.opts.db
+      .update(account)
+      .set({
+        accessToken: null,
+        refreshToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        updatedAt: new Date()
+      })
+      .where(and(eq(account.id, row.id), eq(account.refreshToken, row.refreshToken!)));
+  }
+
+  /** Whether an earlier presentation of THIS ciphertext is still unanswered. */
+  private async hasUnansweredPresentation(row: GrantRow): Promise<boolean> {
+    const [marker] = await this.opts.db
+      .select({ refreshToken: hubGrantPresentations.refreshToken })
+      .from(hubGrantPresentations)
+      .where(eq(hubGrantPresentations.accountId, row.id))
+      .limit(1);
+    // A marker for a DIFFERENT ciphertext is stale by construction (a
+    // browser login re-seeded the row): the token it names is gone.
+    return marker !== undefined && marker.refreshToken === row.refreshToken;
+  }
+
+  private async recordPresentation(row: GrantRow): Promise<void> {
+    await this.opts.db
+      .insert(hubGrantPresentations)
+      .values({ accountId: row.id, refreshToken: row.refreshToken!, presentedAt: new Date() })
+      .onConflictDoUpdate({
+        target: hubGrantPresentations.accountId,
+        set: { refreshToken: row.refreshToken!, presentedAt: new Date() }
+      });
+  }
+
+  private async clearPresentation(accountId: string): Promise<void> {
+    await this.opts.db.delete(hubGrantPresentations).where(eq(hubGrantPresentations.accountId, accountId));
+  }
+
+  /**
+   * RFC 7662 probe of a refresh token whose last presentation went
+   * unanswered. Read-only at the hub: the pinned oauth-provider plugin's
+   * introspection answers `active:false` for a rotated-out, expired, or
+   * unknown refresh token and never touches the family. Anything but a
+   * definite answer is transient — a probe must never be the reason a
+   * grant dies.
+   */
+  private async introspect(refreshToken: string): Promise<ProbeOutcome> {
+    const body = new URLSearchParams({
+      token: refreshToken,
+      token_type_hint: 'refresh_token',
+      client_id: this.opts.clientId,
+      client_secret: this.opts.clientSecret
+    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(this.introspectUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+        body: body.toString(),
+        signal: AbortSignal.timeout(this.dials.introspectTimeoutMs)
+      });
+    } catch (err) {
+      this.opts.logger.warn({ err }, 'hub grant: introspection endpoint unreachable — probe inconclusive');
+      return 'transient';
+    }
+    let payload: unknown = null;
+    try {
+      payload = await res.json();
+    } catch {
+      // classified below by status
+    }
+    if (res.ok) {
+      const active = (payload as { active?: unknown } | null)?.active;
+      if (active === true) return 'active';
+      if (active === false) return 'inactive';
+      this.opts.logger.warn(
+        'hub grant: introspection 200 without a boolean `active` — malformed, probe inconclusive'
+      );
+      return 'transient';
+    }
+    if (res.status === 401) {
+      this.opts.logger.error(
+        'hub grant: introspection answered invalid_client — HUB_CLIENT_ID/HUB_CLIENT_SECRET are broken; probe inconclusive'
+      );
+      return 'transient';
+    }
+    this.opts.logger.warn(
+      { status: res.status },
+      'hub grant: introspection answered non-2xx — probe inconclusive'
+    );
+    return 'transient';
+  }
+
   private async readRow(userId: string): Promise<GrantRow | null> {
     const [row] = await this.opts.db
       .select({

@@ -15,7 +15,7 @@ import {
   uuid,
   type AnyPgColumn
 } from 'drizzle-orm/pg-core';
-import { user } from './auth-schema.js';
+import { account, user } from './auth-schema.js';
 
 // Better Auth owns the shape of user/session/account/verification (generated
 // via @better-auth/cli, snapshot-checked in CI); everything below is domain.
@@ -299,6 +299,37 @@ export const ssoConnectJtis = pgTable('sso_connect_jtis', {
   /** The token's own `exp` — after this the row only documents history. */
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+/**
+ * The hub-grant PRESENTATION marker (PRDCT-1370, internal/federation.md
+ * "Ambiguous refresh outcomes"): written by HubGrantService immediately
+ * BEFORE it presents a user's refresh token to the hub's token endpoint,
+ * cleared once the hub's answer is known (a rotation, or a definitive
+ * refusal). A row that survives therefore means "this exact token was
+ * presented and its answer never arrived" — a client-side timeout, a lost
+ * response, a socket reset after the hub committed. The hub rotates BEFORE
+ * it answers and cannot roll back, so blindly re-presenting that token
+ * would trip the hub's RFC 9700 reuse detection and tear down the user's
+ * whole (client, user) grant family, the CLI grant included. With the
+ * marker in place the next refresh PROBES the token through the hub's
+ * RFC 7662 introspection endpoint first (read-only: it never rotates and
+ * never tears down) and only presents a token the hub still calls active.
+ *
+ * Keyed by the `account` row (one hub link per user); `refresh_token` is
+ * the ciphertext presented, so a browser re-login that re-seeds the row
+ * mid-flight invalidates the marker by construction (the ciphertext no
+ * longer matches). Postgres-backed so every replica sees it — the refresh
+ * lock is cross-replica, and so must the memory of an unanswered
+ * presentation be.
+ */
+export const hubGrantPresentations = pgTable('hub_grant_presentations', {
+  accountId: text('account_id')
+    .primaryKey()
+    .references(() => account.id, { onDelete: 'cascade' }),
+  /** The refresh-token CIPHERTEXT that was presented (matches account.refresh_token). */
+  refreshToken: text('refresh_token').notNull(),
+  presentedAt: timestamp('presented_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 /**

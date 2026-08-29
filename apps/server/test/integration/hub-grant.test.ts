@@ -4,7 +4,11 @@ import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import { createDatabase, createTestApp, startPostgres, type TestApp } from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
 import * as sso from './sso-helpers.js';
-import { DEFAULT_GRANT_DIALS, HubGrantService } from '../../src/identity/hub-grant.js';
+import {
+  DEFAULT_GRANT_DIALS,
+  HubGrantService,
+  LOCK_WATCHDOG_HEADROOM_MS
+} from '../../src/identity/hub-grant.js';
 
 /**
  * The per-user hub grant (identity/hub-grant.ts) against the FakeHub's
@@ -59,7 +63,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body)
 });
 
-function makeService(): HubGrantService {
+function makeService(dials: Partial<typeof DEFAULT_GRANT_DIALS> = {}): HubGrantService {
   return new HubGrantService({
     db: app.db.db,
     issuerUrl: hub.issuer,
@@ -69,8 +73,18 @@ function makeService(): HubGrantService {
     key: async () => AUTH_SECRET,
     connectionString,
     logger: app.logger,
-    dials: { ...DEFAULT_GRANT_DIALS, tokenTimeoutMs: 3_000 }
+    dials: { ...DEFAULT_GRANT_DIALS, tokenTimeoutMs: 3_000, ...dials }
   });
+}
+
+/** The unanswered-presentation record for alice's hub link, or null. */
+async function presentationRow(): Promise<{ refresh_token: string } | null> {
+  const { rows } = await app.db.pool.query(
+    `SELECT p.refresh_token FROM hub_grant_presentations p JOIN account a ON a.id = p.account_id
+     WHERE a.provider_id = 'antasphere' AND a.user_id = $1`,
+    [aliceId]
+  );
+  return (rows[0] as { refresh_token: string } | undefined) ?? null;
 }
 
 async function grantRow(): Promise<{ access_token: string | null; refresh_token: string | null }> {
@@ -313,5 +327,179 @@ describe('the failure taxonomy', () => {
     // Sanity: our encrypt primitive matches better-auth's (same key path).
     const cipher = await symmetricEncrypt({ key: AUTH_SECRET, data: 'probe' });
     await expect(symmetricDecrypt({ key: AUTH_SECRET, data: cipher })).resolves.toBe('probe');
+  });
+});
+
+describe('ambiguous outcomes: the presentation record + the RFC 7662 probe (PRDCT-1370)', () => {
+  // Short timeouts: these cases wait for the client-side abort on purpose.
+  const FAST = { tokenTimeoutMs: 400, introspectTimeoutMs: 400 };
+
+  it('a timeout AFTER the hub rotated: the next demand probes, marks the grant dead, and never presents the rotated-out token — the family survives', async () => {
+    await staleStoredAccess();
+    const before = await grantRow();
+    const presentations = hub.refreshCount();
+    const probes = hub.introspectRequests.length;
+
+    hub.tokenMode = 'commit_then_hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    // The hub consumed the token (one presentation) and the record survived
+    // the transient outcome, naming the exact ciphertext presented.
+    expect(hub.refreshCount()).toBe(presentations + 1);
+    expect((await presentationRow())?.refresh_token).toBe(before.refresh_token);
+    expect((await grantRow()).refresh_token).toBe(before.refresh_token); // untouched
+
+    // Second demand: a probe, NOT a presentation.
+    expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'grant_dead' });
+    expect(hub.refreshCount()).toBe(presentations + 1);
+    expect(hub.introspectRequests.length).toBe(probes + 1);
+    expect(hub.introspectRequests.at(-1)?.hint).toBe('refresh_token');
+    // The family was NOT torn down — the whole point (the CLI grant shares it).
+    expect(hub.isFamilyDead(alice.sub)).toBe(false);
+    // Dead-marked locally, record cleared.
+    const dead = await grantRow();
+    expect(dead.refresh_token).toBeNull();
+    expect(await presentationRow()).toBeNull();
+    // A browser login heals.
+    await sso.ssoLogin(app, hub, alice);
+    expect((await makeService().accessToken(aliceId)).kind).toBe('ok');
+  });
+
+  it('a timeout BEFORE the hub consumed the token: the probe says active and the next demand presents again — nothing destroyed', async () => {
+    await staleStoredAccess();
+    const before = await grantRow();
+    const probes = hub.introspectRequests.length;
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    expect((await presentationRow())?.refresh_token).toBe(before.refresh_token);
+
+    const access = await makeService(FAST).accessToken(aliceId);
+    expect(access.kind).toBe('ok');
+    expect(hub.introspectRequests.length).toBe(probes + 1);
+    expect((await grantRow()).refresh_token).not.toBe(before.refresh_token); // rotated
+    expect(await presentationRow()).toBeNull();
+  });
+
+  it('a confirmed refresh clears the record: ordinary refreshes never probe', async () => {
+    await staleStoredAccess();
+    const probes = hub.introspectRequests.length;
+    expect((await makeService().accessToken(aliceId)).kind).toBe('ok');
+    expect(await presentationRow()).toBeNull();
+    expect(hub.introspectRequests.length).toBe(probes);
+  });
+
+  it('the probe failing is transient — nothing destroyed, the record survives, recovery is immediate', async () => {
+    await staleStoredAccess();
+    const before = await grantRow();
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    for (const mode of ['network', 'http500'] as const) {
+      hub.introspectMode = mode;
+      try {
+        expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+      } finally {
+        hub.introspectMode = 'ok';
+      }
+      expect((await grantRow()).refresh_token).toBe(before.refresh_token);
+      expect((await presentationRow())?.refresh_token).toBe(before.refresh_token);
+    }
+    expect((await makeService(FAST).accessToken(aliceId)).kind).toBe('ok');
+    expect(await presentationRow()).toBeNull();
+  });
+
+  it('a browser re-login makes a stale record inert by construction (different ciphertext): no probe', async () => {
+    await staleStoredAccess();
+    const probes = hub.introspectRequests.length;
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    expect(await presentationRow()).not.toBeNull();
+    await sso.ssoLogin(app, hub, alice); // re-seeds the row: new ciphertext
+    await staleStoredAccess();
+    expect((await makeService(FAST).accessToken(aliceId)).kind).toBe('ok');
+    expect(hub.introspectRequests.length).toBe(probes);
+    expect(await presentationRow()).toBeNull();
+  });
+
+  it('a probe answered 401 or a 200 without a boolean `active` is inconclusive — a probe is never the reason a grant dies', async () => {
+    await staleStoredAccess();
+    const before = await grantRow();
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    for (const mode of ['invalid_client', 'malformed'] as const) {
+      hub.introspectMode = mode;
+      try {
+        expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+      } finally {
+        hub.introspectMode = 'ok';
+      }
+      expect((await grantRow()).refresh_token).toBe(before.refresh_token);
+      expect((await presentationRow())?.refresh_token).toBe(before.refresh_token);
+    }
+    expect((await makeService(FAST).accessToken(aliceId)).kind).toBe('ok');
+  });
+
+  it('the lock watchdog outlives probe + presentation: a sibling replica never presents the same token', async () => {
+    // The verifier's reproduction (PRDCT-1370): a short watchdog, a slow
+    // probe and a slow presentation. Without the clamp the watchdog cut the
+    // lock mid-refresh and replica B presented the token a second time —
+    // reuse detection, family dead. With it, exactly one presentation.
+    await staleStoredAccess();
+    hub.tokenMode = 'hang';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    const presentations = hub.refreshCount();
+    const dials = { tokenTimeoutMs: 3_000, introspectTimeoutMs: 3_000, lockWatchdogMs: 600 };
+    const a = makeService(dials);
+    const b = makeService(dials);
+    expect(a.dials.lockWatchdogMs).toBe(3_000 + 3_000 + LOCK_WATCHDOG_HEADROOM_MS);
+    hub.introspectDelayMs = 400;
+    hub.tokenDelayMs = 500;
+    try {
+      const first = a.accessToken(aliceId);
+      await new Promise((r) => setTimeout(r, 100));
+      const second = b.accessToken(aliceId);
+      const [ra, rb] = await Promise.all([first, second]);
+      expect(ra.kind).toBe('ok');
+      expect(rb.kind).toBe('ok');
+    } finally {
+      hub.introspectDelayMs = 0;
+      hub.tokenDelayMs = 0;
+    }
+    expect(hub.refreshCount()).toBe(presentations + 1);
+    expect(hub.isFamilyDead(alice.sub)).toBe(false);
+  });
+
+  it('invalid_client clears the record — the hub refused the client before consuming the token', async () => {
+    await staleStoredAccess();
+    hub.tokenMode = 'invalid_client';
+    try {
+      expect(await makeService(FAST).accessToken(aliceId)).toEqual({ kind: 'inconclusive' });
+    } finally {
+      hub.tokenMode = 'ok';
+    }
+    expect(await presentationRow()).toBeNull();
+    expect((await makeService(FAST).accessToken(aliceId)).kind).toBe('ok');
   });
 });

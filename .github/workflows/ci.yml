@@ -54,3 +54,41 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Run the multi-replica scale drill
         run: DRILL_SKIP_BUILD=1 ./scripts/scale-drill.sh
+
+  # The federation drill (PRDCT-1370): the hub AND this Slideless checkout in
+  # one compose project, a headless SSO login, then assertions on the HUB's
+  # database — the only place the grant-family consequences are visible.
+  # internal/federation.md "The federation drill". The hub is checked out
+  # beside this repo (its dev branch) and built by the compose file; the
+  # checkout needs a token that can read antasphere/hub
+  # (FEDERATION_CHECKOUT_TOKEN — a fine-grained PAT or a GitHub App token
+  # with contents:read on antasphere/hub).
+  federation-drill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: antasphere/hub
+          ref: dev
+          token: ${{ secrets.FEDERATION_CHECKOUT_TOKEN }}
+          path: .federation-hub
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the Slideless image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: slideless:federation-dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build the hub image
+        uses: docker/build-push-action@v6
+        with:
+          context: .federation-hub
+          load: true
+          tags: antasphere-hub:federation-dev
+          cache-from: type=gha,scope=federation-hub
+          cache-to: type=gha,mode=max,scope=federation-hub
+      - name: Run the federation drill
+        run: FEDERATION_HUB_DIR=$PWD/.federation-hub DRILL_SKIP_BUILD=1 ./scripts/federation-drill.sh

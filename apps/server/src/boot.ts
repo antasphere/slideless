@@ -506,6 +506,9 @@ export async function boot(
         dials: {
           accessSkewMs: hubDials.accessSkewMs,
           tokenTimeoutMs: hubDials.tokenTimeoutMs,
+          // The RFC 7662 probe rides the token-endpoint budget: same hub,
+          // same hop, and it only runs after an unanswered presentation.
+          introspectTimeoutMs: hubDials.tokenTimeoutMs,
           lockWatchdogMs: hubDials.lockWatchdogMs
         }
       })

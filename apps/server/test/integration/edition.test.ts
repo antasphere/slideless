@@ -243,6 +243,32 @@ describe('cloud edition on a fresh database', () => {
     expect(info.auth.twoFactor).toBe(false);
   });
 
+  it('the provider-grant routes stay closed on CLOUD too (PRDCT-1354 pin; the oss pin lives in minted-credentials)', async () => {
+    // On cloud the stored provider grant IS the hub grant (ADR 019): handing
+    // it to a caller — or rotating it outside HubGrantService's lock — is
+    // the seam PRDCT-1370 hardens. The closure is unconditional in code;
+    // this pins it on a cloud boot so an edition-gated regression cannot
+    // pass on the oss-only pin alone.
+    const signIn = await app.app.request(
+      '/api/v1/auth/sign-in/email',
+      json({ email: OWNER.email, password: OWNER.password })
+    );
+    expect(signIn.status).toBe(200);
+    const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
+    for (const path of ['/api/v1/auth/get-access-token', '/api/v1/auth/refresh-token']) {
+      for (const headers of [{ cookie }, {}]) {
+        const res = await app.app.request(path, {
+          ...json({ providerId: 'antasphere' }),
+          headers: { 'content-type': 'application/json', ...headers }
+        });
+        expect(res.status, `${path} with ${Object.keys(headers).join(',') || 'no'} cookie`).toBe(403);
+        const body = await res.text();
+        expect(body).toContain('provider_grant_forbidden');
+        expect(body).not.toMatch(/accessToken|idToken|refreshToken|access_token/);
+      }
+    }
+  });
+
   it('local password sign-in stays WIRED though hidden (the break-glass door, D1)', async () => {
     const signIn = await app.app.request(
       '/api/v1/auth/sign-in/email',

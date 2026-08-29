@@ -1,0 +1,61 @@
+# Federation DRILL overlay (PRDCT-1370) — internal/federation.md "The
+# federation drill". Adds to the dev harness exactly what the automated
+# seam test needs and nothing the harness itself should carry:
+#
+#   docker compose -f docker-compose.federation.yml -f docker-compose.federation.drill.yml up -d
+#
+#  - a delay hop between Slideless and the hub (scripts/lib/delay-proxy.mjs,
+#    run from the Slideless image itself — no third-party image to pull).
+#    The app container is given an /etc/hosts entry pinning `hub.localhost`
+#    to the hop's fixed address (extra_hosts wins over the compose DNS
+#    alias), so every hub call Slideless makes — discovery, JWKS, /orgs,
+#    the token endpoint — crosses it while the hub's own PUBLIC_BASE_URL,
+#    the issuer string and the browser-facing ports stay exactly as in the
+#    harness. The drill script drives the hop's admin API (127.0.0.1:8474)
+#    to make the hub SLOW BUT ALIVE for one refresh: the CLOUD-2 shape,
+#    where the hub commits a rotation and Slideless's client-side timeout
+#    fires first.
+#  - a SECOND registry tool on the hub (`tool-drill-second`), so the
+#    per-client audience rule has a foreign audience to refuse and the
+#    rotation-grace leg has a grant family of its own to tear down without
+#    touching the Slideless user's.
+#
+# DEV/CI ONLY — inline secrets, localhost-bound ports.
+
+services:
+  hubhop:
+    image: slideless:federation-dev
+    restart: unless-stopped
+    entrypoint: ['node', '/delay-proxy.mjs']
+    environment:
+      - LISTEN=3300
+      - UPSTREAM_HOST=hub
+      - UPSTREAM_PORT=3300
+      - ADMIN=8474
+    volumes:
+      - ./scripts/lib/delay-proxy.mjs:/delay-proxy.mjs:ro
+    # The image's own healthcheck probes the Slideless port; the hop has none.
+    healthcheck:
+      disable: true
+    networks:
+      default:
+        ipv4_address: 172.30.250.250
+    ports:
+      - '127.0.0.1:8474:8474'
+
+  app:
+    depends_on:
+      hubhop:
+        condition: service_started
+    extra_hosts:
+      - 'hub.localhost:172.30.250.250'
+
+  hub:
+    environment:
+      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:3310/mcp","redirectUris":["http://slideless.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"},{"slug":"drill-second","name":"Second tool (drill)","resourceUrl":"http://second.localhost:3320/mcp","redirectUris":["http://second.localhost:3320/callback"],"clientId":"tool-drill-second","clientSecret":"federation-dev-client-secret-0002"}]'
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.250.0/24
