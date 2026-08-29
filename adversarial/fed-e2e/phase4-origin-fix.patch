@@ -1,0 +1,11 @@
+--- a/scripts/federation-drill.sh
++++ b/scripts/federation-drill.sh
+@@ -197,7 +197,7 @@
+ say "Phase 4 — AUTH-3: the provider-grant routes are closed on cloud"
+ for path in get-access-token refresh-token; do
+   code=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/pg.json" -w '%{http_code}' -X POST "$SL/api/v1/auth/$path" \
+-    -H 'content-type: application/json' -d '{"providerId":"antasphere"}')
++    -H "Origin: $SL" -H 'content-type: application/json' -d '{"providerId":"antasphere"}')
+   [ "$code" = 403 ] || fail "/auth/$path answered $code (expected 403)"
+   grep -q provider_grant_forbidden "$SCRATCH/pg.json" || fail "/auth/$path 403 lacks provider_grant_forbidden"
+   ! grep -qE 'accessToken|refreshToken|access_token' "$SCRATCH/pg.json" || fail "/auth/$path leaked token material"
