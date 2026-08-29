@@ -71,10 +71,18 @@ VIEWER_BASE_URL=https://usercontent.example.net
 
 Now even a hypothetical header regression cannot expose the dashboard
 session across the real origin boundary — the browser itself separates the
-two worlds. The sandbox headers stay on as defense-in-depth. This is the
-recommended setup for any instance where outsiders routinely open share
-links. (Per-deck subdomains — full storage isolation for interactive
-`app`-kind decks — are the target architecture and remain open.)
+two worlds. The server makes the boundary real rather than cosmetic: the
+viewer hostname serves only decks and the token-authenticated viewer API
+(the dashboard, sign-in and the rest of the API answer 404 there), the app
+hostname redirects deck links across instead of serving them, the app API
+refuses requests carrying the viewer origin — even where it would otherwise
+trust "the origin it is served on" — and the auth layer never counts the
+viewer origin as trusted. The sandbox headers stay on as defense-in-depth.
+This is the recommended setup for any instance where outsiders routinely
+open share links; the proxy recipe is in
+[reverse-proxy.md](../self-hosting/reverse-proxy.md). (Per-deck subdomains
+— full storage isolation for interactive `app`-kind decks — are the target
+architecture and remain open.)
 
 ## Who can read a deck at all
 

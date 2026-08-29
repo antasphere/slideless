@@ -189,6 +189,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     '*',
     crossSiteGuard({
       publicBaseUrl: env.PUBLIC_BASE_URL,
+      // The viewer origin (PRDCT-1352) is author-controlled deck script's
+      // origin: never a trust grant here, even if it is the serving origin.
+      deniedOrigins: env.VIEWER_BASE_URL ? [env.VIEWER_BASE_URL] : [],
       // `/api/v1/viewer/*` is the share-token annotation API, and it is a
       // DELIBERATE wildcard-CORS surface (viewer/annotations-api.ts): it is
       // called by the overlay client running inside the sandboxed viewer

@@ -55,6 +55,7 @@ export interface CreateAuthOptions {
   env: Pick<
     Env,
     | 'PUBLIC_BASE_URL'
+    | 'VIEWER_BASE_URL'
     | 'GOOGLE_CLIENT_ID'
     | 'GOOGLE_CLIENT_SECRET'
     | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
@@ -341,6 +342,7 @@ export function createAuth({
 }: CreateAuthOptions) {
   const isHttps = env.PUBLIC_BASE_URL.startsWith('https://');
   const resource = mcpResourceUrl(env.PUBLIC_BASE_URL);
+  const viewerOrigin = env.VIEWER_BASE_URL ? new URL(env.VIEWER_BASE_URL).origin : null;
 
   /**
    * Cloud only: may this email take the local password door? The setup
@@ -772,7 +774,11 @@ export function createAuth({
             } catch {
               // unparseable request URL — judge by the trusted list only
             }
-            if (origin !== servingOrigin && !ctx.context.isTrustedOrigin(origin)) {
+            // The viewer origin never signs anyone in (PRDCT-1352), even as
+            // the serving origin: an author's deck script must not be able
+            // to mint a session on the hostname it runs on.
+            const isViewerOrigin = viewerOrigin !== null && origin === viewerOrigin;
+            if (isViewerOrigin || (origin !== servingOrigin && !ctx.context.isTrustedOrigin(origin))) {
               throw new APIError('FORBIDDEN', { message: 'Invalid origin' });
             }
           }
@@ -947,6 +953,10 @@ export function createAuth({
     },
     // Trust the serving origin (works on localhost, previews, any domain)
     // plus the configured public origin behind a TLS-terminating proxy.
+    // The viewer origin (VIEWER_BASE_URL, PRDCT-1352) is author-controlled
+    // deck script's origin and is never trusted, serving origin or not: the
+    // host gate keeps the auth surface off that hostname, and this is the
+    // second lock behind it.
     trustedOrigins: (request) => {
       const origins = [env.PUBLIC_BASE_URL];
       try {
@@ -954,7 +964,7 @@ export function createAuth({
       } catch {
         // unparseable request URL — explicit origin only
       }
-      return origins;
+      return viewerOrigin ? origins.filter((origin) => origin !== viewerOrigin) : origins;
     }
   });
 }

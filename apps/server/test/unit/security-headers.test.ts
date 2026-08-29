@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { hstsValue, securityHeaders } from '../../src/middleware/security-headers.js';
+import { buildCsp, hstsValue, securityHeaders } from '../../src/middleware/security-headers.js';
 import { createRuntimeState } from '../../src/state.js';
 
 /**
@@ -85,5 +85,21 @@ describe('HSTS', () => {
   it('sends none when the instance is not https', async () => {
     const res = await appWith(null).request('/dashboard');
     expect(res.headers.get('strict-transport-security')).toBeNull();
+  });
+
+  describe('buildCsp frame-src (PRDCT-1352, DASH-4)', () => {
+    it("frames only 'self' by default — the single-origin preview", () => {
+      expect(buildCsp([])).toContain("frame-src 'self';");
+      expect(buildCsp([])).not.toContain('decks.example.net');
+    });
+
+    it('adds the viewer origin so the dashboard preview can frame decks from it', () => {
+      const csp = buildCsp(["'sha256-abc'"], { frameSrc: ['https://decks.example.net'] });
+      expect(csp).toContain("frame-src 'self' https://decks.example.net;");
+      // Nothing else widens: the viewer origin gets frames, not scripts or connects.
+      expect(csp).toContain("script-src 'self' 'sha256-abc';");
+      expect(csp).toContain("connect-src 'self';");
+      expect(csp).toContain("frame-ancestors 'none';");
+    });
   });
 });

@@ -73,6 +73,18 @@ deploys) + `dev` (day-to-day work).
   to the literal marker alone.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
+- **The viewer origin is a real boundary, never a trust grant (PRDCT-1352)**: with
+  `VIEWER_BASE_URL` set, `middleware/host-gate.ts` makes the viewer hostname answer ONLY
+  `/v/*`, `/api/v1/viewer/*` (token-authed, cookie-less — the overlay and forms runtime call
+  it relative to the deck page) and the probes, everything else 404 before any handler; the
+  app hostname answers `/v/*` with a 308 to the viewer origin. The viewer origin is on the
+  cross-site guard's `deniedOrigins` and filtered out of Better Auth's `trustedOrigins` and
+  the sign-in Origin hook — refused EVEN AS THE SERVING ORIGIN, so a proxy routing the viewer
+  hostname at the app can never turn "the origin we are served on" into trust for deck
+  script. The dashboard CSP gains `frame-src 'self' <viewer origin>` (the preview iframe).
+  Unset, none of this is installed — single-origin behaviour is byte-for-byte unchanged, and
+  `viewer-origin.test.ts` pins both modes. Never widen the viewer-host allowlist to a
+  cookie-reading surface, and never drop the explicit denial in favour of the gate alone.
 - **Deck reads are private, never workspace-wide (ADR 013)**: every presentation read (get,
   versions, version detail, asset download, and the list's WHERE scope) goes through
   `canReadDeck` — deck owner, workspace admin/owner, or an ACTIVE collaborator grant on THAT

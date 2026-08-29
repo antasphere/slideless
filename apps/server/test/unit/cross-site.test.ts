@@ -118,4 +118,49 @@ describe('crossSiteGuard', () => {
     });
     expect(res.status).toBe(200);
   });
+
+  describe('deniedOrigins — the viewer origin (PRDCT-1352)', () => {
+    const VIEWER = 'https://decks.example.net';
+    function gated(): Hono {
+      const api = new Hono();
+      api.use(
+        '*',
+        crossSiteGuard({
+          publicBaseUrl: 'https://app.example.com',
+          // Even listed as trusted, denial wins: an operator cannot re-open it by accident.
+          extraTrustedOrigins: [VIEWER],
+          deniedOrigins: [VIEWER]
+        })
+      );
+      api.post('/orgs', (c) => c.json({ created: true }, 201));
+      const root = new Hono();
+      root.route('/api/v1', api);
+      return root;
+    }
+
+    it('refuses the viewer origin even when it IS the serving origin', async () => {
+      const res = await gated().request(`${VIEWER}/api/v1/orgs`, {
+        method: 'POST',
+        headers: { origin: VIEWER, 'sec-fetch-site': 'same-origin', cookie: 'session=abc' }
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ error: { code: 'cross_site_forbidden' } });
+    });
+
+    it('refuses the viewer origin arriving at the app origin', async () => {
+      const res = await gated().request('https://app.example.com/api/v1/orgs', {
+        method: 'POST',
+        headers: { origin: VIEWER, 'sec-fetch-site': 'cross-site', cookie: 'session=abc' }
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('still lets the app origin through', async () => {
+      const res = await gated().request('https://app.example.com/api/v1/orgs', {
+        method: 'POST',
+        headers: { origin: 'https://app.example.com', 'sec-fetch-site': 'same-origin' }
+      });
+      expect(res.status).toBe(201);
+    });
+  });
 });

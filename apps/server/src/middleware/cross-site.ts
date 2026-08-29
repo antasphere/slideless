@@ -47,6 +47,16 @@ export interface CrossSiteGuardOptions {
    * hosted first-party dashboard, say. Empty on the template.
    */
   extraTrustedOrigins?: readonly string[];
+  /**
+   * Origins REFUSED even when they equal the origin this request was served
+   * on: the viewer origin (VIEWER_BASE_URL, PRDCT-1352). The host gate keeps
+   * `/api/v1` (minus the token-authed `/viewer/*` subset) off that hostname
+   * altogether, so in the shipped assembly no request here carries it as the
+   * serving origin — this is the second lock, so that a gate regression or a
+   * proxy routing the viewer hostname at the app never turns "the origin we
+   * are served on" into a trust grant for author-controlled deck script.
+   */
+  deniedOrigins?: readonly string[];
   /** Escape hatch for surfaces that must stay open (paths are `/api/v1/...`). */
   isExempt?: (path: string) => boolean;
 }
@@ -69,6 +79,7 @@ function servingOrigin(c: Context): string | null {
 export function crossSiteGuard({
   publicBaseUrl,
   extraTrustedOrigins = [],
+  deniedOrigins = [],
   isExempt
 }: CrossSiteGuardOptions): MiddlewareHandler {
   const configured = new Set<string>();
@@ -78,6 +89,13 @@ export function crossSiteGuard({
     const origin = originOf(extra);
     if (origin) configured.add(origin);
   }
+  const denied = new Set<string>();
+  for (const value of deniedOrigins) {
+    const origin = originOf(value);
+    if (origin) denied.add(origin);
+  }
+  // A denied origin wins over every trust source, the serving origin included.
+  for (const origin of denied) configured.delete(origin);
 
   return async (c, next) => {
     if (SAFE_METHODS.has(c.req.method)) return next();
@@ -93,7 +111,7 @@ export function crossSiteGuard({
     const origin = c.req.header('origin');
     if (origin) {
       const serving = servingOrigin(c);
-      const trusted = origin === serving || configured.has(origin);
+      const trusted = !denied.has(origin) && (origin === serving || configured.has(origin));
       if (!trusted) {
         return apiError(c, 403, 'cross_site_forbidden', 'Cross-site requests are not accepted on this API');
       }

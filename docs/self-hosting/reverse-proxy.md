@@ -63,8 +63,26 @@ usercontent.example.net {
 ```
 
 plus `VIEWER_BASE_URL=https://usercontent.example.net` in `.env`. Share
-URLs are then minted on that origin; the dashboard and API stay on
-`PUBLIC_BASE_URL`.
+URLs are then minted on that origin, and the server enforces the split by
+hostname:
+
+- The viewer hostname answers **only** `/v/*` (decks, assets, the password
+  form), `/api/v1/viewer/*` (the token-authenticated annotation and forms
+  API the deck runtime calls) and the `/healthz` / `/readyz` probes.
+  The dashboard, sign-in, `/mcp`, `/embed.js` and the rest of `/api/v1`
+  answer 404 there, and no session cookie is ever issued or read on it.
+- The app hostname (`PUBLIC_BASE_URL`) serves everything else and answers
+  `/v/*` with a redirect to the viewer hostname, so links minted before the
+  switch keep working.
+- The app API refuses any request whose `Origin` is the viewer origin (or
+  any foreign origin), and the dashboard's content policy frames decks
+  from the viewer origin only, so the in-dashboard deck preview keeps
+  working.
+
+The two values must be different origins; the server refuses to boot when
+they are equal. The proxy must forward the original `Host` header (Caddy does
+by default; nginx needs `proxy_set_header Host $host;`) — the split is decided
+on it.
 
 ## Caddy in compose (alternative)
 
