@@ -62,12 +62,15 @@ read them back — so a custom port survives an upgrade instead of reverting:
 
 ## First boot
 
-The dashboard shows the setup wizard: instance name + owner account. When a
-`SETUP_TOKEN` is set, the wizard requires it — this stops a stranger racing
-you to own a freshly exposed instance. `setup.sh` and the one-liner installer
-always generate one; on a hand-written `.env` without it, setup is
-first-come-first-served, so **set `SETUP_TOKEN` on any internet-reachable
-host**. Setup runs exactly once; afterwards the endpoint answers `410 Gone`.
+The dashboard shows the setup wizard: instance name + owner account. The
+wizard **always** requires a setup token — this stops a stranger racing you
+to own a freshly exposed instance. `setup.sh` and the one-liner installer
+generate one into `.env`; a container started without `SETUP_TOKEN` (a
+hand-written `.env`, a plain `docker run`) generates its own at first boot,
+writes it to `/data/setup-token` inside the data volume and **prints it in
+the container log** (`docker compose logs app | grep setup`). Setup is never
+first-come-first-served. It runs exactly once; afterwards the endpoint
+answers `410 Gone` and the generated token file is removed.
 
 Setup is also refused over plaintext HTTP on a non-loopback `PUBLIC_BASE_URL`
 (`403 insecure_transport`) — the request carries the owner password and the

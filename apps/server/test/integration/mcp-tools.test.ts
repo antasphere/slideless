@@ -136,7 +136,10 @@ beforeAll(async () => {
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'mcp_tools'), {}, { email: mail });
 
-  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'MCP Suite', owner: OWNER }));
+  const setup = await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'MCP Suite', owner: OWNER })
+  );
   expect(setup.status).toBe(201);
   ownerCookie = await signIn(OWNER);
   ownerKey = await mintKey(ownerCookie, 'owner-rw', ['presentations:read', 'presentations:write']);

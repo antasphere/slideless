@@ -42,7 +42,10 @@ async function signIn(email: string, password: string): Promise<Response> {
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'acct'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Acct', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Acct', owner: OWNER })
+  );
 });
 
 afterAll(async () => {

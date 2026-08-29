@@ -790,6 +790,57 @@ secret>` and harvested what visitors typed, straight through the official
   (`identity/oauth-jwt.ts`) retries on both names; pinned by the mid-cache
   rotation test.
 
+## Deployment posture (PRDCT-1347 / 1357 / 1356 / 1440, 2026-08-29)
+
+- **"Optional when set" is a hole for the one request that decides ownership.**
+  `SETUP_TOKEN` was checked only when configured, so a bare `docker run` produced
+  a free-to-claim instance. The claim now always needs a token: env, or one
+  generated into `$DATA_DIR/setup-token` at boot and printed to the log
+  (`resolveSetupToken`, the same zero-config shape as the auth secret). The
+  token check sits AFTER the 410 already-set-up answer so a replay never
+  turns into a free claim when the token is null; the generated file is
+  removed on success (it would otherwise ride in every backup). 76 test
+  bodies had to grow a `setupToken` — the test helper now boots every app with
+  `SETUP_TOKEN` so new suites pass it from `helpers.ts`.
+- **The one unencrypted artifact defines the backup's secrecy.** With a
+  passphrase the config archive was encrypted while `/data/secret` rode in
+  the cleartext data tarball. `backup.sh` now `--exclude=./secret`s the
+  tarball and carries the root as `data-secret` in the encrypted archive;
+  `restore.sh` learned the third home (`config_secret`, written into the
+  volume after the swap through a read-only mount of the decrypted WORKDIR,
+  never through the backup dir). Bash 3.2 (macOS, where the unit suite runs
+  the scripts) treats an empty array under `set -u` as unbound — use
+  `${arr[@]+"${arr[@]}"}`.
+- **An erasure that lives only in the database is undone by a restore.**
+  The tombstone (`$DATA_DIR/erasures.jsonl`, append-only, hashed email)
+  lives outside the dump; `restore.sh` carries the LIVE file forward into the
+  restored tree; boot replays it through Better Auth's cascade with a
+  `user.erasure_replayed` system audit row. The append lives in
+  `AccountDeletionService.afterUserDelete` because every GDPR surface (self
+  delete, admin delete) funnels through the adapter hooks; the orphan purge
+  deliberately does not (it is GC, not erasure).
+- **Count-based migration status calls a downgrade "current".** drizzle
+  records the sha256 of each applied file; comparing hash SETS (not counts)
+  makes a database migrated by a newer image show `unknownApplied > 0`. The
+  check runs before `runMigrations` on every boot (drizzle's own migrator only
+  compares timestamps and would happily proceed) and refuses readiness.
+- **The flip acknowledgement is not a migration.** `EDITION_CHANGE_ALLOWED`
+  re-stamped and proceeded; the oss→cloud flip now pre-flights (no
+  unprojected workspace, no unverified user) and cloud→oss is refused. Tests
+  that flip must project the setup workspace first.
+- **On cloud, "no link" is definitive only for a user the hub never
+  projected.** A principal holding `origin='hub'` rows whose account row is
+  gone has a SEVERED link; treating it as the fail-open `no_link` (cached
+  like a success) was the way to switch enforcement off. It now fails closed
+  as a dead grant, and `/unlink-account` for `antasphere` is refused in the
+  same before-hook as reset/OTP. `/sign-in/email` on cloud is the operator's
+  (`instance_settings.operator_user_id`, the durable record that also keeps
+  them out of the orphan purge) and the allowlist's door only.
+- **The break-glass upsert must stamp `origin='local'` on the conflict
+  path too** — an `onConflictDoUpdate` `set` that omits a column keeps the
+  row's old value, so a hub-projected row promoted by break-glass stayed
+  `origin='hub'` and the reconciler swept the recovery ~12 s later.
+
 ## Config / HTTP hardening pass (PRDCT-1374 + PRDCT-1375, 2026-07-26)
 
 Ported from the template. The generic rules live in the template's own LESSONS

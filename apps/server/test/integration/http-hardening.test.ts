@@ -55,7 +55,10 @@ const nest = (depth: number) => '['.repeat(depth) + '1' + ']'.repeat(depth);
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'hardening'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Hard', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Hard', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })
@@ -276,7 +279,11 @@ describe('malformed input from an ANONYMOUS client is 4xx, never 5xx', () => {
   const cases: Array<[string, () => Response | Promise<Response>, string]> = [
     [
       'NUL in the setup instance name',
-      () => app.app.request('/api/v1/setup', json({ instanceName: `Acme${NUL}`, owner: OWNER })),
+      () =>
+        app.app.request(
+          '/api/v1/setup',
+          json({ setupToken: 'integration-test-setup-token', instanceName: `Acme${NUL}`, owner: OWNER })
+        ),
       'validation_error'
     ],
     [

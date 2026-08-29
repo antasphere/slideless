@@ -55,7 +55,10 @@ describe('R7 edition-flip boot guard', () => {
   beforeAll(async () => {
     connectionString = await createDatabase(container, 'edition_guard');
     const app = await createTestApp(connectionString);
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'Ed', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Ed', owner: OWNER })
+    );
     expect(res.status).toBe(201);
     await app.stop();
   });
@@ -74,6 +77,14 @@ describe('R7 edition-flip boot guard', () => {
   });
 
   it('EDITION_CHANGE_ALLOWED=true re-stamps and boots; the flip then holds without the flag', async () => {
+    // The flip pre-flights (PRDCT-1356 EDIT-1): an unprojected workspace
+    // refuses it. Project the setup workspace first — cloud-lifecycle.test.ts
+    // pins the refusal itself.
+    const prep = await createTestApp(connectionString);
+    await prep.db.pool.query(
+      `UPDATE workspaces SET central_account_id = '44444444-aaaa-4bbb-8ccc-0000000000ed'`
+    );
+    await prep.stop();
     const flipped = await createTestApp(connectionString, { ...HUB_ENV, EDITION_CHANGE_ALLOWED: 'true' });
     const { rows } = await flipped.db.pool.query<{ edition: string }>(
       `SELECT edition FROM instance_settings`
@@ -82,7 +93,8 @@ describe('R7 edition-flip boot guard', () => {
     await flipped.stop();
 
     // The stamp moved: a plain cloud boot now succeeds, and an oss boot is
-    // now the refused flip (the guard is symmetric).
+    // now the refused flip (the guard is symmetric) — and the REVERSE flip
+    // is refused even with the flag (EDIT-4, cloud-lifecycle.test.ts).
     const cloudAgain = await createTestApp(connectionString, HUB_ENV);
     await cloudAgain.stop();
     await expect(createTestApp(connectionString)).rejects.toThrow(
@@ -103,7 +115,10 @@ describe('cloud edition on a fresh database', () => {
   });
 
   it('boots (fresh DB — nothing to guard) and setup stamps edition=cloud', async () => {
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'EdCloud', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'EdCloud', owner: OWNER })
+    );
     expect(res.status).toBe(201);
     const body = await readJson(res);
     // Cloud setup creates NO workspace (user-scoped federation): every
@@ -273,7 +288,10 @@ describe('cloud edition closes the local password-reset surface (P8, ADR 017)', 
       { ...HUB_ENV, SUPERADMIN_EMAILS: OWNER.email },
       { email }
     );
-    const res = await app.app.request('/api/v1/setup', jsonIp({ instanceName: 'EdReset', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      jsonIp({ setupToken: 'integration-test-setup-token', instanceName: 'EdReset', owner: OWNER })
+    );
     expect(res.status).toBe(201);
     // Cloud setup mints no workspace — the cloud-LOCAL workspace this
     // suite's reset-link + break-glass fixtures need is seeded directly.
@@ -450,7 +468,10 @@ describe('cloud edition closes the OTP entrances (D1 hub-only credentials)', () 
       { ...HUB_ENV, GOOGLE_CLIENT_ID: 'cloud-google-id', GOOGLE_CLIENT_SECRET: 'cloud-google-secret' },
       { email }
     );
-    const res = await app.app.request('/api/v1/setup', jsonIp({ instanceName: 'EdOtp', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      jsonIp({ setupToken: 'integration-test-setup-token', instanceName: 'EdOtp', owner: OWNER })
+    );
     expect(res.status).toBe(201);
     // Cloud setup mints no workspace — the key-mint fixture below needs the
     // operator to hold a membership; seed a cloud-LOCAL one.
@@ -593,7 +614,12 @@ describe('session TTL split (SL-5): cloud 30d FIXED, oss 365d sliding', () => {
     const app = await createTestApp(await createDatabase(container, 'session_ttl_cloud'), HUB_ENV);
     try {
       expect(
-        (await app.app.request('/api/v1/setup', json({ instanceName: 'Ttl', owner: OWNER }))).status
+        (
+          await app.app.request(
+            '/api/v1/setup',
+            json({ setupToken: 'integration-test-setup-token', instanceName: 'Ttl', owner: OWNER })
+          )
+        ).status
       ).toBe(201);
       const signIn = await app.app.request(
         '/api/v1/auth/sign-in/email',
@@ -626,7 +652,12 @@ describe('session TTL split (SL-5): cloud 30d FIXED, oss 365d sliding', () => {
     const app = await createTestApp(await createDatabase(container, 'session_ttl_oss'));
     try {
       expect(
-        (await app.app.request('/api/v1/setup', json({ instanceName: 'TtlOss', owner: OWNER }))).status
+        (
+          await app.app.request(
+            '/api/v1/setup',
+            json({ setupToken: 'integration-test-setup-token', instanceName: 'TtlOss', owner: OWNER })
+          )
+        ).status
       ).toBe(201);
       const signIn = await app.app.request(
         '/api/v1/auth/sign-in/email',
@@ -678,7 +709,10 @@ describe('oss stays dark: zero hub-shaped calls across boot + a request matrix (
       try {
         // The request matrix: setup, session login, whoami, key mint, key
         // use, a domain read — every credential kind exercised.
-        const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'Dark', owner: OWNER }));
+        const setup = await app.app.request(
+          '/api/v1/setup',
+          json({ setupToken: 'integration-test-setup-token', instanceName: 'Dark', owner: OWNER })
+        );
         expect(setup.status).toBe(201);
         const signIn = await app.app.request(
           '/api/v1/auth/sign-in/email',

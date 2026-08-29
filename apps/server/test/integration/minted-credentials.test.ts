@@ -167,7 +167,10 @@ beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'minted_creds'));
 
-  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'Mint A', owner: OWNER }));
+  const setup = await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Mint A', owner: OWNER })
+  );
   expect(setup.status).toBe(201);
   wA = (await readJson(setup)).workspaceId;
   ownerCookie = await signIn(OWNER.email, OWNER.password);

@@ -172,10 +172,15 @@ export function registerBreakGlassRoutes(api: OpenAPIHono, deps: BreakGlassRoute
     // of an ownerless workspace.
     const [after] = await db
       .insert(workspaceMembers)
-      .values({ workspaceId: ws.id, userId: target.userId, role: 'owner', isActive: true })
+      // origin='local' on BOTH paths (BG-1, PRDCT-1356): a break-glass owner
+      // is the tool's own business, never hub truth. Left at 'hub' (the
+      // conflict path once kept the row's old origin), the cloud reconciler's
+      // deactivation sweep — which targets origin='hub' rows the hub no
+      // longer asserts — undid the recovery ~12 s later.
+      .values({ workspaceId: ws.id, userId: target.userId, role: 'owner', isActive: true, origin: 'local' })
       .onConflictDoUpdate({
         target: [workspaceMembers.workspaceId, workspaceMembers.userId],
-        set: { role: 'owner', isActive: true }
+        set: { role: 'owner', isActive: true, origin: 'local' }
       })
       .returning({ id: workspaceMembers.id });
     if (!after) throw new Error('break-glass ownership upsert returned no row');

@@ -105,7 +105,10 @@ describe('with a delivering email driver (recording)', () => {
   beforeAll(async () => {
     mailer = new RecordingEmailDriver();
     app = await createTestApp(await createDatabase(container, 'ec_rec'), {}, { email: mailer });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'Ec', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Ec', owner: OWNER })
+    );
     ownerCookie = extractCookie(await signIn(app, OWNER.email, OWNER.password));
     await addUser(app, ownerCookie, MEMBER_A);
     await addUser(app, ownerCookie, MEMBER_B);
@@ -250,7 +253,10 @@ describe('no email driver (default): the admin change link', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'ec_none'));
-    await app.app.request('/api/v1/setup', json({ instanceName: 'EcAdm', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'EcAdm', owner: OWNER })
+    );
     ownerCookie = extractCookie(await signIn(app, OWNER.email, OWNER.password));
     await addUser(app, ownerCookie, MEMBER);
     await addUser(app, ownerCookie, ADMIN);

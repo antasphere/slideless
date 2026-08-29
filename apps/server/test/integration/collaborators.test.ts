@@ -111,7 +111,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'collaborators_p5'), {}, { email: mail });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Collab', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Collab', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

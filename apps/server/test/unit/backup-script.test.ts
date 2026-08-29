@@ -41,6 +41,9 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 
 const CANARIES = {
   AUTH_SECRET: 'canary-auth-secret-3f9a1c',
+  // The server-generated pepper root the docker stub serves as /data/secret
+  // (PRDCT-1440): with a passphrase it must never appear in cleartext either.
+  DATA_SECRET: 'stub-data-secret',
   POSTGRES_PASSWORD: 'canary-pg-password-7b2e4d',
   SETUP_TOKEN: 'canary-setup-token-9c6f0a',
   METRICS_TOKEN: 'canary-metrics-token-1d8b5e'
@@ -77,17 +80,22 @@ const DOCKER_STUB = [
   `    cat "$STUB_DUMP"`,
   '    ;;',
   '  run)',
-  '    hostdir="" out="" prev=""',
+  '    hostdir="" out="" prev="" entrypoint="" excl_secret=0',
   '    for a in "$@"; do',
   '      case "$prev" in',
   '        -v) hostdir="${a%%:*}" ;;',
   '        -czf) out="$a" ;;',
+  '        --entrypoint) entrypoint="$a" ;;',
   '      esac',
+  '      [ "$a" = --exclude=./secret ] && excl_secret=1',
   '      prev="$a"',
   '    done',
+  // The PRDCT-1440 read-out of /data/secret (`--entrypoint sh app -c "cat /data/secret …"`).
+  '    if [ "$entrypoint" = sh ]; then printf \'stub-data-secret\\n\'; exit 0; fi',
   '    tmpd=$(mktemp -d)',
   '    mkdir -p "$tmpd/files"',
-  '    printf \'stub-data-secret\\n\' > "$tmpd/secret"',
+  // A real `tar --exclude=./secret` leaves the entry out; the stub mirrors that.
+  '    [ "$excl_secret" = 1 ] || printf \'stub-data-secret\\n\' > "$tmpd/secret"',
   '    printf \'blob\\n\' > "$tmpd/files/blob1"',
   '    tar -czf "$hostdir/$(basename "$out")" -C "$tmpd" .',
   '    rm -rf "$tmpd"',
@@ -159,9 +167,10 @@ function producedBytes(): Array<{ name: string; bytes: string }> {
   return out;
 }
 
-function expectNoCanary(scope: Array<{ name: string; bytes: string }>) {
+function expectNoCanary(scope: Array<{ name: string; bytes: string }>, except: string[] = []) {
   for (const { name, bytes } of scope) {
     for (const [key, canary] of Object.entries(CANARIES)) {
+      if (except.includes(key)) continue;
       expect(bytes.includes(canary), `${key} canary found in ${name}`).toBe(false);
     }
   }
@@ -187,7 +196,12 @@ describe('backup.sh never lets .env material reach a backup in cleartext (PRDCT-
     expect(names).toHaveLength(2);
     expect(names[0]).toMatch(/^data-.*\.tar\.gz$/);
     expect(names[1]).toMatch(/^db-.*\.sql\.gz$/);
-    expectNoCanary(producedBytes());
+    // .env material: never. The generated pepper root DOES ride in the data
+    // tarball on this path (the conscious cleartext choice, PRDCT-1440) — and
+    // the run says so.
+    expectNoCanary(producedBytes(), ['DATA_SECRET']);
+    expect(r.output).toContain('rides INSIDE');
+    expect(r.output).toContain('CLEARTEXT');
 
     for (const name of names) {
       expect(statSync(join(backupDir, name)).mode & 0o777, `${name} must be 0600`).toBe(0o600);
@@ -216,5 +230,55 @@ describe('backup.sh never lets .env material reach a backup in cleartext (PRDCT-
       { encoding: 'utf8', env: { ...process.env, PASS: 'correct-horse-battery' } }
     );
     expect(recovered).toBe(readFileSync(join(checkout, '.env'), 'utf8'));
+  }, 30000);
+});
+
+describe('backup.sh keeps the pepper root out of the cleartext data tarball (PRDCT-1440)', () => {
+  const decrypt = (enc: string, member: string, pass: string) =>
+    execFileSync(
+      'bash',
+      [
+        '-euo',
+        'pipefail',
+        '-c',
+        'openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass fd:3 ' +
+          `-in ${JSON.stringify(enc)} 3<<< "$PASS" | tar -xzOf - ${member}`
+      ],
+      { encoding: 'utf8', env: { ...process.env, PASS: pass } }
+    );
+
+  it('with BACKUP_PASSPHRASE: /data/secret is absent from the data tarball and rides in the encrypted archive', () => {
+    const r = runBackup('correct-horse-battery');
+    expect(r.status, r.output).toBe(0);
+    expect(r.output).toContain('carried in the encrypted config archive');
+
+    const names = readdirSync(backupDir);
+    const data = names.find((n) => /^data-.*\.tar\.gz$/.test(n))!;
+    const enc = names.find((n) => /^config-.*\.tar\.gz\.enc$/.test(n))!;
+    expect(data).toBeDefined();
+    expect(enc).toBeDefined();
+
+    // No cleartext artifact — raw or decompressed — holds the pepper root.
+    expectNoCanary(producedBytes());
+    const entries = execFileSync('tar', ['-tzf', join(backupDir, data)], { encoding: 'utf8' });
+    expect(entries).not.toMatch(/(^|\/)secret$/m);
+    expect(entries).toMatch(/files\/blob1/);
+
+    // The recovery path: the passphrase brings the root back, byte-exact.
+    expect(decrypt(join(backupDir, enc), 'data-secret', 'correct-horse-battery')).toBe('stub-data-secret\n');
+    // …and .env still rides beside it (the OPS-1 path is untouched).
+    expect(decrypt(join(backupDir, enc), '.env', 'correct-horse-battery')).toBe(
+      readFileSync(join(checkout, '.env'), 'utf8')
+    );
+  }, 30000);
+
+  it('with BACKUP_PASSPHRASE and no .env: the encrypted archive still carries the pepper root', () => {
+    rmSync(join(checkout, '.env'));
+    const r = runBackup('correct-horse-battery');
+    expect(r.status, r.output).toBe(0);
+    const enc = readdirSync(backupDir).find((n) => /^config-.*\.tar\.gz\.enc$/.test(n));
+    expect(enc, 'the archive exists for the root alone').toBeDefined();
+    expectNoCanary(producedBytes());
+    expect(decrypt(join(backupDir, enc!), 'data-secret', 'correct-horse-battery')).toBe('stub-data-secret\n');
   }, 30000);
 });

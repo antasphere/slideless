@@ -245,7 +245,7 @@ describe('PLT-12 — restore.sh verifies before it destroys', () => {
   });
 
   it('stops the live .env from shadowing a pepper root restored inside /data', () => {
-    const branch = sh.slice(sh.indexOf('  data_volume)'), sh.indexOf('  none)'));
+    const branch = sh.slice(sh.indexOf('  data_volume | config_secret)'), sh.indexOf('  none)'));
     expect(branch).toContain('dr_env_unset .env AUTH_SECRET');
   });
 
@@ -429,5 +429,53 @@ describe('setup.sh asks the shared rule instead of pattern-matching the URL', ()
   it('still tells the operator the tunnel command and the opt-in', () => {
     expect(sh).toContain('ssh -N -L ${APP_PORT}:127.0.0.1:${APP_PORT}');
     expect(sh).toContain('ALLOW_INSECURE_SETUP=true');
+  });
+});
+
+describe("PRDCT-1440 — restore.sh knows the pepper root's third home (the encrypted config archive)", () => {
+  const sh = read('scripts/restore.sh');
+  const stage = (name: string) => sh.indexOf(`STAGE="${name}"`);
+
+  it('recognises `data-secret` inside the decrypted config archive as a pepper source', () => {
+    expect(sh).toMatch(/PEPPER_SOURCE=config_secret/);
+    expect(sh).toMatch(/-s "\$WORKDIR\/data-secret"/);
+  });
+
+  it('writes it into /data/secret AFTER the volume swap and BEFORE the app starts', () => {
+    const write = sh.indexOf('cp /restore-config/data-secret /data/secret');
+    expect(write).toBeGreaterThan(stage('swap-data'));
+    expect(write).toBeLessThan(stage('start-app'));
+    // …and never through the backup directory in cleartext: the decrypted
+    // WORKDIR is mounted read-only into the container instead.
+    expect(sh).toMatch(/-v "\$WORKDIR":\/restore-config:ro/);
+  });
+
+  it('un-shadows a config-archive pepper root exactly like a data-volume one (env beats file)', () => {
+    expect(sh).toMatch(/data_volume \| config_secret\)/);
+  });
+
+  it('the backup script excludes /data/secret from the data tarball only when it can encrypt it', () => {
+    const backup = read('scripts/backup.sh');
+    const excl = backup.indexOf('--exclude=./secret');
+    expect(excl).toBeGreaterThan(0);
+    // The exclude sits inside the BACKUP_PASSPHRASE branch.
+    const branch = backup.lastIndexOf('if [ -n "${BACKUP_PASSPHRASE:-}" ]; then', excl);
+    expect(branch).toBeGreaterThan(0);
+    expect(backup.indexOf('else', branch)).toBeGreaterThan(excl);
+    // The cleartext opt-in stays loud about it.
+    expect(backup).toMatch(/rides INSIDE data-\$STAMP\.tar\.gz/);
+  });
+});
+
+describe('OPS-3 (PRDCT-1357) — the erasure tombstone survives a restore', () => {
+  it("restore.sh carries the LIVE volume's erasures.jsonl forward into the restored tree", () => {
+    const sh = read('scripts/restore.sh');
+    const carry = sh.indexOf('cat /data/.restore-old/erasures.jsonl >> /data/erasures.jsonl');
+    expect(carry).toBeGreaterThan(0);
+    // Inside the swap script: after the restored tree is in place, before the swap is marked done.
+    expect(carry).toBeGreaterThan(
+      sh.indexOf('find /data/.restore-new -mindepth 1 -maxdepth 1 -exec mv {} /data/')
+    );
+    expect(carry).toBeLessThan(sh.indexOf('DATA_SWAPPED=1'));
   });
 });

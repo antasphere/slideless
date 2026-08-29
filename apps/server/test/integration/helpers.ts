@@ -21,6 +21,13 @@ export class RecordingEmailDriver implements EmailDriver {
   }
 }
 
+/**
+ * The first-boot claim credential every test app boots with (PRDCT-1347:
+ * POST /setup ALWAYS requires a token now). Suites that exercise the
+ * generated-token path override it with an empty SETUP_TOKEN.
+ */
+export const SETUP_TOKEN = 'integration-test-setup-token';
+
 /** Matches the compose stack: Postgres 17 with pgvector available. */
 export const PG_IMAGE = 'pgvector/pgvector:pg17';
 
@@ -44,6 +51,7 @@ export async function createTestApp(
       DATABASE_URL: connectionString,
       DATA_DIR: dataDir,
       AUTH_SECRET: 'integration-test-secret-0123456789abcdef0123456789abcdef',
+      SETUP_TOKEN,
       NODE_ENV: 'test',
       LOG_LEVEL: 'error',
       PUBLIC_BASE_URL: 'http://localhost:3000',

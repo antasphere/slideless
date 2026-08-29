@@ -1,7 +1,9 @@
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 
 /**
  * Advisory-lock key for boot migrations. Constant and app-specific: every
@@ -19,7 +21,53 @@ export interface MigrateOptions {
 export interface MigrationStatus {
   applied: number;
   onDisk: number;
+  /** Migrations on disk whose hash the database has not applied. */
   pending: boolean;
+  /**
+   * Hashes the database has applied that NO file on disk produces (OPS-6,
+   * PRDCT-1357): the database was migrated by a NEWER image (a rollback to
+   * an older tag, `:next` behind `:latest`), or a migration file was edited
+   * after it ran. A count-based status called both "current"; either way
+   * this image's schema expectations are wrong and readiness must refuse.
+   */
+  unknownApplied: number;
+  /** True when the database is ahead of this image (unknownApplied > 0). */
+  downgrade: boolean;
+}
+
+/** drizzle's own migration identity: sha256 of the whole .sql file (migrator.js). */
+export function migrationHash(sql: string): string {
+  return createHash('sha256').update(sql).digest('hex');
+}
+
+/**
+ * Pure comparison of the on-disk hashes with the applied ones — the part of
+ * migrationStatus worth unit-testing without a database.
+ */
+export function compareMigrations(onDisk: string[], applied: string[]): MigrationStatus {
+  const appliedSet = new Set(applied);
+  const onDiskSet = new Set(onDisk);
+  const pendingCount = onDisk.filter((h) => !appliedSet.has(h)).length;
+  const unknownApplied = applied.filter((h) => !onDiskSet.has(h)).length;
+  return {
+    applied: applied.length,
+    onDisk: onDisk.length,
+    pending: pendingCount > 0,
+    unknownApplied,
+    downgrade: unknownApplied > 0
+  };
+}
+
+/** The hashes drizzle would compute for the journal's migrations, in journal order. */
+export async function onDiskMigrationHashes(migrationsFolder: string): Promise<string[]> {
+  const journal = JSON.parse(await readFile(join(migrationsFolder, 'meta', '_journal.json'), 'utf8')) as {
+    entries: Array<{ tag: string }>;
+  };
+  const hashes: string[] = [];
+  for (const entry of journal.entries) {
+    hashes.push(migrationHash(await readFile(join(migrationsFolder, `${entry.tag}.sql`), 'utf8')));
+  }
+  return hashes;
 }
 
 /**
@@ -54,14 +102,18 @@ export async function runMigrations({
 }
 
 /**
- * Compare applied migrations against the folder without running anything.
- * Used when AUTO_MIGRATE=false: the app refuses readiness while pending.
+ * Compare applied migrations against the folder without running anything,
+ * BY HASH (never by count): drizzle records the sha256 of every applied file,
+ * so a database migrated by a newer image shows up as applied hashes this
+ * image does not know — a downgrade — instead of "n of n, current". Used
+ * before every boot's migration decision: pending → apply (AUTO_MIGRATE) or
+ * refuse readiness; downgrade → refuse readiness regardless.
  */
 export async function migrationStatus({
   connectionString,
   migrationsFolder
 }: Omit<MigrateOptions, 'log'>): Promise<MigrationStatus> {
-  const onDisk = (await readdir(migrationsFolder)).filter((f) => f.endsWith('.sql')).length;
+  const onDisk = await onDiskMigrationHashes(migrationsFolder);
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
@@ -71,13 +123,13 @@ export async function migrationStatus({
         WHERE t.table_schema = 'drizzle' AND t.table_name = '__drizzle_migrations'`
     );
     if (res.rows[0]?.count === '0') {
-      return { applied: 0, onDisk, pending: onDisk > 0 };
+      return compareMigrations(onDisk, []);
     }
-    const applied = await client.query<{ count: string }>(
-      'SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations'
+    const applied = await client.query<{ hash: string }>('SELECT hash FROM drizzle.__drizzle_migrations');
+    return compareMigrations(
+      onDisk,
+      applied.rows.map((r) => r.hash)
     );
-    const appliedCount = Number(applied.rows[0]?.count ?? '0');
-    return { applied: appliedCount, onDisk, pending: appliedCount < onDisk };
   } finally {
     await client.end();
   }

@@ -54,7 +54,11 @@ beforeAll(async () => {
   const setup = await app.app.request('/api/v1/setup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceName: 'First Workspace', owner: OWNER })
+    body: JSON.stringify({
+      setupToken: 'integration-test-setup-token',
+      instanceName: 'First Workspace',
+      owner: OWNER
+    })
   });
   expect(setup.status).toBe(201);
   w1 = (await readJson(setup)).workspaceId;

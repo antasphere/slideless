@@ -140,7 +140,10 @@ async function blobStatuses(
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'blob_read_privacy'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Blobs', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Blobs', owner: OWNER })
+  );
   ownerCookie = await signIn(OWNER);
 
   expect((await uploadAsset(SECRET, ownerCookie)).status).toBe(201);

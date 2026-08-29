@@ -35,7 +35,10 @@ beforeAll(async () => {
   const url = await createDatabase(container, 'platform_core');
   app = await createTestApp(url);
 
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Core', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Core', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

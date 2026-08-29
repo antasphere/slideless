@@ -169,7 +169,10 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${port}`;
   server = serve({ fetch: app.app.fetch, port, hostname: '127.0.0.1' });
 
-  await app.app.request('/api/v1/setup', json({ instanceName: 'GDPR', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'GDPR', owner: OWNER })
+  );
   ownerCookie = await signIn(OWNER.email, OWNER.password, IPS.owner);
   const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie: ownerCookie } }));
   ownerUserId = me.user.id;

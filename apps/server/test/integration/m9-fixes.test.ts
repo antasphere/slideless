@@ -38,7 +38,10 @@ const json = (body: unknown, extraHeaders: Record<string, string> = {}) => ({
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'm9'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'M9', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'M9', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password }, { 'x-forwarded-for': '10.7.0.1' })

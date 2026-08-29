@@ -167,7 +167,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'forms_adr022'), {}, { email: mail });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Forms', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Forms', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })
@@ -916,7 +919,10 @@ describe("mail driver 'none'", () => {
   beforeAll(async () => {
     // No email override: EMAIL_DRIVER defaults to the non-delivering driver.
     app2 = await createTestApp(await createDatabase(container, 'forms_nomail'));
-    await app2.app.request('/api/v1/setup', json({ instanceName: 'NoMail', owner: OWNER }));
+    await app2.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'NoMail', owner: OWNER })
+    );
     cookie2 = extractCookie(
       await app2.app.request(
         '/api/v1/auth/sign-in/email',
