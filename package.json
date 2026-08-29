@@ -7,8 +7,13 @@
   "packageManager": "pnpm@10.34.4",
   "pnpm": {
     "overrides": {
-      "better-auth@1.6.15>@better-auth/core": "1.6.15",
-      "@better-auth/oauth-provider@1.6.15>@better-auth/core": "1.6.15"
+      "better-auth@1.6.22>@better-auth/core": "1.6.22",
+      "@better-auth/oauth-provider@1.6.22>@better-auth/core": "1.6.22",
+      "fast-uri@3": ">=3.1.5",
+      "ip-address@10": ">=10.3.1",
+      "nanoid@3": ">=3.3.18",
+      "nanoid@5": ">=5.1.16",
+      "postcss@8": ">=8.5.18"
     }
   },
   "engines": {

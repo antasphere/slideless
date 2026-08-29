@@ -156,7 +156,10 @@ const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy
 
 /**
  * Every Better Auth route that can SET or RESET a local password with no
- * current-password proof, enumerated against the pinned 1.6.15 surface
+ * current-password proof, enumerated against the pinned 1.6.22 surface
+ * (re-enumerated on the 1.6.15 → 1.6.22 bump, 2026-08-29, ADR 001; the
+ * dist-wide createAuthEndpoint path+method diff was one added route in the
+ * unregistered oauth-popup plugin, nothing removed)
  * (re-verify on ANY Better Auth bump):
  *
  *  - core emailAndPassword: POST /request-password-reset,
@@ -165,7 +168,8 @@ const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy
  *    POST /email-otp/request-password-reset, POST /email-otp/reset-password,
  *    and the deprecated POST /forget-password/email-otp alias;
  *  - core /set-password (the passwordless-ADD route): included as bump
- *    insurance. In 1.6.15 its endpoint is registered PATHLESS
+ *    insurance. In 1.6.22 its endpoint is `createAuthEndpoint.serverOnly`;
+ *    in 1.6.15 it was registered PATHLESS
  *    (update-user.mjs — `createAuthEndpoint({ method, body, use })` with no
  *    path arg), so better-call's router SKIPS it (`!endpoint.path` →
  *    `continue`, router.mjs) and it is unreachable over HTTP today — the one
@@ -174,7 +178,7 @@ const CLIENT_METADATA_URI_FIELDS = ['client_uri', 'logo_uri', 'tos_uri', 'policy
  *    a security allowlist must not depend on that accident, so guard it now
  *    (denying an unreachable path is a no-op until it isn't).
  *
- * Ruled OUT of this predicate on purpose, against the same 1.6.15 surface:
+ * Ruled OUT of this predicate on purpose, against the same 1.6.22 surface:
  *  - /change-password proves the CURRENT password AND requires an existing
  *    credential account (CREDENTIAL_ACCOUNT_NOT_FOUND otherwise), so a
  *    hub-JIT user — who has neither — cannot set a password through it;
@@ -207,7 +211,9 @@ function isPasswordResetPath(path: string): boolean {
 
 /**
  * Every emailOTP route that can MINT A SESSION from an emailed code — or
- * mail such a code — enumerated against the pinned 1.6.15 surface
+ * mail such a code — enumerated against the pinned 1.6.22 surface
+ * (re-enumerated on the 1.6.15 → 1.6.22 bump, 2026-08-29: the plugin's nine
+ * routes are byte-identical in path and method)
  * (plugins/email-otp/routes.mjs; re-verify on ANY Better Auth bump):
  *
  *  - POST /sign-in/email-otp: the sign-in mint — verifies the code, then
@@ -225,12 +231,12 @@ function isPasswordResetPath(path: string): boolean {
  *    code could only ever be a dead letter — refuse the send rather than
  *    mail codes that cannot work.
  *
- * Ruled OUT on purpose, against the same 1.6.15 surface:
+ * Ruled OUT on purpose, against the same 1.6.22 surface:
  *  - POST /email-otp/check-verification-otp verifies WITHOUT consuming and
  *    mints nothing (no createSession in its handler); with the send leg
  *    closed there is nothing to check anyway;
  *  - POST /email-otp/request-email-change + POST /email-otp/change-email
- *    (the plugin's two remaining 1.6.15 routes): both run behind
+ *    (the plugin's two remaining routes, unchanged at 1.6.22): both run behind
  *    sensitiveSessionMiddleware — an EXISTING fresh session is their entry
  *    condition, so neither is a session ENTRANCE (change-email's
  *    setSessionCookie only re-sets the cookie of the session it already
@@ -240,7 +246,7 @@ function isPasswordResetPath(path: string): boolean {
  *    it is hidden and D10 re-syncs email from the hub anyway). If
  *    changeEmail is ever enabled, re-rule them here;
  *  - createVerificationOTP / getVerificationOTP are registered PATHLESS in
- *    1.6.15 (routes.mjs — `createAuthEndpoint({...})` with no path arg), so
+ *    1.6.15 and `createAuthEndpoint.serverOnly` in 1.6.22 (routes.mjs), so
  *    better-call's router skips them: server-side only, unreachable over
  *    HTTP (same accident /set-password documents — do not rely on it);
  *  - /sign-in/email-otp is the plugin's ONLY /sign-in/* route; the twoFactor
@@ -269,7 +275,8 @@ function isOtpSignInPath(path: string): boolean {
 /**
  * The two Better Auth core routes that hand a caller the PROVIDER GRANT
  * stored on their own `account` row, in PLAINTEXT (PRDCT-1354, findings
- * AUTH-3 + AUTH-7; better-auth 1.6.15 `api/routes/account.mjs` — re-verify
+ * AUTH-3 + AUTH-7; better-auth 1.6.22 `api/routes/account.mjs` (both routes
+ * present unchanged at the 1.6.15 → 1.6.22 bump, 2026-08-29) — re-verify
  * the enumeration on ANY bump):
  *
  *  - POST /get-access-token → `{ accessToken, idToken, accessTokenExpiresAt,
@@ -558,8 +565,9 @@ export function createAuth({
       // token, identity/hub-grant.ts), which must never sit plaintext in a
       // dump. Enabled on BOTH editions (oss: Google tokens, when
       // configured). CONFIG-ONLY: no schema change (drift:check proves),
-      // and retroactively safe — 1.6.15's decrypt passes legacy PLAINTEXT
-      // values through untouched (dist/oauth2/utils.mjs isLikelyEncrypted;
+      // and retroactively safe — the decrypt passes legacy PLAINTEXT values
+      // through untouched (dist/oauth2/utils.mjs isLikelyEncrypted, verified
+      // on 1.6.15 and again on 1.6.22;
       // hub-grant.ts mirrors the same rule). The key is the auth context's
       // secretConfig (= this instance's AUTH_SECRET under our string-secret
       // config). Re-verify both facts on any Better Auth bump.
@@ -584,7 +592,7 @@ export function createAuth({
     basePath: AUTH_BASE_PATH,
     secret: authSecret,
     // Cloud only: OAuth-callback error redirects land on the LOGIN PAGE.
-    // Verified on 1.6.15 (re-verify on ANY bump): the genericOAuth callback
+    // Verified on 1.6.15 and 1.6.22 (re-verify on ANY bump): the genericOAuth callback
     // resolves `onAPIError.errorURL || <authBase>/error` and redirects an
     // AS error (`?error=login_required` from a prompt=none authorize,
     // `?error=access_denied`, …) there BEFORE parseState runs
@@ -917,14 +925,20 @@ export function createAuth({
         // own sign-in hook covers /sign-in/email (password) but NOT
         // /sign-in/email-otp, so an emailed one-time code would sign a
         // 2FA-enabled user straight in — collapsing 2FA to mailbox control.
-        // Mirror the plugin's dance (verified against 1.6.15
+        // Mirror the plugin's dance (verified against 1.6.22
         // plugins/two-factor/index.mjs; re-verify on ANY Better Auth bump):
         // drop the just-minted session, park the pending sign-in in the
-        // verification table behind the signed `two_factor` cookie, and
-        // answer { twoFactorRedirect } so /two-factor/verify-totp (or a
-        // backup code) completes it. A 2FA-enabled user always has a
-        // verified TOTP secret — activation is the only path that sets
-        // user.twoFactorEnabled.
+        // verification table behind the signed `two_factor` cookie, park the
+        // per-challenge attempt counter next to it, and answer
+        // { twoFactorRedirect } so /two-factor/verify-totp (or a backup code)
+        // completes it. A 2FA-enabled user always has a verified TOTP secret
+        // — activation is the only path that sets user.twoFactorEnabled.
+        // The `2fa-attempts-<identifier>` row is NOT optional since 1.6.22:
+        // verifyTwoFactor's beginAttempt CONSUMES it on every verify and
+        // throws INVALID_TWO_FACTOR_COOKIE (401) when it is missing, so a
+        // mirror that parks only the `2fa-` row hands the user a pending
+        // state no factor can ever complete (PRDCT-1344; the hub hit the
+        // same trap on its own bump).
         if (ctx.path === '/sign-in/email-otp') {
           const data = ctx.context.newSession;
           if (!data?.user || !(data.user as { twoFactorEnabled?: boolean }).twoFactorEnabled) return;
@@ -934,10 +948,16 @@ export function createAuth({
           const maxAge = 600; // the plugin's twoFactorCookieMaxAge default
           const twoFactorCookie = ctx.context.createAuthCookie('two_factor', { maxAge });
           const identifier = `2fa-${generateRandomString(20)}`;
+          const expiresAt = new Date(Date.now() + maxAge * 1000);
           await ctx.context.internalAdapter.createVerificationValue({
             value: data.user.id,
             identifier,
-            expiresAt: new Date(Date.now() + maxAge * 1000)
+            expiresAt
+          });
+          await ctx.context.internalAdapter.createVerificationValue({
+            value: '0',
+            identifier: `2fa-attempts-${identifier}`,
+            expiresAt
           });
           await ctx.setSignedCookie(
             twoFactorCookie.name,
@@ -978,7 +998,7 @@ export function createAuth({
     //    the anchor at most every 30 days, and each re-derivation's authorize
     //    touch slides the HUB session forward (the anchor stays alive off
     //    activity on ANY tool). The knob is `disableSessionRefresh` — pinned
-    //    on 1.6.15 (dist/api/routes/session.mjs is its ONLY reader:
+    //    on 1.6.15 and 1.6.22 (dist/api/routes/session.mjs is its ONLY reader:
     //    `needsRefresh` goes false, so expiresAt never advances on use;
     //    re-verify on ANY bump). `updateAge` is left at its default there —
     //    it is dead config once refresh is disabled. CONFIG-ONLY: no schema

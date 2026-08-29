@@ -910,4 +910,56 @@ entry; these are what THIS repo added or had to do differently.
   ones (`VIEW_EVENTS_RETENTION_DAYS`, `VIEW_DEDUPE_WINDOW_MINUTES`) — because
   the day someone adds `VAR=${VAR:-}` to compose it would go live silently.
 
+## Release gate (PRDCT-1345 / 1344 / 1346, 2026-08-29)
+
+- **Trivy's image export is what wedged Docker Desktop, twice.** `trivy image
+<tag>` pulls the image through the daemon API while downloading its vuln DB;
+  on this Mac that hung the daemon (every `docker` call timing out, an
+  error-dialog process up) and took the integration suite's testcontainers down
+  with it. Scan a `docker save` tarball instead (`trivy image --input x.tar`):
+  same findings, no daemon in the loop. release.yml runs Trivy from its own
+  container on a fresh runner, so CI is not affected.
+- **better-auth's optional peers ship in the image unless denied.** The plugin
+  declares svelte, vite, vitest, better-sqlite3, @sveltejs/kit and
+  @prisma/client as `optionalDependencies`, so `pnpm deploy --prod` resolves
+  them all — 48 MB of node_modules and the scanner surface behind the Trivy
+  HIGHs. They are on the deny-list now, and the prune script grew an ORPHAN
+  pass: removing a package strands its own subtree in `.pnpm` as real
+  directories (rollup, postcss, tinypool, …) that the dangling-symlink sweep
+  never sees. The pass keeps only store entries reachable through
+  `node_modules` symlink chains from the deployed package. `.pnpm/node_modules`
+  hoist links are deliberately NOT an edge (they would mark everything
+  reachable) — and that hoist dir IS a Node resolution path for undeclared
+  requires, so the honest statement is: the declared graph (step 4) and the
+  static graph (step 5) are proven; a phantom DYNAMIC require satisfiable only
+  through the hoist would break at container runtime, the same class of gap
+  the deny-list always had (checked on the 2026-08-29 lock: every specifier
+  that stops resolving belongs to a pruned package or a test dir). A dangling
+  hoist left by the pass is attributed and unlinked, anything else still fails
+  the build. The sweep's "resolves" verdict is build-stage-relative: a link
+  that lands outside the deploy dir works in the build stage and dangles in
+  the runtime image — `pnpm deploy --legacy` leaves exactly one (the deployed
+  package's own hoist entry), now unlinked; any other escape fails the build. Unit
+  test: `test/unit/prune-runtime-deps.test.ts` on a synthetic pnpm tree.
+- **Compare store paths against `realpathSync(store)`.** `realpathSync` on a
+  symlink answers the canonical path; on macOS the temp dir is `/var →
+/private/var`, so a prefix test against the store path as spelled marks
+  nothing reachable and the orphan pass deletes the whole store. A DANGLING
+  link's lexical target, on the other hand, carries the spelled prefix — test
+  both.
+- **The 1.6.22 bump had two teeth beyond the schema drift** (both already met
+  by the hub on its own bump, both re-hit here because the mirror was ported
+  before the fix): `two_factor` gains `failed_verification_count` +
+  `locked_until` (migration 0038), and the email-OTP → 2FA mirror must park a
+  `2fa-attempts-<identifier>` verification row beside the `2fa-` one, because
+  `verifyTwoFactor.beginAttempt` consumes it and 401s without it. The
+  two-factor + cli-auth integration suites are the guard (6 red without it).
+  Route surface re-enumerated 1.6.15 → 1.6.22: 156 → 157, one added
+  (`GET /oauth-popup/start`, plugin not registered), nothing removed; ADR 001
+  carries the method.
+- **`@slideless/db` resolves to `dist`, so a schema edit is invisible to the
+  server's tests until `pnpm --filter @slideless/db build`.** The symptom is
+  Better Auth's "field X does not exist in the Drizzle schema" 500 on routes
+  that touch the table — not a drift failure.
+
 > > > > > > > fix/sec-1374-1375
