@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Logger } from '../logger.js';
@@ -15,12 +15,25 @@ import type { Logger } from '../logger.js';
  * the restored tree, and boot REPLAYS it: any tombstoned user present in
  * the database is deleted again, with an audit row recording the replay.
  *
- * The line carries the user id (the replay key) and a salted-free sha256
- * of the lowercased email (a second correlation handle for operators,
- * never the address itself — the file is the one artifact that must
- * outlive the erasure it records).
+ * The line carries the user id (the replay key) and a KEYED fingerprint of
+ * the lowercased email (a second correlation handle for operators, never
+ * the address itself — the file is the one artifact that must outlive the
+ * erasure it records). Keyed (PRDCT-1811): the file rides in the
+ * UNENCRYPTED data tarball of every backup, and a plain hash of a
+ * low-entropy value is a dictionary lookup away from the address — an
+ * off-site backup would list who asked to be forgotten. HMAC-SHA256 under
+ * the instance's auth secret (which travels only in the passphrase-
+ * encrypted config archive) keeps the operator's correlation and denies it
+ * to anyone holding the tarball alone. Rotating the auth secret changes
+ * the fingerprints written from then on; old lines keep their old key.
  */
 export const ERASURE_LOG_FILE = 'erasures.jsonl';
+
+/** What a replay did: the ids re-erased, and the tombstones it could NOT apply. */
+export interface ErasureReplay {
+  replayed: string[];
+  refused: Array<{ userId: string; erasedAt: string; cause: unknown }>;
+}
 
 export interface ErasureTombstone {
   userId: string;
@@ -28,8 +41,8 @@ export interface ErasureTombstone {
   at: string;
 }
 
-export function emailHash(email: string): string {
-  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+export function emailHash(email: string, key: string): string {
+  return createHmac('sha256', key).update(email.trim().toLowerCase()).digest('hex');
 }
 
 export class ErasureLog {
@@ -37,7 +50,9 @@ export class ErasureLog {
 
   constructor(
     dataDir: string,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    /** The fingerprint key: the resolved auth secret (never stored beside the file). */
+    private readonly fingerprintKey: string
   ) {
     this.path = join(dataDir, ERASURE_LOG_FILE);
   }
@@ -46,7 +61,7 @@ export class ErasureLog {
   async append(user: { id: string; email: string }): Promise<void> {
     const line: ErasureTombstone = {
       userId: user.id,
-      emailHash: emailHash(user.email),
+      emailHash: emailHash(user.email, this.fingerprintKey),
       at: new Date().toISOString()
     };
     try {
@@ -90,13 +105,16 @@ export class ErasureLog {
   /**
    * Replay: for every tombstoned user still (or again) present, delete them
    * through `deleteUser` (Better Auth's cascade, the same path every GDPR
-   * surface uses) and count it. Returns the ids re-erased.
+   * surface uses) and count it. A tombstone whose delete FAILS is reported
+   * as refused, never swallowed (PRDCT-1809): the caller decides what a
+   * present-but-unerasable subject means for the boot (it refuses to serve).
    */
   async replay(
     exists: (userId: string) => Promise<boolean>,
     deleteUser: (userId: string) => Promise<void>
-  ): Promise<string[]> {
+  ): Promise<ErasureReplay> {
     const replayed: string[] = [];
+    const refused: ErasureReplay['refused'] = [];
     const seen = new Set<string>();
     for (const tomb of await this.read()) {
       if (seen.has(tomb.userId)) continue;
@@ -110,12 +128,13 @@ export class ErasureLog {
           'erasure tombstone replayed: a previously erased user was present again (restore from an older backup?) and has been re-erased'
         );
       } catch (err) {
+        refused.push({ userId: tomb.userId, erasedAt: tomb.at, cause: err });
         this.logger.error(
           { err, userId: tomb.userId },
-          'erasure tombstone: replay delete failed — the user is STILL PRESENT'
+          'erasure tombstone: replay delete refused — the user is STILL PRESENT'
         );
       }
     }
-    return replayed;
+    return { replayed, refused };
   }
 }

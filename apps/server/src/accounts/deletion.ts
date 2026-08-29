@@ -190,25 +190,8 @@ export class AccountDeletionService {
   async beforeUserDelete(userId: string): Promise<void> {
     const memberships = await this.membershipsOf(userId);
     if (memberships.length === 0) return; // no workspace to guard or audit against
-    const owned = await this.ownedGuardedWorkspaceIds(userId);
-    const locks: OwnerLock[] = [];
-    let parked = false;
-    try {
-      for (const workspaceId of owned) {
-        locks.push(await this.acquireOwnerLock(workspaceId));
-        if (!(await hasOtherActiveOwner(this.db, workspaceId, userId))) {
-          throw new LastOwnerError();
-        }
-      }
-      if (locks.length > 0) {
-        this.parkLocks(userId, locks);
-        parked = true;
-      }
-    } finally {
-      if (!parked) {
-        for (const lock of locks) await this.releaseOwnerLock(lock);
-      }
-    }
+    const locks = await this.acquireOwnerLocks(userId);
+    if (locks.length > 0) this.parkLocks(userId, locks);
     const [u] = await this.db
       .select({ email: userTable.email })
       .from(userTable)
@@ -218,6 +201,28 @@ export class AccountDeletionService {
       workspaceIds: memberships.map((m) => m.workspaceId),
       email: u?.email ?? ''
     });
+  }
+
+  /**
+   * Run an erasure under EVERY last-owner guard the user is subject to, with
+   * nothing touched when any guard refuses (PRDCT-1809). The boot-time
+   * tombstone replay uses this: Better Auth's cascade deletes the account
+   * rows BEFORE the user row, so a delete the 0009 trigger refuses mid-way
+   * leaves a half-erased owner (no credential, PII intact, membership
+   * intact). The locks are acquired in sorted order (as beforeUserDelete)
+   * and released on every path; a refusal surfaces as LastOwnerError before
+   * `op` runs, and a trigger refusal inside `op` is mapped to the same.
+   */
+  async withAllLastOwnerGuards<T>(userId: string, op: () => Promise<T>): Promise<T> {
+    const locks = await this.acquireOwnerLocks(userId);
+    try {
+      return await op();
+    } catch (cause) {
+      if (isLastOwnerDbError(cause)) throw new LastOwnerError();
+      throw cause;
+    } finally {
+      for (const lock of locks) await this.releaseOwnerLock(lock);
+    }
   }
 
   /**
@@ -258,6 +263,29 @@ export class AccountDeletionService {
         resourceId: user.id,
         metadata: { deletedUserId: user.id, email: stashed.email || user.email }
       });
+    }
+  }
+
+  /**
+   * Acquire the per-workspace lock and run the guard re-check for EVERY
+   * non-projected workspace where the user is an active owner, in sorted
+   * order (deterministic → no deadlock between concurrent deletes). On a
+   * refusal every lock taken so far is released and LastOwnerError is
+   * thrown; on success the caller owns the locks.
+   */
+  private async acquireOwnerLocks(userId: string): Promise<OwnerLock[]> {
+    const locks: OwnerLock[] = [];
+    try {
+      for (const workspaceId of await this.ownedGuardedWorkspaceIds(userId)) {
+        locks.push(await this.acquireOwnerLock(workspaceId));
+        if (!(await hasOtherActiveOwner(this.db, workspaceId, userId))) {
+          throw new LastOwnerError();
+        }
+      }
+      return locks;
+    } catch (cause) {
+      for (const lock of locks) await this.releaseOwnerLock(lock);
+      throw cause;
     }
   }
 

@@ -811,6 +811,18 @@ secret>` and harvested what visitors typed, straight through the official
   never through the backup dir). Bash 3.2 (macOS, where the unit suite runs
   the scripts) treats an empty array under `set -u` as unbound — use
   `${arr[@]+"${arr[@]}"}`.
+- **An erasure replay that fails is fail-open unless the boot says otherwise
+  (PRDCT-1809).** The replay deletes through Better Auth's cascade, which drops
+  the account rows BEFORE the user row; when the subject is the sole active
+  owner in the restored dump the 0009 trigger refuses the membership delete
+  mid-cascade, and a swallowed error left a half-erased owner (no credential,
+  PII back, membership intact), readiness green, no audit row. The replay now
+  runs under every last-owner guard (`withAllLastOwnerGuards`, nothing touched
+  on a refusal) and a refused tombstone CLOSES the service (`state.closed` →
+  503 everywhere but the probes) with a `user.erasure_replay_refused` audit row
+  until an operator promotes another owner and restarts. Readiness alone is not
+  a closure: only `/readyz` reads `state.ready`, and the compose healthcheck
+  watches `/healthz`.
 - **An erasure that lives only in the database is undone by a restore.**
   The tombstone (`$DATA_DIR/erasures.jsonl`, append-only, hashed email)
   lives outside the dump; `restore.sh` carries the LIVE file forward into the

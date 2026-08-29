@@ -33,6 +33,8 @@ That is the whole authoring contract:
 
 `slideless push` needs no flags and no manifest entry: pushing a deck that contains a marked form — in its HTML or in a script file that renders the form at load time — is all it takes, and the push output lists the detected form names as a reminder. Any share link then serves it working (see per-link control below).
 
+**How the server decides.** At commit it stamps each version with whether it holds a form, and only stamped versions are served with the runtime. The rule: a deck that ships any script (a script file, or an inline `<script>` in a page) is always served with the runtime, because a form built at load time — `form.dataset.slidelessForm = 'rsvp'`, attributes read from a JSON data file, a minified bundle — cannot be seen in the bytes; a deck with no script at all is served with the runtime when the marker appears literally in an HTML page or a JSON file. Stylesheets, fonts and images never count. So a script-bearing deck always gets the runtime (one inert script tag if it has no form); a script-less deck must carry the literal `data-slideless-form` marker.
+
 ## What a viewer experiences
 
 Submitting swaps the form for a confirmation card, with double-submit protection while the request is in flight and inline errors if something goes wrong. The card carries:

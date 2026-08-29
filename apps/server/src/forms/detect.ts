@@ -19,20 +19,39 @@ import { blobKey, type StorageDriver } from '../storage/driver.js';
  * enforces the capability on every submit.
  *
  * Cost shape: authenticated, once per commit, streaming with a fixed-size
- * carry so memory never scales with the document. HTML entries AND script
- * entries are read: a deck whose page carries no marker and whose bundled
- * `app.js` injects the form on load is a form deck too, and reading only
- * HTML stamped it form-less — the runtime never arrived and every submit
- * native-navigated the sandbox, storing nothing (PRDCT-1331/1334 residual;
- * the shape worked before detection existed). Fonts, images and styles are
- * never read: a marker cannot be born from them.
+ * carry so memory never scales with the document.
+ *
+ * THE RULE (PRDCT-1810, closing the PRDCT-1331/1334 residual for good):
+ *
+ *   1. A SCRIPT entry (by declared type or by extension) arms the runtime by
+ *      its mere presence. A byte scan can never see a marker that is born
+ *      at runtime — `f.dataset.slidelessForm = …`, an attribute map read
+ *      from a JSON data file, a minifier splitting `'data-slideless-' +
+ *      'form'` — and every one of those shapes was stamped form-less, so
+ *      the runtime never arrived and each submit native-navigated the
+ *      sandbox, storing nothing: the silent death PRDCT-1334 meant to
+ *      close. Runnable code is INCONCLUSIVE, and inconclusive arms.
+ *   2. An HTML entry arms it when it carries the marker OR an inline
+ *      `<script` (runnable code again).
+ *   3. A JSON entry arms it when it carries the marker (a schema-driven
+ *      deck keeps its attributes in data).
+ *   4. Fonts, images and styles never arm it: a marker cannot be born from
+ *      them (the stylesheet-decoy pin in forms.test.ts).
+ *
+ * A false positive costs one inert script tag on the streaming injector
+ * (the injection streams since PRDCT-1334; the buffered path this flag was
+ * born to avoid is gone); a false negative costs the author every response.
+ * A form-less, script-less deck keeps the byte-exact ETag serve.
  */
 
 /** The authoring marker. Matching is case-insensitive: HTML attributes are. */
 export const FORM_MARKER_ATTRIBUTE = 'data-slideless-form';
 
-/** Bytes carried between chunks so a marker split across chunks still matches. */
-const CARRY = FORM_MARKER_ATTRIBUTE.length - 1;
+/** Inline runnable code in an HTML page: inconclusive, so it arms (rule 2). */
+const INLINE_SCRIPT_MARKER = '<script';
+
+/** Bytes carried between chunks so a needle split across chunks still matches. */
+const CARRY = Math.max(FORM_MARKER_ATTRIBUTE.length, INLINE_SCRIPT_MARKER.length) - 1;
 
 const SCRIPT_TYPES = [
   'text/javascript',
@@ -42,18 +61,32 @@ const SCRIPT_TYPES = [
   'application/ecmascript'
 ];
 const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs'];
+const JSON_TYPES = ['application/json', 'text/json'];
+const JSON_EXTENSIONS = ['.json'];
+
+/** How an entry takes part in detection (see THE RULE above). */
+export type EntryKind = 'script' | 'html' | 'json' | 'inert';
 
 /**
- * Entries that can carry the marker: HTML, and scripts by declared type OR
- * by extension (the manifest's `contentType` is client-supplied; a bundler
- * or a hand-written manifest may label `app.js` as octet-stream).
+ * Scripts by declared type OR by extension (the manifest's `contentType` is
+ * client-supplied; a bundler or a hand-written manifest may label `app.js`
+ * as octet-stream); JSON by type or extension the same way. HTML by declared
+ * TYPE only, deliberately: the viewer injects the runtime only into documents
+ * it serves as `text/html` (viewer/routes.ts `isHtmlDoc`), so an `.html`
+ * entry mislabelled as octet-stream is never injected and must not be armed.
  */
-export function isScannable(entry: ManifestEntry): boolean {
+export function entryKind(entry: ManifestEntry): EntryKind {
   const type = entry.contentType.toLowerCase().split(';')[0]!.trim();
-  if (type.startsWith('text/html')) return true;
-  if (SCRIPT_TYPES.includes(type)) return true;
   const path = entry.path.toLowerCase();
-  return SCRIPT_EXTENSIONS.some((ext) => path.endsWith(ext));
+  if (SCRIPT_TYPES.includes(type) || SCRIPT_EXTENSIONS.some((ext) => path.endsWith(ext))) return 'script';
+  if (type.startsWith('text/html')) return 'html';
+  if (JSON_TYPES.includes(type) || JSON_EXTENSIONS.some((ext) => path.endsWith(ext))) return 'json';
+  return 'inert';
+}
+
+/** Entries that take part in detection at all (kept for the CLI-side mirror). */
+export function isScannable(entry: ManifestEntry): boolean {
+  return entryKind(entry) !== 'inert';
 }
 
 /** ASCII-only lowercase — leaves multi-byte UTF-8 sequences untouched. */
@@ -66,13 +99,14 @@ function asciiLower(buf: Buffer): Buffer {
   return out;
 }
 
-async function blobHasMarker(storage: StorageDriver, key: string): Promise<boolean> {
+/** True when the blob's ASCII-lowercased bytes contain ANY of the needles (all needles are lowercase). */
+async function blobHasAny(storage: StorageDriver, key: string, needles: readonly string[]): Promise<boolean> {
   const stream = await storage.getStream(key);
   let carry: Buffer = Buffer.alloc(0);
   try {
     for await (const chunk of stream) {
       const window = asciiLower(Buffer.concat([carry, chunk as Buffer]));
-      if (window.includes(FORM_MARKER_ATTRIBUTE)) return true;
+      for (const needle of needles) if (window.includes(needle)) return true;
       carry = window.subarray(Math.max(0, window.length - CARRY));
     }
   } finally {
@@ -81,23 +115,31 @@ async function blobHasMarker(storage: StorageDriver, key: string): Promise<boole
   return false;
 }
 
+const HTML_NEEDLES = [FORM_MARKER_ATTRIBUTE, INLINE_SCRIPT_MARKER] as const;
+const JSON_NEEDLES = [FORM_MARKER_ATTRIBUTE] as const;
+
 /**
- * True when ANY HTML or script entry of the manifest carries the marker.
- * Storage failures resolve to `false` rather than failing the commit: the
- * flag is a serving optimization, and a blob that cannot be read here is
- * about to fail the commit's own missing-blob check anyway.
+ * THE RULE, applied to a manifest: any script entry → true without a read;
+ * otherwise true when an HTML entry carries the marker or an inline script
+ * tag, or a JSON entry carries the marker. Storage failures resolve to
+ * `false` rather than failing the commit: the flag is a serving
+ * optimization, and a blob that cannot be read here is about to fail the
+ * commit's own missing-blob check anyway.
  */
 export async function manifestHasForms(
   storage: StorageDriver,
   workspaceId: string,
   manifest: ManifestEntry[]
 ): Promise<boolean> {
+  if (manifest.some((entry) => entryKind(entry) === 'script')) return true;
   const seen = new Set<string>();
   for (const entry of manifest) {
-    if (!isScannable(entry) || seen.has(entry.sha256)) continue;
+    const kind = entryKind(entry);
+    if (kind === 'inert' || seen.has(entry.sha256)) continue;
     seen.add(entry.sha256);
+    const needles = kind === 'json' ? JSON_NEEDLES : HTML_NEEDLES;
     try {
-      if (await blobHasMarker(storage, blobKey(workspaceId, entry.sha256))) return true;
+      if (await blobHasAny(storage, blobKey(workspaceId, entry.sha256), needles)) return true;
     } catch {
       // Unreadable / not yet uploaded — the commit rejects it downstream.
     }

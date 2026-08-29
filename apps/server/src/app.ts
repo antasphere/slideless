@@ -87,6 +87,23 @@ export async function createApp({
 
   app.use('*', requestId(logger));
   app.use('*', securityHeaders({ csp, state, hsts: hsts ?? null }));
+  // PRDCT-1809: a fail-closed boot verdict closes the whole surface — the
+  // operator-facing probes stay so the verdict is visible (/readyz carries
+  // the reason) and the process is not restarted into the same state.
+  app.use('*', async (c, next) => {
+    if (state.closed === null) return next();
+    const path = c.req.path;
+    if (path === '/healthz' || path === '/readyz' || path === '/metrics') return next();
+    return c.json(
+      {
+        error: {
+          code: 'service_closed',
+          message: 'This instance refuses to serve until an operator resolves a boot verdict; see /readyz'
+        }
+      },
+      503
+    );
+  });
   if (otelMiddleware) app.use('*', otelMiddleware);
   if (metricsMiddleware) app.use('*', metricsMiddleware);
 

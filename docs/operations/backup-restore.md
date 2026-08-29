@@ -169,12 +169,43 @@ A GDPR erasure that lived only in the database would be undone by the next
 restore from an older dump — the person's row back, their password working,
 the audit entry saying they were erased rolled back with everything else.
 Every completed account erasure therefore also appends a line to
-`/data/erasures.jsonl` (the user id and a hash of the email, never the
-address): an append-only tombstone that lives outside the dump. `restore.sh`
-carries the live volume's tombstones forward into the restored tree, and the
-server replays the file at every boot: a tombstoned user found present again
-is deleted again, with a `user.erasure_replayed` audit row. Back the file up
-like the rest of `/data`; never truncate it.
+`/data/erasures.jsonl` (the user id and a keyed fingerprint of the email,
+never the address): an append-only tombstone that lives outside the dump.
+`restore.sh` carries the live volume's tombstones forward into the restored
+tree, and the server replays the file at every boot: a tombstoned user found
+present again is deleted again, with a `user.erasure_replayed` audit row. Back
+the file up like the rest of `/data`; never truncate it.
+
+The fingerprint is an HMAC-SHA256 of the lowercased address under the
+instance's `AUTH_SECRET` (the pepper root), so the file — which rides in the
+unencrypted data tarball — cannot be turned back into a list of erased
+addresses by anyone holding the tarball alone; an operator holding the
+encrypted config archive can still correlate a line with an address. Rotating
+`AUTH_SECRET` changes the fingerprints written from then on; earlier lines keep
+their old key. The first-boot claim token (`/data/setup-token`) is likewise
+never written into a data tarball: an unclaimed instance mints a fresh one on
+its next boot.
+
+**When the erased person was the workspace's only owner.** A restore of a dump
+taken before the handover that made the erasure possible brings the subject
+back as the sole active owner. The replay refuses to delete them (the workspace
+must keep one active owner and the product cannot decide who inherits it), and
+the instance then **refuses to serve**: `/readyz` is 503 with the reason, every
+other route answers `503 service_closed`, and a `user.erasure_replay_refused`
+audit row names the user. Nothing about the subject is touched (no half-erased
+account). To resolve it, promote another member to owner in the database, then
+restart; the next boot replays the tombstone under the guard and serves:
+
+```bash
+docker compose exec db psql -U slideless -d slideless -c \
+  "UPDATE workspace_members SET role = 'owner', is_active = true
+     WHERE workspace_id = '<workspace id>' AND user_id = '<the inheriting member>';"
+docker compose restart app
+```
+
+The audit row and the container log carry the tombstoned user id; the workspace
+id is the one they own (`SELECT workspace_id FROM workspace_members WHERE
+user_id = '<id>' AND role = 'owner'`).
 
 ### A downgrade is refused, not reported as "current"
 

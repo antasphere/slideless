@@ -59,6 +59,18 @@ deploys) + `dev` (day-to-day work).
   `slideless dev` is a real containment boundary: `realpath` re-check, dotfile paths 404, and a
   `Host` allowlist (the DNS-rebinding guard). Every non-`--json` sink goes through
   `sanitizeForTty` — `--json` stays byte-exact and must never be routed through it.
+- **A tombstone the boot cannot replay closes the service (PRDCT-1809)**: the erasure replay in
+  `boot.ts` runs under `withAllLastOwnerGuards` (nothing touched on a refusal — Better Auth's
+  cascade drops account rows before the user row, so an unguarded refusal half-erases), and a
+  refused tombstone sets `state.closed`, which answers 503 `service_closed` on every route but
+  `/healthz`, `/readyz`, `/metrics`, plus a `user.erasure_replay_refused` audit row. Never
+  downgrade the closure to a readiness flag alone: only `/readyz` reads `state.ready` and the
+  compose healthcheck watches `/healthz`, so the API would keep serving the resurrected
+  subject. The erasure fingerprint is an HMAC under the auth secret (PRDCT-1811) — never a plain
+  hash, since `erasures.jsonl` rides in the UNENCRYPTED data tarball. Forms detection
+  (`forms/detect.ts`, PRDCT-1810): any script entry or inline `<script>` ARMS the runtime; a
+  byte scan cannot see a runtime-authored marker, so "inconclusive arms" — never narrow it back
+  to the literal marker alone.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **Deck reads are private, never workspace-wide (ADR 013)**: every presentation read (get,
