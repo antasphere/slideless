@@ -326,6 +326,47 @@ function isHttpUrl(value: unknown): boolean {
   }
 }
 
+/**
+ * Better Auth `trustedOrigins` (PRDCT-1352): the configured public origin plus
+ * the origin the request was served on (localhost, previews, any domain behind
+ * a TLS-terminating proxy) — MINUS the viewer origin, which is author-
+ * controlled deck script's origin and is never trusted, serving origin or
+ * not. The host gate keeps the auth surface off that hostname; this is the
+ * second lock behind it. Exported pure so a unit test can pin the exclusion.
+ */
+export function trustedOriginsFor(
+  publicBaseUrl: string,
+  viewerOrigin: string | null
+): (request?: Request) => string[] {
+  return (request) => {
+    const origins = [publicBaseUrl];
+    try {
+      if (request) origins.push(new URL(request.url).origin);
+    } catch {
+      // unparseable request URL — explicit origin only
+    }
+    return viewerOrigin ? origins.filter((origin) => origin !== viewerOrigin) : origins;
+  };
+}
+
+/**
+ * The sign-in Origin lock (M9 login-CSRF hardening + PRDCT-1352): a sign-in
+ * that presents an Origin must present a trusted one — the serving origin or
+ * Better Auth's own trusted list — and the viewer origin is refused OUTRIGHT,
+ * even as the serving origin: deck script must never mint a session on the
+ * hostname it runs on. Exported pure so a unit test can pin both arms.
+ */
+export function signInOriginRefused(input: {
+  origin: string;
+  servingOrigin: string | null;
+  viewerOrigin: string | null;
+  isTrustedOrigin: (origin: string) => boolean;
+}): boolean {
+  const { origin, servingOrigin, viewerOrigin, isTrustedOrigin } = input;
+  if (viewerOrigin !== null && origin === viewerOrigin) return true;
+  return origin !== servingOrigin && !isTrustedOrigin(origin);
+}
+
 export function createAuth({
   db,
   env,
@@ -774,11 +815,14 @@ export function createAuth({
             } catch {
               // unparseable request URL — judge by the trusted list only
             }
-            // The viewer origin never signs anyone in (PRDCT-1352), even as
-            // the serving origin: an author's deck script must not be able
-            // to mint a session on the hostname it runs on.
-            const isViewerOrigin = viewerOrigin !== null && origin === viewerOrigin;
-            if (isViewerOrigin || (origin !== servingOrigin && !ctx.context.isTrustedOrigin(origin))) {
+            if (
+              signInOriginRefused({
+                origin,
+                servingOrigin,
+                viewerOrigin,
+                isTrustedOrigin: (o) => ctx.context.isTrustedOrigin(o)
+              })
+            ) {
               throw new APIError('FORBIDDEN', { message: 'Invalid origin' });
             }
           }
@@ -953,18 +997,7 @@ export function createAuth({
     },
     // Trust the serving origin (works on localhost, previews, any domain)
     // plus the configured public origin behind a TLS-terminating proxy.
-    // The viewer origin (VIEWER_BASE_URL, PRDCT-1352) is author-controlled
-    // deck script's origin and is never trusted, serving origin or not: the
-    // host gate keeps the auth surface off that hostname, and this is the
-    // second lock behind it.
-    trustedOrigins: (request) => {
-      const origins = [env.PUBLIC_BASE_URL];
-      try {
-        if (request) origins.push(new URL(request.url).origin);
-      } catch {
-        // unparseable request URL — explicit origin only
-      }
-      return viewerOrigin ? origins.filter((origin) => origin !== viewerOrigin) : origins;
-    }
+    // Serving origin + public origin, never the viewer origin (see trustedOriginsFor).
+    trustedOrigins: trustedOriginsFor(env.PUBLIC_BASE_URL, viewerOrigin)
   });
 }

@@ -287,6 +287,25 @@ describe('split origin: the viewer hostname serves decks — and nothing else', 
     }
   });
 
+  it('never serves the app HTML shell at the bare /v or /v/ (verifier F1)', async () => {
+    for (const path of ['/v', '/v/']) {
+      const res = await split.app.app.request(`${VIEWER}${path}`, { headers: { accept: 'text/html' } });
+      expect(res.status, path).toBe(404);
+      expect(res.headers.get('content-type') ?? '', path).toContain('application/json');
+    }
+  });
+
+  it('decides the host on the Host header, never on X-Forwarded-Host (verifier F3)', async () => {
+    const spoofedIn = await split.app.app.request(`${APP}/api/v1/me`, {
+      headers: { ...dashboard(split.cookie), 'x-forwarded-host': 'decks.test' }
+    });
+    expect(spoofedIn.status).toBe(200);
+    const spoofedOut = await split.app.app.request(`${VIEWER}/api/v1/me`, {
+      headers: { ...dashboard(split.cookie), 'x-forwarded-host': 'localhost:3000' }
+    });
+    expect(spoofedOut.status).toBe(404);
+  });
+
   it('cannot sign in on the viewer hostname, even with valid credentials', async () => {
     const res = await split.app.app.request(
       `${VIEWER}/api/v1/auth/sign-in/email`,

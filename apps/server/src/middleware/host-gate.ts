@@ -19,7 +19,10 @@ import type { Context, MiddlewareHandler } from 'hono';
  *    runs in — overlay.ts / forms-runtime.ts build their URLs off
  *    `location.href`), and the two operator probes. Everything else answers
  *    404 with the wire error shape, before any route runs. No session cookie
- *    is ever issued or read on that hostname.
+ *    is ever issued on that hostname and nothing served there is
+ *    authenticated by one (the viewer API authenticates on the share secret;
+ *    the generic authContext still RESOLVES a presented cookie on
+ *    `/api/v1/viewer/*` but no viewer route reads the principal).
  *  - On every OTHER hostname (the app origin, localhost, a preview host) a
  *    `GET|HEAD /v/*` redirects to the same path on the viewer origin, so links
  *    minted before the switch keep working; an unsafe method on `/v/*` there
@@ -34,7 +37,13 @@ import type { Context, MiddlewareHandler } from 'hono';
  * forwards (Caddy by default; nginx with `proxy_set_header Host $host`). It is
  * deliberately NOT read from `X-Forwarded-Host`: that header is client-
  * controlled unless the proxy strips it, and a wrong answer here is what
- * decides whether a deck runs on the app origin.
+ * decides whether a deck runs on the app origin (pinned by a test). The
+ * comparison is exact on `host`: a Host carrying an explicit default port
+ * (`decks.test:443`) or a trailing dot (`decks.test.`) is NOT the viewer host
+ * and lands on the app side — the safe direction, since neither is the
+ * browser origin deck script runs under (a browser never sends the default
+ * port, and `decks.test.` is a distinct origin for same-origin policy and
+ * cookies alike), and the app side never serves deck bytes.
  */
 export interface HostGateOptions {
   /** VIEWER_BASE_URL, already validated as an http(s) URL. */
@@ -44,19 +53,24 @@ export interface HostGateOptions {
 const PROBES = new Set(['/healthz', '/readyz']);
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
 
-function underPrefix(path: string, prefix: string): boolean {
-  return path === prefix || path.startsWith(prefix + '/');
+/** `/v/<something>`: a deck route. The bare `/v` and `/v/` route NOTHING in the viewer. */
+function isDeckPath(path: string): boolean {
+  return path.startsWith('/v/') && path.length > '/v/'.length;
 }
 
 /**
- * Paths the viewer hostname answers: the deck routes under `/v/`, the
- * token-authed viewer API STRICTLY beneath `/api/v1/viewer/` (the bare prefix
- * routes nothing and stays 404), and the probes. Prefix matches are on the
- * `/` boundary — `/vanity` and `/api/v1/viewers` are not viewer paths.
+ * Paths the viewer hostname answers: the deck routes STRICTLY beneath `/v/`,
+ * the token-authed viewer API STRICTLY beneath `/api/v1/viewer/`, and the
+ * probes. The bare prefixes (`/v`, `/v/`, `/api/v1/viewer`) route nothing
+ * and stay 404 — admitting them let the SPA fallback answer `/v` on the
+ * viewer hostname with the app's HTML shell, the one first-party document
+ * the split exists to keep off that origin (verifier finding, PRDCT-1352).
+ * Prefix matches are on the `/` boundary — `/vanity` and `/api/v1/viewers`
+ * are not viewer paths.
  */
 export function isViewerHostPath(path: string): boolean {
   if (PROBES.has(path)) return true;
-  if (underPrefix(path, '/v')) return true;
+  if (isDeckPath(path)) return true;
   return path.startsWith('/api/v1/viewer/');
 }
 
@@ -85,7 +99,7 @@ export function hostGate({ viewerBaseUrl }: HostGateOptions): MiddlewareHandler 
       );
     }
 
-    if (underPrefix(path, '/v')) {
+    if (isDeckPath(path)) {
       if (SAFE_METHODS.has(c.req.method)) {
         const target = new URL(c.req.url);
         return c.redirect(viewerOrigin + target.pathname + target.search, 308);

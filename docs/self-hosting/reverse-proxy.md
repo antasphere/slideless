@@ -70,7 +70,9 @@ hostname:
   form), `/api/v1/viewer/*` (the token-authenticated annotation and forms
   API the deck runtime calls) and the `/healthz` / `/readyz` probes.
   The dashboard, sign-in, `/mcp`, `/embed.js` and the rest of `/api/v1`
-  answer 404 there, and no session cookie is ever issued or read on it.
+  answer 404 there, no session cookie is ever issued on it, and nothing it
+  serves is authenticated by one (the viewer API authenticates on the share
+  secret).
 - The app hostname (`PUBLIC_BASE_URL`) serves everything else and answers
   `/v/*` with a redirect to the viewer hostname, so links minted before the
   switch keep working.

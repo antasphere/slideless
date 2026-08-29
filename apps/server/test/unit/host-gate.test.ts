@@ -56,6 +56,8 @@ describe('hostGate — the viewer hostname', () => {
       '/api/v1/auth/sign-in/email',
       '/api/v1/auth/get-session',
       '/api/v1/viewer', // the bare prefix, not the API under it
+      '/v', // the bare deck prefix routes nothing — the SPA shell must not answer here
+      '/v/',
       '/api/v1/viewerish/x', // a prefix must match on the path boundary
       '/mcp',
       '/embed.js',
@@ -109,9 +111,21 @@ describe('hostGate — every other hostname', () => {
   });
 });
 
+describe('hostGate — the host is the Host header, never X-Forwarded-Host', () => {
+  it('ignores a client-supplied X-Forwarded-Host in both directions', async () => {
+    // Forged towards the viewer host: the app host keeps serving the app.
+    const spoofedIn = await on(APP, '/api/v1/me', { headers: { 'x-forwarded-host': 'decks.example.net' } });
+    expect(spoofedIn.status).toBe(200);
+    // Forged away from the viewer host: the viewer host keeps refusing.
+    const spoofedOut = await on(VIEWER, '/api/v1/me', { headers: { 'x-forwarded-host': 'app.example.com' } });
+    expect(spoofedOut.status).toBe(404);
+  });
+});
+
 describe('isViewerHostPath', () => {
   it('is a boundary-aware prefix match', () => {
-    expect(isViewerHostPath('/v')).toBe(true);
+    expect(isViewerHostPath('/v')).toBe(false); // routes nothing; the SPA fallback would answer
+    expect(isViewerHostPath('/v/')).toBe(false);
     expect(isViewerHostPath('/v/x')).toBe(true);
     expect(isViewerHostPath('/vx')).toBe(false);
     expect(isViewerHostPath('/api/v1/viewer/x/forms/f/responses')).toBe(true);
