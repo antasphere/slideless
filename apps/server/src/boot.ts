@@ -512,14 +512,30 @@ export async function boot(
       });
     }
     if (refused.length > 0) {
-      const ids = refused.map((r) => r.userId).join(', ');
+      // The public reason stays COARSE: /readyz is unauthenticated and the
+      // subject asked to be forgotten, so their id lives in the log line and
+      // the audit row only. The remedy names the cause the operator faces.
+      const lastOwner = refused.filter((r) => r.cause instanceof LastOwnerError).length;
+      const other = refused.length - lastOwner;
+      const remedy = [
+        lastOwner > 0
+          ? `${lastOwner} subject(s) present again after a restore as the last active owner of a workspace — promote another member to owner, then restart`
+          : null,
+        other > 0
+          ? `${other} re-erasure(s) failed — see the container log, fix the cause, then restart`
+          : null
+      ]
+        .filter((s): s is string => s !== null)
+        .join('; ');
       state.reason =
-        `refusing to serve: ${refused.length} erasure tombstone(s) could not be replayed (user ${ids}) — ` +
-        'the subject is present again after a restore and is the last active owner of a workspace; ' +
-        'promote another member to owner, then restart (docs/operations/backup-restore.md)';
+        `refusing to serve: ${refused.length} erasure tombstone(s) could not be replayed: ${remedy} ` +
+        '(docs/operations/backup-restore.md, audit action user.erasure_replay_refused)';
       readinessRefusal = state.reason;
       state.closed = state.reason;
-      logger.error({ refused: refused.map((r) => r.userId) }, state.reason);
+      logger.error(
+        { refused: refused.map((r) => ({ userId: r.userId, lastOwner: r.cause instanceof LastOwnerError })) },
+        state.reason
+      );
     }
   }
 

@@ -97,10 +97,14 @@ describe('PRDCT-1809: tombstone replay when the erased subject is the sole activ
 
       const ready = await app.app.request('/readyz');
       expect(ready.status).toBe(503);
-      expect(await readJson(ready)).toMatchObject({
+      const readyBody = await readJson(ready);
+      expect(readyBody).toMatchObject({
         status: 'unavailable',
-        reason: expect.stringContaining(ownerUserId)
+        reason: expect.stringContaining('erasure tombstone')
       });
+      // Coarse on purpose: the probe is unauthenticated and the subject asked to be forgotten.
+      expect(JSON.stringify(readyBody)).not.toContain(ownerUserId);
+      expect(JSON.stringify(readyBody)).not.toContain(OWNER.email);
       expect((await app.app.request('/healthz')).status).toBe(200);
 
       // The surface is CLOSED: the resurrected owner cannot sign in, nothing else serves either.
@@ -111,7 +115,18 @@ describe('PRDCT-1809: tombstone replay when the erased subject is the sole activ
       expect(signIn.status).toBe(503);
       expect(await readJson(signIn)).toMatchObject({ error: { code: 'service_closed' } });
       expect((await app.app.request('/api/v1/me')).status).toBe(503);
-      expect((await app.app.request('/')).status).toBe(503);
+      // Every other mount is behind the closure too: the dashboard, the share-link
+      // viewer, MCP, discovery, static assets.
+      for (const path of [
+        '/',
+        '/v/not-a-real-secret/',
+        '/mcp',
+        '/.well-known/openid-configuration',
+        '/favicon.ico'
+      ]) {
+        const res = await app.app.request(path, { headers: { accept: 'text/html' } });
+        expect(res.status, path).toBe(503);
+      }
 
       // NOTHING was touched: no half-erased owner (credential, membership, row all intact).
       const acc = await app.db.pool.query(`SELECT count(*)::int AS n FROM account WHERE user_id = $1`, [

@@ -70,7 +70,10 @@ export type EntryKind = 'script' | 'html' | 'json' | 'inert';
 /**
  * Scripts by declared type OR by extension (the manifest's `contentType` is
  * client-supplied; a bundler or a hand-written manifest may label `app.js`
- * as octet-stream); HTML and JSON by type or extension the same way.
+ * as octet-stream); JSON by type or extension the same way. HTML by declared
+ * TYPE only, deliberately: the viewer injects the runtime only into documents
+ * it serves as `text/html` (viewer/routes.ts `isHtmlDoc`), so an `.html`
+ * entry mislabelled as octet-stream is never injected and must not be armed.
  */
 export function entryKind(entry: ManifestEntry): EntryKind {
   const type = entry.contentType.toLowerCase().split(';')[0]!.trim();
