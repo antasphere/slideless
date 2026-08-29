@@ -55,6 +55,7 @@ export interface CreateAuthOptions {
   env: Pick<
     Env,
     | 'PUBLIC_BASE_URL'
+    | 'VIEWER_BASE_URL'
     | 'GOOGLE_CLIENT_ID'
     | 'GOOGLE_CLIENT_SECRET'
     | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
@@ -325,6 +326,47 @@ function isHttpUrl(value: unknown): boolean {
   }
 }
 
+/**
+ * Better Auth `trustedOrigins` (PRDCT-1352): the configured public origin plus
+ * the origin the request was served on (localhost, previews, any domain behind
+ * a TLS-terminating proxy) — MINUS the viewer origin, which is author-
+ * controlled deck script's origin and is never trusted, serving origin or
+ * not. The host gate keeps the auth surface off that hostname; this is the
+ * second lock behind it. Exported pure so a unit test can pin the exclusion.
+ */
+export function trustedOriginsFor(
+  publicBaseUrl: string,
+  viewerOrigin: string | null
+): (request?: Request) => string[] {
+  return (request) => {
+    const origins = [publicBaseUrl];
+    try {
+      if (request) origins.push(new URL(request.url).origin);
+    } catch {
+      // unparseable request URL — explicit origin only
+    }
+    return viewerOrigin ? origins.filter((origin) => origin !== viewerOrigin) : origins;
+  };
+}
+
+/**
+ * The sign-in Origin lock (M9 login-CSRF hardening + PRDCT-1352): a sign-in
+ * that presents an Origin must present a trusted one — the serving origin or
+ * Better Auth's own trusted list — and the viewer origin is refused OUTRIGHT,
+ * even as the serving origin: deck script must never mint a session on the
+ * hostname it runs on. Exported pure so a unit test can pin both arms.
+ */
+export function signInOriginRefused(input: {
+  origin: string;
+  servingOrigin: string | null;
+  viewerOrigin: string | null;
+  isTrustedOrigin: (origin: string) => boolean;
+}): boolean {
+  const { origin, servingOrigin, viewerOrigin, isTrustedOrigin } = input;
+  if (viewerOrigin !== null && origin === viewerOrigin) return true;
+  return origin !== servingOrigin && !isTrustedOrigin(origin);
+}
+
 export function createAuth({
   db,
   env,
@@ -341,6 +383,7 @@ export function createAuth({
 }: CreateAuthOptions) {
   const isHttps = env.PUBLIC_BASE_URL.startsWith('https://');
   const resource = mcpResourceUrl(env.PUBLIC_BASE_URL);
+  const viewerOrigin = env.VIEWER_BASE_URL ? new URL(env.VIEWER_BASE_URL).origin : null;
 
   /**
    * Cloud only: may this email take the local password door? The setup
@@ -772,7 +815,14 @@ export function createAuth({
             } catch {
               // unparseable request URL — judge by the trusted list only
             }
-            if (origin !== servingOrigin && !ctx.context.isTrustedOrigin(origin)) {
+            if (
+              signInOriginRefused({
+                origin,
+                servingOrigin,
+                viewerOrigin,
+                isTrustedOrigin: (o) => ctx.context.isTrustedOrigin(o)
+              })
+            ) {
               throw new APIError('FORBIDDEN', { message: 'Invalid origin' });
             }
           }
@@ -947,14 +997,7 @@ export function createAuth({
     },
     // Trust the serving origin (works on localhost, previews, any domain)
     // plus the configured public origin behind a TLS-terminating proxy.
-    trustedOrigins: (request) => {
-      const origins = [env.PUBLIC_BASE_URL];
-      try {
-        if (request) origins.push(new URL(request.url).origin);
-      } catch {
-        // unparseable request URL — explicit origin only
-      }
-      return origins;
-    }
+    // Serving origin + public origin, never the viewer origin (see trustedOriginsFor).
+    trustedOrigins: trustedOriginsFor(env.PUBLIC_BASE_URL, viewerOrigin)
   });
 }

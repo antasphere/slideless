@@ -23,8 +23,19 @@ export function inlineScriptHashes(html: string): string[] {
   return hashes;
 }
 
-export function buildCsp(scriptHashes: string[]): string {
+export interface CspOptions {
+  /**
+   * Extra `frame-src` sources beyond 'self'. The dashboard previews decks in
+   * a sandboxed iframe whose URL honours VIEWER_BASE_URL (PRDCT-1352, DASH-4):
+   * with `default-src 'self'` and no `frame-src`, a split viewer origin made
+   * that preview a blank frame with no error anywhere but the console.
+   */
+  frameSrc?: readonly string[];
+}
+
+export function buildCsp(scriptHashes: string[], { frameSrc = [] }: CspOptions = {}): string {
   const script = ["'self'", ...scriptHashes].join(' ');
+  const frame = ["'self'", ...frameSrc].join(' ');
   return [
     "default-src 'self'",
     `script-src ${script}`,
@@ -33,6 +44,7 @@ export function buildCsp(scriptHashes: string[]): string {
     "img-src 'self' data:",
     "connect-src 'self'",
     "font-src 'self'",
+    `frame-src ${frame}`,
     "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",

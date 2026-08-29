@@ -806,7 +806,8 @@ export async function boot(
     // that goes away later (unmounted volume, wiped /data after a failed
     // restore, revoked S3 credentials) stops reporting ready.
     probeStorage: () => storage.healthcheck(),
-    hsts: hstsValue(env)
+    hsts: hstsValue(env),
+    viewerBaseUrl: env.VIEWER_BASE_URL
   });
   rootApp.current = app;
 

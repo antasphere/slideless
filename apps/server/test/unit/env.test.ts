@@ -320,4 +320,29 @@ describe('env schema', () => {
       expect(envSchema.parse({ ...minimal, EDITION: ' ' }).EDITION).toBe('oss');
     });
   });
+
+  it('refuses a VIEWER_BASE_URL on the same origin as PUBLIC_BASE_URL (PRDCT-1352)', () => {
+    // The host gate would put every dashboard/API request on the viewer side
+    // and answer 404 — a dead instance. Origin equality, so path and case
+    // differences do not sneak past.
+    const same = envSchema.safeParse({
+      ...minimal,
+      PUBLIC_BASE_URL: 'https://app.example.com',
+      VIEWER_BASE_URL: 'https://APP.example.com/'
+    });
+    expect(same.success).toBe(false);
+    if (!same.success) {
+      expect(same.error.issues.some((i) => i.path[0] === 'VIEWER_BASE_URL')).toBe(true);
+    }
+    expect(
+      envSchema.safeParse({
+        ...minimal,
+        PUBLIC_BASE_URL: 'https://app.example.com',
+        VIEWER_BASE_URL: 'https://decks.example.net'
+      }).success
+    ).toBe(true);
+    // The default PUBLIC_BASE_URL is http://localhost:3000 — a viewer URL on a
+    // different port is a different origin and is fine.
+    expect(envSchema.safeParse({ ...minimal, VIEWER_BASE_URL: 'http://localhost:3100' }).success).toBe(true);
+  });
 });

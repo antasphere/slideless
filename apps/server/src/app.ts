@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import type { Logger } from './logger.js';
 import type { RuntimeState } from './state.js';
 import { requestId } from './middleware/request-id.js';
+import { hostGate } from './middleware/host-gate.js';
 import { buildCsp, inlineScriptHashes, securityHeaders } from './middleware/security-headers.js';
 import { healthRoutes } from './routes/health.js';
 
@@ -41,6 +42,14 @@ export interface AppDeps {
   probeStorage?: () => Promise<void>;
   /** `Strict-Transport-Security` value (security-headers.ts `hstsValue`); null/absent = no HSTS. */
   hsts?: string | null;
+  /**
+   * VIEWER_BASE_URL (PRDCT-1352): when present, installs the host gate
+   * (middleware/host-gate.ts) — the viewer hostname answers only `/v/*`,
+   * `/api/v1/viewer/*` and the probes, every other hostname redirects `/v/*`
+   * there — and lets the dashboard CSP frame that origin for the preview.
+   * Absent = single-origin behaviour, gate not installed.
+   */
+  viewerBaseUrl?: string | undefined;
 }
 
 /**
@@ -71,7 +80,8 @@ export async function createApp({
   metricsRoutes,
   otelMiddleware,
   probeStorage,
-  hsts
+  hsts,
+  viewerBaseUrl
 }: AppDeps): Promise<Hono> {
   const app = new Hono();
 
@@ -83,7 +93,9 @@ export async function createApp({
   } catch {
     logger.warn({ publicDir }, 'no dashboard build found — serving a placeholder at /');
   }
-  const csp = buildCsp(indexHtml ? inlineScriptHashes(indexHtml) : []);
+  const csp = buildCsp(indexHtml ? inlineScriptHashes(indexHtml) : [], {
+    frameSrc: viewerBaseUrl ? [new URL(viewerBaseUrl).origin] : []
+  });
 
   app.use('*', requestId(logger));
   app.use('*', securityHeaders({ csp, state, hsts: hsts ?? null }));
@@ -106,6 +118,10 @@ export async function createApp({
   });
   if (otelMiddleware) app.use('*', otelMiddleware);
   if (metricsMiddleware) app.use('*', metricsMiddleware);
+  // PRDCT-1352: the viewer-origin host gate, BEFORE every mount below — the
+  // boundary between the two hostnames must be decided before any route
+  // (and any cookie-reading middleware) runs.
+  if (viewerBaseUrl) app.use('*', hostGate({ viewerBaseUrl }));
 
   // Uncaught handler errors: log with the request id, answer the wire shape.
   app.onError((error, c) => {

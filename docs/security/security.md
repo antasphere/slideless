@@ -132,7 +132,11 @@ responsible for, and the rules that govern rendering user content.
   routes are covered by a **cross-site gate of their own**
   (`middleware/cross-site.ts`, PRDCT-1375): every unsafe method under
   `/api/v1` is refused when `Sec-Fetch-Site` says `cross-site`, or when an
-  `Origin` arrives that is neither the serving origin nor `PUBLIC_BASE_URL`.
+  `Origin` arrives that is neither the serving origin nor `PUBLIC_BASE_URL`
+  — and, when `VIEWER_BASE_URL` splits the origins (PRDCT-1352), the viewer
+  origin is refused outright, even when it is the serving origin: deck script
+  lives there, and `middleware/host-gate.ts` keeps the dashboard, sign-in and
+  the cookie-authed API off that hostname altogether.
   Exempt, each deliberately and each with a test: safe methods;
   `Authorization`-bearing calls (API keys and OAuth bearers are not ambient
   credentials); the wildcard-CORS OAuth endpoints (`middleware/oauth-public.ts`);

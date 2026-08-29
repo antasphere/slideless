@@ -125,8 +125,12 @@ const envObjectSchema = z.object({
    * user-content origin (a domain that carries no app cookies and no API,
    * fronting the same instance) is the documented hardening path
    * (docs/security/viewer-security-model.md): share URLs are
-   * then built on that origin, and a header regression can no longer expose
-   * the dashboard session across a real origin boundary.
+   * then built on that origin, that hostname serves ONLY decks and the
+   * token-authed viewer API (the dashboard, login, /mcp and the rest of
+   * /api/v1 answer 404 there; deck links on the app hostname redirect
+   * across), the app API refuses requests carrying the viewer origin, and
+   * a header regression can no longer expose the dashboard session across a
+   * real origin boundary. Must differ from PUBLIC_BASE_URL's origin.
    */
   VIEWER_BASE_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
   /** De-dupe window (minutes) for share-link view counting: repeat opens of the same link from one browser inside this window count once, so browser prefetch/prerender, reloads, and mail-scanner hits no longer inflate a token's accessCount. Enforced with a signed, token-scoped HttpOnly cookie; cookie-less clients (SDKs, curl) count every fetch. Large values shift the metric toward "unique browsers" rather than "opens". 0 disables de-dupe: every entry GET counts and no cookie is set. */
@@ -249,6 +253,26 @@ const envObjectSchema = z.object({
 const HUB_REQUIRED_VARS = ['HUB_ISSUER_URL', 'HUB_CLIENT_ID', 'HUB_CLIENT_SECRET'] as const;
 
 export const envSchema = envObjectSchema.superRefine((env, ctx) => {
+  // The viewer origin is a boundary only if it is a DIFFERENT origin: equal
+  // to the public origin, the host gate (middleware/host-gate.ts) would put
+  // every dashboard, login and API request on the viewer side and answer
+  // 404 — a dead instance. Refuse at boot with the fix named.
+  if (env.VIEWER_BASE_URL !== undefined) {
+    let same = false;
+    try {
+      same = new URL(env.VIEWER_BASE_URL).origin === new URL(env.PUBLIC_BASE_URL).origin;
+    } catch {
+      same = false;
+    }
+    if (same) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['VIEWER_BASE_URL'],
+        message:
+          'must be a different origin than PUBLIC_BASE_URL (a second hostname for deck content) — unset it to serve decks on the app origin'
+      });
+    }
+  }
   if (env.EDITION !== 'cloud') return;
   for (const key of HUB_REQUIRED_VARS) {
     if (env[key] === undefined) {
