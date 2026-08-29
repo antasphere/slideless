@@ -290,6 +290,9 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
       const authCtx = await auth.$context;
       await authCtx.internalAdapter.deleteUser(target.userId);
       await authCtx.internalAdapter.deleteUserSessions(target.userId);
+      // OPS-3 (PRDCT-1357): this path bypasses the deleteUser hooks, so the
+      // erasure tombstone is written here — a restore must not undo this.
+      await accountDeletion.recordErasure({ id: target.userId, email: snapshot!.email });
     };
     try {
       if (target.role === 'owner' && target.isActive) {

@@ -47,6 +47,13 @@ export interface InvitationRouteDeps {
    * with this pointer. undefined on oss — zero behavior change there.
    */
   hubManaged?: { manageUrl: string } | undefined;
+  /**
+   * Cloud edition only (CLOUD-5, PRDCT-1356): the accept path's
+   * account-creation branch is CLOSED — a local-password account minted
+   * here would be a permanent non-SSO entrance. The invitee signs in with
+   * Antasphere first (JIT), then accepts as an existing account.
+   */
+  ssoOnly?: boolean | undefined;
 }
 
 /** Method-exact public-shape check shared by the admin and P7 gates:
@@ -59,7 +66,7 @@ const isPublicInvitationShape = (path: string, method: string): boolean =>
   (method === 'POST' && path.endsWith('/invitations/accept'));
 
 export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRouteDeps): void {
-  const { db, env, auth, email, audit, registry, logger, hubManaged } = deps;
+  const { db, env, auth, email, audit, registry, logger, hubManaged, ssoOnly } = deps;
   const service = new InvitationService(db);
 
   // P7 (cloud only): a hub-origin workspace takes its membership from the
@@ -280,6 +287,17 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
       userId = session.user.id;
       alreadyVerified = account.emailVerified;
     } else {
+      if (ssoOnly) {
+        // Cloud (D1): same stance as the collaborator claim — checked BEFORE
+        // the credentials check so the answer never depends on the body.
+        return c.json(
+          err(
+            'sso_required',
+            'This instance signs in with Antasphere — sign in first, then open the invitation link again'
+          ),
+          409
+        );
+      }
       if (!body.name || !body.password) {
         return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
       }

@@ -109,7 +109,11 @@ beforeAll(async () => {
   const setup = await app.app.request('/api/v1/setup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceName: 'CliAuth Instance', owner: OWNER })
+    body: JSON.stringify({
+      setupToken: 'integration-test-setup-token',
+      instanceName: 'CliAuth Instance',
+      owner: OWNER
+    })
   });
   expect(setup.status).toBe(201);
 }, 240_000);
@@ -335,7 +339,7 @@ describe('DELETE /cli/auth/key — the logout self-revoke', () => {
     revokeApp = await createTestApp(dbUrl, {}, { email: revokeMailer });
     const setup = await revokeApp.app.request(
       '/api/v1/setup',
-      jsonR({ instanceName: 'Revoke Instance', owner: OWNER })
+      jsonR({ setupToken: 'integration-test-setup-token', instanceName: 'Revoke Instance', owner: OWNER })
     );
     expect(setup.status).toBe(201);
     const signIn = await revokeApp.app.request(

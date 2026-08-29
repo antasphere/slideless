@@ -99,7 +99,10 @@ describe('with SUPERADMIN_EMAILS set', () => {
     // Deliberately messy allowlist value: mixed case + stray whitespace must
     // still match (parse trims + lowercases; Better Auth stores lowercase).
     app = await createTestApp(connectionString, { SUPERADMIN_EMAILS: ' Root@bg.test , second@bg.test ' });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'BG', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'BG', owner: OWNER })
+    );
     ownerCookie = await signIn(app, OWNER.email, OWNER.password);
     await inviteAndAccept(app, ownerCookie, ROOT);
     await inviteAndAccept(app, ownerCookie, ADMIN);
@@ -338,6 +341,49 @@ describe('with SUPERADMIN_EMAILS set', () => {
     expect(again.status).toBe(200);
     expect((await readJson(again)).hadTwoFactor).toBe(false);
   });
+
+  it('claim-ownership stamps origin=local on BOTH the insert and the conflict path (BG-1, PRDCT-1356)', async () => {
+    // Conflict path: a hub-projected row (the shape the cloud reconciler
+    // sweeps when the hub stops asserting it), seeded raw so the test does
+    // not depend on what earlier cases did to the fixture members.
+    await app.db.pool.query(
+      `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
+       VALUES ('bg-hub-user', 'Hub Row', 'hubrow@bg.test', true, now(), now())`
+    );
+    const ws = (
+      await app.db.pool.query<{ id: string }>(`SELECT id FROM workspaces ORDER BY created_at LIMIT 1`)
+    ).rows[0]!;
+    const seeded = await app.db.pool.query<{ id: string }>(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, origin, is_active)
+       VALUES ($1, 'bg-hub-user', 'member', 'hub', true) RETURNING id`,
+      [ws.id]
+    );
+    const promoted = await app.app.request(
+      '/api/v1/admin/break-glass/claim-ownership',
+      json({ userId: 'bg-hub-user', workspaceId: ws.id }, { cookie: rootCookie })
+    );
+    expect(promoted.status).toBe(200);
+    const { rows } = await app.db.pool.query<{ origin: string; role: string }>(
+      `SELECT origin, role FROM workspace_members WHERE id = $1`,
+      [seeded.rows[0]!.id]
+    );
+    expect(rows).toEqual([{ origin: 'local', role: 'owner' }]);
+    // Insert path: root has no membership row on a fresh workspace — claim
+    // it and read the origin back.
+    const fresh = await app.db.pool.query<{ id: string }>(
+      `INSERT INTO workspaces (name) VALUES ('BG fresh') RETURNING id`
+    );
+    const claimed = await app.app.request(
+      '/api/v1/admin/break-glass/claim-ownership',
+      json({ workspaceId: fresh.rows[0]!.id }, { cookie: rootCookie })
+    );
+    expect(claimed.status).toBe(200);
+    const inserted = await app.db.pool.query<{ origin: string }>(
+      `SELECT origin FROM workspace_members WHERE id = $1`,
+      [(await readJson(claimed)).memberId]
+    );
+    expect(inserted.rows).toEqual([{ origin: 'local' }]);
+  });
 });
 
 describe('with SUPERADMIN_EMAILS unset (default)', () => {
@@ -345,7 +391,10 @@ describe('with SUPERADMIN_EMAILS unset (default)', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'bg_dormant'));
-    await app.app.request('/api/v1/setup', json({ instanceName: 'BG2', owner: ROOT }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'BG2', owner: ROOT })
+    );
     // Even a VERIFIED owner whose email would be on a typical allowlist gets
     // nothing: no env = no superadmin exists, the capability is dormant.
     await app.db.pool.query(`UPDATE "user" SET email_verified = true WHERE email = $1`, [ROOT.email]);
@@ -382,7 +431,10 @@ describe('multi-workspace targeting (ADR 014)', () => {
     app = await createTestApp(await createDatabase(container, 'bg_multi'), {
       SUPERADMIN_EMAILS: ROOT3.email
     });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'BG3', owner: ROOT3 }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'BG3', owner: ROOT3 })
+    );
     await app.db.pool.query(`UPDATE "user" SET email_verified = true WHERE email = $1`, [ROOT3.email]);
     // A second workspace owned by someone else — root has NO standing in it.
     const other = await app.auth.api.signUpEmail({

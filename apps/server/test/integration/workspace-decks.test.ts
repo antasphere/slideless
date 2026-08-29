@@ -116,7 +116,10 @@ beforeAll(async () => {
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'ws_decks'), {}, { email: mail });
 
-  const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'Deck W1', owner: OWNER1 }));
+  const setup = await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Deck W1', owner: OWNER1 })
+  );
   expect(setup.status).toBe(201);
   w1 = (await readJson(setup)).workspaceId;
   owner1Cookie = await signIn(OWNER1.email, OWNER1.password);

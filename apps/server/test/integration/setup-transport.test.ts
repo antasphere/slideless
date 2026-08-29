@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { createDatabase, createTestApp, startPostgres, type TestApp } from './helpers.js';
+import { createDatabase, createTestApp, startPostgres, type TestApp, SETUP_TOKEN } from './helpers.js';
 
 /**
  * PLT-10, end to end: the one-shot wizard is the request that decides who
@@ -86,7 +86,7 @@ describe('POST /setup on a transport the operator can trust', () => {
   it('succeeds over plaintext LOOPBACK — the `ssh -L` tunnel path', async () => {
     const app = await bootWith({ PUBLIC_BASE_URL: 'http://127.0.0.1:3000' }, 'plaintext_loopback');
     try {
-      const res = await postSetup(app, { owner, instanceName: 'Acme' });
+      const res = await postSetup(app, { owner, instanceName: 'Acme', setupToken: SETUP_TOKEN });
       expect(res.status).toBe(201);
     } finally {
       await app.stop();
@@ -96,7 +96,7 @@ describe('POST /setup on a transport the operator can trust', () => {
   it('succeeds over https on a public origin', async () => {
     const app = await bootWith({ PUBLIC_BASE_URL: 'https://platform.example.com' }, 'https_public');
     try {
-      const res = await postSetup(app, { owner, instanceName: 'Acme' });
+      const res = await postSetup(app, { owner, instanceName: 'Acme', setupToken: SETUP_TOKEN });
       expect(res.status).toBe(201);
     } finally {
       await app.stop();
@@ -109,7 +109,7 @@ describe('POST /setup on a transport the operator can trust', () => {
       'plaintext_optin'
     );
     try {
-      const res = await postSetup(app, { owner, instanceName: 'Acme' });
+      const res = await postSetup(app, { owner, instanceName: 'Acme', setupToken: SETUP_TOKEN });
       expect(res.status).toBe(201);
     } finally {
       await app.stop();

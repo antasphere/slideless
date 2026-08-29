@@ -3,6 +3,7 @@ import { and, eq, isNull, ne } from 'drizzle-orm';
 import { user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
 import type { AuditService } from '../audit/service.js';
 import type { Logger } from '../logger.js';
+import type { ErasureLog } from './erasure-log.js';
 
 /**
  * Account deletion (GDPR erasure), shared by both delete surfaces: the
@@ -128,7 +129,9 @@ export class AccountDeletionService {
     private readonly audit: AuditService,
     private readonly logger: Logger,
     /** Dedicated advisory-lock connections (mirrors packages/db migrate.ts). */
-    private readonly connectionString: string
+    private readonly connectionString: string,
+    /** The append-only erasure tombstone (OPS-3): every completed erasure lands a line. */
+    private readonly erasureLog?: ErasureLog
   ) {}
 
   /**
@@ -217,6 +220,16 @@ export class AccountDeletionService {
     });
   }
 
+  /**
+   * Land the erasure tombstone (OPS-3) for a deletion that did NOT run
+   * through Better Auth's deleteUser hooks — the admin DELETE /members/{id}
+   * cascade calls the internal adapter directly, so afterUserDelete never
+   * fires there. Every GDPR surface must end here or in afterUserDelete.
+   */
+  async recordErasure(user: { id: string; email: string }): Promise<void> {
+    await this.erasureLog?.append(user);
+  }
+
   /** Pop the stash and record the system-actor completion rows (FK-safe: the user is gone). */
   async afterUserDelete(user: { id: string; email: string }): Promise<void> {
     const locks = this.heldLocks.get(user.id);
@@ -224,6 +237,10 @@ export class AccountDeletionService {
       this.heldLocks.delete(user.id);
       for (const lock of locks) await this.releaseOwnerLock(lock);
     }
+    // The tombstone is written for EVERY completed erasure, stashed context
+    // or not: the audit rows below are what a restore rolls back; this line
+    // is what makes the erasure hold across one (OPS-3).
+    await this.erasureLog?.append(user);
     const stashed = this.stash.get(user.id);
     this.stash.delete(user.id);
     if (!stashed) {

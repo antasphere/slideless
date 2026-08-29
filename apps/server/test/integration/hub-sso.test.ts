@@ -73,7 +73,10 @@ describe('cloud edition: the SSO entrance', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'hub_sso'), cloudEnv());
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'SSO', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'SSO', owner: OWNER })
+    );
     expect(res.status).toBe(201);
   });
 

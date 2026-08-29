@@ -60,7 +60,10 @@ describe('cloud: first-run onboarding + ssoOnly', () => {
       HUB_CLIENT_ID: 'tool-slideless-cloud',
       HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001'
     });
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'Onb', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Onb', owner: OWNER })
+    );
     expect(res.status).toBe(201);
   });
 
@@ -236,7 +239,10 @@ describe('oss: zero onboarding surface', () => {
   it('/me carries neither key and the dismiss route answers the JSON 404 terminator', async () => {
     const app = await createTestApp(await createDatabase(container, 'onboarding_oss'));
     try {
-      const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'OnbOss', owner: OWNER }));
+      const setup = await app.app.request(
+        '/api/v1/setup',
+        json({ setupToken: 'integration-test-setup-token', instanceName: 'OnbOss', owner: OWNER })
+      );
       expect(setup.status).toBe(201);
       const signIn = await app.app.request(
         '/api/v1/auth/sign-in/email',

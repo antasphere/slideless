@@ -7,8 +7,10 @@ responsible for, and the rules that govern rendering user content.
 
 - **Closed sign-up.** Accounts enter through first-boot setup or invitations
   only: the HTTP sign-up endpoint is disabled, OTP signs in existing
-  accounts only, social providers have `disableSignUp`. `SETUP_TOKEN` gates
-  the wizard against squatters on freshly exposed instances.
+  accounts only, social providers have `disableSignUp`. The setup wizard
+  always requires a token (`SETUP_TOKEN`, or one the server generates into
+  the data volume and logs at first boot) — squatters never get a free claim
+  on a freshly exposed instance.
 - **Optional per-user 2FA (TOTP + backup codes).** Any
   member can enroll from the account page: password-gated enrollment issues
   an authenticator secret plus 10 one-time backup codes (shown exactly once),

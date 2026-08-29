@@ -6,8 +6,9 @@ restore — and the drill that proves your backups actually work.
 ## What must be backed up
 
 1. **The database** — users, workspaces, keys, audit, file metadata, jobs.
-2. **The `/data` volume** — uploaded file blobs (local storage driver) and
-   the auto-generated auth secret.
+2. **The `/data` volume** — uploaded file blobs (local storage driver), the
+   erasure tombstone (see below) and, on installs that never set
+   `AUTH_SECRET`, the auto-generated auth secret.
 3. **`.env`** — your secrets and configuration.
 
 With `STORAGE_DRIVER=s3`, blobs live in the bucket; use the bucket's own
@@ -69,6 +70,19 @@ your credentials.
 `restore.sh` accepts the encrypted form and, for backups made by older
 versions of `backup.sh`, the legacy cleartext `config-<stamp>.tar.gz`.
 
+### The generated pepper root never rides in the data tarball
+
+On installs where the server generated its own auth secret into
+`/data/secret`, that file **is** the pepper root — and the data tarball is
+the one artifact that is not encrypted. With `BACKUP_PASSPHRASE` set,
+`backup.sh` therefore leaves `/data/secret` **out** of `data-<stamp>.tar.gz`
+and carries it inside the encrypted config archive instead (as
+`data-secret`, beside `.env`). No backup artifact holds the root in
+cleartext. `restore.sh` reads it back out of the archive and writes it into
+the restored volume after the swap. With `--allow-unencrypted`, the tarball
+keeps the old shape — the secret rides in it in cleartext — and the run says
+so loudly; that is the conscious choice the flag exists for.
+
 ## Restore
 
 ```bash
@@ -113,7 +127,7 @@ Flags: `--yes` skips the prompt (drills, automation); `--no-config` accepts
 running without a pepper root, i.e. deliberately accepts losing
 `AUTH_SECRET`.
 
-### The pepper root has two homes
+### The pepper root has three homes
 
 `AUTH_SECRET` is optional. Set it in `.env` (what `setup.sh` does) and that is
 the pepper root. Leave it unset and the server generates one into
@@ -126,13 +140,14 @@ secret 404s while every API key 401s.
 
 `restore.sh` therefore works out where the pepper root is during the _verify_
 phase, before anything is destroyed, and says so (`pepper root comes from:
-config_env | data_volume | none`):
+config_env | data_volume | config_secret | none`):
 
-| Where the backup carries it                      | What restore.sh does                                                                           |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `AUTH_SECRET` in the archived `.env`             | Merges it (plus `API_KEY_PEPPERS`) into the live `.env`.                                       |
-| Only `$DATA_DIR/secret`, inside the data tarball | **Removes** `AUTH_SECRET` from the live `.env`, so the restored file is what the server reads. |
-| Neither                                          | Refuses the restore, unless you pass `--no-config`.                                            |
+| Where the backup carries it                                 | What restore.sh does                                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `AUTH_SECRET` in the archived `.env`                        | Merges it (plus `API_KEY_PEPPERS`) into the live `.env`.                                                |
+| `$DATA_DIR/secret` inside the data tarball (older backups)  | **Removes** `AUTH_SECRET` from the live `.env`, so the restored file is what the server reads.          |
+| `data-secret` inside the encrypted config archive (current) | Writes it to `/data/secret` after the volume swap, then removes `AUTH_SECRET` from the live `.env` too. |
+| None of them                                                | Refuses the restore, unless you pass `--no-config`.                                                     |
 
 If you would rather never depend on `/data` for this, set `AUTH_SECRET`
 explicitly and keep it in a secret manager — see
@@ -147,6 +162,33 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U slideless -d postgres \
 
 Rotating `AUTH_SECRET` afterwards is a separate, deliberate operation — see
 the pepper-rotation runbook in [security.md](../security/security.md).
+
+### Erasures hold across a restore
+
+A GDPR erasure that lived only in the database would be undone by the next
+restore from an older dump — the person's row back, their password working,
+the audit entry saying they were erased rolled back with everything else.
+Every completed account erasure therefore also appends a line to
+`/data/erasures.jsonl` (the user id and a hash of the email, never the
+address): an append-only tombstone that lives outside the dump. `restore.sh`
+carries the live volume's tombstones forward into the restored tree, and the
+server replays the file at every boot: a tombstoned user found present again
+is deleted again, with a `user.erasure_replayed` audit row. Back the file up
+like the rest of `/data`; never truncate it.
+
+### A downgrade is refused, not reported as "current"
+
+The migration status compares the **hashes** drizzle records for every
+applied migration with the files the running image ships. A database that
+was migrated by a newer image (a rollback to an older tag, `:next` behind
+`:latest`) carries hashes this image does not know: the instance boots but
+refuses readiness (`/readyz` 503, the reason in the log) instead of running
+older code against a newer schema. Deploy the version that applied them.
+The same verdict fires if a migration file was **edited after it ran** on
+that database (a development-branch database that applied an earlier draft
+of a file): there the remedy is to fix the recorded hash by hand in
+`drizzle.__drizzle_migrations` (`UPDATE … SET hash = '<sha256 of the file>'`),
+never to loosen the check.
 
 ## Disaster recovery drill
 

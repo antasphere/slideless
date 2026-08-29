@@ -89,7 +89,10 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       // watch a hub-side change propagate in milliseconds.
       hubDials: { reconcileTtlMs: 120, reconcileStaleMaxMs: 60_000, retryMs: 250 }
     });
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'Connect', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Connect', owner: OWNER })
+    );
     expect(res.status).toBe(201);
   });
 
@@ -563,7 +566,10 @@ describe('oss edition: the route does not exist', () => {
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'sso_cli_connect_oss'));
-    const res = await app.app.request('/api/v1/setup', json({ instanceName: 'OSS', owner: OWNER }));
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'OSS', owner: OWNER })
+    );
     expect(res.status).toBe(201);
   });
 

@@ -50,7 +50,10 @@ describe('sustained quota: isolation, threshold, headers, exemptions', () => {
   beforeAll(async () => {
     url = await createDatabase(container, 'quota_sustained');
     app = await createTestApp(url, quotaEnv);
-    await app.app.request('/api/v1/setup', json({ instanceName: 'Quota', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Quota', owner: OWNER })
+    );
     const signIn = await app.app.request(
       '/api/v1/auth/sign-in/email',
       json({ email: OWNER.email, password: OWNER.password })
@@ -126,7 +129,10 @@ describe('sustained quota: isolation, threshold, headers, exemptions', () => {
     expect((await app.app.request('/healthz')).status).toBe(200);
     expect((await app.app.request('/api/v1/instance')).status).toBe(200);
     // Setup answers its own domain error (already set up), never the quota's 429.
-    const setup = await app.app.request('/api/v1/setup', json({ instanceName: 'X', owner: OWNER }));
+    const setup = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'X', owner: OWNER })
+    );
     expect(setup.status).toBe(410);
     // The auth surfaces keep their own walls; the exhausted general quota
     // must not block a sign-in.
@@ -155,7 +161,10 @@ describe('burst cap: 1-second spikes 429 and a fresh window recovers', () => {
   beforeAll(async () => {
     const url = await createDatabase(container, 'quota_burst');
     app = await createTestApp(url, { API_RATE_LIMIT_PER_MINUTE: '1000', API_RATE_LIMIT_BURST: '2' });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'Burst', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Burst', owner: OWNER })
+    );
     const signIn = await app.app.request(
       '/api/v1/auth/sign-in/email',
       json({ email: OWNER.email, password: OWNER.password })

@@ -78,7 +78,11 @@ beforeAll(async () => {
   const setup = await app.app.request('/api/v1/setup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceName: 'Cred Boundaries', owner: EVE })
+    body: JSON.stringify({
+      setupToken: 'integration-test-setup-token',
+      instanceName: 'Cred Boundaries',
+      owner: EVE
+    })
   });
   expect(setup.status).toBe(201);
 

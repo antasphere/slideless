@@ -52,7 +52,7 @@ beforeAll(async () => {
   const setup = await app.app.request('/api/v1/setup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceName: 'Idem', owner: OWNER })
+    body: JSON.stringify({ setupToken: 'integration-test-setup-token', instanceName: 'Idem', owner: OWNER })
   });
   const setupBody = await readJson(setup);
   workspaceId = setupBody.workspaceId;

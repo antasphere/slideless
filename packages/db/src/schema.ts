@@ -41,7 +41,17 @@ export const instanceSettings = pgTable('instance_settings', {
    * existing users/workspaces silently changes identity semantics. The
    * default covers pre-column rows honestly: everything so far is oss.
    */
-  edition: text('edition').notNull().default('oss')
+  edition: text('edition').notNull().default('oss'),
+  /**
+   * The user setup minted as the instance operator (CLOUD-3, PRDCT-1356).
+   * On cloud the operator holds NO membership (every cloud workspace is a
+   * hub projection), which made them structurally an orphan: the purge
+   * deleted the only local credential and the only break-glass identity.
+   * A durable record here excludes them from the sweep by construction —
+   * not by an env allowlist the operator may never have set. NULL on
+   * instances set up before this column existed.
+   */
+  operatorUserId: text('operator_user_id')
 });
 
 /**

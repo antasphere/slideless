@@ -97,7 +97,10 @@ beforeAll(async () => {
     {},
     { email: new RecordingEmailDriver() }
   );
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Annot', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Annot', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

@@ -115,7 +115,10 @@ describe('orphan purge (default 72h grace)', () => {
     app = await createTestApp(await createDatabase(container, 'gc_on'), {
       SUPERADMIN_EMAILS: SUPERADMIN_EMAIL
     });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'GC', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'GC', owner: OWNER })
+    );
     const ownerCookie = extractCookie(
       await app.app.request(
         '/api/v1/auth/sign-in/email',
@@ -171,6 +174,9 @@ describe('orphan purge (default 72h grace)', () => {
     // The break-glass operator: allowlisted email, no membership, session
     // long gone — must survive so recovery stays possible (ADR 010).
     await seedUser(app, 'superadmin-dormant', SUPERADMIN_EMAIL, 100);
+    // BG-2 (PRDCT-1356): the allowlist shelters a VERIFIED address only —
+    // exactly what break-glass would accept. seedUser inserts unverified.
+    await app.db.pool.query(`UPDATE "user" SET email_verified = true WHERE id = 'superadmin-dormant'`);
   }, 60_000);
 
   afterAll(async () => {
@@ -264,7 +270,10 @@ describe('ORPHAN_USER_RETENTION_HOURS=0 disables the sweep', () => {
     app = await createTestApp(await createDatabase(container, 'gc_off'), {
       ORPHAN_USER_RETENTION_HOURS: '0'
     });
-    await app.app.request('/api/v1/setup', json({ instanceName: 'GCOff', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'GCOff', owner: OWNER })
+    );
     await seedUser(app, 'orphan-ancient', 'orphan-ancient@gc.test', 1000);
   }, 60_000);
 
@@ -299,7 +308,10 @@ describe('the deletion MECHANISM cascades a hub-origin membership with its accou
 
   beforeAll(async () => {
     app = await createTestApp(await createDatabase(container, 'gc_cascade'));
-    await app.app.request('/api/v1/setup', json({ instanceName: 'GCCascade', owner: OWNER }));
+    await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'GCCascade', owner: OWNER })
+    );
   }, 60_000);
 
   afterAll(async () => {
@@ -376,4 +388,63 @@ describe('the deletion MECHANISM cascades a hub-origin membership with its accou
     const ws = await app.db.pool.query(`SELECT 1 FROM workspaces WHERE id = $1`, [wsId]);
     expect(ws.rows).toHaveLength(1);
   }, 40_000);
+});
+
+describe('the setup operator is never an orphan (CLOUD-3), and the allowlist shelters VERIFIED addresses only (BG-2)', () => {
+  let app: TestApp;
+  let operatorId: string;
+
+  beforeAll(async () => {
+    // The CLOUD shape, for real: cloud setup mints NO membership, so the
+    // operator is exactly the zero-membership user the sweep collects.
+    // SUPERADMIN_EMAILS UNSET: the operator's survival must not depend on it.
+    app = await createTestApp(await createDatabase(container, 'gc_operator'), {
+      EDITION: 'cloud',
+      HUB_ISSUER_URL: 'http://hub.localhost:3300',
+      HUB_CLIENT_ID: 'tool-slideless-cloud',
+      HUB_CLIENT_SECRET: 'integration-test-hub-secret-0001',
+      SUPERADMIN_EMAILS: '',
+      ORPHAN_USER_RETENTION_HOURS: '1'
+    });
+    const setup = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'GC Op', owner: OWNER })
+    );
+    expect(setup.status).toBe(201);
+    operatorId = (await readJson(setup)).ownerUserId;
+    const memberships = await app.db.pool.query(`SELECT 1 FROM workspace_members WHERE user_id = $1`, [
+      operatorId
+    ]);
+    expect(memberships.rows).toHaveLength(0);
+    // Their session has lapsed; age the row past the grace.
+    await app.db.pool.query(`DELETE FROM session WHERE user_id = $1`, [operatorId]);
+    await app.db.pool.query(`UPDATE "user" SET created_at = now() - interval '400 hours' WHERE id = $1`, [
+      operatorId
+    ]);
+  });
+
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('the purge deletes a plain stale orphan but keeps the operator', async () => {
+    await seedUser(app, 'u-stale', 'stale@gc.test', 400);
+    await runPurge(app);
+    expect(await userExists(app, 'u-stale')).toBe(false);
+    expect(await userExists(app, operatorId)).toBe(true);
+  });
+
+  it('an UNVERIFIED allowlisted address gets no shelter (BG-2 — break-glass would not accept it either)', async () => {
+    await app.stop();
+    app = await createTestApp(await createDatabase(container, 'gc_bg2'), {
+      SUPERADMIN_EMAILS: 'squat@gc.test, real@gc.test',
+      ORPHAN_USER_RETENTION_HOURS: '1'
+    });
+    await seedUser(app, 'u-squat', 'squat@gc.test', 400); // email_verified = false
+    await seedUser(app, 'u-real', 'real@gc.test', 400);
+    await app.db.pool.query(`UPDATE "user" SET email_verified = true WHERE id = 'u-real'`);
+    await runPurge(app);
+    expect(await userExists(app, 'u-squat')).toBe(false);
+    expect(await userExists(app, 'u-real')).toBe(true);
+  });
 });

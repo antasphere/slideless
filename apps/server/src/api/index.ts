@@ -84,6 +84,14 @@ export interface ApiDeps {
   oauthJwt: OauthJwtVerifier;
   /** Server auth secret — also derives the idempotency replay-cache cipher key. */
   authSecret: string;
+  /**
+   * The credential POST /setup REQUIRES (PRDCT-1347): SETUP_TOKEN, or the
+   * token boot generated into the data volume for an unclaimed instance.
+   * null only once the instance is set up (nothing left to claim).
+   */
+  setupToken: string | null;
+  /** Removes the boot-generated token file after a successful claim (no-op when SETUP_TOKEN is set). */
+  clearGeneratedSetupToken: () => Promise<void>;
   accountDeletion: AccountDeletionService;
   /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
   sharing: ShareTokenService;
@@ -393,13 +401,18 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       );
     }
 
-    if (env.SETUP_TOKEN && !constantTimeEquals(body.setupToken ?? '', env.SETUP_TOKEN)) {
-      return c.json(err('invalid_setup_token', 'A valid setup token is required'), 403);
-    }
-
     const [existing] = await db.select({ id: instanceSettings.id }).from(instanceSettings).limit(1);
     if (existing) {
       return c.json(err('already_setup', 'This instance has already been set up'), 410);
+    }
+
+    // ALWAYS required (PRDCT-1347): the claim decides who owns the instance.
+    // `deps.setupToken` is SETUP_TOKEN or the boot-generated token; it is
+    // null only for a set-up instance, which the 410 above already answered
+    // — so a null here is a claim with no credential to compare against and
+    // fails closed rather than falling through to a free claim.
+    if (!deps.setupToken || !constantTimeEquals(body.setupToken ?? '', deps.setupToken)) {
+      return c.json(err('invalid_setup_token', 'A valid setup token is required'), 403);
     }
 
     // Create the owner user through Better Auth so credential hashing and
@@ -456,7 +469,14 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           // The edition stamp is what the R7 boot guard compares against
           // (boot.ts, internal/federation.md): setup records the edition this
           // instance was born under.
-          .values({ id: 'instance', instanceId, name: body.instanceName, edition: env.EDITION })
+          .values({
+            id: 'instance',
+            instanceId,
+            name: body.instanceName,
+            edition: env.EDITION,
+            // The durable operator record (CLOUD-3): survives the orphan purge.
+            operatorUserId: ownerUserId
+          })
           .onConflictDoNothing()
           .returning({ id: instanceSettings.id });
         if (claimed.length === 0) throw new SetupAlreadyDone();
@@ -475,6 +495,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
 
     registry.events.emit('setup.completed', { workspaceId, instanceId });
     logger.info({ workspaceId, instanceId }, 'first-boot setup completed');
+    // The generated token has done its one job; a leftover copy in the data
+    // volume is a secret with no purpose (it would ride in every backup).
+    await deps.clearGeneratedSetupToken().catch((cause: unknown) => {
+      logger.warn({ err: cause }, 'setup: could not remove the generated setup-token file');
+    });
 
     // The genesis privileged action: audited directly (no principal in
     // context yet — the middleware exempts /setup).
@@ -703,7 +728,18 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     hubManaged
   });
   registerApiKeyRoutes(api, db, apiKeyService);
-  registerInvitationRoutes(api, { db, env, auth, email, audit, registry, logger, hubManaged });
+  registerInvitationRoutes(api, {
+    db,
+    env,
+    auth,
+    email,
+    audit,
+    registry,
+    logger,
+    hubManaged,
+    // CLOUD-5: no local-password accounts minted through invitations on cloud.
+    ssoOnly: Boolean(deps.hubSso)
+  });
   registerAuditRoutes(api, db);
   registerExportRoutes(api, {
     db,

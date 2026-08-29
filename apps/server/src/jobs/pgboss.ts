@@ -313,10 +313,18 @@ export async function createJobs(
                 AND inv.revoked_at IS NULL
                 AND inv.expires_at > now()
             )
+            -- BG-2: the allowlist protects exactly what break-glass ACCEPTS —
+            -- a VERIFIED allowlisted address. An unverified squat of an
+            -- allowlisted email is no operator and gets no shelter.
             AND NOT EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(${superadmins}::jsonb) AS sa(email)
-              WHERE sa.email = lower(u.email)
+              WHERE sa.email = lower(u.email) AND u.email_verified
             )
+            -- CLOUD-3: the setup operator (instance_settings.operator_user_id)
+            -- is NEVER an orphan — on cloud they hold no membership by
+            -- design, and deleting them loses the only local credential and
+            -- the only break-glass identity. Durable, allowlist or not.
+            AND u.id IS DISTINCT FROM (SELECT operator_user_id FROM instance_settings LIMIT 1)
           LIMIT ${BATCH}
         `);
         const rows = res.rows as unknown as Array<{ id: string; email: string }>;

@@ -30,7 +30,10 @@ const json = (body: unknown) => ({
 });
 
 async function setupApp(app: TestApp): Promise<string> {
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Files', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Files', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

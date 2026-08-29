@@ -44,7 +44,10 @@ beforeAll(async () => {
       }
     }
   );
-  await app.app.request('/api/v1/setup', json({ instanceName: 'Obs', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'Obs', owner: OWNER })
+  );
   const signIn = await app.app.request(
     '/api/v1/auth/sign-in/email',
     json({ email: OWNER.email, password: OWNER.password })

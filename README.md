@@ -21,6 +21,8 @@ server** — no central service anywhere in the loop.
 ```bash
 git clone <this-repo> slideless && cd slideless
 ./setup.sh                # generates secrets + a setup token, writes .env (mode 600), starts the stack
+                          # (a bare `docker compose up` works too: the server then generates the
+                          #  setup token itself and prints it in the container log)
 open http://localhost:3000
 ```
 

@@ -162,7 +162,11 @@ describe('AUTH_SECRET rotation vs OAuth token signing (ADR 023)', () => {
     const setup = await app.app.request('/api/v1/setup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ instanceName: 'SkrInstance', owner: OWNER })
+      body: JSON.stringify({
+        setupToken: 'integration-test-setup-token',
+        instanceName: 'SkrInstance',
+        owner: OWNER
+      })
     });
     expect(setup.status).toBe(201);
 

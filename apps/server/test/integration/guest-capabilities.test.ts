@@ -103,7 +103,10 @@ beforeAll(async () => {
   container = await startPostgres();
   mail = new RecordingEmailDriver();
   app = await createTestApp(await createDatabase(container, 'guest_caps'), {}, { email: mail });
-  await app.app.request('/api/v1/setup', json({ instanceName: 'GuestCaps', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'GuestCaps', owner: OWNER })
+  );
   ownerCookie = extractCookie(
     await app.app.request(
       '/api/v1/auth/sign-in/email',

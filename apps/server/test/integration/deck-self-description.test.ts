@@ -85,7 +85,10 @@ async function createDeck(body: Record<string, unknown>) {
 beforeAll(async () => {
   container = await startPostgres();
   app = await createTestApp(await createDatabase(container, 'deck_self_desc'));
-  await app.app.request('/api/v1/setup', json({ instanceName: 'SelfDesc', owner: OWNER }));
+  await app.app.request(
+    '/api/v1/setup',
+    json({ setupToken: 'integration-test-setup-token', instanceName: 'SelfDesc', owner: OWNER })
+  );
   ownerCookie = extractCookie(
     await app.app.request(
       '/api/v1/auth/sign-in/email',

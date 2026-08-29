@@ -80,7 +80,11 @@ describe('first-boot setup', () => {
     const res = await app.app.request('/api/v1/setup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ instanceName: 'Test Instance', owner: OWNER })
+      body: JSON.stringify({
+        setupToken: 'integration-test-setup-token',
+        instanceName: 'Test Instance',
+        owner: OWNER
+      })
     });
     expect(res.status).toBe(201);
     const body = await readJson(res);
@@ -98,7 +102,11 @@ describe('first-boot setup', () => {
     const res = await app.app.request('/api/v1/setup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ instanceName: 'Again', owner: { ...OWNER, email: 'other@example.com' } })
+      body: JSON.stringify({
+        setupToken: 'integration-test-setup-token',
+        instanceName: 'Again',
+        owner: { ...OWNER, email: 'other@example.com' }
+      })
     });
     expect(res.status).toBe(410);
     const body = await readJson(res);
