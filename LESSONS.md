@@ -927,11 +927,19 @@ entry; these are what THIS repo added or had to do differently.
   pass: removing a package strands its own subtree in `.pnpm` as real
   directories (rollup, postcss, tinypool, …) that the dangling-symlink sweep
   never sees. The pass keeps only store entries reachable through
-  `node_modules` symlink chains from the deployed package — unreachable means
-  Node cannot resolve it, so deletion cannot change what loads, and steps 4+5
-  still prove it. `.pnpm/node_modules` hoist links are deliberately NOT an
-  edge (they would mark everything reachable); a dangling hoist left by the
-  pass is attributed and unlinked, anything else still fails the build. Unit
+  `node_modules` symlink chains from the deployed package. `.pnpm/node_modules`
+  hoist links are deliberately NOT an edge (they would mark everything
+  reachable) — and that hoist dir IS a Node resolution path for undeclared
+  requires, so the honest statement is: the declared graph (step 4) and the
+  static graph (step 5) are proven; a phantom DYNAMIC require satisfiable only
+  through the hoist would break at container runtime, the same class of gap
+  the deny-list always had (checked on the 2026-08-29 lock: every specifier
+  that stops resolving belongs to a pruned package or a test dir). A dangling
+  hoist left by the pass is attributed and unlinked, anything else still fails
+  the build. The sweep's "resolves" verdict is build-stage-relative: a link
+  that lands outside the deploy dir works in the build stage and dangles in
+  the runtime image — `pnpm deploy --legacy` leaves exactly one (the deployed
+  package's own hoist entry), now unlinked; any other escape fails the build. Unit
   test: `test/unit/prune-runtime-deps.test.ts` on a synthetic pnpm tree.
 - **Compare store paths against `realpathSync(store)`.** `realpathSync` on a
   symlink answers the canonical path; on macOS the temp dir is `/var →

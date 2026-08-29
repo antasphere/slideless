@@ -11,7 +11,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -53,7 +53,8 @@ function pkg(entry: string, name: string, extra: Record<string, unknown> = {}) {
 function link(from: string, name: string, to: string, toName = name) {
   const at = join(store, from, 'node_modules', name);
   mkdirSync(dirname(at), { recursive: true });
-  symlinkSync(join('..', '..', to, 'node_modules', toName), at);
+  // relative like pnpm writes it — one more `..` for a scoped link
+  symlinkSync(relative(dirname(at), join(store, to, 'node_modules', toName)), at);
 }
 function hoist(name: string, to: string) {
   const at = join(store, 'node_modules', name);
@@ -159,6 +160,61 @@ describe('prune-runtime-deps: deny-list + orphan pass', () => {
     expect(existsSync(join(store, 'tinypool@1.0.0'))).toBe(false);
     expect(existsSync(join(store, 'node_modules', 'tinypool'))).toBe(false);
     expect(danglingLinks(join(root, 'node_modules'))).toEqual([]);
+  });
+
+  it('denies EVERY deny-list entry, exact names and scope globs alike, and nothing adjacent to a glob', () => {
+    // one reachable package per deny-list entry (reachable, so the orphan pass
+    // alone would keep them: only the deny-list can remove these), plus two
+    // near-misses that a sloppy glob would swallow
+    const denied = [
+      ['drizzle-kit@0.31.0', 'drizzle-kit'],
+      ['esbuild@0.25.0', 'esbuild'],
+      ['@esbuild+linux-x64@0.25.0', '@esbuild/linux-x64'],
+      ['@esbuild-kit+core-utils@3.0.0', '@esbuild-kit/core-utils'],
+      ['typescript@5.9.0', 'typescript'],
+      ['svelte@5.0.0', 'svelte'],
+      ['@sveltejs+kit@2.0.0', '@sveltejs/kit'],
+      ['vite@6.0.0', 'vite'],
+      ['vitest@3.0.0', 'vitest'],
+      ['better-sqlite3@12.0.0', 'better-sqlite3'],
+      ['@prisma+client@5.0.0', '@prisma/client']
+    ] as const;
+    const kept = [
+      ['@prismatic+foo@1.0.0', '@prismatic/foo'],
+      ['@esbuildy+bar@1.0.0', '@esbuildy/bar']
+    ] as const;
+    for (const [entry, name] of [...denied, ...kept]) {
+      pkg(entry, name);
+      link('hono@1.0.0', name, entry);
+    }
+    const res = run();
+    expect(res.status, res.stderr + res.stdout).toBe(0);
+    for (const [entry] of denied) expect(existsSync(join(store, entry)), entry).toBe(false);
+    for (const [entry, name] of kept) {
+      expect(existsSync(join(store, entry)), entry).toBe(true);
+      expect(statSync(join(store, 'hono@1.0.0', 'node_modules', name, 'package.json')).isFile()).toBe(true);
+    }
+    expect(danglingLinks(join(root, 'node_modules'))).toEqual([]);
+  });
+
+  it("unlinks the deployed package's own hoist link into the workspace, and fails any other link that escapes the deploy dir", () => {
+    // `pnpm deploy --legacy` leaves `.pnpm/node_modules/<app> → <workspace source>`:
+    // it resolves in the build stage and dangles in the runtime image
+    const outside = mkdtempSync(join(tmpdir(), 'workspace-'));
+    try {
+      writeFileSync(join(outside, 'package.json'), '{"name":"app"}');
+      symlinkSync(outside, join(store, 'node_modules', 'app'));
+      let res = run();
+      expect(res.status, res.stderr + res.stdout).toBe(0);
+      expect(existsSync(join(store, 'node_modules', 'app'))).toBe(false);
+
+      symlinkSync(outside, join(store, 'node_modules', 'someone-else'));
+      res = run();
+      expect(res.status).toBe(1);
+      expect(res.stderr).toMatch(/symlink escapes the deploy dir/);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('still fails the build on a dangling symlink it cannot attribute to the deny-list or the orphan pass', () => {

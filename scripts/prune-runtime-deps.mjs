@@ -139,11 +139,17 @@ if (removedDirs === 0) {
 // Removing a deny-listed package strands its own dependency subtree in the
 // store (vite's rollup/postcss, vitest's tinypool, …): real directories, so
 // the dangling-symlink sweep never sees them, yet they ship as scanner
-// surface. Node resolves ONLY through node_modules symlinks, so a store dir
-// no symlink chain reaches from the deployed package's node_modules is
-// unresolvable by construction — deleting it cannot change what loads
-// (steps 4 and 5 still prove that). Walk from the top-level entries,
-// following every `node_modules/*` symlink into the store, and drop the rest.
+// surface. Walk from the top-level entries, following every `node_modules/*`
+// symlink into the store, and drop the rest. The `.pnpm/node_modules` hoist
+// dir is DELIBERATELY not an edge: it is where pnpm parks every package for
+// undeclared (phantom) requires, so counting it would mark the whole store
+// reachable. The consequence, stated honestly: a surviving package that
+// dynamically requires a package it never declared, satisfiable only through
+// the hoist, would break at container runtime, not here — the same class of
+// gap the deny-list always had (steps 4 and 5 prove the DECLARED and the
+// STATIC graph, nothing dynamic). Verified on the 2026-08-29 lockfile: every
+// bare specifier that stops resolving after this pass belongs to a pruned
+// package or to a test/benchmark directory.
 // Compare against the store's REAL path: realpathSync answers canonical
 // paths, and the deploy dir itself may sit behind a symlink (macOS /var →
 // /private/var in the unit test; a bind mount in some CI runners).
@@ -214,6 +220,23 @@ function targetOrphaned(linkPath) {
 // package entries (or @scopes), 'scope' = children are scoped packages,
 // 'other' = plain directory contents. Symlinks are never followed.
 let unlinkedDangling = 0;
+const rootReal = realpathSync(root);
+const deployedName = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
+/**
+ * A symlink that resolves here but lands OUTSIDE the deploy dir only "works"
+ * in this build stage: the runtime stage copies /out alone, so it dangles
+ * there. `pnpm deploy --legacy` leaves exactly one such link — the deployed
+ * package's own hoist entry (`.pnpm/node_modules/<name>` → the workspace
+ * source dir). Nothing imports the package by its own name, so that one is
+ * unlinked; any other escape is a real error.
+ */
+function escapesDeploy(p) {
+  try {
+    return !realpathSync(p).startsWith(rootReal + '/');
+  } catch {
+    return false;
+  }
+}
 function sweep(dir, kind, scope = '') {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
@@ -237,6 +260,13 @@ function sweep(dir, kind, scope = '') {
         }
       } else if (pkgName && denied(pkgName)) {
         errors.push(`deny-listed package still resolvable (symlink): ${p}`);
+      } else if (escapesDeploy(p)) {
+        if (pkgName === deployedName) {
+          unlinkSync(p); // the deployed package's own hoist link into the workspace
+          unlinkedDangling++;
+        } else {
+          errors.push(`symlink escapes the deploy dir (dangles in the runtime image): ${p}`);
+        }
       }
     } else if (e.isDirectory()) {
       if (pkgName && denied(pkgName)) {
@@ -250,7 +280,7 @@ function sweep(dir, kind, scope = '') {
   }
 }
 sweep(nodeModules, 'nm');
-console.log(`sweep: removed ${unlinkedDangling} dangling symlink(s) left by the prune and the orphan pass`);
+console.log(`sweep: removed ${unlinkedDangling} dangling symlink(s) (prune, orphan pass, self-hoist)`);
 
 // ── 4. every declared prod dependency must still resolve ───────────────────
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
