@@ -1,0 +1,109 @@
+/* =====================================================================
+   The Antasphere brand tokens — CONSTANTS + SLOTS, copied from
+   company/brand src/lib/tokens.css (the same file finance-app and
+   hiring-app carry). These never vary, whatever the recipe; a theme may
+   only write the four slot variables at the bottom.
+   ===================================================================== */
+:root {
+  /* grounds — the paper (graphite) */
+  --ground: #f7f6f4;
+  --ground-2: #f0efec;
+  --ground-3: #e8e7e3;
+
+  /* ink */
+  --ink: #1a1918;
+  --ink-soft: #333230;
+  --muted: #6c6b66;
+  --hairline: #dcdbd6;
+
+  /* the ember survives only as a focus ring */
+  --focus: #b4552f;
+
+  /* status — the semantic triplet. Success and warning are constants like
+     the ember; danger IS the ember. Softs are their washes. */
+  --ok: #2e7d52;
+  --ok-soft: #dfece3;
+  --warn: #b07d1e;
+  --warn-soft: #f4ead2;
+  --danger: #b4552f;
+  --danger-soft: #f3e1d8;
+
+  /* elevation — the four shadow steps the products use */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 21, 0.05);
+  --shadow: 0 1px 3px rgba(28, 25, 21, 0.1), 0 1px 2px -1px rgba(28, 25, 21, 0.1);
+  --shadow-md: 0 4px 6px -1px rgba(28, 25, 21, 0.1), 0 2px 4px -2px rgba(28, 25, 21, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(28, 25, 21, 0.12), 0 4px 6px -4px rgba(28, 25, 21, 0.1);
+
+  /* type — the Observatory pairing, what the website ships */
+  --display: 'Sentient', system-ui, sans-serif;
+  --display-weight: 300;
+  --display-track: -0.005em;
+  /* page-title tier — one step above section heads, so a page opens on a
+     title rather than a caption. Sections stay 19px/400. */
+  --title-size: 28px;
+  --title-weight: 500;
+  --title-track: -0.015em;
+  --second: 'Sora', system-ui, sans-serif;
+  --ui: 'Onest', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* geometry */
+  --r: 7px;
+  --r-lg: 12px;
+  /* buttons carry their own radius, settled against the Clay reference
+     (16px on a ~40px control). */
+  --r-btn: 16px;
+
+  /* control heights — every interactive control sits on this ramp, never
+     on emergent padding+line-height. sm = compact/inline, md = the default
+     field/button/rail height, lg = hero actions. */
+  --control-h-sm: 32px;
+  --control-h-md: 36px;
+  --control-h-lg: 40px;
+
+  /* the photo grade — every photograph passes through this, unchanged */
+  --photo-filter: grayscale(0.35) sepia(0.18) saturate(0.85) contrast(1.04) brightness(1.02);
+
+  /* the film grain as a repeating tile — the field engine's grain (alpha
+     0.22) reduced to an SVG turbulence square, so filled controls carry the
+     same material as the fields. Blend it `overlay` on a colored fill. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='96' height='96' filter='url(%23g)' opacity='0.3'/%3E%3C/svg%3E");
+
+  /* ------------------------------------------------------------------
+     SLOTS — the only variables a theme is allowed to write.
+     Defaults = glacier, the shipped theme.
+     ------------------------------------------------------------------ */
+  --accent: #47799a;
+  --accent-ink: #f7f4ec;
+  --accent-soft: rgba(71, 121, 154, 0.14);
+  --field-base: #e9f0f3;
+}
+
+/* =====================================================================
+   Dark set — lifted from Exos packages/viewer-kit/src/tokens.css (the one
+   existing dark implementation of the brand register): grounds, ink,
+   hairline, status washes and shadows inverted; SLOTS untouched; grain
+   kept. Selector is `.dark` on <html> — this app's tailwind darkMode
+   mechanism — instead of the viewer-kit's [data-theme='dark'].
+   ===================================================================== */
+:root.dark {
+  --ground: #1c1b19;
+  --ground-2: #141311;
+  --ground-3: #272623;
+  --ink: #f0eee9;
+  --ink-soft: #d8d5ce;
+  --muted: #9c9991;
+  --hairline: #33322e;
+  --focus: #d9805a;
+  --ok: #5db487;
+  --ok-soft: #1d3127;
+  --warn: #d9a646;
+  --warn-soft: #3a2f16;
+  --danger: #e07a56;
+  --danger-soft: #3d241b;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.45), 0 2px 4px -2px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}

@@ -78,8 +78,8 @@
 <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
   <Card.Root>
     <Card.Header>
-      <Card.Description>{t('overview.instanceCard')}</Card.Description>
-      <Card.Title class="text-2xl">{data.instance.name}</Card.Title>
+      <Card.Description class="overline">{t('overview.instanceCard')}</Card.Description>
+      <Card.Title class="font-display text-2xl font-normal">{data.instance.name}</Card.Title>
     </Card.Header>
     <Card.Content class="flex flex-wrap gap-2">
       <Badge variant="secondary">v{data.instance.version}</Badge>
@@ -90,8 +90,8 @@
 
   <Card.Root>
     <Card.Header>
-      <Card.Description>{t('overview.decksCard')}</Card.Description>
-      <Card.Title class="text-2xl">{deckCount ?? '—'}</Card.Title>
+      <Card.Description class="overline">{t('overview.decksCard')}</Card.Description>
+      <Card.Title class="font-display text-[28px] font-normal tabular-nums">{deckCount ?? '—'}</Card.Title>
     </Card.Header>
     <Card.Content>
       <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/decks">
@@ -103,8 +103,9 @@
   {#if !isGuest}
     <Card.Root>
       <Card.Header>
-        <Card.Description>{t('overview.activeMembers')}</Card.Description>
-        <Card.Title class="text-2xl">{memberCount ?? '—'}</Card.Title>
+        <Card.Description class="overline">{t('overview.activeMembers')}</Card.Description>
+        <Card.Title class="font-display text-[28px] font-normal tabular-nums">{memberCount ?? '—'}</Card.Title
+        >
       </Card.Header>
       <Card.Content>
         <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/members">
@@ -115,8 +116,8 @@
 
     <Card.Root>
       <Card.Header>
-        <Card.Description>{t('overview.filesCard')}</Card.Description>
-        <Card.Title class="text-2xl">{fileCount ?? '—'}</Card.Title>
+        <Card.Description class="overline">{t('overview.filesCard')}</Card.Description>
+        <Card.Title class="font-display text-[28px] font-normal tabular-nums">{fileCount ?? '—'}</Card.Title>
       </Card.Header>
       <Card.Content>
         <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/files">
@@ -130,7 +131,7 @@
 <div class="mt-8 grid gap-4 md:grid-cols-2">
   <Card.Root>
     <Card.Header>
-      <Card.Title class="text-base">{t('overview.apiAccessTitle')}</Card.Title>
+      <Card.Title class="font-display text-base font-normal">{t('overview.apiAccessTitle')}</Card.Title>
       <Card.Description>
         {t('overview.apiAccessBody')}
         <code class="rounded bg-muted px-1 py-0.5 text-xs">/api/v1</code>.
@@ -143,7 +144,7 @@
 
   <Card.Root>
     <Card.Header>
-      <Card.Title class="text-base">{t('overview.teamTitle')}</Card.Title>
+      <Card.Title class="font-display text-base font-normal">{t('overview.teamTitle')}</Card.Title>
       <Card.Description>
         {t('overview.teamDescription')}
       </Card.Description>

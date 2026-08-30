@@ -1,23 +1,24 @@
 <script lang="ts" module>
   import { type VariantProps, tv } from 'tailwind-variants';
   export const badgeVariants = tv({
-    base: 'focus:ring-ring inline-flex select-none items-center rounded-md border text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2',
+    // Status pills, the brand way: soft washes with a 7px dot in the status
+    // color, never a saturated fill; hierarchy from the wash, not weight.
+    base: 'focus:ring-ring inline-flex select-none items-center rounded-md border text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2',
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/80 border-transparent shadow',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80 border-transparent',
+        default:
+          'border-transparent bg-[var(--accent-soft)] text-foreground before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--accent)] before:content-[""]',
+        secondary: 'border-transparent bg-[var(--ground-3)] text-ink-soft',
         destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/80 border-transparent shadow',
+          'border-transparent bg-[var(--danger-soft)] text-[var(--danger)] before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--danger)] before:content-[""]',
         outline: 'text-foreground',
-        version:
-          'border-purple-500/20 bg-purple-500/10 text-purple-600 hover:border-purple-500/40 hover:bg-purple-500/20 hover:text-purple-700 dark:text-purple-400 dark:hover:border-purple-400/40 dark:hover:bg-purple-400/20 dark:hover:text-purple-300 dark:border-purple-400/20 dark:bg-purple-400/10 font-mono',
-        old: 'border-orange-500/20 bg-orange-500/10 text-orange-600 hover:border-orange-500/40 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-400 dark:hover:border-orange-400/40 dark:hover:bg-orange-400/20 dark:hover:text-orange-300 dark:border-orange-400/20 dark:bg-orange-400/10 font-mono',
+        version: 'border-transparent bg-[var(--accent-soft)] text-foreground font-mono',
+        old: 'border-transparent bg-[var(--warn-soft)] text-[var(--warn)] before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--warn)] before:content-[""] font-mono',
         latest:
-          'border-green-500/20 bg-green-500/10 text-green-600 hover:border-green-500/40 hover:bg-green-500/20 hover:text-green-700 dark:text-green-400 dark:hover:border-green-400/40 dark:hover:bg-green-400/20 dark:hover:text-green-300 dark:border-green-400/20 dark:bg-green-400/10 font-mono',
+          'border-transparent bg-[var(--ok-soft)] text-[var(--ok)] before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--ok)] before:content-[""] font-mono',
         accepted:
-          'border-blue-500/20 bg-blue-500/10 text-blue-600 hover:border-blue-500/40 hover:bg-blue-500/20 hover:text-blue-700 dark:text-blue-400 dark:hover:border-blue-400/40 dark:hover:bg-blue-400/20 dark:hover:text-blue-300 dark:border-blue-400/20 dark:bg-blue-400/10 font-mono',
-        inactive:
-          'border-slate-500/20 bg-slate-500/10 text-slate-600 hover:border-slate-500/40 hover:bg-slate-500/20 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-400/40 dark:hover:bg-slate-400/20 dark:hover:text-slate-300 dark:border-slate-400/20 dark:bg-slate-400/10 font-mono'
+          'border-transparent bg-[var(--accent-soft)] text-foreground before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--accent)] before:content-[""] font-mono',
+        inactive: 'border-transparent bg-[var(--ground-3)] text-brand-muted font-mono'
       }
     },
     defaultVariants: {

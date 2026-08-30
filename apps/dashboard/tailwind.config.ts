@@ -2,6 +2,11 @@ import type { Config } from 'tailwindcss';
 import tailwindcssAnimate from 'tailwindcss-animate';
 import { fontFamily } from 'tailwindcss/defaultTheme';
 
+/* The semantic color contract reads the shadcn variables that src/app.css maps
+   onto the Antasphere brand tokens (the Exos pattern). `muted` and `accent`
+   read the --tpl- renamed pair (the bare names belong to the brand). Radii
+   follow the brand's ramp (7 / 12, buttons 16); the default sans is Onest,
+   the display Sentient. */
 const config: Config = {
   darkMode: ['class'],
   content: ['./src/**/*.{html,js,svelte,ts}'],
@@ -16,272 +21,6 @@ const config: Config = {
     },
     extend: {
       colors: {
-        // Custom Brand Colors
-        'custom-orange': {
-          50: 'hsl(var(--custom-orange-50))',
-          100: 'hsl(var(--custom-orange-100))',
-          200: 'hsl(var(--custom-orange-200))',
-          300: 'hsl(var(--custom-orange-300))',
-          400: 'hsl(var(--custom-orange-400))',
-          500: 'hsl(var(--custom-orange-500))',
-          600: 'hsl(var(--custom-orange-600))',
-          700: 'hsl(var(--custom-orange-700))',
-          800: 'hsl(var(--custom-orange-800))',
-          900: 'hsl(var(--custom-orange-900))',
-          950: 'hsl(var(--custom-orange-950))'
-        },
-        'custom-blue': {
-          50: 'hsl(var(--custom-blue-50))',
-          100: 'hsl(var(--custom-blue-100))',
-          200: 'hsl(var(--custom-blue-200))',
-          300: 'hsl(var(--custom-blue-300))',
-          400: 'hsl(var(--custom-blue-400))',
-          500: 'hsl(var(--custom-blue-500))',
-          600: 'hsl(var(--custom-blue-600))',
-          700: 'hsl(var(--custom-blue-700))',
-          800: 'hsl(var(--custom-blue-800))',
-          900: 'hsl(var(--custom-blue-900))',
-          950: 'hsl(var(--custom-blue-950))'
-        },
-        'custom-red': {
-          50: 'hsl(var(--custom-red-50))',
-          100: 'hsl(var(--custom-red-100))',
-          200: 'hsl(var(--custom-red-200))',
-          300: 'hsl(var(--custom-red-300))',
-          400: 'hsl(var(--custom-red-400))',
-          500: 'hsl(var(--custom-red-500))',
-          600: 'hsl(var(--custom-red-600))',
-          700: 'hsl(var(--custom-red-700))',
-          800: 'hsl(var(--custom-red-800))',
-          900: 'hsl(var(--custom-red-900))',
-          950: 'hsl(var(--custom-red-950))'
-        },
-        'custom-green': {
-          50: 'hsl(var(--custom-green-50))',
-          100: 'hsl(var(--custom-green-100))',
-          200: 'hsl(var(--custom-green-200))',
-          300: 'hsl(var(--custom-green-300))',
-          400: 'hsl(var(--custom-green-400))',
-          500: 'hsl(var(--custom-green-500))',
-          600: 'hsl(var(--custom-green-600))',
-          700: 'hsl(var(--custom-green-700))',
-          800: 'hsl(var(--custom-green-800))',
-          900: 'hsl(var(--custom-green-900))',
-          950: 'hsl(var(--custom-green-950))'
-        },
-        'custom-blue-light': 'hsl(var(--custom-blue-light))',
-        'custom-pink': 'hsl(var(--custom-pink))',
-        'custom-green-light': 'hsl(var(--custom-green-light))',
-        // Override default Tailwind colors with terra colors
-        blue: {
-          50: 'hsl(var(--terra-blue-50))',
-          100: 'hsl(var(--terra-blue-100))',
-          200: 'hsl(var(--terra-blue-200))',
-          300: 'hsl(var(--terra-blue-300))',
-          400: 'hsl(var(--terra-blue-400))',
-          500: 'hsl(var(--terra-blue-500))',
-          600: 'hsl(var(--terra-blue-600))',
-          700: 'hsl(var(--terra-blue-700))',
-          800: 'hsl(var(--terra-blue-800))',
-          900: 'hsl(var(--terra-blue-900))',
-          950: 'hsl(var(--terra-blue-950))'
-        },
-        red: {
-          50: 'hsl(var(--terra-red-50))',
-          100: 'hsl(var(--terra-red-100))',
-          200: 'hsl(var(--terra-red-200))',
-          300: 'hsl(var(--terra-red-300))',
-          400: 'hsl(var(--terra-red-400))',
-          500: 'hsl(var(--terra-red-500))',
-          600: 'hsl(var(--terra-red-600))',
-          700: 'hsl(var(--terra-red-700))',
-          800: 'hsl(var(--terra-red-800))',
-          900: 'hsl(var(--terra-red-900))',
-          950: 'hsl(var(--terra-red-950))'
-        },
-        yellow: {
-          50: 'hsl(var(--terra-yellow-50))',
-          100: 'hsl(var(--terra-yellow-100))',
-          200: 'hsl(var(--terra-yellow-200))',
-          300: 'hsl(var(--terra-yellow-300))',
-          400: 'hsl(var(--terra-yellow-400))',
-          500: 'hsl(var(--terra-yellow-500))',
-          600: 'hsl(var(--terra-yellow-600))',
-          700: 'hsl(var(--terra-yellow-700))',
-          800: 'hsl(var(--terra-yellow-800))',
-          900: 'hsl(var(--terra-yellow-900))',
-          950: 'hsl(var(--terra-yellow-950))'
-        },
-        green: {
-          50: 'hsl(var(--terra-green-50))',
-          100: 'hsl(var(--terra-green-100))',
-          200: 'hsl(var(--terra-green-200))',
-          300: 'hsl(var(--terra-green-300))',
-          400: 'hsl(var(--terra-green-400))',
-          500: 'hsl(var(--terra-green-500))',
-          600: 'hsl(var(--terra-green-600))',
-          700: 'hsl(var(--terra-green-700))',
-          800: 'hsl(var(--terra-green-800))',
-          900: 'hsl(var(--terra-green-900))',
-          950: 'hsl(var(--terra-green-950))'
-        },
-        purple: {
-          50: 'hsl(var(--terra-purple-50))',
-          100: 'hsl(var(--terra-purple-100))',
-          200: 'hsl(var(--terra-purple-200))',
-          300: 'hsl(var(--terra-purple-300))',
-          400: 'hsl(var(--terra-purple-400))',
-          500: 'hsl(var(--terra-purple-500))',
-          600: 'hsl(var(--terra-purple-600))',
-          700: 'hsl(var(--terra-purple-700))',
-          800: 'hsl(var(--terra-purple-800))',
-          900: 'hsl(var(--terra-purple-900))',
-          950: 'hsl(var(--terra-purple-950))'
-        },
-        gray: {
-          50: 'hsl(var(--terra-gray-50))',
-          100: 'hsl(var(--terra-gray-100))',
-          200: 'hsl(var(--terra-gray-200))',
-          300: 'hsl(var(--terra-gray-300))',
-          400: 'hsl(var(--terra-gray-400))',
-          500: 'hsl(var(--terra-gray-500))',
-          600: 'hsl(var(--terra-gray-600))',
-          700: 'hsl(var(--terra-gray-700))',
-          800: 'hsl(var(--terra-gray-800))',
-          900: 'hsl(var(--terra-gray-900))',
-          950: 'hsl(var(--terra-gray-950))'
-        },
-        orange: {
-          50: 'hsl(var(--terra-orange-50))',
-          100: 'hsl(var(--terra-orange-100))',
-          200: 'hsl(var(--terra-orange-200))',
-          300: 'hsl(var(--terra-orange-300))',
-          400: 'hsl(var(--terra-orange-400))',
-          500: 'hsl(var(--terra-orange-500))',
-          600: 'hsl(var(--terra-orange-600))',
-          700: 'hsl(var(--terra-orange-700))',
-          800: 'hsl(var(--terra-orange-800))',
-          900: 'hsl(var(--terra-orange-900))',
-          950: 'hsl(var(--terra-orange-950))'
-        },
-        teal: {
-          50: 'hsl(var(--terra-teal-50))',
-          100: 'hsl(var(--terra-teal-100))',
-          200: 'hsl(var(--terra-teal-200))',
-          300: 'hsl(var(--terra-teal-300))',
-          400: 'hsl(var(--terra-teal-400))',
-          500: 'hsl(var(--terra-teal-500))',
-          600: 'hsl(var(--terra-teal-600))',
-          700: 'hsl(var(--terra-teal-700))',
-          800: 'hsl(var(--terra-teal-800))',
-          900: 'hsl(var(--terra-teal-900))',
-          950: 'hsl(var(--terra-teal-950))'
-        },
-        pink: {
-          50: 'hsl(var(--terra-pink-50))',
-          100: 'hsl(var(--terra-pink-100))',
-          200: 'hsl(var(--terra-pink-200))',
-          300: 'hsl(var(--terra-pink-300))',
-          400: 'hsl(var(--terra-pink-400))',
-          500: 'hsl(var(--terra-pink-500))',
-          600: 'hsl(var(--terra-pink-600))',
-          700: 'hsl(var(--terra-pink-700))',
-          800: 'hsl(var(--terra-pink-800))',
-          900: 'hsl(var(--terra-pink-900))',
-          950: 'hsl(var(--terra-pink-950))'
-        },
-        indigo: {
-          50: 'hsl(var(--terra-indigo-50))',
-          100: 'hsl(var(--terra-indigo-100))',
-          200: 'hsl(var(--terra-indigo-200))',
-          300: 'hsl(var(--terra-indigo-300))',
-          400: 'hsl(var(--terra-indigo-400))',
-          500: 'hsl(var(--terra-indigo-500))',
-          600: 'hsl(var(--terra-indigo-600))',
-          700: 'hsl(var(--terra-indigo-700))',
-          800: 'hsl(var(--terra-indigo-800))',
-          900: 'hsl(var(--terra-indigo-900))',
-          950: 'hsl(var(--terra-indigo-950))'
-        },
-        emerald: {
-          50: 'hsl(var(--terra-emerald-50))',
-          100: 'hsl(var(--terra-emerald-100))',
-          200: 'hsl(var(--terra-emerald-200))',
-          300: 'hsl(var(--terra-emerald-300))',
-          400: 'hsl(var(--terra-emerald-400))',
-          500: 'hsl(var(--terra-emerald-500))',
-          600: 'hsl(var(--terra-emerald-600))',
-          700: 'hsl(var(--terra-emerald-700))',
-          800: 'hsl(var(--terra-emerald-800))',
-          900: 'hsl(var(--terra-emerald-900))',
-          950: 'hsl(var(--terra-emerald-950))'
-        },
-        violet: {
-          50: 'hsl(var(--terra-violet-50))',
-          100: 'hsl(var(--terra-violet-100))',
-          200: 'hsl(var(--terra-violet-200))',
-          300: 'hsl(var(--terra-violet-300))',
-          400: 'hsl(var(--terra-violet-400))',
-          500: 'hsl(var(--terra-violet-500))',
-          600: 'hsl(var(--terra-violet-600))',
-          700: 'hsl(var(--terra-violet-700))',
-          800: 'hsl(var(--terra-violet-800))',
-          900: 'hsl(var(--terra-violet-900))',
-          950: 'hsl(var(--terra-violet-950))'
-        },
-        slate: {
-          50: 'hsl(var(--terra-slate-50))',
-          100: 'hsl(var(--terra-slate-100))',
-          200: 'hsl(var(--terra-slate-200))',
-          300: 'hsl(var(--terra-slate-300))',
-          400: 'hsl(var(--terra-slate-400))',
-          500: 'hsl(var(--terra-slate-500))',
-          600: 'hsl(var(--terra-slate-600))',
-          700: 'hsl(var(--terra-slate-700))',
-          800: 'hsl(var(--terra-slate-800))',
-          900: 'hsl(var(--terra-slate-900))',
-          950: 'hsl(var(--terra-slate-950))'
-        },
-        zinc: {
-          50: 'hsl(var(--terra-zinc-50))',
-          100: 'hsl(var(--terra-zinc-100))',
-          200: 'hsl(var(--terra-zinc-200))',
-          300: 'hsl(var(--terra-zinc-300))',
-          400: 'hsl(var(--terra-zinc-400))',
-          500: 'hsl(var(--terra-zinc-500))',
-          600: 'hsl(var(--terra-zinc-600))',
-          700: 'hsl(var(--terra-zinc-700))',
-          800: 'hsl(var(--terra-zinc-800))',
-          900: 'hsl(var(--terra-zinc-900))',
-          950: 'hsl(var(--terra-zinc-950))'
-        },
-        neutral: {
-          50: 'hsl(var(--terra-neutral-50))',
-          100: 'hsl(var(--terra-neutral-100))',
-          200: 'hsl(var(--terra-neutral-200))',
-          300: 'hsl(var(--terra-neutral-300))',
-          400: 'hsl(var(--terra-neutral-400))',
-          500: 'hsl(var(--terra-neutral-500))',
-          600: 'hsl(var(--terra-neutral-600))',
-          700: 'hsl(var(--terra-neutral-700))',
-          800: 'hsl(var(--terra-neutral-800))',
-          900: 'hsl(var(--terra-neutral-900))',
-          950: 'hsl(var(--terra-neutral-950))'
-        },
-        stone: {
-          50: 'hsl(var(--terra-stone-50))',
-          100: 'hsl(var(--terra-stone-100))',
-          200: 'hsl(var(--terra-stone-200))',
-          300: 'hsl(var(--terra-stone-300))',
-          400: 'hsl(var(--terra-stone-400))',
-          500: 'hsl(var(--terra-stone-500))',
-          600: 'hsl(var(--terra-stone-600))',
-          700: 'hsl(var(--terra-stone-700))',
-          800: 'hsl(var(--terra-stone-800))',
-          900: 'hsl(var(--terra-stone-900))',
-          950: 'hsl(var(--terra-stone-950))'
-        },
-        // Semantic colors
         border: 'hsl(var(--border) / <alpha-value>)',
         input: 'hsl(var(--input) / <alpha-value>)',
         ring: 'hsl(var(--ring) / <alpha-value>)',
@@ -300,11 +39,11 @@ const config: Config = {
           foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)'
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
+          DEFAULT: 'hsl(var(--tpl-muted) / <alpha-value>)',
           foreground: 'hsl(var(--muted-foreground) / <alpha-value>)'
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent) / <alpha-value>)',
+          DEFAULT: 'hsl(var(--tpl-accent) / <alpha-value>)',
           foreground: 'hsl(var(--accent-foreground) / <alpha-value>)'
         },
         popover: {
@@ -325,26 +64,50 @@ const config: Config = {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))'
         },
-        // Button specific colors
         'button-hover': 'hsl(var(--button-hover) / <alpha-value>)',
         'button-hover-foreground': 'hsl(var(--button-hover-foreground) / <alpha-value>)',
-        // Surface brand colors
-        surface: {
-          'brand-solid': 'hsl(var(--surface-brand-solid))',
-          'brand-solid-hover': 'hsl(var(--surface-brand-solid-hover))',
-          primary: 'hsl(var(--surface-primary))',
-          secondary: 'hsl(var(--surface-secondary))',
-          tertiary: 'hsl(var(--surface-tertiary))'
+        /* the brand tokens as utilities, for the odd inline case */
+        ground: {
+          DEFAULT: 'var(--ground)',
+          2: 'var(--ground-2)',
+          3: 'var(--ground-3)'
+        },
+        ink: {
+          DEFAULT: 'var(--ink)',
+          soft: 'var(--ink-soft)'
+        },
+        hairline: 'var(--hairline)',
+        brand: {
+          muted: 'var(--muted)',
+          accent: 'var(--accent)',
+          'accent-ink': 'var(--accent-ink)',
+          'accent-soft': 'var(--accent-soft)',
+          ok: 'var(--ok)',
+          'ok-soft': 'var(--ok-soft)',
+          warn: 'var(--warn)',
+          'warn-soft': 'var(--warn-soft)',
+          danger: 'var(--danger)',
+          'danger-soft': 'var(--danger-soft)'
         }
       },
       borderRadius: {
-        xl: 'calc(var(--radius) * 2)',
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) * 0.75)',
-        sm: 'calc(var(--radius) * 0.5)'
+        '2xl': '16px',
+        xl: 'var(--r-lg)',
+        lg: '9px',
+        md: 'var(--r)',
+        sm: '5px',
+        btn: 'var(--r-btn)'
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        DEFAULT: 'var(--shadow)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)'
       },
       fontFamily: {
-        sans: ['geist-sans', ...fontFamily.sans]
+        sans: ['Onest', ...fontFamily.sans],
+        display: ['Sentient', ...fontFamily.serif],
+        second: ['Sora', ...fontFamily.sans]
       },
       keyframes: {
         'accordion-down': {

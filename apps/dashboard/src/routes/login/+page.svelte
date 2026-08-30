@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as Card from '$lib/components/ui/card/index.js';
+  import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
@@ -250,19 +251,15 @@
        it stays painted until the browser leaves for the hub, and the
        app-shell splash (app.html) covers the callback-return leg, so no
        blank/white frame ever shows between redirects. -->
-  <div
-    class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6"
-    role="status"
-    aria-live="polite"
-  >
-    <div class="flex flex-col items-center gap-8 text-center">
+  <GateShell plate={false}>
+    <div class="flex flex-col items-center gap-8 text-center" role="status" aria-live="polite">
       <div class="connect-mark" aria-hidden="true">
         <span class="connect-ring"></span>
         <span class="connect-arc"></span>
         <span class="connect-core"></span>
       </div>
       <div class="space-y-2">
-        <h1 class="text-2xl font-semibold tracking-tight text-foreground">{data.instance.name}</h1>
+        <h1 class="font-display text-2xl font-normal tracking-tight text-foreground">{data.instance.name}</h1>
         <p class="text-sm text-muted-foreground">{t('login.connectingToAntasphere')}</p>
         <p class="text-xs text-muted-foreground/70">{t('login.connectingHint')}</p>
       </div>
@@ -270,14 +267,14 @@
         <span></span><span></span><span></span>
       </div>
     </div>
-  </div>
+  </GateShell>
 {:else}
-  <LanguageSwitcher class="fixed right-4 top-4" />
+  <LanguageSwitcher class="fixed right-4 top-4 z-20" />
 
-  <div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
-    <Card.Root class="w-full max-w-sm">
+  <GateShell>
+    <Card.Root class="w-full border-0 bg-transparent shadow-none">
       <Card.Header>
-        <Card.Title class="text-xl">{data.instance.name}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{data.instance.name}</Card.Title>
         <Card.Description>{t('login.subtitle')}</Card.Description>
       </Card.Header>
       <Card.Content class="space-y-4">
@@ -501,7 +498,7 @@
         {/if}
       </Card.Content>
     </Card.Root>
-  </div>
+  </GateShell>
 {/if}
 
 <style>

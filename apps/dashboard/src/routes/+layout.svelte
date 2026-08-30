@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { Toaster } from '$lib/components/ui/sonner/index.js';
+  import PageGrain from '$lib/components/brand/PageGrain.svelte';
   import { createHintWatch } from '$lib/hint-watch';
   import { consumePendingNext, pendingNextStorage } from '$lib/sso';
   import { signOutToLogin } from '$lib/session';
@@ -49,5 +50,8 @@
 </script>
 
 <Toaster richColors />
+
+<!-- one faint sheet of film grain over the whole app (the brand's paper) -->
+<PageGrain />
 
 {@render children()}

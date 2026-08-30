@@ -182,7 +182,7 @@
       </a>
       <!-- SECURITY: the deck title is USER-AUTHORED — Svelte {…} interpolation
            renders it as escaped text. NEVER switch this to {@html}. -->
-      <h2 class="text-2xl font-semibold tracking-tight">{deck.title}</h2>
+      <h2 class="font-display text-2xl font-normal tracking-[-0.01em]">{deck.title}</h2>
       <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <Badge variant="secondary">{kindLabel(deck.kind)}</Badge>
         {#if deck.interactive}

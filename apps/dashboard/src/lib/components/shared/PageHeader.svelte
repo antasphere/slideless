@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button/index.js';
-  import { Separator } from '$lib/components/ui/separator/index.js';
   import { Plus } from '@lucide/svelte';
   import { t } from '$lib/i18n';
 
@@ -14,20 +13,19 @@
   let { title, description, onAdd, addLabel = t('common.add') }: Props = $props();
 </script>
 
-<div>
-  <div class="flex items-center justify-between">
-    <div class="space-y-1">
-      <h2 class="text-2xl font-semibold tracking-tight">{title}</h2>
-      {#if description}
-        <p class="text-sm text-muted-foreground">{description}</p>
-      {/if}
-    </div>
-    {#if onAdd}
-      <Button onclick={onAdd} size="sm">
-        <Plus class="mr-2 h-4 w-4" />
-        {addLabel}
-      </Button>
+<!-- The page-title tier of the brand's type register: Sentient at the title
+     size, the hairline underneath doing the separating (no Separator). -->
+<div class="page-head mb-10 items-end justify-between gap-4">
+  <div class="min-w-0 space-y-1">
+    <h1>{title}</h1>
+    {#if description}
+      <p class="text-sm text-muted-foreground">{description}</p>
     {/if}
   </div>
-  <Separator class="mb-10 mt-4" />
+  {#if onAdd}
+    <Button onclick={onAdd} size="sm" class="shrink-0">
+      <Plus class="mr-1 h-4 w-4" />
+      {addLabel}
+    </Button>
+  {/if}
 </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card/index.js';
+  import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
@@ -42,10 +43,10 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
-  <Card.Root class="w-full max-w-sm">
+<GateShell width="max-w-sm">
+  <Card.Root class="w-full border-0 bg-transparent shadow-none">
     <Card.Header>
-      <Card.Title class="text-xl">{t('forgot.title')}</Card.Title>
+      <Card.Title class="font-display text-xl font-normal">{t('forgot.title')}</Card.Title>
       <Card.Description>{t('forgot.description')}</Card.Description>
     </Card.Header>
     <Card.Content class="space-y-4">
@@ -78,4 +79,4 @@
       </div>
     </Card.Content>
   </Card.Root>
-</div>
+</GateShell>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card/index.js';
+  import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
   import Download from '@lucide/svelte/icons/download';
@@ -150,11 +151,11 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
-  <Card.Root class="w-full max-w-md">
+<GateShell width="max-w-md">
+  <Card.Root class="w-full border-0 bg-transparent shadow-none">
     {#if view === 'invalid'}
       <Card.Header class="text-center">
-        <Card.Title class="text-xl">{t('consent.invalidTitle')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('consent.invalidTitle')}</Card.Title>
         <Card.Description>
           {t('consent.invalidDescription')}
         </Card.Description>
@@ -166,7 +167,7 @@
       </Card.Content>
     {:else if view === 'error'}
       <Card.Header class="text-center">
-        <Card.Title class="text-xl">{t('consent.errorTitle')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('consent.errorTitle')}</Card.Title>
         <Card.Description>{t('consent.errorDescription')}</Card.Description>
       </Card.Header>
       <Card.Content>
@@ -176,7 +177,7 @@
       </Card.Content>
     {:else if view === 'loading'}
       <Card.Header class="text-center">
-        <Card.Title class="text-xl">{t('consent.loading')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('consent.loading')}</Card.Title>
       </Card.Header>
     {:else}
       <Card.Header class="text-center">
@@ -187,7 +188,7 @@
             <ShieldCheck class="h-6 w-6 text-primary" />
           </div>
         {/if}
-        <Card.Title class="text-xl">{t('consent.title')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('consent.title')}</Card.Title>
         <Card.Description>
           <span class="font-medium text-foreground">{clientName}</span>
           {t('consent.wantsAccess')}
@@ -240,4 +241,4 @@
       </Card.Content>
     {/if}
   </Card.Root>
-</div>
+</GateShell>
