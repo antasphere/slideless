@@ -4,15 +4,17 @@
   import { type VariantProps, tv } from 'tailwind-variants';
 
   export const buttonVariants = tv({
-    base: 'focus-visible:ring-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+    base: 'focus-visible:ring-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-btn text-sm font-medium transition-[color,background-color,filter,transform] focus-visible:outline-none focus-visible:ring-1 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90 shadow',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm',
+        // Filled controls carry the brand material: grain + falling light
+        // over the accent; hover moves only the fill (brightness).
+        default: 'material bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-[0.94]',
+        destructive: 'material bg-[var(--danger)] text-[var(--accent-ink)] hover:brightness-[0.94]',
         outline:
-          'bg-transparent border border-border hover:bg-button-hover/50 hover:text-button-hover-foreground shadow-sm',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-sm',
-        ghost: 'hover:bg-button-hover hover:text-button-hover-foreground',
+          'bg-transparent border border-border hover:bg-[var(--ground-3)] hover:text-foreground shadow-sm',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-[var(--ground-3)]',
+        ghost: 'hover:bg-[var(--ground-3)] hover:text-foreground',
         link: 'text-primary underline-offset-4 hover:underline'
       },
       size: {

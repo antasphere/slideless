@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import * as Card from '$lib/components/ui/card/index.js';
+  import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
@@ -111,11 +112,11 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
-  <Card.Root class="w-full max-w-md">
+<GateShell width="max-w-md">
+  <Card.Root class="w-full border-0 bg-transparent shadow-none">
     {#if data.state === 'dead' || deadReason}
       <Card.Header>
-        <Card.Title class="text-xl">{t('invite.deadTitle')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('invite.deadTitle')}</Card.Title>
         <Card.Description>
           {deadReason ?? t('invite.deadDescription')}
         </Card.Description>
@@ -127,12 +128,14 @@
       </Card.Content>
     {:else if data.state === 'error' || !lookup}
       <Card.Header>
-        <Card.Title class="text-xl">{t('invite.errorTitle')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('invite.errorTitle')}</Card.Title>
         <Card.Description>{t('invite.errorDescription')}</Card.Description>
       </Card.Header>
     {:else}
       <Card.Header>
-        <Card.Title class="text-xl">{t('invite.joinTitle', { workspace: lookup.workspaceName })}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal"
+          >{t('invite.joinTitle', { workspace: lookup.workspaceName })}</Card.Title
+        >
         <Card.Description>
           {t('invite.invitedAs', { email: lookup.email })}
           <Badge variant="secondary" class="align-middle">{lookup.role}</Badge>
@@ -208,4 +211,4 @@
       </Card.Content>
     {/if}
   </Card.Root>
-</div>
+</GateShell>

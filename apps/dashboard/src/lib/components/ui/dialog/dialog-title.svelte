@@ -7,6 +7,6 @@
 
 <DialogPrimitive.Title
   bind:ref
-  class={cn('text-lg font-semibold leading-none tracking-tight', className)}
+  class={cn('font-display text-lg font-normal leading-none tracking-tight', className)}
   {...restProps}
 />

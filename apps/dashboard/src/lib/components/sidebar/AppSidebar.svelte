@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/state';
+  import { page, navigating } from '$app/state';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import NavUser from './NavUser.svelte';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
@@ -11,6 +11,7 @@
   import ScrollText from '@lucide/svelte/icons/scroll-text';
   import Settings from '@lucide/svelte/icons/settings';
   import { t } from '$lib/i18n';
+  import LogoTile from '$lib/components/brand/LogoTile.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
   import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 
@@ -74,13 +75,14 @@
     }
   ]);
 
-  const currentPath = $derived(page.url.pathname);
+  // Use the navigation target as soon as a click starts a navigation, so the
+  // selected highlight flips immediately instead of waiting for the page load
+  // (the dashboard-template's instant-nav-highlight refinement).
+  const currentPath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
 
   function isActive(href: string): boolean {
     return href === '/' ? currentPath === '/' : currentPath.startsWith(href);
   }
-
-  const initial = $derived((instanceName || 'P').slice(0, 1).toUpperCase());
 </script>
 
 <Sidebar.Root variant="inset" collapsible="icon">
@@ -88,13 +90,15 @@
     {#if showSwitcher}
       <WorkspaceSwitcher {workspaces} {activeWorkspaceId} {hubManageUrl} />
     {:else}
-      <div class="flex items-center gap-2 px-2 py-2">
-        <div
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm"
-        >
-          {initial}
-        </div>
-        <span class="truncate text-sm font-semibold">{instanceName}</span>
+      <!-- The identity block: a contained header (the template convention the
+           bare version drifted from), the initial on a small brand field. -->
+      <div
+        class="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-background/70 px-2 py-2 shadow-sm"
+      >
+        <LogoTile label={instanceName} />
+        <span class="truncate font-display text-[15px] font-normal tracking-[-0.005em]">
+          {instanceName}
+        </span>
       </div>
     {/if}
   </Sidebar.Header>
@@ -105,13 +109,19 @@
         <Sidebar.Menu>
           {#each group.items as item (item.href)}
             <Sidebar.MenuItem>
+              <!-- Nav active state, the brand way: an accent-soft wash with
+                   the icon in the accent — never a fill. -->
               <Sidebar.MenuButton
                 isActive={isActive(item.href)}
-                class="transition-[transform,background-color] duration-200 hover:translate-x-0.5 hover:!bg-sidebar-accent/75 hover:!text-sidebar-accent-foreground"
+                class="transition-[transform,background-color] duration-200 hover:translate-x-0.5 hover:!bg-sidebar-accent/75 hover:!text-sidebar-accent-foreground data-[active=true]:!bg-[var(--accent-soft)] data-[active=true]:!text-foreground"
               >
                 {#snippet child({ props }: { props: Record<string, unknown> })}
                   <a href={item.href} {...props}>
-                    <item.icon class="text-muted-foreground transition-transform" />
+                    <item.icon
+                      class="{isActive(item.href)
+                        ? 'text-brand-accent'
+                        : 'text-muted-foreground'} transition-transform"
+                    />
                     <span>{item.title}</span>
                   </a>
                 {/snippet}

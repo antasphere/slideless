@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as Card from '$lib/components/ui/card/index.js';
+  import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
@@ -60,11 +61,11 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<div class="flex min-h-dvh items-center justify-center bg-surface-secondary p-6">
-  <Card.Root class="w-full max-w-sm">
+<GateShell width="max-w-sm">
+  <Card.Root class="w-full border-0 bg-transparent shadow-none">
     {#if linkDead}
       <Card.Header>
-        <Card.Title class="text-xl">{t('reset.deadTitle')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('reset.deadTitle')}</Card.Title>
         <Card.Description>{t('reset.deadDescription')}</Card.Description>
       </Card.Header>
       <Card.Content>
@@ -72,7 +73,7 @@
       </Card.Content>
     {:else}
       <Card.Header>
-        <Card.Title class="text-xl">{t('reset.title')}</Card.Title>
+        <Card.Title class="font-display text-xl font-normal">{t('reset.title')}</Card.Title>
         <Card.Description>{t('reset.description')}</Card.Description>
       </Card.Header>
       <Card.Content>
@@ -114,4 +115,4 @@
       </Card.Content>
     {/if}
   </Card.Root>
-</div>
+</GateShell>

@@ -65,7 +65,7 @@
               <Avatar.Fallback class="rounded-lg">{initials}</Avatar.Fallback>
             </Avatar.Root>
             <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-semibold">{displayName}</span>
+              <span class="truncate font-medium">{displayName}</span>
               <span class="truncate text-xs">{user.email}</span>
             </div>
           </div>

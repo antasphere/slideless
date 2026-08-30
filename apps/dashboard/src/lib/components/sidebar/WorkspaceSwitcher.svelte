@@ -4,6 +4,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+  import LogoTile from '$lib/components/brand/LogoTile.svelte';
   import { useSidebar } from '$lib/components/ui/sidebar/index.js';
   import { switchWorkspace } from '$lib/api';
   import { t } from '$lib/i18n';
@@ -36,7 +37,6 @@
   const active = $derived(
     workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0] ?? { id: '', name: '' }
   );
-  const initial = $derived((active.name || 'W').slice(0, 1).toUpperCase());
 
   function pick(id: string) {
     if (id === activeWorkspaceId) return;
@@ -49,21 +49,22 @@
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
+          <!-- The trigger is a CONTAINED block (the template's styled header
+               convention — never a bare transparent MenuButton), the
+               workspace initial on a small brand field. -->
           <Sidebar.MenuButton
             {...props}
             size="default"
             aria-label={t('workspace.switch')}
             data-testid="workspace-switcher"
-            class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            class="h-auto rounded-lg border border-sidebar-border bg-background/70 px-2 py-2 shadow-sm data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
           >
-            <div
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm"
-            >
-              {initial}
-            </div>
+            <LogoTile label={active.name} />
             {#if sidebar.state !== 'collapsed'}
-              <span class="truncate text-sm font-semibold">{active.name}</span>
-              <ChevronsUpDown class="ml-auto size-4 shrink-0" />
+              <span class="truncate font-display text-[15px] font-normal tracking-[-0.005em]">
+                {active.name}
+              </span>
+              <ChevronsUpDown class="ml-auto size-4 shrink-0 text-muted-foreground" />
             {/if}
           </Sidebar.MenuButton>
         {/snippet}
