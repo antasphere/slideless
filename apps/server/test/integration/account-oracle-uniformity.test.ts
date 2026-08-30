@@ -61,22 +61,45 @@ async function mint(newEmail: string): Promise<string> {
   return (await readJson(res)).verifyUrl as string;
 }
 
-/** Consume a link logged out; returns the observables a prober could read. */
-async function consume(verifyUrl: string): Promise<{
+interface Observables {
   status: number;
   location: string | null;
   hasSessionCookie: boolean;
   hasErrorParam: boolean;
-}> {
+  body: string;
+}
+
+/** Consume a link logged out; returns the FULL observable set a prober reads. */
+async function consume(verifyUrl: string): Promise<Observables> {
   const res = await app.app.request(verifyUrl, { headers: { 'x-forwarded-for': nextIp() } });
   const location = res.headers.get('location');
   const setCookie = res.headers.get('set-cookie') ?? '';
+  const body = res.status === 200 ? await res.text() : '';
   return {
     status: res.status,
     location,
     hasSessionCookie: /better-auth\.session_token=[^;]/.test(setCookie),
-    hasErrorParam: (location ?? '').includes('error=')
+    hasErrorParam: (location ?? '').includes('error='),
+    body
   };
+}
+
+/** Rewrite (or drop) the callbackURL query param on a minted verify URL. */
+function withCallback(verifyUrl: string, callbackURL: string | null): string {
+  const u = new URL(verifyUrl, 'http://localhost:3000');
+  if (callbackURL === null) u.searchParams.delete('callbackURL');
+  else u.searchParams.set('callbackURL', callbackURL);
+  return u.pathname + u.search;
+}
+
+/** Every observable must agree between the taken and the free consume. */
+function expectIdentical(taken: Observables, free: Observables): void {
+  expect(taken.status).toBe(free.status);
+  expect(taken.location).toBe(free.location);
+  expect(taken.hasSessionCookie).toBe(free.hasSessionCookie);
+  expect(taken.hasErrorParam).toBe(false);
+  expect(free.hasErrorParam).toBe(false);
+  expect(taken.body).toBe(free.body);
 }
 
 beforeAll(async () => {
@@ -130,38 +153,79 @@ afterAll(async () => {
   await container?.stop();
 });
 
+/**
+ * Consume, once for a FRESH unused address (the change goes through) and once
+ * for ELSEWHERE_EMAIL (a collision), under the SAME callbackURL shape, and
+ * assert every observable agrees. A counter hands each call a distinct fresh
+ * address, since every successful free consume renames the member.
+ */
+let freshCounter = 0;
+async function bothWaysUnder(callbackURL: string | null): Promise<{ taken: Observables; free: Observables }> {
+  const fresh = `fresh${freshCounter++}@oracle.test`;
+  const free = await consume(withCallback(await mint(fresh), callbackURL));
+  const taken = await consume(withCallback(await mint(ELSEWHERE_EMAIL), callbackURL));
+  return { taken, free };
+}
+
 describe('the change-email consume answers uniformly (door 1)', () => {
-  it('unused address and taken address produce identical observables; only the unused one changes the email', async () => {
-    // Branch A — the "no account" case: the change goes through.
-    const unusedUrl = await mint('fresh@oracle.test');
-    const unused = await consume(unusedUrl);
-    expect(unused.status).toBeGreaterThanOrEqual(300);
-    expect(unused.status).toBeLessThan(400);
-    expect(await memberEmail()).toBe('fresh@oracle.test');
-
-    // Branch B — the "account exists elsewhere" case: same observables.
-    const takenUrl = await mint(ELSEWHERE_EMAIL);
-    const taken = await consume(takenUrl);
-
-    expect(taken.status).toBe(unused.status);
-    expect(taken.location).toBe(unused.location);
-    expect(taken.hasErrorParam).toBe(false);
-    expect(unused.hasErrorParam).toBe(false);
-    expect(taken.hasSessionCookie).toBe(unused.hasSessionCookie);
-    expect(taken.hasSessionCookie).toBe(true);
-
-    // The collision changed nothing: the member keeps the branch-A address,
-    // and the elsewhere account keeps its own.
-    expect(await memberEmail()).toBe('fresh@oracle.test');
+  it('the minted shape (relative callbackURL): taken ≡ free, and only free renames the member', async () => {
+    const before = await memberEmail();
+    const { taken, free } = await bothWaysUnder('/account');
+    expectIdentical(taken, free);
+    expect(free.status).toBeGreaterThanOrEqual(300);
+    expect(free.status).toBeLessThan(400);
+    // The free consume renamed the member; the collision left both accounts.
+    expect(await memberEmail()).not.toBe(before);
     const { rows } = await app.db.pool.query(`SELECT 1 FROM "user" WHERE email = $1`, [ELSEWHERE_EMAIL]);
     expect(rows.length).toBe(1);
   });
 
+  it('Repro A — no callbackURL (the JSON path): taken ≡ free, both user:null (no user record leaks)', async () => {
+    const { taken, free } = await bothWaysUnder(null);
+    expectIdentical(taken, free);
+    expect(free.status).toBe(200);
+    // The free JSON must be normalized to user:null — a leaked user record is
+    // the whole oracle this repro exposed.
+    expect(JSON.parse(free.body)).toEqual({ status: true, user: null });
+    expect(JSON.parse(taken.body)).toEqual({ status: true, user: null });
+  });
+
+  it('Repro B — absolute SAME-ORIGIN callbackURL: taken ≡ free (both redirect, no oracle)', async () => {
+    const { taken, free } = await bothWaysUnder('http://localhost:3000/account');
+    expectIdentical(taken, free);
+    expect(free.status).toBeGreaterThanOrEqual(300);
+    expect(free.status).toBeLessThan(400);
+  });
+
+  it('an untrusted absolute callbackURL is refused IDENTICALLY on both branches (no open redirect)', async () => {
+    const { taken, free } = await bothWaysUnder('http://evil.example/x');
+    expect(taken.status).toBe(free.status);
+    expect(taken.location).toBe(free.location);
+    for (const o of [taken, free]) {
+      expect(o.location ?? '').not.toContain('evil.example');
+    }
+  });
+
+  it('a tab-smuggled protocol-relative callbackURL never redirects off-origin, and both branches agree', async () => {
+    const { taken, free } = await bothWaysUnder('/\t/evil.example');
+    expect(taken.status).toBe(free.status);
+    expect(taken.location).toBe(free.location);
+    for (const o of [taken, free]) {
+      // The one thing that must never happen: a Location resolving off-origin.
+      const loc = o.location;
+      if (loc) {
+        const resolved = new URL(loc, 'http://localhost:3000');
+        expect(resolved.origin).toBe('http://localhost:3000');
+      }
+    }
+  });
+
   it('never answers 5xx on the consume path, and the collision-branch session authenticates the target', async () => {
-    const url = await mint(ELSEWHERE_EMAIL);
-    const res = await app.app.request(url, { headers: { 'x-forwarded-for': nextIp() } });
+    const res = await app.app.request(withCallback(await mint(ELSEWHERE_EMAIL), '/account'), {
+      headers: { 'x-forwarded-for': nextIp() }
+    });
     expect(res.status).toBeLessThan(500);
-    // The link is sign-in-equivalent by design (LESSONS M6) — on the uniform
+    // The link is sign-in-equivalent by design (LESSONS M6) — on the collision
     // branch too, and for the TARGET member, never the probed account.
     const cookie = extractCookie(res);
     const me = await readJson(await app.app.request('/api/v1/me', { headers: { cookie } }));
@@ -176,5 +240,41 @@ describe('the change-email consume answers uniformly (door 1)', () => {
     expect(res.status).toBeGreaterThanOrEqual(300);
     expect(res.status).toBeLessThan(400);
     expect(res.headers.get('location')).toContain('error=');
+  });
+});
+
+/** Mint an invitation and return its accept token. */
+async function inviteToken(email: string): Promise<string> {
+  const inv = await readJson(
+    await app.app.request('/api/v1/invitations', json({ email, role: 'member' }, { cookie: ownerCookie }))
+  );
+  return (inv.acceptUrl as string).split('/invite/')[1]!;
+}
+
+describe('the invitation accept answers uniformly to a credential-less probe (door 2)', () => {
+  it('existing and fresh emails answer credentials_required alike; existence surfaces only on a committed create', async () => {
+    // ELSEWHERE_EMAIL has an account on the instance; the fresh one does not.
+    const takenToken = await inviteToken(ELSEWHERE_EMAIL);
+    const freshToken = await inviteToken('door2-fresh@oracle.test');
+
+    const probe = (token: string, body: Record<string, unknown> = {}) =>
+      app.app.request('/api/v1/invitations/accept', json({ token, ...body }));
+
+    // Credential-less: the account-existence bit is not readable for free —
+    // same status, same code on both. (The old oracle answered 409
+    // account_exists for the existing email, 400 for the fresh one.)
+    const taken = await probe(takenToken);
+    const fresh = await probe(freshToken);
+    expect(taken.status).toBe(fresh.status);
+    expect(taken.status).toBe(400);
+    expect((await readJson(taken)).error.code).toBe('credentials_required');
+    expect((await readJson(fresh)).error.code).toBe('credentials_required');
+
+    // Existence surfaces ONLY after real credentials are committed — the
+    // inherent signup collision, not a free pre-credential probe. The invite
+    // stays alive (nothing created on the collision branch).
+    const withCreds = await probe(takenToken, { name: 'Probe', password: 'a-probe-password-123' });
+    expect(withCreds.status).toBe(409);
+    expect((await readJson(withCreds)).error.code).toBe('account_exists');
   });
 });

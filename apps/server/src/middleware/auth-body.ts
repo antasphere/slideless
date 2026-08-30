@@ -9,20 +9,23 @@ const JSON_CONTENT_TYPE = /^application\/([a-z0-9.+-]*\+)?json/i;
  * Pre-validates JSON bodies bound for the Better Auth mount (AF-1 + the
  * update-user half of SL-B4, PRDCT-1358).
  *
- * Better Auth catches a JSON parse error INSIDE its own dispatch and answers
- * its own 500 — a response `app.onError` never sees, so the app-level
- * invalid_json mapping that covers every Hono-validated route does not reach
- * `/auth/*`: a malformed or empty JSON body was an anonymous 500 across the
- * whole auth surface. Same story one step later for a NUL character: Better
- * Auth's free-text sinks (`/update-user`'s `name`) are outside the contract,
- * so a NUL rode through to Postgres (SQLSTATE 22021) and surfaced as Better
- * Auth's own 500 — again invisible to the app-level 22021 backstop.
+ * The load-bearing half is NUL: Better Auth's free-text sinks (`/update-user`'s
+ * `name`) are outside the contract, so a NUL rode through to Postgres (SQLSTATE
+ * 22021) and surfaced as Better Auth's OWN 500 — a response `app.onError` never
+ * sees, so the app-level 22021 backstop cannot reach `/auth/*`. Refusing it
+ * here, before the mount, is the only complete place.
  *
- * So both classes are refused HERE, before the mount: a body under a JSON
- * content-type must parse, and the parsed value must carry no NUL anywhere.
- * Non-JSON content types pass untouched (the OAuth token endpoint is
- * form-encoded), as do bodyless requests. The body is read from a clone —
- * the mount consumes the original.
+ * The malformed/empty-JSON half is defence in depth and a wire-shape
+ * normalizer: on the pinned Better Auth (better-call ≥ 1.3.7) a JSON parse
+ * error already answers 400 (`BAD_REQUEST`), not a 500 — but with better-call's
+ * own error code, not this API's. Answering `invalid_json` here keeps the auth
+ * surface's parse errors in the same envelope as every other route, and guards
+ * a future dependency change that reverts to a 500.
+ *
+ * A body under a JSON content-type must parse and carry no NUL anywhere;
+ * non-JSON content types pass untouched (the OAuth token endpoint is
+ * form-encoded), as do bodyless requests. The body is read from a clone — the
+ * mount consumes the original.
  */
 export function authBodyGuard(): MiddlewareHandler {
   return async (c, next) => {

@@ -104,13 +104,21 @@ export const versionParamSchema = z
  */
 export function hasNulDeep(value: unknown): boolean {
   const stack: unknown[] = [value];
+  // A shared value graph (the contract is documented safe to run outside the
+  // server, where a caller may hand it a live object carrying a cycle) would
+  // spin this walk forever; the seen-set makes each container visited once.
+  const seen = new WeakSet<object>();
   while (stack.length > 0) {
     const current = stack.pop();
     if (typeof current === 'string') {
       if (current.includes('\u0000')) return true;
     } else if (Array.isArray(current)) {
+      if (seen.has(current)) continue;
+      seen.add(current);
       for (const item of current) stack.push(item);
     } else if (current !== null && typeof current === 'object') {
+      if (seen.has(current)) continue;
+      seen.add(current);
       for (const [key, item] of Object.entries(current)) {
         if (key.includes('\u0000')) return true;
         stack.push(item);
@@ -132,9 +140,16 @@ export function hasNulDeep(value: unknown): boolean {
 export function jsonDepthOf(value: unknown): number {
   let max = 0;
   const stack: Array<{ node: unknown; depth: number }> = [{ node: value, depth: 0 }];
+  // Same cycle guard as hasNulDeep: a live object with a back-reference must
+  // not make the depth walk (or the caller's later stringify) run forever.
+  const seen = new WeakSet<object>();
   while (stack.length > 0) {
     const { node, depth } = stack.pop()!;
     if (depth > max) max = depth;
+    if (node !== null && typeof node === 'object') {
+      if (seen.has(node)) continue;
+      seen.add(node);
+    }
     if (Array.isArray(node)) {
       for (const item of node) stack.push({ node: item, depth: depth + 1 });
     } else if (node !== null && typeof node === 'object') {

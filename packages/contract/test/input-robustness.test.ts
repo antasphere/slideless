@@ -39,6 +39,18 @@ describe('hasNulDeep', () => {
   it('survives a hostile depth without recursing', () => {
     expect(hasNulDeep(nested(200_000))).toBe(false);
   });
+
+  it('terminates on a circular graph instead of spinning forever', () => {
+    // The contract is documented safe to run outside the server, where a caller
+    // may hand it a live object with a back-reference. Without the seen-set this
+    // hangs; the assertion completing at all is the test.
+    const cyclic: Record<string, unknown> = { a: 1 };
+    cyclic.self = cyclic;
+    cyclic.arr = [cyclic];
+    expect(hasNulDeep(cyclic)).toBe(false);
+    cyclic.tainted = 'x\u0000';
+    expect(hasNulDeep(cyclic)).toBe(true);
+  });
 });
 
 describe('jsonDepthOf', () => {
@@ -47,6 +59,36 @@ describe('jsonDepthOf', () => {
     expect(jsonDepthOf({ a: 1 })).toBe(1);
     expect(jsonDepthOf({ a: [{ b: 1 }] })).toBe(3);
     expect(jsonDepthOf(nested(50_000))).toBe(50_000);
+  });
+
+  it('terminates on a circular graph', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(jsonDepthOf(cyclic)).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('opaqueJsonChecks short-circuits depth before the size stringify', () => {
+  it('a value past the depth cap is refused without the recursive stringify ever running', () => {
+    // The size refine calls JSON.stringify (recursive — the SL-B5 hazard); the
+    // depth refine carries `abort: true` so a hostile-depth value fails FIRST
+    // and the stringify never runs. A `toJSON` that throws proves the ordering
+    // on any host: the depth walk uses Object.values and never calls toJSON, so
+    // it does not throw; JSON.stringify calls toJSON first and would. If the
+    // size refine ran, safeParse would throw instead of returning a clean
+    // validation failure.
+    const trap = {
+      toJSON() {
+        throw new Error('JSON.stringify reached the value — depth did not short-circuit');
+      }
+    };
+    let overDeep: unknown = trap;
+    for (let i = 0; i < MAX_OPAQUE_JSON_DEPTH + 2; i++) overDeep = { k: overDeep };
+    let result: ReturnType<typeof presentationMetadataSchema.safeParse> | undefined;
+    expect(() => {
+      result = presentationMetadataSchema.safeParse(overDeep as Record<string, unknown>);
+    }).not.toThrow();
+    expect(result!.success).toBe(false);
   });
 });
 
@@ -70,7 +112,6 @@ describe('media type (PLT-5)', () => {
       'text/', // empty subtype
       'text/ht ml', // raw space in token
       'text/html\r\nx-evil: 1', // header injection
-      'text/héml', // non-Latin1 → ByteString TypeError at the Headers set
       'text/html; charset', // parameter without value
       '', // empty
       'a'.repeat(300) + '/b' // over 255
@@ -79,10 +120,29 @@ describe('media type (PLT-5)', () => {
     }
   });
 
+  it('refuses any code point above Latin-1 — the real ByteString trap (PLT-5)', () => {
+    // These pass RFC 7231's quoted-string grammar but carry a unit > 0xFF, so
+    // `new Headers().set('content-type', v)` throws a ByteString TypeError. A
+    // grammar-only gate would admit them; the guard must reject them too.
+    for (const v of ['text/html; charset="€"', 'text/plain; name="café☕"']) {
+      expect(isValidMediaType(v), JSON.stringify(v)).toBe(false);
+      // Prove the premise: this value genuinely throws at the header set.
+      expect(() => new Headers().set('content-type', v), JSON.stringify(v)).toThrow();
+    }
+    // A Latin-1 code point above 0x7F but ≤ 0xFF is header-safe (no throw): the
+    // ceiling is the ByteString limit 0xFF, not ASCII. `ø` is still refused as a
+    // media type because it is not a token character, but for the GRAMMAR
+    // reason, not the ByteString one.
+    expect(() => new Headers().set('content-type', 'text/html; charset=" é"')).not.toThrow();
+    expect(isValidMediaType('application/x-ø')).toBe(false);
+  });
+
   it('manifest entries carry the media-type rule', () => {
     const entry = { path: 'index.html', sha256: 'a'.repeat(64), sizeBytes: 1 };
     expect(manifestEntrySchema.safeParse({ ...entry, contentType: 'text/html' }).success).toBe(true);
-    expect(manifestEntrySchema.safeParse({ ...entry, contentType: 'text/h éml' }).success).toBe(false);
+    expect(manifestEntrySchema.safeParse({ ...entry, contentType: 'text/html; charset="€"' }).success).toBe(
+      false
+    );
   });
 });
 

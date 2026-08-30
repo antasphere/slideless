@@ -202,6 +202,24 @@ describe('anonymous viewer surfaces (SL-B4)', () => {
     expect(ok.status).toBe(201);
   });
 
+  it('a deep annotation selection is refused at the schema even under text/plain (edge cap bypass)', async () => {
+    // The route parses with c.req.json(), which ignores Content-Type, so the
+    // JSON-typed edge depth cap does not see a text/plain body. The schema's
+    // own depth cap must catch it, or the handler's JSON.stringify byte-cap
+    // blows the stack on the shipped image (SL-B5, verifier V4).
+    const post = (ct: string) =>
+      app.app.request(`/api/v1/viewer/${secret}/annotations`, {
+        method: 'POST',
+        headers: { 'content-type': ct, origin: 'null', 'x-forwarded-for': nextIp() },
+        body: JSON.stringify({ body: 'note', selection: nested(60) })
+      });
+    for (const ct of ['application/json', 'text/plain', 'application/x-www-form-urlencoded']) {
+      const res = await post(ct);
+      expect(res.status, ct).toBe(400);
+      expect((await readJson(res)).error.code, ct).toBe('validation_error');
+    }
+  });
+
   it('a NUL inside a form payload answers 400, a clean one 201', async () => {
     const post = (payload: unknown) =>
       app.app.request(`/api/v1/viewer/${secret}/forms/rsvp/responses`, {

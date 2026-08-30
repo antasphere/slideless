@@ -8,6 +8,7 @@ import {
   collaboratorsListRoute
 } from '@slideless/contract/routes';
 import { user as userTable, workspaceMembers, type Db } from '@slideless/db';
+import { isDuplicateAccountError } from '../accounts/signup-duplicate.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
@@ -58,23 +59,6 @@ import {
  */
 
 const err = (code: string, message: string) => ({ error: { code, message } });
-
-/**
- * True when a failed signUpEmail means "this email already has an account":
- * either Better Auth's own pre-check (APIError USER_ALREADY_EXISTS / 422) or,
- * in the tight concurrent-claim race where two claims pass the account lookup
- * together, the losing INSERT's Postgres unique_violation (23505) on the
- * user email — found anywhere down the wrapped error's `cause` chain.
- */
-function isDuplicateAccountError(e: unknown): boolean {
-  for (let cur: unknown = e, depth = 0; cur instanceof Error && depth < 10; cur = cur.cause, depth++) {
-    const anyErr = cur as { code?: unknown; status?: unknown; body?: { code?: unknown } };
-    if (anyErr.code === '23505') return true;
-    if (anyErr.body?.code === 'USER_ALREADY_EXISTS') return true;
-    if (anyErr.status === 'UNPROCESSABLE_ENTITY' || anyErr.status === 422) return true;
-  }
-  return false;
-}
 
 export interface CollaboratorRouteDeps {
   db: Db;
@@ -344,33 +328,35 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
         .limit(1);
       alreadyVerified = self?.emailVerified ?? false;
     } else {
-      const [account] = await db
-        .select({ id: userTable.id, emailVerified: userTable.emailVerified })
-        .from(userTable)
-        .where(eq(userTable.email, grant.email))
-        .limit(1);
-
-      if (account) {
-        // Existing account: the caller must BE that account (signed in).
-        const session = await auth.api.getSession({ headers: c.req.raw.headers });
-        if (!session?.user || session.user.email !== grant.email) {
-          return c.json(
-            err('account_exists', 'An account with this email exists — sign in with it, then claim again'),
-            409
-          );
-        }
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (session?.user && session.user.email === grant.email) {
+        // Signed in AS the invitee: claim against that existing account. The
+        // session — not a public account lookup — is what proves the account
+        // exists, so nothing here reveals existence to a caller who is not it.
         userId = session.user.id;
-        alreadyVerified = account.emailVerified;
+        const [self] = await db
+          .select({ emailVerified: userTable.emailVerified })
+          .from(userTable)
+          .where(eq(userTable.id, userId))
+          .limit(1);
+        alreadyVerified = self?.emailVerified ?? false;
       } else {
+        // PRDCT-1437 door 2 (owner-reachable existence oracle): the credential
+        // and SSO gates are refused BEFORE any account-existence lookup, so a
+        // credential-less claim answers identically whether or not the address
+        // has an account. Existence is revealed ONLY after real credentials are
+        // committed, via the signUpEmail collision below — the inherent signup
+        // residual (a fresh address creates, a taken one fails), not a free
+        // pre-credential probe. Removing the public lookup's `accountExists`
+        // field would have been cosmetic while this stayed a free door.
         if (hubSso) {
-          // Cloud (D1): identity is hub-only — a local-password account
-          // minted here would be one no cloud login surface accepts, and a
-          // second signup entrance beside the sanctioned SSO one. The claim
-          // page routes the invitee through "Sign in with Antasphere" (the
-          // P3 entrance — JIT, the deliberate fourth signup switch), whose
-          // grant sweep + the G1 cross-request fallback above complete the
-          // claim on the re-POST. Checked BEFORE the credentials check so
-          // the answer never depends on the body shape.
+          // Cloud (D1): identity is hub-only — a local-password account minted
+          // here would be one no cloud login surface accepts, and a second
+          // signup entrance beside the sanctioned SSO one. The claim page
+          // routes the invitee through "Sign in with Antasphere" (the P3
+          // entrance — JIT, the deliberate fourth signup switch), whose grant
+          // sweep + the G1 cross-request fallback above complete the claim on
+          // the re-POST.
           return c.json(
             err(
               'sso_required',
@@ -392,10 +378,10 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
           });
           userId = created.user.id;
         } catch (e) {
-          // Two concurrent claims of one invite can both pass the account
-          // lookup above and race signUpEmail; the DB's unique email makes
-          // exactly ONE account — map the loser to the same clean 409 the
-          // account-exists branch answers instead of an uncaught 500.
+          // The address already has an account (Better Auth's own pre-check) or
+          // a concurrent claim won the unique-email race — map either to the
+          // guided 409 instead of an uncaught 500. This is the ONLY place
+          // existence surfaces, and only to a caller who committed credentials.
           if (isDuplicateAccountError(e)) {
             return c.json(
               err('account_exists', 'An account with this email exists — sign in with it, then claim again'),

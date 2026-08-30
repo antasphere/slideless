@@ -646,15 +646,27 @@ describe('G1 CROSS-REQUEST regression — a grant swept active in an EARLIER req
 });
 
 describe('claim by an EXISTING account (template invitation semantics: explicit claim, never auto-activate)', () => {
-  it('unauthenticated claim for an existing email → 409 account_exists; signed-in claim succeeds (no verified flip on the copyable token)', async () => {
+  it('credential-less claim answers credentials_required regardless of existence; a committed create reveals the collision; signed-in claim succeeds', async () => {
     const secondDeck = await createDeck('Second Deck');
     const created = await readJson(await invite(secondDeck, DEV.email));
     expect(created.collaborator.status).toBe('pending'); // existing user, still pending
     const copyable = created.claimUrl.split('/collab/')[1] as string;
 
-    const anon = await app.app.request('/api/v1/collaborators/claim', json({ token: copyable }));
-    expect(anon.status).toBe(409);
-    expect((await readJson(anon)).error.code).toBe('account_exists');
+    // PRDCT-1437 door 2: an anonymous, credential-less claim of an EXISTING
+    // email answers the SAME 400 credentials_required that a non-existent
+    // email would — the account-existence bit is not readable for free.
+    const anonNoCreds = await app.app.request('/api/v1/collaborators/claim', json({ token: copyable }));
+    expect(anonNoCreds.status).toBe(400);
+    expect((await readJson(anonNoCreds)).error.code).toBe('credentials_required');
+
+    // Existence surfaces ONLY after real credentials are committed (the
+    // inherent signup collision), never before.
+    const anonWithCreds = await app.app.request(
+      '/api/v1/collaborators/claim',
+      json({ token: copyable, name: 'Probe', password: 'a-probe-password-123' })
+    );
+    expect(anonWithCreds.status).toBe(409);
+    expect((await readJson(anonWithCreds)).error.code).toBe('account_exists');
 
     const devCookie = extractCookie(
       await app.app.request('/api/v1/auth/sign-in/email', json({ email: DEV.email, password: DEV.password }))

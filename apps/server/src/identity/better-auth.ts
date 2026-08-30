@@ -1,11 +1,10 @@
 import { betterAuth } from 'better-auth';
-import { APIError, getSessionFromCtx } from 'better-auth/api';
+import { APIError } from 'better-auth/api';
 import { createAuthMiddleware } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, genericOAuth, jwt, twoFactor } from 'better-auth/plugins';
-import { deleteSessionCookie, setSessionCookie } from 'better-auth/cookies';
+import { deleteSessionCookie } from 'better-auth/cookies';
 import { generateRandomString } from 'better-auth/crypto';
-import { jwtVerify } from 'jose';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { and, eq } from 'drizzle-orm';
 import {
@@ -836,72 +835,11 @@ export function createAuth({
             }
           }
         }
-        // PRDCT-1437 door 1: the change-email CONSUME answers UNIFORMLY
-        // whether or not the new address already has an account on the
-        // instance. Unhandled, the collision died at the `user.email` UNIQUE
-        // constraint as a raw 500 (vs a 302 on the free case) — a mint-then-
-        // consume account-existence oracle for any owner, plus a robustness
-        // bug in its own right. This pre-check verifies the token EXACTLY as
-        // Better Auth does (HS256 under the auth secret — re-verify on any
-        // bump), and when the target address is already held it mirrors the
-        // success branch's observables: same session mint, same cookie, same
-        // 302 to the callback — the email just does not change. The residual
-        // is inherent and documented (ADR 013 amendment): email uniqueness
-        // is instance-global, so whether the change TOOK can always be read
-        // back one step later; this closes the direct response oracle and
-        // the 500. Verification failures fall through untouched — Better
-        // Auth answers its own error redirect for those.
-        if (ctx.path === '/verify-email' && ctx.request) {
-          let payload: Record<string, unknown> | null = null;
-          let callbackURL: string | null = null;
-          try {
-            const url = new URL(ctx.request.url);
-            callbackURL = url.searchParams.get('callbackURL');
-            const token = url.searchParams.get('token') ?? '';
-            const verified = await jwtVerify(token, new TextEncoder().encode(ctx.context.secret), {
-              algorithms: ['HS256']
-            });
-            payload = verified.payload as Record<string, unknown>;
-          } catch {
-            payload = null;
-          }
-          if (
-            payload &&
-            typeof payload.email === 'string' &&
-            typeof payload.updateTo === 'string' &&
-            payload.requestType === 'change-email-verification'
-          ) {
-            const target = await ctx.context.internalAdapter.findUserByEmail(payload.email);
-            const session = await getSessionFromCtx(ctx);
-            // A signed-in NON-target errors identically on both branches in
-            // Better Auth ('unauthorized'), so only the reachable-update
-            // states need the uniform answer.
-            const wouldReachUpdate = target && (!session || session.user.email === payload.email);
-            if (wouldReachUpdate) {
-              const holder = await ctx.context.internalAdapter.findUserByEmail(payload.updateTo);
-              if (holder && holder.user.id !== target.user.id) {
-                let activeSession = session;
-                if (!activeSession) {
-                  // The token is sign-in-equivalent for the TARGET by design
-                  // (LESSONS.md M6) — minting here grants nothing the success
-                  // branch would not, and keeps set-cookie uniform.
-                  const newSession = await ctx.context.internalAdapter.createSession(target.user.id);
-                  activeSession = { session: newSession, user: target.user };
-                }
-                await setSessionCookie(ctx, activeSession);
-                // Redirect exactly like the success branch — but only to a
-                // RELATIVE callback (single leading slash): this branch runs
-                // before the route's originCheck middleware, so an absolute
-                // URL must not become an open redirect through it. The
-                // instance's own mint always sends /account.
-                if (callbackURL && /^\/(?![/\\])/.test(callbackURL)) {
-                  throw ctx.redirect(callbackURL);
-                }
-                return ctx.json({ status: true, user: null });
-              }
-            }
-          }
-        }
+        // PRDCT-1437 door 1 (the change-email consume existence oracle) is
+        // closed at the mount wrapper in api/index.ts, not here: it needs to
+        // rewrite the REQUEST before Better Auth reads the token, which a
+        // before-hook's `ctx.query` mutation does not reach (the endpoint reads
+        // its own parsed query). See `rewriteChangeEmailCollision` there.
         // The plugin scheme-checks only redirect_uris — reject javascript:/data:
         // metadata URIs on every client write path (unauthenticated DCR AND the
         // session-gated create/update-client endpoints) so a stored javascript:
