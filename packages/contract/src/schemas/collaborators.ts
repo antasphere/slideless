@@ -47,14 +47,20 @@ export const collaboratorInvitedSchema = z.object({
 });
 export type CollaboratorInvited = z.infer<typeof collaboratorInvitedSchema>;
 
-/** Public claim-token resolution (drives the claim page — the invitations pattern). */
+/**
+ * Public claim-token resolution (drives the claim page — the invitations
+ * pattern). Deliberately carries NO account-existence signal: it answered an
+ * instance-global "does this email have an account?" for any admin who
+ * minted an invite naming the address — a free, side-effect-less oracle
+ * (PRDCT-1437 door 2). The claim page offers sign-in and create-account
+ * neutrally; the claim endpoint itself answers `account_exists` when a
+ * create collides.
+ */
 export const collaboratorLookupSchema = z.object({
   email: z.string(),
   presentationTitle: z.string(),
   role: collaboratorRoleSchema,
-  expiresAt: z.string(),
-  /** True when an account with the invited email already exists (sign in to claim). */
-  accountExists: z.boolean()
+  expiresAt: z.string()
 });
 export type CollaboratorLookup = z.infer<typeof collaboratorLookupSchema>;
 

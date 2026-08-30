@@ -18,10 +18,18 @@ export const membersListSchema = z.object({
   nextCursor: z.string().nullable()
 });
 
-export const memberUpdateSchema = z.object({
-  role: workspaceRoleSchema.optional(),
-  isActive: z.boolean().optional()
-});
+// Both fields optional, so an empty body must be refused HERE: `{}` used to
+// pass validation and build an empty drizzle `.set({})`, which Postgres
+// refuses — an anonymous-shaped 500 for a plain client mistake (FUZZ-5,
+// PRDCT-1358).
+export const memberUpdateSchema = z
+  .object({
+    role: workspaceRoleSchema.optional(),
+    isActive: z.boolean().optional()
+  })
+  .refine((v) => v.role !== undefined || v.isActive !== undefined, {
+    error: 'at least one of role or isActive is required'
+  });
 export type MemberUpdate = z.infer<typeof memberUpdateSchema>;
 
 /** Admin-generated password reset link for a member (the SMTP-free recovery path). */

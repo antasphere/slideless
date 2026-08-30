@@ -200,7 +200,9 @@ describe('invitations without SMTP (exit criterion 3, API half)', () => {
     expect(res.status).toBe(200);
     const body = await readJson(res);
     expect(body.email).toBe(INVITEE.email);
-    expect(body.accountExists).toBe(false);
+    // No account-existence signal on the public lookup (PRDCT-1437): the
+    // admin holds the accept URL, so the field was an instance-global oracle.
+    expect(body).not.toHaveProperty('accountExists');
     expect(body.workspaceName).toBe('Core');
   });
 

@@ -170,15 +170,17 @@ describe('invite', () => {
     expect((await readJson(self)).error.code).toBe('already_owner');
   });
 
-  it('lookup resolves a live token (deck title, accountExists=false), 404 for junk', async () => {
+  it('lookup resolves a live token (deck title, no account signal), 404 for junk', async () => {
     const token = emailTokenFromMail(DEV.email);
     const ok = await readJson(await getFresh(`/api/v1/collaborators/lookup?token=${token}`));
     expect(ok).toMatchObject({
       email: DEV.email,
       presentationTitle: 'Collab Deck',
-      role: 'dev',
-      accountExists: false
+      role: 'dev'
     });
+    // No account-existence signal on the public lookup (PRDCT-1437): the
+    // admin holds the claim URL, so the field was an instance-global oracle.
+    expect(ok).not.toHaveProperty('accountExists');
     const junk = await getFresh(`/api/v1/collaborators/lookup?token=${'x'.repeat(43)}`);
     expect(junk.status).toBe(404);
   });

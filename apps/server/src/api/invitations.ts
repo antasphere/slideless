@@ -217,18 +217,18 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
       .from(workspaces)
       .where(eq(workspaces.id, invitation.workspaceId))
       .limit(1);
-    const [account] = await db
-      .select({ id: userTable.id })
-      .from(userTable)
-      .where(eq(userTable.email, invitation.email))
-      .limit(1);
+    // NO account-existence signal (PRDCT-1437, the collaborator-lookup rule):
+    // the admin who created the invitation holds the copyable accept URL, so
+    // an `accountExists` here answered "does this email have an account
+    // anywhere on the instance?" for any address, free and revocable. The
+    // accept page offers both paths neutrally; the accept endpoint answers
+    // `account_exists` only when a create actually collides.
     return c.json(
       {
         email: invitation.email,
         role: invitation.role,
         workspaceName: ws?.name ?? '',
-        expiresAt: invitation.expiresAt.toISOString(),
-        accountExists: Boolean(account)
+        expiresAt: invitation.expiresAt.toISOString()
       },
       200
     );

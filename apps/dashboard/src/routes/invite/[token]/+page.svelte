@@ -23,6 +23,9 @@
   let password = $state('');
   let loading = $state(false);
   let error = $state<string | null>(null);
+  // The lookup deliberately carries no account-existence signal (PRDCT-1437):
+  // the invitee picks the path themselves.
+  let mode = $state<'create' | 'signin'>('create');
   let deadReason = $state<string | null>(null);
 
   async function finish() {
@@ -149,10 +152,7 @@
           <Button class="w-full" disabled={loading} onclick={() => void acceptAsSignedIn()}>
             {loading ? t('invite.accepting') : t('invite.accept')}
           </Button>
-        {:else if lookup.accountExists}
-          <p class="text-sm text-muted-foreground">
-            {t('invite.accountExists')}
-          </p>
+        {:else if mode === 'signin'}
           <form
             class="space-y-4"
             onsubmit={(e) => {
@@ -177,6 +177,13 @@
               {loading ? t('common.working') : t('invite.signInAndAccept')}
             </Button>
           </form>
+          <button
+            type="button"
+            class="text-sm text-muted-foreground underline underline-offset-4"
+            onclick={() => (mode = 'create')}
+          >
+            {t('invite.switchToCreate')}
+          </button>
         {:else}
           <form
             class="space-y-4"
@@ -207,6 +214,13 @@
               {loading ? t('invite.joining') : t('invite.createAndJoin')}
             </Button>
           </form>
+          <button
+            type="button"
+            class="text-sm text-muted-foreground underline underline-offset-4"
+            onclick={() => (mode = 'signin')}
+          >
+            {t('invite.switchToSignIn')}
+          </button>
         {/if}
       </Card.Content>
     {/if}

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { plainText } from './common.js';
+import { opaqueJsonChecks, plainText } from './common.js';
 
 /**
  * Presentation domain wire schemas (ADR 011). A deck is a set of static
@@ -99,12 +99,10 @@ export const PRESENTATION_METADATA_MAX_LENGTH = 16 * 1024;
  * external dashboards on top of the API — PATCH replaces the whole object,
  * merge is a client concern.
  */
-export const presentationMetadataSchema = z
-  .record(z.string(), z.unknown())
-  .refine(
-    (v) => JSON.stringify(v).length <= PRESENTATION_METADATA_MAX_LENGTH,
-    `metadata must serialize to at most ${PRESENTATION_METADATA_MAX_LENGTH} characters`
-  );
+export const presentationMetadataSchema = opaqueJsonChecks(z.record(z.string(), z.unknown())).refine(
+  (v) => JSON.stringify(v).length <= PRESENTATION_METADATA_MAX_LENGTH,
+  `metadata must serialize to at most ${PRESENTATION_METADATA_MAX_LENGTH} characters`
+);
 export type PresentationMetadata = z.infer<typeof presentationMetadataSchema>;
 
 /**
@@ -152,12 +150,37 @@ export const presentationsListSchema = z.object({
 
 // ── Upload / versions ────────────────────────────────────────────────────────
 
+/**
+ * RFC 7231 media type: `token "/" token`, optionally followed by
+ * `;`-separated `token=token|quoted-string` parameters. The manifest's
+ * `contentType` is copied VERBATIM into the response `Content-Type` header
+ * when the blob is served (`files/serve.ts`), including on the anonymous
+ * viewer — and versions are immutable, so a committed value that the
+ * `Headers` constructor refuses (a non-Latin-1 character, say) was a
+ * permanent anonymous 500 on that asset (PLT-5, PRDCT-1358). The grammar
+ * check at commit is the fix; the serve-time sanitizer is the backstop for
+ * rows committed before it.
+ */
+const MEDIA_TYPE_TOKEN = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+export const MEDIA_TYPE_RE = new RegExp(
+  `^${MEDIA_TYPE_TOKEN}\\/${MEDIA_TYPE_TOKEN}` +
+    `(?:[ \\t]*;[ \\t]*${MEDIA_TYPE_TOKEN}=(?:${MEDIA_TYPE_TOKEN}|"[^"\\\\\\u0000-\\u001f\\u007f]*"))*$`
+);
+
+export function isValidMediaType(value: string): boolean {
+  return value.length >= 1 && value.length <= 255 && MEDIA_TYPE_RE.test(value);
+}
+
 /** One manifest line: where a blob mounts inside the deck. */
 export const manifestEntrySchema = z.object({
   path: assetPathSchema,
   sha256: sha256Schema,
   sizeBytes: z.number().int().min(0),
-  contentType: plainText(1, 255)
+  contentType: z
+    .string()
+    .min(1)
+    .max(255)
+    .refine(isValidMediaType, 'contentType must be an RFC 7231 media type (e.g. text/html)')
 });
 export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
 
@@ -262,7 +285,7 @@ export type PresentationUpdate = z.infer<typeof presentationUpdateSchema>;
  * commit answers 409 version_conflict (someone else pushed in between).
  */
 export const versionCommitSchema = z.object({
-  expectedBaseVersion: z.number().int().min(0),
+  expectedBaseVersion: z.number().int().min(0).max(2_147_483_647),
   entryPath: assetPathSchema,
   manifest: manifestSchema,
   /** Optionally retitle the deck in the same commit. */

@@ -279,18 +279,17 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     const { grant } = match;
     const deck = await presentations.get(grant.workspaceId, grant.presentationId);
     if (!deck) return c.json(err('not_found', 'Invite not found or no longer valid'), 404);
-    const [account] = await db
-      .select({ id: userTable.id })
-      .from(userTable)
-      .where(eq(userTable.email, grant.email))
-      .limit(1);
+    // NO account-existence signal (PRDCT-1437 door 2): the admin who minted
+    // the invite holds the claim URL, so an `accountExists` here was an
+    // instance-global account oracle for ANY email, free and side-effect-less.
+    // The claim page offers both paths neutrally; the claim endpoint answers
+    // `account_exists` only when a create actually collides.
     return c.json(
       {
         email: grant.email,
         presentationTitle: deck.title,
         role: grant.role,
-        expiresAt: grant.claimExpiresAt!.toISOString(),
-        accountExists: Boolean(account)
+        expiresAt: grant.claimExpiresAt!.toISOString()
       },
       200
     );

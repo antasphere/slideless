@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { plainText } from './common.js';
+import { plainText, versionNumberSchema } from './common.js';
 
 /**
  * Per-recipient share tokens: each recipient gets their own 48-byte secret
@@ -105,7 +105,7 @@ export const shareTokenCreateSchema = z
     name: plainText(1, 200),
     versionMode: shareTokenVersionModeSchema.default('latest'),
     /** Required when versionMode is 'pinned'. */
-    pinnedVersion: z.number().int().min(1).optional(),
+    pinnedVersion: versionNumberSchema.optional(),
     canAnnotate: z.boolean().default(false),
     /**
      * Forms submit ON by default — a deck's embedded form is its intended
@@ -136,7 +136,7 @@ export type ShareTokenCreate = z.infer<typeof shareTokenCreateSchema>;
  */
 export const previewTokenCreateSchema = z.object({
   /** Pin the preview to this version; omitted = latest. */
-  version: z.number().int().min(1).optional()
+  version: versionNumberSchema.optional()
 });
 export type PreviewTokenCreate = z.infer<typeof previewTokenCreateSchema>;
 
@@ -159,7 +159,7 @@ export const shareTokenUpdateSchema = z
     name: plainText(1, 200).optional(),
     versionMode: shareTokenVersionModeSchema.optional(),
     /** Required alongside versionMode 'pinned'; ignored for 'latest'. */
-    pinnedVersion: z.number().int().min(1).optional(),
+    pinnedVersion: versionNumberSchema.optional(),
     canAnnotate: z.boolean().optional(),
     canSubmitForms: z.boolean().optional(),
     /**

@@ -24,6 +24,7 @@ import { isApiKeyToken } from '../apikeys/service.js';
 import { auditMiddleware, type AuditService } from '../audit/service.js';
 import { constantTimeEquals } from '../constant-time.js';
 import { isSecureSetupOrigin } from '../setup-transport.js';
+import { authBodyGuard } from '../middleware/auth-body.js';
 import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
 import { crossSiteGuard } from '../middleware/cross-site.js';
@@ -312,12 +313,41 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     api.use('/sso/cli-connect', rateLimit(limiters.login, clientIp));
   }
 
+  // ── JSON pre-validation in front of the Better Auth mount (AF-1 + the
+  // update-user half of SL-B4, PRDCT-1358): Better Auth answers its own 500
+  // on a malformed/empty JSON body and on a NUL that reaches Postgres —
+  // responses app.onError never sees, so the app-level mappings cannot help.
+  // Registered here, after the size and depth caps, so the guard's body read
+  // is bounded.
+  api.use('/auth/*', authBodyGuard());
+
   // Better Auth owns /api/v1/auth/* (mounted before the credential middleware
   // — it IS the credential machinery). On cloud the whole mount runs inside
   // the hub-SSO login scope: an AsyncLocalStorage span carrying the verified
   // hub assertion from the SSO callback's getUserInfo to its after-hook —
   // request-scoped, so concurrent logins can never cross-wire (ADR 015).
   const { hubSso } = deps;
+  // The change-email consume, wrapped (PRDCT-1437): the before-hook in
+  // identity/better-auth.ts answers the known-collision case uniformly, but
+  // its pre-check races a concurrent claim of the same address — the loser
+  // still dies at the `user.email` UNIQUE constraint inside Better Auth,
+  // whose 500 never reaches app.onError. Whatever reaches a 5xx here becomes
+  // the same non-revealing answer the hook gives (a 302 to a RELATIVE
+  // callback, or the JSON success shape), logged at warn for the operator.
+  // Registered BEFORE the wildcard mount so the exact route wins.
+  api.on(['GET'], '/auth/verify-email', async (c) => {
+    const res = await (hubSso
+      ? hubSso.runWithLoginScope(() => auth.handler(c.req.raw))
+      : auth.handler(c.req.raw));
+    if (res.status < 500) return res;
+    logger.warn(
+      { status: res.status },
+      'verify-email answered 5xx — mapped to the uniform non-revealing response'
+    );
+    const callbackURL = new URL(c.req.url).searchParams.get('callbackURL');
+    if (callbackURL && /^\/(?![/\\])/.test(callbackURL)) return c.redirect(callbackURL, 302);
+    return c.json({ status: true, user: null }, 200);
+  });
   api.on(['GET', 'POST'], '/auth/*', (c) =>
     hubSso ? hubSso.runWithLoginScope(() => auth.handler(c.req.raw)) : auth.handler(c.req.raw)
   );

@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import type { Context } from 'hono';
+import { isValidMediaType } from '@slideless/contract';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import type { Logger } from '../logger.js';
 import { contentDispositionFor, parseRangeHeader } from './http.js';
@@ -40,10 +41,17 @@ export interface ServeBlobOptions {
 export async function serveBlob(c: Context, opts: ServeBlobOptions): Promise<Response> {
   // Content-addressed: the ETag IS the content hash, immutable forever.
   const etag = `"${opts.sha256}"`;
+  // Defensive sanitization at the header set (PLT-5, PRDCT-1358): the
+  // contract now refuses a non-RFC-7231 contentType at commit, but versions
+  // are IMMUTABLE — a value committed before that gate (or through any
+  // future path that skips it) would make the `Headers` constructor throw on
+  // every serve of the asset, an unrepairable anonymous 500. An invalid
+  // stored value degrades to octet-stream instead of poisoning the route.
+  const contentType = isValidMediaType(opts.contentType) ? opts.contentType : 'application/octet-stream';
   const baseHeaders: Record<string, string> = {
-    'content-type': opts.contentType,
+    'content-type': contentType,
     'x-content-type-options': 'nosniff',
-    'content-disposition': opts.contentDisposition ?? contentDispositionFor(opts.contentType, opts.filename),
+    'content-disposition': opts.contentDisposition ?? contentDispositionFor(contentType, opts.filename),
     'accept-ranges': 'bytes',
     etag,
     'cache-control': 'private, max-age=31536000, immutable',

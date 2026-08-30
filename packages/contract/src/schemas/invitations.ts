@@ -35,13 +35,19 @@ export const invitationCreatedSchema = z.object({
 });
 export type InvitationCreated = z.infer<typeof invitationCreatedSchema>;
 
+/**
+ * Deliberately carries NO account-existence signal (the collaborator-lookup
+ * rule, PRDCT-1437): an admin who creates an invitation naming any address
+ * holds the copyable accept URL, so the lookup was an instance-global
+ * account oracle. The accept page offers sign-in and create-account
+ * neutrally; the accept endpoint answers `account_exists` when a create
+ * collides.
+ */
 export const invitationLookupSchema = z.object({
   email: z.string(),
   role: workspaceRoleSchema,
   workspaceName: z.string(),
-  expiresAt: z.string(),
-  /** True when an account with the invited email already exists (sign in to accept). */
-  accountExists: z.boolean()
+  expiresAt: z.string()
 });
 export type InvitationLookup = z.infer<typeof invitationLookupSchema>;
 

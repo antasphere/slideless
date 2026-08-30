@@ -646,15 +646,14 @@ describe('AUTH-5 (PRDCT-1393): no per-deck WRITE route confirms a deck exists', 
  * The boundary that actually holds is the `user_email_unique` index at
  * CONSUMPTION time. This test pins both halves of that sentence.
  *
- * KNOWN RESIDUAL (pre-existing, unchanged by PRDCT-1354): the LOSING
- * consumption surfaces as a sanitized 500 rather than a clean error
- * redirect — the 23505 escapes Better Auth's own `/verify-email` handler,
- * whose try/catch does not cover `updateUserByEmail`. Data integrity is
- * intact (exactly one account holds the address, no session is minted for
- * the loser); only the error shape is wrong, and fixing it means
- * intercepting the pinned Better Auth route. Asserted below so a future
- * Better Auth bump that changes it is noticed rather than silently
- * absorbed.
+ * PRDCT-1437 closed the old residual here: the LOSING consumption used to
+ * surface as a sanitized 500 (the 23505 escaped Better Auth's own
+ * `/verify-email` handler) — which, against the winner's 302, was exactly
+ * the account-existence oracle. The consume now answers the SAME
+ * non-revealing 302 on both branches (the verify-email before-hook + the
+ * 5xx wrapper on the mount), so the RESPONSE no longer says who won; the
+ * DATA assertions below are what prove the unique index still let exactly
+ * one land. Uniform response + intact integrity, both pinned.
  */
 describe('RACE-7: concurrent change-email mints for one address', () => {
   it('both links mint (the pre-check is NOT the boundary) but only one lands', async () => {
@@ -665,18 +664,21 @@ describe('RACE-7: concurrent change-email mints for one address', () => {
     ]);
     expect([a.status, b.status]).toEqual([200, 200]);
 
-    const outcomes: number[] = [];
+    const outcomes: Array<{ status: number; location: string | null }> = [];
     for (const res of [a, b]) {
       const { verifyUrl } = await readJson(res);
       const consumed = await app.app.request(verifyUrl, { headers: { 'x-forwarded-for': nextIp() } });
-      outcomes.push(consumed.status);
+      outcomes.push({ status: consumed.status, location: consumed.headers.get('location') });
     }
-    // Winner: a 3xx redirect to the callback (and a session for that user).
-    expect(outcomes[0]).toBeGreaterThanOrEqual(300);
-    expect(outcomes[0]).toBeLessThan(400);
-    // Loser: refused. 500 today (the known residual above); a clean 4xx
-    // after any fix — both are acceptable, a 3xx would mean it LANDED.
-    expect(outcomes[1]).toBeGreaterThanOrEqual(400);
+    // Winner AND loser answer the same non-revealing 302 (PRDCT-1437): the
+    // response is not the place the race's outcome can be read.
+    for (const outcome of outcomes) {
+      expect(outcome.status).toBeGreaterThanOrEqual(300);
+      expect(outcome.status).toBeLessThan(400);
+      expect(outcome.location ?? '').not.toContain('error=');
+    }
+    expect(outcomes[1]!.status).toBe(outcomes[0]!.status);
+    expect(outcomes[1]!.location).toBe(outcomes[0]!.location);
 
     // The unique index did the work: exactly one account, and the loser
     // still holds its original address.

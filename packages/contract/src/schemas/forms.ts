@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { hasNulDeep, noControlChars } from './common.js';
 
 /**
  * Deck-embedded form responses (ADR 022). The deck HTML is the form
@@ -45,6 +46,13 @@ export const formResponsePayloadSchema = z
   .record(z.string().min(1).max(FORM_PAYLOAD_MAX_KEY_CHARS), z.union([z.string(), z.array(z.string())]))
   .refine((v) => Object.keys(v).length <= FORM_PAYLOAD_MAX_FIELDS, {
     message: `payload must have at most ${FORM_PAYLOAD_MAX_FIELDS} fields`
+  })
+  // The payload lands in a jsonb column, which refuses NUL (SQLSTATE 22P05):
+  // a share-link respondent needs no account, so an unvalidated NUL was an
+  // anonymous 500 + error-level log line (SL-B4, PRDCT-1358). Keys and
+  // values alike.
+  .refine((v) => !hasNulDeep(v), {
+    message: 'payload must not contain NUL characters in keys or values'
   });
 export type FormResponsePayload = z.infer<typeof formResponsePayloadSchema>;
 
@@ -88,7 +96,11 @@ export const formResponsesListQuerySchema = z.object({
   /** Only responses that came through this share link. */
   token: z.uuid().optional(),
   source: formResponseSourceSchema.optional(),
-  placement: z.string().max(64).optional(),
+  // Sanitized on WRITE by the view-events placement rule; the read filter
+  // must validate too, or a NUL in the query param reaches the WHERE
+  // comparison and Postgres refuses it (22021 → a 500 for a plain client
+  // mistake — SL-B4's read-filter member).
+  placement: noControlChars(z.string().max(64)).optional(),
   /** Only responses created at or after this instant. */
   since: z.iso.datetime().optional()
 });
