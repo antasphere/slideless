@@ -43,6 +43,9 @@
   let password = $state('');
   let loading = $state(false);
   let error = $state<string | null>(null);
+  // The lookup deliberately carries no account-existence signal (PRDCT-1437):
+  // the invitee picks the path themselves.
+  let mode = $state<'create' | 'signin'>('create');
   let deadReason = $state<string | null>(null);
   // G1 recovery in flight: a dead lookup + a live session → try the claim
   // before believing the 404.
@@ -255,10 +258,7 @@
           <Button class="w-full" disabled={loading} onclick={() => void signInWithAntasphere()}>
             {loading ? t('collab.claiming') : t('login.signInWithAntasphere')}
           </Button>
-        {:else if lookup.accountExists}
-          <p class="text-sm text-muted-foreground">
-            {t('collab.accountExists')}
-          </p>
+        {:else if mode === 'signin'}
           <form
             class="space-y-4"
             onsubmit={(e) => {
@@ -283,6 +283,13 @@
               {loading ? t('common.working') : t('collab.signInAndClaim')}
             </Button>
           </form>
+          <button
+            type="button"
+            class="text-sm text-muted-foreground underline underline-offset-4"
+            onclick={() => (mode = 'create')}
+          >
+            {t('collab.switchToCreate')}
+          </button>
         {:else}
           <form
             class="space-y-4"
@@ -313,6 +320,13 @@
               {loading ? t('collab.claiming') : t('collab.createAndClaim')}
             </Button>
           </form>
+          <button
+            type="button"
+            class="text-sm text-muted-foreground underline underline-offset-4"
+            onclick={() => (mode = 'signin')}
+          >
+            {t('collab.switchToSignIn')}
+          </button>
         {/if}
       </Card.Content>
     {/if}

@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { apiErrorSchema, cursorPageQuerySchema } from '../schemas/common.js';
+import { apiErrorSchema, cursorPageQuerySchema, versionParamSchema } from '../schemas/common.js';
 import { instanceInfoSchema } from '../schemas/instance.js';
 import { setupRequestSchema, setupResponseSchema } from '../schemas/setup.js';
 import { meResponseSchema, onboardingDismissedSchema } from '../schemas/me.js';
@@ -689,7 +689,9 @@ export const fileDeleteRoute = createRoute({
 const tokenParams = z.object({ id: z.uuid(), tokenId: z.uuid() });
 const collaboratorParams = z.object({ id: z.uuid(), collaboratorId: z.uuid() });
 const annotationParams = z.object({ id: z.uuid(), annotationId: z.uuid() });
-const versionParams = z.object({ id: z.uuid(), version: z.coerce.number().int().min(1) });
+// Strict digits + int4 bound (FUZZ-9, PRDCT-1358): `z.coerce.number()` let
+// `99999999999999999999` through `.int()` into a Postgres int4 overflow → 500.
+const versionParams = z.object({ id: z.uuid(), version: versionParamSchema });
 const assetParams = z.object({ id: z.uuid(), sha256: sha256Schema });
 
 // ── Presentations ────────────────────────────────────────────────────────────
@@ -889,7 +891,7 @@ export const agentDocGetRoute = createRoute({
   summary: "The deck's AGENT.md briefing (current version, or ?version=N)",
   request: {
     params: uuidParams,
-    query: z.object({ version: z.coerce.number().int().min(1).optional() })
+    query: z.object({ version: versionParamSchema.optional() })
   },
   responses: {
     // Streamed like assetDownloadRoute; markdown bytes, inline disposition.

@@ -835,6 +835,11 @@ export function createAuth({
             }
           }
         }
+        // PRDCT-1437 door 1 (the change-email consume existence oracle) is
+        // closed at the mount wrapper in api/index.ts, not here: it needs to
+        // rewrite the REQUEST before Better Auth reads the token, which a
+        // before-hook's `ctx.query` mutation does not reach (the endpoint reads
+        // its own parsed query). See `rewriteChangeEmailCollision` there.
         // The plugin scheme-checks only redirect_uris — reject javascript:/data:
         // metadata URIs on every client write path (unauthenticated DCR AND the
         // session-gated create/update-client endpoints) so a stored javascript:

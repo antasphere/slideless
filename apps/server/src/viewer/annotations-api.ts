@@ -2,7 +2,12 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
-import { badgePositionSchema, noControlChars } from '@slideless/contract';
+import {
+  badgePositionSchema,
+  MAX_SELECTION_JSON_BYTES,
+  noControlChars,
+  opaqueJsonChecks
+} from '@slideless/contract';
 import type { Logger } from '../logger.js';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
@@ -57,19 +62,23 @@ export const VIEWER_API_CORS_HEADERS = {
   'Access-Control-Max-Age': '86400'
 } as const;
 
-/** Serialized-selection byte cap (the anchor payload is a quote, not a document). */
-export const MAX_SELECTION_JSON_BYTES = 8 * 1024;
-
 // SL-B4: this schema is INLINE here, not the contract's annotationCreateSchema,
 // so the contract-level `plainText` sweep does not reach it — and this is the
 // most anonymously-reachable free-text write on the whole instance (a share-link
-// reviewer needs no account). Both sinks land in Postgres `text` columns, where
-// a NUL raises SQLSTATE 22021 and the resulting 500 logs the statement with its
-// bound parameters.
+// reviewer needs no account). Both text sinks land in Postgres `text` columns,
+// where a NUL raises SQLSTATE 22021 and the resulting 500 logs the statement
+// with its bound parameters. `selection` lands in a jsonb column, which refuses
+// NUL its own way (22P05) AND, unbounded, would blow the handler's
+// `JSON.stringify` byte cap on a deep body (SL-B5). The edge depth cap
+// (middleware/json-depth.ts) cannot be relied on here: this route parses with
+// `c.req.json()`, which ignores Content-Type, so a `text/plain` body slips past
+// the JSON-typed edge guard. `opaqueJsonChecks` caps depth AND rejects NUL at
+// the schema, Content-Type-independently — depth first (abort) so the byte-cap
+// stringify never runs on a hostile shape.
 const annotationCreateBody = z.object({
   body: noControlChars(z.string().min(1).max(10000)),
   authorName: noControlChars(z.string().trim().min(1).max(120)).optional(),
-  selection: z.record(z.string(), z.unknown()).default({}),
+  selection: opaqueJsonChecks(z.record(z.string(), z.unknown())).default({}),
   version: z.number().int().min(1).optional()
 });
 

@@ -8,6 +8,7 @@ import {
   invitationsListRoute
 } from '@slideless/contract/routes';
 import { invitations, workspaces, user as userTable, type Db, type Invitation } from '@slideless/db';
+import { isDuplicateAccountError } from '../accounts/signup-duplicate.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';
@@ -217,18 +218,18 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
       .from(workspaces)
       .where(eq(workspaces.id, invitation.workspaceId))
       .limit(1);
-    const [account] = await db
-      .select({ id: userTable.id })
-      .from(userTable)
-      .where(eq(userTable.email, invitation.email))
-      .limit(1);
+    // NO account-existence signal (PRDCT-1437, the collaborator-lookup rule):
+    // the admin who created the invitation holds the copyable accept URL, so
+    // an `accountExists` here answered "does this email have an account
+    // anywhere on the instance?" for any address, free and revocable. The
+    // accept page offers both paths neutrally; the accept endpoint answers
+    // `account_exists` only when a create actually collides.
     return c.json(
       {
         email: invitation.email,
         role: invitation.role,
         workspaceName: ws?.name ?? '',
-        expiresAt: invitation.expiresAt.toISOString(),
-        accountExists: Boolean(account)
+        expiresAt: invitation.expiresAt.toISOString()
       },
       200
     );
@@ -267,29 +268,29 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
       }
     }
 
-    const [account] = await db
-      .select({ id: userTable.id, emailVerified: userTable.emailVerified })
-      .from(userTable)
-      .where(eq(userTable.email, invitation.email))
-      .limit(1);
-
     let userId: string;
     let alreadyVerified = false;
-    if (account) {
-      // Existing account: the caller must BE that account (signed in).
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      if (!session?.user || session.user.email !== invitation.email) {
-        return c.json(
-          err('account_exists', 'An account with this email exists — sign in with it, then accept again'),
-          409
-        );
-      }
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (session?.user && session.user.email === invitation.email) {
+      // Signed in AS the invitee: accept against that existing account. The
+      // session proves the account exists — no public account lookup, so
+      // nothing here reveals existence to a caller who is not the invitee.
       userId = session.user.id;
-      alreadyVerified = account.emailVerified;
+      const [self] = await db
+        .select({ emailVerified: userTable.emailVerified })
+        .from(userTable)
+        .where(eq(userTable.id, userId))
+        .limit(1);
+      alreadyVerified = self?.emailVerified ?? false;
     } else {
+      // PRDCT-1437 door 2 (owner-reachable existence oracle): the SSO and
+      // credential gates are refused BEFORE any account-existence lookup, so a
+      // credential-less accept answers identically whether or not the address
+      // has an account. Existence surfaces ONLY after real credentials are
+      // committed, via the signUpEmail collision below — the inherent signup
+      // residual (a fresh address creates, a taken one fails), not a free
+      // pre-credential probe.
       if (ssoOnly) {
-        // Cloud (D1): same stance as the collaborator claim — checked BEFORE
-        // the credentials check so the answer never depends on the body.
         return c.json(
           err(
             'sso_required',
@@ -301,12 +302,25 @@ export function registerInvitationRoutes(api: OpenAPIHono, deps: InvitationRoute
       if (!body.name || !body.password) {
         return c.json(err('credentials_required', 'Provide name and password to create your account'), 400);
       }
-      // `user.created` is emitted by the identity layer's database hook
-      // (identity/better-auth.ts) — never from call sites like this one.
-      const created = await auth.api.signUpEmail({
-        body: { email: invitation.email, password: body.password, name: body.name }
-      });
-      userId = created.user.id;
+      try {
+        // `user.created` is emitted by the identity layer's database hook
+        // (identity/better-auth.ts) — never from call sites like this one.
+        const created = await auth.api.signUpEmail({
+          body: { email: invitation.email, password: body.password, name: body.name }
+        });
+        userId = created.user.id;
+      } catch (e) {
+        // The address already has an account, or a concurrent accept won the
+        // unique-email race — the guided 409, never an uncaught 500. The only
+        // place existence surfaces, and only to a credential-committing caller.
+        if (isDuplicateAccountError(e)) {
+          return c.json(
+            err('account_exists', 'An account with this email exists — sign in with it, then accept again'),
+            409
+          );
+        }
+        throw e;
+      }
     }
 
     const accepted = await service.accept(invitation, userId);

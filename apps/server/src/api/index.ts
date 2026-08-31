@@ -1,5 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
+import { createEmailVerificationToken } from 'better-auth/api';
+import { jwtVerify } from 'jose';
 import { registerOpenApiDoc } from './openapi-doc.js';
 import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -24,6 +26,7 @@ import { isApiKeyToken } from '../apikeys/service.js';
 import { auditMiddleware, type AuditService } from '../audit/service.js';
 import { constantTimeEquals } from '../constant-time.js';
 import { isSecureSetupOrigin } from '../setup-transport.js';
+import { authBodyGuard } from '../middleware/auth-body.js';
 import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
 import { crossSiteGuard } from '../middleware/cross-site.js';
@@ -68,6 +71,121 @@ import type { StorageDriver } from '../storage/driver.js';
 
 /** Inline error body matching the wire shape; keeps openapi handlers typed. */
 const err = (code: string, message: string) => ({ error: { code, message } });
+
+/**
+ * PRDCT-1437 door 1: neutralize the change-email consume's account-existence
+ * oracle by rewriting the REQUEST before Better Auth reads the token.
+ *
+ * The consume of a `change-email-verification` link updates the target's email
+ * to the new address; when that address already belongs to ANOTHER user the
+ * update dies at the `user.email` UNIQUE constraint as a raw 500, while a free
+ * address answers a 302 — a mint-then-consume "does this email exist anywhere
+ * on the instance" for any workspace owner, and a robustness bug. Rather than
+ * reimplement the consume (LESSONS.md M6: never hand-roll the Better Auth
+ * flow), on a collision we re-sign the token so its target is the member's
+ * CURRENT address — a no-op change that runs Better Auth's ENTIRE success path
+ * (its own `callbackURL` origin check, the session mint, the set-cookie, the
+ * 302-or-JSON, the audit hook) with no unique violation. Redirect, cookie, and
+ * origin-check verdict are then byte-identical to the free case BY
+ * CONSTRUCTION, and no `callbackURL` handling is added here, so no open-redirect
+ * surface is introduced (the route's own originCheck stays the only judge).
+ *
+ * The one residual tell — the success JSON echoes the resulting email in its
+ * `user` record — is reachable only WITHOUT a `callbackURL` (a real consume
+ * always carries one and redirects) and is stripped to `user:null` by the
+ * wrapper below. The honest, inherent residual (email uniqueness is
+ * instance-global, so the change's outcome is readable one step later on the
+ * roster) is documented in ADR 013's amendment. It runs in a before-hook only
+ * as a query mutation, which the endpoint's own parsed query never sees, so it
+ * MUST rewrite the request here. Re-verify the token shape and the
+ * `change-email-verification` requestType on ANY Better Auth bump.
+ */
+/**
+ * Constrain a verify-email redirect Location to the instance's own origin
+ * (Major 3, PRDCT-1437 hardening). DEFENCE-IN-DEPTH, not a hole being closed:
+ * on the pinned Better Auth, `/verify-email` DOES run its own callbackURL
+ * origin check in production (the `originCheck` factory has no GET skip; only
+ * `originCheckMiddleware` does) — but the test harness disables that guard
+ * (`NODE_ENV=test` sets `skipOriginCheck`), and a future bump could regress
+ * it, so we constrain the redirect ourselves and the no-op collision rewrite
+ * routes the taken branch through the same constraint. A same-origin (or
+ * public-origin) target is returned
+ * as a relative path; anything off-origin is neutralized to `/`. Legitimate
+ * consumes send a relative `callbackURL` and are untouched; applied to every
+ * response the wrapper sees, so the taken and free branches stay identical.
+ */
+function safeRedirectLocation(location: string, requestUrl: string, publicBaseUrl: string): string {
+  let resolved: URL;
+  let servingOrigin: string;
+  try {
+    servingOrigin = new URL(requestUrl).origin;
+    resolved = new URL(location, requestUrl);
+  } catch {
+    return '/';
+  }
+  let publicOrigin: string | null = null;
+  try {
+    publicOrigin = new URL(publicBaseUrl).origin;
+  } catch {
+    publicOrigin = null;
+  }
+  if (resolved.origin === servingOrigin || resolved.origin === publicOrigin) {
+    return resolved.pathname + resolved.search + resolved.hash;
+  }
+  return '/';
+}
+
+async function rewriteChangeEmailCollision(
+  auth: Auth,
+  authSecret: string,
+  request: Request
+): Promise<Request> {
+  const url = new URL(request.url);
+  const token = url.searchParams.get('token');
+  if (!token) return request;
+  let payload: Record<string, unknown>;
+  try {
+    const verified = await jwtVerify(token, new TextEncoder().encode(authSecret), {
+      algorithms: ['HS256']
+    });
+    payload = verified.payload as Record<string, unknown>;
+  } catch {
+    return request; // a bad token is Better Auth's to reject (uniform error redirect)
+  }
+  const email = payload.email;
+  const updateTo = payload.updateTo;
+  if (
+    payload.requestType !== 'change-email-verification' ||
+    typeof email !== 'string' ||
+    typeof updateTo !== 'string' ||
+    email === updateTo
+  ) {
+    return request;
+  }
+  try {
+    const authCtx = await auth.$context;
+    const target = await authCtx.internalAdapter.findUserByEmail(email);
+    if (!target) return request; // user_not_found — uniform on both branches
+    // A signed-in NON-target redirectOnErrors identically on both branches, so
+    // only the state that actually reaches the update needs neutralizing.
+    const session = await auth.api.getSession({ headers: request.headers }).catch(() => null);
+    if (session && session.user.email !== email) return request;
+    const holder = await authCtx.internalAdapter.findUserByEmail(updateTo);
+    if (!holder || holder.user.id === target.user.id) return request; // no collision
+    // Collision: re-sign as a no-op (change email → same email). Better Auth
+    // then updates the row to its own value (no 23505) and runs the full
+    // success path off the rewritten request.
+    const noopToken = await createEmailVerificationToken(authCtx.secret, email, email, 3600, {
+      requestType: 'change-email-verification'
+    });
+    url.searchParams.set('token', noopToken);
+    return new Request(url.toString(), request);
+  } catch {
+    // A lookup failure must not turn into a distinguishing error — let Better
+    // Auth answer, and the wrapper's 5xx→uniform mapping backstops it.
+    return request;
+  }
+}
 
 export interface ApiDeps {
   db: Db;
@@ -312,12 +430,77 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     api.use('/sso/cli-connect', rateLimit(limiters.login, clientIp));
   }
 
+  // ── JSON pre-validation in front of the Better Auth mount (AF-1 + the
+  // update-user half of SL-B4, PRDCT-1358): Better Auth answers its own 500
+  // on a malformed/empty JSON body and on a NUL that reaches Postgres —
+  // responses app.onError never sees, so the app-level mappings cannot help.
+  // Registered here, after the size and depth caps, so the guard's body read
+  // is bounded.
+  api.use('/auth/*', authBodyGuard());
+
   // Better Auth owns /api/v1/auth/* (mounted before the credential middleware
   // — it IS the credential machinery). On cloud the whole mount runs inside
   // the hub-SSO login scope: an AsyncLocalStorage span carrying the verified
   // hub assertion from the SSO callback's getUserInfo to its after-hook —
   // request-scoped, so concurrent logins can never cross-wire (ADR 015).
   const { hubSso } = deps;
+  // The change-email consume, wrapped (PRDCT-1437). The request is rewritten
+  // on a collision (rewriteChangeEmailCollision above), then two response
+  // normalizations keep the taken and free cases indistinguishable:
+  //
+  //  - JSON success body: the change-email success echoes the resulting email
+  //    in its `user` record — the one observable the no-op rewrite leaves
+  //    differing between the taken and free cases. It is reachable ONLY without
+  //    a `callbackURL` (a real consume always carries one and redirects, never
+  //    hitting this JSON), so stripping `user` to null for every change-email
+  //    consume touches no legitimate flow. Only the change/legacy branches
+  //    return a non-null user; the plain verify-email success is already null.
+  //  - a residual 5xx: the rewrite closes the DECIDABLE collision, but two
+  //    concurrent mints claiming one FRESH address (no pre-existing account —
+  //    so NOT an existence probe) can still lose at the DB. Map it to the same
+  //    benign JSON so it never surfaces a raw 500. No redirect is issued here —
+  //    every redirect stays Better Auth's, judged by its own originCheck, so
+  //    this wrapper adds no open-redirect surface.
+  //
+  // Registered BEFORE the wildcard mount so the exact route wins.
+  api.on(['GET'], '/auth/verify-email', async (c) => {
+    const req = await rewriteChangeEmailCollision(auth, deps.authSecret, c.req.raw);
+    const res = await (hubSso ? hubSso.runWithLoginScope(() => auth.handler(req)) : auth.handler(req));
+    if (res.status === 200 && (res.headers.get('content-type') ?? '').includes('application/json')) {
+      const body = (await res
+        .clone()
+        .json()
+        .catch(() => null)) as { status?: unknown; user?: unknown } | null;
+      if (body && body.status === true && body.user != null) {
+        const headers = new Headers(res.headers);
+        headers.delete('content-length');
+        return new Response(JSON.stringify({ status: true, user: null }), { status: 200, headers });
+      }
+      return res;
+    }
+    // A 3xx: constrain the Location to this origin (Major 3). Better Auth's
+    // GET verify-email skips originCheck (no Origin header on a navigation) and
+    // redirects to any callbackURL — an open redirect for anyone holding a
+    // verify token, applied to BOTH branches so it stays uniform.
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (location) {
+        const safe = safeRedirectLocation(location, c.req.url, env.PUBLIC_BASE_URL);
+        if (safe !== location) {
+          const headers = new Headers(res.headers);
+          headers.set('location', safe);
+          return new Response(null, { status: res.status, headers });
+        }
+      }
+      return res;
+    }
+    if (res.status < 500) return res;
+    logger.warn(
+      { status: res.status },
+      'verify-email answered 5xx — mapped to the uniform non-revealing response'
+    );
+    return c.json({ status: true, user: null }, 200);
+  });
   api.on(['GET', 'POST'], '/auth/*', (c) =>
     hubSso ? hubSso.runWithLoginScope(() => auth.handler(c.req.raw)) : auth.handler(c.req.raw)
   );
