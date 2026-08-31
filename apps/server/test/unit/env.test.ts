@@ -201,6 +201,45 @@ describe('env schema', () => {
     expect(envSchema.safeParse({ ...minimal, VIEW_DEDUPE_WINDOW_MINUTES: '-1' }).success).toBe(false);
   });
 
+  describe('the version is intrinsic (PRDCT-1844)', () => {
+    it('defaults APP_VERSION to the baked-in package version, never a CI string', async () => {
+      // Compare against the package.json FILE, not the exported constant: a
+      // version.ts that stopped reading package.json (a hardcoded literal)
+      // must go red here, not just a broken default.
+      const { readFileSync } = await import('node:fs');
+      const { dirname, join } = await import('node:path');
+      const { fileURLToPath } = await import('node:url');
+      const here = dirname(fileURLToPath(import.meta.url));
+      const pkg = JSON.parse(readFileSync(join(here, '../../package.json'), 'utf8')) as {
+        version: string;
+      };
+      const env = envSchema.parse(minimal);
+      expect(env.APP_VERSION).toBe(pkg.version);
+      // A real semver, and specifically not the old CI-dependent defaults.
+      expect(env.APP_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+      expect(env.APP_VERSION).not.toBe('dev');
+      expect(env.APP_VERSION).not.toBe('next');
+    });
+
+    it('keeps the env var as a deliberate operator override', () => {
+      expect(envSchema.parse({ ...minimal, APP_VERSION: 'custom-build' }).APP_VERSION).toBe('custom-build');
+    });
+
+    it('the server package version agrees with the canonical root package.json', async () => {
+      // Root is the one authoritative version (the release workflow checks
+      // v-tags against it); the server package is the baked carrier the
+      // bundle reads. This pin makes a half-bumped release fail loudly.
+      const { readFileSync } = await import('node:fs');
+      const { dirname, join } = await import('node:path');
+      const { fileURLToPath } = await import('node:url');
+      const here = dirname(fileURLToPath(import.meta.url));
+      const read = (p: string) => JSON.parse(readFileSync(p, 'utf8')) as { version: string };
+      const root = read(join(here, '../../../../package.json'));
+      const server = read(join(here, '../../package.json'));
+      expect(server.version).toBe(root.version);
+    });
+  });
+
   describe('edition split (internal/federation.md)', () => {
     const hubVars = {
       HUB_ISSUER_URL: 'https://account.antasphere.com',

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { parseApiKeyPeppers } from './apikeys/peppers.js';
 import { parseSuperadminEmails } from './accounts/superadmin.js';
+import { INTRINSIC_VERSION } from './version.js';
 
 /**
  * The single entry point for configuration. Every env var the app reads is
@@ -188,8 +189,8 @@ const envObjectSchema = z.object({
   HUB_HINT_COOKIE_DOMAIN: optionalString(z.string().min(1)),
   /** R7 escape hatch (internal/federation.md): acknowledge an EDITION change on an already-set-up instance. Without it, boot refuses an EDITION that differs from the one stamped at setup — flipping editions under existing users/workspaces changes identity semantics and must be a conscious operator act. */
   EDITION_CHANGE_ALLOWED: booleanish.default(false),
-  /** Build version stamped by CI (Docker ARG); 'dev' locally. */
-  APP_VERSION: z.string().default('dev'),
+  /** Reported version. Defaults to the code's own baked-in package version (PRDCT-1844) — the image knows its version intrinsically, CI injects nothing. The env var remains as a deliberate operator override only. */
+  APP_VERSION: z.string().default(INTRINSIC_VERSION),
   /** RFC 7591 dynamic client registration on the built-in authorization server: unauthenticated `POST /api/v1/auth/oauth2/register`, which is how MCP clients self-register. Default true (the connector-friendly posture, rate-limited in api/index.ts). Set false on an instance whose OAuth clients are provisioned by hand — the endpoint then refuses every caller instead of minting client records for anyone who asks. */
   OAUTH_DYNAMIC_CLIENT_REGISTRATION: booleanish.default(true),
   /** `Strict-Transport-Security` max-age in seconds, sent on every response when PUBLIC_BASE_URL is https (browsers ignore HSTS over plain http per RFC 6797 §7.2, so an http instance is unaffected). Default 180 days; 0 disables the header — the escape hatch for an operator who is not yet certain every subdomain can serve TLS. */

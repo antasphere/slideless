@@ -62,8 +62,9 @@ RUN apk upgrade --no-cache && apk add --no-cache tini wget \
  && mkdir -p /data && chown node:node /data
 WORKDIR /app
 ENV NODE_ENV=production
-ARG APP_VERSION=dev
-ENV APP_VERSION=$APP_VERSION
+# No APP_VERSION arg/env: the version is intrinsic (PRDCT-1844) — the server
+# bundle bakes it in from package.json at build, so a plain `docker build`
+# reports the true semver. Operators can still override with `-e APP_VERSION`.
 
 COPY --from=build --chown=node:node /out /app
 
@@ -74,8 +75,7 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=30s \
   CMD wget --spider -q "http://localhost:${PORT:-3000}/healthz" || exit 1
 
 LABEL org.opencontainers.image.title="slideless" \
-      org.opencontainers.image.description="Self-hosted Slideless (API + dashboard + MCP) in one image" \
-      org.opencontainers.image.version=$APP_VERSION
+      org.opencontainers.image.description="Self-hosted Slideless (API + dashboard + MCP) in one image"
 
 ENTRYPOINT ["tini", "--"]
 CMD ["node", "dist/index.js"]
