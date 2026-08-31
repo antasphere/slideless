@@ -60,7 +60,11 @@ describe('serveBlob content-type sanitization (PLT-5)', () => {
   });
 
   it('degrades an invalid stored value to octet-stream instead of throwing', async () => {
-    for (const bad of ['text/héml', 'not a type', 'text/html\r\nx-evil: 1']) {
+    // Includes a value that passes the RFC 7231 grammar but carries a code
+    // point above Latin-1 in a quoted parameter (charset="€") — the real
+    // ByteString trap the serve backstop must also catch, not just the
+    // grammar violations (PLT-5, verifier round-2 coverage note).
+    for (const bad of ['text/html; charset="€"', 'text/héml', 'not a type', 'text/html\r\nx-evil: 1']) {
       const res = await serve(bad);
       expect(res.status, bad).toBe(200);
       expect(res.headers.get('content-type'), bad).toBe('application/octet-stream');
