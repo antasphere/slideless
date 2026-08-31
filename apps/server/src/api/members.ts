@@ -508,8 +508,9 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
     // (PRDCT-1437): a colliding consume used to answer a raw 500 against the
     // free case's 302 — a mint-then-consume account oracle. The consume path
     // now answers the SAME redirect + session on both branches (the
-    // verify-email before-hook in identity/better-auth.ts, plus the 5xx
-    // wrapper on the mount), and the honest residual — the owner can always
+    // collision rewrite at the /auth mount — rewriteChangeEmailCollision in
+    // api/index.ts re-signs the token as a no-op change so Better Auth runs
+    // its native success path), and the honest residual — the owner can always
     // read back whether the change TOOK, because email uniqueness is
     // instance-global — is documented in ADR 013's amendment.
     const newEmail = body.newEmail.toLowerCase();

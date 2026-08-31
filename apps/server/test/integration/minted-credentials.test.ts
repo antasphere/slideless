@@ -650,8 +650,9 @@ describe('AUTH-5 (PRDCT-1393): no per-deck WRITE route confirms a deck exists', 
  * surface as a sanitized 500 (the 23505 escaped Better Auth's own
  * `/verify-email` handler) — which, against the winner's 302, was exactly
  * the account-existence oracle. The consume now answers the SAME
- * non-revealing 302 on both branches (the verify-email before-hook + the
- * 5xx wrapper on the mount), so the RESPONSE no longer says who won; the
+ * non-revealing 302 on both branches (rewriteChangeEmailCollision at the
+ * /auth mount in api/index.ts re-signs the losing token as a no-op change,
+ * so Better Auth runs its native success path), so the RESPONSE no longer says who won; the
  * DATA assertions below are what prove the unique index still let exactly
  * one land. Uniform response + intact integrity, both pinned.
  */

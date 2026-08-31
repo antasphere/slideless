@@ -102,11 +102,14 @@ const err = (code: string, message: string) => ({ error: { code, message } });
  */
 /**
  * Constrain a verify-email redirect Location to the instance's own origin
- * (Major 3, PRDCT-1437 hardening). Better Auth's `/verify-email` is a GET that
- * carries no Origin header, so its `originCheck` skips and it redirects to
- * whatever `callbackURL` the URL names — an open redirect for anyone holding a
- * verify token, and one the no-op collision rewrite would otherwise route the
- * taken branch through too. A same-origin (or public-origin) target is returned
+ * (Major 3, PRDCT-1437 hardening). DEFENCE-IN-DEPTH, not a hole being closed:
+ * on the pinned Better Auth, `/verify-email` DOES run its own callbackURL
+ * origin check in production (the `originCheck` factory has no GET skip; only
+ * `originCheckMiddleware` does) — but the test harness disables that guard
+ * (`NODE_ENV=test` sets `skipOriginCheck`), and a future bump could regress
+ * it, so we constrain the redirect ourselves and the no-op collision rewrite
+ * routes the taken branch through the same constraint. A same-origin (or
+ * public-origin) target is returned
  * as a relative path; anything off-origin is neutralized to `/`. Legitimate
  * consumes send a relative `callbackURL` and are untouched; applied to every
  * response the wrapper sees, so the taken and free branches stay identical.

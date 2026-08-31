@@ -197,6 +197,10 @@ describe('the change-email consume answers uniformly (door 1)', () => {
     expect(free.status).toBeLessThan(400);
   });
 
+  // CAVEAT: this harness runs with NODE_ENV=test, which makes Better Auth
+  // skip ITS OWN callbackURL origin check — so these two assertions exercise
+  // safeRedirectLocation (our defence-in-depth layer) alone, not production's
+  // stacked guards. Do not read them as proof the upstream guard works.
   it('an untrusted absolute callbackURL is refused IDENTICALLY on both branches (no open redirect)', async () => {
     const { taken, free } = await bothWaysUnder('http://evil.example/x');
     expect(taken.status).toBe(free.status);
