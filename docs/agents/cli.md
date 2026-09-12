@@ -203,7 +203,7 @@ and a destination whose `.slideless.json` names a _different_ instance errors
 loudly — the same refusal `push` has always had.
 
 **dev** serves the folder locally with the **exact** public-viewer posture —
-`Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups
+`Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox
 allow-modals allow-downloads`, `nosniff`, `no-referrer`, `no-store` — so what
 you preview is exactly what share-link recipients get (same isolation, same
 relative paths). Live reload is injected into HTML responses; any file change

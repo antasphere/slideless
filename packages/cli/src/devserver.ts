@@ -15,7 +15,8 @@ import { contentTypeFor } from './manifest.js';
  * (VIEWER_CONTENT_HEADERS) — keep them in lockstep.
  */
 
-export const DEV_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+export const DEV_SANDBOX_CSP =
+  'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
 
 const CONTENT_HEADERS: Record<string, string> = {
   'content-security-policy': DEV_SANDBOX_CSP,

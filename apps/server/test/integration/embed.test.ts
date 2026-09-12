@@ -127,6 +127,8 @@ describe('GET /embed.js (the official embed loader)', () => {
     // constant verbatim. If someone edits the attrs in embed.ts without
     // going through the contract, this fails.
     expect(body).toContain(`var SANDBOX = '${VIEWER_IFRAME_SANDBOX}';`);
+    // PRDCT-2268: the loader's frame lets opened windows escape the sandbox.
+    expect(VIEWER_IFRAME_SANDBOX).toContain('allow-popups-to-escape-sandbox');
     // And the constant itself must never regress the two fatal tokens.
     expect(VIEWER_IFRAME_SANDBOX).not.toContain('allow-same-origin');
     expect(VIEWER_IFRAME_SANDBOX).not.toContain('allow-top-navigation');

@@ -266,12 +266,14 @@ the exact regime a dedicated browser spike proved safe on Chromium, WebKit,
 and Firefox:
 
 - Every user-content response carries
-  `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups
+  `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox
 allow-modals allow-downloads` (an **opaque origin**: no cookies, no
   storage, no service workers, no credentialed same-origin API),
   `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
   **Never `allow-same-origin`, never `allow-top-navigation*`** — either one
-  re-opens session theft.
+  re-opens session theft. `allow-popups-to-escape-sandbox` is deliberate: it
+  lifts the sandbox on the windows a deck opens (so an application opened
+  from a deck can boot), never on the deck itself.
 - The global `securityHeaders` middleware is guarded to never clobber those
   per-route headers, and regression tests assert the header set on every
   viewer response shape (the protection is one header on one route — treat

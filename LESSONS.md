@@ -455,10 +455,26 @@ json)` — queue-row insert + per-queue partition CREATE TABLE/attach — bare.)
   per-route `CSP: sandbox` (found by the ADR 012 spike). The middleware now
   sets CSP/Referrer-Policy only when the route did not (set-if-absent), and
   `test/integration/sharing-viewer.test.ts` asserts the exact sandbox set —
-  `sandbox allow-scripts allow-forms allow-popups allow-modals
-allow-downloads`, never `allow-same-origin` — on every viewer response
-  shape (entry, HTML sub-page, asset, 206, pinned/latest, password-unlocked).
-  Treat any diff touching those headers as security-critical.
+  `sandbox allow-scripts allow-forms allow-popups
+allow-popups-to-escape-sandbox allow-modals allow-downloads`, never
+  `allow-same-origin` — on every viewer response shape (entry, HTML sub-page,
+  asset, 206, pinned/latest, password-unlocked). Treat any diff touching those
+  headers as security-critical.
+- **A window a deck opens inherits the deck's sandbox, whatever URL it shows
+  (PRDCT-2268).** Without `allow-popups-to-escape-sandbox`, a `window.open` or
+  a `target="_blank"` link from a sandboxed deck yields a top-level page running
+  in an OPAQUE origin: `document.cookie` throws, its fetches carry
+  `Origin: null`, and the application it points at cannot boot — while the
+  address bar shows the right https URL (found on an Exos client-demo page: the
+  « Ouvrir » buttons opened an app that never started). The token lifts the
+  sandbox on the OPENED window only; the deck keeps no `allow-same-origin`, and
+  an `about:blank` or `javascript:` popup still inherits the opener's opaque
+  origin, so it hands the deck no app-origin script. It lives in all THREE
+  lists — `VIEWER_CSP`, `VIEWER_IFRAME_SANDBOX`, `DEV_SANDBOX_CSP` — and the
+  share link is opened TOP-LEVEL, so the CSP header on the viewer's own
+  responses (not the iframe attribute) is what the reported case inherited.
+  The dashboard's `decks.test.ts` and `e2e/decks.spec.ts` spell the list out
+  literally; `e2e/viewer-popups.spec.ts` proves the escape in a real browser.
 - **A pure secret-as-lookup-key credential cannot store a pepper version.**
   Share-token resolution computes sha256(secret + pepper) under EVERY
   registered pepper version and probes the unique hash index (O(rotations));
@@ -744,8 +760,6 @@ secret>` and harvested what visitors typed, straight through the official
   ONLY onto a VERIFIED local address) or the entrance diverges from the
   browser SSO path's takeover posture.
 
-<<<<<<< HEAD
-
 ## Blob authorization (SL-B1, 2026-07-26)
 
 - **An ACL on the resource is not an ACL on its bytes.** ADR 013 made deck
@@ -961,5 +975,3 @@ entry; these are what THIS repo added or had to do differently.
   server's tests until `pnpm --filter @slideless/db build`.** The symptom is
   Better Auth's "field X does not exist in the Drizzle schema" 500 on routes
   that touch the table — not a drift failure.
-
-> > > > > > > fix/sec-1374-1375

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 
 /**
  * Phase 8 — the decks product UI, against the same stack the smoke project
@@ -18,7 +18,8 @@ const XSS_BODY = '<img src=x onerror=alert(1)>';
 const XSS_AUTHOR = '<script>alert(2)</script>';
 const HTML_V1 = '<!doctype html><html><body><h1>E2E deck body v1</h1></body></html>';
 const HTML_V2 = '<!doctype html><html><body><h1>E2E deck body v2</h1></body></html>';
-const SANDBOX = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+const SANDBOX =
+  'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
 
 const shaOf = (text: string) => createHash('sha256').update(Buffer.from(text)).digest('hex');
 const entryOf = (path: string, text: string) => ({
@@ -51,11 +52,7 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
   });
 
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    await signInAsOwner(page);
   });
 
   let deckId = '';

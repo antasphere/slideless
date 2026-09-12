@@ -60,10 +60,15 @@ export const PREVIEW_SHARE_TOKEN_NAME = 'Dashboard preview';
  * official embed loader (`GET /embed.js`), the copyable embed snippets, and
  * the docs all carry exactly this string. SECURITY: this must NEVER gain
  * `allow-same-origin` (that one token re-opens full session theft, ADR 012
- * Surface C) or `allow-top-navigation*` (framebusting). Pinned by
- * decks.test.ts (dashboard) and embed.test.ts (server).
+ * Surface C) or `allow-top-navigation*` (framebusting).
+ * `allow-popups-to-escape-sandbox` (PRDCT-2268) is deliberate: it lifts the
+ * sandbox on windows the deck OPENS (window.open, target=_blank), never on
+ * the deck itself — without it an opened application runs in an opaque
+ * origin and cannot boot. Pinned by decks.test.ts (dashboard) and
+ * embed.test.ts (server).
  */
-export const VIEWER_IFRAME_SANDBOX = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+export const VIEWER_IFRAME_SANDBOX =
+  'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
 
 export const shareTokenSchema = z.object({
   id: z.string(),

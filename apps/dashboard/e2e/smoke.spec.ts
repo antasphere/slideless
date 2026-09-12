@@ -26,6 +26,11 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     await page.getByLabel('Email').fill(OWNER.email);
     await page.getByLabel('Password').fill(OWNER.password);
     await page.getByRole('button', { name: 'Create instance' }).click();
+    // The first-boot claim requires a setup token (PRDCT-1347); the wizard
+    // reveals the field only after the first refused submit. The runner
+    // minted the value the stack boots with (playwright.config.ts).
+    await page.getByLabel('Setup token').fill(process.env.PW_SMOKE_SETUP_TOKEN ?? '');
+    await page.getByRole('button', { name: 'Create instance' }).click();
     await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
   });
 
