@@ -10,8 +10,14 @@ describe('PREVIEW_SANDBOX (ADR 012 Surface D tripwire)', () => {
     expect(PREVIEW_SANDBOX).not.toContain('allow-top-navigation');
   });
 
+  it('carries allow-popups-to-escape-sandbox — a window the deck opens runs unsandboxed (PRDCT-2268)', () => {
+    expect(PREVIEW_SANDBOX).toContain('allow-popups-to-escape-sandbox');
+  });
+
   it('is the exact ADR 012 set, in order', () => {
-    expect(PREVIEW_SANDBOX).toBe('allow-scripts allow-forms allow-popups allow-modals allow-downloads');
+    expect(PREVIEW_SANDBOX).toBe(
+      'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads'
+    );
   });
 });
 

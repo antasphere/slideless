@@ -21,6 +21,8 @@ describe('buildEmbedSnippets', () => {
     expect(s.iframe).toContain(`src="${URL_}"`);
     expect(s.iframe).toContain(`sandbox="${VIEWER_IFRAME_SANDBOX}"`);
     expect(s.iframe).toContain('referrerpolicy="no-referrer"');
+    // PRDCT-2268: windows the deck opens escape the sandbox; the deck does not.
+    expect(s.iframe).toContain('allow-popups-to-escape-sandbox');
     // The tripwires: these tokens must never appear (ADR 012).
     expect(s.iframe).not.toContain('allow-same-origin');
     expect(s.iframe).not.toContain('allow-top-navigation');

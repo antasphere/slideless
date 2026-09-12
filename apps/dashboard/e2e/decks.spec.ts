@@ -18,7 +18,8 @@ const XSS_BODY = '<img src=x onerror=alert(1)>';
 const XSS_AUTHOR = '<script>alert(2)</script>';
 const HTML_V1 = '<!doctype html><html><body><h1>E2E deck body v1</h1></body></html>';
 const HTML_V2 = '<!doctype html><html><body><h1>E2E deck body v2</h1></body></html>';
-const SANDBOX = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+const SANDBOX =
+  'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
 
 const shaOf = (text: string) => createHash('sha256').update(Buffer.from(text)).digest('hex');
 const entryOf = (path: string, text: string) => ({

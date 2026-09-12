@@ -37,14 +37,14 @@ If you'd rather not load a script, embed the frame directly:
 ```html
 <iframe
   src="https://slides.example.com/v/SECRET/"
-  sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+  sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
   referrerpolicy="no-referrer"
   allow="fullscreen"
   style="width:100%;aspect-ratio:16/9;border:0"
 ></iframe>
 ```
 
-This is exactly the frame the loader builds. Keep the `sandbox` attribute exactly as shown — it is the security boundary (below). To tag the embed in the link analytics, append `?p=your-label` to the `src` URL yourself.
+This is exactly the frame the loader builds. Keep the `sandbox` attribute exactly as shown — it is the security boundary (below). `allow-popups-to-escape-sandbox` lets a window the deck opens run as a normal page (without it the opened page inherits the deck's isolation and an application there cannot start); it grants the deck itself nothing. To tag the embed in the link analytics, append `?p=your-label` to the `src` URL yourself.
 
 ## From the CLI (for agents)
 

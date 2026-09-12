@@ -25,7 +25,8 @@ export function stackEnv() {
     PUBLIC_BASE_URL: `http://localhost:${APP_PORT}`,
     POSTGRES_PASSWORD: process.env.PW_SMOKE_PG_PASSWORD ?? randomBytes(16).toString('hex'),
     AUTH_SECRET: '',
-    SETUP_TOKEN: '',
+    // The runner mints this in playwright.config.ts; the smoke presents it.
+    SETUP_TOKEN: process.env.PW_SMOKE_SETUP_TOKEN ?? '',
     EMAIL_DRIVER: 'none'
   };
 }

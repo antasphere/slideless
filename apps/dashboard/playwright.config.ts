@@ -1,4 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import { defineConfig } from '@playwright/test';
+
+// The first-boot claim requires a setup token (PRDCT-1347). One value is
+// minted here, in the runner process, so the compose stack (webServer
+// inherits this env) and the smoke spec (workers inherit it too) agree.
+process.env.PW_SMOKE_SETUP_TOKEN ??= randomBytes(16).toString('hex');
 
 // Keep in lockstep with e2e/stack-env.mjs (this config cannot import the
 // .mjs): the port is overridable so the suite can run beside another
@@ -35,7 +41,9 @@ export default defineConfig({
       testMatch: /viewer-forms-realdeck\.spec\.ts/,
       dependencies: ['smoke']
     },
-    { name: 'embed-forms', testMatch: /embed-forms\.spec\.ts/, dependencies: ['smoke'] }
+    { name: 'embed-forms', testMatch: /embed-forms\.spec\.ts/, dependencies: ['smoke'] },
+    // PRDCT-2268: windows a deck opens escape the sandbox; the deck does not.
+    { name: 'viewer-popups', testMatch: /viewer-popups\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,

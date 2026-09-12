@@ -65,6 +65,8 @@ function expectViewerContentHeaders(res: Response): void {
   const csp = res.headers.get('content-security-policy') ?? '';
   expect(csp).toBe(VIEWER_CSP);
   expect(csp).toContain('sandbox');
+  // PRDCT-2268: a window the deck opens runs unsandboxed; the deck does not.
+  expect(csp).toContain('allow-popups-to-escape-sandbox');
   expect(csp).not.toContain('allow-same-origin');
   expect(csp).not.toContain('allow-top-navigation');
   // Framing policy (ADR 021): deck bytes are deliberately frameable — the

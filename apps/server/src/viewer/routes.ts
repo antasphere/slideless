@@ -36,7 +36,7 @@ import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.j
  * credential. This is only safe under the ADR 012 regime, enforced here and
  * regression-tested (test/integration/sharing-viewer.test.ts):
  *
- *   Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups
+ *   Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox
  *                            allow-modals allow-downloads
  *   X-Content-Type-Options:  nosniff
  *   Referrer-Policy:         no-referrer
@@ -46,6 +46,10 @@ import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.j
  * workers, no credentialed same-origin API — the spike proved this defeats
  * session theft on Chromium/WebKit/Firefox. NEVER add `allow-same-origin`
  * (fully re-opens the vulnerability) or `allow-top-navigation*`. The global
+ * `allow-popups-to-escape-sandbox` (PRDCT-2268) lifts the sandbox on windows
+ * the deck OPENS, never on the deck: without it every `window.open` and
+ * `target="_blank"` runs in the opener's opaque origin and the application
+ * it points at cannot boot. The global
  * securityHeaders middleware is guarded to not clobber these per-route
  * headers. `VIEWER_BASE_URL` can move share links to a dedicated
  * user-content origin (the hardening path); this same handler serves either
@@ -60,7 +64,8 @@ import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.j
 export const VIEWER_PATH_PREFIX = '/v';
 
 /** The exact ADR 012 sandbox policy. Single definition — tests import it. */
-export const VIEWER_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads';
+export const VIEWER_CSP =
+  'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
 
 /** Headers every user-content viewer response must carry (ADR 012). */
 export const VIEWER_CONTENT_HEADERS: Readonly<Record<string, string>> = {

@@ -26,6 +26,9 @@ describe('slideless dev server', () => {
     const res = await fetch(server.url);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-security-policy')).toBe(DEV_SANDBOX_CSP);
+    // PRDCT-2268: mirrors the public viewer — opened windows escape, the deck does not.
+    expect(DEV_SANDBOX_CSP).toContain('allow-popups-to-escape-sandbox');
+    expect(DEV_SANDBOX_CSP).not.toContain('allow-same-origin');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     expect(res.headers.get('cache-control')).toBe('no-store');

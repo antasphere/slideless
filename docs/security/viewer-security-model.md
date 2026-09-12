@@ -41,7 +41,7 @@ metric toward "unique browsers" rather than "opens".
 Every byte of deck content is served under this exact header set:
 
 ```
-Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads
+Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
 ```
@@ -53,6 +53,13 @@ credentialed call to the instance's API — verified empirically on Chromium,
 WebKit, and Firefox with a hostile deck and a live owner session in the
 browser. The dashboard's own preview additionally wraps decks in
 a `sandbox` iframe as a second, independent lock.
+
+`allow-popups-to-escape-sandbox` is the one token that reaches outside the
+deck: a window the deck opens (a `window.open`, a link with
+`target="_blank"`) runs as a normal top-level page instead of inheriting the
+deck's opaque origin, so a deck that links out to an application can open it.
+It changes nothing about the deck itself, which still runs without
+`allow-same-origin`.
 
 This is the **safe default**: with zero configuration, a share link on the
 app origin cannot be used to steal a dashboard session.
