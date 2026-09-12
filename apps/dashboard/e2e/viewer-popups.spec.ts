@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect, type Page } from '@playwright/test';
 import { VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 
 /**
  * PRDCT-2268 — a window a deck OPENS runs as a normal top-level page, while
@@ -112,11 +112,7 @@ test('share link: the deck stays sandboxed, the windows it opens run on the app 
   browser
 }) => {
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    await signInAsOwner(page);
   });
 
   const appOrigin = new URL(page.url()).origin;
@@ -166,11 +162,7 @@ test('embed iframe: the framed deck stays sandboxed, the windows it opens run on
   browser
 }) => {
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    await signInAsOwner(page);
   });
 
   const appOrigin = new URL(page.url()).origin;

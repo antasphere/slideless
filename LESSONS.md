@@ -760,8 +760,6 @@ secret>` and harvested what visitors typed, straight through the official
   ONLY onto a VERIFIED local address) or the entrance diverges from the
   browser SSO path's takeover posture.
 
-<<<<<<< HEAD
-
 ## Blob authorization (SL-B1, 2026-07-26)
 
 - **An ACL on the resource is not an ACL on its bytes.** ADR 013 made deck

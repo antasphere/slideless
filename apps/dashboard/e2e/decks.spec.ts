@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 
 /**
  * Phase 8 — the decks product UI, against the same stack the smoke project
@@ -52,11 +52,7 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
   });
 
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    await signInAsOwner(page);
   });
 
   let deckId = '';

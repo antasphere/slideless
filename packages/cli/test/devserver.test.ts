@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
 import { DEV_SANDBOX_CSP, startDevServer } from '../src/devserver.js';
 import type { DevServer } from '../src/devserver.js';
 
@@ -27,6 +28,8 @@ describe('slideless dev server', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-security-policy')).toBe(DEV_SANDBOX_CSP);
     // PRDCT-2268: mirrors the public viewer — opened windows escape, the deck does not.
+    // Lockstep with the contract's iframe list (the third copy of the one list).
+    expect(DEV_SANDBOX_CSP).toBe(`sandbox ${VIEWER_IFRAME_SANDBOX}`);
     expect(DEV_SANDBOX_CSP).toContain('allow-popups-to-escape-sandbox');
     expect(DEV_SANDBOX_CSP).not.toContain('allow-same-origin');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
