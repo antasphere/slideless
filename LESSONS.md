@@ -760,6 +760,32 @@ secret>` and harvested what visitors typed, straight through the official
   ONLY onto a VERIFIED local address) or the entrance diverges from the
   browser SSO path's takeover posture.
 
+## The Playwright suite and the release gate (PRDCT-2268 / PRDCT-2274, 2026-09-12)
+
+- **The Playwright suite (`apps/dashboard/e2e`) runs nowhere in CI, so it rots silently.** It
+  had been dead since PRDCT-1347 made the first-boot claim require a setup token: the harness
+  passed `SETUP_TOKEN=''`, every dependent project failed at the wizard, and nobody saw it for
+  two weeks. Now `playwright.config.ts` mints one token in the runner process, `stack-env.mjs`
+  boots the stack with it and `smoke.spec.ts` fills the field, which the wizard only reveals
+  AFTER the first refused submit (`tokenRequired` flips on the `invalid_setup_token` answer).
+  Run the suite locally before shipping anything the smoke exercises; CI part 1 does not.
+- **Better Auth's own sign-in throttle, not ours, is what "Too many attempts" means in e2e.**
+  Our `limiters.login` is 10 points per 15 minutes and consumes on FAILURE for sign-in; the
+  e2e projects never fail a login. What trips is Better Auth's default special rule on
+  `/sign-in*` and `/sign-up*` (3 requests per 10-second sliding window per IP), active because
+  the image runs `NODE_ENV=production`, and the dashboard renders any 429 with the same
+  `login.errorRateLimited` string. Projects that sign in right after the smoke hit it;
+  `signInAsOwner()` in `e2e/accounts.ts` waits 12 s once and retries. A future Better Auth
+  bump that widens that window makes the wait too short: re-check on any bump.
+- **The prod release publishes nothing when Trivy finds a HIGH anywhere in the image**, even in
+  a dependency the change never touched (nodemailer 9.0.3, GHSA-2x7j-588g-ccc2, blocked the
+  PRDCT-2268 roll). Bump that dependency alone: `pnpm add` re-resolves the Better Auth
+  transitive pins ADR 001 keeps exact (better-call, @better-fetch/fetch), so restore the
+  lockfile and edit the package's three entries by hand (importer, packages, snapshots), then
+  `pnpm install --frozen-lockfile` to validate. The roll itself, once the image is published,
+  is the fleet repo's runbook: `labs/products/antasphere/infra/README.md`, "The roll as it
+  actually runs".
+
 ## Blob authorization (SL-B1, 2026-07-26)
 
 - **An ACL on the resource is not an ACL on its bytes.** ADR 013 made deck
