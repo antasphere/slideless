@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assetPathSchema,
   attachmentNameOf,
   attachmentPathOf,
   attachmentsOf,
@@ -77,5 +78,17 @@ describe('attachmentsOf', () => {
       }
     ]);
     expect(attachmentsOf([entry('index.html')])).toEqual([]);
+  });
+});
+
+describe('the reserved root path downloads.zip', () => {
+  it('is refused at the root, in any case, and allowed anywhere else', () => {
+    // The viewer answers /v/{secret}/downloads.zip itself; a root file of
+    // that name would be shadowed with no way to reach it.
+    expect(assetPathSchema.safeParse('downloads.zip').success).toBe(false);
+    expect(assetPathSchema.safeParse('Downloads.ZIP').success).toBe(false);
+    expect(assetPathSchema.safeParse('assets/downloads.zip').success).toBe(true);
+    expect(assetPathSchema.safeParse('downloads/downloads.zip').success).toBe(true);
+    expect(assetPathSchema.safeParse('downloads.zip.txt').success).toBe(true);
   });
 });

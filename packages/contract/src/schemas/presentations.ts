@@ -58,6 +58,18 @@ export const RESERVED_ASSET_FILENAMES = [
 const RESERVED_ASSET_FILENAME_SET: ReadonlySet<string> = new Set<string>(RESERVED_ASSET_FILENAMES);
 
 /**
+ * Root paths the SERVER answers itself, so a deck may not carry them: the
+ * viewer serves `/v/{secret}/downloads.zip` as the version's attachments
+ * archive (PRDCT-2278), and a root file of that name would be shadowed
+ * silently, unreachable through any route (verifier round 1, F3). Exact
+ * root position, compared case-insensitively like the reserved filenames;
+ * a nested `assets/downloads.zip` is an ordinary asset.
+ */
+export const RESERVED_ROOT_ASSET_PATHS = ['downloads.zip'] as const;
+
+const RESERVED_ROOT_ASSET_PATH_SET: ReadonlySet<string> = new Set<string>(RESERVED_ROOT_ASSET_PATHS);
+
+/**
  * A relative asset path inside a deck. Traversal-safe (above) AND free of
  * dot-prefixed segments and reserved filenames.
  *
@@ -71,6 +83,7 @@ const RESERVED_ASSET_FILENAME_SET: ReadonlySet<string> = new Set<string>(RESERVE
  */
 export function isSafeAssetPath(p: string): boolean {
   if (!isTraversalSafeAssetPath(p)) return false;
+  if (RESERVED_ROOT_ASSET_PATH_SET.has(p.toLowerCase())) return false;
   return p
     .split('/')
     .every((seg) => !seg.startsWith('.') && !RESERVED_ASSET_FILENAME_SET.has(seg.toLowerCase()));
@@ -83,7 +96,8 @@ export const assetPathSchema = z
   .refine(
     isSafeAssetPath,
     'relative path required: no empty, "." or ".." segments, no dot-prefixed segment, ' +
-      `and no reserved filename (${RESERVED_ASSET_FILENAMES.join(', ')})`
+      `no reserved filename (${RESERVED_ASSET_FILENAMES.join(', ')}) ` +
+      `and no reserved root path (${RESERVED_ROOT_ASSET_PATHS.join(', ')})`
   );
 
 /**

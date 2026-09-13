@@ -7,6 +7,7 @@ A deck can carry files that travel **with** it: a spreadsheet next to the report
 - `downloads/` at the root of the deck bundle is reserved: every file under it (nested folders included) is an attachment. Files elsewhere in the deck stay ordinary assets.
 - Attachments are **pinned to the version**. A recipient downloads the set of the version their link resolves to: a link that follows the latest push always hands out the latest set; a link pinned to version 3 keeps handing out version 3's files after you push version 4. The version history is yours; recipients never see other versions.
 - Storage is content-addressed and deduplicated, as for every deck file: a file you push again unchanged is stored once, and a new version re-uploads only what changed.
+- `downloads.zip` at the root of the deck is reserved too: the viewer answers that URL with the version's archive, so a push carrying a root file of that name is refused. Anywhere else the name is free.
 - An attachment is **handed out, never shown**. Whatever its type, it downloads with an `attachment` disposition and `nosniff`. An HTML file dropped in `downloads/` is a file to download, not a page of the deck: the viewer never renders it.
 - The size limit per file is the instance's `MAX_FILE_SIZE_MB` (100 MB by default).
 
@@ -43,6 +44,6 @@ Both routes follow the deck read rules: a deck you cannot read answers 404, neve
 
 ## Counting
 
-Each link counts its downloads in `downloadCount`, next to its view count: one per file taken, one per zip, whatever the zip held. A download is never a view, and a view never a download. Repeat downloads count again; `HEAD` requests, revalidations the `ETag` answers with a 304, and your own dashboard previews never count.
+Each link counts its downloads in `downloadCount`, next to its view count: one per file taken, one per zip, whatever the zip held. A download is never a view, and a view never a download. Repeat downloads count again. What never counts: `HEAD` requests, byte-range requests (a download manager fetching in chunks, a media player seeking), revalidations the `ETag` answers with a 304, a file the storage could not serve, and your own dashboard previews.
 
-Each download is also recorded as an event with the link, the version served, the file's name (empty for a zip) and when — and nothing else: **no IP address, no geolocation, no referrer, no user agent**, on any edition, self-hosted included. Events are pruned nightly with the view events, after `VIEW_EVENTS_RETENTION_DAYS` (default 90; `0` keeps them forever). The per-link counter is never pruned.
+Each download is also recorded as an event with the link, the version served, the file's name (`NULL` for a zip) and when — and nothing else: **no IP address, no geolocation, no referrer, no user agent**, on any edition, self-hosted included. Events are pruned nightly with the view events, after `VIEW_EVENTS_RETENTION_DAYS` (default 90; `0` keeps them forever). The per-link counter is never pruned.

@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFile, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -307,6 +309,47 @@ describe('the downloads/ convention at commit', () => {
     expect((await readJson(zip)).error.code).toBe('no_attachments');
   });
 
+  it('a root file named downloads.zip is refused at commit (the viewer answers that URL itself, verifier F3)', async () => {
+    const reserve = await readJson(
+      await app.app.request('/api/v1/presentations/uploads', {
+        method: 'POST',
+        headers: { cookie: ownerCookie }
+      })
+    );
+    const refused = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        {
+          title: 'Shadowed',
+          entryPath: 'index.html',
+          manifest: [
+            entryOf('index.html', HTML, 'text/html'),
+            entryOf('downloads.zip', ZIP_C, 'application/zip')
+          ]
+        },
+        { cookie: ownerCookie }
+      )
+    );
+    expect(refused.status).toBe(400);
+    expect((await readJson(refused)).error.code).toBe('validation_error');
+    // The same name nested is an ordinary asset; the session survives the refusal.
+    const accepted = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        {
+          title: 'Not shadowed',
+          entryPath: 'index.html',
+          manifest: [
+            entryOf('index.html', HTML, 'text/html'),
+            entryOf('assets/downloads.zip', ZIP_C, 'application/zip')
+          ]
+        },
+        { cookie: ownerCookie }
+      )
+    );
+    expect(accepted.status).toBe(201);
+  });
+
   it('the folder is exact and case-sensitive: Downloads/ and downloads-old/ are not attachments', async () => {
     const committed = await commitVersion(plainDeckId, 1, [
       entryOf('index.html', HTML, 'text/html'),
@@ -585,6 +628,22 @@ describe('download events and the counter', () => {
     expect((await tokenRow(preview.shareToken.id)).downloadCount).toBe(0);
   });
 
+  it('a byte-range request never counts, satisfiable or not; the whole file counts once (verifier F1)', async () => {
+    const created = await createToken({ name: 'Ranges' });
+    for (let i = 0; i < 3; i++) {
+      const chunk = await get(`/v/${created.secret}/downloads/a.csv`, { range: `bytes=${i}-${i}` });
+      expect(chunk.status).toBe(206);
+    }
+    const unsatisfiable = await get(`/v/${created.secret}/downloads/a.csv`, { range: 'bytes=9999-' });
+    expect(unsatisfiable.status).toBe(416);
+    expect(await downloadRows(created.shareToken.id)).toHaveLength(0);
+    expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(0);
+
+    expect((await get(`/v/${created.secret}/downloads/a.csv`)).status).toBe(200);
+    expect((await downloadRows(created.shareToken.id)).map((r) => r.name)).toEqual(['a.csv']);
+    expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(1);
+  });
+
   it('a refused download (downloads off) records nothing', async () => {
     const created = await createToken({ name: 'Off, uncounted', canDownload: false });
     expect((await get(`/v/${created.secret}/downloads/a.csv`)).status).toBe(404);
@@ -692,5 +751,76 @@ describe('the owner side: any version of a readable deck', () => {
     expect(
       (await get(`${base()}/2/downloads/a.csv`, { authorization: `Bearer ${writeOnlyKey}` })).status
     ).toBe(403);
+  });
+});
+
+// ═══ The migration's backfill, verbatim from the file (verifier F4) ══════════
+
+describe("migration 0039's backfill", () => {
+  it('re-stamps has_downloads on versions that carry the folder and mirrors the deck from its current version', async () => {
+    // Wind the stamps back to the pre-0039 shape on every row, then run the
+    // committed backfill statements exactly as the migration file holds
+    // them (the 0028 precedent) — the SQL rule and the TypeScript rule are
+    // two implementations of one convention, and this keeps them in step.
+    await app.db.pool.query('UPDATE presentation_versions SET has_downloads = false');
+    await app.db.pool.query('UPDATE presentations SET has_downloads = false');
+    const file = await readFile(
+      join(import.meta.dirname, '../../../../packages/db/drizzle/0039_attachments.sql'),
+      'utf8'
+    );
+    const statements = file.split('--> statement-breakpoint').map((x) => x.trim());
+    const backfill = statements.filter((x) => x.includes('UPDATE "presentation'));
+    expect(backfill).toHaveLength(2);
+    for (const statement of backfill) await app.db.pool.query(statement);
+
+    const versions = await app.db.pool.query<{ version: number; has_downloads: boolean }>(
+      'SELECT version, has_downloads FROM presentation_versions WHERE presentation_id = $1 ORDER BY version',
+      [deckId]
+    );
+    expect(versions.rows).toEqual([
+      { version: 1, has_downloads: true },
+      { version: 2, has_downloads: true }
+    ]);
+    const plain = await app.db.pool.query<{ version: number; has_downloads: boolean }>(
+      'SELECT version, has_downloads FROM presentation_versions WHERE presentation_id = $1 ORDER BY version',
+      [plainDeckId]
+    );
+    // v2 of the plain deck carries Downloads/ and downloads-old/: not the folder.
+    expect(plain.rows).toEqual([
+      { version: 1, has_downloads: false },
+      { version: 2, has_downloads: false }
+    ]);
+    const decks = await app.db.pool.query<{ id: string; has_downloads: boolean }>(
+      'SELECT id, has_downloads FROM presentations WHERE id = ANY($1) ORDER BY id',
+      [[deckId, plainDeckId]]
+    );
+    expect(Object.fromEntries(decks.rows.map((r) => [r.id, r.has_downloads]))).toEqual({
+      [deckId]: true,
+      [plainDeckId]: false
+    });
+  });
+});
+
+// ═══ A blob the storage cannot reach (verifier F2) — LAST: it removes a blob ═
+
+describe('a blob the storage cannot serve', () => {
+  it('answers 404 on the file and the zip and records no download', async () => {
+    const created = await createToken({ name: 'Gone blob' });
+    const me = await readJson(await get('/api/v1/me', { cookie: ownerCookie }));
+    const workspaceId: string = me.workspace.id;
+    const sha = shaOf(ZIP_C);
+    // The local driver's layout (storage/local.ts + blobKey): remove the
+    // bytes behind c.zip, the way a local-storage replica that never
+    // received them would look.
+    await unlink(join(app.env.DATA_DIR, 'storage', 'blobs', 'ws', workspaceId, sha.slice(0, 2), sha));
+
+    const file = await get(`/v/${created.secret}/downloads/c.zip`);
+    expect(file.status).toBe(404);
+    const zip = await get(`/v/${created.secret}/downloads.zip`);
+    expect(zip.status).toBe(404);
+    // The other files still serve, and count.
+    expect((await get(`/v/${created.secret}/downloads/a.csv`)).status).toBe(200);
+    expect((await downloadRows(created.shareToken.id)).map((r) => r.name)).toEqual(['a.csv']);
+    expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(1);
   });
 });

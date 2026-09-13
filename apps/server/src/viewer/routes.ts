@@ -628,14 +628,17 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   }
 
   /**
-   * One download event per file taken and per zip, keyed on the SERVER-SET
-   * `purpose` like the view exclusion (an owner's preview never counts);
-   * HEAD never counts, and neither does a revalidation the ETag answers
-   * with 304 (the caller passes the entry's sha, null for the zip).
+   * One download event per WHOLE file taken and per zip, keyed on the
+   * SERVER-SET `purpose` like the view exclusion (an owner's preview never
+   * counts). HEAD never counts, and neither does a byte-range request: a
+   * resumable or chunking client, a media element seeking, would otherwise
+   * count once per chunk (verifier round 1, F1). The caller records only
+   * once the serve has answered 200 — a 304 revalidation, a 416 range, a
+   * blob the storage cannot reach (F2) all leave the counter alone, so the
+   * count reads "files handed out", never "requests seen".
    */
-  function downloadCounted(c: Context, token: ShareTokenRow, etagSha: string | null): boolean {
-    if (c.req.method !== 'GET' || token.purpose === 'preview') return false;
-    return etagSha === null || c.req.header('if-none-match') !== `"${etagSha}"`;
+  function downloadCounted(c: Context, token: ShareTokenRow): boolean {
+    return c.req.method === 'GET' && token.purpose !== 'preview' && c.req.header('range') === undefined;
   }
 
   const attachmentHeaders: Readonly<Record<string, string>> = {
@@ -653,16 +656,7 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     if (attachments.length === 0) {
       return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
     }
-    if (downloadCounted(c, token, null)) {
-      await deps.downloads.record({
-        workspaceId: token.workspaceId,
-        presentationId: deck.id,
-        shareTokenId: token.id,
-        version: version.version,
-        name: null
-      });
-    }
-    return serveAttachmentsZip(c, {
+    const res = await serveAttachmentsZip(c, {
       storage,
       logger,
       workspaceId: token.workspaceId,
@@ -672,6 +666,18 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       headOnly: c.req.method === 'HEAD',
       extraHeaders: { ...VIEWER_CONTENT_HEADERS }
     });
+    // Recorded once the archive is really going out (the preflight answered
+    // 404 otherwise), awaited so the count is durable before the bytes.
+    if (res.status === 200 && downloadCounted(c, token)) {
+      await deps.downloads.record({
+        workspaceId: token.workspaceId,
+        presentationId: deck.id,
+        shareTokenId: token.id,
+        version: version.version,
+        name: null
+      });
+    }
+    return res;
   });
 
   app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret/downloads/*`, async (c) => {
@@ -701,18 +707,8 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
     }
 
-    if (downloadCounted(c, token, entry.sha256)) {
-      await deps.downloads.record({
-        workspaceId: token.workspaceId,
-        presentationId: deck.id,
-        shareTokenId: token.id,
-        version: version.version,
-        name
-      });
-    }
-
     const basename = name.split('/').pop() ?? name;
-    return serveBlob(c, {
+    const res = await serveBlob(c, {
       storage,
       logger,
       workspaceId: token.workspaceId,
@@ -725,6 +721,19 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       contentDisposition: encodeContentDisposition('attachment', basename),
       extraHeaders: { ...attachmentHeaders }
     });
+    // Recorded only on a 200: a 304 revalidation or a blob the storage
+    // cannot reach handed nothing out. Awaited before the response returns,
+    // so the count is durable before the bytes start (the entry-view posture).
+    if (res.status === 200 && downloadCounted(c, token)) {
+      await deps.downloads.record({
+        workspaceId: token.workspaceId,
+        presentationId: deck.id,
+        shareTokenId: token.id,
+        version: version.version,
+        name
+      });
+    }
+    return res;
   });
 
   // ── Deck assets (path-relative to the resolved version's manifest) ─────────
