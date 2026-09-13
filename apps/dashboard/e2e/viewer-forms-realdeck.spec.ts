@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 import {
   ARCHITECTURE_DECK_HTML,
   BUNDLE_DECK_APP_JS,
@@ -34,13 +34,12 @@ interface ResponseRow {
   payload: Record<string, string | string[]>;
 }
 
-async function signIn(page: Page): Promise<void> {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill(OWNER.email);
-  await page.getByLabel('Password').fill(OWNER.password);
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
-}
+// The shared, throttle-aware sign-in (accounts.ts): the projects sign in
+// back to back on one worker, and Better Auth's sign-in throttle (three per
+// ten seconds per IP under the image's production mode) answers "Too many
+// attempts" to whichever lands fourth — a bare click here failed the moment
+// the master project (PRDCT-2279) shifted the timing.
+const signIn = signInAsOwner;
 
 interface DeckFile {
   path: string;
