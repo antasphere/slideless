@@ -89,6 +89,13 @@ export const shareTokenSchema = z.object({
    * and the recipient list is empty; the deck itself still shows.
    */
   canDownload: z.boolean(),
+  /**
+   * Whether the recipient top bar rides this link (PRDCT-2281): the strip
+   * over the deck with its title, its version and its attachments to
+   * download. Off = a bare deck. Top-level navigations only: embeds and
+   * frames are bare whatever this says.
+   */
+  showBar: z.boolean(),
   /** Per-link badge slot; null = deck default (then bottom-right). */
   badgePosition: badgePositionSchema.nullable(),
   expiresAt: z.string().nullable(),
@@ -137,6 +144,11 @@ export const shareTokenCreateSchema = z
      */
     canDownload: z.boolean().default(true),
     /**
+     * The recipient top bar ON by default (PRDCT-2281): a recipient should
+     * know what they are looking at. Opt out per link for a bare deck.
+     */
+    showBar: z.boolean().default(true),
+    /**
      * Explicit badge slot for this link. Also becomes the deck's remembered
      * default for future links. Omitted = inherit the deck's remembered
      * position.
@@ -151,7 +163,7 @@ export const shareTokenCreateSchema = z
   });
 /**
  * The CLIENT-facing shape: the schema's INPUT, so every field the server
- * defaults (versionMode, canAnnotate, canSubmitForms, canDownload) is
+ * defaults (versionMode, canAnnotate, canSubmitForms, canDownload, showBar) is
  * optional to a caller. A client that had to spell out every default would
  * break at typecheck each time the contract gained one (PRDCT-2278 did);
  * the server validates against the schema and reads the output type.
@@ -193,6 +205,7 @@ export const shareTokenUpdateSchema = z
     canAnnotate: z.boolean().optional(),
     canSubmitForms: z.boolean().optional(),
     canDownload: z.boolean().optional(),
+    showBar: z.boolean().optional(),
     /**
      * Explicit slot (also updates the deck's remembered default) or null to
      * fall back to the deck default again.

@@ -179,13 +179,23 @@ describe('overlay injection', () => {
     expect(await viaHeader.text()).not.toContain(OVERLAY_MARKER);
 
     // canSubmitForms off too: since ADR 022 the forms runtime injects for
-    // ANY submit-capable token, so byte-exact streaming needs both flags off.
-    const viewOnly = await createToken({ name: 'View Only', canAnnotate: false, canSubmitForms: false });
+    // ANY submit-capable token, and showBar off as well since PRDCT-2281 (the
+    // recipient bar rides every browser navigation by default), so byte-exact
+    // streaming needs all three flags off.
+    const viewOnly = await createToken({
+      name: 'View Only',
+      canAnnotate: false,
+      canSubmitForms: false,
+      showBar: false
+    });
     const plain = await fetchEntry(viewOnly.secret);
     expect(plain.status).toBe(200);
     expect(await plain.text()).not.toContain(OVERLAY_MARKER);
     // Untransformed entries keep streaming with their content-sha ETag.
     expect(plain.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
+    // A non-annotator link with the bar on still carries no overlay.
+    const barred = await createToken({ name: 'View Only, bar', canAnnotate: false, canSubmitForms: false });
+    expect(await (await fetchEntry(barred.secret)).text()).not.toContain(OVERLAY_MARKER);
   });
 
   it('badge position: explicit on the link, remembered as the deck default for the next link', async () => {

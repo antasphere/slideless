@@ -821,6 +821,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       canAnnotate: body.canAnnotate,
       canSubmitForms: body.canSubmitForms,
       canDownload: body.canDownload,
+      showBar: body.showBar,
       badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
@@ -844,6 +845,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         pinnedVersion: row.pinnedVersion,
         canAnnotate: row.canAnnotate,
         canDownload: row.canDownload,
+        showBar: row.showBar,
         badgePosition: row.badgePosition,
         hasPassword: row.passwordHash !== null,
         expiresAt: row.expiresAt?.toISOString() ?? null
@@ -907,6 +909,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // never counted — the viewer keys the exclusion on `purpose`, like
       // views (PRDCT-2278).
       canDownload: true,
+      // The bar too, for the same reason — though the dashboard's preview
+      // iframe is a FRAME navigation, so the bar never mounts there anyway.
+      showBar: true,
       badgePosition: null, // no overlay on previews — nothing to place
       expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS),
       passwordHash: null
@@ -963,6 +968,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (patch.canAnnotate !== undefined) set.canAnnotate = patch.canAnnotate;
     if (patch.canSubmitForms !== undefined) set.canSubmitForms = patch.canSubmitForms;
     if (patch.canDownload !== undefined) set.canDownload = patch.canDownload;
+    if (patch.showBar !== undefined) set.showBar = patch.showBar;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
       // Explicit slot → new deck default (explicit null just falls back),

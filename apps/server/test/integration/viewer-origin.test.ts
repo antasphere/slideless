@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
+import { TOPBAR_MARKER } from '../../src/viewer/topbar.js';
 import {
   SETUP_TOKEN,
   createDatabase,
@@ -310,6 +311,23 @@ describe('split origin: the viewer hostname serves decks — and nothing else', 
     expect((await readJson(list)).attachments.map((a: { name: string }) => a.name)).toEqual(['figures.csv']);
   });
 
+  it('serves the recipient bar on a browser navigation, and the one call it makes (PRDCT-2281)', async () => {
+    const res = await split.app.app.request(`${VIEWER}/v/${split.secret}/`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'document' }
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-security-policy')).toBe(VIEWER_CSP);
+    const html = await res.text();
+    expect(html).toContain(TOPBAR_MARKER);
+    // The bar calls the list relative to its page: on the viewer hostname,
+    // cookie-less, from the opaque origin.
+    const list = await split.app.app.request(`${VIEWER}/api/v1/viewer/${split.secret}/attachments`, {
+      headers: { origin: 'null', 'sec-fetch-site': 'cross-site' }
+    });
+    expect(list.status).toBe(200);
+    expect(list.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
   it('answers the probes', async () => {
     expect((await split.app.app.request(`${VIEWER}/healthz`)).status).toBe(200);
   });
@@ -440,6 +458,16 @@ describe('single origin (VIEWER_BASE_URL unset): nothing changes', () => {
     const list = await plain.app.app.request(`${APP}/api/v1/viewer/${plain.secret}/attachments`);
     expect(list.status).toBe(200);
     expect((await readJson(list)).attachments).toHaveLength(1);
+  });
+
+  it('serves the recipient bar on the app origin, no redirect (PRDCT-2281)', async () => {
+    const res = await plain.app.app.request(`${APP}/v/${plain.secret}/`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'document' },
+      redirect: 'manual'
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-security-policy')).toBe(VIEWER_CSP);
+    expect(await res.text()).toContain(TOPBAR_MARKER);
   });
 
   it('installs no host gate: an unknown hostname is just the app (401, not 404, on a protected read)', async () => {

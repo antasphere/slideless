@@ -281,6 +281,13 @@
       "when": 1789297204451,
       "tag": "0039_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789305524339,
+      "tag": "0040_share_token_show_bar",
+      "breakpoints": true
     }
   ]
 }

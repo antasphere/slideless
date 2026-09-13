@@ -548,7 +548,7 @@ var css = [
   '#__sl-layer.on{display:block;}',
   '#__sl-drag{position:fixed;display:none;border:2px dashed var(--sl-accent);border-radius:6px;',
   '  background:rgba(245,179,1,.1);pointer-events:none;}',
-  '#__sl-banner{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:none;',
+  '#__sl-banner{position:fixed;top:calc(14px + var(--slideless-topbar,0px));left:50%;transform:translateX(-50%);display:none;',
   '  align-items:center;gap:10px;background:var(--sl-bg);border:1px solid var(--sl-border);',
   '  border-radius:999px;padding:8px 8px 8px 15px;font-size:12.5px;font-weight:500;',
   '  box-shadow:var(--sl-shadow);white-space:nowrap;max-width:92vw;}',
@@ -636,10 +636,15 @@ fabPin.textContent = '+';
 // would let the stylesheet's right/bottom stretch the box). Config is
 // server-controlled, but validate anyway and fall back to the default. The
 // + FAB stacks toward the viewport center from the badge's slot.
+// The three TOP slots add the recipient bar's height (PRDCT-2281): the bar
+// publishes it as --slideless-topbar on the root (0 when absent or
+// collapsed), so the badge never sits under the bar and follows a collapse
+// live, with no coupling between the two runtimes.
+var TOP_OFFSET = 'var(--slideless-topbar, 0px)';
 var BADGE_SLOTS = {
-  'top-left': { top: '20px', left: '20px' },
-  top: { top: '20px', left: '50%', transform: 'translateX(-50%)' },
-  'top-right': { top: '20px', right: '20px' },
+  'top-left': { top: 'calc(20px + ' + TOP_OFFSET + ')', left: '20px' },
+  top: { top: 'calc(20px + ' + TOP_OFFSET + ')', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: 'calc(20px + ' + TOP_OFFSET + ')', right: '20px' },
   right: { right: '20px', top: '50%', transform: 'translateY(-50%)' },
   'bottom-right': { bottom: '20px', right: '20px' },
   bottom: { bottom: '20px', left: '50%', transform: 'translateX(-50%)' },
@@ -647,9 +652,9 @@ var BADGE_SLOTS = {
   left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
 };
 var FAB_SLOTS = {
-  'top-left': { top: '74px', left: '20px' },
-  top: { top: '74px', left: '50%', transform: 'translateX(-50%)' },
-  'top-right': { top: '74px', right: '20px' },
+  'top-left': { top: 'calc(74px + ' + TOP_OFFSET + ')', left: '20px' },
+  top: { top: 'calc(74px + ' + TOP_OFFSET + ')', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: 'calc(74px + ' + TOP_OFFSET + ')', right: '20px' },
   right: { right: '20px', top: 'calc(50% - 62px)', transform: 'translateY(-50%)' },
   'bottom-right': { bottom: '74px', right: '20px' },
   bottom: { bottom: '74px', left: '50%', transform: 'translateX(-50%)' },

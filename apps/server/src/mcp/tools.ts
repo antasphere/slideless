@@ -720,8 +720,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'public viewer link to hand to the recipient — the secret appears ONLY in this response. ' +
         'Supports a per-recipient name label, pinning to a version (default: follow the latest), ' +
         'reviewer annotations, expiry, a viewer password, and whether the recipient may download the ' +
-        "version's attachments (its downloads/ folder; canDownload, default true). Always confirm " +
-        'with the user before calling.',
+        "version's attachments (its downloads/ folder; canDownload, default true), and whether the " +
+        'recipient sees the top bar over the deck (title, version, downloads; showBar, default true). ' +
+        'Always confirm with the user before calling.',
       inputSchema: {
         workspace: workspaceInput,
         presentationId: deckIdInput,
@@ -744,6 +745,14 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
             "Let the recipient download the version's attachments — the files under downloads/ " +
               '(default true). false = the link shows the deck but hands out no files.'
           ),
+        showBar: z
+          .boolean()
+          .optional()
+          .describe(
+            'Show the recipient top bar over the deck: its title, its version, and the files to ' +
+              'download (default true). false = a bare deck, nothing but the presentation itself. ' +
+              'Embeds and frames are always bare.'
+          ),
         badgePosition: badgePositionSchema
           .optional()
           .describe(
@@ -762,6 +771,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       pinnedVersion,
       canAnnotate,
       canDownload,
+      showBar,
       badgePosition,
       expiresAt,
       password
@@ -777,6 +787,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
               ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
               canAnnotate: canAnnotate ?? false,
               ...(canDownload !== undefined ? { canDownload } : {}),
+              ...(showBar !== undefined ? { showBar } : {}),
               ...(badgePosition !== undefined ? { badgePosition } : {}),
               ...(expiresAt !== undefined ? { expiresAt } : {}),
               ...(password !== undefined ? { password } : {})
@@ -791,7 +802,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     {
       description:
         "A deck's share tokens with access stats (name, versionMode, pinnedVersion, expiry, " +
-        'hasPassword, revokedAt, accessCount, canDownload, downloadCount). accessCount is ' +
+        'hasPassword, revokedAt, accessCount, canDownload, showBar, downloadCount). accessCount is ' +
         'de-duplicated opens — repeat opens from one browser within the configured window count ' +
         'once, not raw request hits. downloadCount is attachment downloads through the link (one ' +
         'per file taken, one per whole-set zip; never a view). Secrets are never retrievable — only ' +

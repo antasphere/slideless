@@ -95,6 +95,7 @@ Never add `allow-same-origin` to the sandbox. It would collapse the isolation be
 
 - **Password-protected links don't work in embeds.** The password gate refuses to render inside a frame, by design: a first-party credential form has no business appearing on a third-party page. Embed links without a password (the secret URL is itself the credential).
 - **Annotations never appear in embeds.** The notes overlay and its badge only mount when the deck is the top-level page, even on a link that allows annotations. Recipients who should annotate need the direct link. [Forms](forms.md) are the deliberate exception to embedded interactivity (see above).
+- **Embeds stay bare.** The recipient bar a share link shows over the deck (its title, its version, the [downloads](downloads.md)) never mounts inside an embed or any iframe, whatever the link's `showBar` says: the frame belongs to your page.
 - **View counting is coarser across sites.** The de-dupe cookie that collapses reloads into one view is scoped to the viewer and third-party cookie rules vary by browser, so embedded opens may count somewhat more often than direct opens.
 
 ## Self-hosting note

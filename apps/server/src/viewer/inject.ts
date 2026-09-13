@@ -2,12 +2,22 @@ import type { Context } from 'hono';
 import type { ShareTokenRow } from '@slideless/db';
 import { overlayScriptTag } from './overlay.js';
 import { formsScriptTag } from './forms-runtime.js';
+import { topbarScriptTag } from './topbar.js';
 
 /**
  * The INJECTION SEAM (built Phase 4, live since Phase 5; multi-page with
- * PRDCT-1296, forms with ADR 022).
+ * PRDCT-1296, forms with ADR 022, the recipient bar with PRDCT-2281).
  *
- * Two injected runtimes ride it, with DIFFERENT navigation gates:
+ * Three injected runtimes ride it, with DIFFERENT navigation gates:
+ *
+ *  - The RECIPIENT TOP BAR (viewer/topbar.ts), for `show_bar` tokens (the
+ *    default): browser DOCUMENT navigations only, like the overlay — an
+ *    embed or a frame is bare, and so are the password gate and the error
+ *    shells, which never enter this seam. Since the switch defaults ON,
+ *    every default share link now leaves the byte-exact streaming path on
+ *    a browser navigation; the streaming injector keeps that O(window).
+ *    Its tag is FIRST in the plan so the root offset it sets is in place
+ *    when the overlay places its badge.
  *
  *  - The ANNOTATION OVERLAY (viewer/overlay.ts), for `can_annotate` tokens:
  *    browser DOCUMENT navigations only — entry and text/html sub-pages. A
@@ -58,7 +68,10 @@ export const fragmentCaptureTag = (): string =>
   `<script ${FRAGMENT_CAPTURE_MARKER}>window.__slidelessArrivalHash=location.hash||'';</script>`;
 
 export interface EntryTransformContext {
-  token: Pick<ShareTokenRow, 'id' | 'canAnnotate' | 'canSubmitForms' | 'createdAt' | 'expiresAt'>;
+  token: Pick<
+    ShareTokenRow,
+    'id' | 'canAnnotate' | 'canSubmitForms' | 'canDownload' | 'showBar' | 'createdAt' | 'expiresAt'
+  >;
   /** True when the caller asked for the raw authored HTML (?raw / ?format=html). */
   rawRequested: boolean;
   /** True for a browser top-level document navigation — see docNavigation(). */
@@ -69,6 +82,14 @@ export interface EntryTransformContext {
   version: number;
   /** The version's entry path — tells the overlay the root document's name. */
   entryPath: string;
+  /** The deck's title — what the recipient bar names (PRDCT-2281). */
+  deckTitle: string;
+  /**
+   * True when the resolved VERSION carries attachments
+   * (`presentation_versions.has_downloads`, PRDCT-2278). With the link's
+   * `canDownload` it decides whether the bar fetches the list at all.
+   */
+  versionHasDownloads: boolean;
   /**
    * Resolved badge slot for this link (token override ?? deck default), or
    * null = the overlay's own bottom-right default. One of the 8 slots: the
@@ -139,6 +160,15 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
 
   let body = '';
   let head = '';
+  // PRDCT-2281: the bar first, so its root offset precedes the overlay.
+  if (ctx.token.showBar && ctx.browserEntry) {
+    body += topbarScriptTag({
+      title: ctx.deckTitle,
+      version: ctx.version,
+      unlock: ctx.mintUnlockProof(),
+      downloads: ctx.token.canDownload && ctx.versionHasDownloads
+    });
+  }
   if (ctx.token.canAnnotate && ctx.browserEntry) {
     body += overlayScriptTag({
       version: ctx.version,

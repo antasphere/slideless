@@ -426,6 +426,10 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       frameEntry: frameNavigation(c),
       version: version.version,
       entryPath: version.entryPath,
+      // The recipient bar's content (PRDCT-2281): the deck's title and
+      // whether the version has anything to hand out.
+      deckTitle: deck.title,
+      versionHasDownloads: version.hasDownloads,
       // Badge slot resolution: per-link override → the deck's remembered
       // default (last explicit choice) → the overlay's own bottom-right.
       badgePosition: token.badgePosition ?? deck.annotationBadgePosition,

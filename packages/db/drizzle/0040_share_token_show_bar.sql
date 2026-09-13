@@ -1,0 +1,1 @@
+ALTER TABLE "share_tokens" ADD COLUMN "show_bar" boolean DEFAULT true NOT NULL;
