@@ -56,6 +56,8 @@ function shareOptionsOf(opts: {
   forms: boolean;
   /** Commander --no-download negation: true by default, false when passed (PRDCT-2278). */
   download: boolean;
+  /** Commander --no-bar negation: true by default, false when passed (PRDCT-2281). */
+  bar: boolean;
   badgePosition?: BadgePositionValue;
   expires?: string;
   password?: string;
@@ -70,6 +72,7 @@ function shareOptionsOf(opts: {
     canAnnotate: opts.annotator,
     canSubmitForms: opts.forms,
     canDownload: opts.download,
+    showBar: opts.bar,
     ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
     ...(opts.password ? { password: opts.password } : {})
@@ -88,6 +91,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
       '--no-download',
       "disallow downloading the version's attachments (its downloads/ folder) through this link"
     )
+    .option('--no-bar', 'hand out a bare deck: no recipient bar (title, version, downloads) over it')
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -110,6 +114,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           annotator: boolean;
           forms: boolean;
           download: boolean;
+          bar: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -144,7 +149,9 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             `${created.shareToken.versionMode}${created.shareToken.pinnedVersion ? ` v${created.shareToken.pinnedVersion}` : ''}` +
             `${created.shareToken.canAnnotate ? ', annotator' : ''}` +
             `${created.shareToken.hasPassword ? ', password' : ''}` +
-            `${created.shareToken.canDownload ? '' : ', no downloads'})\n` +
+            `${created.shareToken.canDownload ? '' : ', no downloads'}` +
+            // Strict false: a server from before the switch answers without the field.
+            `${created.shareToken.showBar === false ? ', no bar' : ''})\n` +
             '  The URL is shown once — copy it now.\n'
         );
         if (opts.embed || opts.placement !== undefined) {
@@ -198,6 +205,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--annotator', 'let recipients annotate', false)
     .option('--no-forms', "disallow submitting the deck's embedded forms through these links")
     .option('--no-download', "disallow downloading the version's attachments through these links")
+    .option('--no-bar', 'hand out bare decks: no recipient bar over them')
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -216,6 +224,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           annotator: boolean;
           forms: boolean;
           download: boolean;
+          bar: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
