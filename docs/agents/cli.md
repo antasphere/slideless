@@ -212,7 +212,9 @@ re-uploaded.
 `.slideless.json` (deck id + instance) and composes the same URL a push
 prints, with no key and no network call. `--json` prints
 `{ presentationId, baseUrl, url }` instead of opening. An unlinked folder is
-an error pointing at `push`.
+an error pointing at `push`, and a link file whose instance is not an
+`http(s)` URL is refused before anything reaches the opener (the file can
+arrive with a cloned folder; the opener would dispatch any scheme).
 
 **pull** downloads a version's manifest and streams every blob to disk —
 byte-identical to what was pushed — then writes/refreshes `.slideless.json`

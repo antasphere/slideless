@@ -278,6 +278,17 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           `No ${LINK_FILENAME} in ${rootDir} — push the folder once (\`slideless push\`) to link it to a deck.`
         );
       }
+      // The link file can arrive with a cloned folder, and the platform
+      // opener dispatches ANY scheme to its handler (javascript:, file:, a
+      // custom protocol). A deck's instance is always http(s); refuse the rest
+      // before it reaches the opener (the argv discipline in open.ts covers
+      // the shell, not the scheme).
+      if (!isHttpUrl(link.baseUrl)) {
+        throw new CliUsageError(
+          `${LINK_FILENAME} names ${JSON.stringify(link.baseUrl)} as the instance, which is not an ` +
+            'http(s) URL — refusing to open it. Fix the file or push the folder again.'
+        );
+      }
       const url = deckMasterUrl(link.baseUrl, link.presentationId);
       if (json) return printJson(io, { presentationId: link.presentationId, baseUrl: link.baseUrl, url });
       io.out.write(`${url}\n`);
@@ -560,6 +571,16 @@ async function setAnnotationStatus(
   const updated = await ctx.client.updateAnnotation(id, annotationId, { status });
   if (ctx.json) return printJson(io, updated);
   io.out.write(`Annotation ${updated.id} ${status === 'resolved' ? 'resolved' : 'reopened'}.\n`);
+}
+
+/** Whether a link file's instance is an http(s) origin the opener may be handed. */
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 /** `dev` is backendless: only the --json flag matters, never URL/key. */

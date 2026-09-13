@@ -62,6 +62,9 @@ export function shouldOpenAfterPush(input: {
   /** `--open` → true, `--no-open` → false, neither → undefined. */
   flag: boolean | undefined;
 }): boolean {
+  // `push` returns its JSON before it ever reaches this, so the `json` guard
+  // never fires from there today. It stays: a second layer for any future
+  // caller, and the matrix tests pin it on its own.
   if (input.json || !input.interactive) return false;
   if (input.flag !== undefined) return input.flag;
   return input.created;

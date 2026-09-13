@@ -233,6 +233,28 @@ describe('push answers with the master URL', () => {
     expect(h.opened).toEqual([]);
   });
 
+  it('a deck that embeds a form keeps url next to formsDetected in the JSON, on both branches', async () => {
+    // Created branch.
+    const dir = await makeDeckDir();
+    await writeFile(join(dir, 'index.html'), '<html><form data-slideless-form="signup"></form></html>');
+    const h = openingHarness(pushRoutes(false), true);
+    expect(await run(['push', dir, '--json', '--url', 'http://x', '--api-key', 'slk_k_s'], h.io)).toBe(0);
+    const created = JSON.parse(h.out()) as { url: string; formsDetected: string[] };
+    expect(created.url).toBe(MASTER);
+    expect(created.formsDetected).toEqual(['signup']);
+    // Existing-deck branch.
+    const h2 = openingHarness(pushRoutes(true), true);
+    expect(await run(['push', dir, '--json', '--url', 'http://x', '--api-key', 'slk_k_s'], h2.io)).toBe(0);
+    const pushed = JSON.parse(h2.out()) as {
+      url: string;
+      formsDetected: string[];
+      version: { version: number };
+    };
+    expect(pushed.url).toBe(MASTER);
+    expect(pushed.formsDetected).toEqual(['signup']);
+    expect(pushed.version.version).toBe(4);
+  });
+
   it('composes the URL from the resolved base URL, trailing slash or not', async () => {
     const dir = await makeDeckDir();
     const h = openingHarness(pushRoutes(false), false);
@@ -268,6 +290,31 @@ describe('slideless open', () => {
     expect(h.opened).toEqual([]);
   });
 
+  it("trims a trailing slash on the link file's base URL (read raw, never through the resolver)", async () => {
+    const dir = await makeDeckDir();
+    await writeLink(dir, { presentationId: DECK.id, baseUrl: 'https://slides.example.com/' });
+    const h = openingHarness([], false);
+    expect(await run(['open', dir], h.io)).toBe(0);
+    expect(h.out()).toBe(`https://slides.example.com/decks/${DECK.id}/present\n`);
+    expect(h.opened).toEqual([`https://slides.example.com/decks/${DECK.id}/present`]);
+  });
+
+  for (const base of ['javascript:alert(1)//', 'file:///etc', 'not a url', 'ftp://x']) {
+    it(`refuses a link file whose instance is ${JSON.stringify(base)} and opens nothing`, async () => {
+      const dir = await makeDeckDir();
+      await writeLink(dir, { presentationId: DECK.id, baseUrl: base });
+      const h = openingHarness([], true);
+      expect(await run(['open', dir], h.io)).toBe(1);
+      expect(h.err()).toContain('not an http(s) URL');
+      expect(h.out()).toBe('');
+      expect(h.opened).toEqual([]);
+      // --json refuses the same way: no URL is composed from it either.
+      const hj = openingHarness([], true);
+      expect(await run(['open', dir, '--json'], hj.io)).toBe(1);
+      expect(hj.out()).toBe('');
+    });
+  }
+
   it('an unlinked folder is a usage error pointing at push', async () => {
     const dir = await makeDeckDir();
     const h = openingHarness([], true);
@@ -275,5 +322,29 @@ describe('slideless open', () => {
     expect(h.err()).toContain('.slideless.json');
     expect(h.err()).toContain('slideless push');
     expect(h.opened).toEqual([]);
+  });
+});
+
+describe('slideless dev', () => {
+  it('opens the local preview through the shared opener, --no-open suppresses it', async () => {
+    const dir = await makeDeckDir();
+    const h = openingHarness([], true);
+    // `dev` serves until SIGINT; run it unawaited, wait for the open, then stop it.
+    const running = run(['dev', dir, '--port', '0'], h.io);
+    const deadline = Date.now() + 5000;
+    while (h.opened.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    process.emit('SIGINT');
+    expect(await running).toBe(0);
+    expect(h.opened).toHaveLength(1);
+    expect(h.opened[0]).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+    expect(h.out()).toContain(`Serving ${dir} at ${h.opened[0]}`);
+
+    const quiet = openingHarness([], true);
+    const runningQuiet = run(['dev', dir, '--port', '0', '--no-open'], quiet.io);
+    while (!quiet.out().includes('Serving') && Date.now() < deadline + 5000)
+      await new Promise((r) => setTimeout(r, 10));
+    process.emit('SIGINT');
+    expect(await runningQuiet).toBe(0);
+    expect(quiet.opened).toEqual([]);
   });
 });
