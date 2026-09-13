@@ -239,6 +239,20 @@ describe('what the guest is REFUSED (403 guest_forbidden — D2, capability of o
         )
       )
     );
+    // The duplicate (PRDCT-2279) is deck creation by another door: the same
+    // wall, before any deck lookup — a real id (the deck the guest may read)
+    // and an unknown one answer the same 403, session and key alike.
+    for (const id of [grantedDeck, '00000000-0000-4000-8000-000000000000']) {
+      await expectGuestForbidden(
+        await app.app.request(`/api/v1/presentations/${id}/duplicate`, json({}, { cookie: guestCookie }))
+      );
+      await expectGuestForbidden(
+        await app.app.request(
+          `/api/v1/presentations/${id}/duplicate`,
+          json({}, { authorization: `Bearer ${guestKey}` })
+        )
+      );
+    }
   });
 
   it('cannot touch the generic /files surface — reads INCLUDED (deck-content bypass)', async () => {

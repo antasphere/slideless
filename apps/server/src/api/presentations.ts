@@ -523,7 +523,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       resourceId: result.presentation.id,
       metadata: {
         sourceId: source.id,
-        sourceVersion: body.version ?? source.currentVersion,
+        // The version the transaction actually copied (re-read FOR SHARE), not
+        // the handler's earlier read: a push racing the copy must not mislabel it.
+        sourceVersion: result.sourceVersion,
         title: result.presentation.title,
         fileCount: result.version.fileCount
       }

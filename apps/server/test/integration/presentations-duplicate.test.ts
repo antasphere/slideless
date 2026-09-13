@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { auditLog, files, presentations } from '@slideless/db';
+import { auditLog, files, presentations, presentationVersions } from '@slideless/db';
 import {
   createDatabase,
   createTestApp,
@@ -39,6 +39,9 @@ const CSV = Buffer.from('quarter,revenue\nQ3,42\n');
 const PDF_V1 = Buffer.from('%PDF-1.4 annex v1');
 const PDF_V2 = Buffer.from('%PDF-1.4 annex v2');
 const NOTES = Buffer.from('# notes\n');
+
+/** A high surrogate without its low, or a low without its high: a string Postgres would not take as-is. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const entryOf = (path: string, bytes: Buffer, contentType: string) => ({
@@ -297,6 +300,89 @@ describe('what a duplicate is', () => {
     expect(res.status).toBe(400);
     expect((await readJson(res)).error.code).toBe('invalid_version');
     expect(await liveDecksCount()).toBe(decksBefore);
+  });
+
+  it('names the copy by code point: a 300-unit emoji title gets no lone surrogate', async () => {
+    // Verifier round 1: a unit-wise slice split a surrogate pair and Postgres
+    // stored U+FFFD. The title is legal on the wire (300 UTF-16 units).
+    const emoji = '😀'.repeat(150);
+    const reserve = await readJson(
+      await app.app.request('/api/v1/presentations/uploads', {
+        method: 'POST',
+        headers: { cookie: ownerCookie }
+      })
+    );
+    const commit = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json({ title: emoji, entryPath: 'index.html', manifest: MANIFEST_V1 }, { cookie: ownerCookie })
+    );
+    expect(commit.status).toBe(201);
+    const sourceId = (await readJson(commit)).presentation.id as string;
+    const res = await duplicate(sourceId, {}, { cookie: ownerCookie });
+    expect(res.status).toBe(201);
+    const title = (await readJson(res)).presentation.title as string;
+    expect(title.endsWith(' (copy)')).toBe(true);
+    expect(title.length).toBeLessThanOrEqual(300);
+    expect(LONE_SURROGATE.test(title)).toBe(false);
+    expect(title.includes('\uFFFD')).toBe(false);
+    expect(Array.from(title.slice(0, -' (copy)'.length)).every((c) => c === '😀')).toBe(true);
+  });
+
+  it('the audit row names the version the transaction copied, on the chosen-version path too', async () => {
+    const res = await duplicate(deckId, { version: 1, title: 'Audited copy' }, { cookie: ownerCookie });
+    expect(res.status).toBe(201);
+    const copyId = (await readJson(res)).presentation.id as string;
+    const [audit] = await app.db.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.action, 'presentation.duplicate'), eq(auditLog.resourceId, copyId)));
+    expect((audit!.metadata as { sourceVersion: number }).sourceVersion).toBe(1);
+  });
+
+  it('the copy’s version row keeps the source’s entry path and its forms flag', async () => {
+    // A forms deck whose entry is NOT the column default: the viewer serves
+    // the copy by version.entryPath and arms the forms runtime from
+    // version.hasForms, so a copy that lost either would not serve, or
+    // would drop submissions (verifier round 1, gaps M12 and M14).
+    const FORM_HTML = Buffer.from(
+      '<!doctype html><html><body><form data-slideless-form="rsvp"><input name="who"></form></body></html>'
+    );
+    await uploadAsset(FORM_HTML, 'text/html', 'deck.html');
+    const reserve = await readJson(
+      await app.app.request('/api/v1/presentations/uploads', {
+        method: 'POST',
+        headers: { cookie: ownerCookie }
+      })
+    );
+    const commit = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        { title: 'RSVP', entryPath: 'deck.html', manifest: [entryOf('deck.html', FORM_HTML, 'text/html')] },
+        { cookie: ownerCookie }
+      )
+    );
+    expect(commit.status).toBe(201);
+    const sourceId = (await readJson(commit)).presentation.id as string;
+    const res = await duplicate(sourceId, {}, { cookie: ownerCookie });
+    expect(res.status).toBe(201);
+    const { presentation: copy, version } = await readJson(res);
+    expect(copy.entryPath).toBe('deck.html');
+    expect(version.entryPath).toBe('deck.html');
+    const [sourceRow] = await app.db.db
+      .select({ hasForms: presentationVersions.hasForms, entryPath: presentationVersions.entryPath })
+      .from(presentationVersions)
+      .where(and(eq(presentationVersions.presentationId, sourceId), eq(presentationVersions.version, 1)));
+    const [copyRow] = await app.db.db
+      .select({ hasForms: presentationVersions.hasForms, entryPath: presentationVersions.entryPath })
+      .from(presentationVersions)
+      .where(and(eq(presentationVersions.presentationId, copy.id), eq(presentationVersions.version, 1)));
+    expect(sourceRow!.hasForms).toBe(true);
+    expect(copyRow).toEqual({ hasForms: true, entryPath: 'deck.html' });
+    const [deckRow] = await app.db.db
+      .select({ hasForms: presentations.hasForms })
+      .from(presentations)
+      .where(eq(presentations.id, copy.id));
+    expect(deckRow!.hasForms).toBe(true);
   });
 
   it('a copy of a copy points at the copy, not the original', async () => {

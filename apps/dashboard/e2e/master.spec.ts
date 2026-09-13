@@ -110,7 +110,8 @@ async function openTitleMenu(page: Page): Promise<void> {
 }
 
 test('master page: full-page deck under the bar — rename, version history with files, downloads, share, duplicate, delete', async ({
-  page
+  page,
+  browser
 }) => {
   // Copy-to-clipboard is part of the share flow; the browser must allow it.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -234,6 +235,26 @@ test('master page: full-page deck under the bar — rename, version history with
     await created.getByRole('button', { name: 'Done' }).click();
 
     await expect(sheet.getByRole('cell', { name: 'board-alice' })).toBeVisible();
+
+    // A second link with downloads switched OFF: the switch must reach the
+    // server (verifier round 1, gap M9), and the row says so.
+    await sheet.getByRole('button', { name: 'New share link' }).click();
+    const second = page.getByRole('dialog').filter({ hasText: 'Create a share link' });
+    await second.getByRole('textbox', { name: 'Recipient' }).fill('board-bob-no-files');
+    await second.getByRole('checkbox', { name: /Allow downloads/ }).uncheck();
+    await second.getByRole('button', { name: 'Create link' }).click();
+    const createdSecond = page.getByRole('dialog').filter({ hasText: 'Share link created' });
+    await createdSecond.getByRole('button', { name: 'Done' }).click();
+    await expect(sheet.getByRole('cell', { name: 'board-bob-no-files' })).toBeVisible();
+    await expect(sheet.getByRole('row').filter({ hasText: 'board-bob-no-files' })).toContainText(
+      'Downloads off'
+    );
+    const tokens = await (await page.request.get(`/api/v1/presentations/${deckId}/tokens`)).json();
+    const bob = tokens.shareTokens.find((t: { name: string }) => t.name === 'board-bob-no-files');
+    expect(bob.canDownload).toBe(false);
+    const alice = tokens.shareTokens.find((t: { name: string }) => t.name === 'board-alice');
+    expect(alice.canDownload).toBe(true);
+
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
 
@@ -268,6 +289,20 @@ test('master page: full-page deck under the bar — rename, version history with
     await expect(page).toHaveURL(/\/decks$/);
     await expect(page.getByRole('heading', { name: 'Decks', exact: true })).toBeVisible();
     expect((await page.request.get(`/api/v1/presentations/${copyId}`)).status()).toBe(404);
+  });
+
+  await test.step('signed out, the master URL bounces to the login with the deep link kept', async () => {
+    // The new route group carries the app shell's guard (verifier round 1,
+    // gap M16): no session, no page — the login, with `next` pointing back.
+    const context = await browser.newContext();
+    const visitor = await context.newPage();
+    await visitor.goto(deckMasterPath(deckId));
+    await expect(visitor).toHaveURL(/\/login\?next=/);
+    expect(decodeURIComponent(new URL(visitor.url()).searchParams.get('next') ?? '')).toBe(
+      deckMasterPath(deckId)
+    );
+    await expect(visitor.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+    await context.close();
   });
 
   await test.step('clean up: delete the original via the API', async () => {

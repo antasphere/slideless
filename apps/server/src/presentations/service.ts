@@ -49,7 +49,9 @@ export type DuplicateFailure =
   | { code: 'no_versions' }
   | { code: 'invalid_version'; version: number }
   | { code: 'missing_blobs'; missing: string[] };
-export type DuplicateResult = CommitSuccess | { ok: false; failure: DuplicateFailure };
+/** The success carries the source version the copy was actually made from (read in-transaction). */
+export type DuplicateResult =
+  (CommitSuccess & { sourceVersion: number }) | { ok: false; failure: DuplicateFailure };
 
 /**
  * The presentation domain (ADR 011): decks with append-only immutable
@@ -509,7 +511,7 @@ export class PresentationService {
           createdByRole: 'owner'
         })
         .returning();
-      return { ok: true, presentation: presentation!, version: version! };
+      return { ok: true, presentation: presentation!, version: version!, sourceVersion: wanted };
     });
   }
 
@@ -777,10 +779,23 @@ export class PresentationService {
   }
 }
 
-/** The title a copy gets when the caller names none: the source's, suffixed, within the 300-char cap. */
+/** The wire cap on a deck title (`plainText(1, 300)`), in UTF-16 code units like zod's `max`. */
+const TITLE_MAX_UNITS = 300;
+
+/**
+ * The title a copy gets when the caller names none: the source's, suffixed,
+ * within the cap. The cut is by CODE POINT, never by code unit: a title made
+ * of astral characters (emoji) can be legal at 300 units, and a unit-wise
+ * slice would split a surrogate pair — the lone surrogate then lands in
+ * Postgres as U+FFFD (verifier round 1). Code points are dropped from the
+ * end until the suffixed title fits the unit cap.
+ */
 export function duplicateTitle(sourceTitle: string): string {
   const suffix = ' (copy)';
-  return `${sourceTitle.slice(0, 300 - suffix.length)}${suffix}`;
+  const points = Array.from(sourceTitle);
+  let keep = points.length;
+  while (keep > 0 && points.slice(0, keep).join('').length + suffix.length > TITLE_MAX_UNITS) keep -= 1;
+  return `${points.slice(0, keep).join('')}${suffix}`;
 }
 
 /**
