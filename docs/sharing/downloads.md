@@ -15,11 +15,11 @@ A deck can carry files that travel **with** it: a spreadsheet next to the report
 
 On a share link, the attachments are reachable relative to the deck's own URL:
 
-| URL                                 | What it serves                                                                                                                                         |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/v/SECRET/downloads/<name>`        | One attachment by its name (its path relative to `downloads/`), with the content type declared at push, `ETag` and `Range` like an asset               |
-| `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression                         |
-| `/api/v1/viewer/SECRET/attachments` | The list of the version's files, for a page or a script that offers them: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }` |
+| URL                                 | What it serves                                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/v/SECRET/downloads/<name>`        | One attachment by its name (its path relative to `downloads/`), with the content type declared at push, `ETag` and `Range` like an asset                 |
+| `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression                           |
+| `/api/v1/viewer/SECRET/attachments` | The list the recipient bar renders, readable by any script on the page too: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }` |
 
 The three are behind the same rules as the deck itself: a revoked link answers 403, an expired one 410, an unknown one 404, and a password-protected link takes the password the same way the deck does (the unlock cookie in a browser, the `x-viewer-password` header for a script). Nothing here sets or reads a session; the link secret is the whole credential.
 
@@ -52,15 +52,13 @@ Each download is also recorded as an event with the link, the version served, th
 
 ## What the recipient sees
 
-<!-- PRDCT-2281 (lane D): the recipient bar. -->
-
-A share link opens with a slim **bar** over the deck: the deck's title, the version the link resolves to (`v3`), a small Slideless mark, and, when the version carries attachments and the link allows downloads, a **Download** button. The button opens a menu listing each file with its size, one link per file, and **Download all** for the whole set as a zip. The deck itself is pushed down by the bar's height, never covered; a deck sized to the viewport scrolls by that height. The bar collapses to a thin handle at the top of the page (the arrow button, or Esc while the bar has focus) and stays collapsed on that link for the rest of the browser tab; the handle brings it back.
+A share link opens with a slim **bar** over the deck: the deck's title, the version the link resolves to (`v3`), a small Slideless mark, and, when the version carries attachments and the link allows downloads, a **Download** button. The button opens a menu listing each file with its size, one link per file, and **Download all** for the whole set as a zip. The deck itself is pushed down by the bar's height, never covered; a deck sized to the viewport scrolls by that height. The bar collapses to a thin handle at the top of the page (the **Hide this bar** button, or Esc while the bar has focus) and stays collapsed on that link for the rest of the browser tab; the handle, **Show the presentation bar**, brings it back.
 
 The bar is part of the viewer's isolation, not an exception to it: it runs inside the same sandbox as the deck, holds nothing the deck could not already read (the link secret is in the page's own address), calls only the attachments list above, relative to the deck page and without cookies, and mounts in a shadow root so the deck's styles cannot restyle it and its styles cannot reach the deck. Clicks and keys on the bar stop at the bar: a deck script listening on the document in the usual way (the bubble phase) never sees them; one listening in the capture phase still does, as it does for the annotation layer.
 
 Where it never appears: inside an [embed](embedding.md) or any iframe (the deck stays bare there), on the password gate, and on the error pages. With downloads off, the bar shows the title and the version without a Download button.
 
-Two shapes of deck defeat the bar, by the deck's own choice: a body fixed to the viewport (`position: fixed; inset: 0`) ignores the push-down and sits under the bar, and a script that sets the bar's own loaded flag before the page ends suppresses it. Neither weakens anything: the bar was already the deck's to cover or hide from inside its sandbox.
+Two shapes of deck defeat the bar, by the deck's own choice: a body fixed to the viewport (`position: fixed; inset: 0`) ignores the push-down and sits under the bar, and a script that sets the bar's own loaded flag (`window.__slidelessTopbarLoaded = true`) before the page ends suppresses it. Neither weakens anything: the bar was already the deck's to cover or hide from inside its sandbox.
 
 Every share link carries `showBar`, **on by default**. Switch it off per link to hand out a bare deck, nothing but the presentation itself:
 

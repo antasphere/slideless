@@ -50,8 +50,8 @@ manifest and its attachments) and over MCP (`slideless_list_versions`, `slideles
 
 ## What a recipient sees
 
-A recipient sees the version their link resolves to, and nothing about the others: not the history,
-not the version count, not another version's files. The version is served whole, its attachments
+A recipient sees the version their link resolves to, named in the bar over the deck (`v3`), and
+nothing about the others: not the history, not the version count, not another version's files. The version is served whole, its attachments
 included when the link allows downloads. A recipient with an annotator link leaves notes on the
 version they saw, and the note is stamped with that version.
 

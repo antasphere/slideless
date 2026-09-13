@@ -1,9 +1,10 @@
 # Attachments
 
 Files can travel with a deck: the spreadsheet behind a chart, the PDF of the slides, the raw data.
-Put them in a `downloads/` folder at the root of the deck and push. Every file in that folder is an
-attachment of the version it was pushed with, downloadable from a share link one by one or as a zip,
-unless you switch downloads off for that link.
+Put them in a `downloads/` folder at the root of the deck and push. Every file in that folder is an attachment of the version it was pushed with, offered to the
+recipient by the bar over the share link, one by one or as a zip. Where the bar is absent (a link
+made with the bar off, an embed), the deck links them itself; where downloads are switched off for
+the link, nothing offers them.
 
 ## The convention
 
@@ -43,12 +44,12 @@ version, with each version's files.
 - **On the deck's page**, the bar's **Download files** menu lists the shown version's files with
   **All files (zip)** first, and **Version history** lists each version's **Files** with the same
   zip link. That is the owner's side, behind the sign-in.
-- **On a share link**, the files of the version the link resolves to are served one by one at
-  `/v/<secret>/downloads/<name>` and all together at `/v/<secret>/downloads.zip`. The link shows the
-  deck as it was pushed and nothing else, so a deck that hands out its files links them itself,
-  relative to its own URL: `downloads/figures.csv` for one file, `downloads.zip` for the set. A deck
-  pushed with a `downloads/` folder and no such link hands out nothing a recipient can click, and
-  nothing on the owner's side says so: add the links and push again. Every download counts on the
+- **On a share link**, the bar over the deck carries a **Download** button when the version has
+  files: its menu lists each file with its size, one link per file, and **Download all** for the
+  zip. The files are served one by one at `/v/<secret>/downloads/<name>` and all together at
+  `/v/<secret>/downloads.zip`, relative to the deck's own URL, so a deck may also link them itself
+  (`downloads/figures.csv`, `downloads.zip`); it must, when the link was made with the bar off or
+  the deck is embedded on a site, since the bar never mounts there. Every download counts on the
   link, next to its views.
 - **On the API**, `GET /api/v1/presentations/{id}/versions/{n}` lists a version's attachments, and
   the same version's files download from `/versions/{n}/downloads/{name}` and
@@ -58,9 +59,9 @@ version, with each version's files.
 
 Every link carries **Allow downloads**, on by default: the files were put in `downloads/` to be
 handed out. Untick it on the form, or pass `--no-download` to `slideless share`, when a recipient
-should see the deck but not take its files. With downloads off, the deck still opens; the file URLs
-answer 404 and the list of files is empty, so a link holder learns nothing about a folder you chose
-not to hand out. The links list shows `Downloads off` on such a link, and `slideless tokens` prints
+should see the deck but not take its files. With downloads off, the deck still opens and the bar shows the title and the version without a
+**Download** button; the file URLs answer 404 and the list of files is empty, so a link holder learns
+nothing about a folder you chose not to hand out. The links list shows `Downloads off` on such a link, and `slideless tokens` prints
 `no downloads` in its downloads column.
 
 ## The zip
