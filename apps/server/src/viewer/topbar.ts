@@ -36,12 +36,20 @@
  *    Firefox opaque-origin residual, ADR 012), authenticated by the secret
  *    it reads from `location.pathname` plus the unlock proof — never a
  *    cookie, never a session. The download links point at the two
- *    attachment routes, served `attachment` + `nosniff` by the viewer.
+ *    attachment routes, served `attachment` + `nosniff` by the viewer, and
+ *    are ABSOLUTE, resolved against `location.href` like the list call: a
+ *    deck's `<base href>` would otherwise send the link secret to the
+ *    base's host (round 2, F3).
  *  - It mounts in a SHADOW ROOT: deck CSS cannot restyle the bar and the
  *    bar's stylesheet cannot reach the deck. The root is `open` so the
  *    browser suite can look inside; the isolation wanted is CSS-level, and
  *    a closed root would be no security boundary against deck JS anyway
- *    (same document, same origin).
+ *    (same document, same origin). The HOST element itself lives in the
+ *    deck's tree, where a `:host {}` rule loses to ANY outer author rule
+ *    (verifier round 2, F2: `body > div { position: relative }` moved the
+ *    bar to the end of the document), so the host's layout-critical
+ *    declarations are set INLINE with `!important` — the one declaration
+ *    level an outer stylesheet cannot beat, `!important` included.
  *  - The deck is PUSHED DOWN, never covered: the root element gets a top
  *    margin the height of the bar, a height reduced by the same amount and
  *    vertical scrolling, as `!important` inline styles (the strongest
@@ -50,7 +58,16 @@
  *    viewport units cannot shrink (vh resolves against the window, not
  *    against any box) and scrolls by the bar's height instead of losing
  *    its bottom. Collapsing the bar to its handle gives the deck its
- *    viewport back. The one shape this cannot reach is a `position:
+ *    viewport back. One mixed shape needs a second move (round 2, F1): a
+ *    body that is BOTH a `100%` box and `overflow: hidden` holding a
+ *    `100vh` child clips that child's last bar-height before the root ever
+ *    gets to scroll. After mount the runtime measures the body: when an
+ *    overflow-hidden body overflows at all, the root's reduction is what
+ *    made it clip, so the root gets its full `100%` height back — the deck
+ *    keeps exactly its own geometry, shifted down, and the page scrolls by
+ *    the bar's height. A translate-driven slide strip (a body hiding a lot
+ *    on purpose) gets the same treatment and loses nothing: its box is the
+ *    size it always was. The one shape this cannot reach is a `position:
  *    fixed; inset: 0` body, which ignores the root's margin by design.
  *  - The overlay follows the bar through ONE custom property on the root,
  *    `--slideless-topbar` (the bar's current height): its top badge slots
@@ -126,8 +143,10 @@ var OFFSET_PROP = '${TOPBAR_OFFSET_PROPERTY}';
 function encodePath(p) {
   return p.split('/').map(function (s) { return encodeURIComponent(s); }).join('/');
 }
-function fileUrl(name) { return '/v/' + rawSecret + '/downloads/' + encodePath(name); }
-function zipUrl() { return '/v/' + rawSecret + '/downloads.zip'; }
+// Absolute, against the page's own address: never a relative href, which a
+// deck's <base href> would resolve elsewhere, secret included.
+function fileUrl(name) { return new URL('/v/' + rawSecret + '/downloads/' + encodePath(name), location.href).toString(); }
+function zipUrl() { return new URL('/v/' + rawSecret + '/downloads.zip', location.href).toString(); }
 function fmtSize(n) {
   if (typeof n !== 'number' || !(n >= 0)) return '';
   if (n < 1024) return n + ' B';
@@ -244,6 +263,17 @@ function el(tag, cls, text) {
 // ---- Build the DOM (in the shadow root) ---------------------------------
 var host = el('div');
 host.id = '__slideless_topbar';
+// The host's layout, INLINE and !important: it is the deck tree's element,
+// and a :host rule loses to any outer author declaration.
+function pinHost(height) {
+  var pinned = {
+    position: 'fixed', top: '0px', left: '0px', right: '0px', bottom: 'auto',
+    width: 'auto', height: height + 'px', margin: '0px', padding: '0px', border: '0px none',
+    transform: 'none', display: 'block', visibility: 'visible', opacity: '1',
+    'z-index': '2147483001', 'pointer-events': 'auto', overflow: 'visible', 'box-sizing': 'border-box'
+  };
+  for (var k in pinned) host.style.setProperty(k, pinned[k], 'important');
+}
 var shadow = host.attachShadow({ mode: 'open' });
 var style = doc.createElement('style');
 style.textContent = css;
@@ -318,10 +348,25 @@ function applyLayout() {
   root.style.setProperty('overflow-y', push ? 'auto' : '', push ? 'important' : '');
   root.style.setProperty('scroll-padding-top', push + 'px', 'important');
   root.style.setProperty(OFFSET_PROP, push + 'px');
+  pinHost(h);
   if (collapsed) host.setAttribute('data-collapsed', '');
   else host.removeAttribute('data-collapsed');
   dlBtn.setAttribute('aria-expanded', 'false');
   dl.removeAttribute('data-open');
+  if (push) fitBody(root);
+}
+// A body that is a 100% box AND overflow-hidden clips whatever the root's
+// reduction pushed past it (a 100vh child, typically). Give the root its
+// full height back: the body is then the size it always was, shifted down,
+// and the page scrolls by the bar's height instead of hiding the strip.
+function fitBody(root) {
+  var b = doc.body;
+  if (!b) return;
+  try {
+    var cs = getComputedStyle(b);
+    var hidden = cs.overflowY === 'hidden' || cs.overflowY === 'clip';
+    if (hidden && b.scrollHeight > b.clientHeight) root.style.setProperty('height', '100%', 'important');
+  } catch (e) {}
 }
 function setCollapsed(next, remember) {
   collapsed = !!next;

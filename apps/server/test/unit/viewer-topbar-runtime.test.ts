@@ -30,6 +30,7 @@ interface FakeEl {
   style: {
     props: Map<string, string>;
     setProperty: (k: string, v: string, p?: string) => void;
+    removeProperty: (k: string) => void;
     display: string;
   };
   shadowRoot: FakeRoot | null;
@@ -71,6 +72,9 @@ function makeEl(tag: string, shadowRoots: FakeRoot[]): FakeEl {
       display: '',
       setProperty(k, v, p) {
         this.props.set(k, `${v}${p ? ` !${p}` : ''}`);
+      },
+      removeProperty(k) {
+        this.props.delete(k);
       }
     },
     shadowRoot: null,
@@ -134,7 +138,9 @@ interface Run {
 /** Execute the injected tag in a fake window; `top` decides the browsing context. */
 function run(
   cfg: { title: string; version: number; unlock: string | null; downloads: boolean },
-  opts: { top: boolean; tag?: string } = { top: true }
+  opts: { top: boolean; tag?: string; attachments?: Array<{ name: string; sizeBytes: number }> } = {
+    top: true
+  }
 ): Run {
   const tag = opts.tag ?? topbarScriptTag(cfg);
   const src = /<script[^>]*>([\s\S]*)<\/script>/.exec(tag)?.[1];
@@ -168,8 +174,13 @@ function run(
     name: '',
     fetch: (url: string, init: Record<string, unknown>) => {
       fetches.push({ url, init });
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: 1, attachments: [] }) });
-    }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ version: 1, attachments: opts.attachments ?? [] })
+      });
+    },
+    // No layout in a vm: the body never reads as clipped.
+    getComputedStyle: () => ({ overflowY: 'visible' })
   };
   // The sandboxed opaque origin: every storage access throws (ADR 012).
   Object.defineProperty(win, 'sessionStorage', {
@@ -229,6 +240,37 @@ describe('the runtime, executed', () => {
     const r = run({ ...CFG, downloads: false });
     expect(r.win['__slidelessTopbarLoaded']).toBe(true);
     expect(r.fetches).toHaveLength(0);
+  });
+
+  it('pins the host layout inline and important: an outer deck rule cannot move or hide it', () => {
+    const r = run(CFG);
+    const host = r.body.children[0]!;
+    // The one declaration level an outer stylesheet cannot beat (verifier round 2, F2).
+    for (const [k, v] of [
+      ['position', 'fixed'],
+      ['top', '0px'],
+      ['left', '0px'],
+      ['right', '0px'],
+      ['height', `${TOPBAR_HEIGHT_PX}px`],
+      ['display', 'block'],
+      ['transform', 'none'],
+      ['z-index', '2147483001']
+    ]) {
+      expect(host.style.props.get(k!), k).toBe(`${v} !important`);
+    }
+  });
+
+  it('builds absolute download links against the page, so a deck base href cannot redirect them', async () => {
+    const r = run(CFG, { top: true, attachments: [{ name: 'sub dir/an&nex #1.pdf', sizeBytes: 12 }] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const menu = r.shadowRoots[0]!.children.find((c) => c.className === 'bar')!.children.find(
+      (c) => c.className === 'dl'
+    )!.children[1]!;
+    const hrefs = menu.children.map((a) => a.href);
+    expect(hrefs).toEqual([
+      'http://decks.test/v/SECRET123/downloads/sub%20dir/an%26nex%20%231.pdf',
+      'http://decks.test/v/SECRET123/downloads.zip'
+    ]);
   });
 
   it('survives the sandbox: storage throws and the bar still mounts, expanded', () => {

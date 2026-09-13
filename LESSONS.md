@@ -1067,3 +1067,18 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
   link and keep their own marker assertion on a default link. When adding a fourth runtime, read
   those pins first: the stream path is the BARE link's, and the streaming injector is what keeps
   a default link O(window) rather than O(document).
+- **A `:host {}` rule protects nothing on the host itself.** The shadow root shields the
+  bar's inside, but the host element lives in the deck's tree, and in the cascade a
+  declaration from the shadow context (`:host`) loses to ANY outer author declaration, whatever
+  its specificity: a deck's `body > div { position: relative }` turned the fixed bar into a
+  700 px block at the end of the document (verifier round 2). The layout-critical declarations
+  of an injected host are set inline with `!important`, the one level an outer stylesheet
+  cannot beat. Same for any future injected host.
+- **`overflow-y: auto` on the root does not reach content a `100%`-and-`overflow: hidden` body
+  clips first.** A body sized to the root and hiding overflow becomes a clipping box the
+  bar's height short of a `100vh` child, and no user scroll reaches the strip. The runtime
+  measures the body after mount and, when an overflow-hidden body overflows, gives the root
+  its full height back: the body is then the size it always was, shifted down, and the page
+  scrolls by the bar's height. Forcing the body to scroll instead (the first attempt) failed
+  on any deck with a margin: its own overflow hid the bar's, and a threshold on the excess is
+  a guess about the deck.

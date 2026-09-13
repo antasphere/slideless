@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { sql } from 'drizzle-orm';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
 import { OVERLAY_MARKER } from '../../src/viewer/overlay.js';
 import { TOPBAR_MARKER } from '../../src/viewer/topbar.js';
@@ -165,6 +166,19 @@ describe('showBar, the per-link switch', () => {
     expect(byId.get(off.shareToken.id)).toBe(false);
   });
 
+  it('the column itself defaults to true: a row written without it reads on (verifier round 2, F6)', async () => {
+    // The API always sends the schema default, so only a raw insert exercises
+    // the migration's DEFAULT — the value every pre-existing link received.
+    const inserted = await app.db.db.execute(sql`
+      INSERT INTO share_tokens (workspace_id, presentation_id, name, token_hash)
+      SELECT workspace_id, id, 'raw insert', 'raw-insert-hash-' || gen_random_uuid()::text
+      FROM presentations WHERE id = ${deckId}
+      RETURNING show_bar, can_download`);
+    const row = (inserted.rows as Array<{ show_bar: boolean; can_download: boolean }>)[0];
+    expect(row?.show_bar).toBe(true);
+    expect(row?.can_download).toBe(true);
+  });
+
   it('flips on a PATCH and is recorded on the create audit row', async () => {
     const created = await createToken(deckId, { name: 'flip' });
     const patched = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${created.shareToken.id}`, {
@@ -238,6 +252,16 @@ describe('the bar rides top-level document navigations', () => {
     expect(entry.headers.get('etag')).toBe(`"${shaOf(HTML)}"`);
     const sub = await get(`/v/${secret}/pages/two.html`, FRAMED);
     expect(Buffer.from(await sub.arrayBuffer()).equals(HTML_PAGE2)).toBe(true);
+  });
+
+  it('the other sub-resource destinations stay byte-exact too: embed, object, empty (verifier round 2, F5)', async () => {
+    const { secret } = await createToken(deckId, { name: 'sub-resources' });
+    for (const dest of ['embed', 'object', 'empty']) {
+      const res = await get(`/v/${secret}/`, { accept: 'text/html', 'sec-fetch-dest': dest });
+      expect(res.status, dest).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer()).equals(HTML), dest).toBe(true);
+      expect(res.headers.get('etag'), dest).toBe(`"${shaOf(HTML)}"`);
+    }
   });
 
   it('?raw, agent fetches and agent password unlocks stay byte-exact', async () => {
