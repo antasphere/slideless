@@ -26,7 +26,9 @@ const PDF = '%PDF-1.4 annex for the e2e spec';
 /** A deck sized to the viewport, that advances a counter on ANY document click, and tries to restyle every button red. */
 const INDEX_HTML = [
   '<!doctype html><html><head><meta charset="utf-8"><title>Topbar E2E Deck</title>',
-  '<style>html,body{margin:0}#slide{height:100vh;background:#dfe7f5}button{background:#ff0000 !important;color:#ff0000 !important}</style>',
+  // h1 margin 0: a default heading margin collapses through the slide and
+  // the body, and would move the slide's top edge on its own.
+  '<style>html,body{margin:0}h1{margin:0}#slide{height:100vh;background:#dfe7f5}button{background:#ff0000 !important;color:#ff0000 !important}</style>',
   '</head><body>',
   '<section id="slide"><h1 id="marker">Quarterly review</h1><p><a id="to-page2" href="pages/two.html">Open page two</a></p></section>',
   '<div id="counter">0</div>',
