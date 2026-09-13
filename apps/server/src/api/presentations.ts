@@ -29,11 +29,20 @@ import {
   shareTokenViewsListRoute,
   uploadSessionCommitRoute,
   uploadSessionCreateRoute,
+  versionAttachmentDownloadRoute,
+  versionAttachmentsZipRoute,
   versionCommitRoute,
   versionGetRoute,
   versionsListRoute
 } from '@slideless/contract/routes';
-import { AGENT_DOC_PATH, PREVIEW_SHARE_TOKEN_NAME, type ManifestEntry } from '@slideless/contract';
+import {
+  AGENT_DOC_PATH,
+  attachmentPathOf,
+  attachmentsOf,
+  isTraversalSafeAssetPath,
+  PREVIEW_SHARE_TOKEN_NAME,
+  type ManifestEntry
+} from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
@@ -42,9 +51,11 @@ import type { EmailDriver } from '../email/driver.js';
 import { buildShareEmail } from '../email/templates.js';
 import type { FileService } from '../files/service.js';
 import { FileTooLargeError } from '../files/service.js';
+import { encodeContentDisposition } from '../files/http.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
 import { manifestHasForms } from '../forms/detect.js';
+import { attachmentsZipFilename, serveAttachmentsZip } from '../presentations/attachments.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import {
   buildViewerUrl,
@@ -78,6 +89,7 @@ const presentationToWire = (p: PresentationRow) => ({
   currentVersion: p.currentVersion,
   entryPath: p.entryPath,
   hasAgentDoc: p.hasAgentDoc,
+  hasDownloads: p.hasDownloads,
   ownerUserId: p.ownerUserId,
   remixedFrom: p.remixedFrom,
   // Viewer entry loads recorded by recordEntryView (dashboard preview
@@ -94,6 +106,7 @@ const versionToWire = (v: Omit<PresentationVersionRow, 'manifest'>) => ({
   sizeBytes: v.sizeBytes,
   fileCount: v.fileCount,
   hasAgentDoc: v.hasAgentDoc,
+  hasDownloads: v.hasDownloads,
   createdBy: v.createdBy,
   createdByRole: v.createdByRole,
   createdAt: v.createdAt.toISOString()
@@ -475,7 +488,89 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     }
     const row = await service.getVersion(principal.workspaceId, id, version);
     if (!row) return c.json(err('not_found', 'Version not found'), 404);
-    return c.json({ ...versionToWire(row), manifest: row.manifest as ManifestEntry[] }, 200);
+    const manifest = row.manifest as ManifestEntry[];
+    // The attachments are DERIVED here (PRDCT-2278): the `downloads/`
+    // convention has one implementation, and no client re-derives it.
+    return c.json({ ...versionToWire(row), manifest, attachments: attachmentsOf(manifest) }, 200);
+  });
+
+  // ── Attachments, owner side (PRDCT-2278) ───────────────────────────────────
+  // The master page's version history: one version's `downloads/` folder as
+  // a streamed zip, or one file of it by name. canReadDeck like every deck
+  // read (404, never 403 — ADR 013; guests keep their per-deck read as on
+  // the asset route), `attachment` + `nosniff` always (user content never
+  // renders on the app origin). The two literal siblings (`downloads.zip`,
+  // `downloads/{name}`) register before nothing else contends for them.
+
+  /** Deck + version + attachments, or the 404 to answer (one shape for both routes). */
+  const versionForAttachments = async (
+    c: HonoContext,
+    id: string,
+    version: number
+  ): Promise<
+    | { deck: PresentationRow; row: PresentationVersionRow; manifest: ManifestEntry[] }
+    | { status: 404; body: ReturnType<typeof err> }
+  > => {
+    const principal = c.get('principal')!;
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return { status: 404, body: err('not_found', 'Presentation not found') };
+    }
+    const row = await service.getVersion(principal.workspaceId, id, version);
+    if (!row) return { status: 404, body: err('not_found', 'Version not found') };
+    return { deck, row, manifest: row.manifest as ManifestEntry[] };
+  };
+
+  api.openapi(versionAttachmentsZipRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, version } = c.req.valid('param');
+    const loaded = await versionForAttachments(c, id, version);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+    const attachments = attachmentsOf(loaded.manifest);
+    if (attachments.length === 0) {
+      return c.json(err('no_attachments', 'This version carries no attachments'), 404);
+    }
+    return serveAttachmentsZip(c, {
+      storage,
+      logger,
+      workspaceId: principal.workspaceId,
+      attachments,
+      filename: attachmentsZipFilename(loaded.deck.title, loaded.row.version),
+      mtime: loaded.row.createdAt,
+      headOnly: c.req.method === 'HEAD'
+    });
+  });
+
+  api.openapi(versionAttachmentDownloadRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, version, name } = c.req.valid('param');
+    const loaded = await versionForAttachments(c, id, version);
+    if ('status' in loaded) return c.json(loaded.body, loaded.status);
+    // The decoded name (a nested name arrived percent-encoded) must be a
+    // traversal-safe relative path; the lookup is then an EXACT manifest
+    // match on `downloads/<name>` — there is no filesystem underneath.
+    if (!isTraversalSafeAssetPath(name)) {
+      return c.json(err('not_found', 'Attachment not found'), 404);
+    }
+    const entry = loaded.manifest.find((e) => e.path === attachmentPathOf(name));
+    if (!entry) return c.json(err('not_found', 'Attachment not found'), 404);
+    const fileRow = await fileService.getBySha(principal.workspaceId, entry.sha256);
+    if (!fileRow) return c.json(err('not_found', 'Asset content not available'), 404);
+    const basename = name.split('/').pop() ?? name;
+    return serveBlob(c, {
+      storage,
+      logger,
+      workspaceId: principal.workspaceId,
+      sha256: entry.sha256,
+      sizeBytes: fileRow.sizeBytes,
+      contentType: entry.contentType,
+      filename: basename,
+      headOnly: c.req.method === 'HEAD',
+      // FORCED attachment (PRDCT-2278): an attachment is handed out, never
+      // shown — even a type the safe-serving policy would render inline
+      // (a PDF, an image) downloads here. nosniff rides serveBlob.
+      contentDisposition: encodeContentDisposition('attachment', basename)
+    });
   });
 
   api.openapi(assetDownloadRoute, async (c) => {
@@ -647,6 +742,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       pinnedVersion,
       canAnnotate: body.canAnnotate,
       canSubmitForms: body.canSubmitForms,
+      canDownload: body.canDownload,
       badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
@@ -669,6 +765,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         versionMode: row.pinnedVersion === null ? 'latest' : 'pinned',
         pinnedVersion: row.pinnedVersion,
         canAnnotate: row.canAnnotate,
+        canDownload: row.canDownload,
         badgePosition: row.badgePosition,
         hasPassword: row.passwordHash !== null,
         expiresAt: row.expiresAt?.toISOString() ?? null
@@ -727,6 +824,11 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // Owner previews must never create respondent rows — matching the
       // preview exclusion from view stats (and canAnnotate above).
       canSubmitForms: false,
+      // Downloads ON: the preview shows what a default link shows (the
+      // recipient bar's download button included). Preview downloads are
+      // never counted — the viewer keys the exclusion on `purpose`, like
+      // views (PRDCT-2278).
+      canDownload: true,
       badgePosition: null, // no overlay on previews — nothing to place
       expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS),
       passwordHash: null
@@ -782,6 +884,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (patch.name !== undefined) set.name = patch.name;
     if (patch.canAnnotate !== undefined) set.canAnnotate = patch.canAnnotate;
     if (patch.canSubmitForms !== undefined) set.canSubmitForms = patch.canSubmitForms;
+    if (patch.canDownload !== undefined) set.canDownload = patch.canDownload;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
       // Explicit slot → new deck default (explicit null just falls back),

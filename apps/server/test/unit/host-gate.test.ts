@@ -36,6 +36,17 @@ describe('hostGate — the viewer hostname', () => {
     expect((await on(VIEWER, '/v/secret123', { method: 'POST' })).status).toBe(200);
   });
 
+  it('serves the attachment routes of a deck and the token-authed attachments list (PRDCT-2278)', async () => {
+    for (const path of [
+      '/v/abc/downloads.zip',
+      '/v/abc/downloads/figures.csv',
+      '/v/abc/downloads/sub/notes.md',
+      '/api/v1/viewer/abc/attachments'
+    ]) {
+      expect((await on(VIEWER, path)).status, path).toBe(200);
+    }
+  });
+
   it('serves the token-authed viewer API the deck runtime calls relative to its page', async () => {
     const res = await on(VIEWER, '/api/v1/viewer/secret123/annotations', { method: 'POST' });
     expect(res.status).toBe(200);

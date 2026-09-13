@@ -58,6 +58,18 @@ export const RESERVED_ASSET_FILENAMES = [
 const RESERVED_ASSET_FILENAME_SET: ReadonlySet<string> = new Set<string>(RESERVED_ASSET_FILENAMES);
 
 /**
+ * Root paths the SERVER answers itself, so a deck may not carry them: the
+ * viewer serves `/v/{secret}/downloads.zip` as the version's attachments
+ * archive (PRDCT-2278), and a root file of that name would be shadowed
+ * silently, unreachable through any route (verifier round 1, F3). Exact
+ * root position, compared case-insensitively like the reserved filenames;
+ * a nested `assets/downloads.zip` is an ordinary asset.
+ */
+export const RESERVED_ROOT_ASSET_PATHS = ['downloads.zip'] as const;
+
+const RESERVED_ROOT_ASSET_PATH_SET: ReadonlySet<string> = new Set<string>(RESERVED_ROOT_ASSET_PATHS);
+
+/**
  * A relative asset path inside a deck. Traversal-safe (above) AND free of
  * dot-prefixed segments and reserved filenames.
  *
@@ -71,6 +83,7 @@ const RESERVED_ASSET_FILENAME_SET: ReadonlySet<string> = new Set<string>(RESERVE
  */
 export function isSafeAssetPath(p: string): boolean {
   if (!isTraversalSafeAssetPath(p)) return false;
+  if (RESERVED_ROOT_ASSET_PATH_SET.has(p.toLowerCase())) return false;
   return p
     .split('/')
     .every((seg) => !seg.startsWith('.') && !RESERVED_ASSET_FILENAME_SET.has(seg.toLowerCase()));
@@ -83,7 +96,8 @@ export const assetPathSchema = z
   .refine(
     isSafeAssetPath,
     'relative path required: no empty, "." or ".." segments, no dot-prefixed segment, ' +
-      `and no reserved filename (${RESERVED_ASSET_FILENAMES.join(', ')})`
+      `no reserved filename (${RESERVED_ASSET_FILENAMES.join(', ')}) ` +
+      `and no reserved root path (${RESERVED_ROOT_ASSET_PATHS.join(', ')})`
   );
 
 /**
@@ -112,6 +126,34 @@ export type PresentationMetadata = z.infer<typeof presentationMetadataSchema>;
  */
 export const AGENT_DOC_PATH = 'AGENT.md';
 
+/**
+ * The reserved ATTACHMENTS folder (PRDCT-2278): every manifest entry under
+ * `downloads/` at the bundle root is an attachment — a file that travels
+ * WITH the version and is handed to a share-link recipient as a download
+ * (never rendered), switched per link by `canDownload`. A folder
+ * convention rather than per-file flags: the deck author drops files in
+ * one place and the record, the routes and the CLI all agree on what is an
+ * attachment without any of them re-deriving a rule. Exact, case-sensitive
+ * prefix — manifest paths never normalize.
+ */
+export const DOWNLOADS_DIR = 'downloads';
+export const DOWNLOADS_PREFIX = `${DOWNLOADS_DIR}/`;
+
+/** True when a manifest path sits under the reserved `downloads/` folder. */
+export function isAttachmentPath(p: string): boolean {
+  return p.startsWith(DOWNLOADS_PREFIX) && p.length > DOWNLOADS_PREFIX.length;
+}
+
+/** The attachment's name: its manifest path relative to `downloads/`. */
+export function attachmentNameOf(p: string): string {
+  return p.slice(DOWNLOADS_PREFIX.length);
+}
+
+/** The manifest path an attachment name resolves to (the inverse of attachmentNameOf). */
+export function attachmentPathOf(name: string): string {
+  return `${DOWNLOADS_PREFIX}${name}`;
+}
+
 export const presentationSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -128,6 +170,12 @@ export const presentationSchema = z.object({
    * briefing (readable at GET /presentations/{id}/agent-doc).
    */
   hasAgentDoc: z.boolean(),
+  /**
+   * Whether the current version's bundle carries attachments (files under
+   * the reserved `downloads/` folder). Stamped at commit like hasAgentDoc,
+   * so listings never open a manifest to know.
+   */
+  hasDownloads: z.boolean(),
   /** Null once the owner's account was deleted (decks are workspace data). */
   ownerUserId: z.string().nullable(),
   /** Marketplace lineage (reserved) — the deck this one was remixed from. */
@@ -213,6 +261,8 @@ export const presentationVersionSchema = z.object({
   fileCount: z.number().int(),
   /** Whether this version's manifest carries the reserved AGENT.md briefing. */
   hasAgentDoc: z.boolean(),
+  /** Whether this version's manifest carries attachments (entries under `downloads/`). */
+  hasDownloads: z.boolean(),
   /** Null once the author's account was deleted. */
   createdBy: z.string().nullable(),
   createdByRole: versionAuthorRoleSchema,
@@ -220,10 +270,54 @@ export const presentationVersionSchema = z.object({
 });
 export type PresentationVersion = z.infer<typeof presentationVersionSchema>;
 
+/**
+ * One attachment of a version: a manifest entry under `downloads/`, named by
+ * its path relative to that folder. Derived from the manifest by the server
+ * (attachmentsOf) so no client re-derives the convention.
+ */
+export const attachmentSchema = z.object({
+  /** The path relative to `downloads/` — what the recipient sees and the zip entry name. */
+  name: z.string(),
+  /** The full manifest path (`downloads/<name>`). */
+  path: assetPathSchema,
+  sizeBytes: z.number().int().min(0),
+  contentType: z.string(),
+  sha256: sha256Schema
+});
+export type Attachment = z.infer<typeof attachmentSchema>;
+
+/** The attachments of a manifest, in manifest order. */
+export function attachmentsOf(manifest: ReadonlyArray<ManifestEntry>): Attachment[] {
+  return manifest
+    .filter((e) => isAttachmentPath(e.path))
+    .map((e) => ({
+      name: attachmentNameOf(e.path),
+      path: e.path,
+      sizeBytes: e.sizeBytes,
+      contentType: e.contentType,
+      sha256: e.sha256
+    }));
+}
+
 export const presentationVersionDetailSchema = presentationVersionSchema.extend({
-  manifest: z.array(manifestEntrySchema)
+  manifest: z.array(manifestEntrySchema),
+  /** The version's attachments (the `downloads/` entries of the manifest), derived server-side. */
+  attachments: z.array(attachmentSchema)
 });
 export type PresentationVersionDetail = z.infer<typeof presentationVersionDetailSchema>;
+
+/**
+ * The recipient-side attachments list (`GET /api/v1/viewer/{secret}/attachments`,
+ * token-authed, cookie-less): the version the link resolves to and its
+ * attachments. `attachments` is EMPTY when the link's `canDownload` is off —
+ * the link itself is public, only the capability is absent, so this is
+ * never a 403.
+ */
+export const viewerAttachmentsSchema = z.object({
+  version: z.number().int().min(1),
+  attachments: z.array(attachmentSchema)
+});
+export type ViewerAttachments = z.infer<typeof viewerAttachmentsSchema>;
 
 export const presentationVersionsListSchema = z.object({
   versions: z.array(presentationVersionSchema),

@@ -524,6 +524,9 @@ export const presentations = pgTable(
     hasAgentDoc: boolean('has_agent_doc').notNull().default(false),
     // Mirrors the current version's has_forms (ADR 022) the same way.
     hasForms: boolean('has_forms').notNull().default(false),
+    // Mirrors the current version's has_downloads (PRDCT-2278: the reserved
+    // `downloads/` attachment folder) the same way.
+    hasDownloads: boolean('has_downloads').notNull().default(false),
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
@@ -589,6 +592,10 @@ export const presentationVersions = pgTable(
     // left the streaming serve path (PRDCT-1333, audit §3 — a ~10x-document
     // memory spike on an unauthenticated, unlimited GET).
     hasForms: boolean('has_forms').notNull().default(false),
+    // Whether the manifest carries any entry under the reserved `downloads/`
+    // folder — the version's ATTACHMENTS (PRDCT-2278). Stamped at commit like
+    // has_agent_doc; listings and the dashboard never open a manifest to know.
+    hasDownloads: boolean('has_downloads').notNull().default(false),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdByRole: text('created_by_role', { enum: versionAuthorRoles }).notNull().default('owner'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
@@ -652,6 +659,16 @@ export const shareTokens = pgTable(
      */
     canSubmitForms: boolean('can_submit_forms').notNull().default(true),
     /**
+     * Whether viewers of this link may download the version's attachments
+     * (the reserved `downloads/` folder, PRDCT-2278). Defaults TRUE — files
+     * were put in that folder to be handed out, so push + share hands them
+     * out with zero flags; owners opt out per link. Off: the attachment
+     * routes answer 404 and the recipient list is empty (never a 403 — the
+     * link is public, only the capability is absent). The migration gave
+     * every pre-existing link the default.
+     */
+    canDownload: boolean('can_download').notNull().default(true),
+    /**
      * Per-link badge slot override for the annotation overlay. Null = use
      * the deck's remembered `annotation_badge_position`, else bottom-right.
      */
@@ -661,6 +678,14 @@ export const shareTokens = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     accessCount: integer('access_count').notNull().default(0),
     lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
+    /**
+     * Attachment downloads through this link (PRDCT-2278): one per file
+     * taken, one per whole-set zip, incremented in the same transaction as
+     * the share_token_downloads row so the counter and the events agree.
+     * Never a view: the entry-view counters above are untouched by a
+     * download, and the `slvd_` de-dupe cookie plays no part.
+     */
+    downloadCount: integer('download_count').notNull().default(0),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
@@ -876,6 +901,44 @@ export const shareTokenViews = pgTable(
 );
 
 /**
+ * One row per attachment DOWNLOAD through a share link (PRDCT-2278), the
+ * sibling of share_token_views with the same privacy posture: NO IP, NO
+ * geolocation, no referrer, no user agent — the link, the version served,
+ * the file taken and when. `name` is the attachment's name (its path
+ * relative to `downloads/`), or NULL when the recipient took the whole set
+ * as one zip (one event, however many files it held). Written under the
+ * same transaction that increments `share_tokens.download_count`, so the
+ * count and the events never disagree; pruned by the same nightly retention
+ * as the view events (VIEW_EVENTS_RETENTION_DAYS). `share_token_id` is
+ * set-null so a link's history survives its deletion; deck deletion
+ * cascades the rows away with the deck.
+ */
+export const shareTokenDownloads = pgTable(
+  'share_token_downloads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    shareTokenId: uuid('share_token_id').references(() => shareTokens.id, { onDelete: 'set null' }),
+    /** The deck version the attachment(s) came from. */
+    version: integer('version').notNull(),
+    /** The attachment name (path relative to `downloads/`); NULL = the whole set as a zip. */
+    name: text('name'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // Serves a per-token listing (occurred_at DESC, id DESC), the views precedent.
+    index('share_token_downloads_token_occurred_id_idx').on(t.shareTokenId, t.occurredAt, t.id),
+    // Serves the nightly retention purge's age scan.
+    index('share_token_downloads_occurred_idx').on(t.occurredAt)
+  ]
+);
+
+/**
  * Transient reservation for new-deck uploads (~1 h): mints the future
  * presentation id up front so asset uploads and the final commit share one
  * handle. `presentation_id` deliberately has NO foreign key — the
@@ -919,4 +982,5 @@ export type CollaboratorRow = typeof collaborators.$inferSelect;
 export type AnnotationRow = typeof annotations.$inferSelect;
 export type FormResponseRow = typeof formResponses.$inferSelect;
 export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
+export type ShareTokenDownloadRow = typeof shareTokenDownloads.$inferSelect;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;

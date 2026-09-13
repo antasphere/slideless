@@ -158,6 +158,12 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
       }),
     'get /presentations/{id}/versions': () => shot(`${P}/versions`, 'GET', cookie),
     'get /presentations/{id}/versions/{version}': () => shot(`${P}/versions/1`, 'GET', cookie),
+    // The owner-side attachment reads (PRDCT-2278): the same canReadDeck 404
+    // as the version detail, never a 403, for a version that exists.
+    'get /presentations/{id}/versions/{version}/downloads.zip': () =>
+      shot(`${P}/versions/1/downloads.zip`, 'GET', cookie),
+    'get /presentations/{id}/versions/{version}/downloads/{name}': () =>
+      shot(`${P}/versions/1/downloads/figures.csv`, 'GET', cookie),
     'get /presentations/{id}/assets/{sha256}': () => shot(`${P}/assets/${SHA}`, 'GET', cookie),
     'get /presentations/{id}/agent-doc': () => shot(`${P}/agent-doc`, 'GET', cookie),
     'get /presentations/{id}/tokens': () => shot(`${P}/tokens`, 'GET', cookie),

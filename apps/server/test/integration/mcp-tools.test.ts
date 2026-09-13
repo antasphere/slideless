@@ -351,6 +351,60 @@ describe('inline upload → commit → download round-trip (the legacy-broken su
     expect(png.sizeBytes).toBe(Buffer.from(PNG_BASE64, 'base64').length);
   });
 
+  it('a downloads/ folder makes attachments: get_version lists them, the deck says hasDownloads (PRDCT-2278)', async () => {
+    const result = await callTool(ownerKey, 'slideless_upload_presentation_files', {
+      title: 'Attachments Deck',
+      files: [
+        { path: 'index.html', contentText: `<!doctype html><html><body>with files ${MARKER}</body></html>` },
+        { path: 'downloads/report.csv', contentText: 'a,b\n1,2\n' },
+        { path: 'downloads/sub/notes.md', contentText: '# notes\n' }
+      ]
+    });
+    expect(result.isError, result.text).toBe(false);
+    expect(result.data.presentation.hasDownloads).toBe(true);
+    expect(result.data.version.hasDownloads).toBe(true);
+    const attachmentsDeckId = result.data.presentation.id as string;
+
+    const detail = await callTool(ownerKey, 'slideless_get_version', { presentationId: attachmentsDeckId });
+    expect(detail.isError, detail.text).toBe(false);
+    expect(detail.data.manifest).toHaveLength(3);
+    expect(detail.data.attachments).toEqual([
+      expect.objectContaining({ name: 'report.csv', path: 'downloads/report.csv', contentType: 'text/csv' }),
+      expect.objectContaining({ name: 'sub/notes.md', path: 'downloads/sub/notes.md' })
+    ]);
+
+    const noFiles = await callTool(ownerKey, 'slideless_get_version', { presentationId: filesDeckId });
+    expect(noFiles.data.attachments).toEqual([]);
+
+    // The link switch: on by default, off when asked.
+    const on = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: attachmentsDeckId,
+      name: 'downloads on'
+    });
+    expect(on.isError, on.text).toBe(false);
+    expect(on.data.shareToken.canDownload).toBe(true);
+    expect(on.data.shareToken.downloadCount).toBe(0);
+    const off = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: attachmentsDeckId,
+      name: 'downloads off',
+      canDownload: false
+    });
+    expect(off.isError, off.text).toBe(false);
+    expect(off.data.shareToken.canDownload).toBe(false);
+    const offList = await app.app.request(`/api/v1/viewer/${off.data.secret}/attachments`, {
+      headers: { 'x-forwarded-for': nextIp() }
+    });
+    expect(offList.status).toBe(200);
+    expect((await readJson(offList)).attachments).toEqual([]);
+    const onList = await app.app.request(`/api/v1/viewer/${on.data.secret}/attachments`, {
+      headers: { 'x-forwarded-for': nextIp() }
+    });
+    expect((await readJson(onList)).attachments.map((a: { name: string }) => a.name)).toEqual([
+      'report.csv',
+      'sub/notes.md'
+    ]);
+  });
+
   it('with presentationId it commits a NEW VERSION of that deck', async () => {
     const result = await callTool(ownerKey, 'slideless_upload_presentation_files', {
       presentationId: filesDeckId,

@@ -1001,3 +1001,21 @@ entry; these are what THIS repo added or had to do differently.
   server's tests until `pnpm --filter @slideless/db build`.** The symptom is
   Better Auth's "field X does not exist in the Drizzle schema" 500 on routes
   that touch the table — not a drift failure.
+
+## Attachments (PRDCT-2278, 2026-09-13, lane A of the artifact wave)
+
+- **A contract type exported as `z.infer` of a schema with `.default()` fields is the
+  SERVER's shape, not the client's, and every client that spells the body breaks at typecheck
+  the day the schema gains a defaulted field.** `ShareTokenCreate` was `z.infer<...>`: adding
+  `canDownload: z.boolean().default(true)` made the field required for the CLI's `share` and
+  the dashboard's share panel, both of which build a typed body and neither of which had a
+  reason to know the new switch. The client-facing type is now `z.input<...>` (every defaulted
+  field optional to a caller); the server keeps reading the schema's output through
+  `c.req.valid('json')`. Apply the same rule to any create/update type a client constructs.
+- **The generic viewer asset route must refuse the `downloads/` prefix itself, whatever the
+  route order says.** The attachment pattern `/v/:secret/downloads/*` runs first for a real
+  slash, but `downloads%2Fpage.html` is ONE segment to the router: it skips the attachment
+  route and reaches the generic handler, which percent-decodes it back into `downloads/page.html`
+  and, without the explicit exclusion, would find the manifest entry and serve an HTML
+  attachment inline. Order is the mechanism, the exclusion is the guard, and the integration
+  suite drives the encoded shape on purpose.

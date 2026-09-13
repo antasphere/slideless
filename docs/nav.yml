@@ -15,6 +15,7 @@ groups:
     pages:
       - sharing/annotations
       - sharing/forms
+      - sharing/downloads
       - sharing/embedding
       - sharing/link-analytics
   - title: Self-hosting
