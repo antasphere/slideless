@@ -6,6 +6,8 @@ import { PlatformApiError } from '@slideless/sdk';
 import {
   AGENT_DOC_PATH,
   deckMasterUrl,
+  DOWNLOADS_DIR,
+  isAttachmentPath,
   isSafeAssetPath,
   type ManifestEntry,
   type PresentationKind
@@ -33,6 +35,50 @@ import { isInteractive, openInBrowser, shouldOpenAfterPush } from '../open.js';
  */
 
 const UPLOAD_CONCURRENCY = 4;
+
+/**
+ * The per-blob cap the instance documents (`MAX_FILE_SIZE_MB`, 100 by
+ * default). Discovery (`GET /api/v1/instance`) does not carry the value on
+ * the wire today; when it does, the CLI reads it from `limits.maxFileSizeMb`
+ * and this constant is the fallback for older instances.
+ */
+const DEFAULT_MAX_FILE_SIZE_MB = 100;
+
+/** The instance's per-file cap in bytes: discovery's `limits.maxFileSizeMb` when present, else the documented default. */
+async function resolveFileCapBytes(ctx: CliContext): Promise<number> {
+  const info = (await ctx.client.instance().catch(() => null)) as {
+    limits?: { maxFileSizeMb?: unknown };
+  } | null;
+  const mb = info?.limits?.maxFileSizeMb;
+  const capMb = typeof mb === 'number' && Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_MAX_FILE_SIZE_MB;
+  return capMb * 1024 * 1024;
+}
+
+/**
+ * Refuse a file over the instance cap BEFORE the upload session, the
+ * precheck or any upload: the instance answers 413 to the oversized blob,
+ * but only after its bytes have travelled, and after the smaller files of
+ * the same push were already stored. Names the file and the cap.
+ */
+function refuseOverCap(scan: DeckScan, capBytes: number): void {
+  const over = scan.files.find((f) => f.sizeBytes > capBytes);
+  if (!over) return;
+  throw new CliUsageError(
+    `${over.path} is ${fmtBytes(over.sizeBytes)}, over this instance's ${fmtBytes(capBytes)} per-file cap ` +
+      '(MAX_FILE_SIZE_MB) — nothing was uploaded. Shrink or drop the file and push again.'
+  );
+}
+
+/** The attachments of a scan (the `downloads/` entries) and their total size. */
+function attachmentsOfScan(scan: DeckScan): { count: number; sizeBytes: number } {
+  const files = scan.files.filter((f) => f.attachment);
+  return { count: files.length, sizeBytes: files.reduce((sum, f) => sum + f.sizeBytes, 0) };
+}
+
+/** The one-line attachments summary printed after a push whose folder carries some. */
+function attachmentsLine(a: { count: number; sizeBytes: number }): string {
+  return `  Attachments: ${a.count} file${a.count === 1 ? '' : 's'}, ${fmtBytes(a.sizeBytes)} (${DOWNLOADS_DIR}/)\n`;
+}
 
 /** One-line nudge printed after a push whose bundle ships no AGENT.md. */
 const AGENT_DOC_HINT =
@@ -168,6 +214,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         const entryPath = detectEntry(scan, opts.entry);
         const manifest = toManifest(scan);
         const totalBytes = scan.files.reduce((sum, f) => sum + f.sizeBytes, 0);
+        const attachments = attachmentsOfScan(scan);
 
         // New deck vs new version: --id wins, then the link file (which must
         // point at THIS instance), then a fresh deck.
@@ -184,6 +231,10 @@ export function registerContentCommands(program: Command, io: CliIo): void {
             );
           }
         }
+
+        // The cap, before the first write of either branch (discovery is a
+        // public read): a refusal here costs no upload.
+        refuseOverCap(scan, await resolveFileCapBytes(ctx));
 
         if (existingId) {
           const deck = await ctx.client.presentation(existingId);
@@ -210,7 +261,9 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           if (ctx.json) {
             return printJson(
               io,
-              formNames.length > 0 ? { ...committed, url, formsDetected: formNames } : { ...committed, url }
+              formNames.length > 0
+                ? { ...committed, url, attachments, formsDetected: formNames }
+                : { ...committed, url, attachments }
             );
           }
           io.out.write(
@@ -219,6 +272,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
               `  id: ${committed.presentation.id}\n` +
               `  url: ${url}\n`
           );
+          if (attachments.count > 0) io.out.write(attachmentsLine(attachments));
           if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
           if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
           openAfterPush(ctx, url, { created: false, flag: opts.open });
@@ -248,7 +302,9 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         if (ctx.json) {
           return printJson(
             io,
-            formNames.length > 0 ? { ...committed, url, formsDetected: formNames } : { ...committed, url }
+            formNames.length > 0
+              ? { ...committed, url, attachments, formsDetected: formNames }
+              : { ...committed, url, attachments }
           );
         }
         io.out.write(
@@ -258,6 +314,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
             `  url: ${url}\n` +
             `  linked: ${join(scan.rootDir, LINK_FILENAME)}\n`
         );
+        if (attachments.count > 0) io.out.write(attachmentsLine(attachments));
         if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
         if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
         openAfterPush(ctx, url, { created: true, flag: opts.open });
@@ -414,7 +471,11 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           files: detail.manifest.length
         });
       }
-      io.out.write(`Pulled "${deck.title}" v${version} → ${destRoot} (${detail.manifest.length} files)\n`);
+      const pulledAttachments = detail.manifest.filter((e) => isAttachmentPath(e.path)).length;
+      io.out.write(
+        `Pulled "${deck.title}" v${version} → ${destRoot} (${detail.manifest.length} files` +
+          `${pulledAttachments > 0 ? `, ${pulledAttachments} attachment${pulledAttachments === 1 ? '' : 's'}` : ''})\n`
+      );
     });
 
   program

@@ -103,6 +103,8 @@ export const DECK = {
   interactive: false,
   currentVersion: 1,
   entryPath: 'index.html',
+  hasAgentDoc: false,
+  hasDownloads: false,
   ownerUserId: 'u1',
   remixedFrom: null,
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -115,6 +117,8 @@ export const VERSION_ROW = {
   entryPath: 'index.html',
   sizeBytes: 10,
   fileCount: 1,
+  hasAgentDoc: false,
+  hasDownloads: false,
   createdBy: 'u1',
   createdByRole: 'owner',
   createdAt: '2026-01-01T00:00:00.000Z'

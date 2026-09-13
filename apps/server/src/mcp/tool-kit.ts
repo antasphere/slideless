@@ -15,6 +15,12 @@ export interface McpToolContext {
   /** Forwarded verbatim on every in-process API call. */
   authorizationHeader: string;
   /**
+   * The instance's public origin (`PUBLIC_BASE_URL`), for the one thing a
+   * tool composes for a human rather than for the API: the deck's own page
+   * a push answers with (PRDCT-2280). Never used to reach the API.
+   */
+  publicBaseUrl: string;
+  /**
    * Target workspace of THIS tool call (user-scoped credential model): set
    * from the tool's optional `workspace` argument via {@link forWorkspace},
    * it rides the in-process re-entry as the X-Workspace-Id header, where

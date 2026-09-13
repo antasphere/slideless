@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { badgePositionSchema, formNameSchema, formResponseSourceSchema } from '@slideless/contract';
+import {
+  badgePositionSchema,
+  deckMasterUrl,
+  formNameSchema,
+  formResponseSourceSchema
+} from '@slideless/contract';
 import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } from './errors.js';
 import {
   callApi,
@@ -292,10 +297,14 @@ async function pushInlineDeck(
       }
     );
   }
-  const result = committed as { presentation: unknown; version: unknown };
+  const result = committed as { presentation: PresentationWire; version: unknown };
   return jsonText({
     presentation: result.presentation,
     version: result.version,
+    // The deck's own page (PRDCT-2280): the same address the CLI prints, for
+    // the agent to hand to the person. An owner page behind the session,
+    // never a share link — nothing is minted by a push.
+    url: deckMasterUrl(c.publicBaseUrl, result.presentation.id),
     uploadedBlobs: queue.length,
     deduplicatedBlobs: files.length - queue.length
   });
@@ -554,7 +563,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     {
       description:
         'Create a NEW deck from a single self-contained HTML document (uploaded as index.html). ' +
-        'Returns { presentation, version } — share it next with slideless_add_share_token. Inline ' +
+        "Returns { presentation, version, url } where url is the deck's own page on the instance " +
+        "(the owner's view behind their session, not a share link) — hand it to the person; share it " +
+        'with a recipient next with slideless_add_share_token. Inline ' +
         `uploads are capped at ${Math.floor(INLINE_UPLOAD_TOTAL_MAX / 1024)} KiB; ${CLI_HINT}. ` +
         'Always confirm with the user before calling.',
       inputSchema: {
@@ -590,7 +601,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'contentBase64 (binary). Without presentationId this creates a NEW deck; with it, it commits ' +
         'the files as a NEW VERSION of that deck (full snapshot — list every file the version should ' +
         `contain). Inline uploads are capped at ${Math.floor(INLINE_UPLOAD_TOTAL_MAX / 1024)} KiB total; ` +
-        `${CLI_HINT}. Returns { presentation, version }. Always confirm with the user before calling.`,
+        `${CLI_HINT}. Returns { presentation, version, url, uploadedBlobs, deduplicatedBlobs } where url is ` +
+        "the deck's own page on the instance (an owner page, not a share link) to hand to the person. " +
+        'Always confirm with the user before calling.',
       inputSchema: {
         workspace: workspaceInput,
         files: z

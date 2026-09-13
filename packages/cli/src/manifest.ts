@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
-import { isSafeAssetPath, RESERVED_ASSET_FILENAMES } from '@slideless/contract';
+import { isAttachmentPath, isSafeAssetPath, RESERVED_ASSET_FILENAMES } from '@slideless/contract';
 
 /**
  * Deck folder scanning for `slideless push`: walk a folder (or take a single
@@ -18,6 +18,13 @@ export interface DeckFile {
   sha256: string;
   sizeBytes: number;
   contentType: string;
+  /**
+   * An entry under the reserved `downloads/` folder (PRDCT-2278): a file
+   * that travels with the version and is handed to a link's recipient as a
+   * download. The contract's rule, never a local string, so the CLI, the
+   * server and the viewer agree on what is an attachment.
+   */
+  attachment: boolean;
 }
 
 export interface DeckScan {
@@ -273,7 +280,8 @@ export async function scanDeck(target: string): Promise<DeckScan> {
       absPath: item.absPath,
       sha256: await sha256File(item.absPath),
       sizeBytes: s.size,
-      contentType: contentTypeFor(item.path)
+      contentType: contentTypeFor(item.path),
+      attachment: isAttachmentPath(item.path)
     });
   }
   files.sort((a, b) => (a.path < b.path ? -1 : 1));
