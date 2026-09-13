@@ -79,7 +79,8 @@ export function mcpRoutes(deps: McpHttpDeps): Hono {
       {
         fetchApi: deps.fetchApi,
         principal,
-        authorizationHeader: `Bearer ${bearer}`
+        authorizationHeader: `Bearer ${bearer}`,
+        publicBaseUrl: deps.publicBaseUrl
       },
       { version: deps.version, instanceName: await deps.instanceName() }
     );

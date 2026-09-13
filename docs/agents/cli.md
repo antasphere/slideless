@@ -205,6 +205,24 @@ re-uploaded.
   push in CI or under an agent stays silent. The opener is the platform's
   own (`open`, `xdg-open`, the Windows URL handler) with the URL as an
   argument, never a shell string.
+- **Attachments**: a `downloads/` folder at the root of the deck is the
+  version's attachment set (see the Downloads page under Sharing & review):
+  files handed to a link's recipient as downloads, never rendered. The push
+  classifies them by the same rule the server uses and prints an
+  `Attachments: N files, X MB (downloads/)` line under the summary when the
+  folder carries some; `--json` carries `attachments: { count, sizeBytes }`.
+  They ride the same content-addressed protocol as every file: an unchanged
+  attachment is never re-uploaded when you iterate on the HTML (the precheck
+  reports it present), and only what changed travels.
+- **The per-file cap, refused before anything is uploaded**: every file of
+  the deck is checked against the instance's per-file cap before the upload
+  session, the precheck or any upload. A file over it names itself and the
+  cap (`downloads/video.mp4 is 250.0 MB, over this instance's 100.0 MB
+per-file cap (MAX_FILE_SIZE_MB) — nothing was uploaded.`), and no byte has
+  left the machine. The cap is `limits.maxFileSizeMb` from
+  `GET /api/v1/instance` when the instance exposes it, else the documented
+  default of 100 MB. Without this check the instance answered `413` to the
+  oversized blob only after its upload, with the smaller files already stored.
 - Flags: `--title`, `--entry`, `--kind presentation|app|plan`,
   `--interactive`, `--id`, `--new`, `--open` / `--no-open`.
 
@@ -217,7 +235,8 @@ an error pointing at `push`, and a link file whose instance is not an
 arrive with a cloned folder; the opener would dispatch any scheme).
 
 **pull** downloads a version's manifest and streams every blob to disk —
-byte-identical to what was pushed — then writes/refreshes `.slideless.json`
+byte-identical to what was pushed, attachments under `downloads/` included
+(the summary counts them) — then writes/refreshes `.slideless.json`
 so a later `push` in that folder targets the same deck. It treats the
 instance's answer as untrusted input: every manifest path is re-validated
 locally, each blob is capped at the size the manifest declared and must hash
@@ -251,6 +270,9 @@ slideless share <id> --annotator --badge-position top-left  # move the notes but
 slideless share <id> --no-forms                           # viewers of this link cannot submit the
                                                           # deck's embedded forms (default: they can;
                                                           # also on share-email)
+slideless share <id> --no-download                        # viewers of this link cannot download the
+                                                          # version's attachments (default: they can;
+                                                          # also on share-email)
 slideless share <id> --embed                              # also print the website embed snippets
 slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link
@@ -258,7 +280,8 @@ slideless unshare <id>                                    # revoke ALL active li
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed
 slideless pin <id> <tokenId> --to-version 1               # freeze a recipient on v1
 slideless pin <id> <tokenId> --latest                     # follow the latest again
-slideless tokens <id> [--all]                             # list links + access stats (opens, last opened)
+slideless tokens <id> [--all]                             # list links + access stats (opens, last opened,
+                                                          # downloads or "no downloads")
 slideless views <id> [tokenId] [--all]                    # per-view events of one link: when, referring
                                                           # site, ?p= label, browser family (no IPs, no
                                                           # full URLs — never stored)
@@ -285,7 +308,11 @@ Sharing & review.
 Access stats count entry loads only, de-duplicated per browser within a
 short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
 open is one count, while cookie-less fetches (CLI, curl) count each time.
-"Last opened" is the last counted open.
+"Last opened" is the last counted open. The downloads column is the link's
+`downloadCount` (one per attachment taken through the link, one per zip,
+never a view) when the link allows downloads, and `no downloads` when it was
+minted with `--no-download` (`canDownload: false`; the deck still opens, the
+file URLs answer 404). `--json` carries both fields on every token.
 
 **Collecting form responses**: `slideless responses` with no filters prints
 the summary first (responses per form × link × source × placement, with the

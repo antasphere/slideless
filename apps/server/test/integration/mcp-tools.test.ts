@@ -301,6 +301,9 @@ describe('inline upload → commit → download round-trip (the legacy-broken su
     expect(result.data.version.fileCount).toBe(1);
     expect(result.data.uploadedBlobs).toBe(1);
     htmlDeckId = result.data.presentation.id;
+    // PRDCT-2280: the deck's own page, the same address the CLI prints —
+    // composed from PUBLIC_BASE_URL, never a share link.
+    expect(result.data.url).toBe(`http://localhost:3000/decks/${htmlDeckId}/present`);
   });
 
   it('slideless_list_presentations shows it; get/versions/manifest agree', async () => {
@@ -413,6 +416,7 @@ describe('inline upload → commit → download round-trip (the legacy-broken su
     expect(result.isError, result.text).toBe(false);
     expect(result.data.version.version).toBe(2);
     expect(result.data.presentation.currentVersion).toBe(2);
+    expect(result.data.url).toBe(`http://localhost:3000/decks/${filesDeckId}/present`);
 
     const latest = await callTool(ownerKey, 'slideless_download_version', { presentationId: filesDeckId });
     expect(latest.data.version).toBe(2);

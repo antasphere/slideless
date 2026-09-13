@@ -54,6 +54,8 @@ function shareOptionsOf(opts: {
   annotator: boolean;
   /** Commander --no-forms negation: true by default, false when passed. */
   forms: boolean;
+  /** Commander --no-download negation: true by default, false when passed (PRDCT-2278). */
+  download: boolean;
   badgePosition?: BadgePositionValue;
   expires?: string;
   password?: string;
@@ -67,6 +69,7 @@ function shareOptionsOf(opts: {
     ...(opts.toVersion !== undefined ? { pinnedVersion: opts.toVersion } : {}),
     canAnnotate: opts.annotator,
     canSubmitForms: opts.forms,
+    canDownload: opts.download,
     ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
     ...(opts.password ? { password: opts.password } : {})
@@ -81,6 +84,10 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--to-version <n>', 'pin the recipient to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let the recipient annotate', false)
     .option('--no-forms', "disallow submitting the deck's embedded forms through this link")
+    .option(
+      '--no-download',
+      "disallow downloading the version's attachments (its downloads/ folder) through this link"
+    )
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -102,6 +109,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           toVersion?: number;
           annotator: boolean;
           forms: boolean;
+          download: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -135,7 +143,8 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             `  token: ${created.shareToken.id} ("${created.shareToken.name}", ` +
             `${created.shareToken.versionMode}${created.shareToken.pinnedVersion ? ` v${created.shareToken.pinnedVersion}` : ''}` +
             `${created.shareToken.canAnnotate ? ', annotator' : ''}` +
-            `${created.shareToken.hasPassword ? ', password' : ''})\n` +
+            `${created.shareToken.hasPassword ? ', password' : ''}` +
+            `${created.shareToken.canDownload ? '' : ', no downloads'})\n` +
             '  The URL is shown once — copy it now.\n'
         );
         if (opts.embed || opts.placement !== undefined) {
@@ -188,6 +197,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--to-version <n>', 'pin recipients to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let recipients annotate', false)
     .option('--no-forms', "disallow submitting the deck's embedded forms through these links")
+    .option('--no-download', "disallow downloading the version's attachments through these links")
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -205,6 +215,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           toVersion?: number;
           annotator: boolean;
           forms: boolean;
+          download: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -297,6 +308,9 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             `${t.accessCount} open${t.accessCount === 1 ? '' : 's'}`,
             t.lastAccessedAt ?? 'never',
             t.versionMode === 'pinned' ? `pinned v${t.pinnedVersion}` : 'latest',
+            // Downloads: the per-link switch and the count of files taken
+            // through the link (one per file, one per zip; never a view).
+            t.canDownload ? `${t.downloadCount} download${t.downloadCount === 1 ? '' : 's'}` : 'no downloads',
             [t.canAnnotate ? 'annotator' : null, t.hasPassword ? 'password' : null]
               .filter(Boolean)
               .join(', ') || '-',
