@@ -217,12 +217,17 @@ re-uploaded.
 - **The per-file cap, refused before anything is uploaded**: every file of
   the deck is checked against the instance's per-file cap before the upload
   session, the precheck or any upload. A file over it names itself and the
-  cap (`downloads/video.mp4 is 250.0 MB, over this instance's 100.0 MB
-per-file cap (MAX_FILE_SIZE_MB) — nothing was uploaded.`), and no byte has
-  left the machine. The cap is `limits.maxFileSizeMb` from
+  cap, and no byte has left the machine:
+
+  ```
+  Error: downloads/video.mp4 is 250.0 MB, over this instance's 100.0 MB per-file cap (MAX_FILE_SIZE_MB) — nothing was uploaded. Shrink or drop the file and push again.
+  ```
+
+  The cap is `limits.maxFileSizeMb` from
   `GET /api/v1/instance` when the instance exposes it, else the documented
   default of 100 MB. Without this check the instance answered `413` to the
   oversized blob only after its upload, with the smaller files already stored.
+
 - Flags: `--title`, `--entry`, `--kind presentation|app|plan`,
   `--interactive`, `--id`, `--new`, `--open` / `--no-open`.
 

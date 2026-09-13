@@ -153,6 +153,17 @@ describe('push says what travels', () => {
     expect(parsed.url).toContain('/present');
   });
 
+  it('the first push (the created branch) carries attachments and url in --json too', async () => {
+    const dir = await makeDeckWithDownloads();
+    const h = routedHarness(pushRoutes({ missing: [] }).routes);
+    expect(await run(PUSH(dir, '--json'), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    const parsed = JSON.parse(h.out()) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(['presentation', 'version', 'url', 'attachments']);
+    expect(parsed.attachments).toEqual({ count: 2, sizeBytes: Buffer.byteLength(CSV) + PDF.length });
+    expect(h.calls.some((c) => c.path.endsWith('/uploads'))).toBe(true);
+  });
+
   it('prints no Attachments line for a deck without a downloads/ folder, and a zero count in --json', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'slideless-att-'));
     await writeFile(join(dir, 'index.html'), HTML);
@@ -192,6 +203,30 @@ describe('the cap refusal, before any write', () => {
     // Discovery is the only call: no session, no precheck, no upload.
     expect(h.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /api/v1/instance']);
     expect(await readLink(dir)).toBeNull();
+  });
+
+  it("a file exactly at the cap passes: the compare is strict, like the instance's own", async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slideless-att-'));
+    await writeFile(join(dir, 'index.html'), HTML);
+    await writeFile(join(dir, 'exact.bin'), '');
+    await truncate(join(dir, 'exact.bin'), 1024 * 1024);
+    const { routes } = pushRoutes({ missing: [], instance: { limits: { maxFileSizeMb: 1 } } });
+    const h = routedHarness(routes);
+    expect(await run(PUSH(dir), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    expect(h.calls.some((c) => c.path.includes('/commit'))).toBe(true);
+  });
+
+  it('refuses under --json the same way, with nothing on stdout and no write', async () => {
+    const dir = await makeDeckWithDownloads();
+    await truncate(join(dir, 'downloads', 'figures.csv'), 5 * 1024 * 1024);
+    const { routes, uploaded } = pushRoutes({ missing: [], instance: { limits: { maxFileSizeMb: 1 } } });
+    const h = routedHarness(routes);
+    expect(await run(PUSH(dir, '--json'), h.io)).toBe(1);
+    expect(h.out()).toBe('');
+    expect(h.err()).toContain('downloads/figures.csv is 5.0 MB');
+    expect(uploaded).toEqual([]);
+    expect(h.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /api/v1/instance']);
   });
 
   it('applies to any file of the deck, not only attachments', async () => {
