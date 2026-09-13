@@ -42,6 +42,7 @@ import type {
   MeResponse,
   OnboardingDismissed,
   Presentation,
+  PresentationDuplicate,
   PresentationUpdate,
   PresentationVersion,
   PresentationVersionDetail,
@@ -530,6 +531,25 @@ export class PlatformClient {
   /** Soft delete: versions and share tokens stop resolving. */
   deletePresentation(id: string): Promise<Presentation> {
     return this.request('DELETE', `/presentations/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Duplicate a deck (PRDCT-2279): a new deck in the same workspace whose
+   * version 1 references the source version's blobs — nothing is
+   * re-uploaded. `version` picks the source version (current when omitted),
+   * `title` names the copy. Idempotency-Key aware like the other creates.
+   */
+  duplicatePresentation(
+    id: string,
+    req: PresentationDuplicate = {},
+    opts: IdempotentRequestOptions = {}
+  ): Promise<VersionCommitted> {
+    return this.request(
+      'POST',
+      `/presentations/${encodeURIComponent(id)}/duplicate`,
+      req,
+      idempotencyHeader(opts)
+    );
   }
 
   // ── Upload (push) ─────────────────────────────────────────────────────────

@@ -43,6 +43,16 @@ export interface CommitSuccess {
 export type SessionCommitResult = CommitSuccess | { ok: false; failure: SessionCommitFailure };
 export type VersionCommitResult = CommitSuccess | { ok: false; failure: VersionCommitFailure };
 
+/** Duplicate failures (PRDCT-2279): the handler maps each to 404 / 400. */
+export type DuplicateFailure =
+  | { code: 'not_found' }
+  | { code: 'no_versions' }
+  | { code: 'invalid_version'; version: number }
+  | { code: 'missing_blobs'; missing: string[] };
+/** The success carries the source version the copy was actually made from (read in-transaction). */
+export type DuplicateResult =
+  (CommitSuccess & { sourceVersion: number }) | { ok: false; failure: DuplicateFailure };
+
 /**
  * The presentation domain (ADR 011): decks with append-only immutable
  * versions whose manifests reference content-addressed blobs in the shared
@@ -395,6 +405,116 @@ export class PresentationService {
     });
   }
 
+  // ── Duplicate (PRDCT-2279) ─────────────────────────────────────────────────
+
+  /**
+   * A new deck in the caller's workspace whose version 1 is the SOURCE
+   * version's manifest, entry for entry, sha for sha: nothing is re-uploaded
+   * and no `files` row is written — blobs are content-addressed per
+   * workspace, so the copy references the bytes the source already holds.
+   *
+   * Authorization is layered like a push. The HANDLER answers the source's
+   * read check (canReadDeck: 404, never 403 — ADR 013) and the guest wall
+   * (deck creation is a workspace-level act, D2); this transaction then
+   * resolves the manifest's shas under `blobReadScope` like every commit —
+   * the SL-B1 guard — so a sha the caller may not read reports as missing
+   * (never as its own code) and the copy can only bind bytes the caller
+   * could bind by pushing them. The source row is re-read FOR SHARE inside
+   * the transaction: a soft delete racing the duplicate serializes, and a
+   * deck that vanished answers not_found rather than a copy of a deleted
+   * deck. `hasForms` is COPIED from the source version row, not rescanned:
+   * the bytes are the same bytes, and a rescan would open blobs under row
+   * locks (PRDCT-1333). Lineage lands in `remixedFrom`.
+   */
+  async duplicate(opts: {
+    workspaceId: string;
+    principal: Principal;
+    sourceId: string;
+    /** The source version to copy; the source's current version when omitted. */
+    version?: number | undefined;
+    /** The copy's title; `<source title> (copy)` (capped at 300) when omitted. */
+    title?: string | undefined;
+  }): Promise<DuplicateResult> {
+    return this.db.transaction(async (tx): Promise<DuplicateResult> => {
+      const [source] = await tx
+        .select()
+        .from(presentations)
+        .where(
+          and(
+            eq(presentations.id, opts.sourceId),
+            eq(presentations.workspaceId, opts.workspaceId),
+            isNull(presentations.deletedAt)
+          )
+        )
+        .for('share')
+        .limit(1);
+      if (!source) return { ok: false, failure: { code: 'not_found' } };
+      const wanted = opts.version ?? source.currentVersion;
+      if (wanted < 1) return { ok: false, failure: { code: 'no_versions' } };
+      const [sourceVersion] = await tx
+        .select()
+        .from(presentationVersions)
+        .where(
+          and(
+            eq(presentationVersions.presentationId, source.id),
+            eq(presentationVersions.workspaceId, opts.workspaceId),
+            eq(presentationVersions.version, wanted)
+          )
+        )
+        .limit(1);
+      if (!sourceVersion) return { ok: false, failure: { code: 'invalid_version', version: wanted } };
+
+      const manifest = sourceVersion.manifest as ManifestEntry[];
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(
+        tx,
+        opts.workspaceId,
+        opts.principal,
+        manifest
+      );
+      if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
+      const stamped = this.stampManifest(manifest, sizeBySha);
+
+      const title = opts.title ?? duplicateTitle(source.title);
+      const [presentation] = await tx
+        .insert(presentations)
+        .values({
+          workspaceId: opts.workspaceId,
+          ownerUserId: opts.principal.userId,
+          title,
+          kind: source.kind,
+          interactive: source.interactive,
+          metadata: source.metadata,
+          currentVersion: 1,
+          entryPath: sourceVersion.entryPath,
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: sourceVersion.hasForms,
+          hasDownloads: stamped.hasDownloads,
+          remixedFrom: source.id
+        })
+        .returning();
+      const [version] = await tx
+        .insert(presentationVersions)
+        .values({
+          workspaceId: opts.workspaceId,
+          presentationId: presentation!.id,
+          version: 1,
+          entryPath: sourceVersion.entryPath,
+          manifest: stamped.manifest,
+          sizeBytes: stamped.sizeBytes,
+          fileCount: stamped.fileCount,
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: sourceVersion.hasForms,
+          hasDownloads: stamped.hasDownloads,
+          createdBy: opts.principal.userId,
+          // The copy is the caller's own deck: they own it, so they commit
+          // its first version as 'owner' whatever their role on the source.
+          createdByRole: 'owner'
+        })
+        .returning();
+      return { ok: true, presentation: presentation!, version: version!, sourceVersion: wanted };
+    });
+  }
+
   // ── Reads ──────────────────────────────────────────────────────────────────
   // Deck reads are PRIVATE, not workspace-wide (ADR 013, diverging from ADR
   // 006): a workspace admin/owner sees every deck (the operator view); a
@@ -657,6 +777,25 @@ export class PresentationService {
     `);
     return (res.rows?.length ?? 0) > 0;
   }
+}
+
+/** The wire cap on a deck title (`plainText(1, 300)`), in UTF-16 code units like zod's `max`. */
+const TITLE_MAX_UNITS = 300;
+
+/**
+ * The title a copy gets when the caller names none: the source's, suffixed,
+ * within the cap. The cut is by CODE POINT, never by code unit: a title made
+ * of astral characters (emoji) can be legal at 300 units, and a unit-wise
+ * slice would split a surrogate pair — the lone surrogate then lands in
+ * Postgres as U+FFFD (verifier round 1). Code points are dropped from the
+ * end until the suffixed title fits the unit cap.
+ */
+export function duplicateTitle(sourceTitle: string): string {
+  const suffix = ' (copy)';
+  const points = Array.from(sourceTitle);
+  let keep = points.length;
+  while (keep > 0 && points.slice(0, keep).join('').length + suffix.length > TITLE_MAX_UNITS) keep -= 1;
+  return `${points.slice(0, keep).join('')}${suffix}`;
 }
 
 /**

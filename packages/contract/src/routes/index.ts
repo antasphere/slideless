@@ -1301,3 +1301,36 @@ export const formResponseDeleteRoute = createRoute({
     404: errorResponses[404]
   }
 });
+
+// ── Duplicate (PRDCT-2279, lane C of the artifact wave) ──────────────────────
+// A per-deck CREATE: reads the source under canReadDeck (404, never 403 —
+// ADR 013), creates in the caller's workspace like an upload commit (guests
+// refused, 403 guest_forbidden, D2), and mints exactly one copy per
+// Idempotency-Key like the other row-minting creates.
+
+import { presentationDuplicateSchema } from '../schemas/presentations.js';
+
+export const presentationDuplicateRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/duplicate',
+  tags: ['presentations'],
+  summary:
+    'Duplicate a presentation: a new deck in the same workspace whose version 1 references the ' +
+    "source version's blobs (no re-upload); lineage recorded in remixedFrom",
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(
+      presentationDuplicateSchema,
+      'Source version (default: current) and the copy’s title'
+    ),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    201: jsonBody(versionCommittedSchema, 'The copy at version 1'),
+    400: jsonBody(apiErrorSchema, 'Validation error, or the source version does not exist'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict')
+  }
+});

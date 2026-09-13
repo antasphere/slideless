@@ -410,3 +410,19 @@ export const versionCommittedSchema = z.object({
   version: presentationVersionSchema
 });
 export type VersionCommitted = z.infer<typeof versionCommittedSchema>;
+
+// ── Duplicate (PRDCT-2279, the master page) ──────────────────────────────────
+
+/**
+ * Body of `POST /presentations/{id}/duplicate`: a new deck in the same
+ * workspace whose version 1 is the source version's manifest, entry for
+ * entry, sha for sha. Nothing is re-uploaded — blobs are content-addressed
+ * per workspace, so the copy references the bytes the source already holds.
+ * `version` picks the source version (the current one when omitted);
+ * `title` names the copy (the source title with a suffix when omitted).
+ */
+export const presentationDuplicateSchema = z.object({
+  version: z.number().int().min(1).max(2_147_483_647).optional(),
+  title: plainText(1, 300).optional()
+});
+export type PresentationDuplicate = z.infer<typeof presentationDuplicateSchema>;

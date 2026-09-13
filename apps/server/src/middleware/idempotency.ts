@@ -24,6 +24,8 @@ import { apiError } from '../api/errors.js';
  *     that cannot be revoked, on top of the first. The two mint routes must
  *     stay listed together.)
  *   POST /api/v1/presentations/{id}/tokens
+ *   POST /api/v1/presentations/{id}/duplicate (PRDCT-2279: one click mints
+ *     one deck; a network-blip retry must not mint a second copy)
  *   POST /api/v1/presentations/uploads (a retried reserve must not leak a
  *     second session + reserved deck id)
  * Deliberate NON-targets:
@@ -64,6 +66,9 @@ const CHANGE_EMAIL_LINK_RE = /^\/api\/v1\/members\/[^/]+\/change-email-link$/;
 // Share-token creation returns a one-shot secret — exactly what replay
 // protection exists for (a retried create must not mint a second link).
 const SHARE_TOKEN_CREATE_RE = /^\/api\/v1\/presentations\/[^/]+\/tokens$/;
+// The duplicate (PRDCT-2279) mints a deck row and its version 1 from one
+// click: a retried click must land on the same copy, never a second one.
+const DUPLICATE_RE = /^\/api\/v1\/presentations\/[^/]+\/duplicate$/;
 
 function isTarget(method: string, path: string): boolean {
   return (
@@ -71,7 +76,8 @@ function isTarget(method: string, path: string): boolean {
     (TARGET_PATHS.has(path) ||
       RESET_LINK_RE.test(path) ||
       CHANGE_EMAIL_LINK_RE.test(path) ||
-      SHARE_TOKEN_CREATE_RE.test(path))
+      SHARE_TOKEN_CREATE_RE.test(path) ||
+      DUPLICATE_RE.test(path))
   );
 }
 

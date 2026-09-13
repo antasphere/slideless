@@ -30,3 +30,10 @@ describe('requiredScopeFor — attachments', () => {
     expect(requiredScopeFor(`${DECK}/versions/3/downloads.zip`, 'DELETE')).toBe('presentations:write');
   });
 });
+
+describe('requiredScopeFor — duplicate (PRDCT-2279)', () => {
+  it('opens the duplicate under presentations:write and never to a read key', () => {
+    expect(requiredScopeFor(`${DECK}/duplicate`, 'POST')).toBe('presentations:write');
+    expect(requiredScopeFor(`${DECK}/duplicate`, 'GET')).toBe('presentations:read');
+  });
+});

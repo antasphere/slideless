@@ -68,6 +68,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /presentations/{id}': (c) => c.presentation(SAMPLE_ID),
   'PATCH /presentations/{id}': (c) => c.updatePresentation(SAMPLE_ID, { title: 'T' }),
   'DELETE /presentations/{id}': (c) => c.deletePresentation(SAMPLE_ID),
+  'POST /presentations/{id}/duplicate': (c) => c.duplicatePresentation(SAMPLE_ID),
   'POST /presentations/uploads': (c) => c.createUploadSession(),
   'POST /presentations/precheck': (c) => c.precheckAssets([SAMPLE_SHA256]),
   'POST /presentations/assets': (c) => c.uploadAsset(SAMPLE_SHA256, new Uint8Array([1])),
