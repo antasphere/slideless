@@ -9,6 +9,7 @@ import type { Auth } from '../identity/better-auth.js';
 import type { AuditService } from '../audit/service.js';
 import { parseSuperadminEmails } from '../accounts/superadmin.js';
 import { purgeShareTokenViews } from '../sharing/view-events.js';
+import { purgeShareTokenDownloads } from '../sharing/download-events.js';
 
 /**
  * pg-boss job runtime. Queue creation and worker registration follow
@@ -239,6 +240,13 @@ export async function createJobs(
     await boss.work(VIEW_EVENTS_PURGE_QUEUE, async () => {
       const deleted = await purgeShareTokenViews(db, viewRetentionDays);
       logger.info({ retentionDays: viewRetentionDays, deleted }, 'view events retention purge ran');
+      // The download events (PRDCT-2278) ride the same knob and the same
+      // nightly run: one retention story for both kinds of link analytics.
+      const deletedDownloads = await purgeShareTokenDownloads(db, viewRetentionDays);
+      logger.info(
+        { retentionDays: viewRetentionDays, deleted: deletedDownloads },
+        'download events retention purge ran'
+      );
     });
 
     // Orphaned-user GC: setup-race losers, fail-closed SSO login strands

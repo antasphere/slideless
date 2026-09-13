@@ -83,6 +83,12 @@ export const shareTokenSchema = z.object({
   canAnnotate: z.boolean(),
   /** Whether viewers of this link may submit the deck's embedded forms. */
   canSubmitForms: z.boolean(),
+  /**
+   * Whether viewers of this link may download the version's attachments
+   * (the `downloads/` folder, PRDCT-2278). Off = the attachment routes 404
+   * and the recipient list is empty; the deck itself still shows.
+   */
+  canDownload: z.boolean(),
   /** Per-link badge slot; null = deck default (then bottom-right). */
   badgePosition: badgePositionSchema.nullable(),
   expiresAt: z.string().nullable(),
@@ -91,6 +97,12 @@ export const shareTokenSchema = z.object({
   revokedAt: z.string().nullable(),
   accessCount: z.number().int(),
   lastAccessedAt: z.string().nullable(),
+  /**
+   * Attachment downloads through this link: one per file taken, one per
+   * whole-set zip. Never a view, never de-duplicated; owner previews and
+   * HEAD requests never count.
+   */
+  downloadCount: z.number().int().min(0),
   createdAt: z.string()
 });
 export type ShareToken = z.infer<typeof shareTokenSchema>;
@@ -119,6 +131,12 @@ export const shareTokenCreateSchema = z
      */
     canSubmitForms: z.boolean().default(true),
     /**
+     * Downloads ON by default (PRDCT-2278): a link exposes the version's
+     * attachments unless the owner switches it off — the files were put in
+     * `downloads/` to be handed out. Opt out per link.
+     */
+    canDownload: z.boolean().default(true),
+    /**
      * Explicit badge slot for this link. Also becomes the deck's remembered
      * default for future links. Omitted = inherit the deck's remembered
      * position.
@@ -131,7 +149,14 @@ export const shareTokenCreateSchema = z
   .refine(pinnedVersionConsistent, {
     message: 'pinnedVersion is required when versionMode is "pinned"'
   });
-export type ShareTokenCreate = z.infer<typeof shareTokenCreateSchema>;
+/**
+ * The CLIENT-facing shape: the schema's INPUT, so every field the server
+ * defaults (versionMode, canAnnotate, canSubmitForms, canDownload) is
+ * optional to a caller. A client that had to spell out every default would
+ * break at typecheck each time the contract gained one (PRDCT-2278 did);
+ * the server validates against the schema and reads the output type.
+ */
+export type ShareTokenCreate = z.input<typeof shareTokenCreateSchema>;
 
 /**
  * Body of the dedicated preview-token endpoint (owner/admin only). The
@@ -167,6 +192,7 @@ export const shareTokenUpdateSchema = z
     pinnedVersion: versionNumberSchema.optional(),
     canAnnotate: z.boolean().optional(),
     canSubmitForms: z.boolean().optional(),
+    canDownload: z.boolean().optional(),
     /**
      * Explicit slot (also updates the deck's remembered default) or null to
      * fall back to the deck default again.

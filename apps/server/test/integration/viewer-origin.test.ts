@@ -34,6 +34,8 @@ const OWNER = { email: 'owner@origin.test', name: 'Origin Owner', password: 'ori
 
 const HTML = Buffer.from('<!doctype html><html><body><h1>deck</h1><p>Annotate me</p></body></html>');
 const CSS = Buffer.from('h1 { color: teal }');
+/** One attachment (PRDCT-2278): the routes it opens must sit inside the viewer hostname. */
+const CSV = Buffer.from('a,b\n1,2\n');
 const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 interface Fixture {
@@ -83,6 +85,7 @@ async function bootFixture(dbName: string, extraEnv: Record<string, string>): Pr
   };
   await upload(HTML, 'index.html', 'text/html');
   await upload(CSS, 'style.css', 'text/css');
+  await upload(CSV, 'figures.csv', 'text/csv');
 
   const reserveRes = await app.app.request(`${APP}/api/v1/presentations/uploads`, {
     method: 'POST',
@@ -99,7 +102,13 @@ async function bootFixture(dbName: string, extraEnv: Record<string, string>): Pr
         entryPath: 'index.html',
         manifest: [
           { path: 'index.html', sha256: shaOf(HTML), sizeBytes: HTML.length, contentType: 'text/html' },
-          { path: 'style.css', sha256: shaOf(CSS), sizeBytes: CSS.length, contentType: 'text/css' }
+          { path: 'style.css', sha256: shaOf(CSS), sizeBytes: CSS.length, contentType: 'text/css' },
+          {
+            path: 'downloads/figures.csv',
+            sha256: shaOf(CSV),
+            sizeBytes: CSV.length,
+            contentType: 'text/csv'
+          }
         ]
       },
       dashboard(cookie)
@@ -284,6 +293,23 @@ describe('split origin: the viewer hostname serves decks — and nothing else', 
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 
+  it('serves the attachment routes and the token-authed attachments list (PRDCT-2278)', async () => {
+    const file = await split.app.app.request(`${VIEWER}/v/${split.secret}/downloads/figures.csv`);
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-disposition')).toContain('attachment; filename="figures.csv"');
+    expect(file.headers.get('content-security-policy')).toBe(VIEWER_CSP);
+    expect(await file.text()).toBe(CSV.toString());
+    const zip = await split.app.app.request(`${VIEWER}/v/${split.secret}/downloads.zip`);
+    expect(zip.status).toBe(200);
+    expect(zip.headers.get('content-type')).toBe('application/zip');
+    const list = await split.app.app.request(`${VIEWER}/api/v1/viewer/${split.secret}/attachments`, {
+      headers: { origin: 'null', 'sec-fetch-site': 'cross-site' }
+    });
+    expect(list.status).toBe(200);
+    expect(list.headers.get('access-control-allow-origin')).toBe('*');
+    expect((await readJson(list)).attachments.map((a: { name: string }) => a.name)).toEqual(['figures.csv']);
+  });
+
   it('answers the probes', async () => {
     expect((await split.app.app.request(`${VIEWER}/healthz`)).status).toBe(200);
   });
@@ -369,6 +395,14 @@ describe('split origin: the app hostname no longer serves decks', () => {
     expect(res.headers.get('location')).toBe(`${VIEWER}/v/${split.secret}/style.css`);
   });
 
+  it('redirects the attachment routes too, and never serves the bytes on the app origin (PRDCT-2278)', async () => {
+    for (const path of [`/v/${split.secret}/downloads/figures.csv`, `/v/${split.secret}/downloads.zip`]) {
+      const res = await split.app.app.request(`${APP}${path}`, { redirect: 'manual' });
+      expect(res.status, path).toBe(308);
+      expect(res.headers.get('location'), path).toBe(`${VIEWER}${path}`);
+    }
+  });
+
   it('keeps /embed.js on the app origin (ADR 021)', async () => {
     const res = await split.app.app.request(`${APP}/embed.js`);
     expect(res.status).toBe(200);
@@ -393,6 +427,19 @@ describe('single origin (VIEWER_BASE_URL unset): nothing changes', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-security-policy')).toBe(VIEWER_CSP);
     expect(await res.text()).toContain('<h1>deck</h1>');
+  });
+
+  it('serves the attachment routes and the attachments list on the app origin, no redirect (PRDCT-2278)', async () => {
+    const file = await plain.app.app.request(`${APP}/v/${plain.secret}/downloads/figures.csv`, {
+      redirect: 'manual'
+    });
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-disposition')).toContain('attachment; filename="figures.csv"');
+    const zip = await plain.app.app.request(`${APP}/v/${plain.secret}/downloads.zip`, { redirect: 'manual' });
+    expect(zip.status).toBe(200);
+    const list = await plain.app.app.request(`${APP}/api/v1/viewer/${plain.secret}/attachments`);
+    expect(list.status).toBe(200);
+    expect((await readJson(list)).attachments).toHaveLength(1);
   });
 
   it('installs no host gate: an unknown hostname is just the app (401, not 404, on a protected read)', async () => {

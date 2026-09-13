@@ -43,6 +43,7 @@ import {
 } from '../schemas/break-glass.js';
 import { fileSchema, filesListSchema, fileUploadedSchema, fileUploadQuerySchema } from '../schemas/files.js';
 import {
+  ASSET_PATH_MAX_LENGTH,
   assetPrecheckRequestSchema,
   assetPrecheckResponseSchema,
   assetUploadFormSchema,
@@ -879,6 +880,66 @@ export const assetDownloadRoute = createRoute({
     // Deliberately NO `content` key on the 200 (workspace-export precedent):
     // the handler returns a plain streamed Response.
     200: { description: 'Asset bytes (streamed)' },
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
+// ── Attachments (PRDCT-2278, the owner side) ─────────────────────────────────
+// The `downloads/` entries of ONE version, for the master page's version
+// history: the whole set as a streamed store-only zip, or one file by name.
+// Both under canReadDeck (404, never 403 — ADR 013), both `attachment` +
+// `nosniff` (user content never renders on the app origin), both open to
+// machine principals under presentations:read through the /presentations
+// prefix rule of the scope allowlist (middleware/scopes.ts, consciously).
+// Guests keep their per-deck read here as on the asset route. The
+// recipient side (the share link) lives on the viewer: `/v/{secret}/
+// downloads.zip`, `/v/{secret}/downloads/{name...}` and the token-authed
+// list `GET /api/v1/viewer/{secret}/attachments` (viewer/attachments-api.ts).
+
+/**
+ * `{name}` is ONE path segment: an attachment's name relative to
+ * `downloads/`, percent-encoded by the client — a nested name
+ * (`sub/file.csv`) travels as `sub%2Ffile.csv`, so the route keeps typed
+ * parameters and a place in the OpenAPI document. Bounded like a manifest
+ * path; the handler applies the traversal rule to the decoded value and
+ * looks the path up EXACTLY in the version's manifest.
+ */
+const attachmentParams = z.object({
+  id: z.uuid(),
+  version: versionParamSchema,
+  name: z.string().min(1).max(ASSET_PATH_MAX_LENGTH)
+});
+
+export const versionAttachmentsZipRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/versions/{version}/downloads.zip',
+  tags: ['presentations'],
+  summary:
+    "One version's attachments (its `downloads/` folder) as a streamed store-only zip named " +
+    '`<deck-title-slug>-v<n>.zip`; entries are named by their path relative to downloads/. ' +
+    '404 no_attachments when the version carries none.',
+  request: { params: versionParams },
+  responses: {
+    // Deliberately NO `content` key on the 200 (the asset-download precedent):
+    // the handler returns a plain streamed Response.
+    200: { description: 'Zip archive stream (application/zip, attachment)' },
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
+export const versionAttachmentDownloadRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/versions/{version}/downloads/{name}',
+  tags: ['presentations'],
+  summary:
+    'One attachment of one version by its name (the path relative to downloads/, percent-encoded — ' +
+    'a nested name travels as sub%2Ffile.csv), served attachment + nosniff with the manifest content ' +
+    'type, ETag and Range like the asset route.',
+  request: { params: attachmentParams },
+  responses: {
+    200: { description: 'Attachment bytes (streamed, attachment disposition)' },
     401: errorResponses[401],
     404: errorResponses[404]
   }

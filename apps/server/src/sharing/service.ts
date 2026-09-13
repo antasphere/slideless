@@ -81,6 +81,12 @@ export class ShareTokenService {
     canAnnotate: boolean;
     /** Forms default ON (share route) — the preview mint passes false. */
     canSubmitForms: boolean;
+    /**
+     * Downloads default ON (share route, PRDCT-2278); the preview mint
+     * passes true too — an owner's preview shows what a default link shows,
+     * and preview downloads are never counted (viewer/routes.ts).
+     */
+    canDownload: boolean;
     /** Explicit badge slot for this link, or null = inherit the deck default. */
     badgePosition: BadgePosition | null;
     expiresAt: Date | null;
@@ -98,6 +104,7 @@ export class ShareTokenService {
         pinnedVersion: opts.pinnedVersion,
         canAnnotate: opts.canAnnotate,
         canSubmitForms: opts.canSubmitForms,
+        canDownload: opts.canDownload,
         badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
@@ -226,12 +233,14 @@ export function shareTokenToWire(t: ShareTokenRow): {
   pinnedVersion: number | null;
   canAnnotate: boolean;
   canSubmitForms: boolean;
+  canDownload: boolean;
   badgePosition: BadgePosition | null;
   expiresAt: string | null;
   hasPassword: boolean;
   revokedAt: string | null;
   accessCount: number;
   lastAccessedAt: string | null;
+  downloadCount: number;
   createdAt: string;
 } {
   return {
@@ -243,12 +252,14 @@ export function shareTokenToWire(t: ShareTokenRow): {
     pinnedVersion: t.pinnedVersion,
     canAnnotate: t.canAnnotate,
     canSubmitForms: t.canSubmitForms,
+    canDownload: t.canDownload,
     badgePosition: t.badgePosition,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     hasPassword: t.passwordHash !== null,
     revokedAt: t.revokedAt?.toISOString() ?? null,
     accessCount: t.accessCount,
     lastAccessedAt: t.lastAccessedAt?.toISOString() ?? null,
+    downloadCount: t.downloadCount,
     createdAt: t.createdAt.toISOString()
   };
 }

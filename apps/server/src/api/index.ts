@@ -63,6 +63,7 @@ import { ShareTokenViewService } from '../sharing/view-events.js';
 import type { CollaboratorService } from '../collaborators/service.js';
 import type { FormResponseService } from '../forms/service.js';
 import { registerViewerFormRoutes } from '../viewer/forms-api.js';
+import { registerViewerAttachmentRoutes } from '../viewer/attachments-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import type { AccountDeletionService } from '../accounts/deletion.js';
@@ -1019,6 +1020,20 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     env,
     formSubmitLimiter: limiters.viewerFormSubmit,
     formEmailLimiter: limiters.viewerFormEmail,
+    passwordLimiter: limiters.viewerPassword,
+    clientIp
+  });
+  // The PUBLIC viewer-token attachments list (PRDCT-2278): the read-only
+  // third sibling — same resolver, same containment. Unknown-secret probes
+  // burn the annotation surface's per-IP bucket (nothing is written here,
+  // the bucket only keeps the endpoint from being a cheaper secret oracle
+  // than /v).
+  registerViewerAttachmentRoutes(api, {
+    sharing: deps.sharing,
+    presentations: presentationService,
+    logger,
+    authSecret: deps.authSecret,
+    invalidSecretLimiter: limiters.viewerAnnotate,
     passwordLimiter: limiters.viewerPassword,
     clientIp
   });

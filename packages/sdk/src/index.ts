@@ -624,6 +624,52 @@ export class PlatformClient {
     return res;
   }
 
+  /** URL of the streamed attachments zip of one version (PRDCT-2278). */
+  versionAttachmentsZipUrl(id: string, version: number): string {
+    return `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/versions/${version}/downloads.zip`;
+  }
+
+  /**
+   * Downloads one version's attachments (its `downloads/` folder) as a
+   * streamed store-only zip named `<deck-title-slug>-v<n>.zip` (the
+   * Content-Disposition carries it). Returns the raw Response so callers can
+   * stream the bytes; 404 no_attachments when the version carries none.
+   */
+  async downloadVersionAttachmentsZip(id: string, version: number): Promise<Response> {
+    return this.rawDownload(this.versionAttachmentsZipUrl(id, version));
+  }
+
+  /**
+   * URL of one attachment of one version by its name (the path relative to
+   * `downloads/`). The name is ONE path segment on the wire: a nested name
+   * (`sub/file.csv`) is percent-encoded whole (`sub%2Ffile.csv`).
+   */
+  versionAttachmentUrl(id: string, version: number, name: string): string {
+    return `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/versions/${version}/downloads/${encodeURIComponent(name)}`;
+  }
+
+  /** Downloads one attachment (attachment disposition, the manifest content type). Raw Response. */
+  async downloadVersionAttachment(id: string, version: number, name: string): Promise<Response> {
+    return this.rawDownload(this.versionAttachmentUrl(id, version, name));
+  }
+
+  /** The shared body of the streamed-download methods (the asset download's shape). */
+  private async rawDownload(url: string): Promise<Response> {
+    const headers: Record<string, string> = this.baseHeaders();
+    const res = await this.fetchImpl(url, {
+      method: 'GET',
+      headers,
+      credentials: 'same-origin',
+      signal: this.signal('download'),
+      // Browser-only field; cast keeps this isomorphic under a Node lib.
+      cache: 'no-store'
+    } as RequestInit);
+    if (!res.ok) {
+      await this.parse(res); // throws PlatformApiError with the wire shape
+    }
+    return res;
+  }
+
   /** URL of the streamed AGENT.md briefing endpoint. */
   agentDocUrl(id: string, version?: number): string {
     const base = `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/agent-doc`;

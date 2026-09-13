@@ -57,6 +57,7 @@ import { clearGeneratedSetupToken, resolveAuthSecret, resolveSetupToken } from '
 import { ShareTokenService } from './sharing/service.js';
 import { FormResponseService } from './forms/service.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
+import { ShareTokenDownloadService } from './sharing/download-events.js';
 import { PresentationService } from './presentations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { viewerRoutes } from './viewer/routes.js';
@@ -735,6 +736,7 @@ export async function boot(
   const viewer = viewerRoutes({
     sharing,
     views: new ShareTokenViewService(db.db, logger),
+    downloads: new ShareTokenDownloadService(db.db, logger),
     presentations: new PresentationService(db.db),
     fileService,
     storage,

@@ -3,14 +3,22 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import { isTraversalSafeAssetPath, type ManifestEntry } from '@slideless/contract';
+import {
+  attachmentPathOf,
+  attachmentsOf,
+  isAttachmentPath,
+  isTraversalSafeAssetPath,
+  type ManifestEntry
+} from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, ShareTokenRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { FileService } from '../files/service.js';
 import { serveBlob } from '../files/serve.js';
 import { encodeContentDisposition } from '../files/http.js';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
+import { attachmentsZipFilename, serveAttachmentsZip } from '../presentations/attachments.js';
 import type { PresentationService } from '../presentations/service.js';
+import type { ShareTokenDownloadService } from '../sharing/download-events.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import {
   viewPlacement,
@@ -59,6 +67,19 @@ import { mintViewedValue, verifyViewedValue, viewedCookieName } from './viewed.j
  * recipients are not principals), no audit rows (views are counted on the
  * token + deck instead), no `?token=` query form (path-carried secret only,
  * so relative asset references resolve).
+ *
+ * ATTACHMENTS (PRDCT-2278): the version's `downloads/` folder is handed out,
+ * never shown. `GET /v/{secret}/downloads/{name...}` serves one file with a
+ * FORCED `attachment` disposition and `GET /v/{secret}/downloads.zip` the
+ * whole set as a streamed store-only zip, both behind the same resolution
+ * chain and password gate as the assets, both refused with the asset
+ * route's own 404 when the link's `can_download` is off. The generic asset
+ * route below NEVER serves a `downloads/` path — an `.html` dropped in that
+ * folder is not a page of the deck — so the two attachment routes register
+ * BEFORE it and it refuses the prefix on its own as well (the exclusion is
+ * what stops a percent-encoded `downloads%2Fpage.html`, which the attachment
+ * pattern does not match, from reaching the inline serve). A download is
+ * never a view.
  */
 
 export const VIEWER_PATH_PREFIX = '/v';
@@ -78,6 +99,8 @@ export interface ViewerDeps {
   sharing: ShareTokenService;
   /** Per-view analytics events (PRDCT-1313), written under the counted gate. */
   views: ShareTokenViewService;
+  /** Per-download events + the link's download counter (PRDCT-2278), one transaction. */
+  downloads: ShareTokenDownloadService;
   presentations: PresentationService;
   fileService: FileService;
   storage: StorageDriver;
@@ -578,6 +601,132 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     });
   });
 
+  // ── Attachments (PRDCT-2278) ───────────────────────────────────────────────
+  // Registered BEFORE the generic asset route: Hono runs matching handlers
+  // in registration order, and these answer every `downloads/…` request.
+
+  /**
+   * Secret → token → live deck → version → password proof → the download
+   * capability, or the response to answer. The capability refusal is the
+   * asset route's own 404, byte-identical: a link with downloads off must
+   * not confirm that the file (or the folder) exists.
+   */
+  async function resolveDownloader(
+    c: Context
+  ): Promise<{ ok: true; view: ResolvedView } | { ok: false; response: Response }> {
+    const resolved = await resolve(c);
+    if (!resolved.ok) return { ok: false, response: viewerError(c, resolved.failure) };
+    const gate = await passwordSatisfied(c, resolved.view.token);
+    if (!gate.ok) return { ok: false, response: gate.response };
+    if (!resolved.view.token.canDownload) {
+      return {
+        ok: false,
+        response: viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' })
+      };
+    }
+    return { ok: true, view: resolved.view };
+  }
+
+  /**
+   * One download event per file taken and per zip, keyed on the SERVER-SET
+   * `purpose` like the view exclusion (an owner's preview never counts);
+   * HEAD never counts, and neither does a revalidation the ETag answers
+   * with 304 (the caller passes the entry's sha, null for the zip).
+   */
+  function downloadCounted(c: Context, token: ShareTokenRow, etagSha: string | null): boolean {
+    if (c.req.method !== 'GET' || token.purpose === 'preview') return false;
+    return etagSha === null || c.req.header('if-none-match') !== `"${etagSha}"`;
+  }
+
+  const attachmentHeaders: Readonly<Record<string, string>> = {
+    ...VIEWER_CONTENT_HEADERS,
+    // Not content-addressed (a latest-mode token re-maps on every push,
+    // revocation must bite): always revalidate, the asset posture.
+    'cache-control': 'private, no-cache'
+  };
+
+  app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret/downloads.zip`, async (c) => {
+    const resolved = await resolveDownloader(c);
+    if (!resolved.ok) return resolved.response;
+    const { token, deck, version, manifest } = resolved.view;
+    const attachments = attachmentsOf(manifest);
+    if (attachments.length === 0) {
+      return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+    if (downloadCounted(c, token, null)) {
+      await deps.downloads.record({
+        workspaceId: token.workspaceId,
+        presentationId: deck.id,
+        shareTokenId: token.id,
+        version: version.version,
+        name: null
+      });
+    }
+    return serveAttachmentsZip(c, {
+      storage,
+      logger,
+      workspaceId: token.workspaceId,
+      attachments,
+      filename: attachmentsZipFilename(deck.title, version.version),
+      mtime: version.createdAt,
+      headOnly: c.req.method === 'HEAD',
+      extraHeaders: { ...VIEWER_CONTENT_HEADERS }
+    });
+  });
+
+  app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret/downloads/*`, async (c) => {
+    const resolved = await resolveDownloader(c);
+    if (!resolved.ok) return resolved.response;
+    const { token, deck, version, manifest } = resolved.view;
+
+    // Segments after `/v/{secret}/downloads/`, percent-decoded, then the
+    // traversal rule on the decoded NAME and an exact manifest lookup on
+    // `downloads/<name>` — the asset route's discipline, one folder down.
+    const rawSegments = c.req.path.split('/').slice(4);
+    let name: string;
+    try {
+      name = rawSegments.map((s) => decodeURIComponent(s)).join('/');
+    } catch {
+      return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+    if (!isTraversalSafeAssetPath(name)) {
+      return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+    const entry = manifest.find((e) => e.path === attachmentPathOf(name));
+    if (!entry) {
+      return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+    const fileRow = await fileService.getBySha(token.workspaceId, entry.sha256);
+    if (!fileRow) {
+      return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+
+    if (downloadCounted(c, token, entry.sha256)) {
+      await deps.downloads.record({
+        workspaceId: token.workspaceId,
+        presentationId: deck.id,
+        shareTokenId: token.id,
+        version: version.version,
+        name
+      });
+    }
+
+    const basename = name.split('/').pop() ?? name;
+    return serveBlob(c, {
+      storage,
+      logger,
+      workspaceId: token.workspaceId,
+      sha256: entry.sha256,
+      sizeBytes: fileRow.sizeBytes,
+      contentType: entry.contentType,
+      filename: basename,
+      headOnly: c.req.method === 'HEAD',
+      // FORCED attachment: handed out, never shown — whatever the type says.
+      contentDisposition: encodeContentDisposition('attachment', basename),
+      extraHeaders: { ...attachmentHeaders }
+    });
+  });
+
   // ── Deck assets (path-relative to the resolved version's manifest) ─────────
   app.on(['GET', 'HEAD'], `${VIEWER_PATH_PREFIX}/:secret/*`, async (c) => {
     const resolved = await resolve(c);
@@ -605,6 +754,13 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     // the stricter commit-time rule (isSafeAssetPath) would only change what
     // ALREADY-COMMITTED decks can serve, never what can escape.
     if (!isTraversalSafeAssetPath(assetPath)) {
+      return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
+    }
+    // The attachments folder is NEVER served inline (PRDCT-2278): the
+    // attachment routes above own it, and this refusal is what closes the
+    // encoded-slash shape (`downloads%2Fpage.html` is one segment to the
+    // router, so only this handler ever sees it decoded).
+    if (isAttachmentPath(assetPath)) {
       return viewerError(c, { status: 404, code: 'not_found', message: 'No such file in this deck.' });
     }
 

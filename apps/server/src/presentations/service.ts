@@ -14,7 +14,7 @@ import {
   type UploadSessionRow,
   type VersionAuthorRole
 } from '@slideless/db';
-import { AGENT_DOC_PATH, type ManifestEntry, type Principal } from '@slideless/contract';
+import { AGENT_DOC_PATH, isAttachmentPath, type ManifestEntry, type Principal } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 
 /** Upload sessions reserve the future deck id for ~1 h (ADR 011). */
@@ -175,7 +175,13 @@ export class PresentationService {
   private stampManifest(
     manifest: ManifestEntry[],
     sizeBySha: Map<string, number>
-  ): { manifest: ManifestEntry[]; sizeBytes: number; fileCount: number; hasAgentDoc: boolean } {
+  ): {
+    manifest: ManifestEntry[];
+    sizeBytes: number;
+    fileCount: number;
+    hasAgentDoc: boolean;
+    hasDownloads: boolean;
+  } {
     const stamped = manifest.map((e) => ({ ...e, sizeBytes: sizeBySha.get(e.sha256)! }));
     return {
       manifest: stamped,
@@ -183,7 +189,10 @@ export class PresentationService {
       fileCount: stamped.length,
       // The reserved agent briefing: exact root path, case-sensitive like
       // every manifest path. Stamped here so reads never open the manifest.
-      hasAgentDoc: stamped.some((e) => e.path === AGENT_DOC_PATH)
+      hasAgentDoc: stamped.some((e) => e.path === AGENT_DOC_PATH),
+      // The reserved attachments folder (PRDCT-2278), the same way: any
+      // entry under `downloads/` makes the version carry attachments.
+      hasDownloads: stamped.some((e) => isAttachmentPath(e.path))
     };
   }
 
@@ -254,7 +263,8 @@ export class PresentationService {
           currentVersion: 1,
           entryPath: opts.entryPath,
           hasAgentDoc: stamped.hasAgentDoc,
-          hasForms: opts.hasForms
+          hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads
         })
         .returning();
       const [version] = await tx
@@ -269,6 +279,7 @@ export class PresentationService {
           fileCount: stamped.fileCount,
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
           createdBy: opts.principal.userId,
           createdByRole: 'owner'
         })
@@ -359,6 +370,7 @@ export class PresentationService {
           fileCount: stamped.fileCount,
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
           createdBy: opts.principal.userId,
           // 'owner' for the deck owner / workspace admins, 'dev' for an
           // active per-deck collaborator (resolved above, in-transaction).
@@ -372,6 +384,7 @@ export class PresentationService {
           entryPath: opts.entryPath,
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
           updatedAt: new Date(),
           ...(opts.title !== undefined ? { title: opts.title } : {})
         })
@@ -531,6 +544,7 @@ export class PresentationService {
         fileCount: presentationVersions.fileCount,
         hasAgentDoc: presentationVersions.hasAgentDoc,
         hasForms: presentationVersions.hasForms,
+        hasDownloads: presentationVersions.hasDownloads,
         createdBy: presentationVersions.createdBy,
         createdByRole: presentationVersions.createdByRole,
         createdAt: presentationVersions.createdAt
