@@ -217,8 +217,11 @@ re-uploaded.
 - **Attachments**: a `downloads/` folder at the root of the deck is the
   version's attachment set ([Attachments](../concepts/attachments.md), and
   the [Downloads](../sharing/downloads.md) page for the URLs and the API):
-  files handed to a link's recipient as downloads, never rendered. The push
-  classifies them by the same rule the server uses and prints an
+  files handed to a link's recipient as downloads, never rendered. The link
+  serves the deck as it was pushed, so **your deck must link its own files**
+  for a recipient to find them: `<a href="downloads/figures.csv">` for one,
+  `<a href="downloads.zip">` for the set, relative to the deck's own URL. The
+  push classifies them by the same rule the server uses and prints an
   `Attachments: N files, X MB (downloads/)` line under the summary when the
   folder carries some; `--json` carries `attachments: { count, sizeBytes }`.
   They ride the same content-addressed protocol as every file: an unchanged
@@ -325,8 +328,10 @@ same builder as the dashboard's copy dialog (identical sandbox attributes);
 up per view in `slideless views`). Details: the Embedding page under
 Sharing & review.
 
-Access stats count entry loads only, de-duplicated per browser within a
-short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
+`tokens` lists every link of the deck, the dashboard's own preview links
+included: rows named `Dashboard preview` that expire within the hour and
+count nothing; the dashboard hides them, the CLI and the API do not. Access
+stats count entry loads only, de-duplicated per browser within a short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
 open is one count, while cookie-less fetches (CLI, curl) count each time.
 "Last opened" is the last counted open. The downloads column is the link's
 `downloadCount` (one per attachment taken through the link, one per zip,

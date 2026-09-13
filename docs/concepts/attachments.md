@@ -46,8 +46,10 @@ version, with each version's files.
 - **On a share link**, the files of the version the link resolves to are served one by one at
   `/v/<secret>/downloads/<name>` and all together at `/v/<secret>/downloads.zip`. The link shows the
   deck as it was pushed and nothing else, so a deck that hands out its files links them itself,
-  relative to its own URL: `downloads/figures.csv` for one file, `downloads.zip` for the set. Every
-  download counts on the link, next to its views.
+  relative to its own URL: `downloads/figures.csv` for one file, `downloads.zip` for the set. A deck
+  pushed with a `downloads/` folder and no such link hands out nothing a recipient can click, and
+  nothing on the owner's side says so: add the links and push again. Every download counts on the
+  link, next to its views.
 - **On the API**, `GET /api/v1/presentations/{id}/versions/{n}` lists a version's attachments, and
   the same version's files download from `/versions/{n}/downloads/{name}` and
   `/versions/{n}/downloads.zip`, under the deck's read rules.
