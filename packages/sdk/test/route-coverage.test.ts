@@ -21,6 +21,8 @@ const SAMPLE_CHILD_ID = '22222222-2222-2222-2222-222222222222';
 const SAMPLE_TOKEN = 'x'.repeat(24);
 const SAMPLE_SHA256 = 'a'.repeat(64);
 const SAMPLE_VERSION = 3;
+/** A NESTED attachment name: the SDK must send it as ONE percent-encoded segment (PRDCT-2278). */
+const SAMPLE_ATTACHMENT = 'sub/notes.md';
 const SAMPLE_MANIFEST = [
   { path: 'index.html', sha256: SAMPLE_SHA256, sizeBytes: 1, contentType: 'text/html' }
 ];
@@ -86,6 +88,10 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /presentations/{id}/versions': (c) => c.presentationVersions(SAMPLE_ID),
   'GET /presentations/{id}/versions/{version}': (c) => c.presentationVersion(SAMPLE_ID, SAMPLE_VERSION),
   'GET /presentations/{id}/assets/{sha256}': (c) => c.downloadPresentationAsset(SAMPLE_ID, SAMPLE_SHA256),
+  'GET /presentations/{id}/versions/{version}/downloads.zip': (c) =>
+    c.downloadVersionAttachmentsZip(SAMPLE_ID, SAMPLE_VERSION),
+  'GET /presentations/{id}/versions/{version}/downloads/{name}': (c) =>
+    c.downloadVersionAttachment(SAMPLE_ID, SAMPLE_VERSION, SAMPLE_ATTACHMENT),
   'GET /presentations/{id}/agent-doc': (c) => c.agentDoc(SAMPLE_ID),
   'GET /presentations/{id}/tokens': (c) => c.shareTokens(SAMPLE_ID),
   'POST /presentations/{id}/tokens': (c) => c.createShareToken(SAMPLE_ID, { name: 'Alice' }),
@@ -150,7 +156,8 @@ function expectedPath(contractPath: string): string {
     .replace('{id}', SAMPLE_ID)
     .replace(/\{(tokenId|collaboratorId|annotationId|responseId)\}/, SAMPLE_CHILD_ID)
     .replace('{version}', String(SAMPLE_VERSION))
-    .replace('{sha256}', SAMPLE_SHA256)}`;
+    .replace('{sha256}', SAMPLE_SHA256)
+    .replace('{name}', encodeURIComponent(SAMPLE_ATTACHMENT))}`;
 }
 
 describe('SDK route coverage (contract drift guard)', () => {
