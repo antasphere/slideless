@@ -522,6 +522,42 @@ export const fr: Record<MessageKey, string> = {
   'deck.agentDocShow': 'Afficher le briefing',
   'deck.agentDocHide': 'Masquer le briefing',
   'deck.agentDocLoadFailed': 'Impossible de charger le briefing : {error}',
+  'deck.openMaster': 'Ouvrir la page du deck',
+
+  // ── La page du deck (PRDCT-2279) ─────────────────────────────────────
+  'master.artifactBy': 'Artefact de {owner}',
+  'master.updated': 'Mis à jour {when}',
+  'master.rename': 'Renommer',
+  'master.renameLabel': 'Titre du deck',
+  'master.renamedToast': 'Deck renommé',
+  'master.renameFailed': 'Le renommage a échoué',
+  'master.duplicate': 'Dupliquer',
+  'master.duplicating': 'Duplication…',
+  'master.duplicatedToast': 'Copie créée : « {title} »',
+  'master.duplicateFailed': 'La duplication a échoué',
+  'master.share': 'Partager',
+  'master.shareTitle': 'Liens de partage',
+  'master.shareDescription':
+    'Les liens se créent ici, sur le deck. Chacun ouvre le deck pour un destinataire, et chacun se révoque et s’observe séparément.',
+  'master.versionHistory': 'Historique des versions',
+  'master.historyTitle': 'Historique des versions',
+  'master.historyDescription':
+    'Chaque push, du plus récent au plus ancien. Affichez n’importe quelle version sur la page ; chaque version garde ses propres fichiers.',
+  'master.historyShow': 'Afficher',
+  'master.historyShowing': 'Affichée',
+  'master.historyFiles': 'Fichiers',
+  'master.historyFileCount': '{n} fichiers',
+  'master.allDecks': 'Tous les decks',
+  'master.delete': 'Supprimer',
+  'master.deleteConfirmTitle': 'Supprimer ce deck ?',
+  'master.deleteConfirmDescription':
+    '« {title} » et ses versions cessent de répondre, et chaque lien de partage meurt avec lui.',
+  'master.deletedToast': 'Deck « {title} » supprimé',
+  'master.downloadFiles': 'Télécharger les fichiers',
+  'master.downloadAll': 'Tous les fichiers (zip)',
+  'master.openDashboard': 'Ouvrir dans le tableau de bord',
+  'master.previewOwnerOnly':
+    'Le propriétaire du deck et les administrateurs de l’espace voient le deck ici. Ouvrez-le dans le tableau de bord pour parcourir ses versions et ses notes.',
 
   // ── Share links (per-recipient viewer tokens) ────────────────────────
   'tokens.title': 'Liens de partage',
@@ -555,6 +591,10 @@ export const fr: Record<MessageKey, string> = {
   'tokens.annotateHint': '— le destinataire peut laisser des notes sur le deck',
   'tokens.formsLabel': 'Autoriser l’envoi de formulaires',
   'tokens.formsHint': '— les lecteurs de ce lien peuvent répondre aux formulaires intégrés au deck',
+  'tokens.downloadsLabel': 'Autoriser les téléchargements',
+  'tokens.downloadsHint':
+    '— les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/)',
+  'tokens.badgeDownloadsOff': 'Téléchargements désactivés',
   'tokens.badgePositionLabel': 'Position du bouton de notes',
   'tokens.badgePositionDefault': 'Défaut du deck',
   'tokens.badgePositionHint':

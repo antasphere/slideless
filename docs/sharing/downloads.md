@@ -34,7 +34,9 @@ With downloads off, the deck still opens. The file and zip URLs answer 404 and t
 
 ## The owner side
 
-The version history of a deck keeps every version's attachments. Signed in, or with an API key carrying `presentations:read`:
+Every deck has a page of its own in the dashboard, at `/decks/<id>/present`: the deck full-page, with a bar at the top where you rename it, duplicate it, open its version history and create its share links. A push prints that URL and opens it. The version history there lists each version with the files it carried, so you can see that version 3 replaced one file and added another while version 1 kept its own three; each version's files download from the same list, one by one or as a zip. Links are made from that bar too, with the downloads switch on the create form.
+
+The same version history is on the API. Signed in, or with an API key carrying `presentations:read`:
 
 - `GET /api/v1/presentations/{id}/versions/{n}` now carries `attachments` beside the manifest, and both the presentation and each version carry `hasDownloads`.
 - `GET /api/v1/presentations/{id}/versions/{n}/downloads.zip` is the version's set as a zip.

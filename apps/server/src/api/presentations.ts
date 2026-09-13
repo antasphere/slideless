@@ -17,6 +17,7 @@ import {
   formResponsesListRoute,
   formResponsesSummaryRoute,
   presentationDeleteRoute,
+  presentationDuplicateRoute,
   presentationGetRoute,
   presentationsListRoute,
   presentationUpdateRoute,
@@ -153,6 +154,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   // principal there resolves from a non-guest membership.
   api.use('/presentations/uploads', requireNonGuest());
   api.use('/presentations/uploads/*', requireNonGuest());
+  // The duplicate (PRDCT-2279) is deck creation by another door — the same
+  // wall, before any deck lookup (a guest probing a foreign id learns
+  // nothing: 403 guest_forbidden whether the id exists or not).
+  api.use('/presentations/:id/duplicate', requireNonGuest());
 
   // ── Upload (push protocol) ─────────────────────────────────────────────────
   // Literal-segment siblings of /presentations/{id} first (see LESSONS.md on
@@ -460,6 +465,77 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       metadata: { title: deck.title }
     });
     return c.json(presentationToWire(deleted), 200);
+  });
+
+  // ── Duplicate (PRDCT-2279) ─────────────────────────────────────────────────
+  // The master page's "Duplicate": a new deck in the caller's workspace from
+  // one version of the source, no re-upload. The source is a READ (canRead:
+  // 404, never 403 — a dev collaborator may copy the deck they were invited
+  // to, into a deck of their own); creating is the workspace-level act the
+  // guest wall above refuses. The service resolves the manifest under the
+  // blob scope guard, so the copy binds only bytes the caller may read.
+  api.openapi(presentationDuplicateRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const source = await service.get(principal.workspaceId, id);
+    if (!source || !(await service.canRead(principal, source))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const result = await service.duplicate({
+      workspaceId: principal.workspaceId,
+      principal,
+      sourceId: id,
+      version: body.version,
+      title: body.title
+    });
+    if (!result.ok) {
+      const f = result.failure;
+      switch (f.code) {
+        case 'not_found':
+          return c.json(err('not_found', 'Presentation not found'), 404);
+        case 'no_versions':
+          return c.json(err('no_versions', 'This presentation has no version to duplicate yet'), 400);
+        case 'invalid_version':
+          return c.json(
+            err('invalid_version', `Version ${f.version} does not exist on this presentation`),
+            400
+          );
+        case 'missing_blobs':
+          // Unreachable for a readable source in practice (its live version's
+          // blobs are readable by definition); kept for the transaction's
+          // honesty — a blob deleted under a racing DELETE /files reports here.
+          return c.json(
+            {
+              error: {
+                code: 'missing_blobs',
+                message: `The source version references ${f.missing.length} blob(s) this workspace no longer holds`,
+                details: { missing: f.missing }
+              }
+            },
+            400
+          );
+      }
+    }
+    c.set('audit', {
+      action: 'presentation.duplicate',
+      resourceType: 'presentation',
+      resourceId: result.presentation.id,
+      metadata: {
+        sourceId: source.id,
+        sourceVersion: body.version ?? source.currentVersion,
+        title: result.presentation.title,
+        fileCount: result.version.fileCount
+      }
+    });
+    registry.events.emit('presentation.created', {
+      workspaceId: principal.workspaceId,
+      presentationId: result.presentation.id
+    });
+    return c.json(
+      { presentation: presentationToWire(result.presentation), version: versionToWire(result.version) },
+      201
+    );
   });
 
   // ── Pull ───────────────────────────────────────────────────────────────────

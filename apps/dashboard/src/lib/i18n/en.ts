@@ -505,6 +505,42 @@ export const en = {
   'deck.agentDocShow': 'Show briefing',
   'deck.agentDocHide': 'Hide briefing',
   'deck.agentDocLoadFailed': 'Could not load the briefing: {error}',
+  'deck.openMaster': 'Open the deck page',
+
+  // ── The deck's master page (PRDCT-2279) ──────────────────────────────
+  'master.artifactBy': 'Artifact by {owner}',
+  'master.updated': 'Updated {when}',
+  'master.rename': 'Rename',
+  'master.renameLabel': 'Deck title',
+  'master.renamedToast': 'Deck renamed',
+  'master.renameFailed': 'Rename failed',
+  'master.duplicate': 'Duplicate',
+  'master.duplicating': 'Duplicating…',
+  'master.duplicatedToast': 'Copy created: "{title}"',
+  'master.duplicateFailed': 'Duplicate failed',
+  'master.share': 'Share',
+  'master.shareTitle': 'Share links',
+  'master.shareDescription':
+    'Links are made here, on top of the deck. Each one opens the deck for one recipient, and each one is revocable and observable on its own.',
+  'master.versionHistory': 'Version history',
+  'master.historyTitle': 'Version history',
+  'master.historyDescription':
+    'Every push, newest first. Show any version on the page; each version keeps its own files.',
+  'master.historyShow': 'Show',
+  'master.historyShowing': 'Showing',
+  'master.historyFiles': 'Files',
+  'master.historyFileCount': '{n} files',
+  'master.allDecks': 'All decks',
+  'master.delete': 'Delete',
+  'master.deleteConfirmTitle': 'Delete this deck?',
+  'master.deleteConfirmDescription':
+    '"{title}" and its versions stop resolving, and every share link dies with it.',
+  'master.deletedToast': 'Deck "{title}" deleted',
+  'master.downloadFiles': 'Download files',
+  'master.downloadAll': 'All files (zip)',
+  'master.openDashboard': 'Open in dashboard',
+  'master.previewOwnerOnly':
+    'The deck owner and workspace admins see the deck here. Open it in the dashboard to review its versions and notes.',
 
   // ── Share links (per-recipient viewer tokens) ────────────────────────
   'tokens.title': 'Share links',
@@ -538,6 +574,9 @@ export const en = {
   'tokens.annotateHint': '— the recipient can leave notes on the deck',
   'tokens.formsLabel': 'Allow form submissions',
   'tokens.formsHint': '— viewers of this link can submit the forms embedded in the deck',
+  'tokens.downloadsLabel': 'Allow downloads',
+  'tokens.downloadsHint': '— viewers of this link can download the version’s files (its downloads/ folder)',
+  'tokens.badgeDownloadsOff': 'Downloads off',
   'tokens.badgePositionLabel': 'Notes button position',
   'tokens.badgePositionDefault': 'Deck default',
   'tokens.badgePositionHint':
