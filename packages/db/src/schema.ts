@@ -669,6 +669,17 @@ export const shareTokens = pgTable(
      */
     canDownload: boolean('can_download').notNull().default(true),
     /**
+     * Whether the recipient TOP BAR rides this link (PRDCT-2281): the strip
+     * over the deck naming it, its version and its attachments. Defaults
+     * TRUE — a recipient should know what they are looking at — and an
+     * owner switches it off per link to hand out a bare deck. Injected on
+     * top-level document navigations only (viewer/inject.ts): embeds,
+     * frames, the password gate and the error shells never carry it,
+     * whatever this column says. The migration gave every pre-existing
+     * link the default.
+     */
+    showBar: boolean('show_bar').notNull().default(true),
+    /**
      * Per-link badge slot override for the annotation overlay. Null = use
      * the deck's remembered `annotation_badge_position`, else bottom-right.
      */

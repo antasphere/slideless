@@ -406,6 +406,16 @@ describe('inline upload → commit → download round-trip (the legacy-broken su
       'report.csv',
       'sub/notes.md'
     ]);
+
+    // The bar switch (PRDCT-2281, lane D): on by default, off when asked.
+    expect(on.data.shareToken.showBar).toBe(true);
+    const bare = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: attachmentsDeckId,
+      name: 'bare',
+      showBar: false
+    });
+    expect(bare.isError, bare.text).toBe(false);
+    expect(bare.data.shareToken.showBar).toBe(false);
   });
 
   it('with presentationId it commits a NEW VERSION of that deck', async () => {

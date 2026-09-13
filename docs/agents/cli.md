@@ -296,6 +296,9 @@ slideless share <id> --no-forms                           # viewers of this link
 slideless share <id> --no-download                        # viewers of this link cannot download the
                                                           # version's attachments (default: they can;
                                                           # also on share-email)
+slideless share <id> --no-bar                             # a bare deck: no recipient bar (title, version,
+                                                          # downloads) over it (default: shown; also on
+                                                          # share-email; never inside embeds anyway)
 slideless share <id> --embed                              # also print the website embed snippets
 slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link

@@ -314,12 +314,18 @@ describe('forms runtime injection', () => {
     expect(await viaHeader.text()).not.toContain(FORMS_MARKER);
     expect(viaHeader.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
 
-    const noForms = await createToken({ name: 'No Forms', canSubmitForms: false });
+    // showBar off too (PRDCT-2281): the recipient bar rides every browser
+    // navigation by default, so the untransformed stream path on a browser
+    // navigation is now the BARE link's. The forms pin is the marker.
+    const noForms = await createToken({ name: 'No Forms', canSubmitForms: false, showBar: false });
     const plain = await fetchEntry(noForms.secret);
     expect(plain.status).toBe(200);
     expect(await plain.text()).not.toContain(FORMS_MARKER);
     // Untransformed entries keep streaming with their content-sha ETag.
     expect(plain.headers.get('etag')).toBe(`"${shaOf(HTML_V1)}"`);
+    // With the bar on, a no-forms link still carries no forms runtime.
+    const barred = await createToken({ name: 'No Forms, bar', canSubmitForms: false });
+    expect(await (await fetchEntry(barred.secret)).text()).not.toContain(FORMS_MARKER);
 
     // Frame navigation of a no-forms token stays untouched too.
     const framed = await app.app.request(`/v/${noForms.secret}/`, {
@@ -364,12 +370,17 @@ describe('forms runtime injection', () => {
     const plainDeck = await uploadDeck('Plain Deck', [entryOf('index.html', HTML_NO_FORM)]);
     // canSubmitForms defaults ON — the capability alone must not arm the
     // buffering/injecting seam, or every share link leaves the stream path.
-    const { secret } = await createToken({ name: 'Plain' }, plainDeck);
+    // The recipient bar (PRDCT-2281) DOES ride every browser navigation by
+    // default — through the streaming injector, never a buffer — so the
+    // stream-path pin is taken on a bare link, and the forms pin on both.
+    const { secret } = await createToken({ name: 'Plain', showBar: false }, plainDeck);
     const res = await fetchEntry(secret);
     expect(res.status).toBe(200);
     expect(await res.text()).not.toContain(FORMS_MARKER);
     expect(res.headers.get('etag')).toBe(`"${shaOf(HTML_NO_FORM)}"`);
     expect(res.headers.get('accept-ranges')).toBe('bytes');
+    const withBar = await createToken({ name: 'Plain, bar' }, plainDeck);
+    expect(await (await fetchEntry(withBar.secret)).text()).not.toContain(FORMS_MARKER);
 
     // The same deck's frame navigation stays on the stream path too.
     const framed = await app.app.request(`/v/${secret}/`, {

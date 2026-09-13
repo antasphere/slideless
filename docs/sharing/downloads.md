@@ -49,3 +49,21 @@ Both routes follow the deck read rules: a deck you cannot read answers 404, neve
 Each link counts its downloads in `downloadCount`, next to its view count: one per file taken, one per zip, whatever the zip held. A download is never a view, and a view never a download. Repeat downloads count again. What never counts: `HEAD` requests, partial byte-range responses on a file (a download manager fetching in chunks, a media player seeking), revalidations the `ETag` answers with a 304, a file the storage could not serve, and your own dashboard previews. The zip does not serve ranges: every zip response is the whole archive, and it counts.
 
 Each download is also recorded as an event with the link, the version served, the file's name (`NULL` for a zip) and when — and nothing else: **no IP address, no geolocation, no referrer, no user agent**, on any edition, self-hosted included. Events are pruned nightly with the view events, after `VIEW_EVENTS_RETENTION_DAYS` (default 90; `0` keeps them forever). The per-link counter is never pruned.
+
+## What the recipient sees
+
+<!-- PRDCT-2281 (lane D): the recipient bar. -->
+
+A share link opens with a slim **bar** over the deck: the deck's title, the version the link resolves to (`v3`), a small Slideless mark, and, when the version carries attachments and the link allows downloads, a **Download** button. The button opens a menu listing each file with its size, one link per file, and **Download all** for the whole set as a zip. The deck itself is pushed down by the bar's height, never covered; a deck sized to the viewport scrolls by that height. The bar collapses to a thin handle at the top of the page (the arrow button, or Esc while the bar has focus) and stays collapsed on that link for the rest of the browser tab; the handle brings it back.
+
+The bar is part of the viewer's isolation, not an exception to it: it runs inside the same sandbox as the deck, holds nothing the deck could not already read (the link secret is in the page's own address), calls only the attachments list above, relative to the deck page and without cookies, and mounts in a shadow root so the deck's styles cannot restyle it and its styles cannot reach the deck. Clicks and keys on the bar stop at the bar: a deck script listening on the document in the usual way (the bubble phase) never sees them; one listening in the capture phase still does, as it does for the annotation layer.
+
+Where it never appears: inside an [embed](embedding.md) or any iframe (the deck stays bare there), on the password gate, and on the error pages. With downloads off, the bar shows the title and the version without a Download button.
+
+Two shapes of deck defeat the bar, by the deck's own choice: a body fixed to the viewport (`position: fixed; inset: 0`) ignores the push-down and sits under the bar, and a script that sets the bar's own loaded flag before the page ends suppresses it. Neither weakens anything: the bar was already the deck's to cover or hide from inside its sandbox.
+
+Every share link carries `showBar`, **on by default**. Switch it off per link to hand out a bare deck, nothing but the presentation itself:
+
+- **API** — `showBar: false` on `POST /api/v1/presentations/{id}/tokens`, or on a `PATCH` of an existing link.
+- **CLI** — `slideless share <id> --no-bar` (also on `share-email`).
+- **MCP** — the `showBar` argument of `slideless_add_share_token`.

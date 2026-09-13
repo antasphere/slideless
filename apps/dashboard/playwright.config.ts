@@ -45,7 +45,9 @@ export default defineConfig({
     },
     { name: 'embed-forms', testMatch: /embed-forms\.spec\.ts/, dependencies: ['smoke'] },
     // PRDCT-2268: windows a deck opens escape the sandbox; the deck does not.
-    { name: 'viewer-popups', testMatch: /viewer-popups\.spec\.ts/, dependencies: ['smoke'] }
+    { name: 'viewer-popups', testMatch: /viewer-popups\.spec\.ts/, dependencies: ['smoke'] },
+    // PRDCT-2281 (lane D): the recipient bar over a shared deck.
+    { name: 'viewer-topbar', testMatch: /viewer-topbar\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,

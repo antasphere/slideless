@@ -87,6 +87,12 @@ export class ShareTokenService {
      * and preview downloads are never counted (viewer/routes.ts).
      */
     canDownload: boolean;
+    /**
+     * The recipient top bar, default ON (share route, PRDCT-2281); the
+     * preview mint passes true too — the owner's preview shows what a
+     * default link shows.
+     */
+    showBar: boolean;
     /** Explicit badge slot for this link, or null = inherit the deck default. */
     badgePosition: BadgePosition | null;
     expiresAt: Date | null;
@@ -105,6 +111,7 @@ export class ShareTokenService {
         canAnnotate: opts.canAnnotate,
         canSubmitForms: opts.canSubmitForms,
         canDownload: opts.canDownload,
+        showBar: opts.showBar,
         badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
@@ -234,6 +241,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
   canAnnotate: boolean;
   canSubmitForms: boolean;
   canDownload: boolean;
+  showBar: boolean;
   badgePosition: BadgePosition | null;
   expiresAt: string | null;
   hasPassword: boolean;
@@ -253,6 +261,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
     canAnnotate: t.canAnnotate,
     canSubmitForms: t.canSubmitForms,
     canDownload: t.canDownload,
+    showBar: t.showBar,
     badgePosition: t.badgePosition,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     hasPassword: t.passwordHash !== null,

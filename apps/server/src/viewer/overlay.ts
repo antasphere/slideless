@@ -156,6 +156,13 @@ function cssEscape(s) {
   return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
 }
 function parseIdx(v) { var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+/** The recipient bar's current height (PRDCT-2281), 0 when absent or collapsed: nothing of ours may be placed under it. */
+function topInset() {
+  try {
+    var v = parseFloat(getComputedStyle(doc.documentElement).getPropertyValue('--slideless-topbar'));
+    return isNaN(v) ? 0 : v;
+  } catch (e) { return 0; }
+}
 function clamp01(n) { return Math.max(0, Math.min(1, n)); }
 function round4(n) { return Math.round(n * 10000) / 10000; }
 
@@ -427,7 +434,9 @@ var css = [
   '@media (prefers-reduced-motion: reduce){#__sl-fab-pin{transition:none;}}',
 
   // Right sliding sheet
-  '#__sl-sheet{position:fixed;top:0;right:0;height:100%;width:360px;max-width:92vw;',
+  // Below the recipient bar when one is mounted (PRDCT-2281): the header
+  // with the close button must never sit under it.
+  '#__sl-sheet{position:fixed;top:var(--slideless-topbar,0px);right:0;height:calc(100% - var(--slideless-topbar,0px));width:360px;max-width:92vw;',
   '  background:var(--sl-bg);border-left:1px solid var(--sl-border);box-shadow:var(--sl-shadow);',
   '  transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);',
   '  display:flex;flex-direction:column;}',
@@ -548,7 +557,7 @@ var css = [
   '#__sl-layer.on{display:block;}',
   '#__sl-drag{position:fixed;display:none;border:2px dashed var(--sl-accent);border-radius:6px;',
   '  background:rgba(245,179,1,.1);pointer-events:none;}',
-  '#__sl-banner{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:none;',
+  '#__sl-banner{position:fixed;top:calc(14px + var(--slideless-topbar,0px));left:50%;transform:translateX(-50%);display:none;',
   '  align-items:center;gap:10px;background:var(--sl-bg);border:1px solid var(--sl-border);',
   '  border-radius:999px;padding:8px 8px 8px 15px;font-size:12.5px;font-weight:500;',
   '  box-shadow:var(--sl-shadow);white-space:nowrap;max-width:92vw;}',
@@ -636,10 +645,15 @@ fabPin.textContent = '+';
 // would let the stylesheet's right/bottom stretch the box). Config is
 // server-controlled, but validate anyway and fall back to the default. The
 // + FAB stacks toward the viewport center from the badge's slot.
+// The three TOP slots add the recipient bar's height (PRDCT-2281): the bar
+// publishes it as --slideless-topbar on the root (0 when absent or
+// collapsed), so the badge never sits under the bar and follows a collapse
+// live, with no coupling between the two runtimes.
+var TOP_OFFSET = 'var(--slideless-topbar, 0px)';
 var BADGE_SLOTS = {
-  'top-left': { top: '20px', left: '20px' },
-  top: { top: '20px', left: '50%', transform: 'translateX(-50%)' },
-  'top-right': { top: '20px', right: '20px' },
+  'top-left': { top: 'calc(20px + ' + TOP_OFFSET + ')', left: '20px' },
+  top: { top: 'calc(20px + ' + TOP_OFFSET + ')', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: 'calc(20px + ' + TOP_OFFSET + ')', right: '20px' },
   right: { right: '20px', top: '50%', transform: 'translateY(-50%)' },
   'bottom-right': { bottom: '20px', right: '20px' },
   bottom: { bottom: '20px', left: '50%', transform: 'translateX(-50%)' },
@@ -647,9 +661,9 @@ var BADGE_SLOTS = {
   left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
 };
 var FAB_SLOTS = {
-  'top-left': { top: '74px', left: '20px' },
-  top: { top: '74px', left: '50%', transform: 'translateX(-50%)' },
-  'top-right': { top: '74px', right: '20px' },
+  'top-left': { top: 'calc(74px + ' + TOP_OFFSET + ')', left: '20px' },
+  top: { top: 'calc(74px + ' + TOP_OFFSET + ')', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: 'calc(74px + ' + TOP_OFFSET + ')', right: '20px' },
   right: { right: '20px', top: 'calc(50% - 62px)', transform: 'translateY(-50%)' },
   'bottom-right': { bottom: '74px', right: '20px' },
   bottom: { bottom: '74px', left: '50%', transform: 'translateX(-50%)' },
@@ -890,7 +904,7 @@ function showAddAt(range, text) {
   indicatorRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   var left = Math.min(rect.left, window.innerWidth - 140);
   addBtn.style.left = Math.max(8, left) + 'px';
-  addBtn.style.top = Math.max(8, rect.bottom) + 'px';
+  addBtn.style.top = Math.max(8 + topInset(), rect.bottom) + 'px';
   addBtn.style.display = 'inline-flex';
 }
 
@@ -909,6 +923,7 @@ function rectsIntersect(aLeft, aTop, aW, aH, b) {
 function placeComposer() {
   var W = 300;
   var M = 8;
+  var MT = M + topInset(); // the top bound: below the recipient bar
   var GAP = 14;
   pop.style.visibility = 'hidden';
   pop.style.display = 'block';
@@ -933,9 +948,9 @@ function placeComposer() {
   var chosen = null;
   for (var i = 0; i < candidates.length && !chosen; i++) {
     var c = candidates[i];
-    if (c.clampY) c.top = Math.max(M, Math.min(c.top, vh - H - M));
+    if (c.clampY) c.top = Math.max(MT, Math.min(c.top, vh - H - M));
     else c.left = Math.max(M, Math.min(c.left, vw - W - M));
-    if (c.left < M || c.top < M || c.left + W > vw - M || c.top + H > vh - M) continue;
+    if (c.left < M || c.top < MT || c.left + W > vw - M || c.top + H > vh - M) continue;
     var hits = false;
     for (var j = 0; j < avoid.length; j++) {
       if (rectsIntersect(c.left, c.top, W, H, avoid[j])) { hits = true; break; }
@@ -945,7 +960,7 @@ function placeComposer() {
   if (!chosen) {
     chosen = {
       left: Math.max(M, Math.min(r.left + r.width + GAP, vw - W - M)),
-      top: Math.max(M, Math.min(r.top + r.height + GAP, vh - H - M))
+      top: Math.max(MT, Math.min(r.top + r.height + GAP, vh - H - M))
     };
   }
   pop.style.left = chosen.left + 'px';
@@ -1019,7 +1034,7 @@ function renderPreview() {
   // top-right for text and region anchors, the exact point for point ones.
   var px = snapshot.type === 'point' ? rect.left : rect.left + rect.width;
   pin.style.left = Math.max(12, Math.min(px, window.innerWidth - 12)) + 'px';
-  pin.style.top = Math.max(12, Math.min(rect.top, window.innerHeight - 12)) + 'px';
+  pin.style.top = Math.max(12 + topInset(), Math.min(rect.top, window.innerHeight - 12)) + 'px';
   previewLayer.appendChild(pin);
 }
 
@@ -1179,6 +1194,7 @@ function renderPins() {
   // Compute placements first; rebuild the DOM only when they changed, so the
   // safety tick doesn't destroy a pin mid-hover/click.
   var placed = [];
+  var minY = 12 + topInset();
   for (var i = 0; i < notes.length; i++) {
     var a = notes[i];
     if (a.status !== 'open') continue;
@@ -1192,7 +1208,7 @@ function renderPins() {
       rect: rect,
       region: anchor.type === 'region' && rect.width > 4 && rect.height > 4,
       x: Math.max(12, Math.min(px, window.innerWidth - 12)),
-      y: Math.max(12, Math.min(rect.top, window.innerHeight - 12))
+      y: Math.max(minY, Math.min(rect.top, window.innerHeight - 12))
     });
   }
   var sig = placed.map(function (p) {

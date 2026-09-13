@@ -1044,3 +1044,41 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
   `deck.title` read fails svelte-check with `'deck' is possibly 'null'` even under an `{:else}`
   that proved it; read such values through a `$derived` (`deck?.title ?? ''`) declared in the
   script.
+
+## The recipient bar (PRDCT-2281, 2026-09-13, lane D of the artifact wave)
+
+- **A deck document under `CSP: sandbox` has NO storage: `sessionStorage`, `localStorage` and
+  `indexedDB` all THROW on access, not just return empty.** The brief asked for the bar's
+  collapse state "in sessionStorage per token"; in the opaque origin the first read raises a
+  `SecurityError` and, uncaught, would have killed the runtime. The runtime tries storage in a
+  try, then falls back to `window.name`, the one per-tab slot a sandboxed document may write
+  (keyed by a 32-bit fingerprint of the path, never the secret: the next page in the tab can
+  read the name). Any future injected runtime that wants memory has the same two options.
+- **`100vh` cannot be shrunk from inside one document.** The bar pushes the deck down with an
+  `!important` inline margin, height and overflow on the root element; a deck sized with `100%`
+  chains fits exactly, a deck sized in viewport units scrolls by the bar's height (vh resolves
+  against the window, never a box). The only way to give a deck a smaller viewport is a frame,
+  and a frame breaks the password gate (Lax cookies are not sent on frame navigations from the
+  opaque origin), the overlay (top-level only) and forms attribution (a frame records `embed`).
+  Collapsing the bar returns the viewport; that is the design, not a gap.
+- **Every runtime that defaults ON moves every default link off the byte-exact stream path on a
+  browser navigation, and the pins that asserted the ETag on a default link go red.** Three
+  integration pins (forms ×2, annotations ×1) now take the stream-path proof on a `showBar:false`
+  link and keep their own marker assertion on a default link. When adding a fourth runtime, read
+  those pins first: the stream path is the BARE link's, and the streaming injector is what keeps
+  a default link O(window) rather than O(document).
+- **A `:host {}` rule protects nothing on the host itself.** The shadow root shields the
+  bar's inside, but the host element lives in the deck's tree, and in the cascade a
+  declaration from the shadow context (`:host`) loses to ANY outer author declaration, whatever
+  its specificity: a deck's `body > div { position: relative }` turned the fixed bar into a
+  700 px block at the end of the document (verifier round 2). The layout-critical declarations
+  of an injected host are set inline with `!important`, the one level an outer stylesheet
+  cannot beat. Same for any future injected host.
+- **`overflow-y: auto` on the root does not reach content a `100%`-and-`overflow: hidden` body
+  clips first.** A body sized to the root and hiding overflow becomes a clipping box the
+  bar's height short of a `100vh` child, and no user scroll reaches the strip. The runtime
+  measures the body after mount and, when an overflow-hidden body overflows, gives the root
+  its full height back: the body is then the size it always was, shifted down, and the page
+  scrolls by the bar's height. Forcing the body to scroll instead (the first attempt) failed
+  on any deck with a margin: its own overflow hid the bar's, and a threshold on the excess is
+  a guess about the deck.
