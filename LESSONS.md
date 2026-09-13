@@ -1019,3 +1019,28 @@ entry; these are what THIS repo added or had to do differently.
   and, without the explicit exclusion, would find the manifest entry and serve an HTML
   attachment inline. Order is the mechanism, the exclusion is the guard, and the integration
   suite drives the encoded shape on purpose.
+
+## The master page (PRDCT-2279, 2026-09-13, lane C of the artifact wave)
+
+- **The API caches the dashboard's SPA shell at boot.** After `pnpm --filter @slideless/dashboard
+build`, a running API keeps serving the OLD `index.html`, which imports chunks the rebuild
+  deleted (`Failed to load module script … MIME type of "text/html"`), or, when turbo restored a
+  cached shell beside fresh chunks, a shell whose `__sveltekit_<id>` global does not match the
+  chunk's (`Cannot read properties of undefined (reading 'data')` at start). Restart the API
+  after every dashboard rebuild; the browser suite never sees this because it builds the image.
+- **A hands-on session signs in on the API's own port, not through the Vite proxy.** The sign-in
+  Origin hook trusts `PUBLIC_BASE_URL` only, so a login posted from `localhost:5230` to an API
+  whose base URL is `localhost:3230` answers 403 and the page says {{This account cannot sign
+  in here.}} — an origin mismatch, not an account problem. For a look at a built page, open it on
+  the API port (it serves the built dashboard); keep Vite for hot reload of unauthenticated
+  pages, or point `PUBLIC_BASE_URL` at the Vite port and lose the viewer URLs.
+- **`pnpm --filter <pkg> dev -- --port N` does not reach Vite.** The `--` is swallowed and Vite
+  boots on 5173, outside every lane band. Use `pnpm --filter <pkg> exec vite dev --port N
+--strictPort`, and `lsof` the band before trusting the log line.
+- **A menu item's accessible name carries its trailing count.** `Version history` with a `3`
+  badge is `menuitem "Version history 3"`; a Playwright `getByRole('menuitem', { name })` matches
+  by substring unless `exact: true`, so keep the count in a separate span and never pass `exact`.
+- **A snippet loses the template's null narrowing.** Inside `{#snippet child({ props })}` a
+  `deck.title` read fails svelte-check with `'deck' is possibly 'null'` even under an `{:else}`
+  that proved it; read such values through a `$derived` (`deck?.title ?? ''`) declared in the
+  script.
