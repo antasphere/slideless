@@ -217,9 +217,11 @@ re-uploaded.
 - **Attachments**: a `downloads/` folder at the root of the deck is the
   version's attachment set ([Attachments](../concepts/attachments.md), and
   the [Downloads](../sharing/downloads.md) page for the URLs and the API):
-  files handed to a link's recipient as downloads, never rendered. The link
-  serves the deck as it was pushed, so **your deck must link its own files**
-  for a recipient to find them: `<a href="downloads/figures.csv">` for one,
+  files handed to a link's recipient as downloads, never rendered. The bar over
+  the share link offers them (a **Download** button listing each file, and
+  **Download all** for the zip); on a link made with `--no-bar`, or inside an
+  embed, the bar is absent and **your deck must link its own files** for a
+  recipient to find them: `<a href="downloads/figures.csv">` for one,
   `<a href="downloads.zip">` for the set, relative to the deck's own URL. The
   push classifies them by the same rule the server uses and prints an
   `Attachments: N files, X MB (downloads/)` line under the summary when the

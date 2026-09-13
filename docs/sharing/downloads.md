@@ -15,11 +15,11 @@ A deck can carry files that travel **with** it: a spreadsheet next to the report
 
 On a share link, the attachments are reachable relative to the deck's own URL:
 
-| URL                                 | What it serves                                                                                                                                         |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/v/SECRET/downloads/<name>`        | One attachment by its name (its path relative to `downloads/`), with the content type declared at push, `ETag` and `Range` like an asset               |
-| `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression                         |
-| `/api/v1/viewer/SECRET/attachments` | The list of the version's files, for a page or a script that offers them: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }` |
+| URL                                 | What it serves                                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/v/SECRET/downloads/<name>`        | One attachment by its name (its path relative to `downloads/`), with the content type declared at push, `ETag` and `Range` like an asset                 |
+| `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression                           |
+| `/api/v1/viewer/SECRET/attachments` | The list the recipient bar renders, readable by any script on the page too: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }` |
 
 The three are behind the same rules as the deck itself: a revoked link answers 403, an expired one 410, an unknown one 404, and a password-protected link takes the password the same way the deck does (the unlock cookie in a browser, the `x-viewer-password` header for a script). Nothing here sets or reads a session; the link secret is the whole credential.
 
@@ -51,8 +51,6 @@ Each link counts its downloads in `downloadCount`, next to its view count: one p
 Each download is also recorded as an event with the link, the version served, the file's name (`NULL` for a zip) and when — and nothing else: **no IP address, no geolocation, no referrer, no user agent**, on any edition, self-hosted included. Events are pruned nightly with the view events, after `VIEW_EVENTS_RETENTION_DAYS` (default 90; `0` keeps them forever). The per-link counter is never pruned.
 
 ## What the recipient sees
-
-<!-- PRDCT-2281 (lane D): the recipient bar. -->
 
 A share link opens with a slim **bar** over the deck: the deck's title, the version the link resolves to (`v3`), a small Slideless mark, and, when the version carries attachments and the link allows downloads, a **Download** button. The button opens a menu listing each file with its size, one link per file, and **Download all** for the whole set as a zip. The deck itself is pushed down by the bar's height, never covered; a deck sized to the viewport scrolls by that height. The bar collapses to a thin handle at the top of the page (the arrow button, or Esc while the bar has focus) and stays collapsed on that link for the rest of the browser tab; the handle brings it back.
 
