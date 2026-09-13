@@ -630,15 +630,20 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
   /**
    * One download event per WHOLE file taken and per zip, keyed on the
    * SERVER-SET `purpose` like the view exclusion (an owner's preview never
-   * counts). HEAD never counts, and neither does a byte-range request: a
-   * resumable or chunking client, a media element seeking, would otherwise
-   * count once per chunk (verifier round 1, F1). The caller records only
-   * once the serve has answered 200 — a 304 revalidation, a 416 range, a
-   * blob the storage cannot reach (F2) all leave the counter alone, so the
-   * count reads "files handed out", never "requests seen".
+   * counts); HEAD never counts. The caller records only once the serve
+   * has answered 200 — a 206 byte range (a chunking client, a media element
+   * seeking: once per chunk otherwise, verifier round 1 F1), a 416, a 304
+   * revalidation, a blob the storage cannot reach (F2) all leave the
+   * counter alone, so the count reads "files handed out", never "requests
+   * seen". The STATUS is the judge, not the request: the zip ignores Range
+   * and hands out the whole archive at 200, which counts (round 2 F1 — a
+   * request-side Range exclusion here made that download invisible).
+   * ASSUMPTION the callers pin: a successful hand-out on either route is a
+   * 200; a future serve path that answers a counted download with another
+   * status (a redirect to a signed URL, say) must revisit the guard.
    */
   function downloadCounted(c: Context, token: ShareTokenRow): boolean {
-    return c.req.method === 'GET' && token.purpose !== 'preview' && c.req.header('range') === undefined;
+    return c.req.method === 'GET' && token.purpose !== 'preview';
   }
 
   const attachmentHeaders: Readonly<Record<string, string>> = {

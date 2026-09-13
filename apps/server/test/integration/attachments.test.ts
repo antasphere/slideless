@@ -639,9 +639,24 @@ describe('download events and the counter', () => {
     expect(await downloadRows(created.shareToken.id)).toHaveLength(0);
     expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(0);
 
-    expect((await get(`/v/${created.secret}/downloads/a.csv`)).status).toBe(200);
+    // The status is the judge: a whole file is a 200, and a 200 counts.
+    const whole = await get(`/v/${created.secret}/downloads/a.csv`);
+    expect(whole.status).toBe(200);
     expect((await downloadRows(created.shareToken.id)).map((r) => r.name)).toEqual(['a.csv']);
     expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(1);
+  });
+
+  it('a Range header on the zip changes nothing: the whole archive goes out at 200, and it counts (verifier round 2, F1)', async () => {
+    const created = await createToken({ name: 'Zip range' });
+    const plain = await get(`/v/${created.secret}/downloads.zip`);
+    expect(plain.status).toBe(200);
+    const plainBytes = Buffer.from(await plain.arrayBuffer());
+    const ranged = await get(`/v/${created.secret}/downloads.zip`, { range: 'bytes=0-10' });
+    expect(ranged.status).toBe(200);
+    expect(ranged.headers.get('accept-ranges')).toBeNull();
+    expect(Buffer.from(await ranged.arrayBuffer()).length).toBe(plainBytes.length);
+    expect((await downloadRows(created.shareToken.id)).map((r) => r.name)).toEqual([null, null]);
+    expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(2);
   });
 
   it('a refused download (downloads off) records nothing', async () => {
@@ -758,6 +773,19 @@ describe('the owner side: any version of a readable deck', () => {
 
 describe("migration 0039's backfill", () => {
   it('re-stamps has_downloads on versions that carry the folder and mirrors the deck from its current version', async () => {
+    // A deck whose OLD version carried the folder and whose CURRENT one does
+    // not: the one shape that tells the deck mirror's current-version join
+    // from "any version stamps the deck" (verifier round 2, F2).
+    const dropped = await createDeck('Dropped later', [
+      entryOf('index.html', HTML, 'text/html'),
+      entryOf('downloads/a.csv', CSV_A, 'text/csv')
+    ]);
+    const droppedId: string = dropped.presentation.id;
+    await commitVersion(droppedId, 1, [entryOf('index.html', HTML, 'text/html')]);
+    expect(
+      (await readJson(await get(`/api/v1/presentations/${droppedId}`, { cookie: ownerCookie }))).hasDownloads
+    ).toBe(false);
+
     // Wind the stamps back to the pre-0039 shape on every row, then run the
     // committed backfill statements exactly as the migration file holds
     // them (the 0028 precedent) — the SQL rule and the TypeScript rule are
@@ -790,35 +818,60 @@ describe("migration 0039's backfill", () => {
       { version: 1, has_downloads: false },
       { version: 2, has_downloads: false }
     ]);
+    const droppedVersions = await app.db.pool.query<{ version: number; has_downloads: boolean }>(
+      'SELECT version, has_downloads FROM presentation_versions WHERE presentation_id = $1 ORDER BY version',
+      [droppedId]
+    );
+    expect(droppedVersions.rows).toEqual([
+      { version: 1, has_downloads: true },
+      { version: 2, has_downloads: false }
+    ]);
     const decks = await app.db.pool.query<{ id: string; has_downloads: boolean }>(
       'SELECT id, has_downloads FROM presentations WHERE id = ANY($1) ORDER BY id',
-      [[deckId, plainDeckId]]
+      [[deckId, plainDeckId, droppedId]]
     );
     expect(Object.fromEntries(decks.rows.map((r) => [r.id, r.has_downloads]))).toEqual({
       [deckId]: true,
-      [plainDeckId]: false
+      [plainDeckId]: false,
+      // The mirror follows the CURRENT version only: v1's folder does not stamp the deck.
+      [droppedId]: false
     });
   });
 });
 
-// ═══ A blob the storage cannot reach (verifier F2) — LAST: it removes a blob ═
+// ═══ A blob the storage cannot reach (verifier F2) ═══════════════════════════
 
 describe('a blob the storage cannot serve', () => {
   it('answers 404 on the file and the zip and records no download', async () => {
-    const created = await createToken({ name: 'Gone blob' });
+    // Its own deck and its own blob (verifier round 2, F4): the removal
+    // touches nothing another test reads, whatever the order.
+    const GONE = Buffer.from('bytes that will vanish from the local store');
+    await uploadAsset(GONE, 'application/octet-stream', 'gone.bin');
+    const own = await createDeck('Gone blob deck', [
+      entryOf('index.html', HTML, 'text/html'),
+      entryOf('downloads/a.csv', CSV_A, 'text/csv'),
+      entryOf('downloads/gone.bin', GONE, 'application/octet-stream')
+    ]);
+    const ownId: string = own.presentation.id;
+    const minted = await app.app.request(
+      `/api/v1/presentations/${ownId}/tokens`,
+      json({ name: 'Gone blob' }, { cookie: ownerCookie })
+    );
+    expect(minted.status).toBe(201);
+    const created = await readJson(minted);
     const me = await readJson(await get('/api/v1/me', { cookie: ownerCookie }));
     const workspaceId: string = me.workspace.id;
-    const sha = shaOf(ZIP_C);
+    const sha = shaOf(GONE);
     // The local driver's layout (storage/local.ts + blobKey): remove the
-    // bytes behind c.zip, the way a local-storage replica that never
+    // bytes behind gone.bin, the way a local-storage replica that never
     // received them would look.
     await unlink(join(app.env.DATA_DIR, 'storage', 'blobs', 'ws', workspaceId, sha.slice(0, 2), sha));
 
-    const file = await get(`/v/${created.secret}/downloads/c.zip`);
+    const file = await get(`/v/${created.secret}/downloads/gone.bin`);
     expect(file.status).toBe(404);
     const zip = await get(`/v/${created.secret}/downloads.zip`);
     expect(zip.status).toBe(404);
-    // The other files still serve, and count.
+    // The other file still serves, and counts.
     expect((await get(`/v/${created.secret}/downloads/a.csv`)).status).toBe(200);
     expect((await downloadRows(created.shareToken.id)).map((r) => r.name)).toEqual(['a.csv']);
     expect((await tokenRow(created.shareToken.id)).downloadCount).toBe(1);

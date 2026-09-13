@@ -44,6 +44,6 @@ Both routes follow the deck read rules: a deck you cannot read answers 404, neve
 
 ## Counting
 
-Each link counts its downloads in `downloadCount`, next to its view count: one per file taken, one per zip, whatever the zip held. A download is never a view, and a view never a download. Repeat downloads count again. What never counts: `HEAD` requests, byte-range requests (a download manager fetching in chunks, a media player seeking), revalidations the `ETag` answers with a 304, a file the storage could not serve, and your own dashboard previews.
+Each link counts its downloads in `downloadCount`, next to its view count: one per file taken, one per zip, whatever the zip held. A download is never a view, and a view never a download. Repeat downloads count again. What never counts: `HEAD` requests, partial byte-range responses on a file (a download manager fetching in chunks, a media player seeking), revalidations the `ETag` answers with a 304, a file the storage could not serve, and your own dashboard previews. The zip does not serve ranges: every zip response is the whole archive, and it counts.
 
 Each download is also recorded as an event with the link, the version served, the file's name (`NULL` for a zip) and when — and nothing else: **no IP address, no geolocation, no referrer, no user agent**, on any edition, self-hosted included. Events are pruned nightly with the view events, after `VIEW_EVENTS_RETENTION_DAYS` (default 90; `0` keeps them forever). The per-link counter is never pruned.
