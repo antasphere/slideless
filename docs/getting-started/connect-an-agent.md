@@ -45,11 +45,14 @@ profile in `~/.config/antasphere/tools/slideless.json` (mode 600; the
 shared Antasphere CLI config home, see [cli.md](../agents/cli.md)).
 
 **Sign in, option B — paste a dashboard key** (works with `EMAIL_DRIVER=none`,
-and required for accounts with 2FA):
+and required for accounts with 2FA). Mint the key in the dashboard: **API
+keys**, then **Create key**. Tick `presentations:write` there (the dialog
+pre-selects `presentations:read` only) so the key can push and share; the
+secret is shown once, right after creation. Then:
 
 ```bash
 slideless login --api-url https://slides.example.com --api-key slk_...
-slideless verify    # exit 0 iff instance + key work
+slideless verify    # exit 0 iff instance + key work (it does not check the scopes)
 ```
 
 **The agent loop** — push, share, pull:

@@ -43,8 +43,10 @@ version, with each version's files.
 - **On the deck's page**, the bar's **Download files** menu lists the shown version's files with
   **All files (zip)** first, and **Version history** lists each version's **Files** with the same
   zip link. That is the owner's side, behind the sign-in.
-- **On a share link**, the recipient downloads the files of the version the link resolves to, one by
-  one at `/v/<secret>/downloads/<name>` or all together at `/v/<secret>/downloads.zip`. Every
+- **On a share link**, the files of the version the link resolves to are served one by one at
+  `/v/<secret>/downloads/<name>` and all together at `/v/<secret>/downloads.zip`. The link shows the
+  deck as it was pushed and nothing else, so a deck that hands out its files links them itself,
+  relative to its own URL: `downloads/figures.csv` for one file, `downloads.zip` for the set. Every
   download counts on the link, next to its views.
 - **On the API**, `GET /api/v1/presentations/{id}/versions/{n}` lists a version's attachments, and
   the same version's files download from `/versions/{n}/downloads/{name}` and

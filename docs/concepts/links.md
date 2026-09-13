@@ -41,9 +41,9 @@ view, with the referring site and a placement label and without any IP address.
 ## Where links are made
 
 - **The deck's page**: **Share** in the title menu opens the share sheet, `Links are made here, on
-top of the deck`, with **New share link**. The form asks for the recipient, the version, the three
-  switches, the notes button position when annotations are on, the expiry and the password, and
-  answers with the URL once.
+top of the deck`, with **New share link**, which opens the form in a dialog over the sheet. The
+  form asks for the recipient, the version, the three switches, the notes button position when
+  annotations are on, the expiry and the password, and answers with the URL once.
 - **The dashboard**: the share links panel of the deck's dashboard page, the same form.
 - **The CLI**: `slideless share <id> --name "Alice"` prints the URL; `--to-version`, `--annotator`,
   `--no-forms`, `--no-download`, `--expires`, `--password` set the rest, and `--embed` adds the
@@ -55,9 +55,11 @@ top of the deck`, with **New share link**. The form asks for the recipient, the 
 ## What the recipient gets
 
 The deck, whole, at the version the link resolves to, with what the link allows: the notes layer on
-an annotator link, working forms unless they were switched off, the version's files unless downloads
-were switched off. What the recipient never gets: the deck's page, the version history, the other
-links, the owner's name, the workspace.
+an annotator link, working forms unless they were switched off, the version's files at their download
+URLs unless downloads were switched off. The link serves the deck as it was pushed: a deck that hands
+out its files links them itself, relative to its own URL (`downloads/figures.csv`, `downloads.zip`),
+as [Attachments](attachments.md) explains. What the recipient never gets: the deck's page, the version
+history, the other links, the owner's name, the workspace.
 
 A link answers for itself:
 
@@ -82,8 +84,10 @@ Deleting the deck kills every one of its links at once.
 ## Previews are not links
 
 When you look at your own deck on its page or in the dashboard, the frame uses a short-lived preview
-link the instance mints for you: it is not listed with the share links, it expires within the hour,
-and it never counts as a view or a download.
+link the instance mints for you. It expires within the hour and never counts as a view or a download.
+The dashboard's share links panel does not list it; `slideless tokens` and the API do, named
+`Dashboard preview` with `purpose: preview`, so a listing from the terminal can show links you did
+not create: they are yours, and they die on their own.
 
 ## Embedding
 

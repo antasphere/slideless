@@ -15,11 +15,11 @@ A deck can carry files that travel **with** it: a spreadsheet next to the report
 
 On a share link, the attachments are reachable relative to the deck's own URL:
 
-| URL                                 | What it serves                                                                                                                           |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `/v/SECRET/downloads/<name>`        | One attachment by its name (its path relative to `downloads/`), with the content type declared at push, `ETag` and `Range` like an asset |
-| `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression           |
-| `/api/v1/viewer/SECRET/attachments` | The list a recipient page renders: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }`                          |
+| URL                                 | What it serves                                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/v/SECRET/downloads/<name>`        | One attachment by its name (its path relative to `downloads/`), with the content type declared at push, `ETag` and `Range` like an asset               |
+| `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression                         |
+| `/api/v1/viewer/SECRET/attachments` | The list of the version's files, for a page or a script that offers them: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }` |
 
 The three are behind the same rules as the deck itself: a revoked link answers 403, an expired one 410, an unknown one 404, and a password-protected link takes the password the same way the deck does (the unlock cookie in a browser, the `x-viewer-password` header for a script). Nothing here sets or reads a session; the link secret is the whole credential.
 

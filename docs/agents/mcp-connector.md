@@ -37,7 +37,7 @@ claude mcp add --transport http slideless https://slides.example.com/mcp \
   --header "Authorization: Bearer slk_..."
 ```
 
-Mint keys in the dashboard (API keys → New). Scopes gate what tools can do:
+Mint keys in the dashboard (API keys → Create key). Scopes gate what tools can do:
 `presentations:read` for reads, `presentations:write` for mutations.
 
 ## Verify an instance

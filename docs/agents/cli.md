@@ -132,7 +132,10 @@ slideless auth login-complete --api-url https://slides.example.com --email you@e
 `login-complete` mints an `slk_` API key server-side (scopes
 `presentations:read` + `presentations:write`, never `data:export`) and stores
 it as the active profile. Accounts with 2FA enabled are refused
-(`two_factor_required`) — mint a key in the dashboard instead and paste it:
+(`two_factor_required`), and an instance with no email driver has no OTP at
+all — mint a key in the dashboard instead (**API keys**, **Create key**; tick
+`presentations:write`, which the dialog leaves unchecked, for push and share)
+and paste it:
 
 ```bash
 slideless login --api-url https://slides.example.com --api-key slk_…   # or pipe the key on stdin

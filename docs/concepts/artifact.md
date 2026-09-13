@@ -24,8 +24,8 @@ origin, and it is not what a recipient sees: a recipient sees a [share link](lin
 
 ## The bar
 
-On the left, the deck's title. Click it for the deck's menu: **Artifact by** the owner and
-**Updated** when, then **Rename**, **Duplicate**, **Share**, **Version history** (the current version
+On the left, the deck's title. Click it for the deck's menu: **Artifact by** the owner (`You` on
+your own deck) and **Updated** when, then **Rename**, **Duplicate**, **Share**, **Version history** (the current version
 number beside it), **All decks**, and **Delete**.
 
 On the right, for the version the page shows: **Download files** with the file count when that
