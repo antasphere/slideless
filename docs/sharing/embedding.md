@@ -1,6 +1,6 @@
 # Embedding decks on your site
 
-Any share link can render **inline on your own website** — a landing page, a documentation site, an internal wiki — instead of sending visitors away to the viewer. Paste a small snippet where the deck should appear and it renders there, fully isolated from the rest of your page.
+Any [share link](../concepts/links.md) can render **inline on your own website** — a landing page, a documentation site, an internal wiki — instead of sending visitors away to the viewer. Paste a small snippet where the deck should appear and it renders there, fully isolated from the rest of your page.
 
 Both snippets are offered with copy buttons in the dashboard the moment you create a share link (they contain the link's secret URL, which is shown exactly once — the same rule as the URL itself).
 

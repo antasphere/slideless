@@ -45,11 +45,14 @@ profile in `~/.config/antasphere/tools/slideless.json` (mode 600; the
 shared Antasphere CLI config home, see [cli.md](../agents/cli.md)).
 
 **Sign in, option B — paste a dashboard key** (works with `EMAIL_DRIVER=none`,
-and required for accounts with 2FA):
+and required for accounts with 2FA). Mint the key in the dashboard: **API
+keys**, then **Create key**. Tick `presentations:write` there (the dialog
+pre-selects `presentations:read` only) so the key can push and share; the
+secret is shown once, right after creation. Then:
 
 ```bash
 slideless login --api-url https://slides.example.com --api-key slk_...
-slideless verify    # exit 0 iff instance + key work
+slideless verify    # exit 0 iff instance + key work (it does not check the scopes)
 ```
 
 **The agent loop** — push, share, pull:
@@ -58,10 +61,15 @@ slideless verify    # exit 0 iff instance + key work
 export SLIDELESS_URL=https://slides.example.com
 export SLIDELESS_API_KEY=slk_...
 
-id=$(slideless push ./deck --title "Q3 Board Deck" --json | jq -r .presentation.id)
-url=$(slideless share "$id" --name recipient --json | jq -r .url)
+id=$(slideless push ./deck --title "Q3 Board Deck" --json | jq -r .presentation.id)   # .url is the deck's own page
+url=$(slideless share "$id" --name recipient --json | jq -r .url)                     # a recipient link, when one is needed
 slideless pull "$id" ./out          # byte-exact round-trip
 ```
+
+A push answers with the deck's own page on the instance (the owner's view,
+where links are made); a share link is minted only when a recipient needs
+one. The model is in the Concepts pages, starting with
+[The deck is the artifact](../concepts/artifact.md).
 
 `push` is content-addressed (only missing blobs upload; a re-push of the
 same folder is a new immutable version), the first push writes

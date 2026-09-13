@@ -6,6 +6,12 @@ groups:
       - index
       - getting-started/connect-an-agent
       - getting-started/antasphere-account
+  - title: Concepts
+    pages:
+      - concepts/artifact
+      - concepts/versions
+      - concepts/links
+      - concepts/attachments
   - title: Agents
     pages:
       - agents/cli

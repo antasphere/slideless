@@ -68,7 +68,7 @@ Each response records the form name, the deck version the respondent saw, the sh
 
 ## Per-link control
 
-Form submission is a per-link capability that defaults to **on**: a form is part of the deck by the author's own choice, so `push` then `share` yields a working form with zero extra flags. To hand out a read-only link instead:
+Form submission is a per-link capability that defaults to **on** (the per-link switches are listed on [Share links](../concepts/links.md)): a form is part of the deck by the author's own choice, so `push` then `share` yields a working form with zero extra flags. To hand out a read-only link instead:
 
 - **CLI**: `slideless share DECK_ID --no-forms` (also on `share-email`).
 - **Dashboard**: untick _Allow form submissions_ when creating the link. Links that refuse forms show a _Forms off_ badge in the sharing panel.

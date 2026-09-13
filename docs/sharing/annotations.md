@@ -16,7 +16,7 @@ Any share link can carry the annotate capability:
 
 - **MCP** — the `slideless_add_share_token` tool accepts `canAnnotate: true`.
 
-Everything else about share links applies unchanged: pin the link to a version with `--to-version`, protect it with `--password`, expire it with `--expires`. See [cli.md](../agents/cli.md) for the full sharing reference.
+Everything else about share links applies unchanged: pin the link to a version with `--to-version`, protect it with `--password`, expire it with `--expires`. See [Share links](../concepts/links.md) for what a link carries and [cli.md](../agents/cli.md) for the full sharing reference.
 
 ### Placing the notes button
 

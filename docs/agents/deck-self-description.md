@@ -63,8 +63,9 @@ GET /api/v1/presentations/{id}/agent-doc?version=3
 ```
 
 MCP agents call `slideless_get_agent_doc`. The dashboard shows the briefing
-on the deck page (Deck details), and `slideless push` prints a reminder when
-a bundle ships none.
+on the deck's dashboard page (the Deck details panel, one click from the
+[deck's own page](../concepts/artifact.md)), and `slideless push` prints a
+reminder when a bundle ships none.
 
 Because `AGENT.md` is an ordinary bundle file, every share link also serves
 it publicly at `/v/{secret}/AGENT.md` — an agent handed only a viewer URL
