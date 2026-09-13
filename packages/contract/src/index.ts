@@ -20,3 +20,5 @@ export * from './schemas/annotations.js';
 export * from './schemas/forms.js';
 export * from './embed.js';
 export * from './seams.js';
+// Lane B (PRDCT-2280): the deck's master page path, built in one place.
+export * from './master-route.js';

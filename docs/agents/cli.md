@@ -149,8 +149,12 @@ slideless config clear      # delete the config file
 ## Author: push / pull / dev
 
 ```bash
-slideless push ./deck --title "Q3 Board Deck"    # new deck → prints the id
-slideless push ./deck                            # next push = version 2 of the SAME deck
+slideless push ./deck --title "Q3 Board Deck"    # new deck → prints the id + the deck's page URL,
+                                                 # and opens that page in your browser
+slideless push ./deck                            # next push = version 2 of the SAME deck (prints the URL)
+slideless push ./deck --open                     # …and open the page again
+slideless push ./deck --no-open                  # never open, even on the first push
+slideless open ./deck                            # open the linked deck's page (--json prints the URL)
 slideless pull <id> ./out                        # byte-exact download of the latest version
 slideless pull <id> ./out --at 1                 # …or any pinned version
 slideless pull-annotations [id] [--version N] [--status open|resolved] [--out notes.json]
@@ -189,8 +193,28 @@ re-uploaded.
 - **Entry detection**: `--entry` wins, else `index.html`, else the only
   `.html` file, else an error listing candidates. A single-file push
   (`slideless push deck.html`) uses that file as the entry.
+- **The deck's page**: every push answers with the deck's own page on the
+  instance, `<instance>/decks/<id>/present` (the master page: the owner's
+  full view, where share links are minted from — no link is created by a
+  push). The human summary prints it as `url:`; `--json` carries it as
+  `url` next to `presentation` and `version`. The **first push of a
+  folder** (the one that creates the deck) also opens that page in your
+  default browser; later pushes only print it. `--open` opens it on any
+  push, `--no-open` never does. A run whose stdout is not a terminal, or
+  any `--json` run, never opens a browser — whatever the flags say — so a
+  push in CI or under an agent stays silent. The opener is the platform's
+  own (`open`, `xdg-open`, the Windows URL handler) with the URL as an
+  argument, never a shell string.
 - Flags: `--title`, `--entry`, `--kind presentation|app|plan`,
-  `--interactive`, `--id`, `--new`.
+  `--interactive`, `--id`, `--new`, `--open` / `--no-open`.
+
+**open** opens the page of the deck a folder is linked to: it reads
+`.slideless.json` (deck id + instance) and composes the same URL a push
+prints, with no key and no network call. `--json` prints
+`{ presentationId, baseUrl, url }` instead of opening. An unlinked folder is
+an error pointing at `push`, and a link file whose instance is not an
+`http(s)` URL is refused before anything reaches the opener (the file can
+arrive with a cloned folder; the opener would dispatch any scheme).
 
 **pull** downloads a version's manifest and streams every blob to disk —
 byte-identical to what was pushed — then writes/refreshes `.slideless.json`
@@ -317,9 +341,13 @@ and exits non-zero. Typical agent loop:
 ```bash
 export SLIDELESS_URL=https://slides.example.com
 export SLIDELESS_API_KEY=slk_…
-id=$(slideless push ./deck --json | jq -r .presentation.id)
-url=$(slideless share "$id" --name ci --json | jq -r .url)
+id=$(slideless push ./deck --json | jq -r .presentation.id)   # .url is the deck's own page
+url=$(slideless share "$id" --name ci --json | jq -r .url)      # a recipient link, when one is needed
 ```
+
+A `--json` push never opens a browser; hand `.url` (the deck's page on the
+instance, behind the owner's session) to the person, and mint a share link
+only when a recipient needs one.
 
 ## Server endpoints behind `auth login-*`
 
