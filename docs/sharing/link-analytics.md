@@ -1,6 +1,6 @@
 # Link analytics
 
-Every share link already counts its opens (the _Views_ column next to each link). Link analytics goes one level deeper: each counted view is also recorded as its own event, so you can see **when** a link was opened, **which site** drove the visit, **which placement** it came from, and the **browser family** — per link, per view.
+Every [share link](../concepts/links.md) already counts its opens (the _Views_ column next to each link). Link analytics goes one level deeper: each counted view is also recorded as its own event, so you can see **when** a link was opened, **which site** drove the visit, **which placement** it came from, and the **browser family** — per link, per view.
 
 ## What counts as a view
 

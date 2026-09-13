@@ -150,8 +150,8 @@ config_env | data_volume | config_secret | none`):
 | None of them                                                | Refuses the restore, unless you pass `--no-config`.                                                     |
 
 If you would rather never depend on `/data` for this, set `AUTH_SECRET`
-explicitly and keep it in a secret manager — see
-[backup-and-data-sovereignty.md](../../internal/backup-and-data-sovereignty.md).
+explicitly and keep it in a secret manager — the reasoning is in the
+repository's internal design note on backup and data sovereignty.
 
 Drop the kept database once you have verified the instance:
 
@@ -204,8 +204,11 @@ docker compose restart app
 ```
 
 The audit row and the container log carry the tombstoned user id; the workspace
-id is the one they own (`SELECT workspace_id FROM workspace_members WHERE
-user_id = '<id>' AND role = 'owner'`).
+id is the one they own:
+
+```sql
+SELECT workspace_id FROM workspace_members WHERE user_id = '<id>' AND role = 'owner'
+```
 
 ### A downgrade is refused, not reported as "current"
 

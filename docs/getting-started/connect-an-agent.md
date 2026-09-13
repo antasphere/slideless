@@ -58,10 +58,15 @@ slideless verify    # exit 0 iff instance + key work
 export SLIDELESS_URL=https://slides.example.com
 export SLIDELESS_API_KEY=slk_...
 
-id=$(slideless push ./deck --title "Q3 Board Deck" --json | jq -r .presentation.id)
-url=$(slideless share "$id" --name recipient --json | jq -r .url)
+id=$(slideless push ./deck --title "Q3 Board Deck" --json | jq -r .presentation.id)   # .url is the deck's own page
+url=$(slideless share "$id" --name recipient --json | jq -r .url)                     # a recipient link, when one is needed
 slideless pull "$id" ./out          # byte-exact round-trip
 ```
+
+A push answers with the deck's own page on the instance (the owner's view,
+where links are made); a share link is minted only when a recipient needs
+one. The model is in the Concepts pages, starting with
+[The deck is the artifact](../concepts/artifact.md).
 
 `push` is content-addressed (only missing blobs upload; a re-push of the
 same folder is a new immutable version), the first push writes

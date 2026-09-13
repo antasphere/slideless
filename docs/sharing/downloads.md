@@ -1,6 +1,6 @@
 # Downloads
 
-A deck can carry files that travel **with** it: a spreadsheet next to the report, the PDF of the slides, the raw data behind a chart. Put them in a `downloads/` folder at the root of the deck and push as usual. Every file in that folder is an **attachment** of the version it was pushed with, and whoever opens a share link can download them — one by one, or the whole set as a zip — unless you switch downloads off for that link.
+A deck can carry files that travel **with** it: a spreadsheet next to the report, the PDF of the slides, the raw data behind a chart. Put them in a `downloads/` folder at the root of the deck and push as usual. Every file in that folder is an **attachment** of the version it was pushed with, and whoever opens a share link can download them — one by one, or the whole set as a zip — unless you switch downloads off for that link. This page is the reference: the URLs, the API, the counting rules. The model (why files belong to a version, how storage keeps one copy across versions, where the files show) is [Attachments](../concepts/attachments.md), and the link they are handed out through is [Share links](../concepts/links.md).
 
 ## The convention
 
@@ -34,7 +34,7 @@ With downloads off, the deck still opens. The file and zip URLs answer 404 and t
 
 ## The owner side
 
-Every deck has a page of its own in the dashboard, at `/decks/<id>/present`: the deck full-page, with a bar at the top where you rename it, duplicate it, open its version history and create its share links. A push prints that URL and opens it. The version history there lists each version with the files it carried, so you can see that version 3 replaced one file and added another while version 1 kept its own three; each version's files download from the same list, one by one or as a zip. Links are made from that bar too, with the downloads switch on the create form.
+Every deck has a page of its own in the dashboard, at `/decks/<id>/present` ([The deck is the artifact](../concepts/artifact.md)): the deck full-page, with a bar at the top where you rename it, duplicate it, open its version history and create its share links. A push prints that URL and opens it. The version history there lists each version with the files it carried, so you can see that version 3 replaced one file and added another while version 1 kept its own three; each version's files download from the same list, one by one or as a zip. Links are made from that bar too, with the downloads switch on the create form.
 
 The same version history is on the API. Signed in, or with an API key carrying `presentations:read`:
 

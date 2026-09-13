@@ -4,7 +4,12 @@
 primary human/agent face of it. It signs in over email OTP (minting
 its own API key), pushes deck folders as immutable versions, pulls them back
 byte-exactly, manages share links and collaborators, and previews decks
-locally under the exact viewer sandbox.
+locally under the exact viewer sandbox. The model behind the commands (one
+deck as one artifact with a page of its own, immutable versions, links made
+on top, files travelling with the version) is in the Concepts pages:
+[The deck is the artifact](../concepts/artifact.md),
+[Versions](../concepts/versions.md), [Share links](../concepts/links.md),
+[Attachments](../concepts/attachments.md).
 
 ## Install
 
@@ -196,7 +201,8 @@ re-uploaded.
 - **The deck's page**: every push answers with the deck's own page on the
   instance, `<instance>/decks/<id>/present` (the master page: the owner's
   full view, where share links are minted from — no link is created by a
-  push). The human summary prints it as `url:`; `--json` carries it as
+  push; [The deck is the artifact](../concepts/artifact.md) describes the
+  page and its bar). The human summary prints it as `url:`; `--json` carries it as
   `url` next to `presentation` and `version`. The **first push of a
   folder** (the one that creates the deck) also opens that page in your
   default browser; later pushes only print it. `--open` opens it on any
@@ -206,7 +212,8 @@ re-uploaded.
   own (`open`, `xdg-open`, the Windows URL handler) with the URL as an
   argument, never a shell string.
 - **Attachments**: a `downloads/` folder at the root of the deck is the
-  version's attachment set (see the Downloads page under Sharing & review):
+  version's attachment set ([Attachments](../concepts/attachments.md), and
+  the [Downloads](../sharing/downloads.md) page for the URLs and the API):
   files handed to a link's recipient as downloads, never rendered. The push
   classifies them by the same rule the server uses and prints an
   `Attachments: N files, X MB (downloads/)` line under the summary when the
@@ -265,6 +272,11 @@ bound answer 403, which is what stops a DNS-rebinding page from reading your
 deck (and anything else) through the browser.
 
 ## Share
+
+A share link is a secret URL made on top of the deck, public to whoever holds
+it, following the latest version or pinned to one, with its own switches,
+expiry, password and counts: [Share links](../concepts/links.md) is the model,
+[Versions](../concepts/versions.md) the latest-or-pinned story.
 
 ```bash
 slideless share <id> --name "Alice"                       # prints the /v/{secret} URL — shown ONCE
