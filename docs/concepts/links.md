@@ -58,8 +58,9 @@ top of the deck`, with **New share link**, which opens the form in a dialog over
 The deck, whole, at the version the link resolves to, under a slim bar: the `Slideless` mark, the
 deck's title, the version (`v3`) and, when the version carries files and the link allows
 downloads, a **Download** button whose menu lists each file with its size and **Download all** for
-the zip. The bar collapses to a thin handle at the top (its hide button, or Esc while it has focus)
-and stays collapsed on that link for the rest of the browser tab; the handle brings it back. The
+the zip. The bar collapses to a thin handle at the top (its **Hide this bar** button, or Esc while it has
+focus) and stays collapsed on that link for the rest of the browser tab; the handle, **Show the
+presentation bar**, brings it back. The
 deck sits under the bar, pushed down by its height, never covered. With the bar off, the recipient
 gets the deck alone, as it was pushed, and a deck that hands out its files then links them itself,
 relative to its own URL (`downloads/figures.csv`, `downloads.zip`), as [Attachments](attachments.md)

@@ -335,8 +335,9 @@ Sharing & review.
 
 `tokens` lists every link of the deck, the dashboard's own preview links
 included: rows named `Dashboard preview` that expire within the hour and
-count nothing; the dashboard hides them, the CLI and the API do not. Access
-stats count entry loads only, de-duplicated per browser within a short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
+count nothing; the dashboard hides them, the CLI and the API do not. The human table has no column for the
+bar: `--json` carries `showBar` on every token, which is how a bare link is told apart from the
+others. Access stats count entry loads only, de-duplicated per browser within a short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
 open is one count, while cookie-less fetches (CLI, curl) count each time.
 "Last opened" is the last counted open. The downloads column is the link's
 `downloadCount` (one per attachment taken through the link, one per zip,

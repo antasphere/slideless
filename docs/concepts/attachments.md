@@ -2,8 +2,9 @@
 
 Files can travel with a deck: the spreadsheet behind a chart, the PDF of the slides, the raw data.
 Put them in a `downloads/` folder at the root of the deck and push. Every file in that folder is an attachment of the version it was pushed with, offered to the
-recipient by the bar over the share link, one by one or as a zip, unless you switch downloads off
-for that link.
+recipient by the bar over the share link, one by one or as a zip. Where the bar is absent (a link
+made with the bar off, an embed), the deck links them itself; where downloads are switched off for
+the link, nothing offers them.
 
 ## The convention
 
