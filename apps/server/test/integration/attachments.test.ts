@@ -158,6 +158,14 @@ async function liveFilesCount(): Promise<number> {
   return row!.n;
 }
 
+async function totalViewsOf(id: string): Promise<number> {
+  const [row] = await app.db.db
+    .select({ totalViews: presentations.totalViews })
+    .from(presentations)
+    .where(eq(presentations.id, id));
+  return row!.totalViews;
+}
+
 async function tokenRow(tokenId: string) {
   const [row] = await app.db.db.select().from(shareTokens).where(eq(shareTokens.id, tokenId));
   return row!;
@@ -523,10 +531,7 @@ describe('the recipient side: the share link', () => {
 describe('download events and the counter', () => {
   it('each file and each zip is one event and one increment; nothing is a view', async () => {
     const created = await createToken({ name: 'Counted' });
-    const [{ totalViews: viewsBefore }] = await app.db.db
-      .select({ totalViews: presentations.totalViews })
-      .from(presentations)
-      .where(eq(presentations.id, deckId));
+    const viewsBefore = await totalViewsOf(deckId);
 
     expect((await get(`/v/${created.secret}/downloads/a.csv`)).status).toBe(200);
     expect((await get(`/v/${created.secret}/downloads/sub/notes.md`)).status).toBe(200);
@@ -546,11 +551,7 @@ describe('download events and the counter', () => {
     expect(token.downloadCount).toBe(4);
     expect(token.accessCount).toBe(0);
     expect(token.lastAccessedAt).toBeNull();
-    const [{ totalViews: viewsAfter }] = await app.db.db
-      .select({ totalViews: presentations.totalViews })
-      .from(presentations)
-      .where(eq(presentations.id, deckId));
-    expect(viewsAfter).toBe(viewsBefore);
+    expect(await totalViewsOf(deckId)).toBe(viewsBefore);
 
     // The count reaches the owner on the link row.
     const listed = await readJson(

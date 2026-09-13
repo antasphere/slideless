@@ -56,9 +56,10 @@ function storageOf(blobs: Record<string, Buffer>): StorageDriver {
   return {
     name: 'local',
     put: async () => {},
-    getStream: async (key) => Readable.from([blobs[shaOfKey(key)]!]),
-    exists: async (key) => shaOfKey(key) in blobs,
-    head: async (key) => (shaOfKey(key) in blobs ? { sizeBytes: blobs[shaOfKey(key)]!.length } : null),
+    getStream: async (key: string) => Readable.from([blobs[shaOfKey(key)]!]),
+    exists: async (key: string) => shaOfKey(key) in blobs,
+    head: async (key: string) =>
+      shaOfKey(key) in blobs ? { sizeBytes: blobs[shaOfKey(key)]!.length } : null,
     delete: async () => {},
     healthcheck: async () => {}
   } as unknown as StorageDriver;
