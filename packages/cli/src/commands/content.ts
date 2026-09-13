@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -6,6 +5,7 @@ import type { Command } from 'commander';
 import { PlatformApiError } from '@slideless/sdk';
 import {
   AGENT_DOC_PATH,
+  deckMasterUrl,
   isSafeAssetPath,
   type ManifestEntry,
   type PresentationKind
@@ -23,11 +23,13 @@ import {
 import { detectEntry, readLink, scanDeck, writeLink, LINK_FILENAME, type DeckScan } from '../manifest.js';
 import { writeContained } from '../safe-write.js';
 import { startDevServer } from '../devserver.js';
+import { isInteractive, openInBrowser, shouldOpenAfterPush } from '../open.js';
 
 /**
- * Authoring commands: push (the 3-step upload protocol), pull (byte-exact
- * round trip), pull-annotations, annotation resolve/reopen, and dev (local
- * sandboxed preview).
+ * Authoring commands: push (the 3-step upload protocol, answering with the
+ * deck's master page and opening it on a first push), open (the master page
+ * of the linked deck), pull (byte-exact round trip), pull-annotations,
+ * annotation resolve/reopen, and dev (local sandboxed preview).
  */
 
 const UPLOAD_CONCURRENCY = 4;
@@ -142,6 +144,8 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .option('--interactive', 'mark the deck as embedding interactive content (new decks only)', false)
     .option('--id <deckId>', 'push a new version of this existing deck')
     .option('--new', `force a NEW deck even when ${LINK_FILENAME} links one`, false)
+    .option('--open', "open the deck's page in the browser after the push (default: on the first push only)")
+    .option('--no-open', 'never open the browser')
     .action(
       async (
         path: string | undefined,
@@ -152,6 +156,8 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           interactive: boolean;
           id?: string;
           new: boolean;
+          /** --open → true, --no-open → false, neither → undefined. */
+          open?: boolean;
         },
         cmd: Command
       ) => {
@@ -200,19 +206,22 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           }
           await writeLink(scan.rootDir, { presentationId: existingId, baseUrl: ctx.baseUrl });
           const formNames = await detectFormNames(scan);
+          const url = deckMasterUrl(ctx.baseUrl, committed.presentation.id);
           if (ctx.json) {
             return printJson(
               io,
-              formNames.length > 0 ? { ...committed, formsDetected: formNames } : committed
+              formNames.length > 0 ? { ...committed, url, formsDetected: formNames } : { ...committed, url }
             );
           }
           io.out.write(
             `Pushed "${committed.presentation.title}" → version ${committed.version.version} ` +
               `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
-              `  id: ${committed.presentation.id}\n`
+              `  id: ${committed.presentation.id}\n` +
+              `  url: ${url}\n`
           );
           if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
           if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
+          openAfterPush(ctx, url, { created: false, flag: opts.open });
           return;
         }
 
@@ -235,19 +244,45 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           baseUrl: ctx.baseUrl
         });
         const formNames = await detectFormNames(scan);
+        const url = deckMasterUrl(ctx.baseUrl, committed.presentation.id);
         if (ctx.json) {
-          return printJson(io, formNames.length > 0 ? { ...committed, formsDetected: formNames } : committed);
+          return printJson(
+            io,
+            formNames.length > 0 ? { ...committed, url, formsDetected: formNames } : { ...committed, url }
+          );
         }
         io.out.write(
           `Created "${committed.presentation.title}" at version 1 ` +
             `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
             `  id: ${committed.presentation.id}\n` +
+            `  url: ${url}\n` +
             `  linked: ${join(scan.rootDir, LINK_FILENAME)}\n`
         );
         if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
         if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
+        openAfterPush(ctx, url, { created: true, flag: opts.open });
       }
     );
+
+  program
+    .command('open [path]')
+    .description(`Open the linked deck's page in the browser (reads ${LINK_FILENAME}; --json prints the URL)`)
+    .action(async (path: string | undefined, _opts, cmd: Command) => {
+      // Backendless like `dev`: the link file carries the instance base URL,
+      // so the master URL composes offline — no key, no instance resolution.
+      const { json } = resolveContextForDev(cmd, io);
+      const rootDir = resolve(path ?? '.');
+      const link = await readLink(rootDir);
+      if (!link) {
+        throw new CliUsageError(
+          `No ${LINK_FILENAME} in ${rootDir} — push the folder once (\`slideless push\`) to link it to a deck.`
+        );
+      }
+      const url = deckMasterUrl(link.baseUrl, link.presentationId);
+      if (json) return printJson(io, { presentationId: link.presentationId, baseUrl: link.baseUrl, url });
+      io.out.write(`${url}\n`);
+      openInBrowser(io, url);
+    });
 
   program
     .command('agent-doc [id]')
@@ -483,15 +518,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
               'Live reload on; sandbox headers match the public viewer. Ctrl-C to stop.\n'
           );
         }
-        if (opts.open) {
-          const opener =
-            process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-          try {
-            spawn(opener, [server.url], { stdio: 'ignore', detached: true }).unref();
-          } catch {
-            // best-effort
-          }
-        }
+        if (opts.open) openInBrowser(io, server.url);
         // Serve until the process is interrupted.
         await new Promise<void>((resolvePromise) => {
           const stop = () => {
@@ -502,6 +529,22 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         });
       }
     );
+}
+
+/**
+ * The push's browser open (open.ts has the matrix): a first push opens the
+ * master page, a later push prints it, `--open` / `--no-open` decide, and a
+ * `--json` or piped run never opens. The human line says what happened so
+ * a person who did not expect a browser knows which flag turns it off.
+ */
+function openAfterPush(
+  ctx: CliContext,
+  url: string,
+  input: { created: boolean; flag: boolean | undefined }
+): void {
+  if (!shouldOpenAfterPush({ ...input, json: ctx.json, interactive: isInteractive(ctx.io) })) return;
+  ctx.io.out.write('  opened in your browser (--no-open to skip)\n');
+  openInBrowser(ctx.io, url);
 }
 
 /** One PATCH behind both status verbs: `annotation resolve` / `annotation reopen`. */

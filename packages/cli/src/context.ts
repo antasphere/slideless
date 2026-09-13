@@ -26,6 +26,17 @@ export { CliUsageError } from '@antasphere/cli-core';
  */
 export interface CliIo extends CoreCliIo {
   readStdin?: () => Promise<string>;
+  /**
+   * `process.stdout` carries `isTTY`; a pipe does not. The only signal the
+   * CLI reads before opening a browser unasked (open.ts): a piped run is a
+   * script or an agent, and a browser popping up on a build agent is a bug.
+   */
+  out: CoreCliIo['out'] & { isTTY?: boolean };
+  /**
+   * The browser opener seam. The bin leaves it unset and the default spawns
+   * the platform command (open.ts); tests inject a recorder.
+   */
+  openUrl?: (url: string) => void;
 }
 
 // ── Terminal-control sanitation ──────────────────────────────────────────────
@@ -73,7 +84,11 @@ const rawSinks = new WeakMap<CliIo, CliIo>();
 export function ttySafeIo(io: CliIo): CliIo {
   const safe: CliIo = {
     ...io,
-    out: { write: (s: string) => io.out.write(sanitizeForTty(s)) },
+    // `isTTY` rides along: the open decision reads it through the wrapper.
+    out: {
+      write: (s: string) => io.out.write(sanitizeForTty(s)),
+      ...(io.out.isTTY !== undefined ? { isTTY: io.out.isTTY } : {})
+    },
     err: { write: (s: string) => io.err.write(sanitizeForTty(s)) }
   };
   rawSinks.set(safe, io);
