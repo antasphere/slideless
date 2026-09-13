@@ -328,12 +328,30 @@ describe('slideless open', () => {
 describe('slideless dev', () => {
   it('opens the local preview through the shared opener, --no-open suppresses it', async () => {
     const dir = await makeDeckDir();
+    // `dev` serves until SIGINT or SIGTERM (one `once` listener each); run it
+    // unawaited, wait for the open, stop it with one signal, and remove the
+    // other's listener so nothing leaks across runs. Vitest's own 5 s test
+    // timeout is the safety net: a run that never opens fails red on it.
+    const listeners = () => ({
+      int: process.listenerCount('SIGINT'),
+      term: process.listenerCount('SIGTERM')
+    });
+    const before = listeners();
+    const waitFor = async (done: () => boolean) => {
+      const deadline = Date.now() + 4000;
+      while (!done() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    };
+    const stop = (signal: 'SIGINT' | 'SIGTERM') => {
+      const other = signal === 'SIGINT' ? 'SIGTERM' : 'SIGINT';
+      const pending = process.listeners(other).at(-1);
+      process.emit(signal);
+      if (pending) process.removeListener(other, pending as () => void);
+    };
+
     const h = openingHarness([], true);
-    // `dev` serves until SIGINT; run it unawaited, wait for the open, then stop it.
     const running = run(['dev', dir, '--port', '0'], h.io);
-    const deadline = Date.now() + 5000;
-    while (h.opened.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
-    process.emit('SIGINT');
+    await waitFor(() => h.opened.length > 0);
+    stop('SIGINT');
     expect(await running).toBe(0);
     expect(h.opened).toHaveLength(1);
     expect(h.opened[0]).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
@@ -341,10 +359,10 @@ describe('slideless dev', () => {
 
     const quiet = openingHarness([], true);
     const runningQuiet = run(['dev', dir, '--port', '0', '--no-open'], quiet.io);
-    while (!quiet.out().includes('Serving') && Date.now() < deadline + 5000)
-      await new Promise((r) => setTimeout(r, 10));
-    process.emit('SIGINT');
+    await waitFor(() => quiet.out().includes('Serving'));
+    stop('SIGTERM');
     expect(await runningQuiet).toBe(0);
     expect(quiet.opened).toEqual([]);
+    expect(listeners()).toEqual(before);
   });
 });
