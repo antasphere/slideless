@@ -564,7 +564,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .description(
       'Serve the deck folder locally with the exact viewer sandbox headers + live reload (no backend)'
     )
-    .option('--port <n>', 'port (default 4173)', (v: string) => parseInt(v, 10), 4173)
+    .option('--port <n>', 'port to serve on', (v: string) => parseInt(v, 10), 4173)
     .option('--entry <path>', 'entry document (default: index.html, or the only .html)')
     .option('--no-open', 'do not open the browser')
     .action(

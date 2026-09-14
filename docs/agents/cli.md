@@ -9,7 +9,9 @@ deck as one artifact with a page of its own, immutable versions, links made
 on top, files travelling with the version) is in the Concepts pages:
 [The deck is the artifact](../concepts/artifact.md),
 [Versions](../concepts/versions.md), [Share links](../concepts/links.md),
-[Attachments](../concepts/attachments.md).
+[Attachments](../concepts/attachments.md). What each release added is the
+Changelog page of the docs site, generated from the repository's release
+tags; this page describes the current CLI.
 
 ## Install
 
@@ -131,7 +133,9 @@ slideless auth login-complete --api-url https://slides.example.com --email you@e
 
 `login-complete` mints an `slk_` API key server-side (scopes
 `presentations:read` + `presentations:write`, never `data:export`) and stores
-it as the active profile. Accounts with 2FA enabled are refused
+it as the active profile; `--key-name <name>` names the key as the dashboard
+lists it, and `--expires-in-days <n>` gives it a TTL (it never expires
+otherwise). Accounts with 2FA enabled are refused
 (`two_factor_required`), and an instance with no email driver has no OTP at
 all — mint a key in the dashboard instead (**API keys**, **Create key**; tick
 `presentations:write`, which the dialog leaves unchecked, for push and share)
@@ -165,10 +169,12 @@ slideless push ./deck --no-open                  # never open, even on the first
 slideless open ./deck                            # open the linked deck's page (--json prints the URL)
 slideless pull <id> ./out                        # byte-exact download of the latest version
 slideless pull <id> ./out --at 1                 # …or any pinned version
+slideless pull ./deck                            # no id: the folder's .slideless.json names the deck
 slideless pull-annotations [id] [--version N] [--status open|resolved] [--out notes.json]
 slideless annotation resolve <id> <annotationId> # mark a note resolved
 slideless annotation reopen <id> <annotationId>  # …and flip it back open
-slideless dev ./deck --port 4173 --no-open       # local preview, no backend
+slideless dev ./deck --port 4173 --no-open       # local preview, no backend; --entry picks the page
+                                                 # to serve (index.html, else the only .html)
 ```
 
 **push** implements the content-addressed 3-step protocol: scan → hash every
@@ -288,6 +294,8 @@ expiry, password and counts: [Share links](../concepts/links.md) is the model,
 
 ```bash
 slideless share <id> --name "Alice"                       # prints the /v/{secret} URL — shown ONCE
+                                                          # (omit --name and the link is labelled "cli":
+                                                          # name every recipient, the label is the audit)
 slideless share <id> --to-version 2 --annotator \
                      --expires 2026-12-31T23:59:59Z --password hunter22
 slideless share <id> --annotator --badge-position top-left  # move the notes button (8 slots;
@@ -305,7 +313,11 @@ slideless share <id> --embed                              # also print the websi
 slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link
 slideless unshare <id>                                    # revoke ALL active links
-slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed
+slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed;
+                                                          # takes every share flag (--to-version, --annotator,
+                                                          # --no-forms, --no-download, --no-bar, --badge-position,
+                                                          # --expires, --password, --password-stdin) except
+                                                          # --embed and --placement
 slideless pin <id> <tokenId> --to-version 1               # freeze a recipient on v1
 slideless pin <id> <tokenId> --latest                     # follow the latest again
 slideless tokens <id> [--all]                             # list links + access stats (opens, last opened,
@@ -375,14 +387,27 @@ slideless meta <id> --set client=Acme --set priority=3   # merge keys (values pa
 slideless meta <id> --unset priority                     # remove a key
 slideless meta <id> --replace '{"stage":"final"}'        # replace the WHOLE object
 slideless agent-doc [id] [--at <version>] [--out <file>] # print the bundle's AGENT.md briefing
-slideless versions <id> [--all]  # version history, newest first (numbers line up with pull --at)
+slideless versions <id> [--all]  # version history, newest first (numbers line up with pull --at);
+                                 # rows carry the flags and sizes, not the manifest: one version's
+                                 # manifest and attachments are GET /api/v1/presentations/{id}/versions/{n}
+                                 # or the MCP tool slideless_get_version
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed
-slideless files list|upload|rm
+slideless files list [--all]
+slideless files upload <path> [--name <stored name>] [--content-type <type>]
+slideless files rm <id>
 slideless files download <id> [--dir ./here]  # writes the stored name (basename only) into --dir
 slideless files download <id> --out ./exact/path.bin   # …or a path you choose, verbatim
 slideless export [-o file]    # workspace zip (key needs the opt-in data:export scope)
 ```
+
+## Paging
+
+Every listing command (`list`, `versions`, `tokens`, `views`, `responses`,
+`files list`) answers one page at a time, newest first: `--limit <n>` sets the
+page size (1 to 100), `--cursor <cursor>` resumes from the `nextCursor` a
+previous page printed, and `--all` follows the cursors until every page is
+fetched.
 
 ## Shell completion
 

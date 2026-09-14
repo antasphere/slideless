@@ -43,7 +43,11 @@ MCP agents use `slideless_update_presentation`; the object is visible in
 Put a file named exactly `AGENT.md` (case-sensitive) at the root of your
 bundle and push. The server detects it at commit and flags the deck
 (`hasAgentDoc` on the presentation and on each version), so an agent knows
-upfront whether a briefing exists without opening the manifest.
+upfront whether a briefing exists without opening the manifest. A
+`downloads/` folder is flagged the same way (`hasDownloads`, see
+[Attachments](../concepts/attachments.md)): a deck that carries files should
+say in its briefing what each file is and which page it belongs to, since the
+files are handed out, never rendered.
 
 Writing one is the deck **creator's** responsibility. A good briefing tells
 an agent what a human would need to know before presenting: what the deck

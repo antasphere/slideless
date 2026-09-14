@@ -32,7 +32,12 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
 
 const VERSION = '0.2.4';
 
-function buildProgram(io: CliIo): Command {
+/**
+ * The command tree, built once per run. Exported for the docs-coverage test
+ * (test/docs-coverage.test.ts), which walks it to prove every command and
+ * every flag appears in docs/agents/cli.md — the reference an agent reads.
+ */
+export function buildProgram(io: CliIo): Command {
   const program = new Command();
   program
     .name('slideless')
