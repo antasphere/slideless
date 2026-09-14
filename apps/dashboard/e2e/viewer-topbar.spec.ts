@@ -213,7 +213,8 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       });
       expect(motion.visibility).toBe('hidden');
       expect(motion.duration.split(', ')[0]).toBe('0.16s');
-      expect(motion.easing.split(', ')[0]).toBe('cubic-bezier(0.2, 0, 0, 1)');
+      // The easing carries commas of its own: match its start, not a split.
+      expect(motion.easing.startsWith('cubic-bezier(0.2, 0, 0, 1)')).toBe(true);
       await recipient.locator(`${BAR} .dl > button`).click();
       await expect(menu).toBeVisible();
       await expect.poll(() => menu.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
@@ -344,10 +345,10 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
         const cs = getComputedStyle(el);
         return {
           duration: cs.transitionDuration.split(', ')[0],
-          easing: cs.transitionTimingFunction.split(', ')[0]
+          easingStart: cs.transitionTimingFunction.startsWith('cubic-bezier(0.2, 0, 0, 1)')
         };
       });
-      expect(motion).toEqual({ duration: '0.16s', easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+      expect(motion).toEqual({ duration: '0.16s', easingStart: true });
       const hostMotion = await recipient
         .locator(BAR)
         .evaluate((el) => getComputedStyle(el).transitionProperty);

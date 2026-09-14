@@ -1082,3 +1082,21 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
   scrolls by the bar's height. Forcing the body to scroll instead (the first attempt) failed
   on any deck with a margin: its own overflow hid the bar's, and a threshold on the excess is
   a guess about the deck.
+
+## The artifact surface, second pass (PRDCT-2308 / PRDCT-2299, 2026-09-14, lane F)
+
+- **In the shared `DataTable` (`table-fixed`), a column WITHOUT a `meta.width` gets whatever the
+  others leave, which can be nothing.** The links table's recipient column had `minWidth` only and
+  rendered 4px wide inside the share sheet, its lock icon spilling into the next cell — the exact
+  "cut column" Romain reported on the wave. Give EVERY column a width and make them add up to the
+  table's `min-w-*` (`tableClass`), so a narrow host scrolls the table sideways instead of eating
+  a column; `master.spec.ts` pins the first column's width.
+- **The dashboard CSP allowed styles and fonts from `'self'` only, so the Fontshare and Google
+  Fonts links in `app.html` had never loaded on a built page** — Sentient and Onest fell back to
+  the system stack silently (the console said so, nothing else did). `buildCsp` now lists the two
+  API hosts under `style-src` and the two file hosts under `font-src`, nothing more. When adding a
+  CDN link to the shell, add its hosts to the CSP in the same commit and look at the console of a
+  built page, not the Vite dev server (which sets no CSP).
+- **A hands-on seed that signs in from Node needs an `Origin` header**: the sign-in Origin hook
+  refuses a request with none (403), the same answer a wrong origin gets. Send
+  `origin: <PUBLIC_BASE_URL>` on `/sign-in/email` and on every JSON POST from a script.

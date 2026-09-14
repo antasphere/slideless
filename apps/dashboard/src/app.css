@@ -232,13 +232,16 @@
   }
 }
 
-/* The one motion (tokens.css): every popover, menu and sheet-less fold in
-   the dashboard reads the same duration and easing through this class,
-   which tailwindcss-animate's enter/exit keyframes honour. */
+/* The one motion (tokens.css): every popover and menu in the dashboard
+   reads the same duration and easing through this class. tailwindcss-animate's
+   `animate-in` / `animate-out` utilities set their own 150ms and `ease` at
+   utility precedence, so the two declarations are marked important: this
+   class exists to override exactly that default, on the elements that
+   carry it and nowhere else. */
 @layer components {
   .motion {
-    animation-duration: var(--motion-duration);
-    animation-timing-function: var(--motion-ease);
+    animation-duration: var(--motion-duration) !important;
+    animation-timing-function: var(--motion-ease) !important;
     transition-duration: var(--motion-duration);
     transition-timing-function: var(--motion-ease);
   }
