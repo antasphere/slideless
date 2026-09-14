@@ -279,6 +279,29 @@ test('master page: full-page deck under the bar — rename, version history with
     expect(await iframe.getAttribute('sandbox')).toBe(VIEWER_IFRAME_SANDBOX);
   });
 
+  await test.step('leaving the page revokes every thumbnail token it minted (an in-app navigation)', async () => {
+    // The frame's token plus one per version the popovers rendered: each is
+    // revoked on the way out (verifier round 1, G4). The hard-navigation
+    // path (pagehide, keepalive) is pinned by the controller's unit test.
+    const livePreviews = async () =>
+      (await (await page.request.get(`/api/v1/presentations/${deckId}/tokens`)).json()).shareTokens.filter(
+        (t: { purpose: string; revokedAt: string | null }) => t.purpose === 'preview' && !t.revokedAt
+      ).length;
+    const minted = await livePreviews();
+    expect(minted).toBeGreaterThanOrEqual(4);
+    const revoked: string[] = [];
+    page.on('request', (req) => {
+      if (req.method() === 'DELETE' && /\/tokens\/[^/]+$/.test(req.url())) revoked.push(req.url());
+    });
+    await page.getByRole('link', { name: 'Open in dashboard' }).click();
+    await expect(page).toHaveURL(new RegExp(`/decks/${deckId}$`));
+    await expect.poll(() => revoked.length).toBeGreaterThanOrEqual(minted);
+    // At most the admin page's own frame token stays live.
+    await expect.poll(livePreviews).toBeLessThanOrEqual(1);
+    await page.goto(deckMasterPath(deckId));
+    await expect(page.getByTestId('master-bar')).toBeVisible();
+  });
+
   let viewerUrl = '';
   await test.step('share: a link is made from the bar, its URL copied once, the row listed', async () => {
     await openTitleMenu(page);
@@ -315,7 +338,8 @@ test('master page: full-page deck under the bar — rename, version history with
     }
     await expect(aliceRow.locator('[data-capability="notes"]')).not.toHaveAttribute('data-on', '');
     await aliceRow.getByTestId('link-copy').click();
-    await expect(page.getByText('Viewer URL copied to clipboard')).toBeVisible();
+    // The create dialog's own toast may still be on screen: the last one is the row's.
+    await expect(page.getByText('Viewer URL copied to clipboard').last()).toBeVisible();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(viewerUrl);
     expect(await aliceRow.getByTestId('link-open').getAttribute('href')).toBe(viewerUrl);
     expect(await aliceRow.getByTestId('link-open').getAttribute('target')).toBe('_blank');

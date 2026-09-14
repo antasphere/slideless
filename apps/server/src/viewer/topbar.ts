@@ -412,10 +412,17 @@ function fitBody(root) {
 // The host's height and the root's top margin follow the fold. Armed only
 // after the first layout has painted (two frames), so the bar's arrival is
 // never an animation, and never under reduced motion.
+// The root may carry a transition of the deck's own (a theme fade): ours is
+// APPENDED to it, never put in its place (verifier round 1, F2).
 function armMotion() {
   if (REDUCED) return;
   host.style.setProperty('transition', 'height ' + MOTION, 'important');
-  doc.documentElement.style.setProperty('transition', 'margin-top ' + MOTION, 'important');
+  var root = doc.documentElement;
+  var own = '';
+  try { own = String(getComputedStyle(root).transition || ''); } catch (e) {}
+  var ours = 'margin-top ' + MOTION;
+  if (own && own !== 'none' && own !== 'all 0s ease 0s' && own.indexOf('margin-top') === -1) ours = own + ', ' + ours;
+  root.style.setProperty('transition', ours, 'important');
 }
 function setCollapsed(next, remember) {
   collapsed = !!next;

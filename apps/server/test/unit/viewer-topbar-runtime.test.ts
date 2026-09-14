@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { MOTION_DURATION_MS, MOTION_EASING } from '@slideless/contract';
@@ -353,5 +354,53 @@ describe('the runtime, executed', () => {
     expect(clocked.root.style.props.get('transition')).toBe(
       `margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
     );
+  });
+
+  it('never arms the layout motion for a reader who asked for reduced motion (verifier round 1, G1)', () => {
+    const frames: Array<() => void> = [];
+    const r = run(
+      CFG,
+      { top: true },
+      {
+        requestAnimationFrame: (fn: () => void) => frames.push(fn),
+        matchMedia: () => ({ matches: true })
+      }
+    );
+    while (frames.length) frames.shift()!();
+    expect(r.body.children[0]!.style.props.has('transition')).toBe(false);
+    expect(r.root.style.props.has('transition')).toBe(false);
+  });
+
+  it('appends its margin transition to a root transition the deck already has (verifier round 1, F2)', () => {
+    const frames: Array<() => void> = [];
+    const r = run(
+      CFG,
+      { top: true },
+      {
+        requestAnimationFrame: (fn: () => void) => frames.push(fn),
+        getComputedStyle: () => ({ overflowY: 'visible', transition: 'background 5s ease 0s' })
+      }
+    );
+    while (frames.length) frames.shift()!();
+    expect(r.root.style.props.get('transition')).toBe(
+      `background 5s ease 0s, margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
+    );
+  });
+
+  it('ships the brand file’s path, byte for byte (verifier round 1, G5)', () => {
+    // The sha256 of the `d` attribute of company/brand src/brand/mark-light.svg
+    // on 14 September 2026 (mark-dark.svg carries the same path). A redraw,
+    // a rounding or a hand edit of the constant goes red here; a real change
+    // of the mark updates this digest together with the constant.
+    expect(createHash('sha256').update(ANTASPHERE_MARK_PATH).digest('hex')).toBe(
+      '27a38ef3b11983ab711412c1691c01af7104178a92f722697ad615398f0cf129'
+    );
+    expect(ANTASPHERE_MARK_PATH).toHaveLength(4723);
+    expect(ANTASPHERE_MARK_PATH.startsWith('M382.20,266.76 L488.75,266.76')).toBe(true);
+    const r = run(CFG);
+    const mark = r.shadowRoots[0]!.children.find((c) => c.className === 'bar')!.children.find(
+      (c) => c.className === 'mark'
+    )!;
+    expect(mark.innerHTML).toContain(ANTASPHERE_MARK_PATH);
   });
 });

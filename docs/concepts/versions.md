@@ -35,10 +35,15 @@ a published link survives a version you regret: pin it back.
 
 ## What the owner sees
 
-**Version history** in the bar of the deck's page lists every push, newest first: the version
-number, when it was pushed, `Current` on the latest one, who pushed it (`Owner` or `Collaborator`),
-its size and its file count. **Show** renders that version on the page (`Showing` marks the one on
-screen), and the version badge on the right of the bar follows. A version that carries attachments
+Hovering **Version history** in the deck's menu opens the versions beside it, newest first in a
+list that scrolls: each one as a small live rendering, its version number, `Current` on the latest,
+`Showing` on the one on screen, its file count, and how many times recipients were served that
+version and took its files (the counts follow the link analytics' retention; the deck's total views
+is the lifetime figure). Hovering the version badge on the right of the bar opens the same list.
+Picking a version shows it on the page. **Open the full history…** opens the side panel: every
+push with its rendering, when it was pushed, who pushed it (`Owner` or `Collaborator`), its size,
+its file count and its counts. **Show** renders that version on the page and closes the panel;
+the version badge follows. A version that carries attachments
 shows its **Files** with each file's name and size and **All files (zip)**: each version keeps its
 own files, so the history is where you see that version 3 replaced one file and added another
 while version 1 kept its own three.

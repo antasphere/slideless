@@ -42,6 +42,8 @@ let container: StartedPostgreSqlContainer;
 let app: TestApp;
 let ownerCookie: string;
 let deckId: string;
+/** A second deck in the same workspace: its events must never count on the first. */
+let otherDeckId: string;
 
 let ipCounter = 0;
 const nextIp = () => `10.99.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
@@ -70,19 +72,22 @@ async function uploadAsset(bytes: Buffer, contentType: string, name: string): Pr
   expect(res.status).toBe(201);
 }
 
-async function listVersions(): Promise<
-  Array<{ version: number; viewCount: number; downloadCount: number; fileCount: number }>
-> {
-  const res = await app.app.request(`/api/v1/presentations/${deckId}/versions`, {
+async function listVersions(
+  id: string = deckId
+): Promise<Array<{ version: number; viewCount: number; downloadCount: number; fileCount: number }>> {
+  const res = await app.app.request(`/api/v1/presentations/${id}/versions`, {
     headers: { cookie: ownerCookie, 'x-forwarded-for': nextIp() }
   });
   expect(res.status).toBe(200);
   return (await readJson(res)).versions;
 }
 
-async function mintLink(body: Record<string, unknown>): Promise<{ secret: string; id: string }> {
+async function mintLink(
+  body: Record<string, unknown>,
+  id: string = deckId
+): Promise<{ secret: string; id: string }> {
   const res = await app.app.request(
-    `/api/v1/presentations/${deckId}/tokens`,
+    `/api/v1/presentations/${id}/tokens`,
     json(body, { cookie: ownerCookie })
   );
   expect(res.status).toBe(201);
@@ -144,6 +149,30 @@ beforeAll(async () => {
     )
   );
   expect(v2.status).toBe(201);
+
+  // The second deck: one version, its own link, its own views.
+  const reserve2 = await readJson(
+    await app.app.request('/api/v1/presentations/uploads', {
+      method: 'POST',
+      headers: { cookie: ownerCookie }
+    })
+  );
+  const commit2 = await app.app.request(
+    `/api/v1/presentations/uploads/${reserve2.uploadSession.id}/commit`,
+    json(
+      {
+        title: 'Other deck',
+        entryPath: 'index.html',
+        manifest: [
+          entryOf('index.html', HTML_V1, 'text/html'),
+          entryOf('downloads/figures.csv', CSV, 'text/csv')
+        ]
+      },
+      { cookie: ownerCookie }
+    )
+  );
+  expect(commit2.status).toBe(201);
+  otherDeckId = (await readJson(commit2)).presentation.id;
 }, 120_000);
 
 afterAll(async () => {
@@ -164,6 +193,18 @@ describe('per-version views and downloads on the version list', () => {
   it('a latest link counts on the version it served, a pinned link on its pin, a download on its version', async () => {
     const latest = await mintLink({ name: 'follows' });
     const pinned = await mintLink({ name: 'pinned to v1', versionMode: 'pinned', pinnedVersion: 1 });
+    // The other deck's version 1 takes five views and a download of its own
+    // first: they must never appear on this deck's version 1 (verifier
+    // round 1, G2 — the counts are scoped by deck, not by version number).
+    const other = await mintLink({ name: 'other' }, otherDeckId);
+    for (let i = 0; i < 5; i++) expect((await open(other.secret)).status).toBe(200);
+    expect(
+      (
+        await app.app.request(`/v/${other.secret}/downloads/figures.csv`, {
+          headers: { 'x-forwarded-for': nextIp() }
+        })
+      ).status
+    ).toBe(200);
 
     expect((await open(latest.secret)).status).toBe(200);
     expect((await open(latest.secret)).status).toBe(200);
@@ -176,6 +217,7 @@ describe('per-version views and downloads on the version list', () => {
     const versions = await listVersions();
     expect(versions.find((v) => v.version === 2)).toMatchObject({ viewCount: 2, downloadCount: 1 });
     expect(versions.find((v) => v.version === 1)).toMatchObject({ viewCount: 1, downloadCount: 0 });
+    expect(await listVersions(otherDeckId)).toMatchObject([{ version: 1, viewCount: 5, downloadCount: 1 }]);
   });
 
   it('an owner preview never counts: the preview token writes no event', async () => {
@@ -201,13 +243,15 @@ describe('per-version views and downloads on the version list', () => {
     // Age the v1 view past any retention, then run the retention purge as the
     // nightly job does (1 day keeps everything younger than a day).
     await app.db.db.execute(
-      sql`UPDATE share_token_views SET occurred_at = now() - interval '400 days' WHERE version = 1`
+      sql`UPDATE share_token_views SET occurred_at = now() - interval '400 days' WHERE version = 1 AND presentation_id = ${deckId}`
     );
     const { purgeShareTokenViews } = await import('../../src/sharing/view-events.js');
     expect(await purgeShareTokenViews(app.db.db, 1)).toBe(1);
     const after = await listVersions();
     expect(after.find((v) => v.version === 1)!.viewCount).toBe(0);
     expect(after.find((v) => v.version === 2)!.viewCount).toBe(2);
+    // The other deck's events were younger and stay counted.
+    expect((await listVersions(otherDeckId))[0]!.viewCount).toBe(5);
     const deckAfter = await readJson(
       await app.app.request(`/api/v1/presentations/${deckId}`, {
         headers: { cookie: ownerCookie, 'x-forwarded-for': nextIp() }
