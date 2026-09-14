@@ -1963,6 +1963,50 @@ describe('edit history (PRDCT-2329)', () => {
     expect(page2.nextCursor).toBeNull();
   });
 
+  it('the cursor and the order ride the same immutable key: a walk over rows whose creation and activity orders disagree returns every row exactly once (verifier round 2, F-G1)', async () => {
+    const walkDeck = await uploadDeck('Walk Deck', [entryOf('index.html', HTML_V1)]);
+    const { secret } = await createToken({ name: 'W' }, walkDeck);
+    const created: Array<{ id: string; editSecret: string }> = [];
+    for (let i = 0; i < 6; i++) {
+      const c = await readJson(await submit(secret, 'rsvp', { payload: { n: String(i) } }));
+      created.push({ id: c.response.id, editSecret: c.editSecret });
+      await sleep(5);
+    }
+    // Edit the OLDEST and the middle rows only, so the activity order and the
+    // creation order genuinely disagree; leave the newest ones alone.
+    for (const i of [0, 2]) {
+      const res = await putMe(
+        secret,
+        'rsvp',
+        { payload: { n: `${i}-edited` } },
+        { 'x-slideless-response': created[i]!.editSecret }
+      );
+      expect(res.status).toBe(200);
+    }
+    // Walk to exhaustion at a page size smaller than the row count, editing
+    // a row between every two pages as a live deck would.
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let turns = 0;
+    do {
+      const page = await ownerList(walkDeck, `?limit=2${cursor ? `&cursor=${cursor}` : ''}`);
+      seen.push(...page.responses.map((r: { id: string }) => r.id));
+      cursor = page.nextCursor;
+      const victim = created[(turns * 2 + 1) % 6]!;
+      await putMe(
+        secret,
+        'rsvp',
+        { payload: { n: `turn-${turns}` } },
+        { 'x-slideless-response': victim.editSecret }
+      );
+      turns++;
+    } while (cursor && turns < 10);
+    expect(seen).toHaveLength(6);
+    expect(new Set(seen).size).toBe(6);
+    // Creation order, newest first: the sort key never moved.
+    expect(seen).toEqual([...created].reverse().map((c) => c.id));
+  });
+
   it('keeps at most 100 revisions: the first and the latest 99 survive a hundred and one edits', async () => {
     const { secret } = await createToken({ name: 'Editor' }, deck);
     const created = await readJson(await submit(secret, 'rsvp', { payload: { n: '1' } }));
@@ -2169,6 +2213,18 @@ describe('owner mails (PRDCT-2330)', () => {
     const digest = mailBox.sent[mailBox.sent.length - 1]!;
     expect(digest.subject).toBe('New response on "RSVP wall"');
     expect(digest.text).toContain('2 other new responses and 1 other edit arrived too');
+    // A THIRD window (verifier round 2, F-G2): the held-back counts are reset
+    // on every send, so the next mail reports only its own window's events.
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '5' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 2);
+    await sleep(COOLDOWN_MS + 50);
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '6' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 3);
+    const third = mailBox.sent[mailBox.sent.length - 1]!;
+    expect(third.text).toContain('1 other new response arrived too');
+    expect(third.text).not.toContain('3 other');
   });
 
   it('the per-deck switch silences the mails without touching forms; the wire carries it; PATCH alone flips it', async () => {

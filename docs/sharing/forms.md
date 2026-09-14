@@ -67,7 +67,7 @@ An edited response is not overwritten: every submit is a **revision**, and every
 - **Retention.** At most 100 revisions are kept per response. Past that, the oldest revisions after the first are pruned: revision 1 and the latest 99 always survive.
 - **Responses from before this feature** have a single revision carrying the answer as it was when the feature arrived; for one that had already been edited by then, revision 1 is that latest text, not what was first said. The history starts the day the feature lands.
 
-Responses stay listed **newest first by creation**, so a page of results is stable while people keep answering and editing (a cursor over a changing sort order would skip or repeat rows in a CSV export). An edited response is found through its activity instead: the `since` filter, the summary's **Last activity**, and the **Edited · n versions** badge on the row.
+Responses stay listed **newest first by creation**, so a page of results is stable while people keep answering and editing (a cursor over a changing sort order would skip or repeat rows in a CSV export). An edited response is found through its activity instead: the `since` filter, the summary's **Last activity**, and the **Edited · n versions** badge on the row. A `since` result keeps that creation order too, so on a long-lived deck an old response edited this morning sits at the depth its creation gives it, not on the first page; `--since` with `--all`, or the CSV, reads the whole set.
 
 Because an edit is activity, the summary's **Last activity** and the `since` filter follow the latest activity of a response, not the moment it was first created: `--since` this morning finds an answer edited this morning, and the summary says when the last one changed.
 
