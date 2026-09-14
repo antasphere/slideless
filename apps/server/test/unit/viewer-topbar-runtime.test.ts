@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { MOTION_DURATION_MS, MOTION_EASING } from '@slideless/contract';
+import { ANTASPHERE_MARK_PATH } from '../../src/viewer/antasphere-mark.js';
 import { TOPBAR_HEIGHT_PX, TOPBAR_OFFSET_PROPERTY, topbarScriptTag } from '../../src/viewer/topbar.js';
 
 /**
@@ -140,7 +143,8 @@ function run(
   cfg: { title: string; version: number; unlock: string | null; downloads: boolean },
   opts: { top: boolean; tag?: string; attachments?: Array<{ name: string; sizeBytes: number }> } = {
     top: true
-  }
+  },
+  extraWindow: Record<string, unknown> = {}
 ): Run {
   const tag = opts.tag ?? topbarScriptTag(cfg);
   const src = /<script[^>]*>([\s\S]*)<\/script>/.exec(tag)?.[1];
@@ -180,7 +184,8 @@ function run(
       });
     },
     // No layout in a vm: the body never reads as clipped.
-    getComputedStyle: () => ({ overflowY: 'visible' })
+    getComputedStyle: () => ({ overflowY: 'visible' }),
+    ...extraWindow
   };
   // The sandboxed opaque origin: every storage access throws (ADR 012).
   Object.defineProperty(win, 'sessionStorage', {
@@ -276,5 +281,126 @@ describe('the runtime, executed', () => {
   it('survives the sandbox: storage throws and the bar still mounts, expanded', () => {
     const r = run(CFG);
     expect(r.body.children[0]!.hasAttribute('data-collapsed')).toBe(false);
+  });
+
+  // ── PRDCT-2308: the mark, the neutral button, the one motion ──────────
+
+  const strip = (r: Run) => r.shadowRoots[0]!.children.find((c) => c.className === 'bar')!;
+  const stylesheet = (r: Run) => r.shadowRoots[0]!.children.find((c) => c.tag === 'style')!.textContent;
+
+  it('shows the Antasphere mark inline, the brand path verbatim in the bar colour, and no Slideless word', () => {
+    const r = run(CFG);
+    const mark = strip(r).children.find((c) => c.className === 'mark')!;
+    expect(mark.innerHTML).toContain(`<path d="${ANTASPHERE_MARK_PATH}"/>`);
+    expect(mark.innerHTML).toContain('fill="currentColor"');
+    expect(mark.innerHTML).toContain('viewBox="0 0 512 512"');
+    expect(mark.getAttribute('aria-label')).toBe('Antasphere');
+    // No text child: the word is gone, the mark stands alone.
+    expect(mark.children).toHaveLength(0);
+    expect(mark.textContent).toBe('');
+    expect(stylesheet(r)).toContain('.mark{display:inline-flex;align-items:center;color:inherit;');
+  });
+
+  it('carries the one motion, the contract values verbatim, and turns it off under reduced motion', () => {
+    const css = stylesheet(run(CFG));
+    const motion = `${MOTION_DURATION_MS}ms ${MOTION_EASING}`;
+    // The strip's fold, the download menu and the handle all move with it.
+    expect(css).toContain(
+      `.bar{display:flex;align-items:center;gap:12px;height:${TOPBAR_HEIGHT_PX}px;padding:0 14px;`
+    );
+    expect(css).toContain(`transition:transform ${motion},opacity ${motion},visibility 0s linear 0s;}`);
+    expect(css).toContain(
+      `:host([data-collapsed]) .bar{transform:translateY(-100%);opacity:0;visibility:hidden;`
+    );
+    expect(css).toContain(`.dl[data-open] .menu{visibility:visible;opacity:1;transform:none;`);
+    expect(css).toContain(`transition:opacity ${motion},transform ${motion},visibility 0s linear 0s;}`);
+    expect(css).toContain(
+      `:host([data-collapsed]) .handle{visibility:visible;opacity:1;pointer-events:auto;`
+    );
+    expect(css).toContain(
+      '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;}}'
+    );
+    // Nothing is hidden with display:none any more: the fold would have nothing to animate.
+    expect(css).not.toContain(':host([data-collapsed]) .bar{display:none;}');
+    expect(css).not.toContain('.menu{display:none;');
+  });
+
+  it('the download button wears the bar’s neutral tones, never the accent', () => {
+    const css = stylesheet(run(CFG));
+    expect(css).not.toContain('#f5b301');
+    expect(css).toContain(
+      '.dl>button{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:8px;'
+    );
+    expect(css).toContain('background:#2b2b36;color:#ededf2;font-weight:600;}');
+    expect(css).toContain('.dl>button{background:#f0f0f4;color:#1d1d24;}');
+  });
+
+  it('arms the layout motion only after the first paint, and never in a frame or without a frame clock', () => {
+    // No requestAnimationFrame in the vm: the bar mounts with no transition
+    // on the host or the root, so a page never animates its own arrival.
+    const r = run(CFG);
+    const host = r.body.children[0]!;
+    expect(host.style.props.has('transition')).toBe(false);
+    expect(r.root.style.props.has('transition')).toBe(false);
+    // With a frame clock, the two transitions are set after two frames.
+    const frames: Array<() => void> = [];
+    const clocked = run(CFG, { top: true }, { requestAnimationFrame: (fn: () => void) => frames.push(fn) });
+    expect(clocked.body.children[0]!.style.props.has('transition')).toBe(false);
+    frames.shift()!();
+    frames.shift()!();
+    expect(clocked.body.children[0]!.style.props.get('transition')).toBe(
+      `height ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
+    );
+    expect(clocked.root.style.props.get('transition')).toBe(
+      `margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
+    );
+  });
+
+  it('never arms the layout motion for a reader who asked for reduced motion (verifier round 1, G1)', () => {
+    const frames: Array<() => void> = [];
+    const r = run(
+      CFG,
+      { top: true },
+      {
+        requestAnimationFrame: (fn: () => void) => frames.push(fn),
+        matchMedia: () => ({ matches: true })
+      }
+    );
+    while (frames.length) frames.shift()!();
+    expect(r.body.children[0]!.style.props.has('transition')).toBe(false);
+    expect(r.root.style.props.has('transition')).toBe(false);
+  });
+
+  it('appends its margin transition to a root transition the deck already has (verifier round 1, F2)', () => {
+    const frames: Array<() => void> = [];
+    const r = run(
+      CFG,
+      { top: true },
+      {
+        requestAnimationFrame: (fn: () => void) => frames.push(fn),
+        getComputedStyle: () => ({ overflowY: 'visible', transition: 'background 5s ease 0s' })
+      }
+    );
+    while (frames.length) frames.shift()!();
+    expect(r.root.style.props.get('transition')).toBe(
+      `background 5s ease 0s, margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
+    );
+  });
+
+  it('ships the brand file’s path, byte for byte (verifier round 1, G5)', () => {
+    // The sha256 of the `d` attribute of company/brand src/brand/mark-light.svg
+    // on 14 September 2026 (mark-dark.svg carries the same path). A redraw,
+    // a rounding or a hand edit of the constant goes red here; a real change
+    // of the mark updates this digest together with the constant.
+    expect(createHash('sha256').update(ANTASPHERE_MARK_PATH).digest('hex')).toBe(
+      '27a38ef3b11983ab711412c1691c01af7104178a92f722697ad615398f0cf129'
+    );
+    expect(ANTASPHERE_MARK_PATH).toHaveLength(4723);
+    expect(ANTASPHERE_MARK_PATH.startsWith('M382.20,266.76 L488.75,266.76')).toBe(true);
+    const r = run(CFG);
+    const mark = r.shadowRoots[0]!.children.find((c) => c.className === 'bar')!.children.find(
+      (c) => c.className === 'mark'
+    )!;
+    expect(mark.innerHTML).toContain(ANTASPHERE_MARK_PATH);
   });
 });

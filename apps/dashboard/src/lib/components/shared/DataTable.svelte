@@ -33,6 +33,8 @@
     enableRowSelection?: boolean;
     rowSelection?: RowSelectionState;
     getRowId?: (row: TData) => string;
+    /** Extra classes on the table element (a min width so no column is ever cut; the wrapper scrolls). */
+    tableClass?: string;
   }
 
   let {
@@ -51,7 +53,8 @@
     initialColumnVisibility = {},
     enableRowSelection = false,
     rowSelection = $bindable({}),
-    getRowId
+    getRowId,
+    tableClass
   }: Props = $props();
 
   let sorting = $state<SortingState>([]);
@@ -165,7 +168,7 @@
 {/if}
 
 <div class="rounded-md border">
-  <Table.Root class="table-fixed">
+  <Table.Root class={['table-fixed', tableClass].filter(Boolean).join(' ')}>
     <Table.Header>
       {#key renderKey}
         {#each table.getHeaderGroups() as headerGroup (headerGroup.id)}

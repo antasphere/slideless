@@ -44,7 +44,7 @@ import type {
   Presentation,
   PresentationDuplicate,
   PresentationUpdate,
-  PresentationVersion,
+  PresentationVersionSummary,
   PresentationVersionDetail,
   PreviewTokenCreate,
   SetupRequest,
@@ -607,7 +607,7 @@ export class PlatformClient {
   presentationVersions(
     id: string,
     params: ListParams = {}
-  ): Promise<{ versions: PresentationVersion[]; nextCursor: string | null }> {
+  ): Promise<{ versions: PresentationVersionSummary[]; nextCursor: string | null }> {
     return this.request(
       'GET',
       this.pathWithQuery(`/presentations/${encodeURIComponent(id)}/versions`, params)

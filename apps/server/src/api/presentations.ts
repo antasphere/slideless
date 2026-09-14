@@ -554,7 +554,17 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       ...(cursor !== undefined ? { cursor } : {}),
       limit
     });
-    return c.json({ versions: versions.map(versionToWire), nextCursor }, 200);
+    return c.json(
+      {
+        versions: versions.map((v) => ({
+          ...versionToWire(v),
+          viewCount: v.viewCount,
+          downloadCount: v.downloadCount
+        })),
+        nextCursor
+      },
+      200
+    );
   });
 
   api.openapi(versionGetRoute, async (c) => {

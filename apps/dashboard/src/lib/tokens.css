@@ -43,9 +43,21 @@
   --title-size: 28px;
   --title-weight: 500;
   --title-track: -0.015em;
-  --second: 'Sora', system-ui, sans-serif;
+  /* the second voice is Synonym, the website's body face (the Observatory
+     pairing settled 2026-09-12); loaded from the Fontshare CDN in app.html,
+     never from disk, because this repo is slated for the OSS cut and the
+     brand README's license rule keeps planned-public repos on the CDN */
+  --second: 'Synonym', system-ui, sans-serif;
   --ui: 'Onest', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* motion — the product's ONE duration and easing, mirrored from the
+     contract's MOTION_DURATION_MS / MOTION_EASING (packages/contract/src/
+     motion.ts); src/lib/motion.test.ts pins the mirror. Every popover, menu
+     and fold in the dashboard reads these two; the viewer bar carries the
+     same pair inline. */
+  --motion-duration: 160ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* geometry */
   --r: 7px;
@@ -77,6 +89,14 @@
   --accent-ink: #f7f4ec;
   --accent-soft: rgba(71, 121, 154, 0.14);
   --field-base: #e9f0f3;
+}
+
+/* a reader who asked for no motion gets none: the duration goes to zero
+   everywhere the token is read */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+  }
 }
 
 /* =====================================================================

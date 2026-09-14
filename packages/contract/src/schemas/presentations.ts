@@ -271,6 +271,22 @@ export const presentationVersionSchema = z.object({
 export type PresentationVersion = z.infer<typeof presentationVersionSchema>;
 
 /**
+ * A version as the LIST returns it (PRDCT-2308): the summary plus the two
+ * per-version counts the deck page's version popover shows, read from the
+ * link-analytics events (`share_token_views`, `share_token_downloads`)
+ * grouped by the version each event was served from. Both are bounded by
+ * the events' retention (VIEW_EVENTS_RETENTION_DAYS): an old version's
+ * counts fall back to 0 once its events are purged, while the deck's
+ * `totalViews` keeps its lifetime figure. Owner previews write no event and
+ * never count; a whole-set zip is one download.
+ */
+export const presentationVersionSummarySchema = presentationVersionSchema.extend({
+  viewCount: z.number().int().min(0),
+  downloadCount: z.number().int().min(0)
+});
+export type PresentationVersionSummary = z.infer<typeof presentationVersionSummarySchema>;
+
+/**
  * One attachment of a version: a manifest entry under `downloads/`, named by
  * its path relative to that folder. Derived from the manifest by the server
  * (attachmentsOf) so no client re-derives the convention.
@@ -320,7 +336,7 @@ export const viewerAttachmentsSchema = z.object({
 export type ViewerAttachments = z.infer<typeof viewerAttachmentsSchema>;
 
 export const presentationVersionsListSchema = z.object({
-  versions: z.array(presentationVersionSchema),
+  versions: z.array(presentationVersionSummarySchema),
   nextCursor: z.string().nullable()
 });
 

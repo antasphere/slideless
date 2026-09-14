@@ -107,7 +107,7 @@ const config: Config = {
       fontFamily: {
         sans: ['Onest', ...fontFamily.sans],
         display: ['Sentient', ...fontFamily.serif],
-        second: ['Sora', ...fontFamily.sans]
+        second: ['Synonym', ...fontFamily.sans]
       },
       keyframes: {
         'accordion-down': {

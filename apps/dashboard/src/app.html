@@ -20,20 +20,21 @@
         }
       })();
     </script>
-    <!-- The Observatory pairing. Sentient rides the Fontshare CDN because
-         this repo is slated for the OSS cut and the ITF FFL forbids putting
-         the files on publicly accessible servers; private Antasphere repos
-         self-host instead (company/brand README carries the rule). Product
-         UI chrome only — never a face end users typeset their decks with.
-         Onest and Sora (SIL OFL) ride Google Fonts. -->
+    <!-- The Observatory pairing: Sentient (display) over Synonym (the second
+         voice, one variable file, 200 to 700). Both ride the Fontshare CDN
+         because this repo is slated for the OSS cut and the ITF FFL forbids
+         putting the files on publicly accessible servers; private Antasphere
+         repos self-host instead (company/brand README carries the rule).
+         Product UI chrome only — never a face end users typeset their decks
+         with. Onest (SIL OFL) rides Google Fonts. -->
     <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=sentient@300,400,500&display=swap" />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Onest:wght@300..600&family=Sora:wght@300&display=swap"
+      href="https://api.fontshare.com/v2/css?f[]=sentient@300,400,500&f[]=synonym@1&display=swap"
     />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@300..600&display=swap" />
     <style>
       /* Neutral boot splash: shown until the SPA has resolved instance +
          session (decision 11) — no dashboard chrome, no login flash. The

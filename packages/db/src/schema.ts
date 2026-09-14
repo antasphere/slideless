@@ -907,7 +907,10 @@ export const shareTokenViews = pgTable(
     // Serves the API's keyset pagination (occurred_at DESC, id DESC per token).
     index('share_token_views_token_occurred_id_idx').on(t.shareTokenId, t.occurredAt, t.id),
     // Serves the nightly retention purge's age scan.
-    index('share_token_views_occurred_idx').on(t.occurredAt)
+    index('share_token_views_occurred_idx').on(t.occurredAt),
+    // Serves the per-version counts on the version list (PRDCT-2308) and
+    // the deck-deletion cascade (a FK gets no index on its own).
+    index('share_token_views_presentation_version_idx').on(t.presentationId, t.version)
   ]
 );
 
@@ -945,7 +948,10 @@ export const shareTokenDownloads = pgTable(
     // Serves a per-token listing (occurred_at DESC, id DESC), the views precedent.
     index('share_token_downloads_token_occurred_id_idx').on(t.shareTokenId, t.occurredAt, t.id),
     // Serves the nightly retention purge's age scan.
-    index('share_token_downloads_occurred_idx').on(t.occurredAt)
+    index('share_token_downloads_occurred_idx').on(t.occurredAt),
+    // Serves the per-version counts on the version list (PRDCT-2308) and
+    // the deck-deletion cascade (a FK gets no index on its own).
+    index('share_token_downloads_presentation_version_idx').on(t.presentationId, t.version)
   ]
 );
 

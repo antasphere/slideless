@@ -26,11 +26,13 @@ origin, and it is not what a recipient sees: a recipient sees a [share link](lin
 
 On the left, the deck's title. Click it for the deck's menu: **Artifact by** the owner (`You` on
 your own deck) and **Updated** when, then **Rename**, **Duplicate**, **Share**, **Version history** (the current version
-number beside it), **All decks**, and **Delete**.
+number beside it; hovering it opens every version with a live thumbnail, see
+[Versions](versions.md)), **All decks**, and **Delete**.
 
 On the right, for the version the page shows: **Download files** with the file count when that
 version carries [attachments](attachments.md) (**All files (zip)** first, then each file by name),
-the deck's total views, the version badge (`v3`), and **Open in dashboard**.
+the deck's total views, the version badge (`v3`, hovering it opens the versions too), and
+**Open in dashboard**.
 
 Under the bar, the deck itself, rendered through the same sandboxed frame the dashboard's preview
 uses: user HTML never renders on the app origin outside that frame.

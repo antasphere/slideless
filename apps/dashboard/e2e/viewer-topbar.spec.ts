@@ -162,7 +162,20 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       await expect(recipient.locator(`${BAR} .bar`)).toBeVisible();
       await expect(recipient.locator(`${BAR} .title strong`)).toHaveText('Quarterly review');
       await expect(recipient.locator(`${BAR} .version`)).toHaveText('v1');
-      await expect(recipient.locator(`${BAR} .mark`)).toContainText('Slideless');
+      // PRDCT-2308: the Antasphere mark, inline, in the bar's own colour; no word.
+      const mark = recipient.locator(`${BAR} .mark`);
+      await expect(mark).toHaveAttribute('aria-label', 'Antasphere');
+      await expect(mark.locator('svg path')).toHaveCount(1);
+      expect((await mark.textContent())?.trim()).toBe('');
+      expect(await mark.locator('svg').getAttribute('viewBox')).toBe('0 0 512 512');
+      const markFill = await mark.locator('svg').evaluate((el) => ({
+        fill: el.getAttribute('fill'),
+        color: getComputedStyle(el).color,
+        bar: getComputedStyle(el.getRootNode().host as HTMLElement).color
+      }));
+      expect(markFill.fill).toBe('currentColor');
+      expect(markFill.color).toBe(markFill.bar);
+      expect(await mark.locator('svg').evaluate((el) => el.getBoundingClientRect().width)).toBe(18);
       expect(await recipient.locator(BAR).evaluate((el) => el.shadowRoot !== null)).toBe(true);
     });
 
@@ -178,11 +191,36 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       expect(host).toEqual({ position: 'fixed', display: 'block', top: '0px' });
     });
 
-    await test.step('deck CSS cannot restyle the bar: the download button is not red', async () => {
+    await test.step('deck CSS cannot restyle the bar: the download button is not red, and it is not orange either', async () => {
       const bg = await recipient
         .locator(`${BAR} .dl > button`)
         .evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(bg).not.toBe('rgb(255, 0, 0)');
+      // PRDCT-2308: the bar's neutral tone, never the accent (the old #f5b301).
+      expect(bg).not.toBe('rgb(245, 179, 1)');
+      expect(['rgb(43, 43, 54)', 'rgb(240, 240, 244)']).toContain(bg);
+    });
+
+    await test.step('the download menu opens with the product’s one motion and rests where the dashboard’s popovers do', async () => {
+      const menu = recipient.locator(`${BAR} .menu`);
+      const motion = await menu.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          duration: cs.transitionDuration,
+          easing: cs.transitionTimingFunction,
+          visibility: cs.visibility
+        };
+      });
+      expect(motion.visibility).toBe('hidden');
+      expect(motion.duration.split(', ')[0]).toBe('0.16s');
+      // The easing carries commas of its own: match its start, not a split.
+      expect(motion.easing.startsWith('cubic-bezier(0.2, 0, 0, 1)')).toBe(true);
+      await recipient.locator(`${BAR} .dl > button`).click();
+      await expect(menu).toBeVisible();
+      await expect.poll(() => menu.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+      expect(await menu.evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+      await recipient.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
     });
 
     await test.step('the deck is pushed down, never covered: the 100vh slide keeps its whole height', async () => {
@@ -299,6 +337,43 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       const before = Number(await recipient.locator('#counter').textContent());
       await recipient.locator('#marker').click();
       await expect(recipient.locator('#counter')).toHaveText(String(before + 1));
+    });
+
+    await test.step('the fold slides: the strip moves up with the one motion and rests hidden, the handle fades in after it', async () => {
+      const strip = recipient.locator(`${BAR} .bar`);
+      const motion = await strip.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          duration: cs.transitionDuration.split(', ')[0],
+          easingStart: cs.transitionTimingFunction.startsWith('cubic-bezier(0.2, 0, 0, 1)')
+        };
+      });
+      expect(motion).toEqual({ duration: '0.16s', easingStart: true });
+      const hostMotion = await recipient
+        .locator(BAR)
+        .evaluate((el) => getComputedStyle(el).transitionProperty);
+      expect(hostMotion).toBe('height');
+      await recipient.locator(`${BAR} .hide`).click();
+      // Mid-fold the strip is still rendered (visibility is delayed by the
+      // motion); at rest it is out of the tree and the host is the handle.
+      await expect(recipient.locator(BAR)).toHaveAttribute('data-collapsed', '');
+      await expect.poll(() => strip.evaluate((el) => getComputedStyle(el).visibility)).toBe('hidden');
+      await expect.poll(() => strip.evaluate((el) => getComputedStyle(el).opacity)).toBe('0');
+      await expect
+        .poll(() => recipient.locator(BAR).evaluate((el) => el.getBoundingClientRect().height))
+        .toBe(10);
+      await expect(recipient.locator(`${BAR} .handle`)).toBeVisible();
+      await expect
+        .poll(() => recipient.locator(`${BAR} .handle`).evaluate((el) => getComputedStyle(el).opacity))
+        .toBe('1');
+      await recipient.locator(`${BAR} .handle`).click();
+      await expect(recipient.locator(BAR)).not.toHaveAttribute('data-collapsed', '');
+      await expect(strip).toBeVisible();
+      await expect.poll(() => strip.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+      await expect
+        .poll(() => recipient.locator(BAR).evaluate((el) => el.getBoundingClientRect().height))
+        .toBe(44);
+      await expect(recipient.locator(`${BAR} .handle`)).toBeHidden();
     });
 
     await test.step('collapse to a handle, remembered across a reload; expand again', async () => {

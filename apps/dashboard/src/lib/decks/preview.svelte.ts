@@ -1,4 +1,4 @@
-import { api, errorMessage } from '$lib/api';
+import { api, errorMessage, storedWorkspaceId } from '$lib/api';
 import { t } from '$lib/i18n';
 import type { MeResponse, Presentation } from '@slideless/contract';
 
@@ -97,4 +97,85 @@ export function createPreviewController(
       }
     }
   };
+}
+
+/**
+ * Per-version THUMBNAILS (PRDCT-2308): the version popover and the history
+ * sheet show each version as a small live rendering, through the very same
+ * mechanism as the frame above — one transient preview token per version,
+ * minted the first time a row asks (the row asks when it scrolls into view,
+ * so a long history stays cheap), cached for the page's life, every token
+ * revoked on destroy. A HARD navigation (a reload, a typed URL, a closed
+ * tab) never reaches onDestroy, so the controller also listens for
+ * `pagehide` and revokes with a keepalive request the browser finishes
+ * after the page is gone (verifier round 1, F1); the server's 1 h expiry
+ * stays the backstop. Same owner-level gate as the frame: a dev
+ * collaborator's rows stay blank. Nothing here renders deck HTML: the URL
+ * goes into a sandboxed iframe (VersionThumb.svelte) and nowhere else.
+ */
+export interface ThumbnailController {
+  /** The preview URL for a version once minted, null before (and forever for a non-owner). Reactive. */
+  url(version: number): string | null;
+  /** Ask for a version's thumbnail; a no-op when it exists, is in flight, or the caller may not preview. */
+  request(version: number): void;
+  /** Revoke every minted token (best-effort; the server's 1 h expiry is the backstop). */
+  destroy(): void;
+}
+
+export function createThumbnailController(
+  deckId: string,
+  opts: { canPreview: () => boolean }
+): ThumbnailController {
+  let urls = $state<Record<number, string>>({});
+  // Bookkeeping only, never read by the template: plain collections on purpose.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const tokenIds = new Map<number, string>();
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const pending = new Set<number>();
+
+  // The page is going away without the component's own teardown: a
+  // keepalive DELETE per token, the same route the SDK's revoke calls, with
+  // the active workspace header the SDK would send.
+  function onPageHide() {
+    const workspaceId = storedWorkspaceId();
+    for (const id of tokenIds.values()) {
+      void fetch(revokePath(deckId, id), {
+        method: 'DELETE',
+        keepalive: true,
+        headers: workspaceId ? { 'x-workspace-id': workspaceId } : {}
+      }).catch(() => {});
+    }
+    tokenIds.clear();
+  }
+  if (typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide);
+
+  return {
+    url(version) {
+      return urls[version] ?? null;
+    },
+    request(version) {
+      if (!opts.canPreview() || version in urls || pending.has(version)) return;
+      pending.add(version);
+      api
+        .createPreviewToken(deckId, { version })
+        .then((created) => {
+          tokenIds.set(version, created.shareToken.id);
+          urls = { ...urls, [version]: created.url };
+        })
+        .catch(() => {
+          // The row stays blank; the frame and the sheet report their own errors.
+        })
+        .finally(() => pending.delete(version));
+    },
+    destroy() {
+      if (typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide);
+      for (const id of tokenIds.values()) api.revokeShareToken(deckId, id).catch(() => {});
+      tokenIds.clear();
+    }
+  };
+}
+
+/** The share-token revoke route, as the SDK spells it (`DELETE`). */
+export function revokePath(deckId: string, tokenId: string): string {
+  return `/api/v1/presentations/${encodeURIComponent(deckId)}/tokens/${encodeURIComponent(tokenId)}`;
 }

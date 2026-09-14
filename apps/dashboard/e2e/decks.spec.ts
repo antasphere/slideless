@@ -124,6 +124,8 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     // getByLabel substring-matches the "…the recipient can leave notes"
     // checkbox label too — target the textbox role exactly.
     await dialog.getByRole('textbox', { name: 'Recipient' }).fill('reviewer-alice');
+    // PRDCT-2299: the bar switch sits in the shared form, on by default.
+    await expect(dialog.getByRole('checkbox', { name: /Show the bar/ })).toBeChecked();
     await dialog.getByRole('button', { name: 'Create link' }).click();
 
     const created = page.getByRole('dialog').filter({ hasText: 'Share link created' });

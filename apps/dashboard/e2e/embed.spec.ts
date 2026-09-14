@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
 import { VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 
 /**
  * PRDCT-1312 — the official embed loader against the real stack, from a
@@ -50,11 +50,10 @@ test('official embed: cross-origin loader mounts the Surface D iframe, deck rend
   browser
 }) => {
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    // Through the throttle-aware helper (LESSONS: the sign-in throttle is
+    // three per ten seconds per IP; a fast-failing sibling project bunches
+    // the projects' logins inside that window).
+    await signInAsOwner(page);
   });
 
   let deckId = '';

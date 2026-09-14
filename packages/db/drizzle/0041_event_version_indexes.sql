@@ -1,0 +1,2 @@
+CREATE INDEX "share_token_downloads_presentation_version_idx" ON "share_token_downloads" USING btree ("presentation_id","version");--> statement-breakpoint
+CREATE INDEX "share_token_views_presentation_version_idx" ON "share_token_views" USING btree ("presentation_id","version");

@@ -2,14 +2,23 @@
  * The recipient TOP BAR (PRDCT-2281): the third runtime on the injection
  * seam (viewer/inject.ts), beside the annotation overlay and the forms
  * runtime. A slim strip over the deck on a share link, telling the
- * recipient what they are looking at — the deck's title, `v{n}`, a small
- * Slideless mark — and, when the version carries attachments and the link
- * allows downloads, a Download menu listing each file and the whole set as
- * a zip. Read-only plus downloads; no owner action, no login, no version
- * history (a link resolves to ONE version and that is the only set a
- * recipient can take — the owner's history is the master page on the app
- * origin). Vanilla JS + inline CSS, zero external requests: no font, no
- * image, no CDN.
+ * recipient what they are looking at — the Antasphere mark (the brand's
+ * path inline, viewer/antasphere-mark.ts), the deck's title, `v{n}` — and,
+ * when the version carries attachments and the link allows downloads, a
+ * Download menu listing each file and the whole set as a zip. Read-only
+ * plus downloads; no owner action, no login, no version history (a link
+ * resolves to ONE version and that is the only set a recipient can take —
+ * the owner's history is the master page on the app origin). Vanilla JS +
+ * inline CSS, zero external requests: no font (the system stack), no image
+ * (the mark is a path), no CDN.
+ *
+ * MOTION (PRDCT-2308): the fold and the download menu move with the
+ * product's one duration and easing, `MOTION_DURATION_MS` / `MOTION_EASING`
+ * from the contract — the same pair the dashboard's popovers use — and
+ * `prefers-reduced-motion: reduce` turns every transition off. The
+ * transitions are ARMED after the first layout, so a page never animates
+ * its own arrival; the strip slides up and out, the handle fades in after
+ * it, the deck's top margin follows the fold.
  *
  * WHERE IT MOUNTS. Top-level document navigations only, on links with
  * `show_bar` (default on): the server gate is `browserEntry` (Sec-Fetch-Dest
@@ -87,6 +96,9 @@
  * so a `</script>` sequence in a deck title can never break out.
  */
 
+import { MOTION_DURATION_MS, MOTION_EASING } from '@slideless/contract';
+import { ANTASPHERE_MARK_PATH, ANTASPHERE_MARK_VIEWBOX } from './antasphere-mark.js';
+
 export interface TopbarConfig {
   /** The deck's title, as the owner named it (owner content, shown as text). */
   title: string;
@@ -139,6 +151,14 @@ try {
 var BAR = ${TOPBAR_HEIGHT_PX};
 var HANDLE = ${TOPBAR_HANDLE_PX};
 var OFFSET_PROP = '${TOPBAR_OFFSET_PROPERTY}';
+// The one motion (contract: MOTION_DURATION_MS, MOTION_EASING), and whether
+// the reader asked for none.
+var MOTION_MS = ${MOTION_DURATION_MS};
+var MOTION = MOTION_MS + 'ms ${MOTION_EASING}';
+var REDUCED = false;
+try {
+  REDUCED = typeof window.matchMedia === 'function' && !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+} catch (e) {}
 
 function encodePath(p) {
   return p.split('/').map(function (s) { return encodeURIComponent(s); }).join('/');
@@ -197,26 +217,39 @@ var css = [
   '  color:#ededf2;-webkit-font-smoothing:antialiased;}',
   ':host([data-collapsed]){height:' + HANDLE + 'px;}',
   '*{box-sizing:border-box;margin:0;padding:0;}',
+  // The strip slides up and out on a fold (transform + opacity), and is
+  // taken out of the accessibility tree once gone (visibility, delayed by
+  // the motion so it stays visible while it moves).
   '.bar{display:flex;align-items:center;gap:12px;height:' + BAR + 'px;padding:0 14px;',
-  '  background:#17171d;border-bottom:1px solid #2b2b36;box-shadow:0 1px 0 rgba(0,0,0,.35);}',
-  ':host([data-collapsed]) .bar{display:none;}',
-  '.mark{display:inline-flex;align-items:center;gap:6px;color:#9b9baa;font-weight:600;',
-  '  letter-spacing:.02em;white-space:nowrap;text-decoration:none;}',
-  '.mark svg{width:14px;height:14px;display:block;}',
+  '  background:#17171d;border-bottom:1px solid #2b2b36;box-shadow:0 1px 0 rgba(0,0,0,.35);',
+  '  transition:transform ' + MOTION + ',opacity ' + MOTION + ',visibility 0s linear 0s;}',
+  ':host([data-collapsed]) .bar{transform:translateY(-100%);opacity:0;visibility:hidden;pointer-events:none;',
+  '  transition:transform ' + MOTION + ',opacity ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
+  // The mark: the brand's path, currentColor = the bar's foreground.
+  '.mark{display:inline-flex;align-items:center;color:inherit;flex:none;}',
+  '.mark svg{width:18px;height:18px;display:block;}',
   '.title{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;}',
   '.title strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.version{flex:none;font:600 11px/18px inherit;padding:0 7px;border-radius:999px;',
   '  background:#2b2b36;color:#c9c9d4;}',
   'button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;}',
   '.dl{position:relative;}',
+  // Neutral, the bar's own tones: never an accent colour (round 2 of the
+  // artifact wave: "the download button shouldn't be orange").
   '.dl>button{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:8px;',
-  '  background:#f5b301;color:#1a1505;font-weight:600;}',
-  '.dl>button:hover{filter:brightness(1.05);}',
+  '  background:#2b2b36;color:#ededf2;font-weight:600;}',
+  '.dl>button:hover{background:#363643;}',
   '.dl>button svg{width:14px;height:14px;}',
-  '.menu{display:none;position:absolute;top:36px;right:0;min-width:260px;max-width:min(420px,92vw);',
+  // The menu opens like the dashboard's own popovers: a fade with a small
+  // rise and scale, the same duration and easing; closed, it is hidden to
+  // the accessibility tree after the motion.
+  '.menu{position:absolute;top:36px;right:0;min-width:260px;max-width:min(420px,92vw);',
   '  background:#1f1f28;border:1px solid #363643;border-radius:12px;padding:6px;',
-  '  box-shadow:0 12px 40px rgba(0,0,0,.46);}',
-  '.dl[data-open] .menu{display:block;}',
+  '  box-shadow:0 12px 40px rgba(0,0,0,.46);transform-origin:top right;',
+  '  visibility:hidden;opacity:0;transform:translateY(-6px) scale(.96);',
+  '  transition:opacity ' + MOTION + ',transform ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
+  '.dl[data-open] .menu{visibility:visible;opacity:1;transform:none;',
+  '  transition:opacity ' + MOTION + ',transform ' + MOTION + ',visibility 0s linear 0s;}',
   '.menu a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;',
   '  color:#ededf2;text-decoration:none;}',
   '.menu a:hover,.menu a:focus{background:#2b2b36;outline:none;}',
@@ -227,17 +260,23 @@ var css = [
   '  justify-content:center;}',
   '.hide:hover,.hide:focus-visible{background:#2b2b36;color:#ededf2;outline:none;}',
   '.hide svg{width:16px;height:16px;}',
-  '.handle{display:none;position:absolute;top:0;left:50%;transform:translateX(-50%);height:' + HANDLE + 'px;',
+  // The handle fades in once the strip has left, and out as it returns.
+  '.handle{display:inline-flex;position:absolute;top:0;left:50%;transform:translateX(-50%);height:' + HANDLE + 'px;',
   '  width:72px;border-radius:0 0 8px 8px;background:#17171d;border:1px solid #2b2b36;border-top:0;',
-  '  color:#9b9baa;align-items:center;justify-content:center;}',
+  '  color:#9b9baa;align-items:center;justify-content:center;',
+  '  visibility:hidden;opacity:0;pointer-events:none;',
+  '  transition:opacity ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
   '.handle:hover,.handle:focus-visible{color:#ededf2;outline:none;height:' + (HANDLE + 4) + 'px;}',
   '.handle svg{width:12px;height:8px;}',
-  ':host([data-collapsed]) .handle{display:inline-flex;}',
-  'button:focus-visible{box-shadow:0 0 0 2px #f5b301;}',
+  ':host([data-collapsed]) .handle{visibility:visible;opacity:1;pointer-events:auto;',
+  '  transition:opacity ' + MOTION + ' ' + MOTION_MS + 'ms,visibility 0s linear ' + MOTION_MS + 'ms;}',
+  'button:focus-visible{box-shadow:0 0 0 2px #8f8fa3;}',
+  '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;}}',
   '@media (prefers-color-scheme: light){',
   '  :host{color:#1d1d24;}',
   '  .bar{background:#ffffff;border-bottom-color:#e6e6ec;box-shadow:0 1px 0 rgba(20,20,40,.08);}',
-  '  .mark{color:#6c6c78;} .version{background:#f0f0f4;color:#4a4a58;}',
+  '  .version{background:#f0f0f4;color:#4a4a58;}',
+  '  .dl>button{background:#f0f0f4;color:#1d1d24;} .dl>button:hover{background:#e6e6ec;}',
   '  .menu{background:#ffffff;border-color:#dadae2;box-shadow:0 12px 40px rgba(20,20,40,.16);}',
   '  .menu a{color:#1d1d24;} .menu a:hover,.menu a:focus{background:#f6f6f9;}',
   '  .menu .all{border-top-color:#e6e6ec;}',
@@ -247,7 +286,7 @@ var css = [
 ].join('\n');
 
 var ICONS = {
-  mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  mark: '<svg viewBox="${ANTASPHERE_MARK_VIEWBOX}" fill="currentColor" aria-hidden="true"><path d="${ANTASPHERE_MARK_PATH}"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>',
   down: '<svg viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 3 6 6 6-6"/></svg>'
@@ -283,8 +322,10 @@ bar.setAttribute('role', 'region');
 bar.setAttribute('aria-label', 'Presentation');
 
 var mark = el('span', 'mark');
+mark.setAttribute('role', 'img');
+mark.setAttribute('aria-label', 'Antasphere');
+mark.title = 'Antasphere';
 mark.innerHTML = ICONS.mark;
-mark.appendChild(el('span', null, 'Slideless'));
 
 var title = el('div', 'title');
 var titleText = el('strong', null, String(CFG.title || 'Presentation'));
@@ -367,6 +408,21 @@ function fitBody(root) {
     var hidden = cs.overflowY === 'hidden' || cs.overflowY === 'clip';
     if (hidden && b.scrollHeight > b.clientHeight) root.style.setProperty('height', '100%', 'important');
   } catch (e) {}
+}
+// The host's height and the root's top margin follow the fold. Armed only
+// after the first layout has painted (two frames), so the bar's arrival is
+// never an animation, and never under reduced motion.
+// The root may carry a transition of the deck's own (a theme fade): ours is
+// APPENDED to it, never put in its place (verifier round 1, F2).
+function armMotion() {
+  if (REDUCED) return;
+  host.style.setProperty('transition', 'height ' + MOTION, 'important');
+  var root = doc.documentElement;
+  var own = '';
+  try { own = String(getComputedStyle(root).transition || ''); } catch (e) {}
+  var ours = 'margin-top ' + MOTION;
+  if (own && own !== 'none' && own !== 'all 0s ease 0s' && own.indexOf('margin-top') === -1) ours = own + ', ' + ours;
+  root.style.setProperty('transition', ours, 'important');
 }
 function setCollapsed(next, remember) {
   collapsed = !!next;
@@ -451,6 +507,8 @@ function mount() {
   doc.body.appendChild(host);
   applyLayout();
   loadAttachments();
+  var raf = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame.bind(window) : null;
+  if (raf) raf(function () { raf(armMotion); });
 }
 // The offset property is set before the overlay's script runs (the bar's
 // tag precedes it in the plan), so its slots are right from the first paint.

@@ -102,4 +102,25 @@ describe('HSTS', () => {
       expect(csp).toContain("frame-ancestors 'none';");
     });
   });
+
+  describe('buildCsp style-src and font-src (PRDCT-2308, the two font CDNs)', () => {
+    it('allows exactly the two stylesheet API hosts and the two font file hosts, nothing wider', () => {
+      const csp = buildCsp([]);
+      expect(csp).toContain(
+        "style-src 'self' 'unsafe-inline' https://api.fontshare.com https://fonts.googleapis.com;"
+      );
+      expect(csp).toContain("font-src 'self' https://cdn.fontshare.com https://fonts.gstatic.com;");
+      // No scheme-wide source anywhere: `https:` or `data:` on styles or fonts
+      // would let any host in (verifier round 1, M12/M13).
+      for (const directive of csp.split('; ')) {
+        if (directive.startsWith('style-src') || directive.startsWith('font-src')) {
+          expect(directive).not.toMatch(/\bhttps:(\s|$)/);
+          expect(directive).not.toContain('data:');
+        }
+      }
+      expect(csp).toContain("img-src 'self' data:;");
+      expect(csp).toContain("connect-src 'self';");
+      expect(csp).toContain("default-src 'self';");
+    });
+  });
 });
