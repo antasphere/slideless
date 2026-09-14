@@ -80,6 +80,7 @@ import {
   collaboratorsListSchema
 } from '../schemas/collaborators.js';
 import {
+  formResponseDetailSchema,
   formResponseSchema,
   formResponsesListQuerySchema,
   formResponsesListSchema,
@@ -1287,6 +1288,26 @@ export const formResponsesSummaryRoute = createRoute({
   }
 });
 
+/**
+ * One response with its edit history (PRDCT-2329): the current row plus
+ * every revision, newest first. Owner surface only — the respondent wire
+ * (viewer/forms-api.ts) never carries a history. Registered AFTER the
+ * literal `/responses/summary` handler (the literal-segment trap).
+ */
+export const formResponseGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/responses/{responseId}',
+  tags: ['forms'],
+  summary: 'One form response with its revision history (owner surface)',
+  request: { params: formResponseParams },
+  responses: {
+    200: jsonBody(formResponseDetailSchema, 'The response and its revisions, newest first'),
+    401: errorResponses[401],
+    // Deliberately NO 403 (the responses-list posture): an ordinary member
+    // gets the same 404 an outsider would.
+    404: errorResponses[404]
+  }
+});
 export const formResponseDeleteRoute = createRoute({
   method: 'delete',
   path: '/presentations/{id}/responses/{responseId}',

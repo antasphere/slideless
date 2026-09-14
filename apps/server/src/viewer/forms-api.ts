@@ -15,8 +15,10 @@ import type { ClientIpFn } from '../middleware/rate-limit.js';
 import {
   formResponseToRespondentWire,
   FORM_RESPONSES_MAX_PER_DECK,
+  linkRemembers,
   type FormResponseService
 } from '../forms/service.js';
+import type { FormResponseNotifier } from '../forms/notify.js';
 import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 /**
@@ -48,6 +50,15 @@ import { resolveTokenSession, type TokenSessionView } from './token-session.js';
  *  - FORM BINDING: the own-row routes carry `{form}` and the row's
  *    `form_name` must match, so an edit secret can never reach another
  *    form's row even on the same deck and link (PRDCT-1334 item 2).
+ *  - REMEMBERING LINKS (PRDCT-2328): on a link minted with
+ *    `remembers_responses` the SHARE SECRET alone resolves the link's ONE
+ *    remembered row per form — no fragment, no edit secret. This is NOT
+ *    leg 3: the server keys on `share_token_id`, a fact it already stores
+ *    and re-stamps, and hands the document nothing but a boolean. The
+ *    token secret is thereby a bearer credential for the ANSWERS (the
+ *    docs and the sharing surfaces say so). Embed submissions on such a
+ *    link are ordinary fresh rows: a website's visitors share the link.
+ *    Preview tokens never remember (linkRemembers refuses by purpose).
  *  - ABUSE: creates/updates burn a per-IP+token bucket; unknown share
  *    secrets burn per-IP; failed edit-secret lookups burn the same submit
  *    bucket; the email leg has its own tight per-IP+token AND per-address
@@ -106,6 +117,8 @@ export interface ViewerFormDeps {
   /** Failed password header attempts consume from this bucket (per IP + token). */
   passwordLimiter: RateLimiterAbstract;
   clientIp: ClientIpFn;
+  /** Owner notifications (PRDCT-2330): best-effort, never awaited by the respondent's answer. */
+  notifier: FormResponseNotifier;
 }
 
 export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps): void {
@@ -203,12 +216,30 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
    * oracle.
    */
   async function resolveOwnResponse(
-    c: Context
+    c: Context,
+    opts: { allowRemembered: boolean } = { allowRemembered: true }
   ): Promise<{ ok: true; view: TokenSessionView; row: FormResponseRow } | { ok: false; res: Response }> {
     const resolved = await resolveSubmitter(c);
     if (!resolved.ok) return resolved;
     const formName = parseFormName(c);
     if (!formName.ok) return { ok: false, res: formName.res };
+    // PRDCT-2328: no edit secret presented on a remembering link = the
+    // link's own remembered row for this form. Nothing is guessed here (the
+    // share secret already resolved), so a miss does not burn the bucket.
+    if (
+      opts.allowRemembered &&
+      c.req.header(RESPONSE_SECRET_HEADER) === undefined &&
+      linkRemembers(resolved.view.token)
+    ) {
+      const row = await forms.findRemembered(resolved.view.token.id, formName.name);
+      if (!row) {
+        return {
+          ok: false,
+          res: c.json(err('not_found', 'This link has no remembered response for this form yet.'), 404)
+        };
+      }
+      return { ok: true, view: resolved.view, row };
+    }
     const found = await lookupOwnRow(c, resolved.view);
     if (!found.ok) return found;
     if (found.row.formName !== formName.name) {
@@ -313,12 +344,23 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     const claimed = resolveClaimedVersion(c, resolved.view, body.version);
     if (!claimed.ok) return claimed.res;
 
+    // PRDCT-2328: a DIRECT navigation on a remembering link submits INTO
+    // the link's remembered row (created on the first submit, updated
+    // after). An embed submission (`source: 'embed'`) on the same link is
+    // an ordinary fresh row: the source is client-declared attribution, and
+    // lying about it gains nothing — the token already IS the credential
+    // for the remembered row, so the only effect of a false 'link' is to
+    // reach what the token could reach anyway.
+    const remembering = linkRemembers(token) && body.source === 'link';
+    const existing = remembering ? await forms.findRemembered(token.id, formName.name) : null;
+
     // Hard per-deck ceiling — spam containment on a public write endpoint.
-    if ((await forms.countForDeck(presentationId)) >= FORM_RESPONSES_MAX_PER_DECK) {
+    // An UPDATE of a remembered row adds no row, so it passes a full deck.
+    if (!existing && (await forms.countForDeck(presentationId)) >= FORM_RESPONSES_MAX_PER_DECK) {
       return c.json(err('responses_full', 'This deck has reached its response limit.'), 403);
     }
 
-    const { row, editSecret } = await forms.create({
+    const attribution = {
       workspaceId: token.workspaceId,
       presentationId,
       version: claimed.version,
@@ -327,7 +369,24 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       source: body.source,
       placement: viewPlacement(body.placement),
       payload: body.payload
-    });
+    };
+
+    if (remembering) {
+      const { row, created } = await forms.upsertRemembered(attribution);
+      deps.logger.info(
+        { presentationId, shareTokenId: token.id, responseId: row.id, formName: formName.name, created },
+        created ? 'viewer form response created (remembered)' : 'viewer form response updated (remembered)'
+      );
+      deps.notifier.fire({ kind: created ? 'new' : 'edited', row, shareTokenName: token.name });
+      // No edit secret on the wire: the LINK is the handle, and the
+      // respondent wire never carries a revision or a history.
+      return c.json(
+        { response: formResponseToRespondentWire(row), emailSent: false, remembered: true, edited: !created },
+        created ? 201 : 200
+      );
+    }
+
+    const { row, editSecret } = await forms.create(attribution);
 
     deps.logger.info(
       {
@@ -339,11 +398,37 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       },
       'viewer form response created'
     );
+    deps.notifier.fire({ kind: 'new', row, shareTokenName: token.name });
     // `emailSent` stays on the wire (the runtime and the tests read it) but
     // is now always false on create: the leg-3 auto-mail is gone with leg 3
     // — it bypassed the email limiter entirely and turned every replayed
     // submit into a mail to a stranger's real address (PRDCT-1331).
-    return c.json({ response: formResponseToRespondentWire(row), editSecret, emailSent: false }, 201);
+    return c.json(
+      {
+        response: formResponseToRespondentWire(row),
+        editSecret,
+        emailSent: false,
+        remembered: false,
+        edited: false
+      },
+      201
+    );
+  });
+
+  // ── GET (form-agnostic): the link's remembered rows, one per form ────────
+  // PRDCT-2328: the runtime's ONE probe per page load on a remembering link,
+  // resolved by the share secret alone. A link that does not remember
+  // answers 404 without burning anything — no secret was guessed, the share
+  // secret already resolved above. The respondent wire: no revision, no
+  // history, no ids beyond the row's own.
+  api.get('/viewer/:secret/forms/responses/remembered', async (c) => {
+    const resolved = await resolveSubmitter(c);
+    if (!resolved.ok) return resolved.res;
+    if (!linkRemembers(resolved.view.token)) {
+      return c.json(err('not_found', 'This link does not remember responses.'), 404);
+    }
+    const rows = await forms.listRemembered(resolved.view.token.id);
+    return c.json({ responses: rows.map(formResponseToRespondentWire) }, 200);
   });
 
   // ── GET (form-agnostic): resolve an arriving edit secret ONCE per page ───
@@ -416,12 +501,16 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       { presentationId: view.presentationId, shareTokenId: view.token.id, responseId: row.id },
       'viewer form response updated'
     );
+    deps.notifier.fire({ kind: 'edited', row: updated, shareTokenName: view.token.name });
     return c.json({ response: formResponseToRespondentWire(updated) }, 200);
   });
 
   // ── POST: mail the respondent their own edit link (leg 2 opt-in) ─────────
   api.post('/viewer/:secret/forms/:form/responses/me/email', async (c) => {
-    const resolved = await resolveOwnResponse(c);
+    // The edit secret is REQUIRED here: the mail carries `#slr=<secret>`,
+    // and a remembered row (PRDCT-2328) has no secret to mail — its link IS
+    // the handle. Header-less calls take the fragment path's 404 + burn.
+    const resolved = await resolveOwnResponse(c, { allowRemembered: false });
     if (!resolved.ok) return resolved.res;
     const { view } = resolved;
 

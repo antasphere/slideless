@@ -1,11 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, count, desc, eq, gte, inArray, max } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lt, max, sql } from 'drizzle-orm';
 import {
+  formResponseMailState,
+  formResponseVersions,
   formResponses,
   shareTokens,
   type Db,
   type FormResponseRow,
-  type FormResponseSource
+  type FormResponseSource,
+  type FormResponseVersionRow,
+  type ShareTokenRow
 } from '@slideless/db';
 import type { FormResponsePayload } from '@slideless/contract';
 import type { PepperRegistry } from '../apikeys/peppers.js';
@@ -30,6 +34,29 @@ import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 /** Hard ceiling on responses per deck — spam containment on a public write. */
 export const FORM_RESPONSES_MAX_PER_DECK = 10_000;
 
+/**
+ * Retention of a response's history (PRDCT-2329): at most this many
+ * revisions per response. Past it the OLDEST revisions after the first are
+ * pruned, so revision 1 (what was first said) and the latest 99 always
+ * survive. A cap on edits instead would punish the respondent for the
+ * owner's retention; no cap at all is the silent unbounded growth the
+ * ticket forbids (682 B realistic, 33 KB worst case per row).
+ */
+export const FORM_RESPONSE_MAX_REVISIONS = 100;
+
+/**
+ * Whether a share link REMEMBERS its answers (PRDCT-2328): the switch, on a
+ * live 'share' token that allows forms. Preview tokens are refused here by
+ * PURPOSE, whatever their column says — an owner's own preview must never
+ * create or resolve a remembered row (ADR 022 decision 6's posture). The
+ * injector uses the same rule for the one boolean it hands the document.
+ */
+export function linkRemembers(
+  token: Pick<ShareTokenRow, 'remembersResponses' | 'purpose' | 'canSubmitForms'>
+): boolean {
+  return token.remembersResponses && token.purpose === 'share' && token.canSubmitForms;
+}
+
 export const FORM_EDIT_SECRET_BYTES = 48; // 64 base64url chars
 
 function hashSecret(secret: string, pepper: string): string {
@@ -47,6 +74,12 @@ export interface FormResponseCreate {
   source: FormResponseSource;
   placement: string | null;
   payload: FormResponsePayload;
+  /**
+   * The link's ONE remembered row for this form (PRDCT-2328). Only the
+   * remembering create path sets it; the partial unique index refuses a
+   * second one per (link, form).
+   */
+  remembered?: boolean;
 }
 
 /**
@@ -80,6 +113,18 @@ export interface FormResponseListed {
   shareTokenName: string | null;
 }
 
+/** One revision with its link's label joined (PRDCT-2329). */
+export interface FormResponseVersionListed {
+  version: FormResponseVersionRow;
+  shareTokenName: string | null;
+}
+
+/**
+ * The owner-mail cooldown verdict (PRDCT-2330): send now, carrying what was
+ * held back since the previous mail, or hold (counted for the next one).
+ */
+export type OwnerMailClaim = { send: true; pendingNew: number; pendingEdited: number } | { send: false };
+
 export interface FormResponseSummaryBucket {
   formName: string;
   shareTokenId: string | null;
@@ -107,22 +152,106 @@ export class FormResponseService {
     if (pepper === undefined) {
       throw new Error(`pepper registry has no current version ${this.peppers.current}`);
     }
+    const row = await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(formResponses)
+        .values({
+          workspaceId: opts.workspaceId,
+          presentationId: opts.presentationId,
+          version: opts.version,
+          formName: opts.formName,
+          shareTokenId: opts.shareTokenId,
+          source: opts.source,
+          placement: opts.placement,
+          responseSecretHash: hashSecret(editSecret, pepper),
+          payload: opts.payload,
+          remembered: opts.remembered === true,
+          revision: 1
+        })
+        .returning();
+      if (!inserted) throw new Error('form response insert failed');
+      // Revision 1 is the create (PRDCT-2329): the history starts with what
+      // was first said, in the same transaction as the row.
+      await tx.insert(formResponseVersions).values({
+        responseId: inserted.id,
+        revision: 1,
+        version: inserted.version,
+        shareTokenId: inserted.shareTokenId,
+        source: inserted.source,
+        placement: inserted.placement,
+        payload: inserted.payload,
+        createdAt: inserted.createdAt
+      });
+      return inserted;
+    });
+    return { row, editSecret };
+  }
+
+  /**
+   * The link's remembered row for one form (PRDCT-2328), or null. Keyed by
+   * the partial unique index, never by "the latest row on the link": embed
+   * submissions and fragment-secret rows on the same link are never
+   * remembered and never resolve here.
+   */
+  async findRemembered(shareTokenId: string, formName: string): Promise<FormResponseRow | null> {
     const [row] = await this.db
-      .insert(formResponses)
-      .values({
-        workspaceId: opts.workspaceId,
-        presentationId: opts.presentationId,
+      .select()
+      .from(formResponses)
+      .where(
+        and(
+          eq(formResponses.shareTokenId, shareTokenId),
+          eq(formResponses.formName, formName),
+          eq(formResponses.remembered, true)
+        )
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Every remembered row of a link, one per form — the runtime's one probe per page load. */
+  async listRemembered(shareTokenId: string): Promise<FormResponseRow[]> {
+    return this.db
+      .select()
+      .from(formResponses)
+      .where(and(eq(formResponses.shareTokenId, shareTokenId), eq(formResponses.remembered, true)))
+      .orderBy(asc(formResponses.formName));
+  }
+
+  /**
+   * Submit through a remembering link (PRDCT-2328): update the link's
+   * remembered row for this form, or create it as remembered. Two tabs
+   * submitting the first answer at once race into the partial unique
+   * index; the loser re-reads the winner's row and updates it, so the link
+   * never ends up with two remembered rows and no submit is lost.
+   */
+  async upsertRemembered(
+    opts: FormResponseCreate
+  ): Promise<{ row: FormResponseRow; created: boolean; editSecret: string | null }> {
+    const existing = await this.findRemembered(opts.shareTokenId, opts.formName);
+    if (existing) {
+      const updated = await this.updatePayload(existing.id, opts.payload, {
         version: opts.version,
-        formName: opts.formName,
         shareTokenId: opts.shareTokenId,
         source: opts.source,
-        placement: opts.placement,
-        responseSecretHash: hashSecret(editSecret, pepper),
-        payload: opts.payload
-      })
-      .returning();
-    if (!row) throw new Error('form response insert failed');
-    return { row, editSecret };
+        placement: opts.placement
+      });
+      return { row: updated ?? existing, created: false, editSecret: null };
+    }
+    try {
+      const { row, editSecret } = await this.create({ ...opts, remembered: true });
+      return { row, created: true, editSecret };
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+      const winner = await this.findRemembered(opts.shareTokenId, opts.formName);
+      if (!winner) throw e;
+      const updated = await this.updatePayload(winner.id, opts.payload, {
+        version: opts.version,
+        shareTokenId: opts.shareTokenId,
+        source: opts.source,
+        placement: opts.placement
+      });
+      return { row: updated ?? winner, created: false, editSecret: null };
+    }
   }
 
   /**
@@ -155,19 +284,108 @@ export class FormResponseService {
     payload: FormResponsePayload,
     attribution: FormResponseAttribution
   ): Promise<FormResponseRow | null> {
-    const [row] = await this.db
-      .update(formResponses)
-      .set({
-        payload,
-        version: attribution.version,
-        shareTokenId: attribution.shareTokenId,
-        ...(attribution.source !== undefined ? { source: attribution.source } : {}),
-        placement: attribution.placement,
-        updatedAt: new Date()
-      })
-      .where(eq(formResponses.id, responseId))
-      .returning();
-    return row ?? null;
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(formResponses)
+        .set({
+          payload,
+          version: attribution.version,
+          shareTokenId: attribution.shareTokenId,
+          ...(attribution.source !== undefined ? { source: attribution.source } : {}),
+          placement: attribution.placement,
+          // PRDCT-2329: every edit is a new revision, never an overwrite of
+          // the history — the row is the latest state, the versions table
+          // keeps what it replaced.
+          revision: sql`${formResponses.revision} + 1`,
+          updatedAt: new Date()
+        })
+        .where(eq(formResponses.id, responseId))
+        .returning();
+      if (!row) return null;
+      await tx.insert(formResponseVersions).values({
+        responseId: row.id,
+        revision: row.revision,
+        version: row.version,
+        shareTokenId: row.shareTokenId,
+        source: row.source,
+        placement: row.placement,
+        payload: row.payload,
+        createdAt: row.updatedAt
+      });
+      // Retention: keep revision 1 and the latest FORM_RESPONSE_MAX_REVISIONS-1.
+      if (row.revision > FORM_RESPONSE_MAX_REVISIONS) {
+        const floor = row.revision - FORM_RESPONSE_MAX_REVISIONS + 2;
+        await tx
+          .delete(formResponseVersions)
+          .where(
+            and(
+              eq(formResponseVersions.responseId, row.id),
+              lt(formResponseVersions.revision, floor),
+              sql`${formResponseVersions.revision} > 1`
+            )
+          );
+      }
+      return row;
+    });
+  }
+
+  /** The owner's history read (PRDCT-2329): every kept revision, newest first, the link label joined. */
+  async versions(responseId: string): Promise<FormResponseVersionListed[]> {
+    return this.db
+      .select({ version: formResponseVersions, shareTokenName: shareTokens.name })
+      .from(formResponseVersions)
+      .leftJoin(shareTokens, eq(shareTokens.id, formResponseVersions.shareTokenId))
+      .where(eq(formResponseVersions.responseId, responseId))
+      .orderBy(desc(formResponseVersions.revision));
+  }
+
+  /**
+   * The owner-mail cooldown (PRDCT-2330), one row per deck: the first event
+   * after a quiet window mails now and carries what was held back since the
+   * previous mail; an event inside the window is counted and held. Under a
+   * row lock so two concurrent submits cannot both claim the send — and the
+   * row is INSERTED before the lock is taken (verifier round 1, F1): a
+   * `SELECT … FOR UPDATE` locks nothing on a row that does not exist yet, so
+   * a deck's very first burst, the burst the feature exists to contain, let
+   * every concurrent first claim send. The insert lands the row at the
+   * epoch, so the first claimer to win the lock sees an expired window and
+   * sends; the racers queue on the lock, then see a fresh window and hold.
+   */
+  async claimOwnerMail(
+    presentationId: string,
+    kind: 'new' | 'edited',
+    windowMs: number,
+    now: Date = new Date()
+  ): Promise<OwnerMailClaim> {
+    return this.db.transaction(async (tx) => {
+      await tx
+        .insert(formResponseMailState)
+        .values({ presentationId, lastSentAt: new Date(0), pendingNew: 0, pendingEdited: 0 })
+        .onConflictDoNothing();
+      const [state] = await tx
+        .select()
+        .from(formResponseMailState)
+        .where(eq(formResponseMailState.presentationId, presentationId))
+        .for('update')
+        .limit(1);
+      if (!state) throw new Error('form_response_mail_state row missing after insert');
+      if (state.lastSentAt.getTime() + windowMs <= now.getTime()) {
+        await tx
+          .update(formResponseMailState)
+          .set({ lastSentAt: now, pendingNew: 0, pendingEdited: 0 })
+          .where(eq(formResponseMailState.presentationId, presentationId));
+        return { send: true, pendingNew: state.pendingNew, pendingEdited: state.pendingEdited };
+      }
+      await tx
+        .update(formResponseMailState)
+        .set(
+          kind === 'new'
+            ? { pendingNew: sql`${formResponseMailState.pendingNew} + 1` }
+            : { pendingEdited: sql`${formResponseMailState.pendingEdited} + 1` }
+        )
+        .where(eq(formResponseMailState.presentationId, presentationId));
+      return { send: false };
+    });
   }
 
   /** Responses on the deck (all forms) — the per-deck cap check. */
@@ -226,12 +444,23 @@ export class FormResponseService {
           ...(opts.token !== undefined ? [eq(formResponses.shareTokenId, opts.token)] : []),
           ...(opts.source !== undefined ? [eq(formResponses.source, opts.source)] : []),
           ...(opts.placement !== undefined ? [eq(formResponses.placement, opts.placement)] : []),
-          ...(opts.since !== undefined ? [gte(formResponses.createdAt, opts.since)] : []),
+          // Activity, not creation (PRDCT-2329, from PRDCT-1339 §1): an
+          // edited response has updated_at >= created_at, so "since" reads
+          // "created or edited at or after" and an edit is found again.
+          ...(opts.since !== undefined ? [gte(formResponses.updatedAt, opts.since)] : []),
           ...(cursorId
             ? [
                 keysetBefore({
                   table: formResponses,
                   id: formResponses.id,
+                  // The keyset rides the IMMUTABLE creation key, on purpose
+                  // (verifier round 1, F2): the cursor row's sort value is
+                  // resolved by subquery at query time, so a mutable key
+                  // (updated_at) drops a row edited between two pages and
+                  // repeats rows when the cursor row itself is edited — the
+                  // CLI's --all --csv export walked that cursor. Activity is
+                  // exposed through `since`, the summary's last activity and
+                  // the revision, never through the page order.
                   createdAt: formResponses.createdAt,
                   // Scope the cursor subquery to THIS deck (the annotations
                   // precedent): a foreign deck's cursor cannot position here.
@@ -266,7 +495,9 @@ export class FormResponseService {
         source: formResponses.source,
         placement: formResponses.placement,
         count: count(),
-        lastResponseAt: max(formResponses.createdAt)
+        // The bucket's LAST ACTIVITY: updated_at is never older than
+        // created_at, so its max is greatest(max(created), max(updated)).
+        lastResponseAt: max(formResponses.updatedAt)
       })
       .from(formResponses)
       .leftJoin(shareTokens, eq(shareTokens.id, formResponses.shareTokenId))
@@ -280,7 +511,7 @@ export class FormResponseService {
         formResponses.source,
         formResponses.placement
       )
-      .orderBy(formResponses.formName, desc(count()), desc(max(formResponses.createdAt)));
+      .orderBy(formResponses.formName, desc(count()), desc(max(formResponses.updatedAt)));
     const buckets = rows.map((r) => ({
       formName: r.formName,
       shareTokenId: r.shareTokenId,
@@ -322,6 +553,7 @@ export function formResponseToWire(r: FormResponseListed): {
   source: FormResponseSource;
   placement: string | null;
   payload: Record<string, string | string[]>;
+  revision: number;
   createdAt: string;
   updatedAt: string;
 } {
@@ -335,16 +567,56 @@ export function formResponseToWire(r: FormResponseListed): {
     source: r.response.source,
     placement: r.response.placement,
     payload: r.response.payload,
+    revision: r.response.revision,
     createdAt: r.response.createdAt.toISOString(),
     updatedAt: r.response.updatedAt.toISOString()
   };
 }
 
+/** Wire mapping of one revision for the OWNER surface (PRDCT-2329). Same RAW CONTENT warning. */
+export function formResponseVersionToWire(v: FormResponseVersionListed): {
+  revision: number;
+  version: number;
+  shareTokenId: string | null;
+  shareTokenName: string | null;
+  source: FormResponseSource;
+  placement: string | null;
+  payload: Record<string, string | string[]>;
+  createdAt: string;
+} {
+  return {
+    revision: v.version.revision,
+    version: v.version.version,
+    shareTokenId: v.version.shareTokenId,
+    shareTokenName: v.shareTokenName,
+    source: v.version.source,
+    placement: v.version.placement,
+    payload: v.version.payload,
+    createdAt: v.version.createdAt.toISOString()
+  };
+}
+
+/**
+ * Postgres 23505 on the partial unique index — the remembering create race.
+ * Drizzle wraps the driver error (DrizzleQueryError → cause), so the code
+ * is read down the cause chain, never on the top error alone.
+ */
+function isUniqueViolation(e: unknown): boolean {
+  let cur: unknown = e;
+  for (let depth = 0; depth < 5 && typeof cur === 'object' && cur !== null; depth++) {
+    if ((cur as { code?: unknown }).code === '23505') return true;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /**
  * Wire mapping for the PUBLIC token session (viewer/forms-api.ts): a
  * deliberate subset — never share_token_id, respondent_user_id, workspace
- * or presentation ids. The respondent sees only what they themselves
- * supplied (plus their row's identity-free envelope).
+ * or presentation ids, and NEVER the revision number or the history
+ * (PRDCT-2329: the respondent sees only the latest; the owner sees the
+ * versions). The respondent sees only what they themselves supplied (plus
+ * their row's identity-free envelope).
  *
  * ⚠️ RAW CONTENT — same warning as formResponseToWire above.
  */

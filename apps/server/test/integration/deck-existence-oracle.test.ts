@@ -193,6 +193,9 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
       shot(`${P}/annotations/${realAnnotationId}`, 'DELETE', cookie),
     'get /presentations/{id}/responses': () => shot(`${P}/responses`, 'GET', cookie),
     'get /presentations/{id}/responses/summary': () => shot(`${P}/responses/summary`, 'GET', cookie),
+    // PRDCT-2329: the per-response history read, same 404 posture as the list.
+    'get /presentations/{id}/responses/{responseId}': () =>
+      shot(`${P}/responses/${realResponseId}`, 'GET', cookie),
     'delete /presentations/{id}/responses/{responseId}': () =>
       shot(`${P}/responses/${realResponseId}`, 'DELETE', cookie)
   };

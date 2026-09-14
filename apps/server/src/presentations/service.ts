@@ -608,13 +608,19 @@ export class PresentationService {
   async update(
     workspaceId: string,
     id: string,
-    patch: { title?: string | undefined; metadata?: Record<string, unknown> | undefined }
+    patch: {
+      title?: string | undefined;
+      metadata?: Record<string, unknown> | undefined;
+      /** The owner-notification switch for form responses (PRDCT-2330). */
+      notifyOnResponse?: boolean | undefined;
+    }
   ): Promise<PresentationRow | null> {
     const [row] = await this.db
       .update(presentations)
       .set({
         ...(patch.title !== undefined ? { title: patch.title } : {}),
         ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
+        ...(patch.notifyOnResponse !== undefined ? { notifyOnResponse: patch.notifyOnResponse } : {}),
         updatedAt: new Date()
       })
       .where(

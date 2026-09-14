@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { ShareTokenRow } from '@slideless/db';
 import { overlayScriptTag } from './overlay.js';
 import { formsScriptTag } from './forms-runtime.js';
+import { linkRemembers } from '../forms/service.js';
 import { topbarScriptTag } from './topbar.js';
 
 /**
@@ -70,7 +71,15 @@ export const fragmentCaptureTag = (): string =>
 export interface EntryTransformContext {
   token: Pick<
     ShareTokenRow,
-    'id' | 'canAnnotate' | 'canSubmitForms' | 'canDownload' | 'showBar' | 'createdAt' | 'expiresAt'
+    | 'id'
+    | 'purpose'
+    | 'canAnnotate'
+    | 'canSubmitForms'
+    | 'canDownload'
+    | 'showBar'
+    | 'remembersResponses'
+    | 'createdAt'
+    | 'expiresAt'
   >;
   /** True when the caller asked for the raw authored HTML (?raw / ?format=html). */
   rawRequested: boolean;
@@ -190,7 +199,13 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
       unlock: ctx.mintUnlockProof(),
       source: ctx.frameEntry ? 'embed' : 'link',
       placement: ctx.placement,
-      emailAvailable: ctx.emailAvailable
+      emailAvailable: ctx.emailAvailable,
+      // PRDCT-2328: the one boolean the remembering feature hands the
+      // document. Context, not capability (see the runtime's trust-boundary
+      // note): THE rule, `linkRemembers` in forms/service.ts, called rather
+      // than re-spelled (verifier round 1, F8) so the document and the API
+      // can never disagree about whether a link remembers.
+      remembers: linkRemembers(ctx.token)
     });
   }
   if (body === '') return null;

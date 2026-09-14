@@ -56,6 +56,7 @@ import { WorkspaceService } from './platform/workspaces.js';
 import { clearGeneratedSetupToken, resolveAuthSecret, resolveSetupToken } from './secret.js';
 import { ShareTokenService } from './sharing/service.js';
 import { FormResponseService } from './forms/service.js';
+import { FormResponseNotifier } from './forms/notify.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
 import { ShareTokenDownloadService } from './sharing/download-events.js';
 import { PresentationService } from './presentations/service.js';
@@ -81,6 +82,12 @@ export interface BootOverrides {
    * always runs the fixed defaults.
    */
   hubDials?: Partial<HubFederationDials>;
+  /**
+   * Shrinks the owner-notification cooldown (forms/notify.ts) so integration
+   * tests can watch the burst posture in milliseconds. Production always
+   * runs the fixed default.
+   */
+  formsMailCooldownMs?: number;
 }
 
 export interface BootResult {
@@ -90,6 +97,8 @@ export interface BootResult {
   state: RuntimeState;
   db: DbHandle;
   auth: Auth;
+  /** Test seam: `drain()` awaits in-flight owner mails (PRDCT-2330). */
+  formsNotifier: FormResponseNotifier;
   registry: PlatformRegistry;
   jobs: Jobs;
   email: EmailDriver;
@@ -674,6 +683,16 @@ export async function boot(
   // Form-response edit secrets: the same credential pattern one level down
   // (ADR 022) — one registry, one rotation story for every peppered secret.
   const forms = new FormResponseService(db.db, pepperRegistry);
+  // Owner mails on new and edited responses (PRDCT-2330): fire-and-forget
+  // after the viewer write, per-deck switch, one mail per deck per window.
+  const formsNotifier = new FormResponseNotifier({
+    db: db.db,
+    forms,
+    email,
+    env,
+    logger,
+    cooldownMs: overrides.formsMailCooldownMs
+  });
   const limiters = await createRateLimiters(env, logger);
 
   // Per-deck collaborators (Phase 5). Claim-at-signup: user creation is the
@@ -719,6 +738,7 @@ export async function boot(
     accountDeletion,
     sharing,
     forms,
+    formsNotifier,
     collaborators: collaboratorService,
     hubSso,
     // Cloud only: /sso/cli-connect stores the H3 offline grant through it.
@@ -821,5 +841,5 @@ export async function boot(
     state.reason = readinessRefusal;
   }
 
-  return { app, env, logger, state, db, auth, registry, jobs, email, otel, authSecret };
+  return { app, env, logger, state, db, auth, registry, jobs, email, otel, authSecret, formsNotifier };
 }

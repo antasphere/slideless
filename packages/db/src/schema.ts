@@ -527,6 +527,14 @@ export const presentations = pgTable(
     // Mirrors the current version's has_downloads (PRDCT-2278: the reserved
     // `downloads/` attachment folder) the same way.
     hasDownloads: boolean('has_downloads').notNull().default(false),
+    /**
+     * Whether the deck OWNER is mailed when a form response arrives or is
+     * edited (PRDCT-2330). Defaults TRUE; the owner switches it off per deck
+     * (a deck collecting 500 RSVPs) without turning forms off. Read by the
+     * forms notifier after every viewer write; honoured whatever the mail
+     * driver is (the `none` driver never sends anyway).
+     */
+    notifyOnResponse: boolean('notify_on_response').notNull().default(true),
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
@@ -679,6 +687,23 @@ export const shareTokens = pgTable(
      * link the default.
      */
     showBar: boolean('show_bar').notNull().default(true),
+    /**
+     * Whether this link REMEMBERS its respondent's form answers
+     * (PRDCT-2328): reopening the link plainly brings the answers back, and
+     * every submit through it updates the ONE remembered row per form
+     * (`form_responses.remembered`) instead of creating a new one. The link
+     * secret is then a bearer credential for the ANSWERS, not just the deck,
+     * so the sharing surfaces say so. The contract default is TRUE on every
+     * mint that names a recipient (Romain, 2026-09-14: "by default a link is
+     * a form"); the COLUMN default is FALSE so every link minted before the
+     * switch existed keeps its behaviour — a broadcast link already in
+     * circulation must never start showing one visitor's answers to the
+     * next. Preview tokens are minted false and refused by purpose anyway.
+     * SECURITY: this is NOT ADR 022 leg 3. Nothing is handed to the deck
+     * document beyond a boolean; the attribution is the token row the server
+     * already stores and re-stamps. Never re-wire `respondent_user_id`.
+     */
+    remembersResponses: boolean('remembers_responses').notNull().default(false),
     /**
      * Per-link badge slot override for the annotation overlay. Null = use
      * the deck's remembered `annotation_badge_position`, else bottom-right.
@@ -855,22 +880,106 @@ export const formResponses = pgTable(
     /** sha256(editSecret + pepper) — resolution probes every registered pepper version. */
     responseSecretHash: text('response_secret_hash').notNull(),
     payload: jsonb('payload').$type<Record<string, string | string[]>>().notNull(),
+    /**
+     * TRUE on the ONE row a remembering link (`share_tokens.remembers_responses`,
+     * PRDCT-2328) holds per form: the row the link's own navigations resolve
+     * without any edit secret. Set only by the remembering create path; an
+     * embed submission or a fragment-secret submission on the same link
+     * stays false. The partial unique index below is what makes "the link's
+     * answer" a key rather than a guess at "the latest row".
+     */
+    remembered: boolean('remembered').notNull().default(false),
+    /**
+     * The current revision number (PRDCT-2329): 1 at create, +1 per edit,
+     * always equal to the highest `form_response_versions.revision` of this
+     * row. The row IS the latest state; the versions table is the history.
+     */
+    revision: integer('revision').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [
     uniqueIndex('form_responses_secret_hash_uniq').on(t.responseSecretHash),
-    // Serves the owner listing + keyset pagination (per deck, optionally per
-    // form) AND the per-deck response-cap COUNT by prefix.
+    // Serves the per-deck response-cap COUNT by prefix and the `since`
+    // fallback scans.
     index('form_responses_presentation_form_created_id_idx').on(
       t.presentationId,
       t.formName,
       t.createdAt,
       t.id
     ),
-    index('form_responses_share_token_idx').on(t.shareTokenId)
+    // Serves the owner listing + keyset pagination, ordered by LAST ACTIVITY
+    // (updated_at) so an edited response resurfaces (PRDCT-2329, from
+    // PRDCT-1339 §1: everything keyed on created_at hid every edit).
+    index('form_responses_presentation_form_updated_id_idx').on(
+      t.presentationId,
+      t.formName,
+      t.updatedAt,
+      t.id
+    ),
+    index('form_responses_share_token_idx').on(t.shareTokenId),
+    // ONE remembered row per (link, form): the remembering resolver's key.
+    uniqueIndex('form_responses_token_form_remembered_uniq')
+      .on(t.shareTokenId, t.formName)
+      .where(sql`${t.remembered}`)
   ]
 );
+
+/**
+ * Every revision of a form response (PRDCT-2329): revision 1 is the create,
+ * each edit appends the next. Responses from before the feature got their
+ * CURRENT answer backfilled as revision 1 (migration 0042): for a response
+ * edited before that, revision 1 is its latest text, not its first.
+ * `form_responses` stays the CURRENT state every existing read uses; this
+ * table is the history the owner reads and the
+ * respondent never sees (the respondent wire carries no revision, no
+ * history). Each revision keeps the attribution of the navigation that
+ * wrote it — the link, the source, the placement, the deck version — never
+ * an identity (ADR 022 decision 4 holds per revision). Retention: at most
+ * FORM_RESPONSE_MAX_REVISIONS (100) rows per response; past it the oldest
+ * revisions AFTER the first are pruned, so revision 1 and the latest 99
+ * always survive. Deleting the response cascades its history away.
+ */
+export const formResponseVersions = pgTable(
+  'form_response_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    responseId: uuid('response_id')
+      .notNull()
+      .references(() => formResponses.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    /** The deck version the respondent saw when writing THIS revision. */
+    version: integer('version').notNull(),
+    shareTokenId: uuid('share_token_id').references(() => shareTokens.id, { onDelete: 'set null' }),
+    source: text('source', { enum: formResponseSources }).notNull().default('link'),
+    placement: text('placement'),
+    payload: jsonb('payload').$type<Record<string, string | string[]>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // One row per revision; serves the owner's history read (revision DESC)
+    // and the retention prune (revision ASC after the first).
+    uniqueIndex('form_response_versions_response_revision_uniq').on(t.responseId, t.revision)
+  ]
+);
+
+/**
+ * The owner-notification cooldown per deck (PRDCT-2330): one mail per deck
+ * per window, the events inside the window counted and carried by the next
+ * mail. One row per deck that ever fired a notification; deck deletion
+ * cascades it away. Nothing here identifies a respondent.
+ */
+export const formResponseMailState = pgTable('form_response_mail_state', {
+  presentationId: uuid('presentation_id')
+    .primaryKey()
+    .references(() => presentations.id, { onDelete: 'cascade' }),
+  /** When the last owner mail for this deck went out. */
+  lastSentAt: timestamp('last_sent_at', { withTimezone: true }).notNull(),
+  /** New responses since `last_sent_at` that no mail has reported yet. */
+  pendingNew: integer('pending_new').notNull().default(0),
+  /** Edits since `last_sent_at` that no mail has reported yet. */
+  pendingEdited: integer('pending_edited').notNull().default(0)
+});
 
 /**
  * One row per COUNTED share-link view (PRDCT-1313): written by the viewer's
@@ -998,6 +1107,8 @@ export type ShareTokenRow = typeof shareTokens.$inferSelect;
 export type CollaboratorRow = typeof collaborators.$inferSelect;
 export type AnnotationRow = typeof annotations.$inferSelect;
 export type FormResponseRow = typeof formResponses.$inferSelect;
+export type FormResponseVersionRow = typeof formResponseVersions.$inferSelect;
+export type FormResponseMailStateRow = typeof formResponseMailState.$inferSelect;
 export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
 export type ShareTokenDownloadRow = typeof shareTokenDownloads.$inferSelect;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;

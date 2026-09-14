@@ -16,7 +16,8 @@ describe('buildShareTokenCreate', () => {
       canAnnotate: false,
       canSubmitForms: true,
       canDownload: true,
-      showBar: true
+      showBar: true,
+      remembersResponses: true
     });
     expect(body).not.toHaveProperty('pinnedVersion');
     expect(body).not.toHaveProperty('expiresAt');
@@ -38,6 +39,16 @@ describe('buildShareTokenCreate', () => {
     });
     expect(body.canDownload).toBe(false);
     expect(body.canSubmitForms).toBe(false);
+  });
+
+  it('carries remembering switched OFF explicitly, and never ON when forms are off (PRDCT-2328)', () => {
+    const off = buildShareTokenCreate({ ...defaultShareLinkForm(3), remembersResponses: false });
+    expect(off.remembersResponses).toBe(false);
+    expect('remembersResponses' in off).toBe(true);
+    // Forms off = nothing to remember: the body says so rather than letting
+    // the server default a remembering check onto a read-only link.
+    const formsOff = buildShareTokenCreate({ ...defaultShareLinkForm(3), canSubmitForms: false });
+    expect(formsOff.remembersResponses).toBe(false);
   });
 
   it('pins a version as a number only when pinned, and the badge slot only with annotations on', () => {

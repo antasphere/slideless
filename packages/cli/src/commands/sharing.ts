@@ -58,6 +58,15 @@ function shareOptionsOf(opts: {
   download: boolean;
   /** Commander --no-bar negation: true by default, false when passed (PRDCT-2281). */
   bar: boolean;
+  /**
+   * Tri-state (PRDCT-2328): `--remember` true, `--no-remember` false,
+   * neither = derived from the name. A link minted FOR someone (a name
+   * given, or share-email's per-address links) remembers by default; the
+   * unnamed quick link ("cli") does not, because a link nobody named is a
+   * link for nobody in particular — the broadcast shape that must not
+   * collapse a thousand people into one row.
+   */
+  remember?: boolean | undefined;
   badgePosition?: BadgePositionValue;
   expires?: string;
   password?: string;
@@ -73,6 +82,7 @@ function shareOptionsOf(opts: {
     canSubmitForms: opts.forms,
     canDownload: opts.download,
     showBar: opts.bar,
+    remembersResponses: opts.remember ?? opts.name !== undefined,
     ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
     ...(opts.password ? { password: opts.password } : {})
@@ -83,7 +93,18 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
   program
     .command('share <id>')
     .description('Create a per-recipient share link (prints the viewer URL — shown once)')
-    .option('--name <name>', 'owner-facing recipient label', 'cli')
+    .option(
+      '--name <name>',
+      'owner-facing recipient label (default "cli"; a NAMED link remembers its answers)'
+    )
+    .option(
+      '--remember',
+      "the link remembers its respondent's form answers: reopening it brings them back, every submit updates them (default for a named link)"
+    )
+    .option(
+      '--no-remember',
+      'every submit through this link is a fresh response, nothing is brought back (default for an unnamed link)'
+    )
     .option('--to-version <n>', 'pin the recipient to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let the recipient annotate', false)
     .option('--no-forms', "disallow submitting the deck's embedded forms through this link")
@@ -109,7 +130,8 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
       async (
         id: string,
         opts: {
-          name: string;
+          name?: string;
+          remember?: boolean;
           toVersion?: number;
           annotator: boolean;
           forms: boolean;
@@ -151,8 +173,14 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             `${created.shareToken.hasPassword ? ', password' : ''}` +
             `${created.shareToken.canDownload ? '' : ', no downloads'}` +
             // Strict false: a server from before the switch answers without the field.
-            `${created.shareToken.showBar === false ? ', no bar' : ''})\n` +
-            '  The URL is shown once — copy it now.\n'
+            `${created.shareToken.showBar === false ? ', no bar' : ''}` +
+            `${created.shareToken.canSubmitForms === false ? ', no forms' : ''}` +
+            // Strict true: the state is printed so it is never unverifiable (PRDCT-1337's lesson).
+            `${created.shareToken.remembersResponses === true ? ', remembers answers' : ''})\n` +
+            '  The URL is shown once — copy it now.\n' +
+            (created.shareToken.remembersResponses === true
+              ? '  This link remembers its answers: whoever holds it can read and change them. Do not post it publicly.\n'
+              : '')
         );
         if (opts.embed || opts.placement !== undefined) {
           io.out.write(
@@ -201,6 +229,10 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .command('share-email <id>')
     .description('Create a personal share link per recipient and email it (one token per address)')
     .requiredOption('--to <email...>', 'recipient email(s)')
+    .option(
+      '--no-remember',
+      "every submit through these links is a fresh response (default: each link remembers its recipient's answers)"
+    )
     .option('--to-version <n>', 'pin recipients to this version', (v: string) => parseInt(v, 10))
     .option('--annotator', 'let recipients annotate', false)
     .option('--no-forms', "disallow submitting the deck's embedded forms through these links")
@@ -220,6 +252,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         id: string,
         opts: {
           to: string[];
+          remember: boolean;
           toVersion?: number;
           annotator: boolean;
           forms: boolean;
@@ -320,7 +353,15 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             // Downloads: the per-link switch and the count of files taken
             // through the link (one per file, one per zip; never a view).
             t.canDownload ? `${t.downloadCount} download${t.downloadCount === 1 ? '' : 's'}` : 'no downloads',
-            [t.canAnnotate ? 'annotator' : null, t.hasPassword ? 'password' : null]
+            // Every switch whose state matters is SHOWN (PRDCT-1337: --no-forms
+            // used to be unverifiable from the CLI). Strict compares: a server
+            // from before a switch answers without its field.
+            [
+              t.canAnnotate ? 'annotator' : null,
+              t.hasPassword ? 'password' : null,
+              t.canSubmitForms === false ? 'no forms' : null,
+              t.remembersResponses === true ? 'remembers answers' : null
+            ]
               .filter(Boolean)
               .join(', ') || '-',
             t.expiresAt ? `expires ${t.expiresAt}` : '-',
@@ -546,6 +587,66 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
         );
       }
     );
+
+  program
+    .command('response <id> <responseId>')
+    .description(
+      'One form response with its edit history (PRDCT-2329): the current answer, then every kept ' +
+        'revision newest first, with the link and the moment each was written through.'
+    )
+    .action(async (id: string, responseId: string, _opts, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      const detail = await ctx.client.formResponse(id, responseId);
+      if (ctx.json) return printJson(io, detail);
+      const r = detail.response;
+      io.out.write(
+        `${r.formName} · ${r.shareTokenName ?? r.shareTokenId ?? '-'} · ${r.source}` +
+          `${r.placement ? ` · p:${r.placement}` : ''} · v${r.version}\n` +
+          `  created ${r.createdAt} · last edited ${r.updatedAt} · revision ${r.revision}\n` +
+          `  ${JSON.stringify(r.payload)}\n`
+      );
+      io.out.write(
+        `\nHistory (${detail.versions.length} revision${detail.versions.length === 1 ? '' : 's'} kept, newest first):\n`
+      );
+      io.out.write(
+        table(
+          detail.versions.map((v) => [
+            `r${v.revision}`,
+            v.createdAt,
+            v.shareTokenName ?? v.shareTokenId ?? '-',
+            v.source,
+            v.placement ? `p:${v.placement}` : '-',
+            `v${v.version}`,
+            JSON.stringify(v.payload)
+          ])
+        )
+      );
+    });
+
+  program
+    .command('notify <id>')
+    .description(
+      'Show or switch the owner mails for form responses on one deck (PRDCT-2330): a mail when a ' +
+        'response arrives, another when one is edited; on by default'
+    )
+    .option('--on', 'mail the deck owner on new and edited responses', false)
+    .option('--off', 'stop mailing the deck owner about responses (forms stay on)', false)
+    .action(async (id: string, opts: { on: boolean; off: boolean }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      if (opts.on && opts.off) throw new CliUsageError('Pass either --on or --off, not both.');
+      const deck =
+        opts.on || opts.off
+          ? await ctx.client.updatePresentation(id, { notifyOnResponse: opts.on })
+          : await ctx.client.presentation(id);
+      if (ctx.json) return printJson(io, { notifyOnResponse: deck.notifyOnResponse });
+      io.out.write(
+        deck.notifyOnResponse
+          ? `Response mails are ON for "${deck.title}": the owner is mailed on a new response and on an edit.\n`
+          : `Response mails are OFF for "${deck.title}".\n`
+      );
+    });
 
   program
     .command('invite <id>')

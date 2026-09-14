@@ -21,10 +21,12 @@ function ctx(over: Partial<EntryTransformContext> = {}): EntryTransformContext {
   return {
     token: {
       id: 'tok',
+      purpose: 'share',
       canAnnotate: false,
       canSubmitForms: true,
       canDownload: true,
       showBar: true,
+      remembersResponses: false,
       createdAt: new Date('2026-09-13T10:00:00Z'),
       expiresAt: null
     },

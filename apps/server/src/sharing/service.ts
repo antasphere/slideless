@@ -93,6 +93,12 @@ export class ShareTokenService {
      * default link shows.
      */
     showBar: boolean;
+    /**
+     * The link remembers its answers (PRDCT-2328). The share route passes
+     * the contract default (true); the preview mint passes false — and the
+     * remembering resolver refuses previews by purpose regardless.
+     */
+    remembersResponses: boolean;
     /** Explicit badge slot for this link, or null = inherit the deck default. */
     badgePosition: BadgePosition | null;
     expiresAt: Date | null;
@@ -112,6 +118,7 @@ export class ShareTokenService {
         canSubmitForms: opts.canSubmitForms,
         canDownload: opts.canDownload,
         showBar: opts.showBar,
+        remembersResponses: opts.remembersResponses,
         badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
@@ -242,6 +249,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
   canSubmitForms: boolean;
   canDownload: boolean;
   showBar: boolean;
+  remembersResponses: boolean;
   badgePosition: BadgePosition | null;
   expiresAt: string | null;
   hasPassword: boolean;
@@ -262,6 +270,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
     canSubmitForms: t.canSubmitForms,
     canDownload: t.canDownload,
     showBar: t.showBar,
+    remembersResponses: t.remembersResponses,
     badgePosition: t.badgePosition,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     hasPassword: t.passwordHash !== null,

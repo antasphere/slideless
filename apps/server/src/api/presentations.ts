@@ -14,6 +14,7 @@ import {
   assetPrecheckRoute,
   assetUploadRoute,
   formResponseDeleteRoute,
+  formResponseGetRoute,
   formResponsesListRoute,
   formResponsesSummaryRoute,
   presentationDeleteRoute,
@@ -67,7 +68,7 @@ import {
 import { hashViewerPassword } from '../sharing/password.js';
 import { shareTokenViewToWire, type ShareTokenViewService } from '../sharing/view-events.js';
 import { annotationToWire, type AnnotationService } from '../annotations/service.js';
-import { formResponseToWire, type FormResponseService } from '../forms/service.js';
+import { formResponseToWire, formResponseVersionToWire, type FormResponseService } from '../forms/service.js';
 import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
 
 /**
@@ -96,6 +97,7 @@ const presentationToWire = (p: PresentationRow) => ({
   // Viewer entry loads recorded by recordEntryView (dashboard preview
   // tokens excluded at the viewer, so owner previews never count).
   totalViews: p.totalViews,
+  notifyOnResponse: p.notifyOnResponse,
   createdAt: p.createdAt.toISOString(),
   updatedAt: p.updatedAt.toISOString()
 });
@@ -428,7 +430,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     }
     const updated = await service.update(principal.workspaceId, id, {
       title: body.title,
-      metadata: body.metadata
+      metadata: body.metadata,
+      notifyOnResponse: body.notifyOnResponse
     });
     if (!updated) return c.json(err('not_found', 'Presentation not found'), 404);
     c.set('audit', {
@@ -832,6 +835,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       canSubmitForms: body.canSubmitForms,
       canDownload: body.canDownload,
       showBar: body.showBar,
+      // PRDCT-2328: the contract default is ON (a named link IS its
+      // recipient's response); the column default stays OFF for every link
+      // minted before the switch existed.
+      remembersResponses: body.remembersResponses,
       badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
@@ -856,6 +863,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         canAnnotate: row.canAnnotate,
         canDownload: row.canDownload,
         showBar: row.showBar,
+        remembersResponses: row.remembersResponses,
         badgePosition: row.badgePosition,
         hasPassword: row.passwordHash !== null,
         expiresAt: row.expiresAt?.toISOString() ?? null
@@ -914,6 +922,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // Owner previews must never create respondent rows — matching the
       // preview exclusion from view stats (and canAnnotate above).
       canSubmitForms: false,
+      // …nor remember any (PRDCT-2328); the resolver refuses by purpose too.
+      remembersResponses: false,
       // Downloads ON: the preview shows what a default link shows (the
       // recipient bar's download button included). Preview downloads are
       // never counted — the viewer keys the exclusion on `purpose`, like
@@ -979,6 +989,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (patch.canSubmitForms !== undefined) set.canSubmitForms = patch.canSubmitForms;
     if (patch.canDownload !== undefined) set.canDownload = patch.canDownload;
     if (patch.showBar !== undefined) set.showBar = patch.showBar;
+    if (patch.remembersResponses !== undefined) set.remembersResponses = patch.remembersResponses;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
       // Explicit slot → new deck default (explicit null just falls back),
@@ -1246,6 +1257,24 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       since: since !== undefined ? new Date(since) : undefined
     });
     return c.json({ responses: responses.map(formResponseToWire), nextCursor }, 200);
+  });
+
+  // The owner's per-response read with its history (PRDCT-2329). Same
+  // gate, same 404 posture; registered after the literal summary route.
+  api.openapi(formResponseGetRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, responseId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const existing = await forms.get(principal.workspaceId, id, responseId);
+    if (!existing) return c.json(err('not_found', 'Response not found'), 404);
+    const versions = await forms.versions(existing.response.id);
+    return c.json(
+      { response: formResponseToWire(existing), versions: versions.map(formResponseVersionToWire) },
+      200
+    );
   });
 
   api.openapi(formResponseDeleteRoute, async (c) => {

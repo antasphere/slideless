@@ -2,10 +2,12 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import Download from '@lucide/svelte/icons/download';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -15,7 +17,12 @@
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { FormResponse, FormResponseSourceValue, FormResponsesSummary } from '@slideless/contract';
+  import type {
+    FormResponse,
+    FormResponseDetail,
+    FormResponseSourceValue,
+    FormResponsesSummary
+  } from '@slideless/contract';
 
   /**
    * SECURITY — READ BEFORE TOUCHING THE MARKUP BELOW.
@@ -123,6 +130,69 @@
 
   function isUpdated(response: FormResponse): boolean {
     return new Date(response.updatedAt).getTime() > new Date(response.createdAt).getTime();
+  }
+
+  // ── Edit history (PRDCT-2329): the owner sees every kept revision ──────
+  let showHistory = $state(false);
+  let historyLoading = $state(false);
+  let history = $state<FormResponseDetail | null>(null);
+
+  async function openHistory(response: FormResponse) {
+    history = null;
+    showHistory = true;
+    historyLoading = true;
+    try {
+      history = await api.formResponse(deckId, response.id);
+    } catch (e) {
+      toast.error(t('formResponses.historyLoadFailed', { error: errorMessage(e) }));
+      showHistory = false;
+    } finally {
+      historyLoading = false;
+    }
+  }
+
+  /** Flatten one revision's payload for display; string[] joins with ", ". RAW input. */
+  function versionEntries(payload: Record<string, string | string[]>): [string, string][] {
+    return Object.entries(payload).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.join(', ') : value
+    ]);
+  }
+
+  // ── Owner mails (PRDCT-2330): the per-deck switch, read from the deck ──
+  // null until the deck is read; the checkbox stays hidden meanwhile.
+  let notify = $state<boolean | null>(null);
+  let notifySaving = $state(false);
+
+  $effect(() => {
+    void api
+      .presentation(deckId)
+      .then((deck) => {
+        notify = deck.notifyOnResponse;
+      })
+      .catch(() => {
+        // A non-writer gets the quiet no-access state elsewhere; no switch.
+        notify = null;
+      });
+  });
+
+  async function setNotify(value: boolean) {
+    if (notifySaving) return;
+    const previous = notify;
+    notify = value;
+    notifySaving = true;
+    try {
+      const deck = await api.updatePresentation(deckId, { notifyOnResponse: value });
+      notify = deck.notifyOnResponse;
+      toast.success(
+        t(deck.notifyOnResponse ? 'formResponses.notifyOnToast' : 'formResponses.notifyOffToast')
+      );
+    } catch (e) {
+      notify = previous;
+      toast.error(t('formResponses.notifyFailed', { error: errorMessage(e) }));
+    } finally {
+      notifySaving = false;
+    }
   }
 
   // ── CSV export of the currently filtered, currently loaded rows ────────
@@ -259,6 +329,20 @@
     </div>
   </Card.Header>
   <Card.Content data-testid="form-responses-panel">
+    {#if notify !== null}
+      <div class="mb-4 flex items-start gap-2" data-testid="form-responses-notify">
+        <Checkbox
+          id="responses-notify"
+          checked={notify}
+          disabled={notifySaving}
+          onCheckedChange={(v) => void setNotify(v === true)}
+        />
+        <Label for="responses-notify" class="font-normal">
+          {t('formResponses.notifyLabel')}
+          <span class="text-muted-foreground">{t('formResponses.notifyHint')}</span>
+        </Label>
+      </div>
+    {/if}
     {#if list.loading || summaryLoading}
       <TableSkeleton columns={3} rows={2} showSearch={false} />
     {:else if noAccess}
@@ -341,7 +425,11 @@
                   {/if}
                   <span>{t('formResponses.onVersion', { n: response.version })}</span>
                   <span>{formatTimeAgo(response.createdAt)}</span>
-                  {#if isUpdated(response)}
+                  {#if response.revision > 1}
+                    <Badge variant="outline" data-testid="response-revision">
+                      {t('formResponses.revisionBadge', { n: response.revision })}
+                    </Badge>
+                  {:else if isUpdated(response)}
                     <Badge variant="outline">{t('formResponses.updatedBadge')}</Badge>
                   {/if}
                 </div>
@@ -359,6 +447,11 @@
                   {/each}
                 </dl>
                 <div class="flex gap-2 pt-1">
+                  {#if response.revision > 1}
+                    <Button variant="ghost" size="sm" onclick={() => void openHistory(response)}>
+                      {t('formResponses.actionHistory')}
+                    </Button>
+                  {/if}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -391,6 +484,53 @@
     {/if}
   </Card.Content>
 </Card.Root>
+
+<Dialog.Root bind:open={showHistory}>
+  <Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-xl" data-testid="response-history">
+    <Dialog.Header>
+      <Dialog.Title>{t('formResponses.historyTitle')}</Dialog.Title>
+      <Dialog.Description>{t('formResponses.historyDescription')}</Dialog.Description>
+    </Dialog.Header>
+    {#if historyLoading || !history}
+      <TableSkeleton rows={3} />
+    {:else}
+      <ol class="space-y-3">
+        {#each history.versions as revision (revision.revision)}
+          <li class="space-y-2 rounded-md border p-3">
+            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <!-- SECURITY: shareTokenName is owner text and placement is
+                   visitor-influenced — {…} interpolation escapes. NEVER {@html}. -->
+              <span class="font-medium text-foreground">
+                {t('formResponses.historyRevision', { n: revision.revision })}
+              </span>
+              <span>{formatTimeAgo(revision.createdAt)}</span>
+              {#if revision.shareTokenName !== null}
+                <span>· {revision.shareTokenName}</span>
+              {:else if revision.shareTokenId === null}
+                <span>· {t('formResponses.linkGone')}</span>
+              {/if}
+              <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
+              {#if revision.placement !== null}
+                <span>· {revision.placement}</span>
+              {/if}
+              <span>{t('formResponses.onVersion', { n: revision.version })}</span>
+            </div>
+            <dl class="space-y-1">
+              {#each versionEntries(revision.payload) as [key, value] (key)}
+                <!-- SECURITY: RAW anonymous-respondent input at every revision.
+                     {…} escapes it; NEVER {@html}, never an attribute. -->
+                <div class="flex gap-2 text-sm">
+                  <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
+                  <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
+                </div>
+              {/each}
+            </dl>
+          </li>
+        {/each}
+      </ol>
+    {/if}
+  </Dialog.Content>
+</Dialog.Root>
 
 <ConfirmDialog
   bind:open={showDeleteDialog}

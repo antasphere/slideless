@@ -295,7 +295,15 @@ expiry, password and counts: [Share links](../concepts/links.md) is the model,
 ```bash
 slideless share <id> --name "Alice"                       # prints the /v/{secret} URL — shown ONCE
                                                           # (omit --name and the link is labelled "cli":
-                                                          # name every recipient, the label is the audit)
+                                                          # name every recipient, the label is the audit).
+                                                          # A NAMED link remembers its recipient's form
+                                                          # answers: reopening it brings them back, every
+                                                          # submit updates them; whoever holds it can read
+                                                          # and change them — never post such a link.
+slideless share <id> --name "Alice" --no-remember         # a named link whose every submit is a fresh
+                                                          # response (a link a team will pass around)
+slideless share <id> --remember                           # make the unnamed "cli" link remember too
+                                                          # (unnamed = fresh responses by default)
 slideless share <id> --to-version 2 --annotator \
                      --expires 2026-12-31T23:59:59Z --password hunter22
 slideless share <id> --annotator --badge-position top-left  # move the notes button (8 slots;
@@ -315,20 +323,28 @@ slideless unshare <id> --token <tokenId>                  # revoke one link
 slideless unshare <id>                                    # revoke ALL active links
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed;
                                                           # takes every share flag (--to-version, --annotator,
-                                                          # --no-forms, --no-download, --no-bar, --badge-position,
-                                                          # --expires, --password, --password-stdin) except
-                                                          # --embed and --placement
+                                                          # --no-forms, --no-download, --no-bar, --no-remember,
+                                                          # --badge-position, --expires, --password,
+                                                          # --password-stdin) except --embed and --placement;
+                                                          # each link remembers its recipient's answers
 slideless pin <id> <tokenId> --to-version 1               # freeze a recipient on v1
 slideless pin <id> <tokenId> --latest                     # follow the latest again
 slideless tokens <id> [--all]                             # list links + access stats (opens, last opened,
-                                                          # downloads or "no downloads")
+                                                          # downloads or "no downloads", "no forms",
+                                                          # "remembers answers")
 slideless views <id> [tokenId] [--all]                    # per-view events of one link: when, referring
                                                           # site, ?p= label, browser family (no IPs, no
                                                           # full URLs — never stored)
 slideless responses <id> [--form name] [--link tokenId] \
                     [--source link|embed] [--placement label] \
                     [--since ISO] [--all] [--json|--csv]  # what viewers submitted through the deck's
-                                                          # embedded forms
+                                                          # embedded forms, newest first; --since reads
+                                                          # activity (created OR edited)
+slideless response <id> <responseId>                      # one response with its edit history: every
+                                                          # kept revision, newest first
+slideless notify <id> [--on|--off]                        # show or switch the owner mails on this deck
+                                                          # (a mail on a new response, another on an edit;
+                                                          # on by default; forms stay on when off)
 ```
 
 Secrets are stored hash-only server-side: the URL printed at creation is
@@ -363,12 +379,20 @@ latest activity), then the most recent rows. Filters narrow the row listing:
 `--form` to one named form, `--link` to one share link (token id or link
 name, never a share URL: secrets are hash-only server-side and cannot be
 resolved back to a token), `--source link|embed` and `--placement <label>`
-to one distribution spot, `--since <ISO datetime>` to a time window. `--all`
+to one distribution spot, `--since <ISO datetime>` to a time window (a
+response created OR edited at or after it — an edit is activity, so an
+edited answer resurfaces). `--all`
 follows pagination, `--json` prints the wire shape for agents, and `--csv`
 writes a spreadsheet-safe CSV (cells are guarded against formula injection)
 built client-side from the same rows. Links minted with `--no-forms` refuse
 submissions (`403 forms_disabled`); everything else about them works
-unchanged. Details: the Forms page under Sharing & review.
+unchanged. Every edit is kept as a revision: `slideless response <id>
+<responseId>` prints the current answer and every kept revision (at most
+100 per response; the first and the latest 99 always survive), each with the
+link and the moment it was written through. `slideless notify <id> --off`
+silences the owner mails (one on a new response, a different one on an edit,
+never carrying the answers, at most one per deck per ten minutes) without
+touching forms. Details: the Forms page under Sharing & review.
 
 ## Collaborators
 

@@ -26,3 +26,4 @@ backups
 # these out so far, which protects nobody else's clone.
 .vscode
 *.local.json
+.playwright-mcp/

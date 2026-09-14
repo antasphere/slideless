@@ -176,6 +176,22 @@
       <span class="text-muted-foreground">{t('tokens.formsHint')}</span>
     </Label>
   </div>
+  {#if form.canSubmitForms}
+    <div class="space-y-1 pl-6">
+      <div class="flex items-center gap-2">
+        <Checkbox id="token-remember" bind:checked={form.remembersResponses} />
+        <Label for="token-remember" class="font-normal">
+          {t('tokens.rememberLabel')}
+          <span class="text-muted-foreground">{t('tokens.rememberHint')}</span>
+        </Label>
+      </div>
+      {#if form.remembersResponses}
+        <p class="text-xs text-muted-foreground" data-testid="token-remember-warning">
+          {t('tokens.rememberWarning')}
+        </p>
+      {/if}
+    </div>
+  {/if}
   <div class="flex items-center gap-2">
     <Checkbox id="token-downloads" bind:checked={form.canDownload} />
     <Label for="token-downloads" class="font-normal">

@@ -253,6 +253,112 @@ export function buildOtpEmail(p: OtpEmailParams): { subject: string; html: strin
   return { subject, html, text };
 }
 
+export interface FormResponseNoticeParams {
+  /** Deck title — owner text, escaped before it reaches the HTML. */
+  presentationTitle: string;
+  /** The form's `data-slideless-form` name (owner-slug charset, escaped anyway). */
+  formName: string;
+  /** The share link's owner-facing label, or null when the link is gone. Owner text, escaped. */
+  shareTokenName: string | null;
+  /** When the response landed / the edit was made. */
+  at: Date;
+  /** The deck's own page on the app origin (the responses live there). */
+  deckUrl: string;
+  /**
+   * Activity the owner was NOT mailed about, because it fell inside the
+   * per-deck cooldown window since the previous mail (PRDCT-2330): counted
+   * and carried by this mail so nothing goes unsaid. Zero when this mail
+   * is the first in a while.
+   */
+  pendingNew: number;
+  pendingEdited: number;
+}
+
+/** The "since the last mail" sentence, or '' when nothing was held back. */
+function pendingSentence(p: FormResponseNoticeParams): string {
+  const parts: string[] = [];
+  if (p.pendingNew > 0) parts.push(`${p.pendingNew} other new response${p.pendingNew === 1 ? '' : 's'}`);
+  if (p.pendingEdited > 0) parts.push(`${p.pendingEdited} other edit${p.pendingEdited === 1 ? '' : 's'}`);
+  return parts.length === 0 ? '' : ` Since the previous mail, ${parts.join(' and ')} arrived too.`;
+}
+
+function responseNoticeMeta(p: FormResponseNoticeParams): string {
+  const link = p.shareTokenName === null ? 'a link since deleted' : `the link "${esc(p.shareTokenName)}"`;
+  return `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
+       Deck: <strong>${esc(p.presentationTitle)}</strong><br>
+       Form: <strong>${esc(p.formName)}</strong><br>
+       Through: ${link}<br>
+       When: ${p.at.toUTCString()}</p>`;
+}
+
+/**
+ * To the DECK OWNER: a new form response arrived (PRDCT-2330). Carries the
+ * deck, the form, the link and the moment — NEVER the answers themselves:
+ * a respondent's text is third-party data that does not belong in an inbox
+ * (PRDCT-1337's data-protection thread); the owner reads it in the product.
+ */
+export function buildFormResponseEmail(p: FormResponseNoticeParams): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const subject = `New response on "${p.presentationTitle}"`;
+  const html = shell(
+    'A new response arrived',
+    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
+       Someone answered the <strong>${esc(p.formName)}</strong> form of your ${PRODUCT_NAME} deck.${esc(pendingSentence(p))}</p>
+     ${responseNoticeMeta(p)}
+     <p style="margin:0 0 24px">
+       <a href="${p.deckUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
+          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
+         Open the responses</a></p>
+     <p style="margin:0;color:#a1a1aa;font-size:12px">
+       The answers stay in ${PRODUCT_NAME}; this mail never carries them. Switch these mails off per deck from the responses panel.<br>
+       <span style="word-break:break-all">${p.deckUrl}</span></p>`
+  );
+  const text =
+    `A new response arrived on "${p.presentationTitle}" (form "${p.formName}", through ${p.shareTokenName === null ? 'a link since deleted' : `the link "${p.shareTokenName}"`}) at ${p.at.toUTCString()}.${pendingSentence(p)}\n\n` +
+    `Open the responses: ${p.deckUrl}\n\nThe answers stay in ${PRODUCT_NAME}; this mail never carries them.`;
+  return { subject, html, text };
+}
+
+export interface FormResponseEditedParams extends FormResponseNoticeParams {
+  /** The revision number the edit produced (2 for the first edit). */
+  revision: number;
+}
+
+/**
+ * To the DECK OWNER: an EXISTING response was edited (PRDCT-2330) — a
+ * different mail from the new-response one, because "an answer changed" is
+ * a different signal from "an answer arrived". Same rule: never the answers.
+ */
+export function buildFormResponseEditedEmail(p: FormResponseEditedParams): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const subject = `A response on "${p.presentationTitle}" was edited`;
+  const html = shell(
+    'An existing response was edited',
+    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
+       An answer already given on the <strong>${esc(p.formName)}</strong> form of your ${PRODUCT_NAME} deck
+       was changed — this is revision ${p.revision} of that response. The earlier revisions are kept;
+       the responses panel shows the history.${esc(pendingSentence(p))}</p>
+     ${responseNoticeMeta(p)}
+     <p style="margin:0 0 24px">
+       <a href="${p.deckUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
+          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
+         Open the responses</a></p>
+     <p style="margin:0;color:#a1a1aa;font-size:12px">
+       The answers stay in ${PRODUCT_NAME}; this mail never carries them. Switch these mails off per deck from the responses panel.<br>
+       <span style="word-break:break-all">${p.deckUrl}</span></p>`
+  );
+  const text =
+    `A response on "${p.presentationTitle}" (form "${p.formName}", through ${p.shareTokenName === null ? 'a link since deleted' : `the link "${p.shareTokenName}"`}) was edited at ${p.at.toUTCString()} — revision ${p.revision}; earlier revisions are kept.${pendingSentence(p)}\n\n` +
+    `Open the responses: ${p.deckUrl}\n\nThe answers stay in ${PRODUCT_NAME}; this mail never carries them.`;
+  return { subject, html, text };
+}
+
 export interface ResponseLinkEmailParams {
   /** The respondent's personal edit link (share URL + fragment secret). */
   editUrl: string;

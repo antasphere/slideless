@@ -27,6 +27,7 @@ import type {
   FileInfo,
   FormResponse,
   FormResponseSourceValue,
+  FormResponseDetail,
   FormResponsesSummary,
   InstanceInfo,
   InvitationAccept,
@@ -913,6 +914,19 @@ export class PlatformClient {
     return this.request(
       'GET',
       this.pathWithFormResponseQuery(`/presentations/${encodeURIComponent(id)}/responses`, params)
+    );
+  }
+
+  /**
+   * One response with its edit history (PRDCT-2329): the current row and
+   * every revision, newest first, each with the link and the moment it was
+   * written through. Payload values are RAW respondent input at every
+   * revision — escape before rendering.
+   */
+  formResponse(id: string, responseId: string): Promise<FormResponseDetail> {
+    return this.request(
+      'GET',
+      `/presentations/${encodeURIComponent(id)}/responses/${encodeURIComponent(responseId)}`
     );
   }
 

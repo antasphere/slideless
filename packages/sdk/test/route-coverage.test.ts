@@ -119,6 +119,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /annotations': (c) => c.annotationInbox(),
   'GET /presentations/{id}/responses': (c) => c.formResponses(SAMPLE_ID),
   'GET /presentations/{id}/responses/summary': (c) => c.formResponsesSummary(SAMPLE_ID),
+  'GET /presentations/{id}/responses/{responseId}': (c) => c.formResponse(SAMPLE_ID, SAMPLE_CHILD_ID),
   'DELETE /presentations/{id}/responses/{responseId}': (c) => c.deleteFormResponse(SAMPLE_ID, SAMPLE_CHILD_ID)
 };
 
