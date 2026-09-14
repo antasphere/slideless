@@ -131,7 +131,9 @@ slideless auth login-complete --api-url https://slides.example.com --email you@e
 
 `login-complete` mints an `slk_` API key server-side (scopes
 `presentations:read` + `presentations:write`, never `data:export`) and stores
-it as the active profile. Accounts with 2FA enabled are refused
+it as the active profile; `--key-name <name>` names the key as the dashboard
+lists it, and `--expires-in-days <n>` gives it a TTL (it never expires
+otherwise). Accounts with 2FA enabled are refused
 (`two_factor_required`), and an instance with no email driver has no OTP at
 all — mint a key in the dashboard instead (**API keys**, **Create key**; tick
 `presentations:write`, which the dialog leaves unchecked, for push and share)
@@ -165,6 +167,7 @@ slideless push ./deck --no-open                  # never open, even on the first
 slideless open ./deck                            # open the linked deck's page (--json prints the URL)
 slideless pull <id> ./out                        # byte-exact download of the latest version
 slideless pull <id> ./out --at 1                 # …or any pinned version
+slideless pull ./deck                            # no id: the folder's .slideless.json names the deck
 slideless pull-annotations [id] [--version N] [--status open|resolved] [--out notes.json]
 slideless annotation resolve <id> <annotationId> # mark a note resolved
 slideless annotation reopen <id> <annotationId>  # …and flip it back open
@@ -378,11 +381,21 @@ slideless agent-doc [id] [--at <version>] [--out <file>] # print the bundle's AG
 slideless versions <id> [--all]  # version history, newest first (numbers line up with pull --at)
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed
-slideless files list|upload|rm
+slideless files list [--all]
+slideless files upload <path> [--name <stored name>] [--content-type <type>]
+slideless files rm <id>
 slideless files download <id> [--dir ./here]  # writes the stored name (basename only) into --dir
 slideless files download <id> --out ./exact/path.bin   # …or a path you choose, verbatim
 slideless export [-o file]    # workspace zip (key needs the opt-in data:export scope)
 ```
+
+## Paging
+
+Every listing command (`list`, `versions`, `tokens`, `views`, `responses`,
+`files list`) answers one page at a time, newest first: `--limit <n>` sets the
+page size (1 to 100), `--cursor <cursor>` resumes from the `nextCursor` a
+previous page printed, and `--all` follows the cursors until every page is
+fetched.
 
 ## Shell completion
 
