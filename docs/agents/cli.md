@@ -338,7 +338,8 @@ slideless views <id> [tokenId] [--all]                    # per-view events of o
 slideless responses <id> [--form name] [--link tokenId] \
                     [--source link|embed] [--placement label] \
                     [--since ISO] [--all] [--json|--csv]  # what viewers submitted through the deck's
-                                                          # embedded forms, latest activity first
+                                                          # embedded forms, newest first; --since reads
+                                                          # activity (created OR edited)
 slideless response <id> <responseId>                      # one response with its edit history: every
                                                           # kept revision, newest first
 slideless notify <id> [--on|--off]                        # show or switch the owner mails on this deck

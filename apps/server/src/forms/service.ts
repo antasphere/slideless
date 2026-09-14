@@ -343,7 +343,13 @@ export class FormResponseService {
    * The owner-mail cooldown (PRDCT-2330), one row per deck: the first event
    * after a quiet window mails now and carries what was held back since the
    * previous mail; an event inside the window is counted and held. Under a
-   * row lock so two concurrent submits cannot both claim the send.
+   * row lock so two concurrent submits cannot both claim the send — and the
+   * row is INSERTED before the lock is taken (verifier round 1, F1): a
+   * `SELECT … FOR UPDATE` locks nothing on a row that does not exist yet, so
+   * a deck's very first burst, the burst the feature exists to contain, let
+   * every concurrent first claim send. The insert lands the row at the
+   * epoch, so the first claimer to win the lock sees an expired window and
+   * sends; the racers queue on the lock, then see a fresh window and hold.
    */
   async claimOwnerMail(
     presentationId: string,
@@ -352,19 +358,17 @@ export class FormResponseService {
     now: Date = new Date()
   ): Promise<OwnerMailClaim> {
     return this.db.transaction(async (tx) => {
+      await tx
+        .insert(formResponseMailState)
+        .values({ presentationId, lastSentAt: new Date(0), pendingNew: 0, pendingEdited: 0 })
+        .onConflictDoNothing();
       const [state] = await tx
         .select()
         .from(formResponseMailState)
         .where(eq(formResponseMailState.presentationId, presentationId))
         .for('update')
         .limit(1);
-      if (!state) {
-        await tx
-          .insert(formResponseMailState)
-          .values({ presentationId, lastSentAt: now, pendingNew: 0, pendingEdited: 0 })
-          .onConflictDoNothing();
-        return { send: true, pendingNew: 0, pendingEdited: 0 };
-      }
+      if (!state) throw new Error('form_response_mail_state row missing after insert');
       if (state.lastSentAt.getTime() + windowMs <= now.getTime()) {
         await tx
           .update(formResponseMailState)
@@ -442,16 +446,22 @@ export class FormResponseService {
           ...(opts.placement !== undefined ? [eq(formResponses.placement, opts.placement)] : []),
           // Activity, not creation (PRDCT-2329, from PRDCT-1339 §1): an
           // edited response has updated_at >= created_at, so "since" reads
-          // "created or edited at or after" and an edit resurfaces.
+          // "created or edited at or after" and an edit is found again.
           ...(opts.since !== undefined ? [gte(formResponses.updatedAt, opts.since)] : []),
           ...(cursorId
             ? [
                 keysetBefore({
                   table: formResponses,
                   id: formResponses.id,
-                  // Last activity is the listing's order (the pager compares
-                  // whichever column it is handed).
-                  createdAt: formResponses.updatedAt,
+                  // The keyset rides the IMMUTABLE creation key, on purpose
+                  // (verifier round 1, F2): the cursor row's sort value is
+                  // resolved by subquery at query time, so a mutable key
+                  // (updated_at) drops a row edited between two pages and
+                  // repeats rows when the cursor row itself is edited — the
+                  // CLI's --all --csv export walked that cursor. Activity is
+                  // exposed through `since`, the summary's last activity and
+                  // the revision, never through the page order.
+                  createdAt: formResponses.createdAt,
                   // Scope the cursor subquery to THIS deck (the annotations
                   // precedent): a foreign deck's cursor cannot position here.
                   workspaceId: formResponses.presentationId,
@@ -462,7 +472,7 @@ export class FormResponseService {
             : [])
         )
       )
-      .orderBy(desc(formResponses.updatedAt), desc(formResponses.id))
+      .orderBy(desc(formResponses.createdAt), desc(formResponses.id))
       .limit(opts.limit + 1);
     const { page, nextCursor } = pageOf(rows, opts.limit);
     return { responses: page, nextCursor };

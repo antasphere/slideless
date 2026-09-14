@@ -1813,6 +1813,31 @@ describe('remembering links (PRDCT-2328)', () => {
     expect((await readJson(await remembered(secret))).responses).toEqual([]);
   });
 
+  it('a link whose remembering was switched off keeps its stored answer to itself: header-less reads answer 404 until the switch is back on', async () => {
+    const { secret, id: tokenId } = await createToken({ name: 'Alice', remembersResponses: true }, deck);
+    expect((await submit(secret, 'rsvp', { payload: { a: 'alice-private' } })).status).toBe(201);
+    const flip = (on: boolean) =>
+      app.app.request(`/api/v1/presentations/${deck}/tokens/${tokenId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie },
+        body: JSON.stringify({ remembersResponses: on })
+      });
+    expect((await flip(false)).status).toBe(200);
+    // Off: the guard (linkRemembers) is the one line between "the link
+    // remembers" and "any holder reads the stored answer" — verifier round 1, F3.
+    expect((await remembered(secret)).status).toBe(404);
+    expect((await getMe(secret, 'rsvp')).status).toBe(404);
+    expect((await putMe(secret, 'rsvp', { payload: { a: 'overwrite' } })).status).toBe(404);
+    // A submit while off is an ordinary fresh row; the remembered row is untouched.
+    const fresh = await submit(secret, 'rsvp', { payload: { a: 'second' } });
+    expect(fresh.status).toBe(201);
+    expect((await readJson(fresh)).remembered).toBe(false);
+    // Back on: the link's own remembered row resolves again, unchanged
+    // (the decision, recorded: the switch gates access, it never erases).
+    expect((await flip(true)).status).toBe(200);
+    expect((await readJson(await getMe(secret, 'rsvp'))).response.payload).toEqual({ a: 'alice-private' });
+  });
+
   it('two concurrent first submits on one remembering link end as ONE row, both answers kept as revisions', async () => {
     const { secret, id: tokenId } = await createToken({ name: 'Race', remembersResponses: true }, deck);
     const results = await Promise.all(
@@ -1885,7 +1910,7 @@ describe('edit history (PRDCT-2329)', () => {
     }
   });
 
-  it('an edited response resurfaces: the list orders by last activity, the summary’s last activity is the edit, since reads activity', async () => {
+  it('an edited response is found again: since reads activity and the summary’s last activity is the edit, while the page order stays on the immutable creation key', async () => {
     const listDeck = await uploadDeck('Activity Deck', [entryOf('index.html', HTML_V1)]);
     const { secret } = await createToken({ name: 'L' }, listDeck);
     const r1 = await readJson(await submit(secret, 'rsvp', { payload: { n: '1' } }));
@@ -1903,8 +1928,12 @@ describe('edit history (PRDCT-2329)', () => {
     expect(edit.status).toBe(200);
     const editedAt = (await readJson(edit)).response.updatedAt;
 
+    // The page order is by CREATION, on purpose (verifier round 1, F2): a
+    // keyset cursor over a mutable key drops and repeats rows. The edit is
+    // visible on the row itself (revision 2) and through the two reads below.
     const listed = await ownerList(listDeck);
-    expect(listed.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id, r2.response.id]);
+    expect(listed.responses.map((r: { id: string }) => r.id)).toEqual([r2.response.id, r1.response.id]);
+    expect(listed.responses[1].revision).toBe(2);
 
     const summary = await readJson(
       await app.app.request(`/api/v1/presentations/${listDeck}/responses/summary`, { headers: { cookie } })
@@ -1915,11 +1944,22 @@ describe('edit history (PRDCT-2329)', () => {
     const since = await ownerList(listDeck, `?since=${encodeURIComponent(cutoff)}`);
     expect(since.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id]);
 
-    // Keyset pagination on the activity order stays gap-free.
+    // Keyset pagination stays gap-free and repeat-free even when a row is
+    // edited between two pages, in both shapes the verifier reproduced: a
+    // row still to come edited (it must not vanish), and the cursor row
+    // itself edited (nothing must repeat).
     const page1 = await ownerList(listDeck, '?limit=1');
-    expect(page1.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id]);
+    expect(page1.responses.map((r: { id: string }) => r.id)).toEqual([r2.response.id]);
+    expect(
+      (await putMe(secret, 'rsvp', { payload: { n: '1c' } }, { 'x-slideless-response': r1.editSecret }))
+        .status
+    ).toBe(200);
+    expect(
+      (await putMe(secret, 'rsvp', { payload: { n: '2b' } }, { 'x-slideless-response': r2.editSecret }))
+        .status
+    ).toBe(200);
     const page2 = await ownerList(listDeck, `?limit=1&cursor=${page1.nextCursor}`);
-    expect(page2.responses.map((r: { id: string }) => r.id)).toEqual([r2.response.id]);
+    expect(page2.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id]);
     expect(page2.nextCursor).toBeNull();
   });
 
@@ -2162,6 +2202,40 @@ describe('owner mails (PRDCT-2330)', () => {
     await drained();
     expect(mailBox.sent.length).toBe(before + 1);
     expect(mailBox.sent[mailBox.sent.length - 1]!.subject).toBe('A response on "Quiet deck" was edited');
+  });
+
+  it('a deck’s FIRST burst mails exactly once: concurrent first responses queue on the state row (verifier round 1, F1)', async () => {
+    const deck = await mDeck('First burst');
+    const secret = await mToken(deck, { name: 'Wall', remembersResponses: false });
+    const before = mailBox.sent.length;
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => mSubmit(secret, 'rsvp', { payload: { n: String(i) } }))
+    );
+    for (const r of results) expect(r.status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 1);
+    // The nine held ones are carried by the next mail after the window.
+    await sleep(COOLDOWN_MS + 50);
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: 'later' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 2);
+    expect(mailBox.sent[mailBox.sent.length - 1]!.text).toContain('9 other new responses arrived too');
+  });
+
+  it('a burst right after the window expires mails exactly once: the claim is under the row lock (verifier round 1, F4)', async () => {
+    const deck = await mDeck('Expired burst');
+    const secret = await mToken(deck, { name: 'Wall', remembersResponses: false });
+    const before = mailBox.sent.length;
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: 'first' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 1);
+    await sleep(COOLDOWN_MS + 50);
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => mSubmit(secret, 'rsvp', { payload: { n: String(i) } }))
+    );
+    for (const r of results) expect(r.status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 2);
   });
 
   it('a remembering link’s first submit is a new-response mail, its later submits are edit mails', async () => {

@@ -65,8 +65,11 @@ An edited response is not overwritten: every submit is a **revision**, and every
 - **The respondent sees only the latest.** Reopening a link or a personal edit link loads the current answers, and nothing on the respondent's side shows a revision number or an earlier text. One respondent can never read another's history.
 - **The owner sees the history.** `GET …/responses/{responseId}` answers `{ response, versions }`, every kept revision newest first; `slideless response <deckId> <responseId>` prints the same; the dashboard's response row shows an **Edited · n versions** badge with a **History** button; the MCP `slideless_list_form_responses` tool takes `responseId`. Who wrote a revision is what the row knows: the link it came through and the moment, never an invented identity.
 - **Retention.** At most 100 revisions are kept per response. Past that, the oldest revisions after the first are pruned: revision 1 and the latest 99 always survive.
+- **Responses from before this feature** have a single revision carrying the answer as it was when the feature arrived; for one that had already been edited by then, revision 1 is that latest text, not what was first said. The history starts the day the feature lands.
 
-Because an edit is activity, the listing, the summary's **Last activity** and the `since` filter all follow the latest activity of a response, not the moment it was first created: an answer edited this morning is at the top of the list again, and `--since` this morning finds it.
+Responses stay listed **newest first by creation**, so a page of results is stable while people keep answering and editing (a cursor over a changing sort order would skip or repeat rows in a CSV export). An edited response is found through its activity instead: the `since` filter, the summary's **Last activity**, and the **Edited · n versions** badge on the row.
+
+Because an edit is activity, the summary's **Last activity** and the `since` filter follow the latest activity of a response, not the moment it was first created: `--since` this morning finds an answer edited this morning, and the summary says when the last one changed.
 
 ## Being told
 
@@ -92,7 +95,7 @@ The deck owner is mailed when a response arrives and, in a **different mail**, w
   slideless notify DECK_ID --off                    # stop the owner mails on this deck
   ```
 
-- **API**: `GET /api/v1/presentations/{id}/responses` (cursor-paginated, latest activity first, filters `form`, `token`, `source`, `placement`, `since`), `GET …/responses/summary` (grouped counts per form × link × source × placement, with last activity), `GET …/responses/{responseId}` (one response with its revision history), and `DELETE …/responses/{responseId}` to remove a response and its history.
+- **API**: `GET /api/v1/presentations/{id}/responses` (cursor-paginated, newest first, filters `form`, `token`, `source`, `placement`, `since`, the last one reading activity), `GET …/responses/summary` (grouped counts per form × link × source × placement, with last activity), `GET …/responses/{responseId}` (one response with its revision history), and `DELETE …/responses/{responseId}` to remove a response and its history.
 - **MCP**: the `slideless_list_form_responses` tool takes the same filters, `summary: true` returns the grouped overview instead of rows, and `responseId` returns one response with its history.
 
 Responses are addressed to the people who can change the deck: the owner, a workspace admin, or an active collaborator. For API keys, reading sits under the `presentations:read` scope and deleting under `presentations:write`.

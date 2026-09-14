@@ -927,7 +927,9 @@ export const formResponses = pgTable(
 
 /**
  * Every revision of a form response (PRDCT-2329): revision 1 is the create,
- * each edit appends the next. `form_responses` stays the CURRENT state every
+ * each edit appends the next. Responses from before the feature got their
+ * CURRENT answer backfilled as revision 1 (migration 0042): for a response
+ * edited before that, revision 1 is its latest text, not its first. `form_responses` stays the CURRENT state every
  * existing read uses; this table is the history the owner reads and the
  * respondent never sees (the respondent wire carries no revision, no
  * history). Each revision keeps the attribution of the navigation that

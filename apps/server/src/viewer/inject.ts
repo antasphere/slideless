@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { ShareTokenRow } from '@slideless/db';
 import { overlayScriptTag } from './overlay.js';
 import { formsScriptTag } from './forms-runtime.js';
+import { linkRemembers } from '../forms/service.js';
 import { topbarScriptTag } from './topbar.js';
 
 /**
@@ -201,9 +202,10 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
       emailAvailable: ctx.emailAvailable,
       // PRDCT-2328: the one boolean the remembering feature hands the
       // document. Context, not capability (see the runtime's trust-boundary
-      // note): the same rule as `linkRemembers` in forms/service.ts, so a
-      // preview token never sees `true` whatever its column says.
-      remembers: ctx.token.remembersResponses && ctx.token.purpose === 'share'
+      // note): THE rule, `linkRemembers` in forms/service.ts, called rather
+      // than re-spelled (verifier round 1, F8) so the document and the API
+      // can never disagree about whether a link remembers.
+      remembers: linkRemembers(ctx.token)
     });
   }
   if (body === '') return null;
