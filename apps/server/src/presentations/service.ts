@@ -5,6 +5,8 @@ import {
   files,
   presentations,
   presentationVersions,
+  shareTokenDownloads,
+  shareTokenViews,
   uploadSessions,
   type BadgePosition,
   type Db,
@@ -16,6 +18,12 @@ import {
 } from '@slideless/db';
 import { AGENT_DOC_PATH, isAttachmentPath, type ManifestEntry, type Principal } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+
+/** A version list row: the summary columns plus its per-version counts (PRDCT-2308). */
+export type VersionSummaryRow = Omit<PresentationVersionRow, 'manifest'> & {
+  viewCount: number;
+  downloadCount: number;
+};
 
 /** Upload sessions reserve the future deck id for ~1 h (ADR 011). */
 export const UPLOAD_SESSION_TTL_MS = 60 * 60 * 1000;
@@ -645,13 +653,15 @@ export class PresentationService {
   /**
    * Version listings deliberately never SELECT the manifest jsonb (ADR 011):
    * the columns are enumerated, `manifest` excluded. The row id feeds the
-   * keyset cursor only — it is not part of the wire shape.
+   * keyset cursor only — it is not part of the wire shape. Each row carries
+   * its views and downloads (PRDCT-2308), counted from the link-analytics
+   * events of the page's versions in one grouped query per table.
    */
   async listVersions(
     workspaceId: string,
     presentationId: string,
     opts: { cursor?: string; limit: number }
-  ): Promise<{ versions: Array<Omit<PresentationVersionRow, 'manifest'>>; nextCursor: string | null }> {
+  ): Promise<{ versions: VersionSummaryRow[]; nextCursor: string | null }> {
     const cursorId = cursorRowId(opts.cursor);
     const rows = await this.db
       .select({
@@ -693,7 +703,62 @@ export class PresentationService {
       .orderBy(desc(presentationVersions.createdAt), desc(presentationVersions.id))
       .limit(opts.limit + 1);
     const { page, nextCursor } = pageOf(rows, opts.limit);
-    return { versions: page, nextCursor };
+    const counts = await this.versionCounts(
+      workspaceId,
+      presentationId,
+      page.map((v) => v.version)
+    );
+    return {
+      versions: page.map((v) => ({
+        ...v,
+        viewCount: counts.views.get(v.version) ?? 0,
+        downloadCount: counts.downloads.get(v.version) ?? 0
+      })),
+      nextCursor
+    };
+  }
+
+  /**
+   * Views and downloads per version (PRDCT-2308), from the two link-analytics
+   * event tables grouped by the version each event was served from — one
+   * index-backed query per table (migration 0041), scoped to the page's
+   * versions. Retention-bounded like the events themselves: a purged event
+   * is not counted, while the deck's totalViews counter keeps its lifetime
+   * figure. Owner previews write no event, so they never count here either.
+   */
+  private async versionCounts(
+    workspaceId: string,
+    presentationId: string,
+    versions: number[]
+  ): Promise<{ views: Map<number, number>; downloads: Map<number, number> }> {
+    const views = new Map<number, number>();
+    const downloads = new Map<number, number>();
+    if (versions.length === 0) return { views, downloads };
+    const viewRows = await this.db
+      .select({ version: shareTokenViews.version, n: sql<number>`count(*)::int` })
+      .from(shareTokenViews)
+      .where(
+        and(
+          eq(shareTokenViews.presentationId, presentationId),
+          eq(shareTokenViews.workspaceId, workspaceId),
+          inArray(shareTokenViews.version, versions)
+        )
+      )
+      .groupBy(shareTokenViews.version);
+    for (const r of viewRows) views.set(r.version, r.n);
+    const downloadRows = await this.db
+      .select({ version: shareTokenDownloads.version, n: sql<number>`count(*)::int` })
+      .from(shareTokenDownloads)
+      .where(
+        and(
+          eq(shareTokenDownloads.presentationId, presentationId),
+          eq(shareTokenDownloads.workspaceId, workspaceId),
+          inArray(shareTokenDownloads.version, versions)
+        )
+      )
+      .groupBy(shareTokenDownloads.version);
+    for (const r of downloadRows) downloads.set(r.version, r.n);
+    return { views, downloads };
   }
 
   async getVersion(

@@ -40,10 +40,16 @@ export function buildCsp(scriptHashes: string[], { frameSrc = [] }: CspOptions =
     "default-src 'self'",
     `script-src ${script}`,
     // Svelte injects component styles at runtime; hashes are impractical there.
-    "style-src 'self' 'unsafe-inline'",
+    // The two font CDNs the dashboard's app.html links (PRDCT-2308): the
+    // Observatory pairing rides Fontshare (Sentient, Synonym) and Google
+    // Fonts (Onest) because this repo is slated for the OSS cut and the
+    // faces may not be committed. Stylesheets from the two API hosts, the
+    // font files from their two file hosts, and nothing else — the
+    // dashboard's own origin stays the only script and connect source.
+    "style-src 'self' 'unsafe-inline' https://api.fontshare.com https://fonts.googleapis.com",
     "img-src 'self' data:",
     "connect-src 'self'",
-    "font-src 'self'",
+    "font-src 'self' https://cdn.fontshare.com https://fonts.gstatic.com",
     `frame-src ${frame}`,
     "object-src 'none'",
     "frame-ancestors 'none'",

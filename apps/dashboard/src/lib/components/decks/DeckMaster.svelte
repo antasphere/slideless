@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
+  import { LinkPreview } from 'bits-ui';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Sheet from '$lib/components/ui/sheet/index.js';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
@@ -21,10 +22,15 @@
   import ShareLinksTable from './share/ShareLinksTable.svelte';
   import ShareLinkCreateDialog from './share/ShareLinkCreateDialog.svelte';
   import VersionHistorySheet from './VersionHistorySheet.svelte';
+  import VersionList from './VersionList.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { PREVIEW_SANDBOX } from '$lib/decks';
-  import { canPreviewDeck, createPreviewController } from '$lib/decks/preview.svelte';
+  import {
+    canPreviewDeck,
+    createPreviewController,
+    createThumbnailController
+  } from '$lib/decks/preview.svelte';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -33,7 +39,7 @@
     Attachment,
     MeResponse,
     Presentation as Deck,
-    PresentationVersion,
+    PresentationVersionSummary,
     ShareToken
   } from '@slideless/contract';
 
@@ -45,6 +51,14 @@
    * right the shown version's files, the views and the version badge. The
    * deck itself renders through the same sandboxed preview the admin page
    * uses (one preview path, ADR 012 Surface D) — never in this DOM.
+   *
+   * The version history (PRDCT-2308) is two popovers and a sheet: hovering
+   * [[Version history]] in the title menu opens the versions beside it,
+   * newest first, each with a live thumbnail, its files, its views and its
+   * downloads; hovering the version badge on the right opens the same list;
+   * picking a version shows it in the frame. The sheet, opened from the
+   * sub-menu's last item, is the long form with each version's files, and
+   * closes by itself on [[Show]].
    *
    * Who sees what: rename, share and delete are the deck administrator's
    * (owner, workspace admin/owner); a dev collaborator gets the read-only
@@ -66,7 +80,7 @@
   let notFound = $state(false);
   let loading = $state(true);
 
-  const versionsList = createPagedList<PresentationVersion>(async (p) => {
+  const versionsList = createPagedList<PresentationVersionSummary>(async (p) => {
     const { versions, nextCursor } = await api.presentationVersions(deckId, p);
     return { items: versions, nextCursor };
   });
@@ -125,7 +139,16 @@
     canPreview: () => canPreview,
     onSelectError: (message) => toast.error(message)
   });
-  onDestroy(() => preview.destroy());
+  // The version popovers' and the sheet's thumbnails: one preview token per
+  // version, minted when a row comes into view, all revoked with the page.
+  const thumbs = createThumbnailController(deckId, { canPreview: () => canPreview });
+  onDestroy(() => {
+    preview.destroy();
+    thumbs.destroy();
+  });
+  // The hover card on the version badge (bits-ui LinkPreview: hover intent
+  // both ways, focus opens it too); a pick closes it.
+  let badgeOpen = $state(false);
 
   /** The version the bar describes: the frame's, or the deck's current one before the first mint. */
   const shownVersion = $derived(
@@ -333,11 +356,28 @@
                 {t('master.share')}
               </DropdownMenu.Item>
             {/if}
-            <DropdownMenu.Item onSelect={() => (historyOpen = true)}>
-              <History />
-              {t('master.versionHistory')}
-              <span class="ml-auto text-xs text-muted-foreground">{deck.currentVersion}</span>
-            </DropdownMenu.Item>
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger data-testid="master-history-trigger">
+                <History />
+                {t('master.versionHistory')}
+                <span class="text-xs text-muted-foreground">{deck.currentVersion}</span>
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.SubContent class="w-auto p-1" data-testid="master-history-popover">
+                <VersionList
+                  list={versionsList}
+                  {thumbs}
+                  currentVersion={deck.currentVersion}
+                  {shownVersion}
+                  menu
+                  onPick={(version) => void preview.select(version)}
+                />
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item onSelect={() => (historyOpen = true)} data-testid="master-history-full">
+                  <History />
+                  {t('master.historyFull')}
+                </DropdownMenu.Item>
+              </DropdownMenu.SubContent>
+            </DropdownMenu.Sub>
             <DropdownMenu.Item onSelect={() => void goto('/decks')}>
               <Layers />
               {t('master.allDecks')}
@@ -399,12 +439,42 @@
         {deck.totalViews}
       </span>
       {#if shownVersion !== null}
-        <Badge
-          variant={shownVersion === deck.currentVersion ? 'outline' : 'secondary'}
-          data-testid="master-version"
-        >
-          v{shownVersion}
-        </Badge>
+        {@const shownIsCurrent = shownVersion === deck.currentVersion}
+        <LinkPreview.Root bind:open={badgeOpen} openDelay={150} closeDelay={200}>
+          <LinkPreview.Trigger>
+            {#snippet child({ props })}
+              <button
+                {...props}
+                type="button"
+                class="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t('master.versionBadgeAria', { n: shownVersion })}
+                data-testid="master-version"
+              >
+                <Badge variant={shownIsCurrent ? 'latest' : 'version'}>v{shownVersion}</Badge>
+              </button>
+            {/snippet}
+          </LinkPreview.Trigger>
+          <LinkPreview.Portal>
+            <LinkPreview.Content
+              side="bottom"
+              align="end"
+              sideOffset={6}
+              class="bg-popover text-popover-foreground motion z-50 rounded-md border p-1 shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+              data-testid="master-version-popover"
+            >
+              <VersionList
+                list={versionsList}
+                {thumbs}
+                currentVersion={deck.currentVersion}
+                {shownVersion}
+                onPick={(version) => {
+                  badgeOpen = false;
+                  void preview.select(version);
+                }}
+              />
+            </LinkPreview.Content>
+          </LinkPreview.Portal>
+        </LinkPreview.Root>
       {/if}
       <Button variant="ghost" size="sm" href={`/decks/${encodeURIComponent(deckId)}`}>
         <LayoutDashboard class="h-4 w-4" />
@@ -459,7 +529,7 @@
   <Sheet.Root bind:open={shareOpen}>
     <Sheet.Content
       side="right"
-      class="flex w-full flex-col overflow-y-auto sm:max-w-3xl"
+      class="flex w-full flex-col overflow-y-auto sm:max-w-5xl"
       data-testid="share-sheet"
     >
       <Sheet.Header>
@@ -486,6 +556,7 @@
     {deckId}
     bind:open={historyOpen}
     list={versionsList}
+    {thumbs}
     currentVersion={deck.currentVersion}
     {shownVersion}
     onShow={(version) => void preview.select(version)}

@@ -232,6 +232,18 @@
   }
 }
 
+/* The one motion (tokens.css): every popover, menu and sheet-less fold in
+   the dashboard reads the same duration and easing through this class,
+   which tailwindcss-animate's enter/exit keyframes honour. */
+@layer components {
+  .motion {
+    animation-duration: var(--motion-duration);
+    animation-timing-function: var(--motion-ease);
+    transition-duration: var(--motion-duration);
+    transition-timing-function: var(--motion-ease);
+  }
+}
+
 /* Popover styling to match sidebar (template convention, kept — the vars
    now resolve to brand-mapped triplets) */
 @layer components {

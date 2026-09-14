@@ -10,9 +10,11 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { api, errorMessage } from '$lib/api';
   import { copyText } from '$lib/clipboard';
+  import { rememberLinkUrl } from '$lib/decks/link-urls.svelte';
+  import { buildShareTokenCreate, defaultShareLinkForm } from '$lib/decks/share-form';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { PresentationVersion, ShareTokenCreate } from '@slideless/contract';
+  import type { PresentationVersion } from '@slideless/contract';
   import { badgePositionSchema, buildEmbedSnippets } from '@slideless/contract';
 
   /**
@@ -41,19 +43,10 @@
     { value: '90', label: t('tokens.expiryDays', { n: 90 }) }
   ];
   let createLoading = $state(false);
-  let tokenName = $state('');
-  let versionMode = $state<'latest' | 'pinned'>('latest');
-  let pinnedVersion = $state('');
-  let canAnnotate = $state(false);
-  // ON by default — a deck's embedded form is its intended interaction
-  // (ADR 022); the toggle is the per-link opt-out.
-  let canSubmitForms = $state(true);
-  // ON by default (PRDCT-2278): files were put in downloads/ to be handed
-  // out; the toggle is the per-link opt-out.
-  let canDownload = $state(true);
-  let badgePosition = $state('default');
-  let expiresIn = $state('never');
-  let password = $state('');
+  // The form's state, one object; the body it sends is built by a pure
+  // function with its own unit test ($lib/decks/share-form.ts), so a switch
+  // dropped from the payload goes red without a browser (PRDCT-2299).
+  let form = $state(defaultShareLinkForm(null));
 
   // The 8 badge slots (4 corners + 4 edge centers) + inherit-the-deck-default.
   const badgeSlotLabels: Record<(typeof badgePositionSchema.options)[number], string> = $derived({
@@ -74,15 +67,7 @@
   // Reset the form each time the host opens it.
   $effect(() => {
     if (!open) return;
-    tokenName = '';
-    versionMode = 'latest';
-    pinnedVersion = versions[0] ? String(versions[0].version) : '';
-    canAnnotate = false;
-    canSubmitForms = true;
-    canDownload = true;
-    badgePosition = 'default';
-    expiresIn = 'never';
-    password = '';
+    form = defaultShareLinkForm(versions[0]?.version ?? null);
   });
 
   // ── Created dialog: the viewer URL appears exactly once ───────────────
@@ -109,22 +94,10 @@
   async function submitCreate() {
     createLoading = true;
     try {
-      const req: ShareTokenCreate = {
-        name: tokenName,
-        versionMode,
-        ...(versionMode === 'pinned' ? { pinnedVersion: Number(pinnedVersion) } : {}),
-        canAnnotate,
-        canSubmitForms,
-        canDownload,
-        ...(canAnnotate && badgePosition !== 'default'
-          ? { badgePosition: badgePosition as ShareTokenCreate['badgePosition'] }
-          : {}),
-        ...(expiresIn !== 'never'
-          ? { expiresAt: new Date(Date.now() + Number(expiresIn) * 86_400_000).toISOString() }
-          : {}),
-        ...(password ? { password } : {})
-      };
-      const result = await api.createShareToken(deckId, req);
+      const result = await api.createShareToken(deckId, buildShareTokenCreate(form));
+      // The URL exists once, here: the links table's copy and open actions
+      // read it from this page-session memory (PRDCT-2308).
+      rememberLinkUrl(result.shareToken.id, result.url);
       open = false;
       createdUrl = result.url;
       showCreatedDialog = true;
@@ -148,19 +121,19 @@
 >
   <div class="space-y-2">
     <Label for="token-name">{t('tokens.nameLabel')}</Label>
-    <Input id="token-name" bind:value={tokenName} placeholder={t('tokens.namePlaceholder')} required />
+    <Input id="token-name" bind:value={form.name} placeholder={t('tokens.namePlaceholder')} required />
   </div>
   <div class="space-y-2">
     <Label for="token-version-mode">{t('tokens.versionLabel')}</Label>
     <Select.Root
       type="single"
-      value={versionMode}
+      value={form.versionMode}
       onValueChange={(v) => {
-        if (v === 'latest' || v === 'pinned') versionMode = v;
+        if (v === 'latest' || v === 'pinned') form.versionMode = v;
       }}
     >
       <Select.Trigger id="token-version-mode" class="w-full">
-        {versionMode === 'latest' ? t('tokens.versionLatest') : t('tokens.versionPinned')}
+        {form.versionMode === 'latest' ? t('tokens.versionLatest') : t('tokens.versionPinned')}
       </Select.Trigger>
       <Select.Content>
         <Select.Item value="latest" label={t('tokens.versionLatest')} />
@@ -168,18 +141,18 @@
       </Select.Content>
     </Select.Root>
   </div>
-  {#if versionMode === 'pinned'}
+  {#if form.versionMode === 'pinned'}
     <div class="space-y-2">
       <Label for="token-pinned-version">{t('tokens.colVersion')}</Label>
       <Select.Root
         type="single"
-        value={pinnedVersion}
+        value={form.pinnedVersion}
         onValueChange={(v) => {
-          if (v) pinnedVersion = v;
+          if (v) form.pinnedVersion = v;
         }}
       >
         <Select.Trigger id="token-pinned-version" class="w-full">
-          {pinnedVersion ? `v${pinnedVersion}` : '—'}
+          {form.pinnedVersion ? `v${form.pinnedVersion}` : '—'}
         </Select.Trigger>
         <Select.Content>
           {#each versions as version (version.version)}
@@ -190,38 +163,45 @@
     </div>
   {/if}
   <div class="flex items-center gap-2">
-    <Checkbox id="token-annotate" bind:checked={canAnnotate} />
+    <Checkbox id="token-annotate" bind:checked={form.canAnnotate} />
     <Label for="token-annotate" class="font-normal">
       {t('tokens.annotateLabel')}
       <span class="text-muted-foreground">{t('tokens.annotateHint')}</span>
     </Label>
   </div>
   <div class="flex items-center gap-2">
-    <Checkbox id="token-forms" bind:checked={canSubmitForms} />
+    <Checkbox id="token-forms" bind:checked={form.canSubmitForms} />
     <Label for="token-forms" class="font-normal">
       {t('tokens.formsLabel')}
       <span class="text-muted-foreground">{t('tokens.formsHint')}</span>
     </Label>
   </div>
   <div class="flex items-center gap-2">
-    <Checkbox id="token-downloads" bind:checked={canDownload} />
+    <Checkbox id="token-downloads" bind:checked={form.canDownload} />
     <Label for="token-downloads" class="font-normal">
       {t('tokens.downloadsLabel')}
       <span class="text-muted-foreground">{t('tokens.downloadsHint')}</span>
     </Label>
   </div>
-  {#if canAnnotate}
+  <div class="flex items-center gap-2">
+    <Checkbox id="token-bar" bind:checked={form.showBar} />
+    <Label for="token-bar" class="font-normal">
+      {t('tokens.barLabel')}
+      <span class="text-muted-foreground">{t('tokens.barHint')}</span>
+    </Label>
+  </div>
+  {#if form.canAnnotate}
     <div class="space-y-2">
       <Label for="token-badge-position">{t('tokens.badgePositionLabel')}</Label>
       <Select.Root
         type="single"
-        value={badgePosition}
+        value={form.badgePosition}
         onValueChange={(v) => {
-          if (v) badgePosition = v;
+          if (v) form.badgePosition = v;
         }}
       >
         <Select.Trigger id="token-badge-position" class="w-full">
-          {badgePositionOptions.find((o) => o.value === badgePosition)?.label}
+          {badgePositionOptions.find((o) => o.value === form.badgePosition)?.label}
         </Select.Trigger>
         <Select.Content>
           {#each badgePositionOptions as option (option.value)}
@@ -236,13 +216,13 @@
     <Label for="token-expiry">{t('tokens.expiryLabel')}</Label>
     <Select.Root
       type="single"
-      value={expiresIn}
+      value={form.expiresIn}
       onValueChange={(v) => {
-        if (v) expiresIn = v;
+        if (v) form.expiresIn = v;
       }}
     >
       <Select.Trigger id="token-expiry" class="w-full">
-        {expiryOptions.find((o) => o.value === expiresIn)?.label}
+        {expiryOptions.find((o) => o.value === form.expiresIn)?.label}
       </Select.Trigger>
       <Select.Content>
         {#each expiryOptions as option (option.value)}
@@ -253,7 +233,7 @@
   </div>
   <div class="space-y-2">
     <Label for="token-password">{t('tokens.passwordLabel')}</Label>
-    <Input id="token-password" type="password" autocomplete="off" bind:value={password} minlength={4} />
+    <Input id="token-password" type="password" autocomplete="off" bind:value={form.password} minlength={4} />
     <p class="text-xs text-muted-foreground">{t('tokens.passwordHint')}</p>
   </div>
 </FormDialog>

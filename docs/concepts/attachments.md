@@ -61,7 +61,7 @@ Every link carries **Allow downloads**, on by default: the files were put in `do
 handed out. Untick it on the form, or pass `--no-download` to `slideless share`, when a recipient
 should see the deck but not take its files. With downloads off, the deck still opens and the bar shows the title and the version without a
 **Download** button; the file URLs answer 404 and the list of files is empty, so a link holder learns
-nothing about a folder you chose not to hand out. The links list shows `Downloads off` on such a link, and `slideless tokens` prints
+nothing about a folder you chose not to hand out. The links list leaves the **Downloads** column unchecked on such a link, and `slideless tokens` prints
 `no downloads` in its downloads column.
 
 ## The zip

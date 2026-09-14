@@ -4,31 +4,36 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import Download from '@lucide/svelte/icons/download';
   import Paperclip from '@lucide/svelte/icons/paperclip';
+  import VersionThumb from './VersionThumb.svelte';
+  import type { ThumbnailController } from '$lib/decks/preview.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { formatBytes, formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
-  import type { Attachment, PresentationVersion } from '@slideless/contract';
+  import type { Attachment, PresentationVersionSummary } from '@slideless/contract';
 
   /**
-   * The master page's version history (PRDCT-2279): every push newest
-   * first, the one the frame shows marked, and each version's own files
-   * (its `downloads/` entries, read from the version detail the server
-   * derives — the page reads, it never computes a diff). Selecting a
-   * version re-targets the preview through the host's controller.
+   * The master page's version history (PRDCT-2279, thumbnails and counts
+   * with PRDCT-2308): every push newest first, each with its live rendering
+   * at the top of its row, the one the frame shows marked, its views and
+   * downloads, and each version's own files (its `downloads/` entries, read
+   * from the version detail the server derives — the page reads, it never
+   * computes a diff). [[Show]] re-targets the preview through the host's
+   * controller and closes the sheet by itself.
    */
   interface Props {
     deckId: string;
     open: boolean;
     /** Page-owned list — shared with the share sheet's pin selects. */
-    list: PagedList<PresentationVersion>;
+    list: PagedList<PresentationVersionSummary>;
+    thumbs: ThumbnailController;
     currentVersion: number;
     /** The version the frame shows (page state). */
     shownVersion: number | null;
     onShow: (version: number) => void;
   }
 
-  let { deckId, open = $bindable(), list, currentVersion, shownVersion, onShow }: Props = $props();
+  let { deckId, open = $bindable(), list, thumbs, currentVersion, shownVersion, onShow }: Props = $props();
 
   // One detail fetch per version that carries files, on first open of the
   // sheet; versions are immutable, so the answer never goes stale.
@@ -51,6 +56,13 @@
     } catch (e) {
       attachmentErrors = { ...attachmentErrors, [version]: errorMessage(e, t('common.genericError')) };
     }
+  }
+
+  function show(version: number) {
+    onShow(version);
+    // The sheet closes by itself: the person asked to see the version, not
+    // to keep reading the list (PRDCT-2308, point 4).
+    open = false;
   }
 </script>
 
@@ -75,14 +87,15 @@
         {#each list.items as version (version.version)}
           {@const shown = version.version === shownVersion}
           <li class="space-y-2 p-3" data-testid="version-row" data-version={version.version}>
+            <VersionThumb {thumbs} version={version.version} width={400} class="w-full max-w-full" />
             <div class="flex items-center justify-between gap-3">
               <div class="min-w-0 space-y-0.5">
                 <div class="flex flex-wrap items-center gap-2 text-sm">
-                  <span class="font-medium">v{version.version}</span>
+                  <span class="font-mono font-medium">v{version.version}</span>
                   <span class="text-muted-foreground">·</span>
                   <span class="text-muted-foreground">{formatTimeAgo(version.createdAt)}</span>
                   {#if version.version === currentVersion}
-                    <Badge variant="outline">{t('versions.badgeCurrent')}</Badge>
+                    <Badge variant="latest">{t('versions.badgeCurrent')}</Badge>
                   {/if}
                 </div>
                 <p class="text-xs text-muted-foreground">
@@ -90,11 +103,15 @@
                   · {formatBytes(version.sizeBytes)}
                   · {t('master.historyFileCount', { n: version.fileCount })}
                 </p>
+                <p class="text-xs text-muted-foreground">
+                  {t('master.versionViews', { n: version.viewCount })}
+                  · {t('master.versionDownloads', { n: version.downloadCount })}
+                </p>
               </div>
               {#if shown}
                 <Badge variant="secondary">{t('master.historyShowing')}</Badge>
               {:else}
-                <Button variant="outline" size="sm" onclick={() => onShow(version.version)}>
+                <Button variant="outline" size="sm" onclick={() => show(version.version)}>
                   {t('master.historyShow')}
                 </Button>
               {/if}

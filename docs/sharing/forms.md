@@ -71,7 +71,7 @@ Each response records the form name, the deck version the respondent saw, the sh
 Form submission is a per-link capability that defaults to **on** (the per-link switches are listed on [Share links](../concepts/links.md)): a form is part of the deck by the author's own choice, so `push` then `share` yields a working form with zero extra flags. To hand out a read-only link instead:
 
 - **CLI**: `slideless share DECK_ID --no-forms` (also on `share-email`).
-- **Dashboard**: untick _Allow form submissions_ when creating the link. Links that refuse forms show a _Forms off_ badge in the sharing panel.
+- **Dashboard**: untick _Allow form submissions_ when creating the link. Links that refuse forms leave the **Forms** column unchecked in the links list.
 - **API**: `canSubmitForms: false` when creating the token, or `PATCH /api/v1/presentations/{id}/tokens/{tokenId}` to flip it on an existing link.
 
 On a link with forms off, no submission wiring is served and direct submission attempts are refused (`403 forms_disabled`). Your own dashboard previews never create responses, the same way they never count as views.

@@ -16,6 +16,14 @@ import { signInAsOwner } from './accounts';
  * must read back file by file. Then, from the bar: rename, the version
  * history with each version's files, the shown version's files, a share
  * link created and copied, a duplicate that lands on its own page, delete.
+ *
+ * PRDCT-2308 (the second pass): hovering [[Version history]] opens the
+ * versions beside the menu, each with a live sandboxed thumbnail, its
+ * files, its views and downloads; the version badge on the right opens
+ * the same list on hover and a pick shows that version; [[Show]] in the
+ * sheet closes it by itself; the links table copies and opens a link made
+ * in this session and shows one check column per capability; the create
+ * form's [[Show the bar]] switch, off, yields a bare link (PRDCT-2299).
  */
 
 const TITLE = 'Quarterly review <b>not-bold</b>';
@@ -175,18 +183,79 @@ test('master page: full-page deck under the bar — rename, version history with
     expect((await fresh.json()).title).toBe(RENAMED);
   });
 
-  await test.step('the version history lists each version with its own files; showing v1 re-targets the frame', async () => {
+  await test.step('hovering Version history opens the versions beside the menu, newest first, each with a live thumbnail and its counts', async () => {
+    await openTitleMenu(page);
+    await page.getByTestId('master-history-trigger').hover();
+    const popover = page.getByTestId('master-history-popover');
+    await expect(popover).toBeVisible();
+    const picks = popover.getByTestId('version-pick');
+    await expect(picks).toHaveCount(3);
+    await expect(picks.nth(0)).toHaveAttribute('data-version', '3');
+    await expect(picks.nth(2)).toHaveAttribute('data-version', '1');
+    await expect(picks.nth(0)).toContainText('Current');
+    await expect(picks.nth(0)).toContainText('Showing');
+    await expect(picks.nth(0)).toContainText('5 files');
+    await expect(picks.nth(0)).toContainText('0 views');
+    await expect(picks.nth(0)).toContainText('0 downloads');
+    // The list has a max height and scrolls: it never grows with the history.
+    const overflow = await popover
+      .getByTestId('version-list')
+      .evaluate((el) => getComputedStyle(el).overflowY);
+    expect(overflow).toBe('auto');
+    // Each thumbnail is the viewer's own page for that version, in the exact
+    // ADR 012 sandbox, scaled down, taking no pointer events.
+    const thumb = popover.locator('[data-testid="version-thumb"][data-version="1"] iframe');
+    await expect(thumb).toHaveCount(1, { timeout: 15_000 });
+    expect(await thumb.getAttribute('sandbox')).toBe(VIEWER_IFRAME_SANDBOX);
+    expect(await thumb.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(await thumb.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(await thumb.getAttribute('src')).toMatch(/\/v\/[A-Za-z0-9_-]{20,}/);
+    expect(await thumb.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
+    // The popover carries the product's one motion.
+    const motion = await popover.evaluate((el) => ({
+      duration: getComputedStyle(el).animationDuration,
+      easing: getComputedStyle(el).animationTimingFunction
+    }));
+    expect(motion).toEqual({ duration: '0.16s', easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+    await page.keyboard.press('Escape');
+  });
+
+  await test.step('hovering the version badge opens the same list; picking v2 shows it and closes the popover', async () => {
+    const srcBefore = await page.getByTestId('deck-preview').getAttribute('src');
+    await page.getByTestId('master-version').hover();
+    const popover = page.getByTestId('master-version-popover');
+    await expect(popover).toBeVisible();
+    await expect(popover.getByTestId('version-pick')).toHaveCount(3);
+    await popover.locator('[data-testid="version-pick"][data-version="2"]').click();
+    await expect(popover).toBeHidden();
+    await expect(page.getByTestId('master-version')).toHaveText('v2');
+    await expect(page.getByTestId('master-downloads')).toContainText('3');
+    const iframe = page.getByTestId('deck-preview');
+    await expect(iframe).toBeVisible();
+    expect(await iframe.getAttribute('src')).not.toBe(srcBefore);
+    expect(await iframe.getAttribute('sandbox')).toBe(VIEWER_IFRAME_SANDBOX);
+  });
+
+  await test.step('the version history lists each version with its own files and a thumbnail; Show on v1 re-targets the frame and closes the sheet by itself', async () => {
     const srcBefore = await page.getByTestId('deck-preview').getAttribute('src');
     await openTitleMenu(page);
-    await page.getByRole('menuitem', { name: 'Version history' }).click();
+    await page.getByTestId('master-history-trigger').hover();
+    await page.getByTestId('master-history-full').click();
     const sheet = page.getByTestId('version-history');
     await expect(sheet).toBeVisible();
     const rows = sheet.getByTestId('version-row');
     await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).locator('[data-testid="version-thumb"] iframe')).toHaveCount(1, {
+      timeout: 15_000
+    });
 
     const v3 = sheet.locator('[data-testid="version-row"][data-version="3"]');
     await expect(v3).toContainText('Current');
-    await expect(v3).toContainText('Showing');
+    await expect(v3).toContainText('0 views');
+    const v2 = sheet.locator('[data-testid="version-row"][data-version="2"]');
+    await expect(v2).toContainText('Showing');
     await expect(v3.getByRole('link', { name: 'notes.md' })).toBeVisible();
     await expect(v3.getByRole('link', { name: 'annex.pdf' })).toBeVisible();
     expect(await v3.getByRole('link').count()).toBe(5); // zip + 4 files
@@ -200,8 +269,7 @@ test('master page: full-page deck under the bar — rename, version history with
     );
 
     await v1.getByRole('button', { name: 'Show' }).click();
-    await expect(v1).toContainText('Showing');
-    await page.keyboard.press('Escape');
+    // No Escape: the sheet leaves on its own once a version is shown.
     await expect(sheet).toBeHidden();
     await expect(page.getByTestId('master-version')).toHaveText('v1');
     await expect(page.getByTestId('master-downloads')).toContainText('3');
@@ -234,7 +302,39 @@ test('master page: full-page deck under the bar — rename, version history with
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(viewerUrl);
     await created.getByRole('button', { name: 'Done' }).click();
 
-    await expect(sheet.getByRole('cell', { name: 'board-alice' })).toBeVisible();
+    const aliceRow = sheet.getByRole('row').filter({ hasText: 'board-alice' });
+    await expect(aliceRow).toBeVisible();
+
+    // The rebuilt table (PRDCT-2308): the recipient first, the version as a
+    // tag, one check per capability, and the row's copy and open actions —
+    // live for a link made in this page session, with the exact URL.
+    await expect(aliceRow.getByTestId('link-version')).toHaveText('latest');
+    await expect(aliceRow.getByTestId('link-version')).toHaveAttribute('data-mode', 'latest');
+    for (const key of ['downloads', 'bar', 'forms']) {
+      await expect(aliceRow.locator(`[data-capability="${key}"]`)).toHaveAttribute('data-on', '');
+    }
+    await expect(aliceRow.locator('[data-capability="notes"]')).not.toHaveAttribute('data-on', '');
+    await aliceRow.getByTestId('link-copy').click();
+    await expect(page.getByText('Viewer URL copied to clipboard')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(viewerUrl);
+    expect(await aliceRow.getByTestId('link-open').getAttribute('href')).toBe(viewerUrl);
+    expect(await aliceRow.getByTestId('link-open').getAttribute('target')).toBe('_blank');
+    expect(await aliceRow.getByTestId('link-open').getAttribute('rel')).toContain('noopener');
+    const headers = await sheet.getByRole('columnheader').allTextContents();
+    expect(headers[0]).toContain('Recipient');
+    // The first column is never cut (the wave's own defect, found hands-on
+    // on this lane: the one column without a width in a fixed table got the
+    // leftover, which was 4px). Every column carries a width; the recipient
+    // gets a real one.
+    const firstColumn = await sheet
+      .getByRole('columnheader')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(firstColumn).toBeGreaterThanOrEqual(160);
+    await expect(aliceRow.getByTestId('link-name')).toHaveAttribute('title', 'board-alice');
+    expect(headers.map((h) => h.trim())).toEqual(
+      expect.arrayContaining(['Version', 'Downloads', 'Bar', 'Notes', 'Forms', 'Views', 'Status'])
+    );
 
     // A second link with downloads switched OFF: the switch must reach the
     // server (verifier round 1, gap M9), and the row says so.
@@ -245,15 +345,38 @@ test('master page: full-page deck under the bar — rename, version history with
     await second.getByRole('button', { name: 'Create link' }).click();
     const createdSecond = page.getByRole('dialog').filter({ hasText: 'Share link created' });
     await createdSecond.getByRole('button', { name: 'Done' }).click();
-    await expect(sheet.getByRole('cell', { name: 'board-bob-no-files' })).toBeVisible();
-    await expect(sheet.getByRole('row').filter({ hasText: 'board-bob-no-files' })).toContainText(
-      'Downloads off'
-    );
+    const bobRow = sheet.getByRole('row').filter({ hasText: 'board-bob-no-files' });
+    await expect(bobRow).toBeVisible();
+    await expect(bobRow.locator('[data-capability="downloads"]')).not.toHaveAttribute('data-on', '');
+    await expect(bobRow.locator('[data-capability="bar"]')).toHaveAttribute('data-on', '');
     const tokens = await (await page.request.get(`/api/v1/presentations/${deckId}/tokens`)).json();
     const bob = tokens.shareTokens.find((t: { name: string }) => t.name === 'board-bob-no-files');
     expect(bob.canDownload).toBe(false);
     const alice = tokens.shareTokens.find((t: { name: string }) => t.name === 'board-alice');
     expect(alice.canDownload).toBe(true);
+
+    // A third link with the BAR switched off (PRDCT-2299): the switch is
+    // there, on by default; off, the link's page is a bare deck.
+    await sheet.getByRole('button', { name: 'New share link' }).click();
+    const third = page.getByRole('dialog').filter({ hasText: 'Create a share link' });
+    await third.getByRole('textbox', { name: 'Recipient' }).fill('board-carol-bare');
+    await expect(third.getByRole('checkbox', { name: /Show the bar/ })).toBeChecked();
+    await third.getByRole('checkbox', { name: /Show the bar/ }).uncheck();
+    await third.getByRole('button', { name: 'Create link' }).click();
+    const createdThird = page.getByRole('dialog').filter({ hasText: 'Share link created' });
+    const bareUrl = await createdThird.getByRole('textbox', { name: 'Viewer URL' }).inputValue();
+    await createdThird.getByRole('button', { name: 'Done' }).click();
+    const carolRow = sheet.getByRole('row').filter({ hasText: 'board-carol-bare' });
+    await expect(carolRow.locator('[data-capability="bar"]')).not.toHaveAttribute('data-on', '');
+    const carol = (
+      await (await page.request.get(`/api/v1/presentations/${deckId}/tokens`)).json()
+    ).shareTokens.find((t: { name: string }) => t.name === 'board-carol-bare');
+    expect(carol.showBar).toBe(false);
+    const bare = await page.request.get(bareUrl, { headers: { 'sec-fetch-dest': 'document' } });
+    expect(bare.status()).toBe(200);
+    expect(await bare.text()).not.toContain('data-slideless-topbar');
+    const withBar = await page.request.get(viewerUrl, { headers: { 'sec-fetch-dest': 'document' } });
+    expect(await withBar.text()).toContain('data-slideless-topbar');
 
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();

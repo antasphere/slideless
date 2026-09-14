@@ -22,3 +22,5 @@ export * from './embed.js';
 export * from './seams.js';
 // Lane B (PRDCT-2280): the deck's master page path, built in one place.
 export * from './master-route.js';
+// Lane F (PRDCT-2308): the one motion, written once and mirrored by tests.
+export * from './motion.js';

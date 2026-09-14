@@ -1,31 +1,36 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import DataTable from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
-  import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import CapabilityCell from './CapabilityCell.svelte';
+  import ShareLinkNameCell from './ShareLinkNameCell.svelte';
+  import ShareLinkRowActions from './ShareLinkRowActions.svelte';
+  import ShareLinkStatusCell from './ShareLinkStatusCell.svelte';
+  import ShareLinkVersionCell from './ShareLinkVersionCell.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { isPreviewToken, tokenStatus } from '$lib/decks';
-  import { formatDate, formatTimeAgo } from '$lib/format';
+  import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import type { PresentationVersion, ShareToken, ShareTokenView } from '@slideless/contract';
 
   /**
-   * The deck's share links as a table with their per-row actions (activity,
-   * change version, revoke) and the dialogs those open. Shared by the admin
-   * page's share panel and the master page's share sheet (PRDCT-2279).
-   * Creating a link is the sibling ShareLinkCreateDialog.
+   * The deck's share links as a table (rebuilt with PRDCT-2308: the
+   * recipient on one line, the version as a tag, one check column per
+   * capability, copy and open on every row) with their per-row actions
+   * (copy, open, activity, change version, revoke) and the dialogs those
+   * open. Shared by the admin page's share panel and the master page's
+   * share sheet (PRDCT-2279). Creating a link is the sibling
+   * ShareLinkCreateDialog.
    */
   interface Props {
     deckId: string;
@@ -145,81 +150,75 @@
     }
   }
 
-  const statusKey = {
-    active: 'tokens.statusActive',
-    revoked: 'tokens.statusRevoked',
-    expired: 'tokens.statusExpired'
-  } as const;
+  // One capability, one column: a check or nothing (PRDCT-2308).
+  const capability = (
+    key: 'downloads' | 'bar' | 'notes' | 'forms',
+    field: 'canDownload' | 'showBar' | 'canAnnotate' | 'canSubmitForms',
+    label: string
+  ): ColumnDef<ShareToken, unknown> => ({
+    accessorKey: field,
+    header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: label }),
+    cell: ({ row }) => renderComponent(CapabilityCell, { key, on: row.original[field], label }),
+    meta: { title: label, width: '80px', align: 'center' }
+  });
 
+  // The recipient first and never cut; the version as a tag; the four
+  // capabilities as checks; the counts; the status with its expiry behind
+  // the hover; copy, open and the menu at the end. EVERY column carries a
+  // width and they add up to the table's min width (972px): in a fixed
+  // table layout the one column without a width gets whatever is left,
+  // which was nothing — the cut column Romain reported. A narrower host
+  // scrolls the table sideways instead.
   const columns: ColumnDef<ShareToken, unknown>[] = $derived([
     {
       accessorKey: 'name',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('tokens.colName') }),
-      // SECURITY: the recipient label is USER-SUPPLIED text. Returning the
-      // plain string renders through FlexRender's escaped `{result}` text
-      // interpolation — never wrap it in createRawSnippet / {@html}.
-      cell: ({ row }) => row.getValue('name'),
-      meta: { title: t('tokens.colName') }
+      // SECURITY: the recipient label is USER-SUPPLIED text — the cell
+      // component renders it through escaped {} interpolation only. Never
+      // wrap it in createRawSnippet / {@html}.
+      cell: ({ row }) =>
+        renderComponent(ShareLinkNameCell, {
+          name: row.original.name,
+          hasPassword: row.original.hasPassword
+        }),
+      meta: { title: t('tokens.colName'), width: '180px' }
     },
     {
       accessorKey: 'pinnedVersion',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('tokens.colVersion') }),
-      cell: ({ row }) => {
-        const token = row.original;
-        const mode =
-          token.pinnedVersion === null
-            ? t('tokens.modeLatest')
-            : t('tokens.modePinned', { n: token.pinnedVersion });
-        const flags = [
-          ...(token.hasPassword ? [t('tokens.badgePassword')] : []),
-          ...(token.canAnnotate ? [t('tokens.badgeAnnotate')] : []),
-          // Forms and downloads default ON — flag the exception, not the norm.
-          ...(token.canSubmitForms ? [] : [t('tokens.badgeFormsOff')]),
-          ...(token.canDownload ? [] : [t('tokens.badgeDownloadsOff')])
-        ];
-        return flags.length ? `${mode} · ${flags.join(' · ')}` : mode;
-      },
-      meta: { title: t('tokens.colVersion'), width: '200px' }
+      cell: ({ row }) => renderComponent(ShareLinkVersionCell, { pinnedVersion: row.original.pinnedVersion }),
+      meta: { title: t('tokens.colVersion'), width: '88px' }
     },
+    capability('downloads', 'canDownload', t('tokens.colDownloads')),
+    capability('bar', 'showBar', t('tokens.colBar')),
+    capability('notes', 'canAnnotate', t('tokens.colNotes')),
+    capability('forms', 'canSubmitForms', t('tokens.colForms')),
     {
       accessorKey: 'accessCount',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('tokens.colViews') }),
       cell: ({ row }) => String(row.original.accessCount),
-      meta: { title: t('tokens.colViews'), width: '80px' }
+      meta: { title: t('tokens.colViews'), width: '64px' }
     },
     {
       accessorKey: 'lastAccessedAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('tokens.colLastAccess') }),
       cell: ({ row }) => formatTimeAgo(row.original.lastAccessedAt),
-      meta: { title: t('tokens.colLastAccess'), width: '130px' }
-    },
-    {
-      accessorKey: 'expiresAt',
-      header: ({ column }) =>
-        renderComponent(DataTableColumnHeader, { column, title: t('tokens.colExpires') }),
-      cell: ({ row }) => (row.original.expiresAt ? formatDate(row.original.expiresAt) : '—'),
-      meta: { title: t('tokens.colExpires'), width: '110px' }
+      meta: { title: t('tokens.colLastAccess'), width: '112px' }
     },
     {
       accessorKey: 'revokedAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('tokens.colStatus') }),
-      cell: ({ row }) => {
-        const status = tokenStatus(row.original);
-        return renderComponent(Badge, {
-          variant: (status === 'active' ? 'outline' : 'destructive') as 'outline' | 'destructive',
-          // Static i18n text only — never user data inside createRawSnippet.
-          children: createRawSnippet(() => ({ render: () => `<span>${t(statusKey[status])}</span>` }))
-        });
-      },
-      meta: { title: t('tokens.colStatus'), width: '100px' }
+      cell: ({ row }) => renderComponent(ShareLinkStatusCell, { token: row.original }),
+      meta: { title: t('tokens.colStatus'), width: '92px' }
     },
     {
       id: 'actions',
       cell: ({ row }) =>
-        renderComponent(DataTableActions, {
+        renderComponent(ShareLinkRowActions, {
+          tokenId: row.original.id,
           actions: [
             // View activity stays available on revoked/expired links too —
             // access history deliberately survives revocation.
@@ -245,19 +244,26 @@
                 ])
           ]
         }),
-      meta: { width: '60px' }
+      meta: { width: '116px' }
     }
   ]);
 </script>
 
 {#if list.loading}
-  <TableSkeleton columns={6} rows={2} />
+  <TableSkeleton columns={10} rows={2} />
 {:else if list.error && !tokens.length}
   <p class="text-sm text-destructive">{t('tokens.loadFailed', { error: list.error })}</p>
 {:else if !tokens.length}
   <p class="text-sm text-muted-foreground">{t('tokens.empty')}</p>
 {:else}
-  <DataTable data={tokens} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
+  <DataTable
+    data={tokens}
+    {columns}
+    showViewOptions={false}
+    showPagination={false}
+    pageSize={200}
+    tableClass="min-w-[972px]"
+  />
   {#if list.nextCursor}
     <div class="flex justify-center py-2">
       <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
