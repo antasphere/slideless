@@ -24,6 +24,13 @@ Compose URL and never publish the repository root as a Pages artifact.
 The `hostinger-pages.yml` workflow publishes exactly `index.html` and
 `docker-compose.yml` to `https://antasphere.github.io/slideless/`.
 
+The initial pin is build `sha-f03cb72`, published by successful release run
+[34700250126](https://github.com/antasphere/slideless/actions/runs/34700250126),
+with manifest digest `sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d`.
+Its existing release smoke and vulnerability gates passed. The historical
+`v0.3.0` tag predates automatic setup-token generation and must not be used
+for this installation flow.
+
 Before its first successful run:
 
 1. Enable public GitHub Pages for this private repository with GitHub Actions
@@ -31,7 +38,7 @@ Before its first successful run:
    private repositories. The source stays private; the two published files
    are intentionally public.
 2. Make the GHCR `antasphere/slideless` package publicly readable and ensure
-   the `0.3.0` tag exists for Linux amd64 and arm64. Check anonymous manifest
+   the pinned image is available for Linux amd64 and arm64. Check anonymous manifest
    access, not just access while logged in. The Pages workflow refuses to
    publish if any template image is inaccessible anonymously.
 3. Merge the template and guide to `prod`, let the docs sync publish the

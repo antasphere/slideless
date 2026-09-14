@@ -3,7 +3,7 @@
 # Keep the project name and all named volumes when recreating containers.
 services:
   init:
-    image: ghcr.io/antasphere/slideless:0.3.0
+    image: ghcr.io/antasphere/slideless:sha-f03cb72@sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d
     restart: 'no'
     environment:
       SLIDELESS_DOMAIN: ${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
@@ -61,7 +61,7 @@ services:
       start_period: 15s
 
   app:
-    image: ghcr.io/antasphere/slideless:0.3.0
+    image: ghcr.io/antasphere/slideless:sha-f03cb72@sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d
     restart: unless-stopped
     stop_grace_period: 60s
     depends_on:

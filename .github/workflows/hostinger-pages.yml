@@ -6,6 +6,7 @@ on:
     paths:
       - 'deploy/hostinger/**'
       - 'scripts/hostinger-template.test.mjs'
+      - 'scripts/hostinger-smoke.mjs'
       - '.github/workflows/hostinger-pages.yml'
   workflow_dispatch:
 
@@ -18,7 +19,11 @@ concurrency:
 
 jobs:
   package:
+    if: github.ref == 'refs/heads/prod'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +31,7 @@ jobs:
           node-version: 22
       - name: Verify deployment template
         run: node --test scripts/hostinger-template.test.mjs
-      - name: Require anonymous access to every pinned image
+      - name: Require anonymous access to every image
         env:
           SLIDELESS_DOMAIN: slides.example.com
         run: |
@@ -37,6 +42,8 @@ jobs:
           while IFS= read -r image; do
             docker --config "$registry_config" manifest inspect "$image" > /dev/null
           done < /tmp/hostinger-images
+      - name: Rehearse installation with the exact published image
+        run: node scripts/hostinger-smoke.mjs
       - uses: actions/configure-pages@v5
       # Only these two public distribution files leave the private source repo.
       - name: Stage public files

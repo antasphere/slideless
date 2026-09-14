@@ -148,7 +148,7 @@ Persistent volumes are not backups. The VPS owner is responsible for backups
 and maintenance. Preserve the database, uploaded files, and both secret-bearing
 volumes together when planning recovery.
 
-The Slideless image is pinned to version `0.3.0`. Application upgrades are
+The Slideless image is pinned to a tested build by its immutable image digest. Application upgrades are
 manual; there is no automatic updater. This Hostinger project does not use
 the checkout-based `setup.sh` or `update.sh` installation layout. Keep its
 Compose configuration and generated credentials when planning an upgrade.

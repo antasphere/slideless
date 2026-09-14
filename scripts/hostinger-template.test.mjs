@@ -34,7 +34,10 @@ test('template requires a hostname and exposes only the HTTPS proxy', () => {
   assert.equal(services.app.environment.PUBLIC_BASE_URL, 'https://slides.example.com');
   assert.equal(services.app.environment.TRUST_PROXY, 'true');
   assert.equal(services.app.environment.ALLOW_INSECURE_SETUP, 'false');
-  assert.equal(services.app.image, 'ghcr.io/antasphere/slideless:0.3.0');
+  assert.equal(
+    services.app.image,
+    'ghcr.io/antasphere/slideless:sha-f03cb72@sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d'
+  );
   assert.equal(services.init.image, services.app.image);
   for (const service of Object.values(services)) assert.equal(service.build, undefined);
   assert.equal(services.db.environment.POSTGRES_PASSWORD, undefined);

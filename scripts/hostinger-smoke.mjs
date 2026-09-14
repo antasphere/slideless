@@ -169,7 +169,17 @@ try {
   compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '180');
   httpsPort = compose('port', 'caddy', '443').trim().split(':').at(-1);
   // Same CA, auth cookie, owner, stored file and database password after recreation.
-  request('/readyz');
+  let readyAfterRecreate = false;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      request('/readyz');
+      readyAfterRecreate = true;
+      break;
+    } catch {
+      await delay(1000);
+    }
+  }
+  assert.ok(readyAfterRecreate, 'HTTPS did not recover after container recreation');
   assert.equal(fingerprint('app', '/run/slideless-secrets/postgres-password'), dbCredential);
   assert.equal(fingerprint('app', '/data/secret'), authSecret);
   assert.equal(JSON.parse(request('/api/v1/me')).user.email, owner.email);
