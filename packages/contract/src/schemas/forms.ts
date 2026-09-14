@@ -76,10 +76,42 @@ export const formResponseSchema = z.object({
   // (PRDCT-1331, audit §1). A response is anonymous unless the AUTHOR asked
   // for a name in the form.
   payload: formResponsePayloadSchema,
+  /**
+   * The current revision number (PRDCT-2329): 1 for a response never
+   * edited, +1 per edit. The history behind it is the detail route's
+   * `versions`; the respondent-facing wire carries neither.
+   */
+  revision: z.number().int().min(1),
   createdAt: z.string(),
   updatedAt: z.string()
 });
 export type FormResponse = z.infer<typeof formResponseSchema>;
+
+/**
+ * One revision of a response (PRDCT-2329): the answer as it was at that
+ * revision, with the attribution of the navigation that wrote it. The
+ * link's owner-facing name is joined for display; there is NO respondent
+ * identity here either, per revision as per response.
+ */
+export const formResponseVersionSchema = z.object({
+  revision: z.number().int().min(1),
+  /** The deck version the respondent saw when writing this revision. */
+  version: z.number().int(),
+  shareTokenId: z.string().nullable(),
+  shareTokenName: z.string().nullable(),
+  source: formResponseSourceSchema,
+  placement: z.string().nullable(),
+  payload: formResponsePayloadSchema,
+  createdAt: z.string()
+});
+export type FormResponseVersion = z.infer<typeof formResponseVersionSchema>;
+
+/** The owner's per-response read: the current row plus its history, newest revision first. */
+export const formResponseDetailSchema = z.object({
+  response: formResponseSchema,
+  versions: z.array(formResponseVersionSchema)
+});
+export type FormResponseDetail = z.infer<typeof formResponseDetailSchema>;
 
 export const formResponsesListSchema = z.object({
   responses: z.array(formResponseSchema),
@@ -101,7 +133,11 @@ export const formResponsesListQuerySchema = z.object({
   // comparison and Postgres refuses it (22021 → a 500 for a plain client
   // mistake — SL-B4's read-filter member).
   placement: noControlChars(z.string().max(64)).optional(),
-  /** Only responses created at or after this instant. */
+  /**
+   * Only responses with activity at or after this instant: created OR
+   * edited (PRDCT-2329, from PRDCT-1339 §1 — keyed on creation alone, an
+   * edited response never resurfaced in any window).
+   */
   since: z.iso.datetime().optional()
 });
 export type FormResponsesListQuery = z.infer<typeof formResponsesListQuerySchema>;
@@ -117,6 +153,7 @@ export const formResponsesSummaryBucketSchema = z.object({
   source: formResponseSourceSchema,
   placement: z.string().nullable(),
   count: z.number().int(),
+  /** The latest activity in the bucket: a create or an edit, whichever is later. */
   lastResponseAt: z.string()
 });
 export type FormResponsesSummaryBucket = z.infer<typeof formResponsesSummaryBucketSchema>;

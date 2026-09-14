@@ -62,6 +62,7 @@ import { AnnotationService } from '../annotations/service.js';
 import { ShareTokenViewService } from '../sharing/view-events.js';
 import type { CollaboratorService } from '../collaborators/service.js';
 import type { FormResponseService } from '../forms/service.js';
+import type { FormResponseNotifier } from '../forms/notify.js';
 import { registerViewerFormRoutes } from '../viewer/forms-api.js';
 import { registerViewerAttachmentRoutes } from '../viewer/attachments-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
@@ -215,6 +216,8 @@ export interface ApiDeps {
   /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
   sharing: ShareTokenService;
   forms: FormResponseService;
+  /** Owner notifications for form responses (PRDCT-2330). */
+  formsNotifier: FormResponseNotifier;
   /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
   collaborators: CollaboratorService;
   /**
@@ -1021,7 +1024,8 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     formSubmitLimiter: limiters.viewerFormSubmit,
     formEmailLimiter: limiters.viewerFormEmail,
     passwordLimiter: limiters.viewerPassword,
-    clientIp
+    clientIp,
+    notifier: deps.formsNotifier
   });
   // The PUBLIC viewer-token attachments list (PRDCT-2278): the read-only
   // third sibling — same resolver, same containment. Unknown-secret probes

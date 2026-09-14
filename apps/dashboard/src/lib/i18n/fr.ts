@@ -603,6 +603,11 @@ export const fr: Record<MessageKey, string> = {
   'tokens.annotateHint': '— le destinataire peut laisser des notes sur le deck',
   'tokens.formsLabel': 'Autoriser l’envoi de formulaires',
   'tokens.formsHint': '— les lecteurs de ce lien peuvent répondre aux formulaires intégrés au deck',
+  'tokens.rememberLabel': 'Retenir les réponses sur ce lien',
+  'tokens.rememberHint': '— rouvrir le lien ramène les réponses ; chaque envoi les met à jour',
+  'tokens.rememberWarning':
+    'Quiconque détient ce lien peut lire et modifier les réponses données par ce lien. Donnez-le à la seule personne à qui il est destiné ; décochez pour un lien que beaucoup de gens ouvriront.',
+  'tokens.colRemembers': 'Retient',
   'tokens.downloadsLabel': 'Autoriser les téléchargements',
   'tokens.downloadsHint':
     '— les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/)',
@@ -748,6 +753,19 @@ export const fr: Record<MessageKey, string> = {
   'formResponses.linkGone': 'lien supprimé',
   'formResponses.onVersion': 'sur la v{n}',
   'formResponses.updatedBadge': 'Modifiée',
+  'formResponses.revisionBadge': 'Modifiée · {n} versions',
+  'formResponses.actionHistory': 'Historique',
+  'formResponses.historyTitle': 'Historique des modifications',
+  'formResponses.historyDescription':
+    'Chaque version de cette réponse, la plus récente en premier. Le répondant ne voit que la dernière.',
+  'formResponses.historyRevision': 'Version {n}',
+  'formResponses.historyLoadFailed': 'Échec du chargement de l’historique : {error}',
+  'formResponses.notifyLabel': 'M’envoyer un mail quand des réponses arrivent',
+  'formResponses.notifyHint':
+    'Un mail à chaque nouvelle réponse, un autre à chaque modification ; au plus un toutes les dix minutes.',
+  'formResponses.notifyOnToast': 'Les mails de réponse sont activés pour ce deck',
+  'formResponses.notifyOffToast': 'Les mails de réponse sont désactivés pour ce deck',
+  'formResponses.notifyFailed': 'Échec du changement du réglage des mails : {error}',
   'formResponses.actionDelete': 'Supprimer',
   'formResponses.deletedToast': 'Réponse supprimée',
   'formResponses.deleteConfirmTitle': 'Supprimer la réponse ?',

@@ -70,7 +70,15 @@ export const fragmentCaptureTag = (): string =>
 export interface EntryTransformContext {
   token: Pick<
     ShareTokenRow,
-    'id' | 'canAnnotate' | 'canSubmitForms' | 'canDownload' | 'showBar' | 'createdAt' | 'expiresAt'
+    | 'id'
+    | 'purpose'
+    | 'canAnnotate'
+    | 'canSubmitForms'
+    | 'canDownload'
+    | 'showBar'
+    | 'remembersResponses'
+    | 'createdAt'
+    | 'expiresAt'
   >;
   /** True when the caller asked for the raw authored HTML (?raw / ?format=html). */
   rawRequested: boolean;
@@ -190,7 +198,12 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
       unlock: ctx.mintUnlockProof(),
       source: ctx.frameEntry ? 'embed' : 'link',
       placement: ctx.placement,
-      emailAvailable: ctx.emailAvailable
+      emailAvailable: ctx.emailAvailable,
+      // PRDCT-2328: the one boolean the remembering feature hands the
+      // document. Context, not capability (see the runtime's trust-boundary
+      // note): the same rule as `linkRemembers` in forms/service.ts, so a
+      // preview token never sees `true` whatever its column says.
+      remembers: ctx.token.remembersResponses && ctx.token.purpose === 'share'
     });
   }
   if (body === '') return null;

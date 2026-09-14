@@ -186,6 +186,12 @@ export const presentationSchema = z.object({
    * never count). Survives token revocation.
    */
   totalViews: z.number().int().min(0),
+  /**
+   * Whether the deck owner is mailed when a form response arrives or is
+   * edited (PRDCT-2330). Default true; the per-deck off switch for an owner
+   * collecting hundreds of answers who does not want a mail per batch.
+   */
+  notifyOnResponse: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -402,9 +408,14 @@ export type UploadSessionCommit = z.infer<typeof uploadSessionCommitSchema>;
 export const presentationUpdateSchema = z
   .object({
     title: plainText(1, 300).optional(),
-    metadata: presentationMetadataSchema.optional()
+    metadata: presentationMetadataSchema.optional(),
+    /** The owner-notification switch for form responses (PRDCT-2330). */
+    notifyOnResponse: z.boolean().optional()
   })
-  .refine((v) => v.title !== undefined || v.metadata !== undefined, 'at least one field required');
+  .refine(
+    (v) => v.title !== undefined || v.metadata !== undefined || v.notifyOnResponse !== undefined,
+    'at least one field required'
+  );
 export type PresentationUpdate = z.infer<typeof presentationUpdateSchema>;
 
 /**

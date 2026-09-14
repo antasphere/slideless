@@ -836,3 +836,105 @@ describe('org as a parameter: the workspace argument targets one of the holder�
     expect(borrowed.text).toContain('HTTP 401');
   });
 });
+
+// ═══ The forms fast-lane through the tools (PRDCT-2328/2329/2330) ═══════════
+
+describe('remembering links, revision history and the owner-mail switch through the tools', () => {
+  let deckId: string;
+
+  beforeAll(async () => {
+    const created = await callTool(ownerKey, 'slideless_upload_html_presentation', {
+      html: '<!doctype html><title>Lane Forms</title><form data-slideless-form="rsvp"><input name="n"></form>',
+      title: 'Lane Forms'
+    });
+    expect(created.isError, created.text).toBe(false);
+    deckId = created.data.presentation.id;
+  });
+
+  it('slideless_add_share_token remembers by default, and can mint a fresh-per-submit or read-only link', async () => {
+    const named = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'Alice'
+    });
+    expect(named.isError, named.text).toBe(false);
+    expect(named.data.shareToken.remembersResponses).toBe(true);
+    expect(named.data.shareToken.canSubmitForms).toBe(true);
+
+    const broadcast = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'Website',
+      remembersResponses: false
+    });
+    expect(broadcast.isError, broadcast.text).toBe(false);
+    expect(broadcast.data.shareToken.remembersResponses).toBe(false);
+
+    const readOnly = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'Read only',
+      canSubmitForms: false
+    });
+    expect(readOnly.isError, readOnly.text).toBe(false);
+    expect(readOnly.data.shareToken.canSubmitForms).toBe(false);
+    expect(readOnly.data.shareToken.remembersResponses).toBe(true);
+  });
+
+  it('slideless_list_form_responses with responseId answers the response and its revisions', async () => {
+    const token = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'Bob'
+    });
+    const secret: string = token.data.secret;
+    const first = await app.app.request(`/api/v1/viewer/${secret}/forms/rsvp/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({ payload: { n: 'one' } })
+    });
+    expect(first.status).toBe(201);
+    const responseId = (await readJson(first)).response.id as string;
+    const second = await app.app.request(`/api/v1/viewer/${secret}/forms/rsvp/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({ payload: { n: 'two' } })
+    });
+    expect(second.status).toBe(200); // the remembering link updated its own row
+
+    const detail = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      responseId
+    });
+    expect(detail.isError, detail.text).toBe(false);
+    expect(detail.data.response.id).toBe(responseId);
+    expect(detail.data.response.revision).toBe(2);
+    expect(detail.data.versions.map((v: { revision: number }) => v.revision)).toEqual([2, 1]);
+    expect(detail.data.versions[1].payload).toEqual({ n: 'one' });
+    expect(detail.data.versions[0].shareTokenName).toBe('Bob');
+
+    const ro = await callTool(readOnlyKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      responseId
+    });
+    expect(ro.isError, ro.text).toBe(false);
+    const foreign = await callTool(memberKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      responseId
+    });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.text).toContain('404');
+  });
+
+  it('slideless_update_presentation switches the owner mails off and on, alone', async () => {
+    const off = await callTool(ownerKey, 'slideless_update_presentation', {
+      presentationId: deckId,
+      notifyOnResponse: false
+    });
+    expect(off.isError, off.text).toBe(false);
+    expect(off.data.notifyOnResponse).toBe(false);
+    const on = await callTool(ownerKey, 'slideless_update_presentation', {
+      presentationId: deckId,
+      notifyOnResponse: true
+    });
+    expect(on.data.notifyOnResponse).toBe(true);
+    const nothing = await callTool(ownerKey, 'slideless_update_presentation', { presentationId: deckId });
+    expect(nothing.isError).toBe(true);
+  });
+});

@@ -96,6 +96,15 @@ export const shareTokenSchema = z.object({
    * frames are bare whatever this says.
    */
   showBar: z.boolean(),
+  /**
+   * Whether this link REMEMBERS its respondent's form answers (PRDCT-2328):
+   * reopening the link plainly brings the answers back, and every submit
+   * through it updates the one remembered answer per form instead of
+   * creating a new response. Whoever holds the link can then read and
+   * change those answers — the sharing surfaces say so. Never true on a
+   * preview token.
+   */
+  remembersResponses: z.boolean(),
   /** Per-link badge slot; null = deck default (then bottom-right). */
   badgePosition: badgePositionSchema.nullable(),
   expiresAt: z.string().nullable(),
@@ -148,6 +157,15 @@ export const shareTokenCreateSchema = z
      * know what they are looking at. Opt out per link for a bare deck.
      */
     showBar: z.boolean().default(true),
+    /**
+     * The link remembers its answers, ON by default (PRDCT-2328; Romain,
+     * 2026-09-14: "by default a link is a form"): a link minted for one
+     * named recipient IS that person's response. Switch it off for a link
+     * many people will open (a public post, an embed page's direct URL) —
+     * every submit then creates its own response, as before. Embedded
+     * frames never remember, whatever this says.
+     */
+    remembersResponses: z.boolean().default(true),
     /**
      * Explicit badge slot for this link. Also becomes the deck's remembered
      * default for future links. Omitted = inherit the deck's remembered
@@ -206,6 +224,7 @@ export const shareTokenUpdateSchema = z
     canSubmitForms: z.boolean().optional(),
     canDownload: z.boolean().optional(),
     showBar: z.boolean().optional(),
+    remembersResponses: z.boolean().optional(),
     /**
      * Explicit slot (also updates the deck's remembered default) or null to
      * fall back to the deck default again.

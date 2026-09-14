@@ -15,6 +15,8 @@ export interface ShareLinkForm {
   canSubmitForms: boolean;
   canDownload: boolean;
   showBar: boolean;
+  /** The link remembers its recipient's answers (PRDCT-2328); moot with forms off. */
+  remembersResponses: boolean;
   /** A badge slot, or 'default' for the deck's own; sent only with annotations on. */
   badgePosition: string;
   /** 'never' or a number of days as a string. */
@@ -38,6 +40,10 @@ export function defaultShareLinkForm(firstVersion: number | null): ShareLinkForm
     // ON by default (PRDCT-2281): the recipient sees the bar; the toggle is
     // the per-link opt-out.
     showBar: true,
+    // ON by default (PRDCT-2328): a link minted for one named recipient IS
+    // that person's response; the toggle is the per-link opt-out for a link
+    // many people will open.
+    remembersResponses: true,
     badgePosition: 'default',
     expiresIn: 'never',
     password: ''
@@ -54,6 +60,10 @@ export function buildShareTokenCreate(form: ShareLinkForm, now: number = Date.no
     canSubmitForms: form.canSubmitForms,
     canDownload: form.canDownload,
     showBar: form.showBar,
+    // Carried explicitly, and OFF when forms are off: a link that refuses
+    // submissions has nothing to remember, and the table must not show a
+    // remembering check on it.
+    remembersResponses: form.canSubmitForms && form.remembersResponses,
     ...(form.canAnnotate && form.badgePosition !== 'default'
       ? { badgePosition: form.badgePosition as ShareTokenCreate['badgePosition'] }
       : {}),

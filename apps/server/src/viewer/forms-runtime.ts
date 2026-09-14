@@ -23,9 +23,14 @@
  * Two capability-bearing values qualify and are injected: the share-token
  * secret (already in `location.pathname`) and the unlock proof (password
  * links, scoped to viewer calls on this same token). The rest of the config
- * — version, source, placement, emailAvailable — is server CONTEXT, not
- * capability, and the server re-derives or re-validates each of them at
- * write time.
+ * — version, source, placement, emailAvailable, remembers — is server
+ * CONTEXT, not capability, and the server re-derives or re-validates each
+ * of them at write time. `remembers` (PRDCT-2328) passes the rule the same
+ * way emailAvailable does: the deck could learn it by calling the
+ * remembered-answers route without any secret (200 or 404), and knowing it
+ * grants nothing — the share secret already in the URL is what resolves the
+ * remembered row. NOTHING identifying rides here: not an id, not an
+ * address, not a handle. That is the whole difference from leg 3.
  *
  * ⚠️ This is a CONSTRAINT ON FUTURE EDITS, not a description of the code.
  * The previous wording here ("the runtime adds NO capability the deck did
@@ -82,6 +87,13 @@ export interface FormsConfig {
   placement: string | null;
   /** Whether the instance sends email (shows the email-me-my-link opt-in). */
   emailAvailable: boolean;
+  /**
+   * Whether this link REMEMBERS its answers (PRDCT-2328): on a direct link
+   * navigation the runtime prefills each form from the link's own remembered
+   * row (no fragment, no secret) and every submit updates it. Inside an
+   * embed the runtime ignores it — a website's visitors share the link.
+   */
+  remembers: boolean;
 }
 
 /** Attribute marking the injected script — tests and humans grep for it. */
@@ -220,6 +232,13 @@ function editLink(form) {
   return location.origin + location.pathname + '#slr=' + form.__slSecret;
 }
 
+// PRDCT-2328: a remembering link on a direct navigation. The LINK is the
+// respondent's handle on their answer — no fragment secret, no "email me my
+// link": the card says so and offers only "Edit response".
+function remembering() {
+  return CFG.remembers === true && CFG.source === 'link';
+}
+
 function card(form, updated) {
   var old = form.__slCard;
   if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -242,6 +261,29 @@ function card(form, updated) {
   ok.className = 'sl-forms-ok';
   ok.textContent = updated ? 'Your response has been updated.' : msg;
   el.appendChild(ok);
+
+  if (remembering()) {
+    var kept = doc.createElement('p');
+    kept.textContent = 'This link remembers your answers: reopen it any time to view or change them.';
+    el.appendChild(kept);
+    var rrow = doc.createElement('div');
+    rrow.className = 'sl-forms-row';
+    var redit = doc.createElement('button');
+    redit.type = 'button';
+    redit.className = 'sl-forms-btn-2';
+    redit.textContent = 'Edit response';
+    redit.addEventListener('click', function () {
+      el.parentNode && el.parentNode.removeChild(el);
+      form.style.display = form.__slDisplay || '';
+    });
+    rrow.appendChild(redit);
+    el.appendChild(rrow);
+    form.__slDisplay = form.style.display;
+    form.style.display = 'none';
+    form.parentNode.insertBefore(el, form.nextSibling);
+    form.__slCard = el;
+    return;
+  }
 
   var keep = doc.createElement('p');
   keep.textContent = 'Keep this personal link to view or update your answer later:';
@@ -387,6 +429,11 @@ function submitForm(form) {
   clearError(form);
   // Own-row update ONLY when this form itself owns a secret: either it just
   // created the row, or the respondent explicitly chose "Edit it" below.
+  // On a REMEMBERING link (PRDCT-2328) every submit is a POST: the server
+  // creates the link's remembered row the first time and updates it after,
+  // atomically, so two tabs cannot race into two rows. The fragment path
+  // (an old personal link pasted on a remembering link) still PUTs its own
+  // row by secret, exactly as before.
   var own = form.__slOwn === true && !!form.__slSecret;
   var url = own ? formApi(form, '/responses/me') : formApi(form, '/responses');
   // source/placement/version ride BOTH verbs: an edited row used to keep the
@@ -408,8 +455,10 @@ function submitForm(form) {
     if (res.status === 201 || res.status === 200) {
       return res.json().then(function (data) {
         if (data && data.editSecret) form.__slSecret = data.editSecret;
-        form.__slOwn = true;
-        card(form, own === true);
+        // A remembering POST never hands the runtime a secret to keep: the
+        // link is the handle. Keep the form on the POST path.
+        if (!(data && data.remembered === true)) form.__slOwn = true;
+        card(form, own === true || (data && data.edited === true));
       }, function () { card(form, own === true); });
     }
     return res.json().then(function (data) {
@@ -447,6 +496,47 @@ function wire(form) {
   form.__slWired = true;
   shield(form);
   if (candidateSecret) offerResume(form);
+  else if (remembering()) prefillRemembered(form);
+}
+
+// ---- remembering link (PRDCT-2328) ------------------------------------
+// ONE probe per page load, whatever the number of forms: the link's
+// remembered rows, one per form, resolved by the SHARE SECRET alone (no
+// fragment, no edit secret — the link is the credential, by the owner's
+// choice at mint). Nothing here asks the respondent to confirm: on a
+// remembering link the answers ARE theirs by construction, that is what the
+// owner minted. An arriving fragment secret wins over this path (the old
+// personal-link flow, with its explicit prompt), see wire().
+var rememberedProbe = null;
+function probeRemembered() {
+  if (rememberedProbe) return rememberedProbe;
+  rememberedProbe = fetchFn(apiBase + '/responses/remembered', {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+    headers: headers(null)
+  }).then(function (res) {
+    if (!res.ok) return [];
+    return res.json().then(function (data) {
+      return data && data.responses ? data.responses : [];
+    }, function () { return []; });
+  }, function () { return []; });
+  return rememberedProbe;
+}
+
+function prefillRemembered(form) {
+  if (form.__slRememberAsked) return;
+  form.__slRememberAsked = true;
+  probeRemembered().then(function (rows) {
+    var name = form.getAttribute('data-slideless-form');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].formName !== name) continue;
+      if (form.__slBusy || form.__slCard) return;
+      prefill(form, rows[i].payload || {});
+      form.__slRemembered = true;
+      return;
+    }
+  });
 }
 
 function wireAll() {
@@ -566,7 +656,8 @@ export function formsScriptTag(cfg: FormsConfig): string {
     unlock: cfg.unlock,
     source: cfg.source,
     placement: cfg.placement,
-    emailAvailable: cfg.emailAvailable
+    emailAvailable: cfg.emailAvailable,
+    remembers: cfg.remembers
   }).replace(/</g, '\\u003c');
   // NO blanket try/catch: it made every real-deck failure silent by
   // construction (five of five decks broke and the suite stayed green —

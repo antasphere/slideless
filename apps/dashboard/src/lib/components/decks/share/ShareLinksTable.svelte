@@ -152,8 +152,8 @@
 
   // One capability, one column: a check or nothing (PRDCT-2308).
   const capability = (
-    key: 'downloads' | 'bar' | 'notes' | 'forms',
-    field: 'canDownload' | 'showBar' | 'canAnnotate' | 'canSubmitForms',
+    key: 'downloads' | 'bar' | 'notes' | 'forms' | 'remembers',
+    field: 'canDownload' | 'showBar' | 'canAnnotate' | 'canSubmitForms' | 'remembersResponses',
     label: string
   ): ColumnDef<ShareToken, unknown> => ({
     accessorKey: field,
@@ -165,7 +165,7 @@
   // The recipient first and never cut; the version as a tag; the four
   // capabilities as checks; the counts; the status with its expiry behind
   // the hover; copy, open and the menu at the end. EVERY column carries a
-  // width and they add up to the table's min width (972px): in a fixed
+  // width and they add up to the table's min width (1052px): in a fixed
   // table layout the one column without a width gets whatever is left,
   // which was nothing — the cut column Romain reported. A narrower host
   // scrolls the table sideways instead.
@@ -194,6 +194,9 @@
     capability('bar', 'showBar', t('tokens.colBar')),
     capability('notes', 'canAnnotate', t('tokens.colNotes')),
     capability('forms', 'canSubmitForms', t('tokens.colForms')),
+    // PRDCT-2328: the link remembers its answers — shown as a fifth check so
+    // the state is never unverifiable from the table (PRDCT-1337's lesson).
+    capability('remembers', 'remembersResponses', t('tokens.colRemembers')),
     {
       accessorKey: 'accessCount',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('tokens.colViews') }),
@@ -262,7 +265,7 @@
     showViewOptions={false}
     showPagination={false}
     pageSize={200}
-    tableClass="min-w-[972px]"
+    tableClass="min-w-[1052px]"
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-2">

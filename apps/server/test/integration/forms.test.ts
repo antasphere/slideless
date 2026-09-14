@@ -2,7 +2,15 @@ import { createHash, createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
-import { auditLog, formResponses, presentations, presentationVersions } from '@slideless/db';
+import {
+  auditLog,
+  formResponseVersions,
+  formResponses,
+  presentations,
+  presentationVersions,
+  shareTokens
+} from '@slideless/db';
+import { deckMasterUrl } from '@slideless/contract';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
 import { FORMS_MARKER } from '../../src/viewer/forms-runtime.js';
 import { FRAGMENT_CAPTURE_MARKER } from '../../src/viewer/inject.js';
@@ -151,15 +159,37 @@ const emailMe = (secret: string, form: string, body: unknown, headers: Record<st
     body: JSON.stringify(body)
   });
 
+/**
+ * Mints a link that does NOT remember its answers unless the body says so:
+ * the suite below exercises the fragment-secret path, which is what every
+ * link minted before PRDCT-2328 has, and its fixtures submit several rows
+ * through one link. The contract default (remembering ON for a named link)
+ * is pinned by its own test in the remembering block.
+ */
 async function createToken(
   body: Record<string, unknown>,
   deck: string = deckId
 ): Promise<{ secret: string; id: string }> {
-  const res = await app.app.request(`/api/v1/presentations/${deck}/tokens`, json(body, { cookie }));
+  const res = await app.app.request(
+    `/api/v1/presentations/${deck}/tokens`,
+    json({ remembersResponses: false, ...body }, { cookie })
+  );
   expect(res.status).toBe(201);
   const parsed = await readJson(res);
   return { secret: parsed.secret, id: parsed.shareToken.id };
 }
+
+const ownerDetail = async (deck: string, responseId: string) =>
+  app.app.request(`/api/v1/presentations/${deck}/responses/${responseId}`, { headers: { cookie } });
+
+/** The runtime's one probe per page load on a remembering link (PRDCT-2328). */
+const remembered = (secret: string) =>
+  app.app.request(`/api/v1/viewer/${secret}/forms/responses/remembered`, {
+    headers: { origin: 'null', 'x-forwarded-for': nextIp() }
+  });
+
+/** The exact respondent wire (PRDCT-2329): never a revision, never a history, never an id beyond its own. */
+const RESPONDENT_WIRE_KEYS = ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'];
 
 const fetchEntry = (secret: string, headers: Record<string, string> = {}) =>
   app.app.request(`/v/${secret}/`, { headers: { accept: 'text/html', ...headers } });
@@ -343,11 +373,15 @@ describe('forms runtime injection', () => {
     const config = /<script data-slideless-forms>[\s\S]*?var CFG=(\{[^\n]*?\});/.exec(html)?.[1];
     expect(config).toBeDefined();
     // The injected config is a CLOSED set: version, unlock, source,
-    // placement, emailAvailable. Anything else here is readable by deck JS
-    // (ADR 012), which is exactly how leg 3 leaked a stranger's identity.
+    // placement, emailAvailable, remembers. Anything else here is readable
+    // by deck JS (ADR 012), which is exactly how leg 3 leaked a stranger's
+    // identity. `remembers` (PRDCT-2328) is a BOOLEAN the deck could learn
+    // by calling the remembered-answers route without a secret; it names
+    // nobody and grants nothing the share secret in the URL does not.
     expect(Object.keys(JSON.parse(config!)).sort()).toEqual(
-      ['emailAvailable', 'placement', 'source', 'unlock', 'version'].sort()
+      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'version'].sort()
     );
+    expect(JSON.parse(config!).remembers).toBe(false);
     // Nothing anywhere in the served document names the signed-in viewer.
     expect(html).not.toContain(ownerUserId);
     expect(html).not.toContain(OWNER.email);
@@ -1105,7 +1139,9 @@ describe("mail driver 'none'", () => {
     const token = await readJson(
       await app2.app.request(
         `/api/v1/presentations/${deck2}/tokens`,
-        json({ name: 'NM' }, { cookie: cookie2 })
+        // The block exercises the email-me-my-link leg, which belongs to
+        // the fragment path: a link that does not remember (PRDCT-2328).
+        json({ name: 'NM', remembersResponses: false }, { cookie: cookie2 })
       )
     );
     secret2 = token.secret;
@@ -1113,6 +1149,32 @@ describe("mail driver 'none'", () => {
 
   afterAll(async () => {
     await app2?.stop();
+  });
+
+  it('PRDCT-2330: the owner notifier is a no-op on the none driver, and the submit still lands', async () => {
+    // Its own non-remembering link: the block's shared link (remembering by
+    // the contract default) must reach the next test with no row yet.
+    const own = await readJson(
+      await app2.app.request(
+        `/api/v1/presentations/${deck2}/tokens`,
+        json({ name: 'NM quiet', remembersResponses: false }, { cookie: cookie2 })
+      )
+    );
+    const created = await app2.app.request(`/api/v1/viewer/${own.secret}/forms/rsvp/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': nextIp() },
+      body: JSON.stringify({ payload: { name: 'quiet' } })
+    });
+    expect(created.status).toBe(201);
+    await app2.formsNotifier.drain();
+    const [row] = await app2.db.db
+      .select()
+      .from(formResponses)
+      .where(eq(formResponses.id, (await readJson(created)).response.id))
+      .limit(1);
+    expect(row).toBeDefined();
+    expect(await app2.formsNotifier.notify({ kind: 'new', row: row!, shareTokenName: 'x' })).toBe(false);
+    expect(await app2.formsNotifier.notify({ kind: 'edited', row: row!, shareTokenName: 'x' })).toBe(false);
   });
 
   it('hides the opt-in (emailAvailable:false), 400s the email leg, and never auto-mails', async () => {
@@ -1541,5 +1603,577 @@ describe('owner responses surface (list / summary / delete)', () => {
       headers: { authorization: `Bearer ${minted.key}` }
     });
     expect(readViaKey.status).toBe(403);
+  });
+});
+
+// ═══ A link that remembers its answers (PRDCT-2328) ══════════════════════════
+
+describe('remembering links (PRDCT-2328)', () => {
+  let deck: string;
+  const respondentKeys = (wire: Record<string, unknown>) => Object.keys(wire).sort();
+
+  beforeAll(async () => {
+    deck = await uploadDeck('Remember Deck', [
+      entryOf('index.html', HTML_V1),
+      entryOf('guide/page2.html', HTML_PAGE2)
+    ]);
+  });
+
+  it('the contract default is ON for a named link; the preview mint is OFF; PATCH flips it', async () => {
+    const res = await app.app.request(
+      `/api/v1/presentations/${deck}/tokens`,
+      json({ name: 'Alice' }, { cookie })
+    );
+    expect(res.status).toBe(201);
+    const { shareToken } = await readJson(res);
+    expect(shareToken.remembersResponses).toBe(true);
+
+    const off = await app.app.request(`/api/v1/presentations/${deck}/tokens/${shareToken.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ remembersResponses: false })
+    });
+    expect(off.status).toBe(200);
+    expect((await readJson(off)).remembersResponses).toBe(false);
+
+    const preview = await app.app.request(
+      `/api/v1/presentations/${deck}/preview-token`,
+      json({}, { cookie })
+    );
+    expect(preview.status).toBe(201);
+    expect((await readJson(preview)).shareToken.remembersResponses).toBe(false);
+  });
+
+  it('hands the deck document exactly one boolean: remembers true on a remembering link', async () => {
+    const { secret } = await createToken({ name: 'Alice', remembersResponses: true }, deck);
+    const html = await (await fetchEntry(secret)).text();
+    const config = /<script data-slideless-forms>[\s\S]*?var CFG=(\{[^\n]*?\});/.exec(html)?.[1];
+    expect(config).toBeDefined();
+    const cfg = JSON.parse(config!);
+    expect(cfg.remembers).toBe(true);
+    expect(Object.keys(cfg).sort()).toEqual(
+      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'version'].sort()
+    );
+    // Nothing identifying anywhere in the served document, remembering or not.
+    expect(html).not.toContain(ownerUserId);
+    expect(html).not.toContain(OWNER.email);
+  });
+
+  it('a submit without any secret creates the link’s remembered row; the next one updates it in place', async () => {
+    const { secret, id: tokenId } = await createToken({ name: 'Alice', remembersResponses: true }, deck);
+    const first = await submit(secret, 'rsvp', { payload: { name: 'Alice', dish: 'pie' } });
+    expect(first.status).toBe(201);
+    const c = await readJson(first);
+    expect(c.remembered).toBe(true);
+    expect(c.edited).toBe(false);
+    expect(c.editSecret).toBeUndefined(); // the LINK is the handle
+    expect(respondentKeys(c.response)).toEqual(RESPONDENT_WIRE_KEYS);
+
+    const second = await submit(secret, 'rsvp', { payload: { name: 'Alice', dish: 'tart' } });
+    expect(second.status).toBe(200);
+    const u = await readJson(second);
+    expect(u.remembered).toBe(true);
+    expect(u.edited).toBe(true);
+    expect(u.response.id).toBe(c.response.id);
+    expect(u.response.payload).toEqual({ name: 'Alice', dish: 'tart' });
+
+    // One row on the link, at revision 2, in the owner's list.
+    const listed = await ownerList(deck, `?token=${tokenId}`);
+    expect(listed.responses).toHaveLength(1);
+    expect(listed.responses[0].revision).toBe(2);
+    expect(listed.responses[0].payload).toEqual({ name: 'Alice', dish: 'tart' });
+
+    // The probe brings the answers back — and only the respondent's own envelope.
+    const probe = await remembered(secret);
+    expect(probe.status).toBe(200);
+    const rows = (await readJson(probe)).responses;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toEqual({ name: 'Alice', dish: 'tart' });
+    expect(respondentKeys(rows[0])).toEqual(RESPONDENT_WIRE_KEYS);
+
+    // The form-bound own-row routes resolve by the link alone too.
+    const me = await getMe(secret, 'rsvp');
+    expect(me.status).toBe(200);
+    expect((await readJson(me)).response.id).toBe(c.response.id);
+    const put = await putMe(secret, 'rsvp', { payload: { name: 'Alice', dish: 'soup' } });
+    expect(put.status).toBe(200);
+    expect((await readJson(await getMe(secret, 'rsvp'))).response.payload).toEqual({
+      name: 'Alice',
+      dish: 'soup'
+    });
+    // …but a form the link never answered is a plain 404, and the email leg needs the fragment secret.
+    expect((await getMe(secret, 'feedback')).status).toBe(404);
+    expect((await emailMe(secret, 'rsvp', { email: 'a@b.co' })).status).toBe(404);
+  });
+
+  it('PROPERTY 1: a respondent on one remembering link can never read or restore another’s answers', async () => {
+    const alice = await createToken({ name: 'Alice', remembersResponses: true }, deck);
+    const bob = await createToken({ name: 'Bob', remembersResponses: true }, deck);
+    expect((await submit(alice.secret, 'rsvp', { payload: { name: 'Alice' } })).status).toBe(201);
+    expect((await submit(bob.secret, 'rsvp', { payload: { name: 'Bob' } })).status).toBe(201);
+
+    // Each link's probe lists its own row and nothing else.
+    const aliceRows = (await readJson(await remembered(alice.secret))).responses;
+    const bobRows = (await readJson(await remembered(bob.secret))).responses;
+    expect(aliceRows.map((r: { payload: unknown }) => r.payload)).toEqual([{ name: 'Alice' }]);
+    expect(bobRows.map((r: { payload: unknown }) => r.payload)).toEqual([{ name: 'Bob' }]);
+
+    // Bob's next submit updates BOB's row; Alice's stays.
+    expect((await submit(bob.secret, 'rsvp', { payload: { name: 'Bob 2' } })).status).toBe(200);
+    expect((await readJson(await getMe(alice.secret, 'rsvp'))).response.payload).toEqual({ name: 'Alice' });
+    expect((await readJson(await getMe(bob.secret, 'rsvp'))).response.payload).toEqual({ name: 'Bob 2' });
+
+    // A link that does not remember gets nothing from either: 404 on the
+    // probe, a fresh row on submit, and no way to name another link's row.
+    const plain = await createToken({ name: 'Plain' }, deck);
+    expect((await remembered(plain.secret)).status).toBe(404);
+    expect((await getMe(plain.secret, 'rsvp')).status).toBe(404);
+    const fresh = await submit(plain.secret, 'rsvp', { payload: { name: 'Nobody' } });
+    expect(fresh.status).toBe(201);
+    expect((await readJson(fresh)).remembered).toBe(false);
+    expect((await readJson(await getMe(alice.secret, 'rsvp'))).response.payload).toEqual({ name: 'Alice' });
+
+    // The database holds exactly one remembered row per (link, form).
+    const rows = await app.db.db
+      .select({
+        token: formResponses.shareTokenId,
+        form: formResponses.formName,
+        remembered: formResponses.remembered
+      })
+      .from(formResponses)
+      .where(eq(formResponses.presentationId, deck));
+    const remembering = rows.filter((r) => r.remembered);
+    const keys = remembering.map((r) => `${r.token}:${r.form}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('PROPERTY 2: a preview token never creates or resolves a remembered response, even with its columns forced', async () => {
+    const preview = await app.app.request(
+      `/api/v1/presentations/${deck}/preview-token`,
+      json({}, { cookie })
+    );
+    const { secret, shareToken } = await readJson(preview);
+    // As minted: forms off, so the surface refuses outright.
+    expect((await submit(secret, 'rsvp', { payload: { x: '1' } })).status).toBe(403);
+    expect((await remembered(secret)).status).toBe(403);
+    // Belt and braces: force the columns a bug might set, keep the purpose.
+    await app.db.db
+      .update(shareTokens)
+      .set({ canSubmitForms: true, remembersResponses: true })
+      .where(eq(shareTokens.id, shareToken.id));
+    expect((await remembered(secret)).status).toBe(404);
+    const res = await submit(secret, 'rsvp', { payload: { x: '1' } });
+    expect(res.status).toBe(201);
+    expect((await readJson(res)).remembered).toBe(false);
+    const rows = await app.db.db
+      .select({ remembered: formResponses.remembered })
+      .from(formResponses)
+      .where(eq(formResponses.shareTokenId, shareToken.id));
+    expect(rows.every((r) => !r.remembered)).toBe(true);
+    await app.db.db.delete(formResponses).where(eq(formResponses.shareTokenId, shareToken.id));
+  });
+
+  it('an embed submission on a remembering link is its own row and never touches the remembered one', async () => {
+    const { secret, id: tokenId } = await createToken({ name: 'Alice', remembersResponses: true }, deck);
+    expect((await submit(secret, 'rsvp', { payload: { name: 'Alice' } })).status).toBe(201);
+    const visitor = await submit(secret, 'rsvp', {
+      payload: { name: 'Visitor' },
+      source: 'embed',
+      placement: 'site'
+    });
+    expect(visitor.status).toBe(201);
+    const v = await readJson(visitor);
+    expect(v.remembered).toBe(false);
+    expect(v.editSecret).toBeDefined();
+    const listed = await ownerList(deck, `?token=${tokenId}`);
+    expect(listed.responses).toHaveLength(2);
+    expect((await readJson(await getMe(secret, 'rsvp'))).response.payload).toEqual({ name: 'Alice' });
+    // And the visitor's fragment path still reaches ONLY the visitor's row.
+    const own = await getMe(secret, 'rsvp', { 'x-slideless-response': v.editSecret });
+    expect((await readJson(own)).response.payload).toEqual({ name: 'Visitor' });
+  });
+
+  it('a fragment secret minted before the link remembered keeps working through the link', async () => {
+    const { secret, id: tokenId } = await createToken({ name: 'Alice' }, deck);
+    const created = await readJson(await submit(secret, 'rsvp', { payload: { name: 'early' } }));
+    await app.app.request(`/api/v1/presentations/${deck}/tokens/${tokenId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ remembersResponses: true })
+    });
+    const put = await putMe(
+      secret,
+      'rsvp',
+      { payload: { name: 'later' } },
+      { 'x-slideless-response': created.editSecret }
+    );
+    expect(put.status).toBe(200);
+    // The old row was never remembered, so the link still has no remembered row of its own.
+    expect((await remembered(secret)).status).toBe(200);
+    expect((await readJson(await remembered(secret))).responses).toEqual([]);
+  });
+
+  it('two concurrent first submits on one remembering link end as ONE row, both answers kept as revisions', async () => {
+    const { secret, id: tokenId } = await createToken({ name: 'Race', remembersResponses: true }, deck);
+    const results = await Promise.all(
+      Array.from({ length: 4 }, (_, i) => submit(secret, 'rsvp', { payload: { n: String(i) } }))
+    );
+    for (const r of results) expect([200, 201]).toContain(r.status);
+    const listed = await ownerList(deck, `?token=${tokenId}`);
+    expect(listed.responses).toHaveLength(1);
+    expect(listed.responses[0].revision).toBe(4);
+  });
+});
+
+// ═══ Every edit is a version (PRDCT-2329) ════════════════════════════════════
+
+describe('edit history (PRDCT-2329)', () => {
+  let deck: string;
+  beforeAll(async () => {
+    deck = await uploadDeck('History Deck', [entryOf('index.html', HTML_V1)]);
+  });
+
+  it('the create is revision 1, each edit appends; the owner reads the history newest first with its attribution', async () => {
+    const { secret } = await createToken({ name: 'Alice' }, deck);
+    const created = await readJson(
+      await submit(secret, 'rsvp', { payload: { dish: 'pie' }, placement: 'first' })
+    );
+    expect(created.response.revision).toBeUndefined(); // never on the respondent wire
+    const put = await putMe(
+      secret,
+      'rsvp',
+      { payload: { dish: 'tart' }, placement: 'second' },
+      { 'x-slideless-response': created.editSecret }
+    );
+    expect(put.status).toBe(200);
+    expect(Object.keys((await readJson(put)).response).sort()).toEqual(RESPONDENT_WIRE_KEYS);
+
+    const res = await ownerDetail(deck, created.response.id);
+    expect(res.status).toBe(200);
+    const detail = await readJson(res);
+    expect(detail.response.revision).toBe(2);
+    expect(detail.response.payload).toEqual({ dish: 'tart' });
+    expect(detail.versions.map((v: { revision: number }) => v.revision)).toEqual([2, 1]);
+    expect(detail.versions[0].payload).toEqual({ dish: 'tart' });
+    expect(detail.versions[0].placement).toBe('second');
+    expect(detail.versions[1].payload).toEqual({ dish: 'pie' });
+    expect(detail.versions[1].placement).toBe('first');
+    expect(detail.versions[1].shareTokenName).toBe('Alice');
+    // No identity, on any revision.
+    for (const v of detail.versions) {
+      expect(v.respondentUserId).toBeUndefined();
+      expect(v.respondentEmail).toBeUndefined();
+    }
+  });
+
+  it('PROPERTY 3: nothing on the respondent wire carries the history or a revision, on any route', async () => {
+    const { secret } = await createToken({ name: 'Alice', remembersResponses: true }, deck);
+    const first = await readJson(await submit(secret, 'rsvp', { payload: { a: '1' } }));
+    const second = await readJson(await submit(secret, 'rsvp', { payload: { a: '2' } }));
+    const probe = await readJson(await remembered(secret));
+    const me = await readJson(await getMe(secret, 'rsvp'));
+    for (const wire of [first.response, second.response, probe.responses[0], me.response]) {
+      expect(Object.keys(wire).sort()).toEqual(RESPONDENT_WIRE_KEYS);
+    }
+    for (const body of [first, second, probe, me]) {
+      expect(JSON.stringify(body)).not.toContain('"revision"');
+      expect(JSON.stringify(body)).not.toContain('"versions"');
+    }
+    // After the edit, the earlier answer is nowhere on the respondent wire.
+    for (const body of [second, probe, me]) {
+      expect(JSON.stringify(body)).not.toContain('"a":"1"');
+    }
+  });
+
+  it('an edited response resurfaces: the list orders by last activity, the summary’s last activity is the edit, since reads activity', async () => {
+    const listDeck = await uploadDeck('Activity Deck', [entryOf('index.html', HTML_V1)]);
+    const { secret } = await createToken({ name: 'L' }, listDeck);
+    const r1 = await readJson(await submit(secret, 'rsvp', { payload: { n: '1' } }));
+    await sleep(15);
+    const r2 = await readJson(await submit(secret, 'rsvp', { payload: { n: '2' } }));
+    await sleep(15);
+    const cutoff = new Date().toISOString();
+    await sleep(15);
+    const edit = await putMe(
+      secret,
+      'rsvp',
+      { payload: { n: '1b' } },
+      { 'x-slideless-response': r1.editSecret }
+    );
+    expect(edit.status).toBe(200);
+    const editedAt = (await readJson(edit)).response.updatedAt;
+
+    const listed = await ownerList(listDeck);
+    expect(listed.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id, r2.response.id]);
+
+    const summary = await readJson(
+      await app.app.request(`/api/v1/presentations/${listDeck}/responses/summary`, { headers: { cookie } })
+    );
+    expect(summary.buckets[0].lastResponseAt).toBe(editedAt);
+
+    // `since` after both creates and before the edit: only the edited one.
+    const since = await ownerList(listDeck, `?since=${encodeURIComponent(cutoff)}`);
+    expect(since.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id]);
+
+    // Keyset pagination on the activity order stays gap-free.
+    const page1 = await ownerList(listDeck, '?limit=1');
+    expect(page1.responses.map((r: { id: string }) => r.id)).toEqual([r1.response.id]);
+    const page2 = await ownerList(listDeck, `?limit=1&cursor=${page1.nextCursor}`);
+    expect(page2.responses.map((r: { id: string }) => r.id)).toEqual([r2.response.id]);
+    expect(page2.nextCursor).toBeNull();
+  });
+
+  it('keeps at most 100 revisions: the first and the latest 99 survive a hundred and one edits', async () => {
+    const { secret } = await createToken({ name: 'Editor' }, deck);
+    const created = await readJson(await submit(secret, 'rsvp', { payload: { n: '1' } }));
+    for (let i = 2; i <= 102; i++) {
+      const res = await putMe(
+        secret,
+        'rsvp',
+        { payload: { n: String(i) } },
+        { 'x-slideless-response': created.editSecret }
+      );
+      expect(res.status).toBe(200);
+    }
+    const detail = await readJson(await ownerDetail(deck, created.response.id));
+    expect(detail.response.revision).toBe(102);
+    const revisions = detail.versions.map((v: { revision: number }) => v.revision);
+    expect(revisions).toHaveLength(100);
+    expect(revisions[0]).toBe(102);
+    expect(revisions[revisions.length - 1]).toBe(1);
+    expect(revisions).not.toContain(2);
+    expect(revisions).not.toContain(3);
+    expect(revisions).toContain(4);
+    expect(detail.versions[revisions.length - 1].payload).toEqual({ n: '1' });
+  }, 60_000);
+
+  it('deleting a response removes its history; a plain member never sees the detail', async () => {
+    const { secret } = await createToken({ name: 'Gone' }, deck);
+    const created = await readJson(await submit(secret, 'rsvp', { payload: { n: '1' } }));
+    await putMe(secret, 'rsvp', { payload: { n: '2' } }, { 'x-slideless-response': created.editSecret });
+    const before = await app.db.db
+      .select({ id: formResponseVersions.id })
+      .from(formResponseVersions)
+      .where(eq(formResponseVersions.responseId, created.response.id));
+    expect(before).toHaveLength(2);
+    const del = await app.app.request(`/api/v1/presentations/${deck}/responses/${created.response.id}`, {
+      method: 'DELETE',
+      headers: { cookie }
+    });
+    expect(del.status).toBe(200);
+    const after = await app.db.db
+      .select({ id: formResponseVersions.id })
+      .from(formResponseVersions)
+      .where(eq(formResponseVersions.responseId, created.response.id));
+    expect(after).toHaveLength(0);
+    expect((await ownerDetail(deck, created.response.id)).status).toBe(404);
+  });
+});
+
+// ═══ The owner is told (PRDCT-2330) ══════════════════════════════════════════
+
+describe('owner mails (PRDCT-2330)', () => {
+  let mailApp: TestApp;
+  let mailBox: RecordingEmailDriver;
+  let mailCookie: string;
+  let mailWorkspace: string;
+  const M_OWNER = { email: 'owner@mail.test', name: 'Mail Owner', password: 'mail-owner-pass-1' };
+  const COOLDOWN_MS = 400;
+
+  const mSubmit = (secret: string, form: string, body: unknown, headers: Record<string, string> = {}) =>
+    mailApp.app.request(`/api/v1/viewer/${secret}/forms/${form}/responses`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'null',
+        'x-forwarded-for': nextIp(),
+        ...headers
+      },
+      body: JSON.stringify(body)
+    });
+  const mPut = (secret: string, form: string, body: unknown, headers: Record<string, string> = {}) =>
+    mailApp.app.request(`/api/v1/viewer/${secret}/forms/${form}/responses/me`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'null',
+        'x-forwarded-for': nextIp(),
+        ...headers
+      },
+      body: JSON.stringify(body)
+    });
+  async function mDeck(title: string): Promise<string> {
+    const bytes = HTML_V1;
+    const form = new FormData();
+    form.set('sha256', shaOf(bytes));
+    form.set('file', new Blob([new Uint8Array(bytes)], { type: 'text/html' }), 'index.html');
+    await mailApp.app.request('/api/v1/presentations/assets', {
+      method: 'POST',
+      headers: { cookie: mailCookie },
+      body: form
+    });
+    const reserve = await readJson(
+      await mailApp.app.request('/api/v1/presentations/uploads', {
+        method: 'POST',
+        headers: { cookie: mailCookie }
+      })
+    );
+    const commit = await mailApp.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        { title, entryPath: 'index.html', manifest: [entryOf('index.html', bytes)] },
+        { cookie: mailCookie }
+      )
+    );
+    expect(commit.status).toBe(201);
+    return reserve.uploadSession.presentationId;
+  }
+  async function mToken(deck: string, body: Record<string, unknown>): Promise<string> {
+    const res = await mailApp.app.request(
+      `/api/v1/presentations/${deck}/tokens`,
+      json(body, { cookie: mailCookie })
+    );
+    expect(res.status).toBe(201);
+    return (await readJson(res)).secret;
+  }
+  const drained = async () => {
+    await mailApp.formsNotifier.drain();
+    return mailBox.sent;
+  };
+
+  beforeAll(async () => {
+    mailBox = new RecordingEmailDriver();
+    mailApp = await createTestApp(
+      await createDatabase(container, 'forms_mail'),
+      { PUBLIC_BASE_URL: 'https://decks.example.test' },
+      { email: mailBox, formsMailCooldownMs: COOLDOWN_MS }
+    );
+    await mailApp.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Mail', owner: M_OWNER })
+    );
+    mailCookie = extractCookie(
+      await mailApp.app.request(
+        '/api/v1/auth/sign-in/email',
+        json({ email: M_OWNER.email, password: M_OWNER.password })
+      )
+    );
+    const me = await readJson(await mailApp.app.request('/api/v1/me', { headers: { cookie: mailCookie } }));
+    mailWorkspace = me.workspace.id;
+    void mailWorkspace;
+  }, 120_000);
+
+  afterAll(async () => {
+    await mailApp?.stop();
+  });
+
+  it('mails the deck owner on a new response, and a DIFFERENT mail on an edit — never the answers', async () => {
+    const deck = await mDeck('Kituo questionnaire');
+    const secret = await mToken(deck, { name: 'Client contact', remembersResponses: false });
+    const created = await readJson(
+      await mSubmit(secret, 'rsvp', { payload: { name: 'Secret Person', dish: 'pie' } })
+    );
+    let sent = await drained();
+    expect(sent).toHaveLength(1);
+    const first = sent[0]!;
+    expect(first.to).toBe(M_OWNER.email);
+    expect(first.subject).toBe('New response on "Kituo questionnaire"');
+    expect(first.html).toContain('Kituo questionnaire');
+    expect(first.html).toContain('rsvp');
+    expect(first.html).toContain('Client contact');
+    expect(first.html).toContain(deckMasterUrl('https://decks.example.test', deck));
+    for (const body of [first.html, first.text ?? '']) {
+      expect(body).not.toContain('Secret Person');
+      expect(body).not.toContain('pie');
+    }
+
+    await sleep(COOLDOWN_MS + 50);
+    const edit = await mPut(
+      secret,
+      'rsvp',
+      { payload: { name: 'Secret Person', dish: 'tart' } },
+      { 'x-slideless-response': created.editSecret }
+    );
+    expect(edit.status).toBe(200);
+    sent = await drained();
+    expect(sent).toHaveLength(2);
+    const second = sent[1]!;
+    expect(second.subject).toBe('A response on "Kituo questionnaire" was edited');
+    expect(second.subject).not.toBe(first.subject);
+    expect(second.html).toContain('revision 2');
+    expect(second.html).not.toContain('tart');
+    expect(second.text).not.toContain('tart');
+  });
+
+  it('one mail per deck per window: a burst inside the window is counted and carried by the next mail', async () => {
+    const deck = await mDeck('RSVP wall');
+    const secret = await mToken(deck, { name: 'Public', remembersResponses: false });
+    const before = mailBox.sent.length;
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '1' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 1);
+    // Three more inside the window: no mail, all counted.
+    const held = await readJson(await mSubmit(secret, 'rsvp', { payload: { n: '2' } }));
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '3' } })).status).toBe(201);
+    expect(
+      (await mPut(secret, 'rsvp', { payload: { n: '2b' } }, { 'x-slideless-response': held.editSecret }))
+        .status
+    ).toBe(200);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 1);
+    // After the window, the next event mails and says what was held back.
+    await sleep(COOLDOWN_MS + 50);
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '4' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 2);
+    const digest = mailBox.sent[mailBox.sent.length - 1]!;
+    expect(digest.subject).toBe('New response on "RSVP wall"');
+    expect(digest.text).toContain('2 other new responses and 1 other edit arrived too');
+  });
+
+  it('the per-deck switch silences the mails without touching forms; the wire carries it; PATCH alone flips it', async () => {
+    const deck = await mDeck('Quiet deck');
+    const read = await readJson(
+      await mailApp.app.request(`/api/v1/presentations/${deck}`, { headers: { cookie: mailCookie } })
+    );
+    expect(read.notifyOnResponse).toBe(true);
+    const off = await mailApp.app.request(`/api/v1/presentations/${deck}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: mailCookie },
+      body: JSON.stringify({ notifyOnResponse: false })
+    });
+    expect(off.status).toBe(200);
+    expect((await readJson(off)).notifyOnResponse).toBe(false);
+
+    const secret = await mToken(deck, { name: 'Alice' });
+    const before = mailBox.sent.length;
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '1' } })).status).toBe(201);
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '2' } })).status).toBe(200);
+    await drained();
+    expect(mailBox.sent.length).toBe(before);
+
+    const on = await mailApp.app.request(`/api/v1/presentations/${deck}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: mailCookie },
+      body: JSON.stringify({ notifyOnResponse: true })
+    });
+    expect((await readJson(on)).notifyOnResponse).toBe(true);
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '3' } })).status).toBe(200);
+    await drained();
+    expect(mailBox.sent.length).toBe(before + 1);
+    expect(mailBox.sent[mailBox.sent.length - 1]!.subject).toBe('A response on "Quiet deck" was edited');
+  });
+
+  it('a remembering link’s first submit is a new-response mail, its later submits are edit mails', async () => {
+    const deck = await mDeck('Remembering deck');
+    const secret = await mToken(deck, { name: 'Alice' });
+    const before = mailBox.sent.length;
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '1' } })).status).toBe(201);
+    await drained();
+    expect(mailBox.sent[before]!.subject).toBe('New response on "Remembering deck"');
+    await sleep(COOLDOWN_MS + 50);
+    expect((await mSubmit(secret, 'rsvp', { payload: { n: '2' } })).status).toBe(200);
+    await drained();
+    expect(mailBox.sent[before + 1]!.subject).toBe('A response on "Remembering deck" was edited');
   });
 });
