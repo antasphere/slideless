@@ -1,0 +1,62 @@
+name: Publish Hostinger deployment
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - 'deploy/hostinger/**'
+      - 'scripts/hostinger-template.test.mjs'
+      - '.github/workflows/hostinger-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-pages
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify deployment template
+        run: node --test scripts/hostinger-template.test.mjs
+      - name: Require anonymous access to every pinned image
+        env:
+          SLIDELESS_DOMAIN: slides.example.com
+        run: |
+          set -euo pipefail
+          registry_config="$(mktemp -d)"
+          trap 'rm -rf "$registry_config"' EXIT
+          docker compose --env-file /dev/null -f deploy/hostinger/docker-compose.yml config --images | sort -u > /tmp/hostinger-images
+          while IFS= read -r image; do
+            docker --config "$registry_config" manifest inspect "$image" > /dev/null
+          done < /tmp/hostinger-images
+      - uses: actions/configure-pages@v5
+      # Only these two public distribution files leave the private source repo.
+      - name: Stage public files
+        run: |
+          mkdir -p /tmp/hostinger-pages
+          cp deploy/hostinger/docker-compose.yml deploy/hostinger/index.html /tmp/hostinger-pages/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: /tmp/hostinger-pages
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: package
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish template and deployment button
+        id: deployment
+        uses: actions/deploy-pages@v4

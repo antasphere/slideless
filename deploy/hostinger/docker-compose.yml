@@ -1,0 +1,125 @@
+# Dedicated VPS. Point DNS to the VPS first, then set SLIDELESS_DOMAIN in hPanel.
+# Guide: https://docs.antasphere.com/slideless/self-hosting/hostinger
+# Keep the project name and all named volumes when recreating containers.
+services:
+  init:
+    image: ghcr.io/antasphere/slideless:0.3.0
+    restart: 'no'
+    environment:
+      SLIDELESS_DOMAIN: ${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
+    # The image's /data directory belongs to its non-root node user. Docker
+    # copies that ownership to the empty volume on its first mount.
+    volumes:
+      - db_credentials:/data
+    read_only: true
+    network_mode: none
+    command:
+      - node
+      - --input-type=module
+      - --eval
+      - |
+        import { randomBytes } from 'node:crypto';
+        import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+        import { join } from 'node:path';
+        import { isIP } from 'node:net';
+        const domain = process.env.SLIDELESS_DOMAIN || '';
+        const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+        if (domain.length > 253 || !domain.includes('.') || isIP(domain) || !domain.split('.').every(part => label.test(part))) {
+          throw new Error('SLIDELESS_DOMAIN must be a DNS hostname, without a scheme, port or path.');
+        }
+        const target = join(process.argv[1], 'postgres-password');
+        if (existsSync(target)) {
+          if (!/^[a-f0-9]{64}\n?$/.test(readFileSync(target, 'utf8'))) {
+            throw new Error('Stored database credential is invalid; restore the db_credentials volume. It will not be replaced.');
+          }
+        } else {
+          const temporary = target + '.tmp';
+          writeFileSync(temporary, randomBytes(32).toString('hex') + '\n', { mode: 0o600 });
+          renameSync(temporary, target);
+        }
+        console.log('Database credential ready.');
+      - /data
+
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: slideless
+      POSTGRES_DB: slideless
+      POSTGRES_PASSWORD_FILE: /run/slideless-secrets/postgres-password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - db_credentials:/run/slideless-secrets:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U slideless -d slideless']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  app:
+    image: ghcr.io/antasphere/slideless:0.3.0
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PUBLIC_BASE_URL: https://${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
+      TRUST_PROXY: 'true'
+      ALLOW_INSECURE_SETUP: 'false'
+      AUTO_MIGRATE: 'true'
+      STORAGE_DRIVER: local
+      EMAIL_DRIVER: none
+    # Keep the image's tini entrypoint and replace the shell with the server.
+    # The generated credential is never interpolated into the Compose file.
+    command:
+      - sh
+      - -ec
+      - |
+        export DATABASE_URL="postgres://slideless:$$(cat /run/slideless-secrets/postgres-password)@db:5432/slideless"
+        exec node dist/index.js
+    read_only: true
+    volumes:
+      - app_data:/data
+      - db_credentials:/run/slideless-secrets:ro
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3000/readyz']
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    # Caddy's reverse-proxy command enables automatic certificates and HTTP
+    # redirects. No companion Caddyfile or repository checkout is required.
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - https://${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
+      - --to
+      - http://app:3000
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  db_credentials:
+  pg_data:
+  app_data:
+  caddy_data:
+  caddy_config:

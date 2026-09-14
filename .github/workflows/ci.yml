@@ -35,6 +35,28 @@ jobs:
       - run: pnpm turbo build --filter=@slideless/db --filter=@slideless/server --filter=@antasphere/slideless
       - run: pnpm turbo test:integration
 
+  hostinger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/hostinger-template.test.mjs
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image for Hostinger rehearsal
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: slideless:hostinger-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Exercise HTTPS installation and persistence
+        env:
+          HOSTINGER_TEST_IMAGE: slideless:hostinger-test
+        run: node scripts/hostinger-smoke.mjs
+
   # The Profile B rehearsal: a real multi-replica stack (advisory-lock
   # migration race, cross-replica sessions/API keys, Redis-shared rate
   # limits + the in-memory contrast, the api/worker SERVICE_ROLE split).

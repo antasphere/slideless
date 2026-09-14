@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deploy Slideless on Hostinger</title>
+    <style>
+      body {
+        max-width: 42rem;
+        margin: 4rem auto;
+        padding: 0 1.5rem;
+        font:
+          18px/1.6 system-ui,
+          sans-serif;
+        color: #202124;
+      }
+      a {
+        color: #4935a3;
+      }
+      code {
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Host your own Slideless</h1>
+    <p>Turn presentations, reports, and small apps into shareable links on your own VPS.</p>
+    <ol>
+      <li>Prepare a dedicated Hostinger VPS and point your hostname to its IP address.</li>
+      <li>Deploy the template and set <code>SLIDELESS_DOMAIN</code> to that hostname.</li>
+      <li>
+        Open your HTTPS address, copy the setup token from the app's logs, and create your owner account.
+      </li>
+    </ol>
+    <p>
+      <a href="https://docs.antasphere.com/slideless/self-hosting/hostinger">Read the setup guide first</a>
+    </p>
+    <p>
+      <a
+        href="https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fantasphere.github.io%2Fslideless%2Fdocker-compose.yml"
+      >
+        <img src="https://assets.hostinger.com/vps/deploy.svg" alt="Deploy on Hostinger" />
+      </a>
+    </p>
+    <p>Already have a VPS? In Docker Manager, select <strong>Compose from URL</strong> and paste:</p>
+    <p><a href="docker-compose.yml">https://antasphere.github.io/slideless/docker-compose.yml</a></p>
+    <p>
+      The template installs Slideless 0.3.0, PostgreSQL, and automatic HTTPS. Email and agent connections are
+      optional. Application upgrades remain manual.
+    </p>
+  </body>
+</html>

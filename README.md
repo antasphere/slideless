@@ -18,6 +18,10 @@ server** — no central service anywhere in the loop.
 
 ## Five-minute quick start
 
+Using a dedicated Hostinger VPS? Follow the
+[Hostinger installation guide](docs/self-hosting/hostinger.md) for the deployment
+button, automatic HTTPS, and browser setup.
+
 ```bash
 git clone <this-repo> slideless && cd slideless
 ./setup.sh                # generates secrets + a setup token, writes .env (mode 600), starts the stack
