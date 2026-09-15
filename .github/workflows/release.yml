@@ -150,12 +150,23 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-      - name: Build + push (multi-arch)
+      # amd64 only. The arm64 leg built under QEMU emulation and on 2026-09-15 it died
+      # mid-`pnpm install` with `qemu: uncaught target signal 4 (Illegal instruction) -
+      # core dumped` — and buildx never saw an error, so the step HUNG rather than
+      # failing: run 34939919865 sat on it for 1h53m until it was cancelled, with the
+      # amd64 half already CACHED in seconds. It had passed on 2026-09-12 and 09-14 by
+      # luck of which packages the emulator had to run.
+      #
+      # Nothing in production wants arm64: Cloud Run runs amd64, so the arm64 manifest
+      # served nothing. It existed for local Docker on Apple Silicon. Restoring it means
+      # a native arm64 runner (a per-platform matrix + a manifest merge), never emulation
+      # — PRDCT-2337 holds that decision.
+      - name: Build + push
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
