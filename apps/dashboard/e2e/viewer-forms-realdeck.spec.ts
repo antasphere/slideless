@@ -334,7 +334,10 @@ test.describe('forms runtime in a real slide deck', () => {
     await expect(status).toHaveCount(1);
     await expect(status).toContainText('Your response has been recorded.');
 
-    // And with the form gone for good, the status floats instead of throwing.
+    // And with the form gone for good while the dialog is open, closing it
+    // floats the status instead of throwing.
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
     await visitor.evaluate(() => {
       document.getElementById('deck')!.innerHTML =
         '<section class="slide active"><h2>No form any more</h2></section>';
