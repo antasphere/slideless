@@ -197,6 +197,15 @@ deploys) + `dev` (day-to-day work).
   dashboard adapts off `/me`'s `workspace.hubOrigin`/`origin`/`hubManageUrl`, never
   edition-sniffing.
 
+## Deploying to prod
+
+`git push origin origin/dev:refs/heads/prod` is the whole action (PRDCT-2326): `release.yml`
+publishes the image (smoke, scan, multi-arch build, ~20 min) and then dispatches the fleet
+repository (`antasphere/infra`, `deploy.yml`), which mirrors, pins, plans behind a one-change
+gate, applies, probes and commits the pin — live ~25 min after the push, no human step. A
+rollback is `gh workflow run deploy.yml -R antasphere/infra -f sha=<older sha> -f version=<its version>`.
+The setup and the break-glass live in the infra repo (`docs/slideless-deploy.html`, README).
+
 ## Commands
 
 ```bash
