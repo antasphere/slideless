@@ -438,7 +438,10 @@ style.textContent =
   '.sl-forms-status{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;' +
   'font-size:13px;color:#3f3f46;margin:8px 0;display:flex;gap:8px;flex-wrap:wrap;' +
   'align-items:center;text-align:left}' +
-  '.sl-forms-status .sl-forms-btn-2{padding:4px 10px;font-size:12px}';
+  '.sl-forms-status .sl-forms-btn-2{padding:4px 10px;font-size:12px}' +
+  '.sl-forms-status-floating{position:fixed;left:12px;bottom:12px;z-index:2147483646;' +
+  'background:#fff;border:1px solid #e4e4e7;border-radius:8px;padding:8px 10px;margin:0;' +
+  'box-shadow:0 4px 16px rgba(0,0,0,.15);max-width:calc(100vw - 24px);box-sizing:border-box}';
 doc.documentElement.appendChild(style);
 
 // ---- deck-handler shield -----------------------------------------------
@@ -555,8 +558,17 @@ function closeDialog(form) {
   var scrim = form.__slDialog;
   if (scrim && scrim.parentNode) scrim.parentNode.removeChild(scrim);
   // The one-line status after the form: the essential line stays in reach,
-  // and the dialog can be reopened as it was.
+  // and the dialog can be reopened as it was. Placed again on every close:
+  // a deck that re-rendered its slide meanwhile detached the earlier one.
   if (!form.__slStatus) renderStatus(form);
+  placeStatus(form);
+  // Another form's dialog still open underneath (verifier round 1): focus
+  // goes to it, or its Escape is dead with the focus on the body.
+  var other = doc.querySelector('.sl-forms-scrim');
+  if (other && other.firstChild) {
+    try { other.firstChild.focus(); } catch (e) { /* the scrim click still closes it */ }
+    return;
+  }
   var back = form.__slReturnFocus;
   if (back && back.focus && doc.contains(back)) {
     try { back.focus(); } catch (e) { /* the form is still there either way */ }
@@ -578,8 +590,32 @@ function renderStatus(form) {
   show.textContent = text(form, 'show');
   show.addEventListener('click', function () { showDialog(form); });
   el.appendChild(show);
-  form.parentNode.insertBefore(el, form.nextSibling);
   form.__slStatus = el;
+}
+
+// After the form when the form is still in the document; after the live
+// form of the same name when the deck re-rendered it (a slide rebuilt on
+// navigation or on resize: verifier round 1, the personal link was then
+// nowhere on the page); floating at the bottom of the viewport when there
+// is no such form at all. The status never lands in a detached subtree.
+function placeStatus(form) {
+  var el = form.__slStatus;
+  if (!el) return;
+  var host = doc.contains(form) ? form : null;
+  if (!host) {
+    var name = form.getAttribute('data-slideless-form');
+    var live = doc.querySelectorAll(SELECTOR);
+    for (var i = 0; i < live.length; i++) {
+      if (live[i].getAttribute('data-slideless-form') === name) { host = live[i]; break; }
+    }
+  }
+  if (host && host.parentNode) {
+    el.className = 'sl-forms-status';
+    if (el.previousSibling !== host) host.parentNode.insertBefore(el, host.nextSibling);
+  } else {
+    el.className = 'sl-forms-status sl-forms-status-floating';
+    if (!doc.contains(el)) (doc.body || doc.documentElement).appendChild(el);
+  }
 }
 
 function clearConfirmation(form) {
@@ -1014,19 +1050,29 @@ function renderResume(form, row) {
 }
 `;
 
+/**
+ * A server-controlled value serialized into the inline script: JSON with
+ * `<` escaped, so no string inside it, however it was authored, can close
+ * the script early. One function for the config and the catalogue, pinned
+ * by a unit test against a value that carries a closing tag.
+ */
+export function serializeForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 export function formsScriptTag(cfg: FormsConfig): string {
-  const json = JSON.stringify({
+  const json = serializeForScript({
     version: cfg.version,
     unlock: cfg.unlock,
     source: cfg.source,
     placement: cfg.placement,
     emailAvailable: cfg.emailAvailable,
     remembers: cfg.remembers
-  }).replace(/</g, '\\u003c');
+  });
   // The catalogue rides the same way: server-authored, `<` escaped so no
   // string could ever close the script (none carries one; the unit test
   // pins that too, and this escape is the belt to that brace).
-  const catalogue = JSON.stringify(FORMS_CATALOGUE).replace(/</g, '\\u003c');
+  const catalogue = serializeForScript(FORMS_CATALOGUE);
   // NO blanket try/catch: it made every real-deck failure silent by
   // construction (five of five decks broke and the suite stayed green —
   // PRDCT-1334). A throw now surfaces in the console, and an IIFE that

@@ -10,6 +10,7 @@ import {
   HASH_DECK_HTML,
   LATE_DECK_HTML,
   REALDECK_SUCCESS,
+  RERENDER_DECK_HTML,
   TWO_FORMS_DECK_HTML
 } from './deck-fixtures';
 
@@ -288,6 +289,51 @@ test.describe('forms runtime in a real slide deck', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ formName: 'late', payload: { note: 'rendered late' } });
 
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('PRDCT-2343: a deck that re-renders its form while the dialog is open keeps the confirmation reachable', async ({
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'RerenderDeck', RERENDER_DECK_HTML);
+    const visitor = await (await browser.newContext({ viewport: { width: 1000, height: 700 } })).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+    await visitor.locator('#f-note').fill('before the rotation');
+    await visitor.locator('#f-send').click();
+    const dialog = visitor.locator('[data-slideless-dialog="again"]');
+    await expect(dialog).toBeVisible();
+    const link = (await dialog.locator('.sl-forms-link').textContent()) ?? '';
+    expect(link).toContain('#slr=');
+
+    // The respondent rotates their phone: the deck rebuilds its slide, the
+    // form the runtime holds is now detached. Closing the dialog used to
+    // insert the status line into that detached subtree (verifier round 1).
+    await visitor.setViewportSize({ width: 700, height: 1000 });
+    await expect(visitor.locator('#f-note')).toHaveValue(''); // a fresh form: the deck really re-rendered
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    const status = visitor.locator('[data-slideless-status="again"]');
+    await expect(status).toBeVisible();
+    await expect(status).toContainText('Your response has been recorded.');
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.sl-forms-link')).toHaveText(link);
+
+    // And with the form gone for good, the status floats instead of throwing.
+    await visitor.evaluate(() => {
+      document.getElementById('deck')!.innerHTML =
+        '<section class="slide active"><h2>No form any more</h2></section>';
+    });
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(status).toBeVisible();
+    await expect(status).toHaveClass(/sl-forms-status-floating/);
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog.locator('.sl-forms-link')).toHaveText(link);
+
+    expect(await listResponses(page, deckId)).toHaveLength(1);
     await visitor.context().close();
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });

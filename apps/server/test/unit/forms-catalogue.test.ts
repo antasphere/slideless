@@ -4,7 +4,8 @@ import {
   FORMS_LANGUAGES,
   FORMS_TEXT_KEYS,
   FORMS_TEXT_MAX,
-  formsScriptTag
+  formsScriptTag,
+  serializeForScript
 } from '../../src/viewer/forms-runtime.js';
 
 /**
@@ -63,5 +64,16 @@ describe('forms runtime: the language catalogue', () => {
     // script early (the `<` escape is what guarantees it for any future string).
     expect(tag.match(/<\/script/gi)).toHaveLength(1);
     expect(tag.match(/<script /g)).toHaveLength(1);
+  });
+
+  it('a serialized value carrying a closing tag cannot end the script (verifier round 1 gap)', () => {
+    // The catalogue's own strings carry no `<`, so the assertion above holds
+    // with or without the escape; this one holds only with it.
+    const hostile = { en: { close: 'Close</script><img src=x onerror=alert(1)>' } };
+    const out = serializeForScript(hostile);
+    expect(out).not.toContain('</script');
+    expect(out).not.toContain('<img');
+    expect(out).toContain('\\u003c/script');
+    expect(JSON.parse(out)).toEqual(hostile); // the escape is transparent to the parser
   });
 });

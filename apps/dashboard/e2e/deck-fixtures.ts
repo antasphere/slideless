@@ -229,6 +229,31 @@ export const LATE_DECK_HTML = [
 ].join('\n');
 
 /**
+ * Fixture 4b — a deck that RE-RENDERS its slide on every resize (the shape
+ * of a deck rebuilding its DOM on navigation or on a phone rotation; same
+ * `innerHTML =` engine as fixture 4). The form the runtime holds is then a
+ * detached element while its dialog is open: the verifier of PRDCT-2343
+ * found the status line inserted into that detached subtree, the personal
+ * link nowhere on the page.
+ */
+export const RERENDER_DECK_HTML = [
+  '<!doctype html><html><head><meta charset="utf-8"><title>Re-rendering deck (e2e)</title>',
+  `<style>${DECK_CSS}</style></head><body>`,
+  '<div id="count">1</div><div id="deck"></div>',
+  '<script>',
+  'function render() {',
+  "  document.getElementById('deck').innerHTML =",
+  '    \'<section class="slide active"><h2>Rerender</h2>\' +',
+  '    \'<form data-slideless-form="again"><input id="f-note" name="note">\' +',
+  '    \'<button id="f-send" type="submit">Send</button></form></section>\';',
+  '}',
+  "document.addEventListener('DOMContentLoaded', render);",
+  "window.addEventListener('resize', render);",
+  '</script>',
+  '</body></html>'
+].join('\n');
+
+/**
  * Fixture 5 — the EXTERNAL BUNDLE (PRDCT-1331/1334 residual): the page
  * carries no marker at all; `app.js` renders the slides, the form included,
  * on `DOMContentLoaded`, the way a build tool outputs a deck. Commit-time
