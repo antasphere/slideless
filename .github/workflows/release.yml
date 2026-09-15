@@ -151,6 +151,7 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       - name: Build + push (multi-arch)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -160,3 +161,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Hand the published image to the fleet (PRDCT-2326). The roll itself lives in
+      # the fleet repository's deploy workflow, never here: this repository is going
+      # open source and carries no infrastructure — no project id, no registry path,
+      # no service name — and a fork's pull request must never reach it. Only a prod
+      # BRANCH push rolls (the promotion is the decision); a v-tag publishes the semver
+      # aliases and nothing else. The token is a fine-grained PAT scoped to the fleet
+      # repository alone (contents: write, the permission a dispatch needs).
+      - name: Dispatch the fleet roll
+        if: github.ref == 'refs/heads/prod'
+        env:
+          GH_TOKEN: ${{ secrets.FLEET_DISPATCH_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg sha "$GITHUB_SHA" \
+            --arg version "$(node -p "require('./apps/server/package.json').version")" \
+            --arg image_digest "$IMAGE_DIGEST" \
+            --arg subject "$(git log -1 --format=%s)" \
+            '{event_type: "slideless-published", client_payload: {sha: $sha, version: $version, image_digest: $image_digest, subject: $subject}}' \
+            | gh api repos/antasphere/infra/dispatches --input -
+          echo "Dispatched \`slideless-published\` for ${GITHUB_SHA:0:7} to antasphere/infra" >> "$GITHUB_STEP_SUMMARY"
