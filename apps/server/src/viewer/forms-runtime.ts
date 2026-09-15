@@ -563,8 +563,10 @@ function closeDialog(form) {
   if (!form.__slStatus) renderStatus(form);
   placeStatus(form);
   // Another form's dialog still open underneath (verifier round 1): focus
-  // goes to it, or its Escape is dead with the focus on the body.
-  var other = doc.querySelector('.sl-forms-scrim');
+  // goes to the topmost one, or its Escape is dead with the focus on the
+  // body.
+  var scrims = doc.querySelectorAll('.sl-forms-scrim');
+  var other = scrims.length ? scrims[scrims.length - 1] : null;
   if (other && other.firstChild) {
     try { other.firstChild.focus(); } catch (e) { /* the scrim click still closes it */ }
     return;
@@ -601,9 +603,19 @@ function renderStatus(form) {
 function placeStatus(form) {
   var el = form.__slStatus;
   if (!el) return;
+  var name = form.getAttribute('data-slideless-form');
+  // ONE status per form name, the latest submit's (verifier round 2): a deck
+  // that re-rendered its form gives the runtime a second form object with
+  // its own dialog, and two lines offering two different links under one
+  // form would leave the respondent guessing which is theirs.
+  var olds = doc.querySelectorAll('[data-slideless-status]');
+  for (var k = 0; k < olds.length; k++) {
+    if (olds[k] !== el && olds[k].getAttribute('data-slideless-status') === name && olds[k].parentNode) {
+      olds[k].parentNode.removeChild(olds[k]);
+    }
+  }
   var host = doc.contains(form) ? form : null;
   if (!host) {
-    var name = form.getAttribute('data-slideless-form');
     var live = doc.querySelectorAll(SELECTOR);
     for (var i = 0; i < live.length; i++) {
       if (live[i].getAttribute('data-slideless-form') === name) { host = live[i]; break; }
@@ -611,10 +623,17 @@ function placeStatus(form) {
   }
   if (host && host.parentNode) {
     el.className = 'sl-forms-status';
+    el.style.bottom = '';
     if (el.previousSibling !== host) host.parentNode.insertBefore(el, host.nextSibling);
   } else {
     el.className = 'sl-forms-status sl-forms-status-floating';
     if (!doc.contains(el)) (doc.body || doc.documentElement).appendChild(el);
+    // Several floating statuses (several forms gone) stack instead of
+    // hiding one another (verifier round 2).
+    var floats = doc.querySelectorAll('.sl-forms-status-floating');
+    var slot = 0;
+    for (var j = 0; j < floats.length; j++) { if (floats[j] === el) break; slot++; }
+    el.style.bottom = (12 + slot * 52) + 'px';
   }
 }
 

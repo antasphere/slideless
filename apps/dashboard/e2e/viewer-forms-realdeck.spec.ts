@@ -316,10 +316,23 @@ test.describe('forms runtime in a real slide deck', () => {
     await expect(dialog).toBeHidden();
     const status = visitor.locator('[data-slideless-status="again"]');
     await expect(status).toBeVisible();
+    await expect(status).toHaveCount(1);
     await expect(status).toContainText('Your response has been recorded.');
     await status.getByRole('button', { name: 'Show confirmation' }).click();
     await expect(dialog).toBeVisible();
     await expect(dialog.locator('.sl-forms-link')).toHaveText(link);
+    await visitor.keyboard.press('Escape');
+
+    // The re-rendered form is a fresh one for the runtime: a submit through
+    // it opens its own dialog, and ONE status line stays under the form,
+    // the latest submit's (verifier round 2: two lines offered two links).
+    await visitor.locator('#f-note').fill('after the rotation');
+    await visitor.locator('#f-send').click();
+    await expect(dialog).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(status).toHaveCount(1);
+    await expect(status).toContainText('Your response has been recorded.');
 
     // And with the form gone for good, the status floats instead of throwing.
     await visitor.evaluate(() => {
@@ -329,11 +342,14 @@ test.describe('forms runtime in a real slide deck', () => {
     await visitor.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(status).toBeVisible();
+    await expect(status).toHaveCount(1);
     await expect(status).toHaveClass(/sl-forms-status-floating/);
     await status.getByRole('button', { name: 'Show confirmation' }).click();
-    await expect(dialog.locator('.sl-forms-link')).toHaveText(link);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.sl-forms-link')).toContainText('#slr=');
 
-    expect(await listResponses(page, deckId)).toHaveLength(1);
+    // Two rows: the first form's, and the fresh form's after the rotation.
+    expect(await listResponses(page, deckId)).toHaveLength(2);
     await visitor.context().close();
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
