@@ -144,7 +144,7 @@ function writeVersion(root, current, next) {
     for (let i = 0; i < lines.length; i++) if (depths[i] === 1 && needle.test(lines[i])) picks.push(i);
     if (picks.length !== 1) {
       fail(
-        `${f}: expected exactly one top-level line carrying "version": "${current}", found ${picks.length}`
+        `${f}: expected exactly one top-level line carrying "version": "${current}", found ${picks.length} (the field must sit on its own line inside the root object)`
       );
     }
     const pick = picks[0];

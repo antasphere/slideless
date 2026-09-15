@@ -174,6 +174,20 @@ describe('pnpm release <kind>', () => {
     expect(readFileSync(join(root, 'package.json'), 'utf8')).toContain('\t"version": "0.3.0"');
   });
 
+  it('is not fooled by an escaped quote and a brace inside a string value above the field', () => {
+    // The scanner must treat \" as part of the string: otherwise the brace that
+    // follows counts, every later line is mis-depthed, and the field is lost.
+    writeFileSync(
+      join(root, 'package.json'),
+      `{\n  "description": "he said \\" and { here",\n  "o": {\n    "version": "0.3.0"\n  },\n  "name": "slideless",\n  "version": "0.3.0"\n}\n`
+    );
+    git('commit', '-q', '-am', 'an escaped quote in a value');
+    const r = run('patch');
+    expect(r.status, r.stderr).toBe(0);
+    expect(version('package.json')).toBe('0.3.1');
+    expect(readFileSync(join(root, 'package.json'), 'utf8')).toContain('"o": {\n    "version": "0.3.0"');
+  });
+
   it('refuses a file where the top-level version line cannot be identified, and writes nothing', () => {
     // Two top-level "version" keys: JSON.parse keeps the last, the pick is
     // ambiguous, and the release must stop before touching either file.
