@@ -15,11 +15,15 @@ jobs:
   # carries a v-tag on another commit is a forgotten `pnpm release` and would
   # ship a lookalike of that release. Twenty seconds, first, so a doomed run
   # never spends the smoke's ten minutes. The guard asks ORIGIN for the tag
-  # (`git ls-remote`, through the checkout's persisted token), so the shallow
-  # checkout below cannot hide a tag from it; a checkout with no origin makes
-  # it refuse rather than pass on missing data.
+  # (`git ls-remote`), so the shallow checkout below cannot hide a tag from it;
+  # a checkout with no origin makes it refuse rather than pass on missing data.
+  # That read goes through the token actions/checkout persists in the git
+  # config (its default, persist-credentials: true): switching that off turns
+  # the guard into a hard failure on every push, not into a silent pass.
   version-guard:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # the guard reads the remote's tags, nothing more
     steps:
       - uses: actions/checkout@v4
       - run: node scripts/release.mjs guard

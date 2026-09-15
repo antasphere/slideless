@@ -96,25 +96,58 @@ function nextVersion(current, kind) {
 }
 
 /**
+ * The JSON nesting depth at the start of each line: 0 before the root brace,
+ * 1 inside the root object, deeper inside any nested object or array. Strings
+ * (with their escapes) are skipped, so a brace inside a value counts for
+ * nothing. Indentation is never consulted: tabs, spaces or none, the depth
+ * is the structure's own.
+ */
+function lineDepths(raw) {
+  const depths = [];
+  let depth = 0;
+  let inString = false;
+  let atLineStart = true;
+  for (let i = 0; i < raw.length; i++) {
+    if (atLineStart) {
+      depths.push(depth);
+      atLineStart = false;
+    }
+    const c = raw[i];
+    if (inString) {
+      if (c === '\\') i++;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') depth--;
+    if (c === '\n') atLineStart = true;
+  }
+  return depths;
+}
+
+/**
  * Rewrite the top-level version line textually, so the file's formatting
- * (key order, indentation, trailing newline) stays byte-identical. Of the
- * lines carrying the current value, the least indented one is the top-level
+ * (key order, indentation, trailing newline) stays byte-identical. The line
+ * is the one carrying the current value at depth 1, the root object's own
  * field (a nested `"version"` under `pnpm.overrides` or `dependencies` sits
- * deeper); the result is re-parsed and must read `next` at the top level, or
- * nothing is written. Both files are prepared before either is touched.
+ * deeper, however it is indented); the result is re-parsed and must read
+ * `next` at the top level, or nothing is written. Both files are prepared
+ * before either is touched.
  */
 function writeVersion(root, current, next) {
   const prepared = VERSION_FILES.map((f) => {
     const path = join(root, f);
     const raw = readFileSync(path, 'utf8');
     const lines = raw.split('\n');
-    const needle = new RegExp(`^(\\s*)"version":\\s*"${current.replace(/\./g, '\\.')}"`);
-    let pick = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(needle);
-      if (m && (pick === -1 || m[1].length < lines[pick].match(needle)[1].length)) pick = i;
+    const depths = lineDepths(raw);
+    const needle = new RegExp(`^\\s*"version":\\s*"${current.replace(/\./g, '\\.')}"`);
+    const picks = [];
+    for (let i = 0; i < lines.length; i++) if (depths[i] === 1 && needle.test(lines[i])) picks.push(i);
+    if (picks.length !== 1) {
+      fail(
+        `${f}: expected exactly one top-level line carrying "version": "${current}", found ${picks.length}`
+      );
     }
-    if (pick === -1) fail(`${f}: no line carries "version": "${current}"`);
+    const pick = picks[0];
     lines[pick] = lines[pick].replace(`"${current}"`, `"${next}"`);
     const updated = lines.join('\n');
     if (JSON.parse(updated).version !== next) {
@@ -181,15 +214,18 @@ function guard(root) {
   const head = git(['rev-parse', 'HEAD'], { root }).out;
 
   // Origin's tags are the namespace that counts (another machine may have cut
-  // the release); a checkout without origin answers from its own tags, and
-  // only when it holds the whole history.
+  // the release), and this checkout's own tags count beside them: a release
+  // cut here and not yet pushed lives only in this .git, and a guard run before
+  // the promotion must not call that version untagged. Without an origin the
+  // local tags stand alone, and only when the checkout holds the whole history.
   const looked = [];
   if (hasOrigin(root)) looked.push({ where: 'origin', target: remoteTagTarget(root, tag) });
   else if (isShallow(root)) {
     fail(
       `cannot verify ${version}: this checkout is shallow and has no origin to ask for the tags — fetch the full history or add the remote`
     );
-  } else looked.push({ where: 'this checkout', target: localTagTarget(root, tag) });
+  }
+  looked.push({ where: 'this checkout', target: localTagTarget(root, tag) });
 
   for (const { where, target } of looked) {
     if (target !== null && target !== head) {
@@ -203,7 +239,9 @@ function guard(root) {
   if (at)
     console.log(`release guard: ${tag} on ${at.where} points at HEAD — this is the ${version} release, ok`);
   else
-    console.log(`release guard: ${version} carries no tag yet on ${looked[0].where} — the version moved, ok`);
+    console.log(
+      `release guard: ${version} carries no tag yet on ${looked.map((l) => l.where).join(' or ')} — the version moved, ok`
+    );
 }
 
 function release(root, { kind, title, push, dryRun }) {

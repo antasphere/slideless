@@ -160,6 +160,38 @@ describe('pnpm release <kind>', () => {
     expect(run('guard').status).toBe(0);
   });
 
+  it('picks the top-level line by JSON depth, so mixed tabs and spaces cannot mislead it', () => {
+    // A decoy indented with ONE tab above a top-level field indented with TWO
+    // spaces: shorter indentation, deeper structure. Depth wins.
+    writeFileSync(
+      join(root, 'package.json'),
+      `{\n  "pnpm": {\n\t"version": "0.3.0"\n  },\n  "name": "slideless",\n  "version": "0.3.0"\n}\n`
+    );
+    git('commit', '-q', '-am', 'mixed indentation');
+    const r = run('patch');
+    expect(r.status, r.stderr).toBe(0);
+    expect(version('package.json')).toBe('0.3.1');
+    expect(readFileSync(join(root, 'package.json'), 'utf8')).toContain('\t"version": "0.3.0"');
+  });
+
+  it('refuses a file where the top-level version line cannot be identified, and writes nothing', () => {
+    // Two top-level "version" keys: JSON.parse keeps the last, the pick is
+    // ambiguous, and the release must stop before touching either file.
+    writeFileSync(
+      join(root, 'package.json'),
+      `{\n  "version": "0.3.0",\n  "name": "slideless",\n  "version": "0.3.0"\n}\n`
+    );
+    git('commit', '-q', '-am', 'a duplicate key');
+    const r = run('patch');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('expected exactly one top-level line');
+    expect(version('apps/server/package.json')).toBe('0.3.0');
+    expect(git('status', '--porcelain')).toBe('');
+    expect(
+      spawnSync('git', ['rev-parse', '-q', '--verify', 'refs/tags/v0.3.1'], { cwd: root }).status
+    ).not.toBe(0);
+  });
+
   it('writes nothing on --dry-run', () => {
     const r = run('patch', '--dry-run');
     expect(r.status).toBe(0);
@@ -328,6 +360,19 @@ describe('release guard (what release.yml runs first on every push)', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('cannot verify');
     rmSync(shallow, { recursive: true, force: true });
+  });
+
+  it('FAILS on a release cut here and not pushed: the tag lives in this checkout only, origin has nothing', () => {
+    withOrigin();
+    expect(run('patch').status).toBe(0); // v0.3.1 made locally, no --push
+    git('push', '-q', 'origin', 'dev'); // the branch pushed, the tag forgotten
+    writeFileSync(join(root, 'README.md'), 'a week of real work\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'feat: something users see');
+    expect(gitIn(origin, 'tag')).toBe('v0.3.0'); // origin never saw v0.3.1
+    const r = run('guard');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('v0.3.1 on this checkout points at');
   });
 
   it('takes no options', () => {
