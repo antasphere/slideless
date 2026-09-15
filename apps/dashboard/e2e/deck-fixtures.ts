@@ -98,9 +98,9 @@ const DECK_CSS = `
   #count{position:fixed;top:4px;right:8px;font:12px monospace}
 `;
 
-function page(title: string, slides: string[], engine: string, extraHead = ''): string {
+function page(title: string, slides: string[], engine: string, extraHead = '', lang = ''): string {
   return [
-    `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>`,
+    `<!doctype html><html${lang ? ` lang="${lang}"` : ''}><head><meta charset="utf-8"><title>${title}</title>`,
     `<style>${DECK_CSS}</style>${extraHead}</head><body>`,
     '<div id="count">1</div>',
     '<div id="deck">',
@@ -157,6 +157,35 @@ export const TWO_FORMS_DECK_HTML = page(
     ].join('\n')
   ],
   ARCHITECTURE_DE_MARQUE_ENGINE
+);
+
+/**
+ * Fixture 2b — a FRENCH deck (PRDCT-2344): `<html lang="fr">` and nothing
+ * else on form `fr`, so every built-in string of its dialog must come out
+ * French; form `xx` declares a language the catalogue lacks and overrides
+ * one string with markup in it, so it must come out English with that
+ * override shown as the characters typed. Same hostile engine as fixture 1.
+ */
+export const FRENCH_OVERRIDE = '<b>Copier</b> le lien';
+export const FRENCH_DECK_HTML = page(
+  'Deck en français (e2e)',
+  [
+    '<h1>Bonjour</h1>',
+    [
+      '<h2>Deux formulaires</h2>',
+      '<form data-slideless-form="fr">',
+      '  <input id="fr-note" name="note" placeholder="note">',
+      '  <button id="fr-send" type="submit">Envoyer</button>',
+      '</form>',
+      `<form data-slideless-form="xx" data-slideless-lang="xx-YY" data-slideless-text-copy="${FRENCH_OVERRIDE}">`,
+      '  <input id="xx-note" name="note" placeholder="note">',
+      '  <button id="xx-send" type="submit">Send</button>',
+      '</form>'
+    ].join('\n')
+  ],
+  ARCHITECTURE_DE_MARQUE_ENGINE,
+  '',
+  'fr'
 );
 
 /**

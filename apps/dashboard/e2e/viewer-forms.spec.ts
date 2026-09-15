@@ -102,16 +102,52 @@ test('viewer forms: submit, confirmation card with edit link, return-and-update,
     await respondent.locator('input[name="dish"][value="bread"]').check();
     await respondent.locator('#f-send').click();
 
-    const card = respondent.locator('.sl-forms-card');
-    await expect(card).toBeVisible();
+    // PRDCT-2343: a dialog OVER the form, the form still there behind it.
+    const dialog = respondent.locator('[data-slideless-dialog="rsvp"]');
+    const card = dialog.locator('[data-slideless-card="rsvp"]');
+    await expect(dialog).toBeVisible();
+    await expect(card).toHaveAttribute('role', 'dialog');
     // The author's custom success message, then the personal edit link.
     await expect(card.locator('.sl-forms-ok')).toHaveText(SUCCESS);
     const link = (await card.locator('.sl-forms-link').textContent()) ?? '';
     expect(link).toContain(`/v/${secret}/#slr=`);
     editUrl = link;
-    // The form swapped away; EMAIL_DRIVER=none hides the email opt-in.
-    await expect(respondent.locator('form[data-slideless-form="rsvp"]')).toBeHidden();
+    // The form is NOT swapped away; EMAIL_DRIVER=none hides the email opt-in.
+    await expect(respondent.locator('form[data-slideless-form="rsvp"]')).toBeVisible();
+    await expect(respondent.locator('#f-name')).toHaveValue('Ada E2E');
     await expect(card.locator('.sl-forms-mail')).toHaveCount(0);
+  });
+
+  await test.step('closing the dialog leaves the answers editable and the confirmation reachable', async () => {
+    const dialog = respondent.locator('[data-slideless-dialog="rsvp"]');
+    // Escape closes it (focus is inside the dialog once it opens).
+    await respondent.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(respondent.locator('#f-name')).toHaveValue('Ada E2E');
+    // The one-line status after the form carries the essential line and
+    // reopens the same dialog, link included.
+    const status = respondent.locator('[data-slideless-status="rsvp"]');
+    await expect(status).toBeVisible();
+    await expect(status).toContainText(SUCCESS);
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.sl-forms-link')).toHaveText(editUrl);
+    // The close control, then a click on the scrim, both close it.
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await expect(dialog).toBeHidden();
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.click({ position: { x: 5, y: 5 } });
+    await expect(dialog).toBeHidden();
+    // Editing directly, no intermediate click: the same row is updated.
+    await respondent.locator('#f-name').fill('Ada Twice');
+    await respondent.locator('#f-send').click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.sl-forms-ok')).toHaveText('Your response has been updated.');
+    await expect(dialog.locator('.sl-forms-link')).toHaveText(editUrl);
+    // The status line follows the latest submit.
+    await respondent.keyboard.press('Escape');
+    await expect(status).toContainText('Your response has been updated.');
   });
 
   let responseId = '';
@@ -120,12 +156,12 @@ test('viewer forms: submit, confirmation card with edit link, return-and-update,
     const listed = await page.request.get(`/api/v1/presentations/${deckId}/responses`);
     expect(listed.status()).toBe(200);
     const { responses } = await listed.json();
-    expect(responses).toHaveLength(1);
+    expect(responses).toHaveLength(1); // the direct edit was an update, never a second row
     expect(responses[0]).toMatchObject({
       formName: 'rsvp',
       source: 'link',
       placement: null,
-      payload: { name: 'Ada E2E', dish: ['salad', 'bread'] }
+      payload: { name: 'Ada Twice', dish: ['salad', 'bread'] }
     });
     responseId = responses[0].id;
     createdUpdatedAt = responses[0].updatedAt;
@@ -145,14 +181,14 @@ test('viewer forms: submit, confirmation card with edit link, return-and-update,
     await resume.getByRole('button', { name: 'Edit that response' }).click();
     await expect(resume).toHaveCount(0);
 
-    await expect(returning.locator('#f-name')).toHaveValue('Ada E2E');
+    await expect(returning.locator('#f-name')).toHaveValue('Ada Twice');
     await expect(returning.locator('input[name="dish"][value="salad"]')).toBeChecked();
     await expect(returning.locator('input[name="dish"][value="bread"]')).toBeChecked();
 
     await returning.locator('#f-name').fill('Ada Updated');
     await returning.locator('input[name="dish"][value="bread"]').uncheck();
     await returning.locator('#f-send').click();
-    await expect(returning.locator('.sl-forms-card .sl-forms-ok')).toHaveText(
+    await expect(returning.locator('[data-slideless-card="rsvp"] .sl-forms-ok')).toHaveText(
       'Your response has been updated.'
     );
     await returning.context().close();

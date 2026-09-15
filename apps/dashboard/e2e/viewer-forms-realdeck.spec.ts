@@ -5,6 +5,8 @@ import {
   ARCHITECTURE_DECK_HTML,
   BUNDLE_DECK_APP_JS,
   BUNDLE_DECK_INDEX_HTML,
+  FRENCH_DECK_HTML,
+  FRENCH_OVERRIDE,
   HASH_DECK_HTML,
   LATE_DECK_HTML,
   REALDECK_SUCCESS,
@@ -153,9 +155,10 @@ test.describe('forms runtime in a real slide deck', () => {
     await expect(visitor.locator('#count')).toHaveText('2');
     await expect(visitor.locator('#f-mail')).toHaveValue('jean@exemple.be');
 
-    // 4. Submitting must not navigate: the confirmation card has to be born
-    //    on the VISIBLE slide, or the respondent never sees their edit link.
+    // 4. Submitting must not navigate: the confirmation dialog opens over
+    //    the VISIBLE slide, or the respondent never sees their edit link.
     await visitor.locator('#f-send').click();
+    const dialog = visitor.locator('[data-slideless-dialog="contact"]');
     const card = visitor.locator('[data-slideless-card="contact"]');
     await expect(card).toBeVisible();
     await expect(card.locator('.sl-forms-ok')).toHaveText(REALDECK_SUCCESS);
@@ -164,6 +167,25 @@ test.describe('forms runtime in a real slide deck', () => {
 
     // …and clicking inside the card does not navigate the deck either.
     await card.locator('.sl-forms-ok').click();
+    await expect(visitor.locator('#count')).toHaveText('2');
+
+    // 5. PRDCT-2343: the dialog's scrim and keys are shielded the same way.
+    //    Focus is inside the dialog: an arrow key must not flip the slide;
+    //    a click on the scrim, left of centre (this engine's "previous
+    //    slide"), closes the dialog and leaves the slide where it was, with
+    //    the answers still in the fields.
+    await visitor.keyboard.press('ArrowRight');
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await dialog.click({ position: { x: 5, y: 5 } });
+    await expect(dialog).toBeHidden();
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await expect(visitor.locator('#f-name')).toHaveValue('Jean Dupont');
+    // The status line after the form reopens it, and Escape closes it, on
+    // the same slide.
+    await visitor.locator('[data-slideless-status="contact"] button').click();
+    await expect(dialog).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
     await expect(visitor.locator('#count')).toHaveText('2');
 
     const rows = await listResponses(page, deckId);
@@ -186,21 +208,31 @@ test.describe('forms runtime in a real slide deck', () => {
 
     // Submit `public`, THEN `salary`. The old runtime kept ONE module-level
     // editSecret, so the second create clobbered the first form's handle.
+    // Each submit opens that form's dialog over the slide; it is closed
+    // (Escape) before the next form is reached, and each form's status
+    // line reopens its own dialog (PRDCT-2343).
     await visitor.locator('#pub-note').fill('nothing to hide');
     await visitor.locator('#pub-send').click();
     await expect(visitor.locator('[data-slideless-card="public"]')).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(visitor.locator('[data-slideless-dialog="public"]')).toBeHidden();
 
     await visitor.locator('#sal-amount').fill('42000');
     await visitor.locator('#sal-send').click();
     await expect(visitor.locator('[data-slideless-card="salary"]')).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(visitor.locator('[data-slideless-dialog="salary"]')).toBeHidden();
 
     expect(await listResponses(page, deckId)).toHaveLength(2);
 
     // Correct the PUBLIC answer. With the shared secret this filed the
     // correction under `salary`, destroying the salary answer, while the
     // card told the respondent "Your response has been updated."
+    await visitor.locator('[data-slideless-status="public"] button').click();
     const publicCard = visitor.locator('[data-slideless-card="public"]');
+    await expect(publicCard).toBeVisible();
     await publicCard.getByRole('button', { name: 'Edit response' }).click();
+    await expect(visitor.locator('[data-slideless-dialog="public"]')).toBeHidden();
     await expect(visitor.locator('form[data-slideless-form="public"]')).toBeVisible();
     await visitor.locator('#pub-note').fill('corrected note');
     await visitor.locator('#pub-send').click();
@@ -215,10 +247,12 @@ test.describe('forms runtime in a real slide deck', () => {
     // The load-bearing assertion of this whole spec.
     expect(byForm['salary']).toEqual({ amount: '42000' });
 
-    // The two cards advertise DIFFERENT edit links — one shared secret made
+    // The two dialogs advertise DIFFERENT edit links — one shared secret made
     // form A's card hand out form B's respondent capability (verified in the
     // audit via Mailpit, under text telling the recipient it is a password).
     const pubLink = await publicCard.locator('.sl-forms-link').textContent();
+    await visitor.keyboard.press('Escape');
+    await visitor.locator('[data-slideless-status="salary"] button').click();
     const salLink = await visitor.locator('[data-slideless-card="salary"] .sl-forms-link').textContent();
     expect(pubLink).not.toBe(salLink);
 
@@ -353,6 +387,55 @@ test.describe('forms runtime in a real slide deck', () => {
     await victim.context().close();
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
+  test('PRDCT-2344: a French deck gets a French dialog, an unknown language falls back to English, an override is text', async ({
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'FrenchDeck', FRENCH_DECK_HTML);
+    const visitor = await (await browser.newContext()).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+    await visitor.locator('body').press('ArrowRight');
+    await expect(visitor.locator('form[data-slideless-form="fr"]')).toBeVisible();
+
+    // Form `fr` carries no attribute at all: <html lang="fr"> is the whole
+    // contract, and EVERY built-in line comes out French, not just one.
+    await visitor.locator('#fr-note').fill('bonjour');
+    await visitor.locator('#fr-send').click();
+    const frCard = visitor.locator('[data-slideless-card="fr"]');
+    await expect(frCard).toBeVisible();
+    await expect(frCard.locator('.sl-forms-ok')).toHaveText('Votre réponse a bien été enregistrée.');
+    await expect(frCard).toContainText(
+      'Conservez ce lien personnel pour consulter ou modifier votre réponse plus tard :'
+    );
+    await expect(frCard.getByRole('button', { name: 'Copier le lien' })).toBeVisible();
+    await expect(frCard.getByRole('button', { name: 'Modifier ma réponse' })).toBeVisible();
+    await expect(frCard.getByRole('button', { name: 'Fermer' })).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(
+      visitor
+        .locator('[data-slideless-status="fr"]')
+        .getByRole('button', { name: 'Afficher la confirmation' })
+    ).toBeVisible();
+
+    // Form `xx` declares a language the catalogue lacks: English as a
+    // whole. Its copy override carries markup, shown as the characters
+    // typed and never rendered as an element.
+    await visitor.locator('#xx-note').fill('hello');
+    await visitor.locator('#xx-send').click();
+    const xxCard = visitor.locator('[data-slideless-card="xx"]');
+    await expect(xxCard).toBeVisible();
+    await expect(xxCard.locator('.sl-forms-ok')).toHaveText('Your response has been recorded.');
+    await expect(xxCard.getByRole('button', { name: 'Edit response' })).toBeVisible();
+    const copy = xxCard.getByRole('button', { name: FRENCH_OVERRIDE });
+    await expect(copy).toHaveText(FRENCH_OVERRIDE);
+    expect(await copy.locator('b').count()).toBe(0);
+    expect(await copy.innerHTML()).toContain('&lt;b&gt;');
+
+    expect(await listResponses(page, deckId)).toHaveLength(2);
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
   test('residual 1: a form authored from an EXTERNAL JS bundle is detected and wired', async ({
     browser
   }) => {
