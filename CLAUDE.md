@@ -199,10 +199,21 @@ deploys) + `dev` (day-to-day work).
 
 ## Deploying to prod
 
-`git push origin origin/dev:refs/heads/prod` is the whole action (PRDCT-2326): `release.yml`
+**First move the version** (PRDCT-2340): on a clean `dev`, `pnpm release patch|minor|major
+[--title "…"]` bumps the root and `apps/server` package files together, commits
+`chore(release): slideless X.Y.Z` and makes the annotated `vX.Y.Z` tag on it; push `dev` and the
+tag (`--push` does both). The kind is the human's call, never derived from commit subjects and
+never auto-incremented. The version is intrinsic to the image (PRDCT-1844), so this is the only
+place it moves; `release.yml`'s first job (`node scripts/release.mjs guard`) refuses a push whose
+package version already carries a v-tag on another commit, so a forgotten bump fails in twenty
+seconds instead of shipping a lookalike of the previous release. The CLI keeps its own series
+(`packages/cli`, `cli-v*` tags, `publish-cli.yml`).
+
+Then `git push origin origin/dev:refs/heads/prod` is the whole action (PRDCT-2326): `release.yml`
 publishes the image (smoke, scan, multi-arch build, ~20 min) and then dispatches the fleet
 repository (`antasphere/infra`, `deploy.yml`), which mirrors, pins, plans behind a one-change
-gate, applies, probes and commits the pin — live ~25 min after the push, no human step. A
+gate, applies, probes and commits the pin — live ~25 min after the push, no human step; the
+probe's last fact is that the live instance serves the version the push carried. A
 rollback is `gh workflow run deploy.yml -R antasphere/infra -f sha=<older sha> -f version=<its version>`.
 The setup and the break-glass live in the infra repo (`docs/slideless-deploy.html`, README).
 
