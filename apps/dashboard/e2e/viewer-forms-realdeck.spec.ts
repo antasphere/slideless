@@ -5,9 +5,12 @@ import {
   ARCHITECTURE_DECK_HTML,
   BUNDLE_DECK_APP_JS,
   BUNDLE_DECK_INDEX_HTML,
+  FRENCH_DECK_HTML,
+  FRENCH_OVERRIDE,
   HASH_DECK_HTML,
   LATE_DECK_HTML,
   REALDECK_SUCCESS,
+  RERENDER_DECK_HTML,
   TWO_FORMS_DECK_HTML
 } from './deck-fixtures';
 
@@ -47,7 +50,13 @@ interface DeckFile {
   contentType: string;
 }
 
-/** Push a deck of one or more files and mint a default share link (forms ON by default). */
+/**
+ * Push a deck of one or more files and mint a share link (forms ON by
+ * default). The link is minted NON-remembering: a named link remembers its
+ * answers by default since PRDCT-2328, and that flow shows no personal link
+ * on the card, while every finding below is about the personal-link flow.
+ * `mintLink` mints the remembering shape when a test wants it.
+ */
 async function seedDeckFiles(
   page: Page,
   title: string,
@@ -79,11 +88,15 @@ async function seedDeckFiles(
   });
   expect(commit.status()).toBe(201);
   const deckId = (await commit.json()).presentation.id;
+  return { deckId, secret: await mintLink(page, deckId, `e2e-${title}`, false) };
+}
+
+async function mintLink(page: Page, deckId: string, name: string, remembers: boolean): Promise<string> {
   const token = await page.request.post(`/api/v1/presentations/${deckId}/tokens`, {
-    data: { name: `e2e-${title}` }
+    data: { name, remembersResponses: remembers }
   });
   expect(token.status()).toBe(201);
-  return { deckId, secret: (await token.json()).secret };
+  return (await token.json()).secret as string;
 }
 
 /** Push a one-file deck and mint a default share link (forms ON by default). */
@@ -153,9 +166,10 @@ test.describe('forms runtime in a real slide deck', () => {
     await expect(visitor.locator('#count')).toHaveText('2');
     await expect(visitor.locator('#f-mail')).toHaveValue('jean@exemple.be');
 
-    // 4. Submitting must not navigate: the confirmation card has to be born
-    //    on the VISIBLE slide, or the respondent never sees their edit link.
+    // 4. Submitting must not navigate: the confirmation dialog opens over
+    //    the VISIBLE slide, or the respondent never sees their edit link.
     await visitor.locator('#f-send').click();
+    const dialog = visitor.locator('[data-slideless-dialog="contact"]');
     const card = visitor.locator('[data-slideless-card="contact"]');
     await expect(card).toBeVisible();
     await expect(card.locator('.sl-forms-ok')).toHaveText(REALDECK_SUCCESS);
@@ -164,6 +178,25 @@ test.describe('forms runtime in a real slide deck', () => {
 
     // …and clicking inside the card does not navigate the deck either.
     await card.locator('.sl-forms-ok').click();
+    await expect(visitor.locator('#count')).toHaveText('2');
+
+    // 5. PRDCT-2343: the dialog's scrim and keys are shielded the same way.
+    //    Focus is inside the dialog: an arrow key must not flip the slide;
+    //    a click on the scrim, left of centre (this engine's "previous
+    //    slide"), closes the dialog and leaves the slide where it was, with
+    //    the answers still in the fields.
+    await visitor.keyboard.press('ArrowRight');
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await dialog.click({ position: { x: 5, y: 5 } });
+    await expect(dialog).toBeHidden();
+    await expect(visitor.locator('#count')).toHaveText('2');
+    await expect(visitor.locator('#f-name')).toHaveValue('Jean Dupont');
+    // The status line after the form reopens it, and Escape closes it, on
+    // the same slide.
+    await visitor.locator('[data-slideless-status="contact"] button').click();
+    await expect(dialog).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
     await expect(visitor.locator('#count')).toHaveText('2');
 
     const rows = await listResponses(page, deckId);
@@ -186,21 +219,31 @@ test.describe('forms runtime in a real slide deck', () => {
 
     // Submit `public`, THEN `salary`. The old runtime kept ONE module-level
     // editSecret, so the second create clobbered the first form's handle.
+    // Each submit opens that form's dialog over the slide; it is closed
+    // (Escape) before the next form is reached, and each form's status
+    // line reopens its own dialog (PRDCT-2343).
     await visitor.locator('#pub-note').fill('nothing to hide');
     await visitor.locator('#pub-send').click();
     await expect(visitor.locator('[data-slideless-card="public"]')).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(visitor.locator('[data-slideless-dialog="public"]')).toBeHidden();
 
     await visitor.locator('#sal-amount').fill('42000');
     await visitor.locator('#sal-send').click();
     await expect(visitor.locator('[data-slideless-card="salary"]')).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(visitor.locator('[data-slideless-dialog="salary"]')).toBeHidden();
 
     expect(await listResponses(page, deckId)).toHaveLength(2);
 
     // Correct the PUBLIC answer. With the shared secret this filed the
     // correction under `salary`, destroying the salary answer, while the
     // card told the respondent "Your response has been updated."
+    await visitor.locator('[data-slideless-status="public"] button').click();
     const publicCard = visitor.locator('[data-slideless-card="public"]');
+    await expect(publicCard).toBeVisible();
     await publicCard.getByRole('button', { name: 'Edit response' }).click();
+    await expect(visitor.locator('[data-slideless-dialog="public"]')).toBeHidden();
     await expect(visitor.locator('form[data-slideless-form="public"]')).toBeVisible();
     await visitor.locator('#pub-note').fill('corrected note');
     await visitor.locator('#pub-send').click();
@@ -215,10 +258,12 @@ test.describe('forms runtime in a real slide deck', () => {
     // The load-bearing assertion of this whole spec.
     expect(byForm['salary']).toEqual({ amount: '42000' });
 
-    // The two cards advertise DIFFERENT edit links — one shared secret made
+    // The two dialogs advertise DIFFERENT edit links — one shared secret made
     // form A's card hand out form B's respondent capability (verified in the
     // audit via Mailpit, under text telling the recipient it is a password).
     const pubLink = await publicCard.locator('.sl-forms-link').textContent();
+    await visitor.keyboard.press('Escape');
+    await visitor.locator('[data-slideless-status="salary"] button').click();
     const salLink = await visitor.locator('[data-slideless-card="salary"] .sl-forms-link').textContent();
     expect(pubLink).not.toBe(salLink);
 
@@ -244,6 +289,70 @@ test.describe('forms runtime in a real slide deck', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ formName: 'late', payload: { note: 'rendered late' } });
 
+    await visitor.context().close();
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
+  test('PRDCT-2343: a deck that re-renders its form while the dialog is open keeps the confirmation reachable', async ({
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'RerenderDeck', RERENDER_DECK_HTML);
+    const visitor = await (await browser.newContext({ viewport: { width: 1000, height: 700 } })).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+    await visitor.locator('#f-note').fill('before the rotation');
+    await visitor.locator('#f-send').click();
+    const dialog = visitor.locator('[data-slideless-dialog="again"]');
+    await expect(dialog).toBeVisible();
+    const link = (await dialog.locator('.sl-forms-link').textContent()) ?? '';
+    expect(link).toContain('#slr=');
+
+    // The respondent rotates their phone: the deck rebuilds its slide, the
+    // form the runtime holds is now detached. Closing the dialog used to
+    // insert the status line into that detached subtree (verifier round 1).
+    await visitor.setViewportSize({ width: 700, height: 1000 });
+    await expect(visitor.locator('#f-note')).toHaveValue(''); // a fresh form: the deck really re-rendered
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    const status = visitor.locator('[data-slideless-status="again"]');
+    await expect(status).toBeVisible();
+    await expect(status).toHaveCount(1);
+    await expect(status).toContainText('Your response has been recorded.');
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.sl-forms-link')).toHaveText(link);
+    await visitor.keyboard.press('Escape');
+
+    // The re-rendered form is a fresh one for the runtime: a submit through
+    // it opens its own dialog, and ONE status line stays under the form,
+    // the latest submit's (verifier round 2: two lines offered two links).
+    await visitor.locator('#f-note').fill('after the rotation');
+    await visitor.locator('#f-send').click();
+    await expect(dialog).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(status).toHaveCount(1);
+    await expect(status).toContainText('Your response has been recorded.');
+
+    // And with the form gone for good while the dialog is open, closing it
+    // floats the status instead of throwing.
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
+    await visitor.evaluate(() => {
+      document.getElementById('deck')!.innerHTML =
+        '<section class="slide active"><h2>No form any more</h2></section>';
+    });
+    await visitor.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(status).toBeVisible();
+    await expect(status).toHaveCount(1);
+    await expect(status).toHaveClass(/sl-forms-status-floating/);
+    await status.getByRole('button', { name: 'Show confirmation' }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.sl-forms-link')).toContainText('#slr=');
+
+    // Two rows: the first form's, and the fresh form's after the rotation.
+    expect(await listResponses(page, deckId)).toHaveLength(2);
     await visitor.context().close();
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
@@ -353,6 +462,92 @@ test.describe('forms runtime in a real slide deck', () => {
     await victim.context().close();
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
+  test('PRDCT-2344: a French deck gets a French dialog, an unknown language falls back to English, an override is text', async ({
+    browser
+  }) => {
+    const { deckId, secret } = await seedDeck(page, 'FrenchDeck', FRENCH_DECK_HTML);
+    const visitor = await (await browser.newContext()).newPage();
+    const origin = new URL(page.url()).origin;
+    await visitor.goto(`${origin}/v/${secret}/`);
+    await visitor.locator('body').press('ArrowRight');
+    await expect(visitor.locator('form[data-slideless-form="fr"]')).toBeVisible();
+
+    // Form `fr` carries no attribute at all: <html lang="fr"> is the whole
+    // contract, and EVERY built-in line comes out French, not just one.
+    await visitor.locator('#fr-note').fill('bonjour');
+    await visitor.locator('#fr-send').click();
+    const frCard = visitor.locator('[data-slideless-card="fr"]');
+    await expect(frCard).toBeVisible();
+    await expect(frCard.locator('.sl-forms-ok')).toHaveText('Votre réponse a bien été enregistrée.');
+    await expect(frCard).toContainText(
+      'Conservez ce lien personnel pour consulter ou modifier votre réponse plus tard :'
+    );
+    await expect(frCard.getByRole('button', { name: 'Copier le lien' })).toBeVisible();
+    await expect(frCard.getByRole('button', { name: 'Modifier ma réponse' })).toBeVisible();
+    await expect(frCard.getByRole('button', { name: 'Fermer' })).toBeVisible();
+    await visitor.keyboard.press('Escape');
+    await expect(
+      visitor
+        .locator('[data-slideless-status="fr"]')
+        .getByRole('button', { name: 'Afficher la confirmation' })
+    ).toBeVisible();
+
+    // Form `xx` declares a language the catalogue lacks: English as a
+    // whole. Its copy override carries markup, shown as the characters
+    // typed and never rendered as an element.
+    await visitor.locator('#xx-note').fill('hello');
+    await visitor.locator('#xx-send').click();
+    const xxCard = visitor.locator('[data-slideless-card="xx"]');
+    await expect(xxCard).toBeVisible();
+    await expect(xxCard.locator('.sl-forms-ok')).toHaveText('Your response has been recorded.');
+    await expect(xxCard.getByRole('button', { name: 'Edit response' })).toBeVisible();
+    const copy = xxCard.getByRole('button', { name: FRENCH_OVERRIDE });
+    await expect(copy).toHaveText(FRENCH_OVERRIDE);
+    expect(await copy.locator('b').count()).toBe(0);
+    expect(await copy.innerHTML()).toContain('&lt;b&gt;');
+
+    expect(await listResponses(page, deckId)).toHaveLength(2);
+    await visitor.context().close();
+
+    // PRDCT-2343 on a REMEMBERING link (the case that filed the task): the
+    // dialog says the link remembers, in French, and Modifier ma réponse
+    // closes it over the still-filled form; a direct edit and resend updates
+    // that link's one response, and the dialog says so in French.
+    const remembering = await mintLink(page, deckId, 'Alice', true);
+    const alice = await (await browser.newContext()).newPage();
+    await alice.goto(`${origin}/v/${remembering}/`);
+    await alice.locator('body').press('ArrowRight');
+    await alice.locator('#fr-note').fill('première réponse');
+    await alice.locator('#fr-send').click();
+    const aliceCard = alice.locator('[data-slideless-card="fr"]');
+    await expect(aliceCard).toBeVisible();
+    await expect(aliceCard.locator('.sl-forms-ok')).toHaveText('Votre réponse a bien été enregistrée.');
+    await expect(aliceCard).toContainText(
+      'Ce lien retient vos réponses : rouvrez-le à tout moment pour les consulter ou les modifier.'
+    );
+    await expect(aliceCard.locator('.sl-forms-link')).toHaveCount(0);
+    await aliceCard.getByRole('button', { name: 'Modifier ma réponse' }).click();
+    await expect(alice.locator('[data-slideless-dialog="fr"]')).toBeHidden();
+    await expect(alice.locator('#fr-note')).toHaveValue('première réponse');
+    await expect(alice.locator('#count')).toHaveText('2');
+    await alice.locator('#fr-note').fill('réponse corrigée');
+    await alice.locator('#fr-send').click();
+    await expect(aliceCard.locator('.sl-forms-ok')).toHaveText('Votre réponse a été mise à jour.');
+    // The status line appears once the dialog is closed, and follows the latest submit.
+    await alice.keyboard.press('Escape');
+    await expect(alice.locator('[data-slideless-dialog="fr"]')).toBeHidden();
+    await expect(alice.locator('[data-slideless-status="fr"]')).toContainText(
+      'Votre réponse a été mise à jour.'
+    );
+    await alice.context().close();
+
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(3); // fr + xx through the first link, ONE row through Alice's
+    expect(rows.some((r) => r.payload['note'] === 'réponse corrigée')).toBe(true);
+    expect(rows.some((r) => r.payload['note'] === 'première réponse')).toBe(false);
+    expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
+  });
+
   test('residual 1: a form authored from an EXTERNAL JS bundle is detected and wired', async ({
     browser
   }) => {

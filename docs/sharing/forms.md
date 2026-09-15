@@ -29,7 +29,7 @@ That is the whole authoring contract:
 - **Multiple forms per deck** are just multiple named forms; each collects its own stream.
 - **Sub-pages work.** In a multi-page deck a form can sit on any HTML page, not only the entry.
 - **The markup stays yours.** The viewer wires submission behavior onto your form; it never restyles or rewrites it.
-- **Custom confirmation.** `data-slideless-success="Thanks, see you there!"` replaces the default "Your response has been recorded."
+- **The confirmation speaks your deck's language, and every line of it is yours to change.** `<html lang="fr">` is enough for a French dialog; `data-slideless-success="Merci, à bientôt !"` replaces its first line. See [The confirmation dialog](#the-confirmation-dialog).
 
 `slideless push` needs no flags and no manifest entry: pushing a deck that contains a marked form — in its HTML or in a script file that renders the form at load time — is all it takes, and the push output lists the detected form names as a reminder. Any share link then serves it working (see per-link control below).
 
@@ -37,11 +37,54 @@ That is the whole authoring contract:
 
 ## What a viewer experiences
 
-Submitting swaps the form for a confirmation card, with double-submit protection while the request is in flight and inline errors if something goes wrong. The card carries:
+Submitting opens a confirmation dialog **over** the form: the form stays on the page with the answers in its fields, behind a scrim, and closing the dialog (its close button, Escape, a click outside it, or **Edit response**) returns the viewer to the form, ready to change an answer and submit again. A one-line status stays under the form with a **Show confirmation** button that reopens the dialog as it was, so nothing it said is ever out of reach. Double-submit protection holds while the request is in flight, and errors show inline under the form. The dialog carries:
 
 - **The personal edit link**: the page URL plus a private `#slr=` fragment. Reopening it later offers to bring back the viewer's own answer; once they confirm, the form is prefilled and submitting again updates it in place. One respondent keeps one evolving response instead of piling up duplicates. The fragment never travels to the server as part of a request URL, so the edit secret stays out of logs; it is shown once, and without it a new submission is simply a new response.
-- **Email me my link** (optional): the card offers to mail the edit link to an address the viewer types at that moment. The field appears only on instances that send email, and the mail only ever carries that viewer's own link.
-- **Returning with an edit link asks first.** Opening a `#slr=` link does not silently put the form into edit mode. The card explains that the link points at a response submitted on a given date and offers _Edit that response_ or _Submit a new response_, defaulting to a new one. The link may have been forwarded, pasted on a page, or handed out deliberately, and overwriting a stranger's answers must never happen by merely opening a URL.
+- **Email me my link** (optional): the dialog offers to mail the edit link to an address the viewer types at that moment. The field appears only on instances that send email, and the mail only ever carries that viewer's own link.
+- **Returning with an edit link asks first.** Opening a `#slr=` link does not silently put the form into edit mode. A prompt above the form explains that the link points at a response submitted on a given date and offers _Edit that response_ or _Submit a new response_, defaulting to a new one; it is not a dialog, so the viewer can ignore it and type. The link may have been forwarded, pasted on a page, or handed out deliberately, and overwriting a stranger's answers must never happen by merely opening a URL.
+
+## The confirmation dialog
+
+Every line of the dialog, of the status under the form and of the returning-link prompt comes from **one language contract**: the deck's language picks a built-in set of strings, and any single string can be replaced. Nothing else in the deck is touched.
+
+**The language.** The viewer reads `data-slideless-lang` on the form, then on the nearest ancestor that carries it, then the document's own `<html lang>`; only the primary tag counts (`fr-BE` is `fr`). Built in: English (`en`), French (`fr`), Dutch (`nl`), German (`de`), Spanish (`es`). Any other language falls back to English as a whole, never string by string, so a dialog is either translated or plainly English.
+
+**A string of your own.** `data-slideless-text-<key>` on the form replaces one built-in string, in whatever language you write it. `data-slideless-success` is the same as `data-slideless-text-success` and keeps working. The keys, with their English text:
+
+| Key                                       | Attribute                                                         | English text                                                                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `success`                                 | `data-slideless-success` (or `…-text-success`)                    | Your response has been recorded.                                                                                                                             |
+| `updated`                                 | `data-slideless-text-updated`                                     | Your response has been updated.                                                                                                                              |
+| `remembers`                               | `data-slideless-text-remembers`                                   | This link remembers your answers: reopen it any time to view or change them.                                                                                 |
+| `keepLink`                                | `data-slideless-text-keep-link`                                   | Keep this personal link to view or update your answer later:                                                                                                 |
+| `copy` · `copied` · `copyFailed`          | `…-text-copy` · `…-text-copied` · `…-text-copy-failed`            | Copy link · Copied · Press Ctrl+C                                                                                                                            |
+| `edit`                                    | `data-slideless-text-edit`                                        | Edit response                                                                                                                                                |
+| `emailSend` · `emailSent` · `emailFailed` | `…-text-email-send` · `…-text-email-sent` · `…-text-email-failed` | Email me my link · Sent · Try again later                                                                                                                    |
+| `emailPlaceholder` · `emailNote`          | `…-text-email-placeholder` · `…-text-email-note`                  | you@example.com · Optional: get the link by email so you can come back to it.                                                                                |
+| `resumeTitle`                             | `data-slideless-text-resume-title`                                | This link points at a response submitted on `{date}`.                                                                                                        |
+| `resumeWhy` · `resumeEdit` · `resumeNew`  | `…-text-resume-why` · `…-text-resume-edit` · `…-text-resume-new`  | Choose "Edit that response" only if it is yours: editing replaces its answers. Otherwise submit a new response. · Edit that response · Submit a new response |
+| `errorGeneric` · `errorNetwork`           | `…-text-error-generic` · `…-text-error-network`                   | Something went wrong. Please try again. · Network error. Please try again.                                                                                   |
+| `close` · `show`                          | `…-text-close` · `…-text-show`                                    | Close · Show confirmation                                                                                                                                    |
+
+`{date}` in the resume title is replaced by the response's date in the dialog's language; it is the only placeholder.
+
+A French deck, with one line of its own:
+
+```html
+<html lang="fr">
+  …
+  <form
+    data-slideless-form="questions"
+    data-slideless-success="Merci, vos réponses sont bien arrivées chez nous."
+  >
+    …
+  </form>
+</html>
+```
+
+Every other line of that dialog is French: the remembering line, **Copier le lien**, **Modifier ma réponse**, **Fermer**, **Afficher la confirmation**. A Flemish reader gets the same deck in Dutch with `<html lang="nl">`, or one form in Dutch on a French page with `data-slideless-lang="nl"` on that form.
+
+**What the viewer does with your strings.** They are text, never markup: a `<b>` in an override is shown as the characters `<b>`, not as bold, and no attribute can add a link, a script or a style to the dialog. Control characters are dropped, an empty string is treated as absent, and a string is cut at 1,000 characters. Only the keys above are read; any other `data-slideless-text-*` attribute is ignored. The strings live in the viewer's sandbox with the rest of your deck: they are never sent to the server, never stored with a response, and never shown in the dashboard.
 
 **Responses are anonymous by default, attributable when you mint an attributable link.** Slideless never attaches a viewer's account to a response, even when they happen to be signed in to the same instance in the same browser. A deck runs in a sandbox, and anything the page is told, the deck's own scripts can read and replay, so an identity handed to the page would be an identity anyone could claim. What a response always carries is the **share link it came through**, and that is the attribution you control: a link minted for one person, with that person's name on it, tells you who answered as surely as a name field would, without the deck ever learning anything. If you want names or emails in the data itself, add fields for them: the deck author decides what to ask, and Slideless never infers meaning from the answers.
 
@@ -56,7 +99,7 @@ This is the default for every link you name: the dashboard's share form (**Remem
 
 **Read this before you forward such a link.** On a remembering link the link secret is a bearer credential for the answers, not just for the deck: whoever holds the link can read what was answered through it and change it. Hand it to the one person it was minted for. For a link you will post publicly, or pass around a team, untick the switch (or `--no-remember`): every submit is then a separate response, and the personal edit link on the confirmation card is the only way back to one of them.
 
-On a remembering link the confirmation card says so ({{This link remembers your answers: reopen it any time to view or change them.}}) and offers **Edit response**; the personal edit link and **Email me my link** do not appear, since the link is what to keep. Your own dashboard previews never remember anything, as they never create responses. The switch can be changed on an existing link (`PATCH …/tokens/{tokenId}` with `remembersResponses`); turning it off stops the link from bringing answers back and leaves the rows as they are.
+On a remembering link the confirmation dialog says so ({{This link remembers your answers: reopen it any time to view or change them.}}) and offers **Edit response**, which simply closes it over the still-filled form; the personal edit link and **Email me my link** do not appear, since the link is what to keep. Your own dashboard previews never remember anything, as they never create responses. The switch can be changed on an existing link (`PATCH …/tokens/{tokenId}` with `remembersResponses`); turning it off stops the link from bringing answers back and leaves the rows as they are.
 
 ## Every edit is kept
 
@@ -119,7 +162,7 @@ On a link with forms off, no submission wiring is served and direct submission a
 Two embed rules carry over:
 
 - **Password-protected links stay unusable in embeds.** The password gate never renders inside a frame, so such a link's forms are unreachable there too. Embed links without a password.
-- **Responses stay anonymous**, exactly as they do on a direct link, unless the form itself asks. The personal edit link and the email option work the same from inside an embed, and the loader ignores any `#…` fragment on a `data-slideless-embed` URL, so an embedding page cannot point visitors at somebody else's response.
+- **Responses stay anonymous**, exactly as they do on a direct link, unless the form itself asks. The confirmation dialog opens inside the frame, the personal edit link and the email option work the same from there, and the loader ignores any `#…` fragment on a `data-slideless-embed` URL, so an embedding page cannot point visitors at somebody else's response.
 
 ## Limits
 

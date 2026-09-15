@@ -129,17 +129,25 @@ test('embedded form: submits cross-origin from the iframe; the row records sourc
       await expect(frame.locator('form[data-slideless-form="rsvp"]')).toBeVisible();
     });
 
-    await test.step('submitting inside the frame swaps to the confirmation card (no navigation)', async () => {
+    await test.step('submitting inside the frame opens the confirmation dialog over the form (no navigation)', async () => {
       const frame = visitor.frameLocator('#good iframe');
       await frame.locator('#f-name').fill('Embedded Visitor');
       await frame.locator('#f-send').click();
-      const card = frame.locator('.sl-forms-card');
+      const card = frame.locator('[data-slideless-card="rsvp"]');
       await expect(card).toBeVisible();
       await expect(card.locator('.sl-forms-link')).toContainText(`/v/${secret}/#slr=`);
       // The frame is still the deck document — the runtime intercepted the
       // native submit that would have garbage-navigated the sandbox.
       await expect(frame.locator('h1')).toHaveText('Embedded RSVP');
-      await expect(frame.locator('form[data-slideless-form="rsvp"]')).toBeHidden();
+      // PRDCT-2343: the form stays, filled, behind the dialog; closing the
+      // dialog inside the frame leaves the status line that reopens it.
+      await expect(frame.locator('form[data-slideless-form="rsvp"]')).toBeVisible();
+      await expect(frame.locator('#f-name')).toHaveValue('Embedded Visitor');
+      await frame.locator('.sl-forms-x').click();
+      await expect(frame.locator('[data-slideless-dialog="rsvp"]')).toBeHidden();
+      await expect(frame.locator('[data-slideless-status="rsvp"]')).toBeVisible();
+      await frame.locator('[data-slideless-status="rsvp"] button').click();
+      await expect(card).toBeVisible();
     });
 
     await test.step("the row records source 'embed' + the placement label", async () => {

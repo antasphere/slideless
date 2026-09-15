@@ -98,9 +98,9 @@ const DECK_CSS = `
   #count{position:fixed;top:4px;right:8px;font:12px monospace}
 `;
 
-function page(title: string, slides: string[], engine: string, extraHead = ''): string {
+function page(title: string, slides: string[], engine: string, extraHead = '', lang = ''): string {
   return [
-    `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>`,
+    `<!doctype html><html${lang ? ` lang="${lang}"` : ''}><head><meta charset="utf-8"><title>${title}</title>`,
     `<style>${DECK_CSS}</style>${extraHead}</head><body>`,
     '<div id="count">1</div>',
     '<div id="deck">',
@@ -160,6 +160,35 @@ export const TWO_FORMS_DECK_HTML = page(
 );
 
 /**
+ * Fixture 2b — a FRENCH deck (PRDCT-2344): `<html lang="fr">` and nothing
+ * else on form `fr`, so every built-in string of its dialog must come out
+ * French; form `xx` declares a language the catalogue lacks and overrides
+ * one string with markup in it, so it must come out English with that
+ * override shown as the characters typed. Same hostile engine as fixture 1.
+ */
+export const FRENCH_OVERRIDE = '<b>Copier</b> le lien';
+export const FRENCH_DECK_HTML = page(
+  'Deck en français (e2e)',
+  [
+    '<h1>Bonjour</h1>',
+    [
+      '<h2>Deux formulaires</h2>',
+      '<form data-slideless-form="fr">',
+      '  <input id="fr-note" name="note" placeholder="note">',
+      '  <button id="fr-send" type="submit">Envoyer</button>',
+      '</form>',
+      `<form data-slideless-form="xx" data-slideless-lang="xx-YY" data-slideless-text-copy="${FRENCH_OVERRIDE}">`,
+      '  <input id="xx-note" name="note" placeholder="note">',
+      '  <button id="xx-send" type="submit">Send</button>',
+      '</form>'
+    ].join('\n')
+  ],
+  ARCHITECTURE_DE_MARQUE_ENGINE,
+  '',
+  'fr'
+);
+
+/**
  * Fixture 3 — reb-app-analysis: `history.replaceState` wipes `#slr=` at
  * start-up, and digits are hotkeys so typing an email used to jump slides.
  */
@@ -195,6 +224,31 @@ export const LATE_DECK_HTML = [
   '    \'<form data-slideless-form="late"><input id="f-note" name="note">\' +',
   '    \'<button id="f-send" type="submit">Send</button></form></section>\';',
   '});',
+  '</script>',
+  '</body></html>'
+].join('\n');
+
+/**
+ * Fixture 4b — a deck that RE-RENDERS its slide on every resize (the shape
+ * of a deck rebuilding its DOM on navigation or on a phone rotation; same
+ * `innerHTML =` engine as fixture 4). The form the runtime holds is then a
+ * detached element while its dialog is open: the verifier of PRDCT-2343
+ * found the status line inserted into that detached subtree, the personal
+ * link nowhere on the page.
+ */
+export const RERENDER_DECK_HTML = [
+  '<!doctype html><html><head><meta charset="utf-8"><title>Re-rendering deck (e2e)</title>',
+  `<style>${DECK_CSS}</style></head><body>`,
+  '<div id="count">1</div><div id="deck"></div>',
+  '<script>',
+  'function render() {',
+  "  document.getElementById('deck').innerHTML =",
+  '    \'<section class="slide active"><h2>Rerender</h2>\' +',
+  '    \'<form data-slideless-form="again"><input id="f-note" name="note">\' +',
+  '    \'<button id="f-send" type="submit">Send</button></form></section>\';',
+  '}',
+  "document.addEventListener('DOMContentLoaded', render);",
+  "window.addEventListener('resize', render);",
   '</script>',
   '</body></html>'
 ].join('\n');
