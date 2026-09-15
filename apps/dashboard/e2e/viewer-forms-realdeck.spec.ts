@@ -49,7 +49,13 @@ interface DeckFile {
   contentType: string;
 }
 
-/** Push a deck of one or more files and mint a default share link (forms ON by default). */
+/**
+ * Push a deck of one or more files and mint a share link (forms ON by
+ * default). The link is minted NON-remembering: a named link remembers its
+ * answers by default since PRDCT-2328, and that flow shows no personal link
+ * on the card, while every finding below is about the personal-link flow.
+ * `mintLink` mints the remembering shape when a test wants it.
+ */
 async function seedDeckFiles(
   page: Page,
   title: string,
@@ -81,11 +87,15 @@ async function seedDeckFiles(
   });
   expect(commit.status()).toBe(201);
   const deckId = (await commit.json()).presentation.id;
+  return { deckId, secret: await mintLink(page, deckId, `e2e-${title}`, false) };
+}
+
+async function mintLink(page: Page, deckId: string, name: string, remembers: boolean): Promise<string> {
   const token = await page.request.post(`/api/v1/presentations/${deckId}/tokens`, {
-    data: { name: `e2e-${title}` }
+    data: { name, remembersResponses: remembers }
   });
   expect(token.status()).toBe(201);
-  return { deckId, secret: (await token.json()).secret };
+  return (await token.json()).secret as string;
 }
 
 /** Push a one-file deck and mint a default share link (forms ON by default). */
@@ -433,6 +443,43 @@ test.describe('forms runtime in a real slide deck', () => {
 
     expect(await listResponses(page, deckId)).toHaveLength(2);
     await visitor.context().close();
+
+    // PRDCT-2343 on a REMEMBERING link (the case that filed the task): the
+    // dialog says the link remembers, in French, and Modifier ma réponse
+    // closes it over the still-filled form; a direct edit and resend updates
+    // that link's one response, and the dialog says so in French.
+    const remembering = await mintLink(page, deckId, 'Alice', true);
+    const alice = await (await browser.newContext()).newPage();
+    await alice.goto(`${origin}/v/${remembering}/`);
+    await alice.locator('body').press('ArrowRight');
+    await alice.locator('#fr-note').fill('première réponse');
+    await alice.locator('#fr-send').click();
+    const aliceCard = alice.locator('[data-slideless-card="fr"]');
+    await expect(aliceCard).toBeVisible();
+    await expect(aliceCard.locator('.sl-forms-ok')).toHaveText('Votre réponse a bien été enregistrée.');
+    await expect(aliceCard).toContainText(
+      'Ce lien retient vos réponses : rouvrez-le à tout moment pour les consulter ou les modifier.'
+    );
+    await expect(aliceCard.locator('.sl-forms-link')).toHaveCount(0);
+    await aliceCard.getByRole('button', { name: 'Modifier ma réponse' }).click();
+    await expect(alice.locator('[data-slideless-dialog="fr"]')).toBeHidden();
+    await expect(alice.locator('#fr-note')).toHaveValue('première réponse');
+    await expect(alice.locator('#count')).toHaveText('2');
+    await alice.locator('#fr-note').fill('réponse corrigée');
+    await alice.locator('#fr-send').click();
+    await expect(aliceCard.locator('.sl-forms-ok')).toHaveText('Votre réponse a été mise à jour.');
+    // The status line appears once the dialog is closed, and follows the latest submit.
+    await alice.keyboard.press('Escape');
+    await expect(alice.locator('[data-slideless-dialog="fr"]')).toBeHidden();
+    await expect(alice.locator('[data-slideless-status="fr"]')).toContainText(
+      'Votre réponse a été mise à jour.'
+    );
+    await alice.context().close();
+
+    const rows = await listResponses(page, deckId);
+    expect(rows).toHaveLength(3); // fr + xx through the first link, ONE row through Alice's
+    expect(rows.some((r) => r.payload['note'] === 'réponse corrigée')).toBe(true);
+    expect(rows.some((r) => r.payload['note'] === 'première réponse')).toBe(false);
     expect((await page.request.delete(`/api/v1/presentations/${deckId}`)).status()).toBe(200);
   });
 

@@ -82,9 +82,12 @@ test('viewer forms: submit, confirmation card with edit link, return-and-update,
     expect(commit.status()).toBe(201);
     deckId = (await commit.json()).presentation.id;
 
-    // No flags: can_submit_forms defaults ON — push + share = working form.
+    // No forms flag: can_submit_forms defaults ON — push + share = working
+    // form. A NAMED link remembers its answers by default since PRDCT-2328,
+    // which is a different flow (no personal link on the card); this spec is
+    // the personal-link flow, so the link is minted non-remembering.
     const token = await page.request.post(`/api/v1/presentations/${deckId}/tokens`, {
-      data: { name: 'e2e-form-filler' }
+      data: { name: 'e2e-form-filler', remembersResponses: false }
     });
     expect(token.status()).toBe(201);
     secret = (await token.json()).secret;
