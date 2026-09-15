@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite dev",
-    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "typecheck": "rm -rf .svelte-kit/types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
     "test:e2e": "playwright test"

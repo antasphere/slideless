@@ -1100,3 +1100,19 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
 - **A hands-on seed that signs in from Node needs an `Origin` header**: the sign-in Origin hook
   refuses a request with none (403), the same answer a wrong origin gets. Send
   `origin: <PUBLIC_BASE_URL>` on `/sign-in/email` and on every JSON POST from a script.
+
+## A restored `.svelte-kit` cache breaks the typecheck when a route group is added (2026-09-14, lane F)
+
+- **`svelte-kit sync` does not clean the generated types it is regenerating, and CI restores them
+  between runs.** Adding `(present)/+layout.ts` made SvelteKit generate a NEW
+  `.svelte-kit/types/src/routes/(present)/proxy+layout.ts`; on a runner whose cache predated the
+  change, the config loader walked the restored tree and `stat`ed an entry sync had since rewritten,
+  dying with `ENOENT … proxy+layout.ts` before a single file was checked. Green on every developer
+  machine and in a fresh clone (the tree is byte-identical), red only where a stale cache is
+  restored — the `checks` job was the ONLY new failure on dev, beside three that had failed for two
+  days. `typecheck` now does `rm -rf .svelte-kit/types` first: idempotent, costs a second, and makes
+  the gate independent of whatever a runner restored. Reproduce the class by planting a dangling
+  entry under `.svelte-kit/types/src/routes/` and running the typecheck.
+- **CI failing "already" is not the same as CI failing the same way.** Compare the FAILING JOB NAMES
+  against the previous commits on the base, not the red/green of the run: three drills had been red
+  since 12 September, which is exactly what hides a fourth job going red for the first time.
