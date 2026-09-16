@@ -9,11 +9,31 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
+  # The version must have MOVED (PRDCT-2340). The image reports its version
+  # intrinsically and the fleet probe asserts it live, which proves nothing
+  # when the number never changes: a prod push whose package version already
+  # carries a v-tag on another commit is a forgotten `pnpm release` and would
+  # ship a lookalike of that release. Twenty seconds, first, so a doomed run
+  # never spends the smoke's ten minutes. The guard asks ORIGIN for the tag
+  # (`git ls-remote`), so the shallow checkout below cannot hide a tag from it;
+  # a checkout with no origin makes it refuse rather than pass on missing data.
+  # That read goes through the token actions/checkout persists in the git
+  # config (its default, persist-credentials: true): switching that off turns
+  # the guard into a hard failure on every push, not into a silent pass.
+  version-guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # the guard reads the remote's tags, nothing more
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/release.mjs guard
+
   # The image must prove itself end-to-end before anything is published:
   # build once for the runner arch, drive the real HTTP flow, restart, check
   # persistence — then scan it. Publish runs only after both gates.
   e2e-smoke:
     runs-on: ubuntu-latest
+    needs: [version-guard]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -77,6 +97,7 @@ jobs:
 
   vuln-scan:
     runs-on: ubuntu-latest
+    needs: [version-guard]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
