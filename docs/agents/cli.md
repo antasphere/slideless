@@ -386,8 +386,9 @@ follows pagination, `--json` prints the wire shape for agents, and `--csv`
 writes a spreadsheet-safe CSV (cells are guarded against formula injection)
 built client-side from the same rows. Links minted with `--no-forms` refuse
 submissions (`403 forms_disabled`); everything else about them works
-unchanged. Every edit is kept as a revision: `slideless response <id>
-<responseId>` prints the current answer and every kept revision (at most
+unchanged. Every edit is kept as a revision:
+`slideless response <id> <responseId>` prints the current answer and every
+kept revision (at most
 100 per response; the first and the latest 99 always survive), each with the
 link and the moment it was written through. `slideless notify <id> --off`
 silences the owner mails (one on a new response, a different one on an edit,
