@@ -131,7 +131,8 @@ export const en = {
   'setup.creating': 'Setting up…',
   'setup.submit': 'Create instance',
   'setup.errorTokenInvalid': 'That setup token is not valid.',
-  'setup.errorTokenRequired': 'This instance requires a setup token (SETUP_TOKEN from your .env).',
+  'setup.errorTokenRequired':
+    'This instance requires a setup token (printed in the server log at first boot, or SETUP_TOKEN in your .env).',
   'setup.errorAlreadySetUp': 'This instance has already been set up.',
   'setup.errorValidation': 'Check the fields: valid email and a password of at least 12 characters.',
   'setup.errorUnreachable': 'Setup failed — is the server reachable?',

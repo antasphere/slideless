@@ -27,6 +27,7 @@ groups:
   - title: Self-hosting
     pages:
       - self-hosting/install
+      - self-hosting/hostinger
       - self-hosting/reverse-proxy
       - self-hosting/deployment-profiles
       - self-hosting/upgrade

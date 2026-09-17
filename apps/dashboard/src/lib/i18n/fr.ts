@@ -136,7 +136,8 @@ export const fr: Record<MessageKey, string> = {
   'setup.creating': 'Configuration…',
   'setup.submit': 'Créer l’instance',
   'setup.errorTokenInvalid': 'Ce jeton d’installation n’est pas valide.',
-  'setup.errorTokenRequired': 'Cette instance requiert un jeton d’installation (SETUP_TOKEN de votre .env).',
+  'setup.errorTokenRequired':
+    'Cette instance requiert un jeton d’installation (affiché dans le journal du serveur au premier démarrage, ou SETUP_TOKEN de votre .env).',
   'setup.errorAlreadySetUp': 'Cette instance a déjà été configurée.',
   'setup.errorValidation':
     'Vérifiez les champs : une adresse e-mail valide et un mot de passe d’au moins 12 caractères.',

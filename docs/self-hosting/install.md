@@ -1,5 +1,8 @@
 # Install
 
+For a dedicated Hostinger VPS with automatic HTTPS and setup through hPanel,
+follow [Install on Hostinger](hostinger.md).
+
 Install Slideless on your own machine: two supported paths, both ending
 with the first-boot wizard in the browser.
 
