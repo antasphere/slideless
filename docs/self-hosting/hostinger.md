@@ -32,8 +32,13 @@ It does not configure another application's proxy or change your DNS.
 
 ## Deploy
 
-For a new VPS, use the button — Hostinger may take you through checkout before
-opening Docker Manager. Finish the DNS steps above before starting the containers.
+For a new VPS, use the button — Hostinger takes you through checkout before
+opening Docker Manager. At checkout, under **Choose what to install**, pick
+**Plain OS → Ubuntu** (24.04): the list is single-choice, so selecting Ubuntu
+replaces the pre-selected _Docker and Traefik_ application, whose Traefik would
+occupy ports 80 and 443 that Slideless's own proxy needs. Docker Manager installs
+Docker on a plain Ubuntu the first time you open it. Finish the DNS steps above
+before starting the containers.
 
 [![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fdeploy.slideless.antasphere.com%2Fhostinger%2Fdocker-compose.yml)
 
