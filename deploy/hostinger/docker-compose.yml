@@ -3,7 +3,7 @@
 # Keep the project name and all named volumes when recreating containers.
 services:
   init:
-    image: ghcr.io/antasphere/slideless:sha-f03cb72@sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d
+    image: ghcr.io/antasphere/slideless:0.4.1@sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2
     restart: 'no'
     environment:
       SLIDELESS_DOMAIN: ${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
@@ -23,9 +23,12 @@ services:
         import { join } from 'node:path';
         import { isIP } from 'node:net';
         const domain = process.env.SLIDELESS_DOMAIN || '';
-        const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+        // Lowercase only: the same value reaches PUBLIC_BASE_URL and Caddy verbatim,
+        // and browsers send lowercase Origins, so a capital letter would break the
+        // app's origin comparison instead of failing here with a clear message.
+        const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
         if (domain.length > 253 || !domain.includes('.') || isIP(domain) || !domain.split('.').every(part => label.test(part))) {
-          throw new Error('SLIDELESS_DOMAIN must be a DNS hostname, without a scheme, port or path.');
+          throw new Error('SLIDELESS_DOMAIN must be a lowercase DNS hostname, without a scheme, port or path.');
         }
         const target = join(process.argv[1], 'postgres-password');
         if (existsSync(target)) {
@@ -41,8 +44,13 @@ services:
       - /data
 
   db:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg17@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
     depends_on:
       init:
         condition: service_completed_successfully
@@ -61,9 +69,15 @@ services:
       start_period: 15s
 
   app:
-    image: ghcr.io/antasphere/slideless:sha-f03cb72@sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d
+    image: ghcr.io/antasphere/slideless:0.4.1@sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2
     restart: unless-stopped
     stop_grace_period: 60s
+    # Rotated logs: the app logs every request, and a VPS disk is finite.
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
     depends_on:
       db:
         condition: service_healthy
@@ -80,7 +94,12 @@ services:
       - sh
       - -ec
       - |
-        export DATABASE_URL="postgres://slideless:$$(cat /run/slideless-secrets/postgres-password)@db:5432/slideless"
+        # Read the credential on its own line: `export X="$(cmd)"` returns
+        # export's status, so a failed read would boot with an empty password
+        # and surface as "app unhealthy" instead of the real error.
+        pw="$$(cat /run/slideless-secrets/postgres-password)"
+        test -n "$$pw"
+        export DATABASE_URL="postgres://slideless:$${pw}@db:5432/slideless"
         exec node dist/index.js
     read_only: true
     volumes:
@@ -96,8 +115,13 @@ services:
       start_period: 30s
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
     depends_on:
       app:
         condition: service_healthy

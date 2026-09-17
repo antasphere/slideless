@@ -24,23 +24,25 @@ Compose URL and never publish the repository root as a Pages artifact.
 The `hostinger-pages.yml` workflow publishes exactly `index.html` and
 `docker-compose.yml` to `https://antasphere.github.io/slideless/`.
 
-The initial pin is build `sha-f03cb72`, published by successful release run
-[34700250126](https://github.com/antasphere/slideless/actions/runs/34700250126),
-with manifest digest `sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d`.
-Its existing release smoke and vulnerability gates passed. The historical
-`v0.3.0` tag predates automatic setup-token generation and must not be used
-for this installation flow.
+The pin is release `0.4.1` (tag `v0.4.1`, commit `b1da96e`), published by
+successful release run
+[35082568219](https://github.com/antasphere/slideless/actions/runs/35082568219),
+with manifest digest `sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2`
+(linux/amd64 — releases build amd64 only since PRDCT-2337, which is what a
+Hostinger VPS runs). The pin names a released version on purpose: the image
+reports that version on `GET /instance`, so a customer and a support session
+agree on which build is running. The historical `v0.3.0` tag predates automatic
+setup-token generation and must not be used for this installation flow. The
+companion images (`pgvector/pgvector:pg17`, `caddy:2-alpine`) are digest-pinned
+too, so the Pages gate inspects exactly what customers will pull.
 
 Before its first successful run:
 
-1. Enable public GitHub Pages for this private repository with GitHub Actions
-   as its build source. The organization's GitHub plan must allow Pages for
-   private repositories. The source stays private; the two published files
-   are intentionally public.
-2. Make the GHCR `antasphere/slideless` package publicly readable and ensure
-   the pinned image is available for Linux amd64 and arm64. Check anonymous manifest
-   access, not just access while logged in. The Pages workflow refuses to
-   publish if any template image is inaccessible anonymously.
+1. Enable GitHub Pages with GitHub Actions as its build source (free once the
+   repository is public). Only the two published files leave the repository.
+2. Make the GHCR `antasphere/slideless` package publicly readable. Check
+   anonymous manifest access, not just access while logged in. The Pages
+   workflow refuses to publish if any template image is inaccessible anonymously.
 3. Merge the template and guide to `prod`, let the docs sync publish the
    guide, and run **Publish Hostinger deployment**. Check the public YAML URL
    returns the file without authentication, then import it in hPanel.

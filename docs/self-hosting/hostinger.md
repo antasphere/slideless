@@ -9,8 +9,14 @@ No terminal commands are required for installation.
 1. Prepare a dedicated VPS with Hostinger's Docker environment. Use
    [Hostinger's Docker VPS guide](https://www.hostinger.com/support/8306612-how-to-use-the-docker-vps-template-at-hostinger/)
    if Docker Manager is not available. Do not reinstall an existing server
-   that contains data to get this environment.
-2. Choose a hostname, for example `slides.example.com`.
+   that contains data to get this environment. The Slideless image is built
+   for x86-64 (amd64) servers, which is what Hostinger VPS plans run; it does
+   not start on an ARM machine.
+2. Choose a hostname, for example `slides.example.com`. Use a dedicated
+   subdomain in lowercase, not your bare domain (`example.com`): Slideless
+   sends a strict-transport header that also covers every subdomain of the
+   hostname it serves, so an install at the bare domain would force HTTPS on
+   everything under it for 180 days.
 3. At your DNS provider, add an **A** record for that hostname pointing to
    the VPS's public IPv4 address. Add an **AAAA** record only if IPv6 also
    reaches this VPS. Remove conflicting records for the same hostname.
@@ -67,8 +73,9 @@ or paste either secret into Hostinger.
    look for **the setup wizard requires the token generated at first boot**.
 3. Open `https://slides.example.com`, using your own hostname. Wait for a
    valid HTTPS connection before entering credentials.
-4. Complete the setup wizard with the token, instance name, and your owner
-   account details. Sign in if prompted.
+4. Complete the setup wizard: enter the instance name and your owner account
+   details, and when the wizard asks for the setup token, paste the one from
+   the log. Sign in if prompted.
 
 The token proves you control the deployment. Without it, someone who discovers
 the hostname first could claim the installation before you. It is used only
@@ -117,18 +124,19 @@ sign-in and password recovery. See the
 
 ## Troubleshooting
 
-| Symptom                                   | What to check                                                                                                                                                                                                     |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Template URL returns 404                  | The public deployment has not been published yet, or the URL is wrong. Use the URL above; private GitHub source URLs cannot be imported anonymously.                                                              |
-| Image pull says unauthorized or denied    | The release image must be public. This is a release-publication problem; you should not need GitHub credentials.                                                                                                  |
-| Missing `SLIDELESS_DOMAIN`                | Add that project variable and validate again. Use a hostname only.                                                                                                                                                |
-| `init` fails                              | Read its logs for hostname or credential validation errors. A damaged credential volume must be restored, not replaced with a new password.                                                                       |
-| Certificate error or HTTPS unavailable    | Check A and AAAA records, DNS-only mode, open ports 80/443, and Caddy's logs. Correct the cause and allow Caddy to retry. Keep `caddy_data`; deleting it can cause repeated certificate requests and rate limits. |
-| Port already allocated                    | Another service owns 80 or 443. Use a dedicated VPS as described above.                                                                                                                                           |
-| App is unhealthy or the proxy returns 502 | Check database health and the app's logs for migrations, storage permissions, or disk-space errors.                                                                                                               |
-| Setup token is missing                    | Look in the app's logs, not `init` or `db`. If setup is unfinished, restarting the app prints the same token again. If setup is complete, sign in instead.                                                        |
-| `insecure_transport` during setup         | Use the HTTPS hostname. Keep `ALLOW_INSECURE_SETUP=false`; this template never requires an HTTP exception.                                                                                                        |
-| A redeploy shows an empty instance        | Check that the project name and existing volumes were preserved. Stop and reconnect the original volumes before setting up another owner.                                                                         |
+| Symptom                                   | What to check                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Template URL returns 404                  | The public deployment has not been published yet, or the URL is wrong. Use the URL above; private GitHub source URLs cannot be imported anonymously.                                                                                                                                                                   |
+| Image pull says unauthorized or denied    | The release image must be public. This is a release-publication problem; you should not need GitHub credentials.                                                                                                                                                                                                       |
+| Missing `SLIDELESS_DOMAIN`                | Add that project variable and validate again. Use a hostname only.                                                                                                                                                                                                                                                     |
+| `init` fails                              | Read its logs for hostname or credential validation errors. A damaged credential volume must be restored, not replaced with a new password (see the next row for the escape).                                                                                                                                          |
+| App cannot connect to the database        | The `db_credentials` volume no longer matches `pg_data` (lost, replaced or edited). From an SSH terminal on the VPS: `docker exec -it <db container> psql -U slideless -c "ALTER ROLE slideless PASSWORD '<the 64-hex value in the app container's /run/slideless-secrets/postgres-password>'"`, then restart the app. |
+| Certificate error or HTTPS unavailable    | Check A and AAAA records, DNS-only mode, open ports 80/443, and Caddy's logs. Correct the cause and allow Caddy to retry. Keep `caddy_data`; deleting it can cause repeated certificate requests and rate limits.                                                                                                      |
+| Port already allocated                    | Another service owns 80 or 443. Use a dedicated VPS as described above.                                                                                                                                                                                                                                                |
+| App is unhealthy or the proxy returns 502 | Check database health and the app's logs for migrations, storage permissions, or disk-space errors.                                                                                                                                                                                                                    |
+| Setup token is missing                    | Look in the app's logs, not `init` or `db`. If setup is unfinished, restarting the app prints the same token again. If setup is complete, sign in instead.                                                                                                                                                             |
+| `insecure_transport` during setup         | Use the HTTPS hostname. Keep `ALLOW_INSECURE_SETUP=false`; this template never requires an HTTP exception.                                                                                                                                                                                                             |
+| A redeploy shows an empty instance        | Check that the project name and existing volumes were preserved. Stop and reconnect the original volumes before setting up another owner.                                                                                                                                                                              |
 
 ## Data and maintenance
 

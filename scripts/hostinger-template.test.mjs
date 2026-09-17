@@ -36,9 +36,14 @@ test('template requires a hostname and exposes only the HTTPS proxy', () => {
   assert.equal(services.app.environment.ALLOW_INSECURE_SETUP, 'false');
   assert.equal(
     services.app.image,
-    'ghcr.io/antasphere/slideless:sha-f03cb72@sha256:9b9c45b3332db45bdb215430aedbf3bd58a3b61dc780afe84ed045d2793be37d'
+    'ghcr.io/antasphere/slideless:0.4.1@sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2'
   );
   assert.equal(services.init.image, services.app.image);
+  // Every image is digest-pinned: the Pages gate inspects exactly what customers pull.
+  for (const service of Object.values(services)) assert.match(service.image, /@sha256:[a-f0-9]{64}$/);
+  for (const name of ['app', 'db', 'caddy']) {
+    assert.equal(services[name].logging.options['max-size'], '10m', `${name} log rotation`);
+  }
   for (const service of Object.values(services)) assert.equal(service.build, undefined);
   assert.equal(services.db.environment.POSTGRES_PASSWORD, undefined);
   assert.equal(services.db.environment.POSTGRES_HOST_AUTH_METHOD, undefined);
@@ -64,7 +69,8 @@ test('initializer preserves credentials, rejects corruption and validates the ho
       '127.0.0.1',
       'slides.example.com/path',
       'a.example.com\n:80',
-      '-bad.example.com'
+      '-bad.example.com',
+      'Slides.Example.com'
     ]) {
       const invalid = run(domain);
       assert.notEqual(invalid.status, 0, domain);
