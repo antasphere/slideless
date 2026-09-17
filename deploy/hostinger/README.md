@@ -20,10 +20,14 @@ User instructions live in `docs/self-hosting/hostinger.md`.
 ## Publication
 
 Never publish the repository root as a Pages artifact. The `hostinger-pages.yml`
-workflow publishes exactly `index.html` and `docker-compose.yml` to the Pages site,
-served on the custom domain `https://deploy.slideless.antasphere.com/` (a CNAME to
-`antasphere.github.io`; the github.io address redirects there). The compose URL
-customers paste and the deploy button both use that domain, never a raw GitHub URL.
+workflow publishes exactly `deploy/index.html` (the root) and this folder's
+`index.html` + `docker-compose.yml` under `/hostinger/` on the Pages site, served on
+the product's deploy domain `https://deploy.slideless.antasphere.com/` (a CNAME to
+`antasphere.github.io`; the github.io address redirects there). The domain is
+product-scoped and the host is the path — a second host (Hetzner, Coolify, …) is a
+sibling folder `deploy/<host>/` staged the same way, never a second domain. The
+compose URL customers paste is `https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml`;
+the deploy button and the guide both use it, never a raw GitHub URL.
 
 The pin is release `0.4.1` (tag `v0.4.1`, commit `b1da96e`), published by
 successful release run

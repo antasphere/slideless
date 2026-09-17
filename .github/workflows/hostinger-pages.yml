@@ -4,6 +4,7 @@ on:
   push:
     branches: [prod]
     paths:
+      - 'deploy/index.html'
       - 'deploy/hostinger/**'
       - 'scripts/hostinger-template.test.mjs'
       - 'scripts/hostinger-smoke.mjs'
@@ -45,11 +46,14 @@ jobs:
       - name: Rehearse installation with the exact published image
         run: node scripts/hostinger-smoke.mjs
       - uses: actions/configure-pages@v5
-      # Only these two public distribution files leave the private source repo.
+      # Only the distribution files are published: one folder per host under the
+      # product's deploy domain (deploy.slideless.antasphere.com/<host>/), plus the
+      # root page that points at them. A second host is a second folder here.
       - name: Stage public files
         run: |
-          mkdir -p /tmp/hostinger-pages
-          cp deploy/hostinger/docker-compose.yml deploy/hostinger/index.html /tmp/hostinger-pages/
+          mkdir -p /tmp/hostinger-pages/hostinger
+          cp deploy/index.html /tmp/hostinger-pages/
+          cp deploy/hostinger/docker-compose.yml deploy/hostinger/index.html /tmp/hostinger-pages/hostinger/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: /tmp/hostinger-pages

@@ -35,7 +35,7 @@ It does not configure another application's proxy or change your DNS.
 For a new VPS, use the button — Hostinger may take you through checkout before
 opening Docker Manager. Finish the DNS steps above before starting the containers.
 
-[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fdeploy.slideless.antasphere.com%2Fdocker-compose.yml)
+[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fdeploy.slideless.antasphere.com%2Fhostinger%2Fdocker-compose.yml)
 
 For an existing VPS:
 
@@ -44,7 +44,7 @@ For an existing VPS:
 3. Paste the template URL:
 
    ```text
-   https://deploy.slideless.antasphere.com/docker-compose.yml
+   https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml
    ```
 
 4. Give the project a name, such as `slideless`. Keep this name for future
