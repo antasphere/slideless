@@ -4,49 +4,229 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Deploy Slideless on Hostinger</title>
+    <meta
+      name="description"
+      content="Host your own Slideless on a Hostinger VPS: one Compose template, automatic HTTPS, your data on your server."
+    />
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- The dashboard's pairing: Sentient (display) over Synonym, Onest for the UI voice.
+         Same CDN links as the product, so this public page never self-hosts the ITF faces. -->
+    <link
+      rel="stylesheet"
+      href="https://api.fontshare.com/v2/css?f[]=sentient@300,400,500&f[]=synonym@1&display=swap"
+    />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@300..600&display=swap" />
     <style>
-      body {
-        max-width: 42rem;
-        margin: 4rem auto;
-        padding: 0 1.5rem;
-        font:
-          18px/1.6 system-ui,
-          sans-serif;
-        color: #202124;
+      :root {
+        --ground: #f7f6f4;
+        --paper: #f0efec;
+        --ink: #1a1918;
+        --ink-soft: #333230;
+        --muted: #6c6b66;
+        --hairline: #dcdbd6;
+        --accent: #47799a;
+        --accent-ink: #f7f4ec;
+        --field: #e9f0f3;
       }
-      a {
-        color: #4935a3;
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1c1b19;
+          --paper: #141311;
+          --ink: #f0eee9;
+          --ink-soft: #d8d5ce;
+          --muted: #9c9991;
+          --hairline: #33322e;
+          --field: #22282c;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: var(--paper);
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          400 17px/1.6 'Onest',
+          system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 3.5rem 1rem 4rem;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+        padding-bottom: 1.25rem;
+        border-bottom: 1px solid var(--hairline);
+        margin-bottom: 2.5rem;
+      }
+      .wordmark {
+        font:
+          500 1.35rem/1 'Sentient',
+          Georgia,
+          serif;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        text-decoration: none;
+      }
+      .by {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .by a {
+        color: inherit;
+        text-decoration: none;
+        border-bottom: 1px solid var(--hairline);
+      }
+      h1 {
+        font:
+          300 clamp(2rem, 6vw, 2.75rem) / 1.15 'Sentient',
+          Georgia,
+          serif;
+        letter-spacing: -0.02em;
+        margin: 0 0 0.75rem;
+      }
+      .lede {
+        font-size: 1.1rem;
+        color: var(--ink-soft);
+        margin: 0 0 2rem;
+      }
+      ol {
+        margin: 0 0 2rem;
+        padding-left: 1.3rem;
+        color: var(--ink-soft);
+      }
+      ol li {
+        margin: 0.35rem 0;
+      }
+      ol li::marker {
+        color: var(--accent);
+        font-weight: 500;
       }
       code {
-        font-size: 0.9em;
+        font:
+          0.9em/1 'Synonym',
+          ui-monospace,
+          monospace;
+        background: var(--field);
+        padding: 0.1em 0.4em;
+        border-radius: 4px;
+      }
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem 1.5rem;
+        margin: 0 0 2.5rem;
+      }
+      .cta img {
+        display: block;
+        height: 44px;
+      }
+      .guide {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid currentColor;
+        font-weight: 500;
+      }
+      .section {
+        border-top: 1px solid var(--hairline);
+        padding-top: 1.75rem;
+        margin-top: 0.5rem;
+      }
+      .section h2 {
+        font:
+          500 1.05rem/1.3 'Onest',
+          system-ui,
+          sans-serif;
+        margin: 0 0 0.5rem;
+      }
+      .section p {
+        margin: 0.25rem 0 0.75rem;
+        color: var(--ink-soft);
+      }
+      .url {
+        display: block;
+        width: 100%;
+        font:
+          0.95rem/1.5 'Synonym',
+          ui-monospace,
+          monospace;
+        background: var(--field);
+        color: var(--ink);
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        padding: 0.65rem 0.85rem;
+        overflow-wrap: anywhere;
+        text-decoration: none;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--hairline);
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      footer a {
+        color: inherit;
       }
     </style>
   </head>
   <body>
-    <h1>Host your own Slideless</h1>
-    <p>Turn presentations, reports, and small apps into shareable links on your own VPS.</p>
-    <ol>
-      <li>Prepare a dedicated Hostinger VPS and point your hostname to its IP address.</li>
-      <li>Deploy the template and set <code>SLIDELESS_DOMAIN</code> to that hostname.</li>
-      <li>
-        Open your HTTPS address, copy the setup token from the app's logs, and create your owner account.
-      </li>
-    </ol>
-    <p>
-      <a href="https://docs.antasphere.com/slideless/self-hosting/hostinger">Read the setup guide first</a>
-    </p>
-    <p>
-      <a
-        href="https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fantasphere.github.io%2Fslideless%2Fdocker-compose.yml"
-      >
-        <img src="https://assets.hostinger.com/vps/deploy.svg" alt="Deploy on Hostinger" />
-      </a>
-    </p>
-    <p>Already have a VPS? In Docker Manager, select <strong>Compose from URL</strong> and paste:</p>
-    <p><a href="docker-compose.yml">https://antasphere.github.io/slideless/docker-compose.yml</a></p>
-    <p>
-      The template installs Slideless, PostgreSQL, and automatic HTTPS. Email and agent connections are
-      optional. Application upgrades remain manual.
-    </p>
+    <main>
+      <header>
+        <a class="wordmark" href="https://slideless.antasphere.com">Slideless</a>
+        <span class="by">by <a href="https://antasphere.com">Antasphere</a></span>
+      </header>
+
+      <h1>Host your own Slideless</h1>
+      <p class="lede">
+        Presentations, reports and small apps as shareable links — on a Hostinger VPS you own. One Compose
+        template installs Slideless, PostgreSQL and automatic HTTPS.
+      </p>
+
+      <ol>
+        <li>Prepare a dedicated Hostinger VPS and point a lowercase subdomain at its IP address.</li>
+        <li>Deploy the template and set <code>SLIDELESS_DOMAIN</code> to that hostname.</li>
+        <li>
+          Open your HTTPS address, take the setup token from the app's log, and create your owner account.
+        </li>
+      </ol>
+
+      <div class="cta">
+        <a
+          href="https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fdeploy.slideless.antasphere.com%2Fdocker-compose.yml"
+        >
+          <img src="https://assets.hostinger.com/vps/deploy.svg" alt="Deploy on Hostinger" />
+        </a>
+        <a class="guide" href="https://docs.antasphere.com/slideless/self-hosting/hostinger"
+          >Read the setup guide first</a
+        >
+      </div>
+
+      <section class="section">
+        <h2>Already have a VPS?</h2>
+        <p>In Docker Manager, choose <strong>Compose from URL</strong> and paste:</p>
+        <a class="url" href="docker-compose.yml"
+          >https://deploy.slideless.antasphere.com/docker-compose.yml</a
+        >
+      </section>
+
+      <footer>
+        Email and agent connections are optional; application upgrades are manual and version-pinned.
+        Slideless is open source — <a href="https://github.com/antasphere/slideless">antasphere/slideless</a>.
+      </footer>
+    </main>
   </body>
 </html>

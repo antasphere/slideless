@@ -19,10 +19,11 @@ User instructions live in `docs/self-hosting/hostinger.md`.
 
 ## Publication
 
-The source repository is private. Never use its raw GitHub URL as the public
-Compose URL and never publish the repository root as a Pages artifact.
-The `hostinger-pages.yml` workflow publishes exactly `index.html` and
-`docker-compose.yml` to `https://antasphere.github.io/slideless/`.
+Never publish the repository root as a Pages artifact. The `hostinger-pages.yml`
+workflow publishes exactly `index.html` and `docker-compose.yml` to the Pages site,
+served on the custom domain `https://deploy.slideless.antasphere.com/` (a CNAME to
+`antasphere.github.io`; the github.io address redirects there). The compose URL
+customers paste and the deploy button both use that domain, never a raw GitHub URL.
 
 The pin is release `0.4.1` (tag `v0.4.1`, commit `b1da96e`), published by
 successful release run

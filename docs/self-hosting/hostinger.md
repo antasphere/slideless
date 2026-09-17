@@ -32,10 +32,10 @@ It does not configure another application's proxy or change your DNS.
 
 ## Deploy
 
-Use the [Slideless deployment page](https://antasphere.github.io/slideless/)
-for the **Deploy on Hostinger** button. For a new VPS, Hostinger may take
-you through checkout before opening Docker Manager. Finish the DNS steps
-above before starting the containers.
+For a new VPS, use the button — Hostinger may take you through checkout before
+opening Docker Manager. Finish the DNS steps above before starting the containers.
+
+[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/docker-hosting?compose_url=https%3A%2F%2Fdeploy.slideless.antasphere.com%2Fdocker-compose.yml)
 
 For an existing VPS:
 
@@ -44,7 +44,7 @@ For an existing VPS:
 3. Paste the template URL:
 
    ```text
-   https://antasphere.github.io/slideless/docker-compose.yml
+   https://deploy.slideless.antasphere.com/docker-compose.yml
    ```
 
 4. Give the project a name, such as `slideless`. Keep this name for future
