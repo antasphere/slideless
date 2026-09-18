@@ -25,6 +25,8 @@ export type PlatformEvents = {
   'presentation.created': { workspaceId: string; presentationId: string };
   'presentation.version_committed': { workspaceId: string; presentationId: string; version: number };
   /** workspaceId is null on the cloud edition — setup creates no workspace there. */
+  /** A person created ANOTHER workspace from inside the product (POST /workspaces). */
+  'workspace.created': { workspaceId: string; ownerUserId: string };
   'setup.completed': { workspaceId: string | null; instanceId: string };
 };
 

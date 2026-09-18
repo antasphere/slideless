@@ -158,6 +158,16 @@ describe('env schema', () => {
     expect(blank.API_RATE_LIMIT_BURST).toBe(100);
   });
 
+  it('defaults the per-person workspace cap to 10; blank is unset, 0 is the conscious close', () => {
+    expect(envSchema.parse(minimal).MAX_WORKSPACES_PER_USER).toBe(10);
+    // `VAR=` / whitespace must never coerce to 0 and silently CLOSE creation.
+    expect(envSchema.parse({ ...minimal, MAX_WORKSPACES_PER_USER: '' }).MAX_WORKSPACES_PER_USER).toBe(10);
+    expect(envSchema.parse({ ...minimal, MAX_WORKSPACES_PER_USER: ' ' }).MAX_WORKSPACES_PER_USER).toBe(10);
+    expect(envSchema.parse({ ...minimal, MAX_WORKSPACES_PER_USER: '0' }).MAX_WORKSPACES_PER_USER).toBe(0);
+    expect(envSchema.safeParse({ ...minimal, MAX_WORKSPACES_PER_USER: '-1' }).success).toBe(false);
+    expect(envSchema.safeParse({ ...minimal, MAX_WORKSPACES_PER_USER: '2.5' }).success).toBe(false);
+  });
+
   it('validates SUPERADMIN_EMAILS loudly and treats blank as unset (dormant)', () => {
     expect(envSchema.parse(minimal).SUPERADMIN_EMAILS).toBeUndefined();
     expect(envSchema.parse({ ...minimal, SUPERADMIN_EMAILS: '' }).SUPERADMIN_EMAILS).toBeUndefined();

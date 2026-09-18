@@ -203,6 +203,8 @@ const envObjectSchema = z.object({
   FORMS_MAX_FILES_PER_RESPONSE: numeric(z.coerce.number().int().min(1).max(1000).default(100)),
   /** Total weight, in MB, of the form uploads ONE deck can hold (attached and not yet submitted together). Past it the upload route answers 403 `uploads_full` until the owner deletes responses. The bound on what a share link can write to the instance's disk. */
   FORMS_MAX_UPLOADS_MB_PER_DECK: numeric(z.coerce.number().int().min(1).default(5120)),
+  /** How many workspaces ONE person may own on this instance — the cap on creating another workspace from the dashboard (the first one comes from setup). Any signed-in member who is not a guest may create one until they own this many. 0 closes workspace creation for everyone. On the cloud edition the count is Antasphere's own organization limit; only the 0 switch applies here. */
+  MAX_WORKSPACES_PER_USER: numeric(z.coerce.number().int().min(0).max(1000).default(10)),
   /** General per-principal API quota: sustained requests/minute allowed to every authenticated /api/v1 principal (API key, OAuth token, session). 0 disables the general limiter. */
   API_RATE_LIMIT_PER_MINUTE: numeric(z.coerce.number().int().min(0).default(600)),
   /** Spike cap for the general API quota: max requests per principal in any 1-second burst. 0 disables burst smoothing (the per-minute window still applies). */

@@ -47,6 +47,12 @@ import type { HubLogoutService } from '../identity/hub-logout.js';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerOnboardingRoutes } from './onboarding.js';
+import {
+  registerWorkspaceRoutes,
+  workspaceCreationPolicy,
+  workspaceCreationRefusal,
+  type WorkspaceCloudDeps
+} from './workspaces.js';
 import { registerSsoConnectRoutes } from './sso-connect.js';
 import { registerSsoLogoutRoutes } from './sso-logout.js';
 import { registerMemberRoutes } from './members.js';
@@ -246,6 +252,12 @@ export interface ApiDeps {
    * Absent on oss: the middleware carries zero hub surface.
    */
   principalGate?: PrincipalGate | undefined;
+  /**
+   * Cloud edition only: what POST /workspaces needs to create the
+   * organization at the hub AS THE CALLER and project it (api/workspaces.ts).
+   * Absent on oss: the route creates locally and carries zero hub surface.
+   */
+  workspaceCloud?: WorkspaceCloudDeps | undefined;
 }
 
 /** Control-flow marker: the singleton claim lost (instance already set up). */
@@ -731,6 +743,22 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
    *    has a credential row (setup mints it), so they are NEVER ssoOnly
    *    and the dashboard's hint-watch can never sign them out.
    */
+  // `/me.canCreateWorkspace` and POST /workspaces judge through the SAME
+  // rule (api/workspaces.ts), so the flag never promises what the route
+  // refuses. Never throws into /me: a failed read answers false.
+  const creationPolicy = workspaceCreationPolicy({
+    maxPerUser: env.MAX_WORKSPACES_PER_USER,
+    cloud: deps.workspaceCloud
+  });
+  const canCreateWorkspace = async (userId: string, via: 'session' | 'api_key' | 'oauth') => {
+    try {
+      return (await workspaceCreationRefusal(db, creationPolicy, { userId, via })) === null;
+    } catch (cause) {
+      logger.warn({ err: cause }, '/me: canCreateWorkspace could not be computed — answering false');
+      return false;
+    }
+  };
+
   const CREDENTIAL_PROVIDER_ID = 'credential';
   const cloudSessionExtras = async (
     userId: string
@@ -793,6 +821,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           // The zero state's CTA target on cloud: organizations are created
           // at the hub, never locally (internal/federation.md).
           hubManageUrl: hubManaged?.manageUrl ?? null,
+          // oss: always false here — a zero-membership user is not an active
+          // member of this instance. cloud: true with a live hub link (their
+          // next organization is created from this very state).
+          canCreateWorkspace: hub ? await canCreateWorkspace(session.user.id, 'session') : false,
           // Cloud + session extras (SL-6): the zero state is session-only
           // by construction, so only the edition gate applies here.
           ...(hub ? await cloudSessionExtras(session.user.id) : {})
@@ -853,6 +885,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         workspaces: wireWorkspaces,
         activeWorkspaceId: principal.workspaceId,
         hubManageUrl: hubManaged && principal.accountRef ? hubManaged.manageUrl : null,
+        canCreateWorkspace: await canCreateWorkspace(principal.userId, principal.via),
         // Cloud + SESSION only (SL-6): machine credentials never carry the
         // onboarding/hint-watch keys — the banner and the auto-sign-out are
         // browser concerns.
@@ -868,6 +901,20 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   if (hub) {
     registerOnboardingRoutes(api, { db, auth });
   }
+
+  // Workspace creation (PRDCT-2444 / PRDCT-2443): one route, both editions.
+  // Session-only — unlisted in the machine scope allowlist, re-checked in
+  // the handler; self-audited into the NEW workspace (audit-exempt path).
+  registerWorkspaceRoutes(api, {
+    db,
+    auth,
+    audit,
+    registry,
+    logger,
+    clientIp,
+    maxPerUser: env.MAX_WORKSPACES_PER_USER,
+    cloud: deps.workspaceCloud
+  });
 
   // ── Platform modules ─────────────────────────────────────────────────────
   // Break-glass first: it self-authenticates (superadmin sessions may carry
