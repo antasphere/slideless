@@ -1,12 +1,18 @@
 # Dedicated VPS. Point DNS to the VPS first, then set SLIDELESS_DOMAIN in hPanel.
 # Guide: https://docs.antasphere.com/slideless/self-hosting/hostinger
 # Keep the project name and all named volumes when recreating containers.
+#
+# SLIDELESS_DOMAIN is required, but NOT at render time: hPanel downloads this
+# file and runs it at once with no environment, and a `${VAR:?}` refusal there
+# leaves no project and no readable error ("Deployment failed", 2026-09-18).
+# The file renders with an empty domain instead, and the init container refuses
+# it with the instruction the customer can act on from Docker Manager.
 services:
   init:
     image: ghcr.io/antasphere/slideless:0.4.1@sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2
     restart: 'no'
     environment:
-      SLIDELESS_DOMAIN: ${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
+      SLIDELESS_DOMAIN: ${SLIDELESS_DOMAIN:-}
     # The image's /data directory belongs to its non-root node user. Docker
     # copies that ownership to the empty volume on its first mount.
     volumes:
@@ -23,6 +29,9 @@ services:
         import { join } from 'node:path';
         import { isIP } from 'node:net';
         const domain = process.env.SLIDELESS_DOMAIN || '';
+        if (!domain) {
+          throw new Error('SLIDELESS_DOMAIN is not set. In Docker Manager, open this project, add the environment variable SLIDELESS_DOMAIN with your hostname (for example slides.example.com), then redeploy.');
+        }
         // Lowercase only: the same value reaches PUBLIC_BASE_URL and Caddy verbatim,
         // and browsers send lowercase Origins, so a capital letter would break the
         // app's origin comparison instead of failing here with a clear message.
@@ -82,7 +91,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      PUBLIC_BASE_URL: https://${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
+      PUBLIC_BASE_URL: https://${SLIDELESS_DOMAIN:-}
       TRUST_PROXY: 'true'
       ALLOW_INSECURE_SETUP: 'false'
       AUTO_MIGRATE: 'true'
@@ -131,7 +140,7 @@ services:
       - caddy
       - reverse-proxy
       - --from
-      - https://${SLIDELESS_DOMAIN:?Set SLIDELESS_DOMAIN to your DNS hostname, without https or a path}
+      - https://${SLIDELESS_DOMAIN:-}
       - --to
       - http://app:3000
     ports:

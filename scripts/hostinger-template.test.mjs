@@ -21,10 +21,12 @@ function config(domain = 'slides.example.com') {
   );
 }
 
-test('template requires a hostname and exposes only the HTTPS proxy', () => {
+test('template renders without a hostname (hPanel runs it with no environment) and exposes only the HTTPS proxy', () => {
+  // A `${VAR:?}` refusal at render time leaves hPanel with no project and no
+  // readable error; the hostname is enforced by the init container instead.
   const missing = config('');
-  assert.notEqual(missing.status, 0);
-  assert.match(missing.stderr, /SLIDELESS_DOMAIN/);
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.equal(JSON.parse(missing.stdout).services.init.environment.SLIDELESS_DOMAIN, '');
   const result = config();
   assert.equal(result.status, 0, result.stderr);
   const { services } = JSON.parse(result.stdout);
@@ -63,6 +65,9 @@ test('initializer preserves credentials, rejects corruption and validates the ho
       env: { SLIDELESS_DOMAIN: domain }
     });
   try {
+    const unset = run('');
+    assert.notEqual(unset.status, 0);
+    assert.match(unset.stderr, /SLIDELESS_DOMAIN is not set.*Docker Manager.*redeploy/);
     for (const domain of [
       'http://slides.example.com',
       'localhost',
