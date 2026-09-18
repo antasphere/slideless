@@ -49,6 +49,13 @@ export const en = {
   'common.hubGrantExpired':
     'Your Antasphere sign-in on this instance has expired — sign in with Antasphere again.',
 
+  // ── Downloads ($lib/download, PRDCT-2426) ────────────────────────────
+  'download.preparing': 'Preparing your download…',
+  'download.notFound': 'This file is no longer available. Reload the page to see what is there now.',
+  'download.timedOut': 'The download took too long and was stopped. Try again.',
+  'download.network': 'The download did not start. Check your connection and try again.',
+  'download.failed': 'The download failed. Try again.',
+
   // ── No-organization zero state (user-scoped federation) ─────────────
   'noOrg.title': 'No organization yet',
   'noOrg.body':

@@ -54,6 +54,14 @@ export const fr: Record<MessageKey, string> = {
   'common.hubGrantExpired':
     'Votre connexion Antasphere sur cette instance a expiré — reconnectez-vous avec Antasphere.',
 
+  // ── Téléchargements ($lib/download, PRDCT-2426) ──────────────────────
+  'download.preparing': 'Préparation du téléchargement…',
+  'download.notFound':
+    'Ce fichier n’est plus disponible. Rechargez la page pour voir ce qui s’y trouve à présent.',
+  'download.timedOut': 'Le téléchargement a pris trop de temps et a été interrompu. Réessayez.',
+  'download.network': 'Le téléchargement n’a pas démarré. Vérifiez votre connexion puis réessayez.',
+  'download.failed': 'Le téléchargement a échoué. Réessayez.',
+
   // ── État vide « aucune organisation » (fédération user-scoped) ──────
   'noOrg.title': 'Aucune organisation pour l’instant',
   'noOrg.body':
