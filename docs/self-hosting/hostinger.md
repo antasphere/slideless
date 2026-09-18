@@ -56,11 +56,15 @@ For an existing VPS:
 
 4. Give the project a name, such as `slideless`. Keep this name for future
    redeployments so Docker reuses its data volumes.
-5. Set the project environment variable `SLIDELESS_DOMAIN` to your hostname.
-   Enter only `slides.example.com`, without `https://`, a port, or a path.
-   If hPanel reports a missing variable during import, add it in the project's
-   environment variables section and validate again before deploying.
-6. Review the configuration and click **Deploy**.
+5. hPanel opens the **Compose an application** page: the four containers
+   (`init`, `db`, `app`, `caddy`) in the visual editor, and a collapsed
+   **Environment** section at the bottom. Expand **Environment** and add the
+   variable `SLIDELESS_DOMAIN` with your hostname. Enter only
+   `slides.example.com`, without `https://`, a port, or a path. This is the
+   only value the template needs; do not edit the containers.
+6. Click **Deploy**. Docker Manager may also offer to _Enable HTTPS with
+   Traefik_ — dismiss it (the ✕): the template brings its own HTTPS proxy, and
+   Traefik would take ports 80 and 443 from it.
 
 The `init` container creates a database password and then exits successfully.
 An exited `init` container with exit code 0 is expected. PostgreSQL starts
@@ -135,7 +139,7 @@ sign-in and password recovery. See the
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Template URL returns 404                  | The public deployment has not been published yet, or the URL is wrong. Use the URL above; private GitHub source URLs cannot be imported anonymously.                                                                                                                                                                   |
 | Image pull says unauthorized or denied    | The release image must be public. This is a release-publication problem; you should not need GitHub credentials.                                                                                                                                                                                                       |
-| Missing `SLIDELESS_DOMAIN`                | Add that project variable and validate again. Use a hostname only.                                                                                                                                                                                                                                                     |
+| Missing `SLIDELESS_DOMAIN`                | The `init` container refused to start without it (its log says so). Open the project (**Manage**), expand **Environment**, add `SLIDELESS_DOMAIN` with your hostname, and click **Deploy** again. A project that shows _Created, 0 container_ after a failed deploy is that same case.                                 |
 | `init` fails                              | Read its logs for hostname or credential validation errors. A damaged credential volume must be restored, not replaced with a new password (see the next row for the escape).                                                                                                                                          |
 | App cannot connect to the database        | The `db_credentials` volume no longer matches `pg_data` (lost, replaced or edited). From an SSH terminal on the VPS: `docker exec -it <db container> psql -U slideless -c "ALTER ROLE slideless PASSWORD '<the 64-hex value in the app container's /run/slideless-secrets/postgres-password>'"`, then restart the app. |
 | Certificate error or HTTPS unavailable    | Check A and AAAA records, DNS-only mode, open ports 80/443, and Caddy's logs. Correct the cause and allow Caddy to retry. Keep `caddy_data`; deleting it can cause repeated certificate requests and rate limits.                                                                                                      |

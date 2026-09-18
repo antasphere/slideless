@@ -74,3 +74,14 @@ Before changing the pinned image, run the smoke against that exact published
 image too, and update both the template and deployment page. Container UIDs,
 the `/data` volume, `tini`, Node, and the server entrypoint are part of the
 template's image contract.
+
+## Verified on a real Hostinger VPS
+
+2026-09-18, KVM 1 (1 vCPU, 4 GB, Germany), Plain OS → Ubuntu 24.04, Docker Manager:
+Compose from URL → Environment `SLIDELESS_DOMAIN=share.antasphere.com` → Deploy.
+Let's Encrypt certificate obtained ~30 s after Deploy, `init` 0 → `db` healthy → `app`
+healthy → `caddy` up, HTTP 308 → HTTPS, wizard claimed with the token from the app log,
+owner signed in, `POST /api/v1/setup` → 410 afterwards. Two things the run corrected in
+the template and the guide: hPanel runs the file with no environment (a `${VAR:?}`
+render refusal leaves no project), and the deploy button does not carry the template
+into a new VPS. The instance stays up as the reference self-hosted Slideless.
