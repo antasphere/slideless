@@ -87,10 +87,12 @@ export function heroPalette(theme: ThemeKey, dark: boolean): string {
   if (!PALETTES[name]) {
     const accent = THEMES[theme].accent;
     const paper = dark ? '#17120E' : '#FBF6EE';
-    const pools = dark ? [0.08, 0.18, 0.3, 0.44, 0.58, 0.12, 0.7] : [0.04, 0.14, 0.26, 0.4, 0.56, 0.08, 0.7];
+    const pools = dark
+      ? [0.05, 0.1, 0.18, 0.27, 0.36, 0.07, 0.46]
+      : [0.02, 0.07, 0.13, 0.2, 0.28, 0.04, 0.36];
     PALETTES[name] = {
       light: !dark,
-      base: mix(paper, accent, dark ? 0.2 : 0.16),
+      base: mix(paper, accent, dark ? 0.12 : 0.08),
       hues: pools.map((x) => mix(paper, accent, x))
     };
   }

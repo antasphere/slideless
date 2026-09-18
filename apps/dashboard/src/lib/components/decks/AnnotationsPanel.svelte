@@ -2,6 +2,7 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
   import * as Select from '$lib/components/ui/select/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -155,70 +156,68 @@
 </script>
 
 <Card.Root>
-  <Card.Header>
-    <div class="flex flex-wrap items-start justify-between gap-4">
+  <Card.Header class="gap-4">
+    <DeckSectionHeading
+      drawing="annotations"
+      title={t('annotations.title')}
+      description={t('annotations.description')}
+    >
+      <a
+        href={ANNOTATIONS_DOCS_URL}
+        target="_blank"
+        rel="noreferrer"
+        class="underline underline-offset-2 hover:text-foreground"
+      >
+        {t('annotations.learnMore')}
+      </a>
+    </DeckSectionHeading>
+    <div class="flex flex-wrap items-end gap-3">
       <div class="space-y-1">
-        <Card.Title class="text-base">{t('annotations.title')}</Card.Title>
-        <Card.Description>
-          {t('annotations.description')}
-          <a
-            href={ANNOTATIONS_DOCS_URL}
-            target="_blank"
-            rel="noreferrer"
-            class="underline underline-offset-2 hover:text-foreground"
-          >
-            {t('annotations.learnMore')}
-          </a>
-        </Card.Description>
+        <Label for="annotation-filter-version" class="text-xs text-muted-foreground">
+          {t('annotations.filterVersion')}
+        </Label>
+        <Select.Root
+          type="single"
+          value={filterVersion}
+          onValueChange={(v) => {
+            if (v) filterVersion = v;
+          }}
+        >
+          <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
+            {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value="all" label={t('annotations.filterAllVersions')} />
+            {#each versions as version (version.version)}
+              <Select.Item value={String(version.version)} label={`v${version.version}`} />
+            {/each}
+          </Select.Content>
+        </Select.Root>
       </div>
-      <div class="flex items-end gap-3">
-        <div class="space-y-1">
-          <Label for="annotation-filter-version" class="text-xs text-muted-foreground">
-            {t('annotations.filterVersion')}
-          </Label>
-          <Select.Root
-            type="single"
-            value={filterVersion}
-            onValueChange={(v) => {
-              if (v) filterVersion = v;
-            }}
-          >
-            <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
-              {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="all" label={t('annotations.filterAllVersions')} />
-              {#each versions as version (version.version)}
-                <Select.Item value={String(version.version)} label={`v${version.version}`} />
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
-        <div class="space-y-1">
-          <Label for="annotation-filter-status" class="text-xs text-muted-foreground">
-            {t('annotations.filterStatus')}
-          </Label>
-          <Select.Root
-            type="single"
-            value={filterStatus}
-            onValueChange={(v) => {
-              if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
-            }}
-          >
-            <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
-              {filterStatus === 'all'
-                ? t('annotations.filterAll')
-                : filterStatus === 'open'
-                  ? t('annotations.statusOpen')
-                  : t('annotations.statusResolved')}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="all" label={t('annotations.filterAll')} />
-              <Select.Item value="open" label={t('annotations.statusOpen')} />
-              <Select.Item value="resolved" label={t('annotations.statusResolved')} />
-            </Select.Content>
-          </Select.Root>
-        </div>
+      <div class="space-y-1">
+        <Label for="annotation-filter-status" class="text-xs text-muted-foreground">
+          {t('annotations.filterStatus')}
+        </Label>
+        <Select.Root
+          type="single"
+          value={filterStatus}
+          onValueChange={(v) => {
+            if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
+          }}
+        >
+          <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
+            {filterStatus === 'all'
+              ? t('annotations.filterAll')
+              : filterStatus === 'open'
+                ? t('annotations.statusOpen')
+                : t('annotations.statusResolved')}
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value="all" label={t('annotations.filterAll')} />
+            <Select.Item value="open" label={t('annotations.statusOpen')} />
+            <Select.Item value="resolved" label={t('annotations.statusResolved')} />
+          </Select.Content>
+        </Select.Root>
       </div>
     </div>
   </Card.Header>
@@ -234,7 +233,7 @@
     {:else}
       <ul class="space-y-3">
         {#each list.items as annotation (annotation.id)}
-          <li class="space-y-2 rounded-md border p-4">
+          <li class="space-y-2 rounded-[10px] border border-[var(--hairline)] bg-[var(--plate-strong)] p-4">
             <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <!-- SECURITY: authorLabel() may return the reviewer-controlled
                    authorName — Svelte {…} interpolation renders it as escaped

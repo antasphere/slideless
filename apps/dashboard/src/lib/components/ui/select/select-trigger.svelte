@@ -14,11 +14,12 @@
 <SelectPrimitive.Trigger
   bind:ref
   class={cn(
-    'border-input ring-offset-background data-[placeholder]:text-muted-foreground focus:ring-ring flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+    // the outline button's material: what opens from it is cut from the same paper
+    'data-[placeholder]:text-muted-foreground focus:ring-ring flex h-9 w-full items-center justify-between gap-2 whitespace-nowrap rounded-[10px] border border-[var(--hairline)] bg-[var(--plate-strong)] px-3 py-2 text-[13.5px] text-[var(--ink)] transition-[background-color,border-color] hover:border-[color-mix(in_oklab,var(--accent)_45%,var(--hairline))] hover:bg-[color-mix(in_oklab,var(--accent)_6%,var(--plate-strong))] focus:outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-50 data-[state=open]:border-[color-mix(in_oklab,var(--accent)_45%,var(--hairline))] [&>span]:line-clamp-1',
     className
   )}
   {...restProps}
 >
   {@render children?.()}
-  <ChevronDown class="size-4 opacity-50" />
+  <ChevronDown class="size-4 shrink-0 text-[var(--muted)]" />
 </SelectPrimitive.Trigger>

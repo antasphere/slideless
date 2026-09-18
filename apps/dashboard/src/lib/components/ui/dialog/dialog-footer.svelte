@@ -11,13 +11,8 @@
   }: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 </script>
 
-<div
-  bind:this={ref}
-  class={cn(
-    'flex flex-col-reverse items-center sm:flex-row sm:items-start sm:justify-end sm:space-x-2',
-    className
-  )}
-  {...restProps}
->
+<!-- the actions: always in view in a framed dialog, side by side, sharing the
+     width on a phone -->
+<div bind:this={ref} class={cn('dlg-footer', className)} {...restProps}>
   {@render children?.()}
 </div>

@@ -33,16 +33,20 @@
     if (!isOpen) onClose();
   }}
 >
-  <Dialog.Content class="sm:max-w-md">
-    <Dialog.Header>
-      <Dialog.Title>{title}</Dialog.Title>
-      <Dialog.Description>{description}</Dialog.Description>
-    </Dialog.Header>
-    <div class="flex justify-end gap-2 pt-4">
+  <!-- A question: its words may run long (a description names what is lost),
+       so they scroll; the two answers never do. -->
+  <Dialog.Content size="sm" framed>
+    <Dialog.Body class="dlg-words">
+      <Dialog.Header>
+        <Dialog.Title>{title}</Dialog.Title>
+        <Dialog.Description>{description}</Dialog.Description>
+      </Dialog.Header>
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button variant="outline" onclick={onClose} disabled={loading}>{t('common.cancel')}</Button>
       <Button {variant} onclick={onConfirm} disabled={loading}>
         {loading ? t('common.working') : confirmLabel}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

@@ -17,6 +17,7 @@
   import { t } from '$lib/i18n';
 
   import { IsMobile } from '$lib/hooks/is-mobile.svelte';
+  import { stuck } from './stuck';
 
   interface Props {
     data: TData[];
@@ -37,6 +38,8 @@
     getRowId?: (row: TData) => string;
     /** Extra classes on the table element (a min width so no column is ever cut; the wrapper scrolls). */
     tableClass?: string;
+    /** The toolbar and the column header stay in place while the page scrolls under them. */
+    sticky?: boolean;
   }
 
   let {
@@ -56,7 +59,8 @@
     enableRowSelection = false,
     rowSelection = $bindable({}),
     getRowId,
-    tableClass
+    tableClass,
+    sticky = true
   }: Props = $props();
 
   let sorting = $state<SortingState>([]);
@@ -142,6 +146,18 @@
   const phone = new IsMobile();
   const isLead = (id: string) => id !== 'select' && id !== 'actions';
 
+  // The toolbar is the head of the table's card, and it stays at the top of
+  // the page's scroll while the rows pass under it; the column header stays
+  // right under the toolbar, so it has to know how tall the toolbar is. A
+  // table with a min width scrolls sideways inside its wrapper, and a
+  // scrolling wrapper cannot let its header stick to the page: that one keeps
+  // a header that travels with it.
+  const hasToolbar = $derived(
+    !!toolbar || !!searchColumns?.length || !!toolbarActions || (showViewOptions && !phone.current)
+  );
+  const stickyHead = $derived(sticky && !tableClass);
+  let toolbarHeight = $state(0);
+
   // Reset page when data or search changes
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- dependency touch
@@ -150,153 +166,162 @@
   });
 </script>
 
-{#if toolbar || searchColumns?.length || toolbarActions || showViewOptions}
-  <div class="flex items-center justify-between gap-2 py-4">
-    <div class="flex flex-1 flex-wrap items-center gap-2">
-      {#if searchColumns?.length}
-        <Input
-          placeholder={searchPlaceholder}
-          value={searchValue}
-          oninput={(e) => {
-            searchValue = e.currentTarget.value;
-          }}
-          class="h-10 w-full md:h-8 md:w-[150px] lg:w-[250px]"
-        />
-      {/if}
-      {#if toolbar}
-        {@render toolbar()}
-      {/if}
-      {#if toolbarActions}
-        {@render toolbarActions()}
+<div class="table-card" style="--toolbar-h: {hasToolbar && sticky ? toolbarHeight : 0}px">
+  {#if hasToolbar}
+    <div class="table-toolbar" class:is-sticky={sticky} bind:offsetHeight={toolbarHeight} use:stuck>
+      <div class="flex flex-1 flex-wrap items-center gap-2">
+        {#if searchColumns?.length}
+          <Input
+            placeholder={searchPlaceholder}
+            value={searchValue}
+            oninput={(e) => {
+              searchValue = e.currentTarget.value;
+            }}
+            class="h-10 w-full md:h-8 md:w-[180px] lg:w-[260px]"
+          />
+        {/if}
+        {#if toolbar}
+          {@render toolbar()}
+        {/if}
+        {#if toolbarActions}
+          {@render toolbarActions()}
+        {/if}
+      </div>
+      {#if showViewOptions && !phone.current}
+        <DataTableViewOptions {table} />
       {/if}
     </div>
-    {#if showViewOptions && !phone.current}
-      <DataTableViewOptions {table} />
-    {/if}
-  </div>
-{/if}
+  {/if}
 
-{#if phone.current}
-  {#key renderKey}
-    <ul class="sheet divide-y divide-[var(--hairline)] overflow-hidden">
-      {#each paginatedRows as row (row.id)}
-        {@const cells = row.getVisibleCells()}
-        {@const lead = cells.find((c) => isLead(c.column.id))}
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-        <li
-          class="px-4 py-3.5 {onRowClick ? 'cursor-pointer active:bg-[var(--ground-3)]' : ''}"
-          data-state={row.getIsSelected() ? 'selected' : undefined}
-          onclick={(e: MouseEvent) => {
-            if (
-              onRowClick &&
-              !(e.target as HTMLElement).closest('[data-actions-cell]') &&
-              !(e.target as HTMLElement).closest('[data-slot="checkbox"]')
-            ) {
-              onRowClick(row.original);
-            }
-          }}
-        >
-          <div class="flex items-start gap-3">
-            {#each cells.filter((c) => c.column.id === 'select') as cell (cell.id)}
-              <span class="pt-0.5"
-                ><FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} /></span
-              >
-            {/each}
-            <div class="min-w-0 flex-1 break-words text-[15px] font-medium">
-              {#if lead}
-                <FlexRender content={lead.column.columnDef.cell} context={lead.getContext()} />
-              {/if}
+  {#if phone.current}
+    {#key renderKey}
+      <ul class="sheet divide-y divide-[var(--hairline)] overflow-hidden">
+        {#each paginatedRows as row (row.id)}
+          {@const cells = row.getVisibleCells()}
+          {@const lead = cells.find((c) => isLead(c.column.id))}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+          <li
+            class="px-4 py-3.5 {onRowClick ? 'cursor-pointer active:bg-[var(--ground-3)]' : ''}"
+            data-state={row.getIsSelected() ? 'selected' : undefined}
+            onclick={(e: MouseEvent) => {
+              if (
+                onRowClick &&
+                !(e.target as HTMLElement).closest('[data-actions-cell]') &&
+                !(e.target as HTMLElement).closest('[data-slot="checkbox"]')
+              ) {
+                onRowClick(row.original);
+              }
+            }}
+          >
+            <div class="flex items-start gap-3">
+              {#each cells.filter((c) => c.column.id === 'select') as cell (cell.id)}
+                <span class="pt-0.5"
+                  ><FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} /></span
+                >
+              {/each}
+              <div class="min-w-0 flex-1 break-words text-[15px] font-medium">
+                {#if lead}
+                  <FlexRender content={lead.column.columnDef.cell} context={lead.getContext()} />
+                {/if}
+              </div>
+              {#each cells.filter((c) => c.column.id === 'actions') as cell (cell.id)}
+                <span data-actions-cell="" class="-mr-2 -mt-1 shrink-0"
+                  ><FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} /></span
+                >
+              {/each}
             </div>
-            {#each cells.filter((c) => c.column.id === 'actions') as cell (cell.id)}
-              <span data-actions-cell="" class="-mr-2 -mt-1 shrink-0"
-                ><FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} /></span
-              >
-            {/each}
-          </div>
-          <dl class="mt-2 grid grid-cols-[minmax(84px,auto)_1fr] gap-x-4 gap-y-1.5 text-[13.5px]">
-            {#each cells.filter((c) => isLead(c.column.id) && c !== lead) as cell (cell.id)}
-              <dt class="text-muted-foreground">{cell.column.columnDef.meta?.title ?? ''}</dt>
-              <dd class="min-w-0 break-words">
-                <FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-              </dd>
-            {/each}
-          </dl>
-        </li>
-      {:else}
-        <li class="px-4 py-10 text-center text-sm text-muted-foreground">{t('table.noResults')}</li>
-      {/each}
-    </ul>
-  {/key}
-{:else}
-  <div class="sheet overflow-hidden">
-    <Table.Root class={['table-fixed', tableClass].filter(Boolean).join(' ')}>
-      <Table.Header>
-        {#key renderKey}
-          {#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-            <Table.Row>
-              {#each headerGroup.headers as header (header.id)}
-                <Table.Head
-                  style={[
-                    header.column.columnDef.meta?.width ? `width: ${header.column.columnDef.meta.width}` : '',
-                    header.column.columnDef.meta?.minWidth
-                      ? `min-width: ${header.column.columnDef.meta.minWidth}`
-                      : ''
-                  ]
-                    .filter(Boolean)
-                    .join('; ') || undefined}
-                  class={header.column.columnDef.meta?.align === 'center'
-                    ? '[&_div]:justify-center [&_button]:!ml-0'
-                    : undefined}
-                >
-                  {#if !header.isPlaceholder}
-                    <FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-                  {/if}
-                </Table.Head>
-              {/each}
-            </Table.Row>
-          {/each}
-        {/key}
-      </Table.Header>
-      <Table.Body>
-        {#key renderKey}
-          {#each paginatedRows as row (row.id)}
-            <Table.Row
-              class={onRowClick ? 'cursor-pointer' : ''}
-              data-state={row.getIsSelected() ? 'selected' : undefined}
-              onclick={(e: MouseEvent) => {
-                if (
-                  onRowClick &&
-                  !(e.target as HTMLElement).closest('[data-actions-cell]') &&
-                  !(e.target as HTMLElement).closest('[data-slot="checkbox"]')
-                ) {
-                  onRowClick(row.original);
-                }
-              }}
-            >
-              {#each row.getVisibleCells() as cell (cell.id)}
-                <Table.Cell
-                  data-actions-cell={cell.column.id === 'actions' ? '' : undefined}
-                  class={cell.column.columnDef.meta?.align === 'center' ? 'text-center' : undefined}
-                >
+            <dl class="mt-2 grid grid-cols-[minmax(84px,auto)_1fr] gap-x-4 gap-y-1.5 text-[13.5px]">
+              {#each cells.filter((c) => isLead(c.column.id) && c !== lead) as cell (cell.id)}
+                <dt class="text-muted-foreground">{cell.column.columnDef.meta?.title ?? ''}</dt>
+                <dd class="min-w-0 break-words">
                   <FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-                </Table.Cell>
+                </dd>
               {/each}
-            </Table.Row>
-          {:else}
-            <Table.Row>
-              <Table.Cell
-                colspan={table.getVisibleLeafColumns().length}
-                class="h-24 text-center text-muted-foreground"
+            </dl>
+          </li>
+        {:else}
+          <li class="px-4 py-10 text-center text-sm text-muted-foreground">{t('table.noResults')}</li>
+        {/each}
+      </ul>
+    {/key}
+  {:else}
+    <!-- clip, not hidden: the corners are still cut, and no scroll container
+         stands between the header and the page, so the header can stick -->
+    <div class="sheet overflow-clip">
+      <Table.Root
+        scroll={!stickyHead}
+        class={['table-fixed', stickyHead && 'table-sticky', tableClass].filter(Boolean).join(' ')}
+      >
+        <Table.Header>
+          {#key renderKey}
+            {#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
+              <Table.Row>
+                {#each headerGroup.headers as header (header.id)}
+                  <Table.Head
+                    style={[
+                      header.column.columnDef.meta?.width
+                        ? `width: ${header.column.columnDef.meta.width}`
+                        : '',
+                      header.column.columnDef.meta?.minWidth
+                        ? `min-width: ${header.column.columnDef.meta.minWidth}`
+                        : ''
+                    ]
+                      .filter(Boolean)
+                      .join('; ') || undefined}
+                    class={header.column.columnDef.meta?.align === 'center'
+                      ? '[&_div]:justify-center [&_button]:!ml-0'
+                      : undefined}
+                  >
+                    {#if !header.isPlaceholder}
+                      <FlexRender content={header.column.columnDef.header} context={header.getContext()} />
+                    {/if}
+                  </Table.Head>
+                {/each}
+              </Table.Row>
+            {/each}
+          {/key}
+        </Table.Header>
+        <Table.Body>
+          {#key renderKey}
+            {#each paginatedRows as row (row.id)}
+              <Table.Row
+                class={onRowClick ? 'cursor-pointer' : ''}
+                data-state={row.getIsSelected() ? 'selected' : undefined}
+                onclick={(e: MouseEvent) => {
+                  if (
+                    onRowClick &&
+                    !(e.target as HTMLElement).closest('[data-actions-cell]') &&
+                    !(e.target as HTMLElement).closest('[data-slot="checkbox"]')
+                  ) {
+                    onRowClick(row.original);
+                  }
+                }}
               >
-                {t('table.noResults')}
-              </Table.Cell>
-            </Table.Row>
-          {/each}
-        {/key}
-      </Table.Body>
-    </Table.Root>
-  </div>
-{/if}
+                {#each row.getVisibleCells() as cell (cell.id)}
+                  <Table.Cell
+                    data-actions-cell={cell.column.id === 'actions' ? '' : undefined}
+                    class={cell.column.columnDef.meta?.align === 'center' ? 'text-center' : undefined}
+                  >
+                    <FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+                  </Table.Cell>
+                {/each}
+              </Table.Row>
+            {:else}
+              <Table.Row>
+                <Table.Cell
+                  colspan={table.getVisibleLeafColumns().length}
+                  class="h-24 text-center !font-normal !text-muted-foreground"
+                >
+                  {t('table.noResults')}
+                </Table.Cell>
+              </Table.Row>
+            {/each}
+          {/key}
+        </Table.Body>
+      </Table.Root>
+    </div>
+  {/if}
+</div>
 
 {#if showPagination}
   <DataTablePagination

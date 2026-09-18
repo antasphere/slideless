@@ -171,11 +171,19 @@
   [data-sidebar='sidebar']:not([data-mobile='true']) {
     background: transparent;
   }
+  /* --main-pad-top mirrors the top padding the shell gives the scroll
+     container (`pt-5 md:pt-2` in (app)/+layout.svelte). A stuck element is
+     held at the container's CONTENT edge, under that padding, so everything
+     that sticks subtracts it to sit flush against the top with no gap for
+     rows to show through. */
   .app-main {
+    --main-pad-top: 20px;
+    --sticky-top: calc(0px - var(--main-pad-top));
     padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px);
   }
   @media (min-width: 768px) {
     .app-main {
+      --main-pad-top: 8px;
       padding-bottom: 48px;
     }
   }
@@ -359,19 +367,168 @@
   }
 }
 
-/* Popover styling to match sidebar (template convention, kept — the vars
-   now resolve to brand-mapped triplets) */
+/* ---------------------------------------------------------------------
+   Floating surfaces: every menu, popover, select list and tooltip is cut
+   from the outline button's material, so what opens from a button reads as
+   the same object. The button's paper (plate-strong) laid over a nearly
+   opaque bar colour and a blur, so nothing under it reads through; one
+   hairline; the button's 10px radius, 7px on the rows inside; the md
+   shadow. A row under the pointer takes the accent wash and stays in ink,
+   never grey. The ui/ primitives carry these classes; nothing else should.
+   --------------------------------------------------------------------- */
+:root {
+  --r-float: 10px;
+  --r-float-item: 7px;
+  --float-bg:
+    linear-gradient(var(--plate-strong), var(--plate-strong)),
+    color-mix(in oklab, var(--bar) 72%, transparent);
+  --wash: color-mix(in oklab, var(--accent) 8%, transparent);
+  /* what is stuck above a table's toolbar: the height of a section's tab
+     bar on the pages that have one (SectionHero), nothing elsewhere */
+  --section-bar-h: 48px;
+  /* the column header's band: a breath of the second ground, opaque */
+  --table-head-bg: color-mix(in oklab, var(--ground-2) 62%, var(--bar));
+  --sticky-top: 0px;
+}
 @layer components {
-  [data-bits-dropdown-menu-content] {
-    background-color: hsl(var(--popover)) !important;
-    color: hsl(var(--popover-foreground)) !important;
-    border: 1px solid hsl(var(--sidebar-border)) !important;
+  .float {
+    background: var(--float-bg);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-float);
+    box-shadow: var(--shadow-md);
+    outline: none;
+  }
+  .float-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--r-float-item);
+    font-size: 13.5px;
+    color: var(--ink);
+    cursor: default;
+    user-select: none;
+    outline: none;
+    transition:
+      background-color var(--motion-duration) var(--motion-ease),
+      color var(--motion-duration) var(--motion-ease);
+  }
+  .float-item > svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    color: var(--muted);
+  }
+  .float-item[data-highlighted],
+  .float-item[data-state='open'] {
+    background: var(--wash);
+    color: var(--ink);
+  }
+  .float-item[data-highlighted] > svg {
+    color: var(--accent-deep);
+  }
+  .float-item[data-disabled] {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  /* an act that removes something: danger ink, and the danger wash under the
+     hand. `.text-destructive` is what callers outside ui/ already pass. */
+  .float-item[data-variant='destructive'],
+  .float-item.text-destructive,
+  .float-item[data-variant='destructive'] > svg,
+  .float-item.text-destructive > svg {
+    color: var(--danger);
+  }
+  .float-item[data-variant='destructive'][data-highlighted],
+  .float-item.text-destructive[data-highlighted] {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  /* the mark of a checked or selected row is the accent's */
+  .float-mark,
+  .float-item > svg.float-mark {
+    color: var(--accent);
+  }
+  .float-label {
+    padding: 6px 8px 4px;
+    font-family: var(--second);
+    font-weight: 300;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .float-sep {
+    height: 1px;
+    margin: 4px -4px;
+    background: var(--hairline);
   }
 
-  [data-bits-dropdown-menu-item]:hover,
-  [data-bits-dropdown-menu-item][data-highlighted] {
-    background-color: hsl(var(--tpl-accent)) !important;
-    color: hsl(var(--foreground)) !important;
+  /* -------------------------------------------------------------------
+     A table's card. Its head is the toolbar (search, filters, View), then
+     the column header on a faint band with a hairline under it, so the
+     first row visibly starts under something. Both stay in place while the
+     rows scroll under them: the toolbar at --sticky-top (under a section's
+     tab bar when the page has one), the column header right under the
+     toolbar (--toolbar-h, measured by DataTable). Every stuck piece is
+     opaque. `stuck.ts` squares the toolbar's corners while it is held.
+     ------------------------------------------------------------------- */
+  .table-toolbar {
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bar);
+    border: 1px solid var(--hairline);
+    border-bottom: 0;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    transition: border-radius var(--motion-duration) var(--motion-ease);
+  }
+  /* only in the page's own scroll: a table inside a dialog or a side sheet
+     (portaled out of the shell) keeps a head that travels with it */
+  .app-main .table-toolbar.is-sticky {
+    position: sticky;
+    top: var(--sticky-top);
+  }
+  /* held: square, and its own line under it (the sheet's top edge, which
+     drew that line at rest, has scrolled away) */
+  .table-toolbar[data-stuck] {
+    border-radius: 0;
+    box-shadow: 0 1px 0 var(--hairline);
+  }
+  /* under a stuck tab bar the two edges would double */
+  .app-main:has([data-section-bar]) .table-toolbar[data-stuck] {
+    border-top-color: transparent;
+  }
+  .table-toolbar + .sheet,
+  .table-toolbar + ul.sheet {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .table-head {
+    background: var(--table-head-bg);
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+  .app-main .table-sticky .table-head {
+    position: sticky;
+    top: calc(var(--sticky-top) + var(--toolbar-h, 0px));
+    z-index: 10;
+  }
+  /* while the head of the card is held, the rows pass under a soft edge */
+  .table-card:has(> .table-toolbar[data-stuck]) .table-sticky .table-head {
+    box-shadow:
+      inset 0 -1px 0 var(--hairline),
+      0 10px 12px -12px rgb(28 25 21 / 0.28);
+  }
+
+  /* A section's tab bar is stuck above everything under it (SectionHero). */
+  .app-main:has([data-section-bar]) {
+    --sticky-top: calc(var(--section-bar-h) - var(--main-pad-top));
   }
 }
 

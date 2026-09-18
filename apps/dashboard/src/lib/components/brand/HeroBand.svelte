@@ -15,15 +15,25 @@
     /** One of the engine's constructions: `latitudes`, `orbits`, `apollonian`… */
     drawing?: string;
     seed?: number;
+    /** A section's hero (people, settings): lower, the drawing smaller. */
+    compact?: boolean;
+    /** Square bottom corners and no bottom edge: something (a tab bar) is attached under it. */
+    attached?: boolean;
     children: Snippet;
   }
-  let { drawing = 'latitudes', seed = RECIPE.seed, children }: Props = $props();
+  let {
+    drawing = 'latitudes',
+    seed = RECIPE.seed,
+    compact = false,
+    attached = false,
+    children
+  }: Props = $props();
 
   $effect(() => theme.start());
   const palette = $derived(heroPalette(look.value.theme, theme.dark));
 </script>
 
-<section class="hero plate-window">
+<section class="hero plate-window" class:compact class:attached>
   <div class="ground"><FieldCanvas {palette} shape={drawing} {seed} linework={false} /></div>
   <div class="drawing"><FieldCanvas {palette} shape={drawing} {seed} animate /></div>
   <div class="words on-field">{@render children()}</div>
@@ -32,12 +42,27 @@
 <style>
   .hero {
     position: relative;
-    min-height: 210px;
+    min-height: 190px;
     display: flex;
     align-items: flex-end;
     border: 1px solid var(--hairline);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-sm);
+  }
+  .hero.attached {
+    border-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: none;
+  }
+  .hero.compact {
+    min-height: 132px;
+  }
+  .compact .words {
+    padding: 20px 22px;
+  }
+  .compact .words :global(.hero-title) {
+    font-size: clamp(24px, 4.4vw, 32px);
   }
   .ground {
     position: absolute;
@@ -80,7 +105,17 @@
   }
   @media (min-width: 768px) {
     .hero {
-      min-height: 250px;
+      min-height: 216px;
+    }
+    .hero.compact {
+      min-height: 150px;
+    }
+    .compact .words {
+      padding: 24px 30px;
+    }
+    .compact .drawing {
+      width: 230px;
+      right: 3%;
     }
     .words {
       padding: 32px 34px;

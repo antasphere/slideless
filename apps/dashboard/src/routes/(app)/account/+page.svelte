@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -243,8 +242,14 @@
   ];
 </script>
 
-<SectionTabs label={t('nav.settings')} tabs={settingsTabs} />
-<PageHeader title={t('account.title')} description={t('account.description')} />
+<SectionHero
+  eyebrow={t('nav.system')}
+  title={t('nav.settings')}
+  lede={t('account.description')}
+  pageTitle={t('account.title')}
+  tabs={settingsTabs}
+  drawing="meridians"
+/>
 
 <div class="grid gap-6 lg:grid-cols-2">
   <!-- The language is the person's, not the instance's: it is kept in this

@@ -3,8 +3,7 @@
   import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import DataTable from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
@@ -18,6 +17,7 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import Copy from '@lucide/svelte/icons/copy';
+  import Plus from '@lucide/svelte/icons/plus';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
@@ -200,13 +200,23 @@
   ]);
 </script>
 
-<SectionTabs label={t('nav.people')} tabs={peopleTabs} />
-<PageHeader
-  title={t('invitations.title')}
-  description={t('invitations.description')}
-  onAdd={hubManaged ? undefined : openCreateDialog}
-  addLabel={t('invitations.invite')}
-/>
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={t('nav.people')}
+  lede={t('invitations.description')}
+  pageTitle={t('invitations.title')}
+  tabs={peopleTabs}
+  drawing="graph"
+>
+  {#snippet action()}
+    {#if !hubManaged}
+      <Button onclick={openCreateDialog} size="sm" class="gap-1.5">
+        <Plus class="h-4 w-4" />
+        {t('invitations.invite')}
+      </Button>
+    {/if}
+  {/snippet}
+</SectionHero>
 
 {#if hubManaged}
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">

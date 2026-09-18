@@ -5,11 +5,5 @@
   let { ref = $bindable(null), class: className, ...restProps }: DialogPrimitive.OverlayProps = $props();
 </script>
 
-<DialogPrimitive.Overlay
-  bind:ref
-  class={cn(
-    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[60] bg-black/30 backdrop-blur-md',
-    className
-  )}
-  {...restProps}
-/>
+<!-- the scrim's look lives with the surface's (dialog-content.svelte) -->
+<DialogPrimitive.Overlay bind:ref class={cn('dlg-overlay', className)} {...restProps} />

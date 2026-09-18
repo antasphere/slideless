@@ -104,17 +104,33 @@ export const fr: Record<MessageKey, string> = {
   'settings.openAccount': 'Ouvrir mon compte',
   'account.languageTitle': 'Langue',
   'account.languageDescription': 'La langue de ce tableau de bord, gardée dans ce navigateur.',
+  // the account card at the foot of the sidebar
+  'userMenu.accountBlurb': 'Profil, mot de passe et langue.',
+  'userMenu.settingsBlurb': 'Cette instance et ses données.',
   // the look a person picks (PRDCT-2439)
   'look.theme': 'Couleur du tableau de bord',
   'look.field': 'Dégradé',
   'look.grain': 'Grain',
   'look.reset': 'Revenir au look Slideless',
+  // la page d'une présentation : le panneau d'un lien de partage et le décompte de la table
+  'tokens.panelEyebrow': 'Lien de partage',
+  'tokens.panelCreated': 'Créé le {date}',
+  'tokens.panelSettings': 'Réglages',
+  'tokens.panelExpiredOn': 'Expiré le {date}',
+  'tokens.panelPassword': 'Mot de passe',
+  'tokens.panelNoPassword': 'Sans mot de passe',
+  'tokens.panelAllows': 'Autorise',
+  'tokens.panelChartAria': '{n} vues sur les {days} derniers jours',
+  'tokens.panelChartCaption': 'Vues par jour, {days} derniers jours',
+  'tokens.panelToday': 'Aujourd’hui',
+  'tokens.panelPrivacy': 'Aucune adresse IP ni URL complète n’est jamais conservée.',
+  'tokens.countLine': '{active} actifs · {total} au total',
   // brands, a preview with made-up data; the overview's lower cards
   'brands.title': 'Marques',
   'nav.blurb.brands': 'Le look et la voix que vos présentations peuvent prendre.',
   'brands.preview': 'Aperçu',
   'brands.previewNote':
-    'Une illustration de là où va Slideless. Les trois marques sont des exemples ; rien ici n’est encore appliqué à vos présentations.',
+    'Une illustration de là où va Slideless. Les quatre marques sont des exemples ; rien ici n’est encore appliqué à vos présentations.',
   'brands.default': 'Par défaut',
   'brands.makeDefault': 'En faire la marque par défaut',
   'brands.isDefault': 'La marque par défaut des nouvelles présentations',
@@ -136,6 +152,35 @@ export const fr: Record<MessageKey, string> = {
     'Une présentation gagne à être relue avant d’être partagée. Faites venir celles et ceux qui doivent la voir d’abord.',
   'overview.teamYou': 'Vous',
   'overview.teamSeat': 'Une place libre',
+  // dialogs, code blocks, the two name fields, the owner's row (one block)
+  'codeBlock.copy': 'Copier',
+  'name.first': 'Prénom',
+  'name.last': 'Nom',
+  'tokens.nameHint':
+    'À qui est-il destiné ? Un libellé que vous seul voyez. Un lien nommé retient les réponses de son destinataire aux formulaires ; un lien sans nom ne s’adresse à personne en particulier et ne retient rien.',
+  'tokens.unnamedLabel': 'Lien sans nom',
+  'tokens.rememberNeedsName':
+    'Seul un lien nommé retient les réponses. Indiquez ci-dessus à qui il est destiné pour activer cette option.',
+  'tokens.groupCan': 'Ce que le destinataire peut faire',
+  'tokens.asideEyebrow': 'Lien de partage',
+  'tokens.asideCaption': 'Un lien pour un lecteur. Vous décidez de ce qu’il ouvre, et pour combien de temps.',
+  'tokens.createdAsideCaption':
+    'Le lien est actif. Il n’existe ici qu’une seule fois : copiez-le avant de fermer.',
+  'tokens.embedRememberWarning':
+    'Ce lien retient les réponses. Ne l’intégrez pas : une intégration publie le lien dans le code source de votre page, et quiconque l’ouvre directement peut lire et modifier ces réponses. Pour un site web, créez un lien sans « Retenir les réponses ».',
+  'collaborators.ownerYou': '{email} (vous)',
+  'collaborators.ownerUnknown': 'Le propriétaire du deck',
+  'collaborators.roleDev': 'Collaborateur',
+  'collaborators.asideEyebrow': 'Collaborateurs',
+  'collaborators.asideCaption': 'Faites venir quelqu’un sur ce deck, et sur ce deck seulement.',
+  'collaborators.claimAsideCaption':
+    'L’invitation est en route. Elle devient un accès dès qu’elle est réclamée.',
+  'collaborators.stepLink':
+    'Vous obtenez un lien à l’étape suivante, et un e-mail part si cette instance envoie du courrier.',
+  'collaborators.stepClaim':
+    'La personne l’ouvre et se connecte, ou crée son compte, avec cette adresse exacte.',
+  'collaborators.stepWork':
+    'Elle peut ensuite lire ce deck et en pousser des versions. Rien d’autre ne s’ouvre dans l’espace de travail.',
   // tags: a tone and a glyph per meaning
   'tags.viaSession': 'Session',
   'tags.viaApiKey': 'Clé API',
@@ -155,10 +200,6 @@ export const fr: Record<MessageKey, string> = {
   'brands.statBrandsHint': '{brand} est la marque par défaut',
   'brands.statDecks': 'Présentations habillées',
   'brands.statDecksHint': 'Habillées au moment du push',
-  'brands.statFaces': 'Polices',
-  'brands.statFacesHint': 'Portées par les présentations de marque',
-  'brands.statColours': 'Couleurs',
-  'brands.statColoursHint': 'Sept niveaux par marque',
   'brands.deckLine': 'Une présentation de {pages} pages · {versions} versions · portée par {used}',
   'brands.newToast': 'Les marques sont un aperçu : rien à ajouter pour l’instant.',
   'brands.fromSite': 'Depuis un site web',
@@ -172,6 +213,11 @@ export const fr: Record<MessageKey, string> = {
   'brands.idea2': 'Ses fichiers sont la marque elle-même : le logo, les polices, les styles, la voix.',
   'brands.idea3':
     'Toute présentation peut la porter. Changez la marque, et les présentations qui la portent suivent.',
+  'brands.statFresh': 'Depuis la dernière modification',
+  'brands.statFreshValue': '{days} jours',
+  'brands.statFreshHint': '{brand}, version {version}',
+  'brands.pages': 'Pages',
+  'brands.files': 'Fichiers',
   'nav.workspace': 'Espace de travail',
   'nav.people': 'Personnes',
   'nav.primary': 'Navigation principale',
@@ -235,7 +281,6 @@ export const fr: Record<MessageKey, string> = {
   'setup.description':
     'Premier démarrage : nommez cette instance et créez le compte propriétaire. Cet écran disparaît ensuite.',
   'setup.instanceName': 'Nom de l’instance',
-  'setup.yourName': 'Votre nom',
   'setup.email': 'E-mail',
   'setup.password': 'Mot de passe',
   'setup.setupToken': 'Jeton d’installation',
@@ -288,7 +333,6 @@ export const fr: Record<MessageKey, string> = {
   'invite.switchToCreate': 'Nouveau ici ? Créez votre compte pour accepter.',
   'invite.passwordFor': 'Mot de passe de {email}',
   'invite.signInAndAccept': 'Se connecter et accepter',
-  'invite.yourName': 'Votre nom',
   'invite.choosePassword': 'Choisissez un mot de passe',
   'invite.joining': 'Inscription…',
   'invite.createAndJoin': 'Créer le compte et rejoindre',
@@ -349,7 +393,7 @@ export const fr: Record<MessageKey, string> = {
 
   // ── Account ──────────────────────────────────────────────────────────
   'account.title': 'Mon compte',
-  'account.description': 'Votre profil et votre mot de passe.',
+  'account.description': 'Votre profil, votre mot de passe et votre langue.',
   'account.profileTitle': 'Profil',
   'account.profileDescription': 'Comment les autres membres vous voient.',
   'account.name': 'Nom',
@@ -703,24 +747,24 @@ export const fr: Record<MessageKey, string> = {
   'tokens.actionChangeVersion': 'Changer la version…',
   'tokens.createTitle': 'Créer un lien de partage',
   'tokens.createDescription':
-    'L’URL de lecture apparaît une seule fois, juste après la création — copiez-la pour le destinataire.',
-  'tokens.nameLabel': 'Destinataire',
+    'L’URL de lecture apparaît une seule fois, juste après la création. Copiez-la pour le destinataire.',
+  'tokens.nameLabel': 'Destinataire (facultatif)',
   'tokens.namePlaceholder': 'alice@client.com, « Relecture 2 », …',
   'tokens.versionLabel': 'Version',
   'tokens.versionLatest': 'Toujours la dernière version',
   'tokens.versionPinned': 'Épingler à une version',
   'tokens.annotateLabel': 'Autoriser les annotations',
-  'tokens.annotateHint': '— le destinataire peut laisser des notes sur le deck',
+  'tokens.annotateHint': 'Le destinataire peut laisser des notes sur le deck.',
   'tokens.formsLabel': 'Autoriser l’envoi de formulaires',
-  'tokens.formsHint': '— les lecteurs de ce lien peuvent répondre aux formulaires intégrés au deck',
+  'tokens.formsHint': 'Les lecteurs de ce lien peuvent répondre aux formulaires intégrés au deck.',
   'tokens.rememberLabel': 'Retenir les réponses sur ce lien',
-  'tokens.rememberHint': '— rouvrir le lien ramène les réponses ; chaque envoi les met à jour',
+  'tokens.rememberHint': 'Rouvrir le lien ramène les réponses ; chaque envoi les met à jour.',
   'tokens.rememberWarning':
     'Quiconque détient ce lien peut lire et modifier les réponses données par ce lien. Donnez-le à la seule personne à qui il est destiné ; décochez pour un lien que beaucoup de gens ouvriront.',
   'tokens.colRemembers': 'Retient',
   'tokens.uploadsLabel': 'Autoriser le dépôt de fichiers',
   'tokens.uploadsHint':
-    '— les répondants peuvent déposer des fichiers dans les champs fichier du formulaire ; l’instance en limite la taille',
+    'Les répondants peuvent déposer des fichiers dans les champs fichier du formulaire ; l’instance en limite la taille.',
   'tokens.colUploads': 'Dépôts',
   'tokens.actionUploadsOn': 'Autoriser le dépôt de fichiers',
   'tokens.actionUploadsOff': 'Ne plus accepter de fichiers',
@@ -728,10 +772,10 @@ export const fr: Record<MessageKey, string> = {
   'tokens.uploadsOffToast': 'Le dépôt de fichiers est désactivé pour « {name} »',
   'tokens.downloadsLabel': 'Autoriser les téléchargements',
   'tokens.downloadsHint':
-    '— les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/)',
+    'Les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/).',
   'tokens.barLabel': 'Afficher la barre',
   'tokens.barHint':
-    '— le destinataire voit une barre au-dessus du deck avec son titre, sa version et ses fichiers',
+    'Le destinataire voit une barre au-dessus du deck avec son titre, sa version et ses fichiers.',
   'tokens.badgePositionLabel': 'Position du bouton de notes',
   'tokens.badgePositionDefault': 'Défaut du deck',
   'tokens.badgePositionHint':
@@ -752,7 +796,7 @@ export const fr: Record<MessageKey, string> = {
   'tokens.createSubmit': 'Créer le lien',
   'tokens.createFailed': 'Échec de la création du lien de partage',
   'tokens.createdTitle': 'Lien de partage créé',
-  'tokens.createdDescription': 'Copiez l’URL de lecture maintenant — elle ne sera plus jamais affichée.',
+  'tokens.createdDescription': 'Copiez l’URL de lecture maintenant. Elle ne sera plus jamais affichée.',
   'tokens.urlAria': 'URL de lecture',
   'tokens.copyUrlAria': 'Copier l’URL de lecture',
   'tokens.urlCopied': 'URL de lecture copiée dans le presse-papiers',
@@ -788,7 +832,7 @@ export const fr: Record<MessageKey, string> = {
   // ── Collaborators (per-deck dev grants) ──────────────────────────────
   'collaborators.title': 'Collaborateurs',
   'collaborators.description':
-    'Personnes invitées à développer ce deck — elles peuvent le lire et pousser des versions.',
+    'Personnes invitées à développer ce deck, aux côtés de son propriétaire. Elles peuvent le lire et pousser des versions.',
   'collaborators.invite': 'Inviter un collaborateur',
   'collaborators.colEmail': 'E-mail',
   'collaborators.colRole': 'Rôle',
@@ -799,22 +843,23 @@ export const fr: Record<MessageKey, string> = {
   'collaborators.statusRevoked': 'Révoqué',
   'collaborators.actionRemove': 'Retirer',
   'collaborators.inviteTitle': 'Inviter un collaborateur',
-  'collaborators.inviteDescription': 'Il réclame l’accès via un lien — vous l’obtenez à l’étape suivante.',
+  'collaborators.inviteDescription':
+    'La personne réclame l’accès via un lien. Vous l’obtenez à l’étape suivante.',
   'collaborators.emailLabel': 'E-mail',
   'collaborators.emailPlaceholder': 'relecteur@exemple.com',
   'collaborators.inviteSubmit': 'Créer l’invitation',
   'collaborators.inviteFailed': 'Échec de l’invitation du collaborateur',
   'collaborators.linkTitle': 'Invitation de collaborateur créée',
-  'collaborators.linkShare': 'Partagez ce lien avec {email} — le réclamer donne accès à ce deck.',
+  'collaborators.linkShare': 'Partagez ce lien avec {email}. Le réclamer donne accès à ce deck.',
   'collaborators.linkAria': 'Lien de réclamation',
   'collaborators.copyLinkAria': 'Copier le lien de réclamation',
   'collaborators.linkCopied': 'Lien de réclamation copié dans le presse-papiers',
   'collaborators.emailAlsoSent': 'Un e-mail a aussi été envoyé.',
-  'collaborators.sendYourself': '— envoyez le lien vous-même.',
+  'collaborators.sendYourself': 'Envoyez le lien vous-même.',
   'collaborators.removeConfirmTitle': 'Retirer le collaborateur ?',
   'collaborators.removeConfirmDescription': '{email} perd immédiatement l’accès à ce deck.',
   'collaborators.removedToast': '{email} retiré',
-  'collaborators.empty': 'Aucun collaborateur.',
+  'collaborators.empty': 'Personne d’autre n’a encore été invité sur ce deck.',
   'collaborators.loadFailed': 'Échec du chargement des collaborateurs : {error}',
   'collaborators.ownersOnly':
     'Seul le propriétaire du deck ou un administrateur de l’espace gère les collaborateurs.',
@@ -932,7 +977,6 @@ export const fr: Record<MessageKey, string> = {
   'collab.switchToCreate': 'Nouveau ici ? Créez votre compte pour réclamer.',
   'collab.passwordFor': 'Mot de passe de {email}',
   'collab.signInAndClaim': 'Se connecter et réclamer',
-  'collab.yourName': 'Votre nom',
   'collab.choosePassword': 'Choisissez un mot de passe',
   'collab.createAndClaim': 'Créer le compte et réclamer',
   'collab.errorWrongPassword': 'Mot de passe incorrect pour ce compte.',
@@ -956,7 +1000,6 @@ export const fr: Record<MessageKey, string> = {
   'audit.empty': 'Aucune entrée d’audit pour le moment.',
 
   // ── Settings ─────────────────────────────────────────────────────────
-  'settings.title': 'Paramètres',
   'settings.description': 'Informations sur l’instance et votre compte.',
   'settings.instanceTitle': 'Instance',
   'settings.instanceDescription': 'Ce que ce déploiement exécute.',

@@ -95,8 +95,10 @@
     <p class="py-16 text-center text-sm text-muted-foreground">{t('audit.empty')}</p>
   {/each}
 {:else}
-  <div class="sheet overflow-hidden">
-    <Table.Root>
+  <!-- clip, not hidden: the corners are still cut and the column header can
+       stick to the page's scroll (app.css, the table's card) -->
+  <div class="sheet overflow-clip">
+    <Table.Root scroll={false} class="table-sticky">
       <Table.Header>
         <Table.Row>
           <Table.Head class="w-[190px]">{t('audit.colTime')}</Table.Head>

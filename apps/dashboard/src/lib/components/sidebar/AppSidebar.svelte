@@ -35,6 +35,9 @@
   // The switcher exists ONLY with several memberships — a single-membership
   // user (every self-host) keeps the plain instance-name header unchanged.
   const showSwitcher = $derived(workspaces.length > 1 && activeWorkspaceId !== '');
+  // What the account card says the role is IN: the workspace this session
+  // targets, the instance for a single-membership user.
+  const workspaceName = $derived(workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? instanceName);
 
   // One model for the sidebar, the phone tab bar and the workspace page ($lib/nav).
   // Invitations are a tab of the people section, so nothing here depends on
@@ -101,6 +104,6 @@
   </Sidebar.Content>
   <Sidebar.Footer>
     <div class="group-data-[collapsible=icon]:hidden"><LookPanel /></div>
-    <NavUser {user} />
+    <NavUser {user} {role} {workspaceName} />
   </Sidebar.Footer>
 </Sidebar.Root>

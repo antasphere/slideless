@@ -5,6 +5,8 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { Reveal, appear } from '$lib/components/ui/reveal/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
@@ -287,6 +289,7 @@
         {/if}
         {#if totpRequired}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
@@ -318,9 +321,7 @@
                 <p class="text-xs text-muted-foreground">{t('login.totpHint')}</p>
               </div>
             {/if}
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
+            <FormError message={error} />
             <Button type="submit" class="w-full" disabled={loading}>
               {loading ? t('common.working') : t('login.verifyCode')}
             </Button>
@@ -372,6 +373,7 @@
           {#if hasPassword}
             {#if mode === 'password'}
               <form
+                in:appear
                 class="space-y-4"
                 onsubmit={(e) => {
                   e.preventDefault();
@@ -402,15 +404,14 @@
                     </div>
                   {/if}
                 </div>
-                {#if error}
-                  <p class="text-sm text-destructive">{error}</p>
-                {/if}
+                <FormError message={error} />
                 <Button type="submit" class="w-full" disabled={loading}>
                   {loading ? t('login.signingIn') : t('login.signIn')}
                 </Button>
               </form>
             {:else}
               <form
+                in:appear
                 class="space-y-4"
                 onsubmit={(e) => {
                   e.preventDefault();
@@ -428,22 +429,18 @@
                     disabled={otpSent}
                   />
                 </div>
-                {#if otpSent}
-                  <div class="space-y-2">
-                    <Label for="otp-code">{t('login.otpCode')}</Label>
-                    <Input
-                      id="otp-code"
-                      inputmode="numeric"
-                      autocomplete="one-time-code"
-                      bind:value={otp}
-                      required
-                    />
-                    <p class="text-xs text-muted-foreground">{t('login.otpSentTo', { email })}</p>
-                  </div>
-                {/if}
-                {#if error}
-                  <p class="text-sm text-destructive">{error}</p>
-                {/if}
+                <Reveal open={otpSent} class="space-y-2">
+                  <Label for="otp-code">{t('login.otpCode')}</Label>
+                  <Input
+                    id="otp-code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    bind:value={otp}
+                    required
+                  />
+                  <p class="text-xs text-muted-foreground">{t('login.otpSentTo', { email })}</p>
+                </Reveal>
+                <FormError message={error} />
                 <Button type="submit" class="w-full" disabled={loading}>
                   {loading ? t('common.working') : otpSent ? t('login.verifyCode') : t('login.sendCode')}
                 </Button>
@@ -488,9 +485,7 @@
                 </div>
               </div>
             {/if}
-            {#if error && !hasPassword}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
+            <FormError message={hasPassword ? null : error} />
             <Button class="w-full" disabled={loading} onclick={() => void signInAntasphere()}>
               {loading ? t('login.signingIn') : t('login.signInWithAntasphere')}
             </Button>

@@ -4,12 +4,16 @@
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { appear } from '$lib/components/ui/reveal/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import { api, PlatformApiError } from '$lib/api';
   import { authClient, isTwoFactorRedirect } from '$lib/auth-client';
   import { refreshSession } from '$lib/session';
+  import NameFields from '$lib/components/shared/NameFields.svelte';
+  import { joinPersonName } from '$lib/person-name';
   import { t } from '$lib/i18n';
 
   let { data } = $props();
@@ -19,7 +23,9 @@
   // Already signed in as the invited account → one-click accept.
   const signedInMatch = $derived(data.me !== null && lookup !== null && data.me.user.email === lookup.email);
 
-  let name = $state('');
+  // A view-only split: the API still takes one `name` ($lib/person-name.ts).
+  let firstName = $state('');
+  let lastName = $state('');
   let password = $state('');
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -81,7 +87,7 @@
     }
     loading = true;
     try {
-      await api.acceptInvitation({ token, name, password });
+      await api.acceptInvitation({ token, name: joinPersonName(firstName, lastName), password });
       const { error: err } = await authClient.signIn.email({ email: lookup.email, password });
       if (err) {
         // Account exists and membership is granted — a manual login still works.
@@ -146,14 +152,13 @@
       </Card.Header>
       <Card.Content class="space-y-4">
         {#if signedInMatch}
-          {#if error}
-            <p class="text-sm text-destructive">{error}</p>
-          {/if}
+          <FormError message={error} />
           <Button class="w-full" disabled={loading} onclick={() => void acceptAsSignedIn()}>
             {loading ? t('invite.accepting') : t('invite.accept')}
           </Button>
         {:else if mode === 'signin'}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
@@ -170,9 +175,7 @@
                 required
               />
             </div>
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
+            <FormError message={error} />
             <Button type="submit" class="w-full" disabled={loading}>
               {loading ? t('common.working') : t('invite.signInAndAccept')}
             </Button>
@@ -186,16 +189,14 @@
           </button>
         {:else}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
               void createAndAccept();
             }}
           >
-            <div class="space-y-2">
-              <Label for="invite-name">{t('invite.yourName')}</Label>
-              <Input id="invite-name" autocomplete="name" bind:value={name} required />
-            </div>
+            <NameFields idPrefix="invite" bind:first={firstName} bind:last={lastName} />
             <div class="space-y-2">
               <Label for="invite-new-password">{t('invite.choosePassword')}</Label>
               <Input
@@ -207,9 +208,7 @@
               />
               <p class="text-xs text-muted-foreground">{t('common.passwordMinHint')}</p>
             </div>
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
+            <FormError message={error} />
             <Button type="submit" class="w-full" disabled={loading}>
               {loading ? t('invite.joining') : t('invite.createAndJoin')}
             </Button>

@@ -3,8 +3,7 @@
   import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import DataTable from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
@@ -317,8 +316,14 @@
   ]);
 </script>
 
-<SectionTabs label={t('nav.people')} tabs={peopleTabs} />
-<PageHeader title={t('members.title')} description={t('members.description')} />
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={t('nav.people')}
+  lede={t('members.description')}
+  pageTitle={t('members.title')}
+  tabs={peopleTabs}
+  drawing="graph"
+/>
 
 {#if hubManaged}
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">

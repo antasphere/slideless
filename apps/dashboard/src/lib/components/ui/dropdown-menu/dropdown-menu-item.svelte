@@ -6,18 +6,18 @@
     ref = $bindable(null),
     class: className,
     inset,
+    variant = 'default',
     ...restProps
   }: DropdownMenuPrimitive.ItemProps & {
     inset?: boolean;
+    /** `destructive`: danger ink, and the danger wash under the hand. */
+    variant?: 'default' | 'destructive';
   } = $props();
 </script>
 
 <DropdownMenuPrimitive.Item
   bind:ref
-  class={cn(
-    'relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
-    inset && 'pl-8',
-    className
-  )}
+  class={cn('float-item px-2 py-2', inset && 'pl-8', className)}
+  data-variant={variant}
   {...restProps}
 />

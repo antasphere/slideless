@@ -19,15 +19,14 @@
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
-      <Button variant="outline" size="sm" class="ml-auto hidden h-8 lg:flex" {...props}>
+      <Button variant="outline" size="sm" class="ml-auto h-8" {...props}>
         <Settings2 class="mr-2 h-4 w-4" />
         {t('table.view')}
       </Button>
     {/snippet}
   </DropdownMenu.Trigger>
-  <DropdownMenu.Content align="end" class="w-[150px]">
+  <DropdownMenu.Content align="end" class="min-w-[176px]">
     <DropdownMenu.Label>{t('table.toggleColumns')}</DropdownMenu.Label>
-    <DropdownMenu.Separator />
     {#each columns as column (column.id)}
       <DropdownMenu.CheckboxItem
         checked={column.getIsVisible()}

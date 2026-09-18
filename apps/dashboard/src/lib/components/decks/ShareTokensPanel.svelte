@@ -2,6 +2,7 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import Plus from '@lucide/svelte/icons/plus';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
   import ShareLinksTable from './share/ShareLinksTable.svelte';
   import ShareLinkCreateDialog from './share/ShareLinkCreateDialog.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
@@ -26,20 +27,16 @@
 </script>
 
 <Card.Root>
-  <Card.Header>
-    <div class="flex items-start justify-between gap-4">
-      <div class="space-y-1">
-        <Card.Title class="text-base">{t('tokens.title')}</Card.Title>
-        <Card.Description>{t('tokens.description')}</Card.Description>
-      </div>
+  <DeckSectionHeading drawing="links" title={t('tokens.title')} description={t('tokens.description')}>
+    {#snippet action()}
       <Button size="sm" onclick={() => (showCreateDialog = true)}>
         <Plus class="mr-2 h-4 w-4" />
         {t('tokens.create')}
       </Button>
-    </div>
-  </Card.Header>
+    {/snippet}
+  </DeckSectionHeading>
   <Card.Content>
-    <ShareLinksTable {deckId} {list} {versions} />
+    <ShareLinksTable {deckId} {list} {versions} defaults="lean" />
   </Card.Content>
 </Card.Root>
 

@@ -110,7 +110,7 @@
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('files.colUploaded') }),
       cell: ({ row }) => formatDateTime(row.getValue('createdAt') as string),
-      meta: { title: t('files.colUploaded'), width: '170px' }
+      meta: { title: t('files.colUploaded'), width: '210px' }
     },
     {
       id: 'actions',

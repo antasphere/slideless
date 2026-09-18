@@ -6,6 +6,7 @@
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
@@ -93,10 +94,11 @@
 </script>
 
 <Card.Root>
-  <Card.Header>
-    <Card.Title class="text-base">{t('versions.title')}</Card.Title>
-    <Card.Description>{t('versions.description')}</Card.Description>
-  </Card.Header>
+  <DeckSectionHeading
+    drawing="versions"
+    title={t('versions.title')}
+    description={t('versions.description')}
+  />
   <Card.Content>
     {#if list.loading}
       <TableSkeleton columns={5} rows={2} showSearch={false} />

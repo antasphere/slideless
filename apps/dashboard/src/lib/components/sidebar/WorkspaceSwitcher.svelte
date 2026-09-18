@@ -57,7 +57,7 @@
             size="default"
             aria-label={t('workspace.switch')}
             data-testid="workspace-switcher"
-            class="h-auto rounded-lg border border-sidebar-border bg-background/70 px-2 py-2 shadow-sm data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            class="h-auto rounded-lg border border-sidebar-border bg-background/70 px-2 py-2 shadow-sm"
           >
             <LogoTile label={active.name} />
             {#if sidebar.state !== 'collapsed'}
@@ -70,14 +70,12 @@
         {/snippet}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content
-        class="w-[var(--bits-dropdown-menu-anchor-width)] min-w-56 rounded-lg"
+        class="w-[var(--bits-dropdown-menu-anchor-width)] min-w-60"
         side={sidebar.isMobile ? 'bottom' : 'right'}
         align="start"
         sideOffset={4}
       >
-        <DropdownMenu.Label class="text-xs text-muted-foreground">
-          {t('workspace.menuLabel')}
-        </DropdownMenu.Label>
+        <DropdownMenu.Label>{t('workspace.menuLabel')}</DropdownMenu.Label>
         {#each workspaces as workspace (workspace.id)}
           <!-- A suspended org stays VISIBLE but is not a switch target
                (visible-but-blocked — the server refuses its requests). -->
@@ -92,7 +90,7 @@
                    /me's hubOrigin flag — never edition-sniffing. Local
                    workspaces are implicitly distinguished: no badge. -->
               <span
-                class="shrink-0 rounded border border-border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                class="shrink-0 rounded-[5px] border border-[var(--hairline)] px-1 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]"
                 title={t('workspace.hubBadgeTitle')}
               >
                 {t('workspace.hubBadge')}
@@ -100,7 +98,7 @@
             {/if}
             {#if workspace.suspended}
               <span
-                class="shrink-0 rounded border border-destructive/50 px-1 text-[10px] font-medium uppercase tracking-wide text-destructive"
+                class="shrink-0 rounded-[5px] border border-[color-mix(in_oklab,var(--danger)_45%,transparent)] px-1 text-[10px] font-medium uppercase tracking-wide text-[var(--danger)]"
               >
                 {t('workspace.suspendedBadge')}
               </span>
@@ -109,14 +107,14 @@
               <!-- The selector-less default (a hub-level per-user setting)
                    — clients read THIS flag, never the list order. -->
               <span
-                class="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                class="shrink-0 rounded-[5px] bg-[var(--accent-soft)] px-1 text-[10px] font-medium uppercase tracking-wide text-[var(--accent-deep)]"
                 title={t('workspace.defaultBadgeTitle')}
               >
                 {t('workspace.defaultBadge')}
               </span>
             {/if}
             {#if workspace.id === activeWorkspaceId}
-              <Check class="ml-auto h-4 w-4 shrink-0" />
+              <Check class="float-mark ml-auto h-4 w-4 shrink-0" strokeWidth={2.2} />
             {/if}
           </DropdownMenu.Item>
         {/each}

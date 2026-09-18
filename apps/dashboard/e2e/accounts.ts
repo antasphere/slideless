@@ -6,8 +6,18 @@ import { expect, type Page } from '@playwright/test';
  * `decks` (dependencies: ['smoke']) signs in as that same owner.
  */
 export const INSTANCE_NAME = 'Smoke Test Instance';
-export const OWNER = { name: 'Owner One', email: 'owner@example.com', password: 'owner-password-123' };
+// The account forms ask for a first and a last name and send them joined as
+// the one `name` the API takes, so `name` stays what the app shows.
+export const OWNER = {
+  firstName: 'Owner',
+  lastName: 'One',
+  name: 'Owner One',
+  email: 'owner@example.com',
+  password: 'owner-password-123'
+};
 export const INVITEE = {
+  firstName: 'Invited',
+  lastName: 'Member',
   name: 'Invited Member',
   email: 'invitee@example.com',
   password: 'invitee-password-123'

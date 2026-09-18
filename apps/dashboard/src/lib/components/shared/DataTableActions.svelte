@@ -26,12 +26,9 @@
       </Button>
     {/snippet}
   </DropdownMenu.Trigger>
-  <DropdownMenu.Content align="end">
+  <DropdownMenu.Content align="end" class="min-w-[176px]">
     {#each actions as action (action.label)}
-      <DropdownMenu.Item
-        onclick={action.onclick}
-        class={action.variant === 'destructive' ? 'text-destructive focus:text-destructive' : ''}
-      >
+      <DropdownMenu.Item onclick={action.onclick} variant={action.variant}>
         {action.label}
       </DropdownMenu.Item>
     {/each}

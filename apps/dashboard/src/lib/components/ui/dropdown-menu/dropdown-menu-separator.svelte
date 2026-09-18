@@ -9,8 +9,4 @@
   }: DropdownMenuPrimitive.SeparatorProps = $props();
 </script>
 
-<DropdownMenuPrimitive.Separator
-  bind:ref
-  class={cn('bg-muted -mx-0.5 my-0.5 h-px', className)}
-  {...restProps}
-/>
+<DropdownMenuPrimitive.Separator bind:ref class={cn('float-sep', className)} {...restProps} />

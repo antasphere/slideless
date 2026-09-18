@@ -33,12 +33,11 @@
     }
   }
   const current = $derived(DEMO_BRANDS.find((b) => b.id === chosen) ?? DEMO_BRANDS[0]);
+  // one card unfolded at a time: opening one folds the other back
+  let opened = $state<string | null>(null);
   // the figures are read off the made-up brands, so they stay true to the page
   const wearing = DEMO_BRANDS.reduce((n, b) => n + b.deck.usedBy, 0);
-  const faces = new Set(
-    DEMO_BRANDS.flatMap((b) => [b.fonts.display.family, b.fonts.body.family, b.fonts.label.family])
-  ).size;
-  const colours = DEMO_BRANDS.length * 7;
+  const freshest = DEMO_BRANDS.reduce((a, b) => (b.deck.updatedDaysAgo < a.deck.updatedDaysAgo ? b : a));
 </script>
 
 <svelte:head>
@@ -52,42 +51,48 @@
   <p class="hero-lede">{t('brands.heroLede')}</p>
 </HeroBand>
 
-<div class="mt-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+<!-- three quiet figures, the ones that say something: how many, who wears them, how fresh -->
+<div class="mt-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3">
   <StatTile
     label={t('brands.statBrands')}
     value={String(DEMO_BRANDS.length)}
     hint={t('brands.statBrandsHint', { brand: current.name })}
-    form="diamond"
+    drawing="brands"
     color={THEMES.dawn.accent}
   />
   <StatTile
     label={t('brands.statDecks')}
     value={String(wearing)}
     hint={t('brands.statDecksHint')}
-    form="square"
+    drawing="worn"
     color={THEMES.solar.accent}
   />
-  <StatTile
-    label={t('brands.statFaces')}
-    value={String(faces)}
-    hint={t('brands.statFacesHint')}
-    form="arc"
-    color={THEMES.reef.accent}
-  />
-  <StatTile
-    label={t('brands.statColours')}
-    value={String(colours)}
-    hint={t('brands.statColoursHint')}
-    form="circle"
-    color={THEMES.iris.accent}
-  />
+  <div class="col-span-2 grid lg:col-span-1">
+    <StatTile
+      label={t('brands.statFresh')}
+      value={t('brands.statFreshValue', { days: String(freshest.deck.updatedDaysAgo) })}
+      hint={t('brands.statFreshHint', {
+        brand: freshest.name,
+        version: String(freshest.deck.versions)
+      })}
+      drawing="fresh"
+      color={THEMES.reef.accent}
+    />
+  </div>
 </div>
 
 <p class="preview"><span>{t('brands.preview')}</span>{t('brands.previewNote')}</p>
 
-<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+<!-- two to a row, each card at rest; a card unfolds in place and its neighbour keeps its height -->
+<div class="grid items-start gap-4 lg:grid-cols-2">
   {#each DEMO_BRANDS as brand (brand.id)}
-    <BrandCard {brand} selected={brand.id === chosen} onSelect={() => choose(brand.id)} />
+    <BrandCard
+      {brand}
+      selected={brand.id === chosen}
+      open={opened === brand.id}
+      onToggle={() => (opened = opened === brand.id ? null : brand.id)}
+      onSelect={() => choose(brand.id)}
+    />
   {/each}
 </div>
 

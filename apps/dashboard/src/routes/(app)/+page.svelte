@@ -105,15 +105,16 @@
     [...decksList.items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3)
   );
 
-  // One form and one colour per figure, each colour one of the brand's own themes.
+  // One drawing and one colour per figure, each colour one of the brand's own themes.
   const stats = $derived([
     {
       id: 'decks',
       label: t('overview.decksCard'),
       value: deckCount,
       href: '/decks',
-      hint: t('overview.browseDecks'),
-      form: 'square' as const,
+      // the link under the recent decks carries its own arrow; the card draws one on hover
+      hint: t('overview.browseDecks').replace(/\s*→$/, ''),
+      drawing: 'decks' as const,
       color: THEMES.dawn.accent
     },
     {
@@ -122,7 +123,7 @@
       value: openCount,
       href: '/decks',
       hint: t('overview.opensHint'),
-      form: 'circle' as const,
+      drawing: 'opens' as const,
       color: THEMES.solar.accent
     },
     ...(isGuest
@@ -134,7 +135,7 @@
             value: memberCount,
             href: '/members',
             hint: t('overview.manageMembers'),
-            form: 'arc' as const,
+            drawing: 'members' as const,
             color: THEMES.reef.accent
           },
           {
@@ -143,7 +144,7 @@
             value: fileCount,
             href: '/files',
             hint: t('overview.browseFiles'),
-            form: 'diamond' as const,
+            drawing: 'files' as const,
             color: THEMES.iris.accent
           }
         ])
@@ -191,7 +192,7 @@
       value={stat.value}
       hint={stat.hint}
       href={stat.href}
-      form={stat.form}
+      drawing={stat.drawing}
       color={stat.color}
     />
   {/each}
@@ -218,7 +219,7 @@
   <!-- Brands: a preview of an idea, with made-up brands ($lib/brands-demo.ts) -->
   <a href="/brands" class="sheet tile lower">
     <div class="fan" aria-hidden="true">
-      {#each DEMO_BRANDS as brand, i (brand.id)}
+      {#each DEMO_BRANDS.slice(0, 3) as brand, i (brand.id)}
         <div class="fan-slide" style="--i: {i}"><BrandSlide {brand} small /></div>
       {/each}
     </div>
@@ -332,23 +333,26 @@
     height: 96px;
   }
   /* under the pointer the faces rise and settle one after the other, the way
-     the three slides beside them fan out */
+     the three slides beside them fan out, once; then they rest for about four
+     seconds before the next rise (the movement is the first quarter of a
+     five-second loop, the stagger rides on the delay) */
   @media (hover: hover) and (prefers-reduced-motion: no-preference) {
     .lower:hover .face,
     .lower:focus-visible .face {
-      animation: bob 1.5s var(--motion-ease) infinite;
+      animation: bob 5s var(--motion-ease) infinite;
       animation-delay: calc(var(--i) * 0.13s);
     }
   }
   @keyframes bob {
     0%,
+    26%,
     100% {
       transform: translateY(0);
     }
-    35% {
+    9% {
       transform: translateY(-9px);
     }
-    65% {
+    17% {
       transform: translateY(3px);
     }
   }

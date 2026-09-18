@@ -6,7 +6,6 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
-  import { Separator } from '$lib/components/ui/separator/index.js';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Presentation from '@lucide/svelte/icons/presentation';
   import ShareTokensPanel from './ShareTokensPanel.svelte';
@@ -15,6 +14,7 @@
   import FormResponsesPanel from './FormResponsesPanel.svelte';
   import VersionsPanel from './VersionsPanel.svelte';
   import DeckMetaPanel from './DeckMetaPanel.svelte';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { kindLabel, PREVIEW_SANDBOX } from '$lib/decks';
@@ -122,6 +122,17 @@
     return memberLabels[userId] ?? `${userId.slice(0, 8)}…`;
   }
 
+  // The preview's description names the version in the frame once one is.
+  const previewDescription = $derived.by(() => {
+    const base = t('deck.previewDescription');
+    if (!deck || preview.version === null || deck.currentVersion < 1) return base;
+    const which =
+      preview.version === deck.currentVersion
+        ? t('deck.previewLatest', { n: preview.version })
+        : t('deck.previewPinned', { n: preview.version });
+    return `${base} · ${which}`;
+  });
+
   let bannerPlayed = $state(false);
 </script>
 
@@ -180,39 +191,39 @@
           {deck.title}
         </h2>
       </div>
-      <div class="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <Badge variant="secondary">{kindLabel(deck.kind)}</Badge>
-        {#if deck.interactive}
-          <Badge variant="outline">{t('decks.badgeInteractive')}</Badge>
-        {/if}
-        <Badge variant="outline">
-          {deck.currentVersion > 0 ? `v${deck.currentVersion}` : t('deck.versionNone')}
-        </Badge>
-        <span>·</span>
-        <!-- SECURITY: ownerLabel may be a member email (user text) — escaped
-             text interpolation only. -->
-        <span>{t('deck.labelOwner')}: {ownerLabel}</span>
-        <span>·</span>
-        <span>{t('deck.labelTotalViews')}: {deck.totalViews}</span>
-        <span>·</span>
-        <span>{t('deck.labelUpdated')}: {formatTimeAgo(deck.updatedAt)}</span>
+      <!-- The deck's facts: its tags, then label and value pairs that wrap as
+           whole pairs, so a phone never ends a line on a lone separator. -->
+      <div class="deck-facts">
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{kindLabel(deck.kind)}</Badge>
+          {#if deck.interactive}
+            <Badge variant="outline">{t('decks.badgeInteractive')}</Badge>
+          {/if}
+          <Badge variant="outline">
+            {deck.currentVersion > 0 ? `v${deck.currentVersion}` : t('deck.versionNone')}
+          </Badge>
+        </div>
+        <dl>
+          <div>
+            <dt>{t('deck.labelOwner')}</dt>
+            <!-- SECURITY: ownerLabel may be a member email (user text) — escaped
+                 text interpolation only. -->
+            <dd>{ownerLabel}</dd>
+          </div>
+          <div>
+            <dt>{t('deck.labelTotalViews')}</dt>
+            <dd>{deck.totalViews}</dd>
+          </div>
+          <div>
+            <dt>{t('deck.labelUpdated')}</dt>
+            <dd>{formatTimeAgo(deck.updatedAt)}</dd>
+          </div>
+        </dl>
       </div>
-      <Separator class="mt-4" />
     </div>
 
     <Card.Root>
-      <Card.Header>
-        <Card.Title class="text-base">{t('deck.previewTitle')}</Card.Title>
-        <Card.Description>
-          {t('deck.previewDescription')}
-          {#if preview.version !== null && deck.currentVersion > 0}
-            ·
-            {preview.version === deck.currentVersion
-              ? t('deck.previewLatest', { n: preview.version })
-              : t('deck.previewPinned', { n: preview.version })}
-          {/if}
-        </Card.Description>
-      </Card.Header>
+      <DeckSectionHeading drawing="preview" title={t('deck.previewTitle')} description={previewDescription} />
       <Card.Content>
         {#if deck.currentVersion < 1}
           <p class="text-sm text-muted-foreground">{t('deck.previewEmpty')}</p>
@@ -223,7 +234,9 @@
         {:else if preview.error}
           <p class="text-sm text-destructive">{t('deck.previewFailed', { error: preview.error })}</p>
         {:else if !preview.url}
-          <div class="flex h-[480px] w-full items-center justify-center rounded-md border">
+          <div
+            class="flex h-[320px] w-full items-center justify-center rounded-[8px] border border-dashed border-[var(--hairline)] md:h-[480px]"
+          >
             <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
           </div>
         {:else}
@@ -240,7 +253,7 @@
               sandbox={PREVIEW_SANDBOX}
               referrerpolicy="no-referrer"
               allow="fullscreen"
-              class="h-[480px] w-full rounded-md border bg-background"
+              class="h-[320px] w-full rounded-[8px] border border-[var(--hairline)] bg-background md:h-[480px]"
               data-testid="deck-preview"
             ></iframe>
           {/key}
@@ -283,6 +296,33 @@
       min-height: 200px;
       padding: 16px 22px 24px;
     }
+  }
+  .deck-facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 20px;
+    margin-top: 14px;
+    padding: 0 2px;
+    font-size: 13.5px;
+  }
+  .deck-facts dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 20px;
+  }
+  .deck-facts dl > div {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+  .deck-facts dt {
+    color: var(--muted);
+  }
+  .deck-facts dd {
+    color: var(--ink);
+    overflow-wrap: anywhere;
   }
   .chip {
     display: inline-flex;

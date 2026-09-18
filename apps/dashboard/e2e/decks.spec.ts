@@ -176,7 +176,8 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     const claimer = await context.newPage();
     await claimer.goto(claimUrl);
     await expect(claimer.getByText('Collaborate on')).toBeVisible();
-    await claimer.getByLabel('Your name').fill('Collab One');
+    await claimer.getByLabel('First name').fill('Collab');
+    await claimer.getByLabel('Last name').fill('One');
     await claimer.getByLabel('Choose a password').fill('collab-password-123');
     await claimer.getByRole('button', { name: 'Create account and claim' }).click();
     // Claiming lands on the deck detail — the collaborator can read it.

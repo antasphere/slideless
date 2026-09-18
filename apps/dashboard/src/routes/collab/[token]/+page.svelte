@@ -5,11 +5,15 @@
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { appear } from '$lib/components/ui/reveal/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import { api, PlatformApiError, WORKSPACE_STORAGE_KEY } from '$lib/api';
   import { authClient, isTwoFactorRedirect } from '$lib/auth-client';
+  import NameFields from '$lib/components/shared/NameFields.svelte';
+  import { joinPersonName } from '$lib/person-name';
   import { t } from '$lib/i18n';
   import type { CollaboratorClaimed } from '@slideless/contract';
 
@@ -39,7 +43,9 @@
   // Already signed in as the invited account → one-click claim.
   const signedInMatch = $derived(data.me !== null && lookup !== null && data.me.user.email === lookup.email);
 
-  let name = $state('');
+  // A view-only split: the API still takes one `name` ($lib/person-name.ts).
+  let firstName = $state('');
+  let lastName = $state('');
   let password = $state('');
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -159,7 +165,11 @@
     }
     loading = true;
     try {
-      const claimed = await api.claimCollaboratorInvite({ token, name, password });
+      const claimed = await api.claimCollaboratorInvite({
+        token,
+        name: joinPersonName(firstName, lastName),
+        password
+      });
       const { error: err } = await authClient.signIn.email({ email: lookup.email, password });
       if (err) {
         // Account exists and the grant is claimed — a manual login still works.
@@ -235,9 +245,7 @@
       </Card.Header>
       <Card.Content class="space-y-4">
         {#if signedInMatch}
-          {#if error}
-            <p class="text-sm text-destructive">{error}</p>
-          {/if}
+          <FormError message={error} />
           <Button class="w-full" disabled={loading} onclick={() => void claimAsSignedIn()}>
             {loading ? t('collab.claiming') : t('collab.claim')}
           </Button>
@@ -252,14 +260,13 @@
           {:else}
             <p class="text-sm text-muted-foreground">{t('collab.ssoIntro')}</p>
           {/if}
-          {#if error}
-            <p class="text-sm text-destructive">{error}</p>
-          {/if}
+          <FormError message={error} />
           <Button class="w-full" disabled={loading} onclick={() => void signInWithAntasphere()}>
             {loading ? t('collab.claiming') : t('login.signInWithAntasphere')}
           </Button>
         {:else if mode === 'signin'}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
@@ -276,9 +283,7 @@
                 required
               />
             </div>
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
+            <FormError message={error} />
             <Button type="submit" class="w-full" disabled={loading}>
               {loading ? t('common.working') : t('collab.signInAndClaim')}
             </Button>
@@ -292,16 +297,14 @@
           </button>
         {:else}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
               void createAndClaim();
             }}
           >
-            <div class="space-y-2">
-              <Label for="collab-name">{t('collab.yourName')}</Label>
-              <Input id="collab-name" autocomplete="name" bind:value={name} required />
-            </div>
+            <NameFields idPrefix="collab" bind:first={firstName} bind:last={lastName} />
             <div class="space-y-2">
               <Label for="collab-new-password">{t('collab.choosePassword')}</Label>
               <Input
@@ -313,9 +316,7 @@
               />
               <p class="text-xs text-muted-foreground">{t('common.passwordMinHint')}</p>
             </div>
-            {#if error}
-              <p class="text-sm text-destructive">{error}</p>
-            {/if}
+            <FormError message={error} />
             <Button type="submit" class="w-full" disabled={loading}>
               {loading ? t('collab.claiming') : t('collab.createAndClaim')}
             </Button>
