@@ -51,6 +51,7 @@ import {
   registerWorkspaceRoutes,
   workspaceCreationPolicy,
   workspaceCreationRefusal,
+  workspaceCreateWallClosed,
   type WorkspaceCloudDeps
 } from './workspaces.js';
 import { registerSsoConnectRoutes } from './sso-connect.js';
@@ -750,9 +751,17 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     maxPerUser: env.MAX_WORKSPACES_PER_USER,
     cloud: deps.workspaceCloud
   });
-  const canCreateWorkspace = async (userId: string, via: 'session' | 'api_key' | 'oauth') => {
+  const creationWall = { person: limiters.workspaceCreate, address: limiters.workspaceCreateAddress };
+  const canCreateWorkspace = async (
+    userId: string,
+    via: 'session' | 'api_key' | 'oauth',
+    address: string
+  ) => {
     try {
-      return (await workspaceCreationRefusal(db, creationPolicy, { userId, via })) === null;
+      if ((await workspaceCreationRefusal(db, creationPolicy, { userId, via })) !== null) return false;
+      // Honest about the rate wall too (read-only, nothing is spent): a
+      // person the route would answer 429 is not offered the entry.
+      return !(await workspaceCreateWallClosed(creationWall, address, userId));
     } catch (cause) {
       logger.warn({ err: cause }, '/me: canCreateWorkspace could not be computed — answering false');
       return false;
@@ -824,7 +833,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           // oss: always false here — a zero-membership user is not an active
           // member of this instance. cloud: true with a live hub link (their
           // next organization is created from this very state).
-          canCreateWorkspace: hub ? await canCreateWorkspace(session.user.id, 'session') : false,
+          canCreateWorkspace: hub ? await canCreateWorkspace(session.user.id, 'session', clientIp(c)) : false,
           // Cloud + session extras (SL-6): the zero state is session-only
           // by construction, so only the edition gate applies here.
           ...(hub ? await cloudSessionExtras(session.user.id) : {})
@@ -885,7 +894,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         workspaces: wireWorkspaces,
         activeWorkspaceId: principal.workspaceId,
         hubManageUrl: hubManaged && principal.accountRef ? hubManaged.manageUrl : null,
-        canCreateWorkspace: await canCreateWorkspace(principal.userId, principal.via),
+        canCreateWorkspace: await canCreateWorkspace(principal.userId, principal.via, clientIp(c)),
         // Cloud + SESSION only (SL-6): machine credentials never carry the
         // onboarding/hint-watch keys — the banner and the auto-sign-out are
         // browser concerns.
@@ -912,7 +921,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     registry,
     logger,
     clientIp,
-    limiter: limiters.workspaceCreate,
+    wall: creationWall,
     maxPerUser: env.MAX_WORKSPACES_PER_USER,
     cloud: deps.workspaceCloud
   });

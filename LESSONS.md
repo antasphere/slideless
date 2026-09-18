@@ -1145,3 +1145,12 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
   guard working, not a regression: it is documented for operators in
   `docs/self-hosting/deployment-profiles.md`, and `MAX_WORKSPACES_PER_USER=0` is the switch for an
   instance that wants to stay one team's.
+- **A rate wall mounted on a PATH counts everything that touches the path.** The first wall on
+  `POST /workspaces` was `api.use('/workspaces', rateLimit(...))` on arrival: OPTIONS, HEAD and
+  anonymous POSTs (all of them 404/401, none of them a creation) each spent the address's budget, so
+  61 preflights locked a person out of a route they had never used, and `/me` still said they could
+  create. The wall now lives IN the handler, after the caller is identified: the per-person bucket
+  is judged first and a person it refuses never reaches the per-address one, which is ten people's
+  worth, so one colleague takes at most a tenth of an office's NAT address. `/me.canCreateWorkspace`
+  reads both buckets (no spend). Rule: a wall protecting an authenticated act is spent by the
+  handler, keyed on who it identified; path mounts are for surfaces whose cost IS the arrival.

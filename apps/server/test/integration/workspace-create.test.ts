@@ -349,20 +349,108 @@ describe('MAX_WORKSPACES_PER_USER=0 closes creation for everyone', () => {
     const count = await closed.db.pool.query(`SELECT count(*)::int AS n FROM workspaces`);
     expect(count.rows[0].n).toBe(1);
   });
-  it('is walled: 60 attempts per hour per IP and per user, then 429 — refused attempts count too', async () => {
-    const headers = { cookie, 'x-forwarded-for': '10.63.0.1' };
-    const statuses: number[] = [];
-    for (let i = 0; i < 61; i++) {
-      const res = await closed.app.request('/api/v1/workspaces', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...headers },
-        body: JSON.stringify({ name: `Wall ${i}` })
-      });
-      statuses.push(res.status);
+});
+
+describe('the creation rate wall counts identified POSTs only, per person first, then per address', () => {
+  let walled: TestApp;
+  const people: Array<{ email: string; cookie: string }> = [];
+
+  const req = (method: string, address: string, cookie?: string, name = 'Walled') =>
+    walled.app.request('/api/v1/workspaces', {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-for': address,
+        ...(cookie ? { cookie } : {})
+      },
+      ...(method === 'POST' ? { body: JSON.stringify({ name }) } : {})
+    });
+  const flag = async (address: string, cookie: string): Promise<boolean> =>
+    (
+      await readJson(
+        await walled.app.request('/api/v1/me', { headers: { cookie, 'x-forwarded-for': address } })
+      )
+    ).canCreateWorkspace as boolean;
+
+  beforeAll(async () => {
+    walled = await createTestApp(await createDatabase(container, 'ws_create_wall'), {
+      MAX_WORKSPACES_PER_USER: '1000' // the cap out of the way: only the wall refuses here
+    });
+    const setup = await walled.app.request(
+      '/api/v1/setup',
+      post({ setupToken: 'integration-test-setup-token', instanceName: 'Walled', owner: OWNER })
+    );
+    expect(setup.status).toBe(201);
+    const w = (await readJson(setup)).workspaceId as string;
+    for (let i = 0; i < 12; i++) {
+      const who = { email: `p${i}@wall.test`, name: `Person ${i}`, password: 'wall-person-password-123' };
+      const created = await walled.auth.api.signUpEmail({ body: who });
+      await walled.db.pool.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, origin, is_active) VALUES ($1, $2, 'member', 'local', true)`,
+        [w, created.user.id]
+      );
+      people.push({ email: who.email, cookie: await signIn(walled, who.email, who.password) });
     }
-    // The per-USER key already spent one point in the test above (another
-    // IP, the same person): 59 more are judged, then the wall answers.
-    expect(statuses.filter((st) => st === 403)).toHaveLength(59);
-    expect(statuses.slice(59)).toEqual([429, 429]);
+  }, 300_000);
+
+  afterAll(async () => {
+    await walled?.stop();
   });
+
+  it('unauthenticated requests and other methods spend NOTHING: a person’s first POST from that address is served', async () => {
+    const address = '10.64.0.1';
+    for (let i = 0; i < 61; i++) {
+      expect((await req('OPTIONS', address)).status).not.toBe(429);
+      expect((await req('POST', address)).status).toBe(401); // no session
+    }
+    for (const method of ['HEAD', 'PUT', 'PATCH', 'DELETE', 'GET']) {
+      for (let i = 0; i < 13; i++) await req(method, address, people[0]!.cookie);
+    }
+    // 61 OPTIONS + 61 anonymous POSTs + 65 signed-in non-POSTs later:
+    expect(await flag(address, people[0]!.cookie)).toBe(true);
+    expect((await req('POST', address, people[0]!.cookie, 'First ever')).status).toBe(201);
+  });
+
+  it('one person gets 60 attempts an hour, then 429 — and /me stops offering it; a colleague at the SAME address is untouched', async () => {
+    const address = '10.64.0.2';
+    const hammer = people[1]!;
+    const statuses: number[] = [];
+    for (let i = 0; i < 65; i++) statuses.push((await req('POST', address, hammer.cookie, `H${i}`)).status);
+    expect(statuses.slice(0, 60).every((st) => st === 201)).toBe(true);
+    expect(statuses.slice(60)).toEqual([429, 429, 429, 429, 429]);
+    expect(await flag(address, hammer.cookie)).toBe(false); // honest about the wall, not the cap (61 < 1000)
+    // The person bucket follows the PERSON, not the address.
+    expect((await req('POST', '10.64.0.99', hammer.cookie)).status).toBe(429);
+
+    const colleague = people[2]!;
+    expect(await flag(address, colleague.cookie)).toBe(true);
+    expect((await req('POST', address, colleague.cookie, 'Colleague')).status).toBe(201);
+  });
+
+  it('an address gets ten people’s worth (600): past it everyone there is refused, and is served again from elsewhere', async () => {
+    const address = '10.64.0.3';
+    // Person 0 has spent 1 point of their own, elsewhere: start from person 3.
+    let served = 0;
+    for (const person of people.slice(3, 12)) {
+      // nine fresh people × 60 = 540
+      for (let i = 0; i < 60; i++) {
+        const res = await req('POST', address, person.cookie, `A${served}`);
+        expect(res.status).toBe(201);
+        served++;
+      }
+    }
+    // The colleague of the previous test has 59 left: 59 more = 599; person 0 has 59 left: 1 more = 600.
+    for (let i = 0; i < 59; i++)
+      expect((await req('POST', address, people[2]!.cookie, `B${i}`)).status).toBe(201);
+    expect((await req('POST', address, people[0]!.cookie, 'The 600th')).status).toBe(201);
+    // The address is spent. Person 0 still has budget of their own (58) — refused HERE only.
+    expect((await req('POST', address, people[0]!.cookie, 'Over')).status).toBe(429);
+    expect(await flag(address, people[0]!.cookie)).toBe(false);
+    expect(await flag('10.64.0.4', people[0]!.cookie)).toBe(true);
+    expect((await req('POST', '10.64.0.4', people[0]!.cookie, 'Elsewhere')).status).toBe(201);
+    // …and the refusal at the walled address did NOT charge the person: 58 − 1 (Elsewhere) = 57 left.
+    let left = 0;
+    while ((await req('POST', '10.64.0.5', people[0]!.cookie, `L${left}`)).status === 201) left++;
+    expect(left).toBe(57);
+  }, 120_000);
 });

@@ -61,21 +61,21 @@ Who can create one:
 `GET /api/v1/me` carries `canCreateWorkspace`, true when the call would be accepted right now. A
 client shows or hides its "new workspace" entry from that one flag.
 
-| Answer                            | When                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `201`                             | Created; the caller is its owner                                          |
-| `400 validation_error`            | The name is missing, blank, too long, or carries control characters       |
-| `401 unauthenticated`             | No session                                                                |
-| `401 hub_grant_expired`           | Cloud: sign in with Antasphere again, then retry                          |
-| `403 session_required`            | The caller is an API key or an OAuth token                                |
-| `403 guest_forbidden`             | The caller is a guest everywhere                                          |
-| `403 workspace_creation_disabled` | The operator closed creation                                              |
-| `403 workspace_limit_reached`     | The caller already owns the maximum                                       |
-| `403 hub_link_required`           | Cloud: the account is not linked to Antasphere                            |
-| `403 hub_unavailable`             | Cloud: Antasphere could not be reached; check your workspaces, then retry |
-| `403 hub_refused`                 | Cloud: Antasphere did not accept the creation                             |
-| `429 rate_limited`                | More than 60 attempts in an hour from one address or one person           |
-| `409`                             | The `Idempotency-Key` was reused with another body, or is in flight       |
+| Answer                            | When                                                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `201`                             | Created; the caller is its owner                                                                                  |
+| `400 validation_error`            | The name is missing, blank, too long, or carries control characters                                               |
+| `401 unauthenticated`             | No session                                                                                                        |
+| `401 hub_grant_expired`           | Cloud: sign in with Antasphere again, then retry                                                                  |
+| `403 session_required`            | The caller is an API key or an OAuth token                                                                        |
+| `403 guest_forbidden`             | The caller is a guest everywhere                                                                                  |
+| `403 workspace_creation_disabled` | The operator closed creation                                                                                      |
+| `403 workspace_limit_reached`     | The caller already owns the maximum                                                                               |
+| `403 hub_link_required`           | Cloud: the account is not linked to Antasphere                                                                    |
+| `403 hub_unavailable`             | Cloud: Antasphere could not be reached; check your workspaces, then retry                                         |
+| `403 hub_refused`                 | Cloud: Antasphere did not accept the creation                                                                     |
+| `429 rate_limited`                | More than 60 attempts in an hour by one person, or 600 from one address; only a signed-in person's attempts count |
+| `409`                             | The `Idempotency-Key` was reused with another body, or is in flight                                               |
 
 ## On Slideless cloud
 

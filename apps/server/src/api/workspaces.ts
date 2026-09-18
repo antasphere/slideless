@@ -9,7 +9,8 @@ import { projectOrgMembership } from '../identity/hub-projection.js';
 import type { ReconcilePassOutcome } from '../identity/hub-reconcile.js';
 import type { HubOrgCreator } from '../identity/hub-user-client.js';
 import type { Logger } from '../logger.js';
-import { rateLimit, type ClientIpFn, type RateLimiters } from '../middleware/rate-limit.js';
+import type { RateLimiterAbstract } from 'rate-limiter-flexible';
+import type { ClientIpFn } from '../middleware/rate-limit.js';
 import type { PlatformRegistry } from '../platform/registry.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
@@ -112,6 +113,75 @@ const REFUSAL_MESSAGES: Record<WorkspaceCreationRefusal, string> = {
   hub_link_required: 'Sign in with Antasphere to create an organization'
 };
 
+/**
+ * The creation rate wall. Two buckets, spent IN THE HANDLER once the caller
+ * is identified — deliberately not a path-mounted middleware:
+ *
+ *  - a path mount counts every method (OPTIONS/HEAD/PUT on a path whose only
+ *    handler is the POST) and every unauthenticated request, so anyone could
+ *    spend an address's budget without a session and lock the people behind
+ *    it out of a route they had never used;
+ *  - here only an IDENTIFIED caller's POST costs anything. The person bucket
+ *    is judged FIRST, and a person it refuses never reaches the address
+ *    bucket — so one person can take at most their own share (a tenth) of
+ *    the address's budget, and an office behind one NAT address is not
+ *    locked out by one colleague. A single person still cannot hammer the
+ *    hub: 60 attempts an hour, refused ones included, zero-membership cloud
+ *    sessions included (they are identified by their session here, which a
+ *    principal-keyed middleware could not do).
+ *
+ * An Idempotency-Key replay never reaches the handler and costs nothing.
+ */
+export interface WorkspaceCreateWall {
+  /** Per person, key `u:<userId>`. */
+  person: RateLimiterAbstract;
+  /** Per address — larger than the person bucket, identified callers only. */
+  address: RateLimiterAbstract;
+}
+
+const personKey = (userId: string) => `u:${userId}`;
+
+async function bucketExhausted(limiter: RateLimiterAbstract, key: string): Promise<boolean> {
+  // A backend read error fails open, like every other read of a limiter here.
+  const state = await limiter.get(key).catch(() => null);
+  return Boolean(state && state.remainingPoints <= 0 && state.msBeforeNext > 0);
+}
+
+/**
+ * Read-only: would the wall refuse this person at this address right now?
+ * `/me.canCreateWorkspace` asks it so the flag stays honest about the wall.
+ */
+export async function workspaceCreateWallClosed(
+  wall: WorkspaceCreateWall,
+  address: string,
+  userId: string
+): Promise<boolean> {
+  return (
+    (await bucketExhausted(wall.person, personKey(userId))) || (await bucketExhausted(wall.address, address))
+  );
+}
+
+/** Spend one attempt. False = walled (429). */
+async function spendCreationAttempt(
+  wall: WorkspaceCreateWall,
+  address: string,
+  userId: string
+): Promise<boolean> {
+  // A walled ADDRESS refuses without charging the person for it.
+  if (await bucketExhausted(wall.address, address)) return false;
+  try {
+    await wall.person.consume(personKey(userId));
+  } catch {
+    return false; // the person's own budget is spent: the address bucket is NOT touched
+  }
+  try {
+    await wall.address.consume(address);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 /** Control-flow marker: a refusal decided inside the locked transaction. */
 class CreationRefused extends Error {
   constructor(readonly refusal: WorkspaceCreationRefusal) {
@@ -135,7 +205,7 @@ export interface WorkspaceRouteDeps {
   registry: PlatformRegistry;
   logger: Logger;
   clientIp: ClientIpFn;
-  limiter: RateLimiters['workspaceCreate'];
+  wall: WorkspaceCreateWall;
   maxPerUser: number;
   cloud?: WorkspaceCloudDeps | undefined;
 }
@@ -149,18 +219,6 @@ export function workspaceCreationPolicy(
 export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDeps): void {
   const { db, auth, audit, registry, logger, cloud } = deps;
   const policy = workspaceCreationPolicy(deps);
-
-  // A rare human act: 60 per hour per IP AND per user. Registered after
-  // authContext, so the user key exists whenever a principal resolved; the
-  // cloud zero-membership session (no principal, so outside the general
-  // quota) is bounded by the IP key — on cloud every attempt reaches the hub.
-  api.use(
-    '/workspaces',
-    rateLimit(deps.limiter, deps.clientIp, async (c) => {
-      const principal = c.get('principal');
-      return principal ? [`u:${principal.userId}`] : [];
-    })
-  );
 
   api.openapi(workspaceCreateRoute, async (c) => {
     const principal = c.get('principal');
@@ -192,6 +250,12 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
       userId = session.user.id;
     }
     const actor = { userId, via: 'session' as const };
+
+    // The rate wall, now that the caller is a known person (see
+    // WorkspaceCreateWall): nothing above this line spends a point.
+    if (!(await spendCreationAttempt(deps.wall, deps.clientIp(c), userId))) {
+      return c.json(err('rate_limited', 'Too many requests, slow down'), 429);
+    }
 
     const name = c.req.valid('json').name.trim();
     if (!name) return c.json(err('validation_error', 'The workspace needs a name'), 400);
