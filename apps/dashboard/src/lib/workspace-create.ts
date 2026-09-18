@@ -1,5 +1,6 @@
 import { PlatformApiError } from '@slideless/sdk';
 import { t, type MessageKey } from '$lib/i18n';
+import { safeNext } from '$lib/utils';
 
 /**
  * The pure half of the "New workspace" dialog (PRDCT-2443 cloud, PRDCT-2444
@@ -89,16 +90,19 @@ export type StartOauth2 = (options: {
 }) => Promise<{ error?: unknown } | undefined>;
 
 /**
- * Start a real sign-in from a LIVE session and come back to `returnTo`. On
- * success the browser leaves for the sign-in page and this never matters
- * again; false means the sign-in could not be started and the caller falls
- * back to a reload.
+ * Start a real sign-in from a LIVE session and come back to `returnTo`. The
+ * return target goes through `safeNext` like every other callbackURL of the
+ * dashboard: `window.location.pathname` can begin with `//` (the SPA fallback
+ * serves any path), which a browser reads as another host. On success the
+ * browser leaves for the sign-in page and this never matters again; false
+ * means the sign-in could not be started and the caller falls back to a
+ * reload.
  */
 export async function startFreshSignIn(oauth2: StartOauth2, returnTo: string): Promise<boolean> {
   try {
     const result = await oauth2({
       providerId: 'antasphere',
-      callbackURL: returnTo,
+      callbackURL: safeNext(returnTo),
       // A refused sign-in lands on the login page with its ?error=<code>.
       errorCallbackURL: '/login'
     });
@@ -106,4 +110,24 @@ export async function startFreshSignIn(oauth2: StartOauth2, returnTo: string): P
   } catch {
     return false;
   }
+}
+
+/**
+ * What the "Sign in again" control does, as one decision the tests can pin:
+ * a live session whose grant predates workspace creation (`freshSignIn`)
+ * starts the sign-in itself, because a reload would come straight back and
+ * fail the same way; anything else, and a sign-in that could not start,
+ * reloads, which meets the login page with the way back.
+ */
+export async function signInAgain(options: {
+  freshSignIn: boolean;
+  oauth2: StartOauth2;
+  returnTo: string;
+  reload: () => void;
+}): Promise<'sign-in' | 'reload'> {
+  if (options.freshSignIn && (await startFreshSignIn(options.oauth2, options.returnTo))) {
+    return 'sign-in';
+  }
+  options.reload();
+  return 'reload';
 }

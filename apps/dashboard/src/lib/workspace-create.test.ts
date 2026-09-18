@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PlatformApiError } from '@slideless/sdk';
 import { en, fr } from '$lib/i18n';
-import { newIdempotencyKey, startFreshSignIn, workspaceCreateFailure } from './workspace-create';
+import { newIdempotencyKey, signInAgain, startFreshSignIn, workspaceCreateFailure } from './workspace-create';
 
 /**
  * The refusal sentences of the "New workspace" dialog (PRDCT-2443 /
@@ -132,5 +132,73 @@ describe('startFreshSignIn', () => {
         throw new Error('network');
       }, '/')
     ).toBe(false);
+  });
+});
+
+describe('the return target of a fresh sign-in', () => {
+  it('goes through safeNext: a path that begins with // would be read as another host', async () => {
+    const calls: { callbackURL: string }[] = [];
+    await startFreshSignIn(async (options) => {
+      calls.push(options);
+      return {};
+    }, '//evil.example/decks');
+    expect(calls[0]?.callbackURL).toBe('/');
+  });
+
+  it('keeps an ordinary page with its query', async () => {
+    const calls: { callbackURL: string }[] = [];
+    await startFreshSignIn(async (options) => {
+      calls.push(options);
+      return {};
+    }, '/decks?x=1');
+    expect(calls[0]?.callbackURL).toBe('/decks?x=1');
+  });
+});
+
+describe("signInAgain, the control's decision", () => {
+  it('a live session whose grant predates creation starts the sign-in and never reloads', async () => {
+    let reloads = 0;
+    const calls: unknown[] = [];
+    const did = await signInAgain({
+      freshSignIn: true,
+      oauth2: async (options) => {
+        calls.push(options);
+        return {};
+      },
+      returnTo: '/decks',
+      reload: () => reloads++
+    });
+    expect(did).toBe('sign-in');
+    expect(calls).toHaveLength(1);
+    expect(reloads).toBe(0);
+  });
+
+  it('a dead session or grant reloads, which meets the login page', async () => {
+    let reloads = 0;
+    const calls: unknown[] = [];
+    const did = await signInAgain({
+      freshSignIn: false,
+      oauth2: async (options) => {
+        calls.push(options);
+        return {};
+      },
+      returnTo: '/decks',
+      reload: () => reloads++
+    });
+    expect(did).toBe('reload');
+    expect(calls).toHaveLength(0);
+    expect(reloads).toBe(1);
+  });
+
+  it('a sign-in that cannot start falls back to the reload', async () => {
+    let reloads = 0;
+    const did = await signInAgain({
+      freshSignIn: true,
+      oauth2: async () => ({ error: { code: 'x' } }),
+      returnTo: '/decks',
+      reload: () => reloads++
+    });
+    expect(did).toBe('reload');
+    expect(reloads).toBe(1);
   });
 });

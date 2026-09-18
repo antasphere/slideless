@@ -4,7 +4,11 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import FormField from '$lib/components/ui/FormField.svelte';
   import { api, switchWorkspace } from '$lib/api';
-  import { newIdempotencyKey, startFreshSignIn, workspaceCreateFailure } from '$lib/workspace-create';
+  import {
+    newIdempotencyKey,
+    signInAgain as decideSignInAgain,
+    workspaceCreateFailure
+  } from '$lib/workspace-create';
   import { authClient } from '$lib/auth-client';
   import { t } from '$lib/i18n';
 
@@ -50,22 +54,14 @@
     }
   });
 
-  /**
-   * The "Sign in again" control. A dead session or grant: a reload meets the
-   * login page, which keeps the way back here. A LIVE session whose grant
-   * predates workspace creation (hub_reauth_required): a reload would come
-   * straight back and fail the same way, so the control starts the sign-in
-   * itself and returns to this page; a reload is the fallback when it cannot.
-   */
-  async function signInAgainNow() {
-    if (freshSignIn) {
-      const started = await startFreshSignIn(
-        (options) => authClient.signIn.oauth2(options),
-        window.location.pathname + window.location.search
-      );
-      if (started) return;
-    }
-    window.location.reload();
+  /** The "Sign in again" control: `signInAgain` in $lib/workspace-create owns the decision. */
+  function signInAgainNow() {
+    return decideSignInAgain({
+      freshSignIn,
+      oauth2: (options) => authClient.signIn.oauth2(options),
+      returnTo: window.location.pathname + window.location.search,
+      reload: () => window.location.reload()
+    });
   }
 
   async function submit() {
