@@ -611,6 +611,14 @@ export const fr: Record<MessageKey, string> = {
   'tokens.rememberWarning':
     'Quiconque détient ce lien peut lire et modifier les réponses données par ce lien. Donnez-le à la seule personne à qui il est destiné ; décochez pour un lien que beaucoup de gens ouvriront.',
   'tokens.colRemembers': 'Retient',
+  'tokens.uploadsLabel': 'Autoriser le dépôt de fichiers',
+  'tokens.uploadsHint':
+    '— les répondants peuvent déposer des fichiers dans les champs fichier du formulaire ; l’instance en limite la taille',
+  'tokens.colUploads': 'Dépôts',
+  'tokens.actionUploadsOn': 'Autoriser le dépôt de fichiers',
+  'tokens.actionUploadsOff': 'Ne plus accepter de fichiers',
+  'tokens.uploadsOnToast': 'Le dépôt de fichiers est activé pour « {name} »',
+  'tokens.uploadsOffToast': 'Le dépôt de fichiers est désactivé pour « {name} »',
   'tokens.downloadsLabel': 'Autoriser les téléchargements',
   'tokens.downloadsHint':
     '— les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/)',
@@ -740,6 +748,10 @@ export const fr: Record<MessageKey, string> = {
     'Ce que les lecteurs ont soumis via les formulaires intégrés à ce deck — filtrable par formulaire, lien de partage et provenance.',
   'formResponses.refresh': 'Actualiser',
   'formResponses.downloadCsv': 'Télécharger en CSV',
+  'formResponses.downloadAllFiles': 'Télécharger tous les fichiers (.zip)',
+  'formResponses.downloadFiles': 'Télécharger les fichiers (.zip)',
+  'formResponses.downloadFile': 'Télécharger ce fichier',
+  'formResponses.filesTitle': 'Fichiers joints ({n})',
   'formResponses.filterForm': 'Formulaire',
   'formResponses.filterAllForms': 'Tous les formulaires',
   'formResponses.filterSource': 'Provenance',

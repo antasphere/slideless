@@ -177,6 +177,13 @@
     </Label>
   </div>
   {#if form.canSubmitForms}
+    <div class="flex items-center gap-2 pl-6">
+      <Checkbox id="token-uploads" bind:checked={form.canUploadFiles} />
+      <Label for="token-uploads" class="font-normal">
+        {t('tokens.uploadsLabel')}
+        <span class="text-muted-foreground">{t('tokens.uploadsHint')}</span>
+      </Label>
+    </div>
     <div class="space-y-1 pl-6">
       <div class="flex items-center gap-2">
         <Checkbox id="token-remember" bind:checked={form.remembersResponses} />

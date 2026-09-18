@@ -17,7 +17,8 @@ describe('buildShareTokenCreate', () => {
       canSubmitForms: true,
       canDownload: true,
       showBar: true,
-      remembersResponses: true
+      remembersResponses: true,
+      canUploadFiles: true
     });
     expect(body).not.toHaveProperty('pinnedVersion');
     expect(body).not.toHaveProperty('expiresAt');
@@ -49,6 +50,17 @@ describe('buildShareTokenCreate', () => {
     // the server default a remembering check onto a read-only link.
     const formsOff = buildShareTokenCreate({ ...defaultShareLinkForm(3), canSubmitForms: false });
     expect(formsOff.remembersResponses).toBe(false);
+  });
+
+  it('carries file uploads switched OFF explicitly, and never ON when forms are off (PRDCT-2403)', () => {
+    const off = buildShareTokenCreate({ ...defaultShareLinkForm(3), canUploadFiles: false });
+    expect(off.canUploadFiles).toBe(false);
+    // Omitted, the server would default the public write back ON.
+    expect('canUploadFiles' in off).toBe(true);
+    // Uploads need submissions: forms off = no uploads, said in the body.
+    const formsOff = buildShareTokenCreate({ ...defaultShareLinkForm(3), canSubmitForms: false });
+    expect(formsOff.canUploadFiles).toBe(false);
+    expect('canUploadFiles' in formsOff).toBe(true);
   });
 
   it('pins a version as a number only when pinned, and the badge slot only with annotations on', () => {
