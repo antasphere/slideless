@@ -6,7 +6,6 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
-  import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
@@ -17,13 +16,15 @@
   import ShareLinkRowActions from './ShareLinkRowActions.svelte';
   import ShareLinkStatusCell from './ShareLinkStatusCell.svelte';
   import ShareLinkVersionCell from './ShareLinkVersionCell.svelte';
+  import ShareLinkColumnsMenu from './ShareLinkColumnsMenu.svelte';
+  import EmptyTable, { emptyColumns } from '../EmptyTable.svelte';
+  import { LinkColumns, type LinkColumnId } from './linkColumns.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { isPreviewToken, tokenStatus } from '$lib/decks';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import Settings2 from '@lucide/svelte/icons/settings-2';
   import Activity from '@lucide/svelte/icons/activity';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import Paperclip from '@lucide/svelte/icons/paperclip';
@@ -37,9 +38,10 @@
    * (copy, open, activity, change version, file uploads on/off, revoke) and
    * the dialogs those open. A row opens the link's panel (ShareLinkPanel):
    * the same facts and the same acts, with the link's activity. Which
-   * columns show is the reader's choice, kept in this browser. Shared by the
-   * admin page's share panel and the master page's share sheet (PRDCT-2279).
-   * Creating a link is the sibling ShareLinkCreateDialog.
+   * columns show is the reader's choice, kept in this browser (LinkColumns).
+   * Shared by the admin page's share panel and the master page's share sheet
+   * (PRDCT-2279). Creating a link is the sibling ShareLinkCreateDialog. With
+   * no link yet the table still stands, its heads over one quiet row.
    */
   interface Props {
     deckId: string;
@@ -52,9 +54,15 @@
      * (the deck page). Each keeps its own remembered choice.
      */
     defaults?: 'full' | 'lean';
+    /**
+     * The host's own column choice: it renders the View button itself (the
+     * deck page sets it in the section's head). Without it the table keeps
+     * its own choice and its own View button, on the status line above it.
+     */
+    view?: LinkColumns;
   }
 
-  let { deckId, list, versions, defaults = 'full' }: Props = $props();
+  let { deckId, list, versions, defaults = 'full', view }: Props = $props();
 
   // The page's own transient preview tokens are plumbing, not shares.
   const tokens = $derived(list.items.filter((token) => !isPreviewToken(token)));
@@ -185,52 +193,12 @@
   }
 
   // ── Which columns show ─────────────────────────────────────────────────
-  // The reader's choice, kept in this browser (per variant). The lean
-  // defaults keep who, which version, what a reader may send back, and how
-  // much it was read; the link's panel holds everything else. The status
-  // column is hidden there because the row already says it: a link that no
-  // longer opens is faded, its name struck, a state tag beside it.
-  type ColumnId =
-    | 'pinnedVersion'
-    | 'canDownload'
-    | 'showBar'
-    | 'canAnnotate'
-    | 'canSubmitForms'
-    | 'canUploadFiles'
-    | 'remembersResponses'
-    | 'accessCount'
-    | 'lastAccessedAt'
-    | 'revokedAt';
-  const LEAN_HIDDEN: ColumnId[] = [
-    'canDownload',
-    'showBar',
-    'canUploadFiles',
-    'remembersResponses',
-    'revokedAt'
-  ];
-  const storageKey = $derived(`slideless.shareLinks.columns.${defaults}`);
-
-  function readHidden(): ColumnId[] {
-    const fallback = defaults === 'lean' ? LEAN_HIDDEN : [];
-    try {
-      const stored: unknown = JSON.parse(globalThis.localStorage?.getItem(storageKey) ?? 'null');
-      if (Array.isArray(stored)) return stored.filter((id): id is ColumnId => typeof id === 'string');
-    } catch {
-      // privacy modes, a hand-edited record: the defaults
-    }
-    return fallback;
-  }
-
-  let hidden = $state<ColumnId[]>(readHidden());
-
-  function setColumn(id: ColumnId, visible: boolean) {
-    hidden = visible ? hidden.filter((h) => h !== id) : [...hidden.filter((h) => h !== id), id];
-    try {
-      globalThis.localStorage?.setItem(storageKey, JSON.stringify(hidden));
-    } catch {
-      // the choice then lasts for this page only
-    }
-  }
+  // The reader's choice (LinkColumns): the host's when it renders the View
+  // button itself, this table's own otherwise.
+  // svelte-ignore state_referenced_locally
+  const own = view ? null : new LinkColumns(defaults);
+  const columnsView = $derived(view ?? own!);
+  const hidden = $derived(columnsView.hidden);
 
   const statusShown = $derived(!hidden.includes('revokedAt'));
   const activeCount = $derived(tokens.filter((token) => tokenStatus(token) === 'active').length);
@@ -340,13 +308,7 @@
   ]);
 
   const columnId = (column: ColumnDef<ShareToken, unknown>) =>
-    ('accessorKey' in column ? String(column.accessorKey) : (column.id ?? '')) as ColumnId;
-  /** The columns a reader may hide: everything but the recipient and the acts. */
-  const choices = $derived(
-    allColumns
-      .filter((column) => 'accessorKey' in column && column.accessorKey !== 'name')
-      .map((column) => ({ id: columnId(column), title: column.meta?.title ?? columnId(column) }))
-  );
+    ('accessorKey' in column ? String(column.accessorKey) : (column.id ?? '')) as LinkColumnId;
   const columns = $derived(allColumns.filter((column) => !hidden.includes(columnId(column))));
   // Every column carries a width; the table is never narrower than their sum
   // (a narrower host scrolls it sideways), and never wider than it has to be.
@@ -359,49 +321,37 @@
   <TableSkeleton columns={10} rows={2} />
 {:else if list.error && !tokens.length}
   <p class="text-sm text-destructive" in:appear>{t('tokens.loadFailed', { error: list.error })}</p>
-{:else if !tokens.length}
-  <p class="text-sm text-muted-foreground">{t('tokens.empty')}</p>
 {:else}
-  <div class="links" style="--links-min: {minWidth}px">
-    <DataTable
-      data={tokens}
-      {columns}
-      showViewOptions={false}
-      showPagination={false}
-      pageSize={200}
-      sticky={false}
-      tableClass="links-table"
-      onRowClick={openPanel}
-    >
-      {#snippet toolbar()}
-        <p class="text-[13px] text-muted-foreground" data-testid="links-count">
+  <!-- The status of the section, said quietly above the first row: how many
+       links still open, out of how many. No band, no box. -->
+  {#if tokens.length || own}
+    <div class="links-status">
+      {#if tokens.length}
+        <p data-testid="links-count">
           {t('tokens.countLine', { active: activeCount, total: tokens.length })}
         </p>
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger>
-            {#snippet child({ props })}
-              <Button variant="outline" size="sm" class="ml-auto h-8" data-testid="links-columns" {...props}>
-                <Settings2 class="mr-2 h-4 w-4" />
-                {t('table.view')}
-              </Button>
-            {/snippet}
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Content align="end" class="min-w-[176px]">
-            <DropdownMenu.Label>{t('table.toggleColumns')}</DropdownMenu.Label>
-            {#each choices as choice (choice.id)}
-              <DropdownMenu.CheckboxItem
-                checked={!hidden.includes(choice.id)}
-                closeOnSelect={false}
-                onCheckedChange={(value) => setColumn(choice.id, !!value)}
-              >
-                {choice.title}
-              </DropdownMenu.CheckboxItem>
-            {/each}
-          </DropdownMenu.Content>
-        </DropdownMenu.Root>
-      {/snippet}
-    </DataTable>
-  </div>
+      {/if}
+      {#if own}
+        <ShareLinkColumnsMenu view={own} class="ml-auto h-8" />
+      {/if}
+    </div>
+  {/if}
+  {#if !tokens.length}
+    <EmptyTable message={t('tokens.empty')} columns={emptyColumns(columns)} {minWidth} />
+  {:else}
+    <div class="links" style="--links-min: {minWidth}px">
+      <DataTable
+        data={tokens}
+        {columns}
+        showViewOptions={false}
+        showPagination={false}
+        pageSize={200}
+        sticky={false}
+        tableClass="links-table"
+        onRowClick={openPanel}
+      />
+    </div>
+  {/if}
   {#if list.nextCursor}
     <div class="flex justify-center py-2" transition:reveal>
       <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
@@ -485,6 +435,16 @@
 />
 
 <style>
+  .links-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+    margin-bottom: 10px;
+    padding: 0 2px;
+    font-size: 13px;
+    color: var(--muted);
+  }
   /* every column has a width: the table is at least their sum */
   .links :global(.links-table) {
     min-width: var(--links-min);

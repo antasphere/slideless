@@ -3,6 +3,7 @@
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import EmptyTable from './EmptyTable.svelte';
   import * as Select from '$lib/components/ui/select/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -228,9 +229,8 @@
     {:else if list.error && !list.items.length}
       <p class="text-sm text-destructive" in:appear>{t('annotations.loadFailed', { error: list.error })}</p>
     {:else if !list.items.length}
-      <p class="text-sm text-muted-foreground">
-        {hasFilters ? t('annotations.emptyFiltered') : t('annotations.empty')}
-      </p>
+      <!-- the notes are a list, not a table: the empty section keeps its frame -->
+      <EmptyTable message={hasFilters ? t('annotations.emptyFiltered') : t('annotations.empty')} />
     {:else}
       <ul class="space-y-3">
         {#each list.items as annotation (annotation.id)}

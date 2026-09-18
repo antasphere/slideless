@@ -5,6 +5,8 @@
   import DeckSectionHeading from './DeckSectionHeading.svelte';
   import ShareLinksTable from './share/ShareLinksTable.svelte';
   import ShareLinkCreateDialog from './share/ShareLinkCreateDialog.svelte';
+  import ShareLinkColumnsMenu from './share/ShareLinkColumnsMenu.svelte';
+  import { LinkColumns } from './share/linkColumns.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { t } from '$lib/i18n';
   import type { PresentationVersion, ShareToken } from '@slideless/contract';
@@ -12,7 +14,9 @@
   /**
    * The admin page's share-links card: the table and the create flow live in
    * `share/` and are shared with the master page's share sheet (PRDCT-2279);
-   * this is the card around them.
+   * this is the card around them. The section's two buttons sit together in
+   * its head: View (which columns the table shows, a choice this card owns
+   * and hands to the table) and, after it, New share link.
    */
   interface Props {
     deckId: string;
@@ -24,11 +28,13 @@
   let { deckId, list, versions }: Props = $props();
 
   let showCreateDialog = $state(false);
+  const view = new LinkColumns('lean');
 </script>
 
 <Card.Root>
   <DeckSectionHeading drawing="links" title={t('tokens.title')} description={t('tokens.description')}>
     {#snippet action()}
+      <ShareLinkColumnsMenu {view} />
       <Button size="sm" onclick={() => (showCreateDialog = true)}>
         <Plus class="mr-2 h-4 w-4" />
         {t('tokens.create')}
@@ -36,7 +42,7 @@
     {/snippet}
   </DeckSectionHeading>
   <Card.Content>
-    <ShareLinksTable {deckId} {list} {versions} defaults="lean" />
+    <ShareLinksTable {deckId} {list} {versions} defaults="lean" {view} />
   </Card.Content>
 </Card.Root>
 

@@ -5,12 +5,14 @@
      folded inside the card until a person asks for it: the name is a real
      button, the whole resting card answers to it, and the fold opens in place
      (grid rows from 0fr to 1fr, the rows arriving one after the other). Escape
-     or a second click folds it back; the page keeps one card open at a time. */
+     or a second click folds it back; the page keeps one card open at a time.
+     The default brand wears a small gold crown tab on its top edge: a mark
+     set on the card, never a border around it. */
   import BrandSlide from './BrandSlide.svelte';
   import BrandPages from './BrandPages.svelte';
   import { Tag } from '$lib/components/ui/tag';
   import { fileTag } from '$lib/tags';
-  import Check from '@lucide/svelte/icons/check';
+  import Crown from '@lucide/svelte/icons/crown';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import type { DeckBrand } from '$lib/brands-demo';
   import { t } from '$lib/i18n';
@@ -56,7 +58,10 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<article class="sheet brand" class:selected class:open bind:this={card}>
+<article class="sheet brand" class:open bind:this={card}>
+  {#if selected}
+    <span class="crown"><Crown class="size-3.5" strokeWidth={1.6} />{t('brands.default')}</span>
+  {/if}
   <div class="rest">
     <!-- the slide is a sample of the look, not content: the name below says which brand this is -->
     <div class="slide" aria-hidden="true"><BrandSlide {brand} /></div>
@@ -77,9 +82,6 @@
           </h3>
           <p class="tagline">{brand.tagline}</p>
         </div>
-        {#if selected}
-          <span class="default"><Check class="size-3" />{t('brands.default')}</span>
-        {/if}
       </header>
 
       <div class="swatches" role="img" aria-label={t('brands.colours')}>
@@ -180,13 +182,11 @@
     display: flex;
     flex-direction: column;
     padding: 10px;
+    position: relative;
     container-type: inline-size;
     transition:
       border-color var(--motion-duration) var(--motion-ease),
       box-shadow 320ms var(--motion-ease);
-  }
-  .brand.selected {
-    border-color: color-mix(in oklab, var(--accent) 60%, var(--hairline));
   }
   @media (hover: hover) {
     .brand:not(.open):has(.rest:hover) {
@@ -196,6 +196,37 @@
   }
   .brand.open {
     box-shadow: var(--shadow-md);
+  }
+
+  /* the default's mark: a warm gold tab riding the card's top edge, opaque so
+     the edge passes behind it; the gold lightens on the dark ground */
+  .crown {
+    --gold: #b8923a;
+    position: absolute;
+    top: -12px;
+    left: 22px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 11px 0 9px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklab, var(--gold) 58%, var(--ground));
+    background: color-mix(in oklab, var(--gold) 22%, var(--ground));
+    color: color-mix(in oklab, var(--gold) 72%, var(--ink));
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    box-shadow: 0 1px 2px rgb(28 25 21 / 0.08);
+    pointer-events: none;
+  }
+  .crown :global(svg) {
+    color: var(--gold);
+  }
+  :global(:root.dark) .crown {
+    --gold: #d2ad55;
   }
 
   /* at rest: everything above the fold answers to the one button */
@@ -250,17 +281,6 @@
     font-size: 14px;
     line-height: 1.4;
     color: var(--muted);
-  }
-  .default {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    flex: none;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent-deep);
-    font-size: 11.5px;
   }
   .swatches {
     display: flex;

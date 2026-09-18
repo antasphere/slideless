@@ -1,9 +1,10 @@
 <script lang="ts">
   import { Tag } from '$lib/components/ui/tag';
   import { fileTag } from '$lib/tags';
+  import Plus from '@lucide/svelte/icons/plus';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import DataTable from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
@@ -29,6 +30,14 @@
   });
 
   const files = $derived(list.items);
+  // the bar's quiet line: how many files, once they are all here
+  const fileCount = $derived(
+    list.loading || list.nextCursor || !files.length
+      ? undefined
+      : files.length === 1
+        ? t('files.countOne')
+        : t('files.count', { n: files.length })
+  );
 
   // ── Upload (raw bytes, filename as query param) ────────────────────────
   let fileInput = $state<HTMLInputElement | null>(null);
@@ -135,12 +144,20 @@
   ]);
 </script>
 
-<PageHeader
+<SectionHero
+  eyebrow={t('nav.workspace')}
   title={t('files.title')}
-  description={t('files.description')}
-  onAdd={() => fileInput?.click()}
-  addLabel={uploading ? t('files.uploading') : t('files.upload')}
-/>
+  lede={t('files.description')}
+  status={fileCount}
+  drawing="contour"
+>
+  {#snippet action()}
+    <Button onclick={() => fileInput?.click()} size="sm" class="gap-1.5">
+      <Plus class="h-4 w-4" />
+      {uploading ? t('files.uploading') : t('files.upload')}
+    </Button>
+  {/snippet}
+</SectionHero>
 
 <input type="file" class="hidden" bind:this={fileInput} onchange={() => void onFileChosen()} />
 

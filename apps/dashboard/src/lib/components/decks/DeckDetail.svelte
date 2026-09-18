@@ -1,13 +1,18 @@
 <script lang="ts">
-  import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
-  import { DECK_PALETTES, DECK_PATTERNS } from '$lib/brand/recipe.js';
+  import FieldCanvas from '$lib/components/brand/FieldCanvas.svelte';
+  import { DECK_PALETTES, PALETTES, RECIPE } from '$lib/brand/recipe.js';
   import { seedOf } from '$lib/brand/seed';
+  import { paletteFor, theme } from '$lib/theme.svelte';
+  import { crumbs } from '$lib/crumbs.svelte';
   import { onDestroy } from 'svelte';
   import * as Card from '$lib/components/ui/card/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
+  import { Tag, type TagTone } from '$lib/components/ui/tag/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Presentation from '@lucide/svelte/icons/presentation';
+  import AppWindow from '@lucide/svelte/icons/app-window';
+  import FileText from '@lucide/svelte/icons/file-text';
+  import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import ShareTokensPanel from './ShareTokensPanel.svelte';
   import CollaboratorsPanel from './CollaboratorsPanel.svelte';
   import AnnotationsPanel from './AnnotationsPanel.svelte';
@@ -15,18 +20,21 @@
   import VersionsPanel from './VersionsPanel.svelte';
   import DeckMetaPanel from './DeckMetaPanel.svelte';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import DeckBannerDrawing from './drawings/DeckBannerDrawing.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { kindLabel, PREVIEW_SANDBOX } from '$lib/decks';
   import { canPreviewDeck, createPreviewController } from '$lib/decks/preview.svelte';
-  import { formatTimeAgo } from '$lib/format';
+  import { formatDateTime, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import { appear } from '$lib/components/ui/reveal/index.js';
   import { deckMasterPath } from '@slideless/contract';
+  import type { Component } from 'svelte';
   import type {
     MeResponse,
     Presentation as Deck,
+    PresentationKind,
     PresentationVersion,
     ShareToken
   } from '@slideless/contract';
@@ -134,7 +142,27 @@
     return `${base} · ${which}`;
   });
 
-  let bannerPlayed = $state(false);
+  // ── The banner and the facts under it ──────────────────────────────────
+  // The banner is still: the field the deck's card carries on the decks page
+  // (same seed, same palette), with one drawing of the deck's kind on it.
+  $effect(() => theme.start());
+  const bannerPalette = $derived(
+    deck ? paletteFor(DECK_PALETTES[seedOf(deck.id) % DECK_PALETTES.length], theme.dark, PALETTES) : 'dawn'
+  );
+
+  const KIND_TAGS: Record<PresentationKind, { tone: TagTone; icon: Component }> = {
+    presentation: { tone: 'clay', icon: Presentation },
+    app: { tone: 'indigo', icon: AppWindow },
+    plan: { tone: 'green', icon: FileText }
+  };
+
+  // The shell's path bar reads `Decks / <title>` once the banner has scrolled
+  // away. The title is user-authored: the bar renders it as text.
+  $effect(() => {
+    if (!deck) return;
+    crumbs.set([{ label: deck.title }]);
+    return () => crumbs.clear();
+  });
 </script>
 
 {#if loading}
@@ -156,22 +184,14 @@
 {:else}
   <div class="space-y-6">
     <div>
-      <!-- The deck's banner (PRDCT-2439): the same plate its card carries on
-           the decks page, so a deck keeps one face from the list to its page. -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="banner plate-window"
-        onpointerenter={() => (bannerPlayed = true)}
-        onpointerleave={() => (bannerPlayed = false)}
-      >
+      <!-- The deck's banner (PRDCT-2439): the field its card carries on the
+           decks page, so a deck keeps one face from the list to its page.
+           Still: a ground, one drawing of the deck's kind, the title. -->
+      <div class="banner plate-window">
         <div class="absolute inset-0">
-          <PatternCanvas
-            pattern={DECK_PATTERNS[deck.kind] ?? 'slides'}
-            palette={DECK_PALETTES[seedOf(deck.id) % DECK_PALETTES.length]}
-            seed={seedOf(deck.id)}
-            active={bannerPlayed}
-          />
+          <FieldCanvas palette={bannerPalette} shape={RECIPE.shape} seed={seedOf(deck.id)} linework={false} />
         </div>
+        <div class="banner-art"><DeckBannerDrawing kind={deck.kind} /></div>
         <div class="relative flex items-center justify-between gap-4">
           <a href="/decks" class="chip">
             <ArrowLeft class="h-3.5 w-3.5" />
@@ -187,40 +207,49 @@
         <!-- SECURITY: the deck title is USER-AUTHORED — Svelte {…} interpolation
              renders it as escaped text. NEVER switch this to {@html}. -->
         <h2
-          class="on-field relative mt-auto font-display text-[28px] font-light leading-[1.1] tracking-[-0.015em] md:text-[38px]"
+          class="banner-title on-field relative mt-auto font-display text-[28px] font-light leading-[1.1] tracking-[-0.015em] md:text-[38px]"
         >
           {deck.title}
         </h2>
       </div>
-      <!-- The deck's facts: its tags, then label and value pairs that wrap as
-           whole pairs, so a phone never ends a line on a lone separator. -->
-      <div class="deck-facts">
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{kindLabel(deck.kind)}</Badge>
-          {#if deck.interactive}
-            <Badge variant="outline">{t('decks.badgeInteractive')}</Badge>
-          {/if}
-          <Badge variant="outline">
-            {deck.currentVersion > 0 ? `v${deck.currentVersion}` : t('deck.versionNone')}
-          </Badge>
+      <!-- The deck's facts, one quiet strip: each a small label over its value
+           under its own hairline, so a phone wraps them two to a line and no
+           line ever ends on a lone separator. -->
+      <dl class="deck-facts">
+        <div>
+          <dt>{t('decks.colKind')}</dt>
+          <dd class="flex flex-wrap gap-1.5">
+            <Tag label={kindLabel(deck.kind)} {...KIND_TAGS[deck.kind] ?? KIND_TAGS.presentation} />
+            {#if deck.interactive}
+              <Tag label={t('decks.badgeInteractive')} tone="amber" icon={MousePointerClick} />
+            {/if}
+          </dd>
         </div>
-        <dl>
-          <div>
-            <dt>{t('deck.labelOwner')}</dt>
-            <!-- SECURITY: ownerLabel may be a member email (user text) — escaped
-                 text interpolation only. -->
-            <dd>{ownerLabel}</dd>
-          </div>
-          <div>
-            <dt>{t('deck.labelTotalViews')}</dt>
-            <dd>{deck.totalViews}</dd>
-          </div>
-          <div>
-            <dt>{t('deck.labelUpdated')}</dt>
-            <dd>{formatTimeAgo(deck.updatedAt)}</dd>
-          </div>
-        </dl>
-      </div>
+        <div>
+          <dt>{t('decks.colVersion')}</dt>
+          <dd>
+            {#if deck.currentVersion > 0}
+              <span class="figure text-[22px]">v{deck.currentVersion}</span>
+            {:else}
+              <span class="text-muted-foreground">{t('deck.versionNone')}</span>
+            {/if}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('deck.labelOwner')}</dt>
+          <!-- SECURITY: ownerLabel may be a member email (user text) — escaped
+               text interpolation only. -->
+          <dd>{ownerLabel}</dd>
+        </div>
+        <div>
+          <dt>{t('deck.labelTotalViews')}</dt>
+          <dd><span class="figure text-[22px]">{deck.totalViews}</span></dd>
+        </div>
+        <div>
+          <dt>{t('deck.labelUpdated')}</dt>
+          <dd title={formatDateTime(deck.updatedAt)}>{formatTimeAgo(deck.updatedAt)}</dd>
+        </div>
+      </dl>
     </div>
 
     <Card.Root>
@@ -300,30 +329,68 @@
       padding: 16px 22px 24px;
     }
   }
+  /* the drawing sits at the right of the field, under the chips' line; the
+     title keeps clear of it on a desk and may cross its faded edge on a phone */
+  .banner-art {
+    position: absolute;
+    right: 8px;
+    bottom: 6px;
+    width: 150px;
+    aspect-ratio: 200 / 132;
+    opacity: 0.8;
+    pointer-events: none;
+  }
+  @media (min-width: 768px) {
+    .banner-art {
+      right: 40px;
+      bottom: 12px;
+      width: 210px;
+      opacity: 1;
+    }
+    .banner-title {
+      max-width: calc(100% - 260px);
+    }
+  }
   .deck-facts {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 20px;
-    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 20px;
+    margin-top: 18px;
     padding: 0 2px;
-    font-size: 13.5px;
   }
-  .deck-facts dl {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 20px;
+  /* a last fact alone on its line takes the whole line, rule included */
+  @media (max-width: 767px) {
+    .deck-facts > div:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
   }
-  .deck-facts dl > div {
+  @media (min-width: 768px) {
+    .deck-facts {
+      grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(
+          0,
+          1fr
+        );
+      gap: 24px;
+    }
+  }
+  .deck-facts > div {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    flex-direction: column;
+    gap: 8px;
     min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
   }
   .deck-facts dt {
+    font-size: 12.5px;
+    line-height: 1;
     color: var(--muted);
   }
   .deck-facts dd {
+    display: flex;
+    align-items: center;
+    min-height: 24px;
+    font-size: 14.5px;
     color: var(--ink);
     overflow-wrap: anywhere;
   }

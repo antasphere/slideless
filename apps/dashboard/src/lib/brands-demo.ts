@@ -43,8 +43,6 @@ export interface DeckBrand {
     versions: number;
     files: string[];
     usedBy: number;
-    /** Days since its last version was pushed (made up, like the rest). */
-    updatedDaysAgo: number;
   };
 }
 
@@ -84,8 +82,7 @@ export const DEMO_BRANDS: DeckBrand[] = [
       pages: 9,
       versions: 4,
       files: ['logo.svg', 'Fraunces.woff2', 'DMSans.woff2', 'voice.md'],
-      usedBy: 3,
-      updatedDaysAgo: 2
+      usedBy: 3
     }
   },
   {
@@ -119,8 +116,7 @@ export const DEMO_BRANDS: DeckBrand[] = [
       pages: 12,
       versions: 7,
       files: ['mark.svg', 'SpaceGrotesk.woff2', 'charts.css', 'voice.md'],
-      usedBy: 1,
-      updatedDaysAgo: 9
+      usedBy: 1
     }
   },
   {
@@ -154,8 +150,7 @@ export const DEMO_BRANDS: DeckBrand[] = [
       pages: 7,
       versions: 2,
       files: ['monogram.svg', 'InstrumentSerif.woff2', 'lookbook.pdf'],
-      usedBy: 1,
-      updatedDaysAgo: 31
+      usedBy: 1
     }
   },
   {
@@ -189,8 +184,7 @@ export const DEMO_BRANDS: DeckBrand[] = [
       pages: 10,
       versions: 3,
       files: ['wheel.svg', 'DMSans.woff2', 'charts.css', 'voice.md'],
-      usedBy: 2,
-      updatedDaysAgo: 5
+      usedBy: 2
     }
   }
 ];

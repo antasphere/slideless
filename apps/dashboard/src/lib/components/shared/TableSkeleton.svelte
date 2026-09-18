@@ -11,7 +11,7 @@
   let { columns = 5, rows = 8, showSearch = true }: Props = $props();
 </script>
 
-<!-- the same card the table will be: the toolbar as its head, then the sheet -->
+<!-- the same shape the table will have: the toolbar floating over the card -->
 <div class="table-card">
   {#if showSearch}
     <div class="table-toolbar">

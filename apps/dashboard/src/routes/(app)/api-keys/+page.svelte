@@ -2,9 +2,10 @@
   import { Tag, TagList } from '$lib/components/ui/tag';
   import { scopeTag, stateTag } from '$lib/tags';
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import Plus from '@lucide/svelte/icons/plus';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import DataTable from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
@@ -39,6 +40,14 @@
   });
 
   const keys = $derived(list.items);
+  // the bar's quiet line: how many keys, once they are all here
+  const keyCount = $derived(
+    list.loading || list.nextCursor || !keys.length
+      ? undefined
+      : keys.length === 1
+        ? t('apiKeys.countOne')
+        : t('apiKeys.count', { n: keys.length })
+  );
 
   // ── Create dialog ──────────────────────────────────────────────────────
   const expiryOptions = [
@@ -205,12 +214,20 @@
   ]);
 </script>
 
-<PageHeader
+<SectionHero
+  eyebrow={t('nav.workspace')}
   title={t('apiKeys.title')}
-  description={t('apiKeys.description')}
-  onAdd={openCreateDialog}
-  addLabel={t('apiKeys.create')}
-/>
+  lede={t('apiKeys.description')}
+  status={keyCount}
+  drawing="lattice"
+>
+  {#snippet action()}
+    <Button onclick={openCreateDialog} size="sm" class="gap-1.5">
+      <Plus class="h-4 w-4" />
+      {t('apiKeys.create')}
+    </Button>
+  {/snippet}
+</SectionHero>
 
 <FormError
   message={list.error && keys.length ? t('common.refreshFailedCached', { error: list.error }) : null}

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { Tag } from '$lib/components/ui/tag';
   import { viaTag } from '$lib/tags';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
+  import { stuck } from '$lib/components/shared/stuck';
   import * as Table from '$lib/components/ui/table/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
@@ -68,7 +69,12 @@
   const pretty = (value: unknown) => JSON.stringify(value, null, 2);
 </script>
 
-<PageHeader title={t('audit.title')} description={t('audit.description')} />
+<SectionHero
+  eyebrow={t('nav.system')}
+  title={t('audit.title')}
+  lede={t('audit.description')}
+  drawing="harmonic"
+/>
 
 {#if list.loading}
   <TableSkeleton columns={6} showSearch={false} />
@@ -99,69 +105,73 @@
   {/each}
 {:else}
   <!-- clip, not hidden: the corners are still cut and the column header can
-       stick to the page's scroll (app.css, the table's card) -->
-  <div class="sheet overflow-clip">
-    <Table.Root scroll={false} class="table-sticky">
-      <Table.Header>
-        <Table.Row>
-          <Table.Head class="w-[190px]">{t('audit.colTime')}</Table.Head>
-          <Table.Head>{t('audit.colActor')}</Table.Head>
-          <Table.Head class="w-[90px]">{t('audit.colVia')}</Table.Head>
-          <Table.Head>{t('audit.colAction')}</Table.Head>
-          <Table.Head>{t('audit.colResource')}</Table.Head>
-          <Table.Head class="w-[130px]">{t('audit.colRequest')}</Table.Head>
-        </Table.Row>
-      </Table.Header>
-      <Table.Body>
-        {#each entries as entry (entry.id)}
-          <Table.Row
-            class="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--focus)]"
-            tabindex={0}
-            role="button"
-            aria-label={`${entry.action} · ${entry.actorEmail ?? t('audit.system')}`}
-            onclick={() => (opened = entry)}
-            onkeydown={(e: KeyboardEvent) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                opened = entry;
-              }
-            }}
-          >
-            <Table.Cell class="whitespace-nowrap">
-              <span class="block">{formatTimeAgo(entry.createdAt)}</span>
-              <span class="block text-xs font-normal text-muted-foreground"
-                >{formatDateTime(entry.createdAt)}</span
-              >
-            </Table.Cell>
-            <Table.Cell>{entry.actorEmail ?? t('audit.system')}</Table.Cell>
-            <Table.Cell>
-              <Tag {...viaTag(entry.actorVia)} />
-            </Table.Cell>
-            <Table.Cell class="max-w-[340px]"
-              ><span class="action block truncate" title={entry.action}>{entry.action}</span></Table.Cell
-            >
-            <Table.Cell class="max-w-[220px] truncate text-muted-foreground">
-              {entry.resourceType}{entry.resourceId ? ` · ${entry.resourceId}` : ''}
-            </Table.Cell>
-            <Table.Cell>
-              {#if entry.requestId}
-                <code class="text-xs text-muted-foreground" title={entry.requestId}>
-                  {entry.requestId.slice(0, 8)}…
-                </code>
-              {:else}
-                <span class="text-muted-foreground">—</span>
-              {/if}
-            </Table.Cell>
-          </Table.Row>
-        {:else}
+       stick to the page's scroll; the cap redraws the card's rounded top over
+       the header while it is held (app.css, a table) -->
+  <div class="table-card">
+    <div class="table-cap" aria-hidden="true" use:stuck></div>
+    <div class="sheet overflow-clip">
+      <Table.Root scroll={false} class="table-sticky">
+        <Table.Header>
           <Table.Row>
-            <Table.Cell colspan={6} class="h-24 text-center text-muted-foreground">
-              {t('audit.empty')}
-            </Table.Cell>
+            <Table.Head class="w-[190px]">{t('audit.colTime')}</Table.Head>
+            <Table.Head>{t('audit.colActor')}</Table.Head>
+            <Table.Head class="w-[90px]">{t('audit.colVia')}</Table.Head>
+            <Table.Head>{t('audit.colAction')}</Table.Head>
+            <Table.Head>{t('audit.colResource')}</Table.Head>
+            <Table.Head class="w-[130px]">{t('audit.colRequest')}</Table.Head>
           </Table.Row>
-        {/each}
-      </Table.Body>
-    </Table.Root>
+        </Table.Header>
+        <Table.Body>
+          {#each entries as entry (entry.id)}
+            <Table.Row
+              class="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--focus)]"
+              tabindex={0}
+              role="button"
+              aria-label={`${entry.action} · ${entry.actorEmail ?? t('audit.system')}`}
+              onclick={() => (opened = entry)}
+              onkeydown={(e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  opened = entry;
+                }
+              }}
+            >
+              <Table.Cell class="whitespace-nowrap">
+                <span class="block">{formatTimeAgo(entry.createdAt)}</span>
+                <span class="block text-xs font-normal text-muted-foreground"
+                  >{formatDateTime(entry.createdAt)}</span
+                >
+              </Table.Cell>
+              <Table.Cell>{entry.actorEmail ?? t('audit.system')}</Table.Cell>
+              <Table.Cell>
+                <Tag {...viaTag(entry.actorVia)} />
+              </Table.Cell>
+              <Table.Cell class="max-w-[340px]"
+                ><span class="action block truncate" title={entry.action}>{entry.action}</span></Table.Cell
+              >
+              <Table.Cell class="max-w-[220px] truncate text-muted-foreground">
+                {entry.resourceType}{entry.resourceId ? ` · ${entry.resourceId}` : ''}
+              </Table.Cell>
+              <Table.Cell>
+                {#if entry.requestId}
+                  <code class="text-xs text-muted-foreground" title={entry.requestId}>
+                    {entry.requestId.slice(0, 8)}…
+                  </code>
+                {:else}
+                  <span class="text-muted-foreground">—</span>
+                {/if}
+              </Table.Cell>
+            </Table.Row>
+          {:else}
+            <Table.Row>
+              <Table.Cell colspan={6} class="h-24 text-center text-muted-foreground">
+                {t('audit.empty')}
+              </Table.Cell>
+            </Table.Row>
+          {/each}
+        </Table.Body>
+      </Table.Root>
+    </div>
   </div>
 {/if}
 

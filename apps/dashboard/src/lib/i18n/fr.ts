@@ -104,6 +104,12 @@ export const fr: Record<MessageKey, string> = {
   'settings.openAccount': 'Ouvrir mon compte',
   'account.languageTitle': 'Langue',
   'account.languageDescription': 'La langue de ce tableau de bord, gardée dans ce navigateur.',
+  // the path in the top bar, and the quiet line in a section's bar
+  'shell.pathAria': 'Vous êtes ici',
+  'apiKeys.count': '{n} clés',
+  'apiKeys.countOne': '1 clé',
+  'files.count': '{n} fichiers',
+  'files.countOne': '1 fichier',
   // the account card at the foot of the sidebar
   'userMenu.accountBlurb': 'Profil, mot de passe et langue.',
   'userMenu.settingsBlurb': 'Cette instance et ses données.',
@@ -196,10 +202,6 @@ export const fr: Record<MessageKey, string> = {
   'brands.heroTitle': 'Chaque présentation, de votre main',
   'brands.heroLede':
     'Une marque est une présentation comme une autre : ses pages disent qui vous êtes, ses fichiers sont ce qu’il faut à une présentation pour vous ressembler.',
-  'brands.statBrands': 'Marques',
-  'brands.statBrandsHint': '{brand} est la marque par défaut',
-  'brands.statDecks': 'Présentations habillées',
-  'brands.statDecksHint': 'Habillées au moment du push',
   'brands.deckLine': 'Une présentation de {pages} pages · {versions} versions · portée par {used}',
   'brands.newToast': 'Les marques sont un aperçu : rien à ajouter pour l’instant.',
   'brands.fromSite': 'Depuis un site web',
@@ -213,9 +215,6 @@ export const fr: Record<MessageKey, string> = {
   'brands.idea2': 'Ses fichiers sont la marque elle-même : le logo, les polices, les styles, la voix.',
   'brands.idea3':
     'Toute présentation peut la porter. Changez la marque, et les présentations qui la portent suivent.',
-  'brands.statFresh': 'Depuis la dernière modification',
-  'brands.statFreshValue': '{days} jours',
-  'brands.statFreshHint': '{brand}, version {version}',
   'brands.pages': 'Pages',
   'brands.files': 'Fichiers',
   'nav.workspace': 'Espace de travail',

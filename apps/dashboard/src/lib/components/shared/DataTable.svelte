@@ -146,8 +146,8 @@
   const phone = new IsMobile();
   const isLead = (id: string) => id !== 'select' && id !== 'actions';
 
-  // The toolbar is the head of the table's card, and it stays at the top of
-  // the page's scroll while the rows pass under it; the column header stays
+  // The toolbar floats over the table's card and stays at the top of the
+  // page's scroll while the rows pass under it; the column header stays
   // right under the toolbar, so it has to know how tall the toolbar is. A
   // table with a min width scrolls sideways inside its wrapper, and a
   // scrolling wrapper cannot let its header stick to the page: that one keeps
@@ -245,6 +245,10 @@
       </ul>
     {/key}
   {:else}
+    {#if stickyHead}
+      <!-- redraws the card's rounded top over the header while it is held (app.css) -->
+      <div class="table-cap" aria-hidden="true" use:stuck></div>
+    {/if}
     <!-- clip, not hidden: the corners are still cut, and no scroll container
          stands between the header and the page, so the header can stick -->
     <div class="sheet overflow-clip">

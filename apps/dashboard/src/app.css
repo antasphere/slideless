@@ -415,12 +415,21 @@
     linear-gradient(var(--plate-strong), var(--plate-strong)),
     color-mix(in oklab, var(--bar) 72%, transparent);
   --wash: color-mix(in oklab, var(--accent) 8%, transparent);
-  /* what is stuck above a table's toolbar: the height of a section's tab
-     bar on the pages that have one (SectionHero), nothing elsewhere */
+  /* what is stuck above a table's toolbar: the height of a section's bar on
+     the pages that have one (SectionHero), nothing elsewhere */
   --section-bar-h: 48px;
-  /* the column header's band: a breath of the second ground, opaque */
-  --table-head-bg: color-mix(in oklab, var(--ground-2) 62%, var(--bar));
+  /* The page's own ground as one opaque colour: the plate's paper over the
+     look's field. What stays in place while the page scrolls (a section's
+     bar, a table's toolbar) wears it, so it reads as the page and not as a
+     band of another colour. */
+  --page-ground: color-mix(in oklab, #faf7f0 70%, var(--field-base));
+  /* a card's paper (plate-strong) over that ground, opaque: a held column header */
+  --sheet-ground: color-mix(in oklab, #fbf9f3 82%, var(--page-ground));
   --sticky-top: 0px;
+}
+:root.dark {
+  --page-ground: color-mix(in oklab, #241e19 60%, var(--field-base));
+  --sheet-ground: color-mix(in oklab, #28221c 84%, var(--page-ground));
 }
 @layer components {
   .float {
@@ -500,13 +509,15 @@
   }
 
   /* -------------------------------------------------------------------
-     A table's card. Its head is the toolbar (search, filters, View), then
-     the column header on a faint band with a hairline under it, so the
-     first row visibly starts under something. Both stay in place while the
-     rows scroll under them: the toolbar at --sticky-top (under a section's
-     tab bar when the page has one), the column header right under the
-     toolbar (--toolbar-h, measured by DataTable). Every stuck piece is
-     opaque. `stuck.ts` squares the toolbar's corners while it is held.
+     A table. The toolbar (search, filters, View) floats over it as a plain
+     row: no box, no edge. A small gap, then the table's card, whose rounded
+     top corners are the column header's. The header is the same light paper
+     as the rows, one hairline between it and the first row. Both stay in
+     place while the rows scroll under them: the toolbar at --sticky-top
+     (under a section's bar when the page has one), the column header right
+     under the toolbar (--toolbar-h, measured by DataTable). Held, the
+     toolbar takes the page's own ground, opaque, so no row reads through,
+     and `.table-cap` redraws the card's rounded top over the held header.
      ------------------------------------------------------------------- */
   .table-toolbar {
     z-index: 20;
@@ -514,12 +525,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
-    background: var(--bar);
-    border: 1px solid var(--hairline);
-    border-bottom: 0;
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-    transition: border-radius var(--motion-duration) var(--motion-ease);
+    /* the gap over the card is padding, so the held toolbar covers it too */
+    padding: 8px 0 10px;
+    transition: background-color var(--motion-duration) var(--motion-ease);
   }
   /* only in the page's own scroll: a table inside a dialog or a side sheet
      (portaled out of the shell) keeps a head that travels with it */
@@ -527,38 +535,59 @@
     position: sticky;
     top: var(--sticky-top);
   }
-  /* held: square, and its own line under it (the sheet's top edge, which
-     drew that line at rest, has scrolled away) */
   .table-toolbar[data-stuck] {
-    border-radius: 0;
-    box-shadow: 0 1px 0 var(--hairline);
+    background: var(--page-ground);
   }
-  /* under a stuck tab bar the two edges would double */
-  .app-main:has([data-section-bar]) .table-toolbar[data-stuck] {
-    border-top-color: transparent;
+  /* a phone's table is a list with no column header to close the held
+     toolbar: its own hairline does */
+  @media (max-width: 767px) {
+    .table-toolbar[data-stuck] {
+      box-shadow: 0 1px 0 var(--hairline);
+    }
   }
-  .table-toolbar + .sheet,
-  .table-toolbar + ul.sheet {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
+  /* The column header: the rows' own paper and the one hairline the first
+     row meets. Where it is held it is that paper made opaque, because rows
+     pass under it. */
   .table-head {
-    background: var(--table-head-bg);
-    box-shadow: inset 0 -1px 0 var(--hairline);
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--hairline) 80%, transparent);
   }
   .app-main .table-sticky .table-head {
+    background: var(--sheet-ground);
     position: sticky;
     top: calc(var(--sticky-top) + var(--toolbar-h, 0px));
     z-index: 10;
   }
-  /* while the head of the card is held, the rows pass under a soft edge */
-  .table-card:has(> .table-toolbar[data-stuck]) .table-sticky .table-head {
+  /* A line of no height right over the card, held where the header is held.
+     Held, it draws the card's top again over the header: the hairline with
+     its two rounded corners, the page's ground outside them. */
+  .table-cap {
+    height: 0;
+    z-index: 11;
+    pointer-events: none;
+  }
+  .app-main .table-cap {
+    position: sticky;
+    top: calc(var(--sticky-top) + var(--toolbar-h, 0px));
+  }
+  .table-cap[data-stuck]::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: var(--r-lg);
+    border: 1px solid var(--hairline);
+    border-bottom: 0;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: 0 0 0 8px var(--page-ground);
+    clip-path: inset(0);
+  }
+  /* while the header is held, the rows pass under a soft edge */
+  .table-card:has(> .table-cap[data-stuck]) .table-sticky .table-head {
     box-shadow:
       inset 0 -1px 0 var(--hairline),
-      0 10px 12px -12px rgb(28 25 21 / 0.28);
+      0 10px 12px -12px rgb(28 25 21 / 0.22);
   }
 
-  /* A section's tab bar is stuck above everything under it (SectionHero). */
+  /* A section's bar is stuck above everything under it (SectionHero). */
   .app-main:has([data-section-bar]) {
     --sticky-top: calc(var(--section-bar-h) - var(--main-pad-top));
   }

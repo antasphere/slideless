@@ -99,6 +99,12 @@ export const en = {
   'settings.openAccount': 'Open my account',
   'account.languageTitle': 'Language',
   'account.languageDescription': 'The language of this dashboard, kept in this browser.',
+  // the path in the top bar, and the quiet line in a section's bar
+  'shell.pathAria': 'You are here',
+  'apiKeys.count': '{n} keys',
+  'apiKeys.countOne': '1 key',
+  'files.count': '{n} files',
+  'files.countOne': '1 file',
   // the account card at the foot of the sidebar
   'userMenu.accountBlurb': 'Profile, password and language.',
   'userMenu.settingsBlurb': 'This instance and its data.',
@@ -188,10 +194,6 @@ export const en = {
   'brands.heroTitle': 'Every deck, in your own hand',
   'brands.heroLede':
     'A brand is a deck like any other: its pages say who you are, the files attached to it are what a deck needs to look and sound like you.',
-  'brands.statBrands': 'Brands',
-  'brands.statBrandsHint': '{brand} is the default',
-  'brands.statDecks': 'Decks wearing one',
-  'brands.statDecksHint': 'Dressed at push time',
   'brands.deckLine': 'A deck of {pages} pages · {versions} versions · worn by {used}',
   'brands.newToast': 'Brands are a preview: nothing to add yet.',
   'brands.fromSite': 'From a website',
@@ -203,9 +205,6 @@ export const en = {
   'brands.idea1': 'Its pages describe the brand to a person, and to the agent that writes your next deck.',
   'brands.idea2': 'Its files are the brand itself: the mark, the faces, the styles, the voice.',
   'brands.idea3': 'Any deck can wear it. Change the brand deck, and the decks that wear it follow.',
-  'brands.statFresh': 'Since the last change',
-  'brands.statFreshValue': '{days} days',
-  'brands.statFreshHint': '{brand}, version {version}',
   'brands.pages': 'Pages',
   'brands.files': 'Files',
   'nav.workspace': 'Workspace',

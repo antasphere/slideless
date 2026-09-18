@@ -17,23 +17,16 @@
     seed?: number;
     /** A section's hero (people, settings): lower, the drawing smaller. */
     compact?: boolean;
-    /** Square bottom corners and no bottom edge: something (a tab bar) is attached under it. */
-    attached?: boolean;
     children: Snippet;
   }
-  let {
-    drawing = 'latitudes',
-    seed = RECIPE.seed,
-    compact = false,
-    attached = false,
-    children
-  }: Props = $props();
+  let { drawing = 'latitudes', seed = RECIPE.seed, compact = false, children }: Props = $props();
 
   $effect(() => theme.start());
   const palette = $derived(heroPalette(look.value.theme, theme.dark));
 </script>
 
-<section class="hero plate-window" class:compact class:attached>
+<!-- `data-page-head`: the shell watches it leave the scroll to show the path in the top bar -->
+<section class="hero plate-window" class:compact data-page-head>
   <div class="ground"><FieldCanvas {palette} shape={drawing} {seed} linework={false} /></div>
   <div class="drawing"><FieldCanvas {palette} shape={drawing} {seed} animate /></div>
   <div class="words on-field">{@render children()}</div>
@@ -42,18 +35,12 @@
 <style>
   .hero {
     position: relative;
-    min-height: 190px;
+    min-height: 260px;
     display: flex;
     align-items: flex-end;
     border: 1px solid var(--hairline);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-sm);
-  }
-  .hero.attached {
-    border-bottom: 0;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    box-shadow: none;
   }
   .hero.compact {
     min-height: 132px;
@@ -79,7 +66,7 @@
   }
   .words {
     position: relative;
-    padding: 24px 22px;
+    padding: 30px 24px;
     max-width: 640px;
   }
   .words :global(.hero-eyebrow) {
@@ -105,7 +92,7 @@
   }
   @media (min-width: 768px) {
     .hero {
-      min-height: 216px;
+      min-height: 312px;
     }
     .hero.compact {
       min-height: 150px;
@@ -118,12 +105,12 @@
       right: 3%;
     }
     .words {
-      padding: 32px 34px;
+      padding: 44px 46px;
     }
     .drawing {
       top: 50%;
       right: 5%;
-      width: 330px;
+      width: 400px;
       transform: translateY(-50%);
     }
   }

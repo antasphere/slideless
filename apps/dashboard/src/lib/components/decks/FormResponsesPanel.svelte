@@ -3,6 +3,7 @@
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import EmptyTable from './EmptyTable.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
@@ -105,6 +106,18 @@
   }
 
   const hasFilters = $derived(filterForm !== 'all' || filterSource !== 'all');
+
+  // The summary table's heads, shared by the table and its empty form.
+  const summaryHeads = $derived(
+    [
+      t('formResponses.colForm'),
+      t('formResponses.colLink'),
+      t('formResponses.colSource'),
+      t('formResponses.colPlacement'),
+      t('formResponses.colCount'),
+      t('formResponses.colLastActivity')
+    ].map((title) => ({ title }))
+  );
 
   $effect(() => {
     // Track the filters so changing either re-fetches page 1.
@@ -368,17 +381,18 @@
         <FormError
           message={summaryError ? t('formResponses.summaryLoadFailed', { error: summaryError }) : null}
         />
-        {#if !summaryError && summary && summary.buckets.length}
+        {#if !summaryError && summary && !summary.buckets.length}
+          <!-- no response on any form yet: the summary table still stands,
+               its heads over one quiet row -->
+          <EmptyTable message={t('formResponses.empty')} columns={summaryHeads} />
+        {:else if !summaryError && summary}
           <div class="sheet overflow-x-auto">
             <Table.Root>
               <Table.Header>
                 <Table.Row>
-                  <Table.Head>{t('formResponses.colForm')}</Table.Head>
-                  <Table.Head>{t('formResponses.colLink')}</Table.Head>
-                  <Table.Head>{t('formResponses.colSource')}</Table.Head>
-                  <Table.Head>{t('formResponses.colPlacement')}</Table.Head>
-                  <Table.Head>{t('formResponses.colCount')}</Table.Head>
-                  <Table.Head>{t('formResponses.colLastActivity')}</Table.Head>
+                  {#each summaryHeads as head (head.title)}
+                    <Table.Head>{head.title}</Table.Head>
+                  {/each}
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -415,9 +429,12 @@
         {/if}
 
         {#if !list.items.length}
-          <p class="text-sm text-muted-foreground">
-            {hasFilters ? t('formResponses.emptyFiltered') : t('formResponses.empty')}
-          </p>
+          <!-- One sentence, once: with no response at all the summary table
+               above already says it. The responses are a list, so here the
+               empty frame stands in for it. -->
+          {#if summaryError || !summary || summary.buckets.length}
+            <EmptyTable message={hasFilters ? t('formResponses.emptyFiltered') : t('formResponses.empty')} />
+          {/if}
         {:else}
           <ul class="space-y-3">
             {#each list.items as response (response.id)}

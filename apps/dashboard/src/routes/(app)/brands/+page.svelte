@@ -4,13 +4,12 @@
      server or applied to a deck; the default is remembered in this browser so
      the page behaves, and that is all. */
   import HeroBand from '$lib/components/brand/HeroBand.svelte';
-  import StatTile from '$lib/components/brand/StatTile.svelte';
-  import { THEMES } from '$lib/brand/recipe.js';
   import { toast } from 'svelte-sonner';
   import BrandCard from '$lib/components/brands/BrandCard.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import { BRAND_FONTS_HREF, DEMO_BRANDS } from '$lib/brands-demo';
   import { t } from '$lib/i18n';
+  import { MediaQuery } from 'svelte/reactivity';
 
   let { data } = $props();
 
@@ -32,12 +31,17 @@
       /* not persisted, still applied */
     }
   }
-  const current = $derived(DEMO_BRANDS.find((b) => b.id === chosen) ?? DEMO_BRANDS[0]);
   // one card unfolded at a time: opening one folds the other back
   let opened = $state<string | null>(null);
-  // the figures are read off the made-up brands, so they stay true to the page
-  const wearing = DEMO_BRANDS.reduce((n, b) => n + b.deck.usedBy, 0);
-  const freshest = DEMO_BRANDS.reduce((a, b) => (b.deck.updatedDaysAgo < a.deck.updatedDaysAgo ? b : a));
+  // Two columns that do not know each other: the brands are dealt alternately
+  // (first and third on the left, second and fourth on the right), so a card
+  // that unfolds grows inside its own column and pushes only what is under it.
+  // Below `lg` there is one column, in reading order, so the keyboard walks
+  // the cards the way the eye does at every width.
+  const wide = new MediaQuery('min-width: 1024px');
+  const columns = $derived(
+    wide.current ? [0, 1].map((side) => DEMO_BRANDS.filter((_, place) => place % 2 === side)) : [DEMO_BRANDS]
+  );
 </script>
 
 <svelte:head>
@@ -51,52 +55,25 @@
   <p class="hero-lede">{t('brands.heroLede')}</p>
 </HeroBand>
 
-<!-- three quiet figures, the ones that say something: how many, who wears them, how fresh -->
-<div class="mt-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3">
-  <StatTile
-    label={t('brands.statBrands')}
-    value={String(DEMO_BRANDS.length)}
-    hint={t('brands.statBrandsHint', { brand: current.name })}
-    drawing="brands"
-    color={THEMES.dawn.accent}
-  />
-  <StatTile
-    label={t('brands.statDecks')}
-    value={String(wearing)}
-    hint={t('brands.statDecksHint')}
-    drawing="worn"
-    color={THEMES.solar.accent}
-  />
-  <div class="col-span-2 grid lg:col-span-1">
-    <StatTile
-      label={t('brands.statFresh')}
-      value={t('brands.statFreshValue', { days: String(freshest.deck.updatedDaysAgo) })}
-      hint={t('brands.statFreshHint', {
-        brand: freshest.name,
-        version: String(freshest.deck.versions)
-      })}
-      drawing="fresh"
-      color={THEMES.reef.accent}
-    />
-  </div>
-</div>
-
 <p class="preview"><span>{t('brands.preview')}</span>{t('brands.previewNote')}</p>
 
-<!-- two to a row, each card at rest; a card unfolds in place and its neighbour keeps its height -->
-<div class="grid items-start gap-4 lg:grid-cols-2">
-  {#each DEMO_BRANDS as brand (brand.id)}
-    <BrandCard
-      {brand}
-      selected={brand.id === chosen}
-      open={opened === brand.id}
-      onToggle={() => (opened = opened === brand.id ? null : brand.id)}
-      onSelect={() => choose(brand.id)}
-    />
+<div class="brands">
+  {#each columns as column, side (side)}
+    <div class="column">
+      {#each column as brand (brand.id)}
+        <BrandCard
+          {brand}
+          selected={brand.id === chosen}
+          open={opened === brand.id}
+          onToggle={() => (opened = opened === brand.id ? null : brand.id)}
+          onSelect={() => choose(brand.id)}
+        />
+      {/each}
+    </div>
   {/each}
 </div>
 
-<div class="mt-4 grid gap-4 lg:grid-cols-2">
+<div class="after grid lg:grid-cols-2">
   <!-- adding a brand: three blank pages that fan out, the way the brands do on the overview -->
   <button type="button" class="sheet tile new" onclick={() => toast(t('brands.newToast'))}>
     <span class="blank-fan" aria-hidden="true">
@@ -134,7 +111,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
-    margin: 28px 0 16px;
+    margin: 36px 2px 28px;
     font-size: 13.5px;
     color: var(--muted);
   }
@@ -146,6 +123,35 @@
     font-size: 11.5px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+  /* the page breathes: one gap between the cards, the columns and what follows */
+  .brands,
+  .after {
+    --gap: 24px;
+    gap: var(--gap);
+  }
+  .brands {
+    display: flex;
+    align-items: flex-start;
+  }
+  .column {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: var(--gap);
+    min-width: 0;
+  }
+  .after {
+    margin-top: 40px;
+  }
+  @media (min-width: 1024px) {
+    .brands,
+    .after {
+      --gap: 32px;
+    }
+    .after {
+      margin-top: 48px;
+    }
   }
   .new,
   .idea {

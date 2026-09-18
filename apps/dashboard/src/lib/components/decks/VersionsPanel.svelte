@@ -7,6 +7,7 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import EmptyTable, { emptyColumns } from './EmptyTable.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
@@ -106,7 +107,7 @@
     {:else if list.error && !list.items.length}
       <p class="text-sm text-destructive" in:appear>{t('versions.loadFailed', { error: list.error })}</p>
     {:else if !list.items.length}
-      <p class="text-sm text-muted-foreground">{t('versions.empty')}</p>
+      <EmptyTable message={t('versions.empty')} columns={emptyColumns(columns)} />
     {:else}
       <DataTable data={list.items} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
       {#if list.nextCursor}

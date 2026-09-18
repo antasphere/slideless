@@ -14,6 +14,7 @@
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { Tag } from '$lib/components/ui/tag/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import EmptyTable, { emptyColumns } from './EmptyTable.svelte';
   import DialogDrawing from './drawings/DialogDrawing.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
@@ -116,6 +117,8 @@
       : list.items
   );
   const isOwnerRow = (row: Collaborator) => row.id === OWNER_ROW_ID;
+  // nobody invited yet, and nothing failed: the table says so in its last row
+  const emptyFoot = $derived(!list.items.length && !list.error);
 
   // ── Invite dialog ──────────────────────────────────────────────────────
   let showInviteDialog = $state(false);
@@ -285,15 +288,24 @@
     {#if list.loading}
       <TableSkeleton columns={4} rows={2} showSearch={false} />
     {:else}
+      <!-- The table always stands. With nobody invited it holds the owner's
+           row and one quiet row under it that says so (the table's own foot,
+           cut from the same sheet); without even the owner's row, the heads
+           over that one row. -->
       {#if rows.length}
-        <DataTable data={rows} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
+        <div class:with-foot={emptyFoot}>
+          <DataTable data={rows} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
+          {#if emptyFoot}
+            <p class="empty-foot">{t('collaborators.empty')}</p>
+          {/if}
+        </div>
+      {:else if !list.error}
+        <EmptyTable message={t('collaborators.empty')} columns={emptyColumns(columns)} />
       {/if}
       {#if list.error && !list.items.length}
         <p class="pt-3 text-sm text-destructive" in:appear>
           {t('collaborators.loadFailed', { error: list.error })}
         </p>
-      {:else if !list.items.length}
-        <p class="pt-3 text-sm text-muted-foreground">{t('collaborators.empty')}</p>
       {/if}
       {#if list.nextCursor}
         <div class="flex justify-center py-2" transition:reveal>
@@ -401,6 +413,29 @@
 />
 
 <style>
+  /* The empty row under the owner's: the table's sheet loses its bottom edge
+     and this foot carries it on, so the two read as one table. */
+  .with-foot :global(.sheet) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: none;
+  }
+  .empty-foot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 88px;
+    padding: 16px 20px;
+    border: 1px solid var(--hairline);
+    border-top: 0;
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    background: var(--plate-strong);
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+    text-wrap: balance;
+    color: var(--muted);
+  }
   /* what happens after Create, said before it: three plain steps */
   .steps {
     display: grid;
