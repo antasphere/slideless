@@ -1,10 +1,11 @@
 <script lang="ts">
   /* The head of a section on the deck page: a small drawing that says what
-     the section is, its title and description, and the section's one button.
-     It renders inside a card, either in place of Card.Header or inside it
-     (the side padding drops when a card header already gives it). The title
-     keeps the card title's heading role, so a section is still found by its
-     name. */
+     the section is, its title and description. A section with a table keeps
+     its buttons in the toolbar over the table (TableToolbar), not here; the
+     `action` slot is for a section that has no table. It renders inside a
+     card, either in place of Card.Header or inside it (the side padding
+     drops when a card header already gives it). The title keeps the card
+     title's heading role, so a section is still found by its name. */
   import type { Snippet } from 'svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckDrawing, { type DeckDrawingKind } from './drawings/DeckDrawing.svelte';
@@ -13,7 +14,7 @@
     drawing: DeckDrawingKind;
     title: string;
     description?: string;
-    /** The section's button (or buttons), set at the end of the head. */
+    /** The buttons of a section that has no table, set at the end of the head. */
     action?: Snippet;
     /** More of the description, after its text: a link to the docs. */
     children?: Snippet;

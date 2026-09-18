@@ -142,7 +142,9 @@
 {/snippet}
 
 <!-- One capability of the link: its switch, its name, and under it what it
-     means. The hint is the checkbox's description, never part of its name. -->
+     means. The whole row is the label (app.css `.choice`), so the hand lands
+     anywhere on it; the switch is named by the title alone, and the hint is
+     its description, never part of its name. -->
 {#snippet option(
   id: string,
   label: string,
@@ -151,20 +153,21 @@
   set: (v: boolean) => void,
   disabled?: boolean
 )}
-  <div class="option" data-disabled={disabled ? '' : undefined}>
+  <label for={id} class="choice" data-disabled={disabled ? '' : undefined}>
     <Checkbox
       {id}
       {checked}
       {disabled}
       onCheckedChange={(v) => set(v === true)}
+      aria-labelledby="{id}-name"
       aria-describedby="{id}-hint"
       class="mt-0.5"
     />
-    <div class="min-w-0">
-      <Label for={id} class="font-medium leading-5">{label}</Label>
-      <p id="{id}-hint" class="hint">{hint}</p>
-    </div>
-  </div>
+    <span class="min-w-0">
+      <span id="{id}-name" class="choice-name">{label}</span>
+      <span id="{id}-hint" class="choice-hint block">{hint}</span>
+    </span>
+  </label>
 {/snippet}
 
 <FormDialog
@@ -230,7 +233,7 @@
 
   <fieldset class="space-y-2">
     <legend class="eyebrow pb-2">{t('tokens.groupCan')}</legend>
-    <div class="options">
+    <div class="choices">
       {@render option(
         'token-annotate',
         t('tokens.annotateLabel'),
@@ -434,34 +437,16 @@
     color: var(--muted);
     text-wrap: pretty;
   }
-  /* the capabilities, as one ruled list: a hairline between two of them */
-  .options {
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
-  }
-  .options > :global(* + *) {
-    border-top: 1px solid color-mix(in oklab, var(--hairline) 75%, transparent);
-  }
-  .option {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 11px 12px;
-    transition: opacity var(--motion-duration) var(--motion-ease);
-  }
-  .option[data-disabled] {
-    opacity: 0.62;
-  }
-  /* what a switch opens sits under it, set in from the rule */
-  .options :global(.nested) {
+  /* what a switch opens sits under it, set in from the rule (the rows
+     themselves are app.css `.choices` and `.choice`) */
+  .choices :global(.nested) {
     padding: 0 12px 12px 38px;
     border-top: 0;
   }
-  .options :global(.nested .option) {
+  .choices :global(.nested .choice) {
     padding: 9px 0;
   }
-  .options :global(.nested > .option + .option) {
+  .choices :global(.nested > .choice + .choice) {
     border-top: 1px solid color-mix(in oklab, var(--hairline) 60%, transparent);
   }
 

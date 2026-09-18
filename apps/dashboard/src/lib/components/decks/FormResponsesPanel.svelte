@@ -1,5 +1,7 @@
 <script lang="ts">
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
+  import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
+  import { rowCount } from '$lib/components/shared/DataTable.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
@@ -106,6 +108,14 @@
   }
 
   const hasFilters = $derived(filterForm !== 'all' || filterSource !== 'all');
+  // the toolbar's quiet line: every response on the deck (the summary's
+  // total), or how many of them the filters keep once they are all here
+  const responseCount = $derived.by(() => {
+    if (summaryLoading || !summary || noAccess) return undefined;
+    const total = summary.total;
+    const shown = hasFilters && !list.loading && !list.nextCursor ? list.items.length : total;
+    return rowCount('formResponses.countOne', 'formResponses.count')(shown, total);
+  });
 
   // The summary table's heads, shared by the table and its empty form.
   const summaryHeads = $derived(
@@ -279,95 +289,79 @@
   }
 </script>
 
-<Card.Root>
-  <Card.Header class="gap-4">
-    <DeckSectionHeading
-      drawing="forms"
-      title={t('formResponses.title')}
-      description={t('formResponses.description')}
-    />
-    <div class="flex flex-wrap items-end gap-3">
-      <div class="space-y-1">
-        <Label for="response-filter-form" class="text-xs text-muted-foreground">
-          {t('formResponses.filterForm')}
-        </Label>
-        <Select.Root
-          type="single"
-          value={filterForm}
-          onValueChange={(v) => {
-            if (v) filterForm = v;
-          }}
-        >
-          <Select.Trigger id="response-filter-form" class="h-8 w-[150px]">
-            {filterForm === 'all' ? t('formResponses.filterAllForms') : filterForm}
-          </Select.Trigger>
-          <Select.Content>
-            <Select.Item value="all" label={t('formResponses.filterAllForms')} />
-            {#each formNames as formName (formName)}
-              <Select.Item value={formName} label={formName} />
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      </div>
-      <div class="space-y-1">
-        <Label for="response-filter-source" class="text-xs text-muted-foreground">
-          {t('formResponses.filterSource')}
-        </Label>
-        <Select.Root
-          type="single"
-          value={filterSource}
-          onValueChange={(v) => {
-            if (v === 'all' || v === 'link' || v === 'embed') filterSource = v;
-          }}
-        >
-          <Select.Trigger id="response-filter-source" class="h-8 w-[150px]">
-            {filterSource === 'all' ? t('formResponses.filterAllSources') : sourceLabel(filterSource)}
-          </Select.Trigger>
-          <Select.Content>
-            <Select.Item value="all" label={t('formResponses.filterAllSources')} />
-            <Select.Item value="link" label={t('formResponses.sourceLink')} />
-            <Select.Item value="embed" label={t('formResponses.sourceEmbed')} />
-          </Select.Content>
-        </Select.Root>
-      </div>
-      <Button variant="outline" size="sm" class="h-8" onclick={refresh} disabled={list.loading}>
-        <RefreshCw class="mr-2 h-3.5 w-3.5" />
-        {t('formResponses.refresh')}
-      </Button>
-      <Button variant="outline" size="sm" class="h-8" onclick={downloadCsv} disabled={!list.items.length}>
-        <Download class="mr-2 h-3.5 w-3.5" />
-        {t('formResponses.downloadCsv')}
-      </Button>
-      {#if anyFiles}
-        <Button
-          variant="outline"
-          size="sm"
-          class="h-8"
-          href={allFilesZipUrl}
-          download
-          data-testid="responses-files-zip"
-        >
-          <Paperclip class="mr-2 h-3.5 w-3.5" />
-          {t('formResponses.downloadAllFiles')}
-        </Button>
-      {/if}
-    </div>
-  </Card.Header>
+<!-- the two filters, at the left of the toolbar where a search would sit;
+     each select says its own value, its name is for assistive technology -->
+{#snippet filters()}
+  <Label for="response-filter-form" class="sr-only">{t('formResponses.filterForm')}</Label>
+  <Select.Root
+    type="single"
+    value={filterForm}
+    onValueChange={(v) => {
+      if (v) filterForm = v;
+    }}
+  >
+    <Select.Trigger id="response-filter-form" class="h-8 w-[150px]">
+      {filterForm === 'all' ? t('formResponses.filterAllForms') : filterForm}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('formResponses.filterAllForms')} />
+      {#each formNames as formName (formName)}
+        <Select.Item value={formName} label={formName} />
+      {/each}
+    </Select.Content>
+  </Select.Root>
+  <Label for="response-filter-source" class="sr-only">{t('formResponses.filterSource')}</Label>
+  <Select.Root
+    type="single"
+    value={filterSource}
+    onValueChange={(v) => {
+      if (v === 'all' || v === 'link' || v === 'embed') filterSource = v;
+    }}
+  >
+    <Select.Trigger id="response-filter-source" class="h-8 w-[150px]">
+      {filterSource === 'all' ? t('formResponses.filterAllSources') : sourceLabel(filterSource)}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('formResponses.filterAllSources')} />
+      <Select.Item value="link" label={t('formResponses.sourceLink')} />
+      <Select.Item value="embed" label={t('formResponses.sourceEmbed')} />
+    </Select.Content>
+  </Select.Root>
+{/snippet}
+
+<!-- the section's acts, at the right of the toolbar -->
+{#snippet actions()}
+  <Button variant="outline" size="sm" class="h-8" onclick={refresh} disabled={list.loading}>
+    <RefreshCw class="mr-2 h-3.5 w-3.5" />
+    {t('formResponses.refresh')}
+  </Button>
+  <Button variant="outline" size="sm" class="h-8" onclick={downloadCsv} disabled={!list.items.length}>
+    <Download class="mr-2 h-3.5 w-3.5" />
+    {t('formResponses.downloadCsv')}
+  </Button>
+  {#if anyFiles}
+    <Button
+      variant="outline"
+      size="sm"
+      class="h-8"
+      href={allFilesZipUrl}
+      download
+      data-testid="responses-files-zip"
+    >
+      <Paperclip class="mr-2 h-3.5 w-3.5" />
+      {t('formResponses.downloadAllFiles')}
+    </Button>
+  {/if}
+{/snippet}
+
+<Card.Root class="deck-section gap-3">
+  <DeckSectionHeading
+    drawing="forms"
+    title={t('formResponses.title')}
+    description={t('formResponses.description')}
+  />
   <Card.Content data-testid="form-responses-panel">
-    {#if notify !== null}
-      <div class="mb-4 flex items-start gap-2" data-testid="form-responses-notify" in:appear>
-        <Checkbox
-          id="responses-notify"
-          checked={notify}
-          disabled={notifySaving}
-          onCheckedChange={(v) => void setNotify(v === true)}
-        />
-        <Label for="responses-notify" class="font-normal">
-          {t('formResponses.notifyLabel')}
-          <span class="text-muted-foreground">{t('formResponses.notifyHint')}</span>
-        </Label>
-      </div>
-    {/if}
+    <TableToolbar count={responseCount} {filters} {actions} sticky={false} />
     {#if list.loading || summaryLoading}
       <TableSkeleton columns={3} rows={2} showSearch={false} />
     {:else if noAccess}
@@ -423,9 +417,6 @@
               </Table.Body>
             </Table.Root>
           </div>
-          <p class="text-xs text-muted-foreground">
-            {t('formResponses.totalCount', { n: summary.total })}
-          </p>
         {/if}
 
         {#if !list.items.length}
@@ -568,6 +559,26 @@
         {/if}
       </div>
     {/if}
+    {#if notify !== null}
+      <!-- the owner's own switch, after the responses it is about: the whole
+           row is the label (app.css `.choice`), the switch named by the
+           title alone -->
+      <label for="responses-notify" class="choice notify" data-testid="form-responses-notify" in:appear>
+        <Checkbox
+          id="responses-notify"
+          checked={notify}
+          disabled={notifySaving}
+          onCheckedChange={(v) => void setNotify(v === true)}
+          aria-labelledby="responses-notify-name"
+          aria-describedby="responses-notify-hint"
+          class="mt-0.5"
+        />
+        <span class="min-w-0">
+          <span id="responses-notify-name" class="choice-name">{t('formResponses.notifyLabel')}</span>
+          <span id="responses-notify-hint" class="choice-hint block">{t('formResponses.notifyHint')}</span>
+        </span>
+      </label>
+    {/if}
   </Card.Content>
 </Card.Root>
 
@@ -667,3 +678,13 @@
   onConfirm={() => void submitDelete()}
   loading={deleteLoading}
 />
+
+<style>
+  /* the switch stands alone, in the ruled list's own frame */
+  .notify {
+    margin-top: 16px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
+  }
+</style>

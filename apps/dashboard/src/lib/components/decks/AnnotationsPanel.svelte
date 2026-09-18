@@ -1,5 +1,7 @@
 <script lang="ts">
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
+  import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
+  import { rowCount } from '$lib/components/shared/DataTable.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
@@ -48,6 +50,12 @@
   });
 
   const hasFilters = $derived(filterVersion !== 'all' || filterStatus !== 'all');
+  // the toolbar's quiet line: how many notes match, once they are all here
+  const noteCount = $derived(
+    list.loading || list.nextCursor || !list.items.length
+      ? undefined
+      : rowCount('annotations.countOne', 'annotations.count')(list.items.length, list.items.length)
+  );
 
   $effect(() => {
     // Track the filters so changing either re-fetches page 1.
@@ -157,73 +165,67 @@
   }
 </script>
 
-<Card.Root>
-  <Card.Header class="gap-4">
-    <DeckSectionHeading
-      drawing="annotations"
-      title={t('annotations.title')}
-      description={t('annotations.description')}
+<!-- the two filters, at the left of the toolbar where a search would sit;
+     each select says its own value, its name is for assistive technology -->
+{#snippet filters()}
+  <Label for="annotation-filter-version" class="sr-only">{t('annotations.filterVersion')}</Label>
+  <Select.Root
+    type="single"
+    value={filterVersion}
+    onValueChange={(v) => {
+      if (v) filterVersion = v;
+    }}
+  >
+    <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
+      {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('annotations.filterAllVersions')} />
+      {#each versions as version (version.version)}
+        <Select.Item value={String(version.version)} label={`v${version.version}`} />
+      {/each}
+    </Select.Content>
+  </Select.Root>
+  <Label for="annotation-filter-status" class="sr-only">{t('annotations.filterStatus')}</Label>
+  <Select.Root
+    type="single"
+    value={filterStatus}
+    onValueChange={(v) => {
+      if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
+    }}
+  >
+    <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
+      {filterStatus === 'all'
+        ? t('annotations.filterAll')
+        : filterStatus === 'open'
+          ? t('annotations.statusOpen')
+          : t('annotations.statusResolved')}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('annotations.filterAll')} />
+      <Select.Item value="open" label={t('annotations.statusOpen')} />
+      <Select.Item value="resolved" label={t('annotations.statusResolved')} />
+    </Select.Content>
+  </Select.Root>
+{/snippet}
+
+<Card.Root class="deck-section gap-3">
+  <DeckSectionHeading
+    drawing="annotations"
+    title={t('annotations.title')}
+    description={t('annotations.description')}
+  >
+    <a
+      href={ANNOTATIONS_DOCS_URL}
+      target="_blank"
+      rel="noreferrer"
+      class="underline underline-offset-2 hover:text-foreground"
     >
-      <a
-        href={ANNOTATIONS_DOCS_URL}
-        target="_blank"
-        rel="noreferrer"
-        class="underline underline-offset-2 hover:text-foreground"
-      >
-        {t('annotations.learnMore')}
-      </a>
-    </DeckSectionHeading>
-    <div class="flex flex-wrap items-end gap-3">
-      <div class="space-y-1">
-        <Label for="annotation-filter-version" class="text-xs text-muted-foreground">
-          {t('annotations.filterVersion')}
-        </Label>
-        <Select.Root
-          type="single"
-          value={filterVersion}
-          onValueChange={(v) => {
-            if (v) filterVersion = v;
-          }}
-        >
-          <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
-            {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
-          </Select.Trigger>
-          <Select.Content>
-            <Select.Item value="all" label={t('annotations.filterAllVersions')} />
-            {#each versions as version (version.version)}
-              <Select.Item value={String(version.version)} label={`v${version.version}`} />
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      </div>
-      <div class="space-y-1">
-        <Label for="annotation-filter-status" class="text-xs text-muted-foreground">
-          {t('annotations.filterStatus')}
-        </Label>
-        <Select.Root
-          type="single"
-          value={filterStatus}
-          onValueChange={(v) => {
-            if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
-          }}
-        >
-          <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
-            {filterStatus === 'all'
-              ? t('annotations.filterAll')
-              : filterStatus === 'open'
-                ? t('annotations.statusOpen')
-                : t('annotations.statusResolved')}
-          </Select.Trigger>
-          <Select.Content>
-            <Select.Item value="all" label={t('annotations.filterAll')} />
-            <Select.Item value="open" label={t('annotations.statusOpen')} />
-            <Select.Item value="resolved" label={t('annotations.statusResolved')} />
-          </Select.Content>
-        </Select.Root>
-      </div>
-    </div>
-  </Card.Header>
+      {t('annotations.learnMore')}
+    </a>
+  </DeckSectionHeading>
   <Card.Content data-testid="annotations-panel">
+    <TableToolbar count={noteCount} {filters} sticky={false} />
     {#if list.loading}
       <TableSkeleton columns={3} rows={2} showSearch={false} />
     {:else if list.error && !list.items.length}

@@ -1,29 +1,19 @@
 <script lang="ts" module>
-  import type { ColumnDef } from '@tanstack/table-core';
-
   export interface EmptyColumn {
     title: string;
     width?: string;
     align?: 'center';
   }
-
-  /** The heads of a DataTable's columns, so the empty table is the same table. */
-  export function emptyColumns<T>(columns: ColumnDef<T, unknown>[]): EmptyColumn[] {
-    return columns.map((column) => ({
-      title: column.meta?.title ?? '',
-      width: column.meta?.width,
-      align: column.meta?.align === 'center' ? 'center' : undefined
-    }));
-  }
 </script>
 
 <script lang="ts">
-  /* A deck section with nothing in it yet keeps its skeleton: the table with
+  /* A deck section with nothing in it yet keeps its skeleton: a table with
      its column heads, and ONE quiet row that says so, in place of a sentence
-     floating where the table will be. Without columns it is the frame alone
-     (a section whose content is a list, not a table). On a phone a table is a
-     list of cards with no heads (DataTable), so the frame and the sentence
-     are all there is to keep. The sentence is static i18n text. */
+     floating where the table will be. A DataTable draws its own empty row
+     (`emptyMessage`); this is for a section whose content is a list, not a
+     DataTable: the frame alone, or the heads of a hand-built table over it.
+     On a phone a table is a list of cards with no heads, so the frame and
+     the sentence are all there is to keep. The sentence is static i18n text. */
   import * as Table from '$lib/components/ui/table/index.js';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 

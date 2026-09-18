@@ -30,6 +30,7 @@
     {#each columns as column (column.id)}
       <DropdownMenu.CheckboxItem
         checked={column.getIsVisible()}
+        closeOnSelect={false}
         onCheckedChange={(value) => column.toggleVisibility(!!value)}
       >
         {column.columnDef.meta?.title ?? column.id}

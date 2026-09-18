@@ -2,7 +2,7 @@
   import { createRawSnippet } from 'svelte';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
@@ -14,7 +14,6 @@
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { Tag } from '$lib/components/ui/tag/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
-  import EmptyTable, { emptyColumns } from './EmptyTable.svelte';
   import DialogDrawing from './drawings/DialogDrawing.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
@@ -119,6 +118,10 @@
   const isOwnerRow = (row: Collaborator) => row.id === OWNER_ROW_ID;
   // nobody invited yet, and nothing failed: the table says so in its last row
   const emptyFoot = $derived(!list.items.length && !list.error);
+  // the toolbar's quiet line: how many people on the deck, once they are all here
+  const peopleCount = $derived(
+    list.nextCursor || !rows.length ? undefined : rowCount('collaborators.countOne', 'collaborators.count')
+  );
 
   // ── Invite dialog ──────────────────────────────────────────────────────
   let showInviteDialog = $state(false);
@@ -257,6 +260,10 @@
   </Dialog.Illustration>
 {/snippet}
 
+{#snippet ownersOnly()}
+  <p class="text-xs text-muted-foreground md:text-right">{t('collaborators.ownersOnly')}</p>
+{/snippet}
+
 {#snippet claimAside()}
   <Dialog.Illustration
     eyebrow={t('collaborators.asideEyebrow')}
@@ -266,42 +273,46 @@
   </Dialog.Illustration>
 {/snippet}
 
-<Card.Root>
+{#snippet inviteAction()}
+  {#if canManage}
+    <Button size="sm" class="h-8" onclick={openInviteDialog}>
+      <Plus class="mr-2 h-4 w-4" />
+      {t('collaborators.invite')}
+    </Button>
+  {/if}
+{/snippet}
+
+<Card.Root class="deck-section gap-3">
   <DeckSectionHeading
     drawing="collaborators"
     title={t('collaborators.title')}
     description={t('collaborators.description')}
-  >
-    {#snippet action()}
-      {#if canManage}
-        <Button size="sm" onclick={openInviteDialog}>
-          <Plus class="mr-2 h-4 w-4" />
-          {t('collaborators.invite')}
-        </Button>
-      {/if}
-    {/snippet}
-  </DeckSectionHeading>
+  />
   <Card.Content>
-    {#if !canManage}
-      <p class="pb-2 text-xs text-muted-foreground">{t('collaborators.ownersOnly')}</p>
-    {/if}
     {#if list.loading}
-      <TableSkeleton columns={4} rows={2} showSearch={false} />
+      <TableSkeleton columns={4} rows={2} />
     {:else}
       <!-- The table always stands. With nobody invited it holds the owner's
            row and one quiet row under it that says so (the table's own foot,
            cut from the same sheet); without even the owner's row, the heads
-           over that one row. -->
-      {#if rows.length}
-        <div class:with-foot={emptyFoot}>
-          <DataTable data={rows} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
-          {#if emptyFoot}
-            <p class="empty-foot">{t('collaborators.empty')}</p>
-          {/if}
-        </div>
-      {:else if !list.error}
-        <EmptyTable message={t('collaborators.empty')} columns={emptyColumns(columns)} />
-      {/if}
+           over that one row. A reader who cannot invite is told so where
+           the button would be. -->
+      <div class:with-foot={rows.length > 0 && emptyFoot}>
+        <DataTable
+          data={rows}
+          {columns}
+          count={peopleCount}
+          actions={canManage ? inviteAction : ownersOnly}
+          emptyMessage={t('collaborators.empty')}
+          showViewOptions={false}
+          showPagination={false}
+          pageSize={200}
+          sticky={false}
+        />
+        {#if rows.length && emptyFoot}
+          <p class="empty-foot">{t('collaborators.empty')}</p>
+        {/if}
+      </div>
       {#if list.error && !list.items.length}
         <p class="pt-3 text-sm text-destructive" in:appear>
           {t('collaborators.loadFailed', { error: list.error })}

@@ -17,8 +17,20 @@
  * from the contract — the same pair the dashboard's popovers use — and
  * `prefers-reduced-motion: reduce` turns every transition off. The
  * transitions are ARMED after the first layout, so a page never animates
- * its own arrival; the strip slides up and out, the handle fades in after
- * it, the deck's top margin follows the fold.
+ * its own arrival; the strip slides up and out, the handle drops in after
+ * it, the deck's top margin follows the fold. The handle is the one piece
+ * with a spring (`SPRING_EASING`, a small overshoot): it grows under the
+ * pointer and the strip settles back with a bounce when the handle reopens
+ * it, a keyframe rather than a transition so the fold's own timing is
+ * untouched.
+ *
+ * LOOK: the bar wears the dashboard's paper. It cannot import the
+ * dashboard's CSS (another origin, a sandboxed page), so the VALUES are
+ * copied into its stylesheet as custom properties on the host, light and
+ * dark, and kept in sync by hand with apps/dashboard/src/lib/tokens.css
+ * (grounds, ink, hairline, accent, plate, shadow), app.css (`.float`, the
+ * wash) and ui/button + ui/tag (radii, heights, hover). The sources are
+ * named beside each block.
  *
  * WHERE IT MOUNTS. Top-level document navigations only, on links with
  * `show_bar` (default on): the server gate is `browserEntry` (Sec-Fetch-Dest
@@ -59,25 +71,27 @@
  *    bar to the end of the document), so the host's layout-critical
  *    declarations are set INLINE with `!important` — the one declaration
  *    level an outer stylesheet cannot beat, `!important` included.
- *  - The deck is PUSHED DOWN, never covered: the root element gets a top
+ *  - The bar TAKES ITS SPACE, it never covers the deck: the BODY becomes
+ *    the scroll container and starts under the bar. The root is pinned to
+ *    the window's height with `overflow: hidden` (a root's overflow is the
+ *    viewport's, so the viewport never scrolls), and the body gets a top
  *    margin the height of the bar, a height reduced by the same amount and
- *    vertical scrolling, as `!important` inline styles (the strongest
+ *    `overflow-y: auto`, all as `!important` inline styles (the strongest
  *    author-level declaration; a deck's own `!important` sheet rule loses
- *    to it). A deck sized with `100%` chains fits exactly; a deck sized in
+ *    to it). The deck's own `position: sticky; top: 0` elements then stick
+ *    to the body's edge, UNDER the bar, where the earlier shape (a margin
+ *    on the root, the viewport still the scroller) left them stuck behind
+ *    it. A deck sized with `100%` chains fits exactly; a deck sized in
  *    viewport units cannot shrink (vh resolves against the window, not
- *    against any box) and scrolls by the bar's height instead of losing
- *    its bottom. Collapsing the bar to its handle gives the deck its
- *    viewport back. One mixed shape needs a second move (round 2, F1): a
- *    body that is BOTH a `100%` box and `overflow: hidden` holding a
- *    `100vh` child clips that child's last bar-height before the root ever
- *    gets to scroll. After mount the runtime measures the body: when an
- *    overflow-hidden body overflows at all, the root's reduction is what
- *    made it clip, so the root gets its full `100%` height back — the deck
- *    keeps exactly its own geometry, shifted down, and the page scrolls by
- *    the bar's height. A translate-driven slide strip (a body hiding a lot
- *    on purpose) gets the same treatment and loses nothing: its box is the
- *    size it always was. The one shape this cannot reach is a `position:
- *    fixed; inset: 0` body, which ignores the root's margin by design.
+ *    against any box) and scrolls by the bar's height inside the body
+ *    instead of losing its bottom; a body that hid its overflow scrolls
+ *    the same way rather than clipping. Collapsing the bar to its handle
+ *    gives the body the whole window back; it stays the scroller through
+ *    the fold so the reader's position never jumps. The trade: a deck that
+ *    listens to `window` scrolling (`window.scrollY`, a scroll event on the
+ *    window, `scroll-snap-type` on the root) sees a body that scrolls
+ *    instead; the viewport is still what IntersectionObserver and fixed
+ *    positioning measure against.
  *  - The overlay follows the bar through ONE custom property on the root,
  *    `--slideless-topbar` (the bar's current height): its top badge slots
  *    add it to their offset, so the badge never sits under the bar and
@@ -125,6 +139,14 @@ export const TOPBAR_HANDLE_PX = 10;
 /** The root custom property the overlay reads to keep its top slots clear. */
 export const TOPBAR_OFFSET_PROPERTY = '--slideless-topbar';
 
+/**
+ * The handle's spring: a small overshoot on the grow under the pointer and
+ * on the strip's return. The one easing in the product besides the
+ * contract's; everything else keeps MOTION_EASING.
+ */
+export const SPRING_EASING = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
+export const SPRING_DURATION_MS = 320;
+
 const TOPBAR_JS = String.raw`
 var doc = document;
 if (!doc || !doc.documentElement) return;
@@ -155,6 +177,8 @@ var OFFSET_PROP = '${TOPBAR_OFFSET_PROPERTY}';
 // the reader asked for none.
 var MOTION_MS = ${MOTION_DURATION_MS};
 var MOTION = MOTION_MS + 'ms ${MOTION_EASING}';
+var SPRING_MS = ${SPRING_DURATION_MS};
+var SPRING = SPRING_MS + 'ms ${SPRING_EASING}';
 var REDUCED = false;
 try {
   REDUCED = typeof window.matchMedia === 'function' && !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -211,78 +235,116 @@ var memory = {
 };
 
 // ---- Styles (inside the shadow root: unreachable from deck CSS) --------
+// The dashboard's tokens, copied by value (see the LOOK note above). Light
+// is the Slideless recipe of tokens.css; dark is its :root.dark set. all:
+// initial on the host leaves custom properties alone, so they can sit in
+// the same rule.
 var css = [
   ':host{all:initial;position:fixed;top:0;left:0;right:0;z-index:2147483001;display:block;',
-  '  height:' + BAR + 'px;font:13px/1.4 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
-  '  color:#ededf2;-webkit-font-smoothing:antialiased;}',
+  '  height:' + BAR + 'px;font:13.5px/1.4 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
+  '  color:var(--ink);-webkit-font-smoothing:antialiased;',
+  // tokens.css, the Slideless recipe (light)
+  '  --ink:#1c1915;--ink-soft:#35302a;--muted:#6e6759;--hairline:#e0daca;--ground-2:#f1ede1;--bar:#faf7f0;',
+  '  --plate-strong:rgb(251 249 243 / 0.82);--accent:#7a6652;--accent-deep:#8a4630;--focus:#b4552f;',
+  '  --shadow-sm:0 1px 2px rgba(28,25,21,.05);',
+  '  --shadow-md:0 4px 6px -1px rgba(28,25,21,.1),0 2px 4px -2px rgba(28,25,21,.1);',
+  // app.css: the float material and the wash a row takes under the pointer
+  '  --float-bg:linear-gradient(var(--plate-strong),var(--plate-strong)),color-mix(in oklab,var(--bar) 72%,transparent);',
+  '  --wash:color-mix(in oklab,var(--accent) 8%,transparent);',
+  // ui/button outline: the edge and the fill under the pointer
+  '  --hover-edge:color-mix(in oklab,var(--accent) 45%,var(--hairline));',
+  '  --hover-fill:color-mix(in oklab,var(--accent) 6%,var(--plate-strong));',
+  // ui/tag + ui/badge: the slate tone the dashboard gives a version tag
+  '  --tone:#5c7285;}',
+  '@media (prefers-color-scheme: dark){:host{',
+  // tokens.css, the Slideless recipe (dark)
+  '  --ink:#f3eee6;--ink-soft:#dcd4c8;--muted:#aca196;--hairline:#3e362e;--ground-2:#171310;--bar:#1f1b17;',
+  '  --plate-strong:rgb(40 34 28 / 0.84);--accent:#db7d5f;--accent-deep:#f3c7ac;--focus:#d9805a;',
+  '  --shadow-sm:0 1px 2px rgba(0,0,0,.35);',
+  '  --shadow-md:0 4px 6px -1px rgba(0,0,0,.45),0 2px 4px -2px rgba(0,0,0,.45);}}',
   ':host([data-collapsed]){height:' + HANDLE + 'px;}',
   '*{box-sizing:border-box;margin:0;padding:0;}',
   // The strip slides up and out on a fold (transform + opacity), and is
   // taken out of the accessibility tree once gone (visibility, delayed by
-  // the motion so it stays visible while it moves).
+  // the motion so it stays visible while it moves). Opaque: the deck
+  // scrolls under it (the --bar token's rule).
   '.bar{display:flex;align-items:center;gap:12px;height:' + BAR + 'px;padding:0 14px;',
-  '  background:#17171d;border-bottom:1px solid #2b2b36;box-shadow:0 1px 0 rgba(0,0,0,.35);',
+  '  background:var(--bar);border-bottom:1px solid var(--hairline);box-shadow:var(--shadow-sm);',
   '  transition:transform ' + MOTION + ',opacity ' + MOTION + ',visibility 0s linear 0s;}',
   ':host([data-collapsed]) .bar{transform:translateY(-100%);opacity:0;visibility:hidden;pointer-events:none;',
   '  transition:transform ' + MOTION + ',opacity ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
+  // The return from the handle: a keyframe with the spring, over the
+  // transition, so the strip settles with a small bounce.
+  '@keyframes slbar-drop{from{transform:translateY(-100%);}to{transform:none;}}',
+  '.bar.drop{animation:slbar-drop ' + SPRING + ';}',
   // The mark: the brand's path, currentColor = the bar's foreground.
   '.mark{display:inline-flex;align-items:center;color:inherit;flex:none;}',
   '.mark svg{width:18px;height:18px;display:block;}',
-  '.title{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;}',
-  '.title strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
-  '.version{flex:none;font:600 11px/18px inherit;padding:0 7px;border-radius:999px;',
-  '  background:#2b2b36;color:#c9c9d4;}',
-  'button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;}',
+  '.title{flex:1;min-width:0;display:flex;align-items:center;gap:8px;}',
+  '.title strong{font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  // ui/badge version: a 24px tag, 7px corners, the slate wash under its
+  // own ink, the mono face.
+  '.version{flex:none;display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:7px;',
+  '  border:1px solid color-mix(in oklab,var(--tone) 24%,transparent);',
+  '  background:color-mix(in oklab,var(--tone) 11%,var(--plate-strong));',
+  '  color:color-mix(in oklab,var(--tone) 62%,var(--ink));',
+  '  font:400 11.5px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;}',
+  'button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;',
+  '  transition:color ' + MOTION + ',background-color ' + MOTION + ',border-color ' + MOTION + ',transform ' + MOTION + ';}',
+  'button:active{transform:scale(.97);}',
   '.dl{position:relative;}',
-  // Neutral, the bar's own tones: never an accent colour (round 2 of the
-  // artifact wave: "the download button shouldn't be orange").
-  '.dl>button{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:8px;',
-  '  background:#2b2b36;color:#ededf2;font-weight:600;}',
-  '.dl>button:hover{background:#363643;}',
-  '.dl>button svg{width:14px;height:14px;}',
+  // ui/button outline, size sm: the plate with a hairline, 10px corners;
+  // under the pointer the edge takes the accent and the fill a 6% wash.
+  // Never the accent as a fill (round 2 of the artifact wave: "the
+  // download button shouldn't be orange").
+  '.dl>button{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;',
+  '  border:1px solid var(--hairline);background:var(--plate-strong);color:var(--ink);font-weight:500;font-size:13px;}',
+  '.dl>button:hover{border-color:var(--hover-edge);background:var(--hover-fill);}',
+  '.dl>button svg{width:16px;height:16px;}',
   // The menu opens like the dashboard's own popovers: a fade with a small
   // rise and scale, the same duration and easing; closed, it is hidden to
-  // the accessibility tree after the motion.
-  '.menu{position:absolute;top:36px;right:0;min-width:260px;max-width:min(420px,92vw);',
-  '  background:#1f1f28;border:1px solid #363643;border-radius:12px;padding:6px;',
-  '  box-shadow:0 12px 40px rgba(0,0,0,.46);transform-origin:top right;',
+  // the accessibility tree after the motion. Cut from the .float
+  // material: the plate over a blur, one hairline, 10px corners, the md
+  // shadow, 7px corners on the rows.
+  '.menu{position:absolute;top:38px;right:0;min-width:260px;max-width:min(420px,92vw);',
+  '  background:var(--float-bg);-webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  border:1px solid var(--hairline);border-radius:10px;padding:4px;color:var(--ink);',
+  '  box-shadow:var(--shadow-md);transform-origin:top right;',
   '  visibility:hidden;opacity:0;transform:translateY(-6px) scale(.96);',
   '  transition:opacity ' + MOTION + ',transform ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
   '.dl[data-open] .menu{visibility:visible;opacity:1;transform:none;',
   '  transition:opacity ' + MOTION + ',transform ' + MOTION + ',visibility 0s linear 0s;}',
-  '.menu a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;',
-  '  color:#ededf2;text-decoration:none;}',
-  '.menu a:hover,.menu a:focus{background:#2b2b36;outline:none;}',
+  '.menu a{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;',
+  '  color:var(--ink);text-decoration:none;transition:background-color ' + MOTION + ',color ' + MOTION + ';}',
+  '.menu a:hover,.menu a:focus{background:var(--wash);outline:none;}',
   '.menu .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
-  '.menu .size{flex:none;color:#9b9baa;font-size:12px;}',
-  '.menu .all{margin-top:4px;padding-top:8px;border-top:1px solid #2b2b36;font-weight:600;}',
-  '.hide{width:30px;height:30px;border-radius:8px;color:#9b9baa;display:inline-flex;align-items:center;',
+  '.menu .size{flex:none;color:var(--muted);font-size:12px;}',
+  '.menu .all{margin-top:4px;padding-top:9px;border-top:1px solid var(--hairline);border-radius:0 0 7px 7px;font-weight:500;}',
+  // ui/button ghost, the icon size: the wash under the pointer, in ink.
+  '.hide{width:32px;height:32px;border-radius:10px;color:var(--muted);display:inline-flex;align-items:center;',
   '  justify-content:center;}',
-  '.hide:hover,.hide:focus-visible{background:#2b2b36;color:#ededf2;outline:none;}',
+  '.hide:hover,.hide:focus-visible{background:var(--wash);color:var(--ink);}',
   '.hide svg{width:16px;height:16px;}',
-  // The handle fades in once the strip has left, and out as it returns.
-  '.handle{display:inline-flex;position:absolute;top:0;left:50%;transform:translateX(-50%);height:' + HANDLE + 'px;',
-  '  width:72px;border-radius:0 0 8px 8px;background:#17171d;border:1px solid #2b2b36;border-top:0;',
-  '  color:#9b9baa;align-items:center;justify-content:center;',
+  // The handle drops in once the strip has left (the spring, after the
+  // fold), and lifts out as it returns. Under the pointer it grows with the
+  // same spring instead of jumping to its hover size.
+  '.handle{display:inline-flex;position:absolute;top:0;left:50%;transform:translate(-50%,-100%);height:' + HANDLE + 'px;',
+  '  width:72px;border-radius:0 0 10px 10px;background:var(--bar);border:1px solid var(--hairline);border-top:0;',
+  '  box-shadow:var(--shadow-sm);color:var(--muted);align-items:center;justify-content:center;',
   '  visibility:hidden;opacity:0;pointer-events:none;',
-  '  transition:opacity ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
-  '.handle:hover,.handle:focus-visible{color:#ededf2;outline:none;height:' + (HANDLE + 4) + 'px;}',
+  '  transition:opacity ' + MOTION + ',transform ' + MOTION + ',height ' + SPRING + ',color ' + MOTION + ',',
+  '    background-color ' + MOTION + ',border-color ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
+  '.handle:hover,.handle:focus-visible{color:var(--ink);background:var(--hover-fill);border-color:var(--hover-edge);',
+  '  height:' + (HANDLE + 8) + 'px;}',
   '.handle svg{width:12px;height:8px;}',
-  ':host([data-collapsed]) .handle{visibility:visible;opacity:1;pointer-events:auto;',
-  '  transition:opacity ' + MOTION + ' ' + MOTION_MS + 'ms,visibility 0s linear ' + MOTION_MS + 'ms;}',
-  'button:focus-visible{box-shadow:0 0 0 2px #8f8fa3;}',
-  '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;}}',
-  '@media (prefers-color-scheme: light){',
-  '  :host{color:#1d1d24;}',
-  '  .bar{background:#ffffff;border-bottom-color:#e6e6ec;box-shadow:0 1px 0 rgba(20,20,40,.08);}',
-  '  .version{background:#f0f0f4;color:#4a4a58;}',
-  '  .dl>button{background:#f0f0f4;color:#1d1d24;} .dl>button:hover{background:#e6e6ec;}',
-  '  .menu{background:#ffffff;border-color:#dadae2;box-shadow:0 12px 40px rgba(20,20,40,.16);}',
-  '  .menu a{color:#1d1d24;} .menu a:hover,.menu a:focus{background:#f6f6f9;}',
-  '  .menu .all{border-top-color:#e6e6ec;}',
-  '  .hide{color:#6c6c78;} .hide:hover,.hide:focus-visible{background:#f6f6f9;color:#1d1d24;}',
-  '  .handle{background:#ffffff;border-color:#e6e6ec;color:#6c6c78;} .handle:hover{color:#1d1d24;}',
-  '}'
+  ':host([data-collapsed]) .handle{visibility:visible;opacity:1;pointer-events:auto;transform:translate(-50%,0);',
+  '  transition:opacity ' + MOTION + ' ' + MOTION_MS + 'ms,transform ' + SPRING + ' ' + MOTION_MS + 'ms,height ' + SPRING + ',',
+  '    color ' + MOTION + ',background-color ' + MOTION + ',border-color ' + MOTION + ',visibility 0s linear ' + MOTION_MS + 'ms;}',
+  // app.css :focus-visible: the ember ring, offset.
+  'button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}',
+  '.handle:focus-visible{outline-offset:-3px;}',
+  '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;animation:none !important;}',
+  '  button,.menu a{transition:none !important;}}'
 ].join('\n');
 
 var ICONS = {
@@ -376,57 +438,70 @@ shadow.appendChild(handle);
   host.addEventListener(type, function (ev) { ev.stopPropagation(); });
 });
 
-// ---- Layout: push the deck down by the bar's height ----------------------
+// ---- Layout: the body scrolls under the bar ------------------------------
 var collapsed = false;
+var armed = false;
 function applyLayout() {
   var h = collapsed ? HANDLE : BAR;
   var root = doc.documentElement;
-  // The handle floats over the deck's first pixels; the deck gets its
-  // viewport back when the bar is collapsed.
+  var b = doc.body;
+  // The handle floats over the deck's first pixels; the body gets the
+  // whole window back when the bar is collapsed, and stays the scroller.
   var push = collapsed ? 0 : h;
-  root.style.setProperty('margin-top', push + 'px', 'important');
-  root.style.setProperty('height', push ? 'calc(100% - ' + push + 'px)' : '', push ? 'important' : '');
-  root.style.setProperty('overflow-y', push ? 'auto' : '', push ? 'important' : '');
-  root.style.setProperty('scroll-padding-top', push + 'px', 'important');
+  // The root: the window's height, never scrolling (a root's overflow is
+  // the viewport's), so the body below is the one scroll container.
+  root.style.setProperty('height', '100%', 'important');
+  root.style.setProperty('min-height', '0', 'important');
+  root.style.setProperty('max-height', 'none', 'important');
+  root.style.setProperty('overflow', 'hidden', 'important');
   root.style.setProperty(OFFSET_PROP, push + 'px');
+  // The body: starts under the bar, ends at the window's bottom, scrolls.
+  // border-box so a padded body never grows past the root and gets cut; no
+  // bottom margin for the same reason (the UA default is 8px).
+  b.style.setProperty('margin-top', push + 'px', 'important');
+  b.style.setProperty('margin-bottom', '0px', 'important');
+  b.style.setProperty('height', 'calc(100% - ' + push + 'px)', 'important');
+  b.style.setProperty('min-height', '0', 'important');
+  b.style.setProperty('max-height', 'none', 'important');
+  b.style.setProperty('box-sizing', 'border-box', 'important');
+  b.style.setProperty('overflow-y', 'auto', 'important');
   pinHost(h);
   if (collapsed) host.setAttribute('data-collapsed', '');
   else host.removeAttribute('data-collapsed');
   dlBtn.setAttribute('aria-expanded', 'false');
   dl.removeAttribute('data-open');
-  if (push) fitBody(root);
 }
-// A body that is a 100% box AND overflow-hidden clips whatever the root's
-// reduction pushed past it (a 100vh child, typically). Give the root its
-// full height back: the body is then the size it always was, shifted down,
-// and the page scrolls by the bar's height instead of hiding the strip.
-function fitBody(root) {
-  var b = doc.body;
-  if (!b) return;
-  try {
-    var cs = getComputedStyle(b);
-    var hidden = cs.overflowY === 'hidden' || cs.overflowY === 'clip';
-    if (hidden && b.scrollHeight > b.clientHeight) root.style.setProperty('height', '100%', 'important');
-  } catch (e) {}
-}
-// The host's height and the root's top margin follow the fold. Armed only
-// after the first layout has painted (two frames), so the bar's arrival is
-// never an animation, and never under reduced motion.
-// The root may carry a transition of the deck's own (a theme fade): ours is
+// The host's height and the body's top margin and height follow the fold.
+// Armed only after the first layout has painted (two frames), so the bar's
+// arrival is never an animation, and never under reduced motion.
+// The body may carry a transition of the deck's own (a theme fade): ours is
 // APPENDED to it, never put in its place (verifier round 1, F2).
 function armMotion() {
   if (REDUCED) return;
+  armed = true;
   host.style.setProperty('transition', 'height ' + MOTION, 'important');
-  var root = doc.documentElement;
+  var b = doc.body;
   var own = '';
-  try { own = String(getComputedStyle(root).transition || ''); } catch (e) {}
-  var ours = 'margin-top ' + MOTION;
+  try { own = String(getComputedStyle(b).transition || ''); } catch (e) {}
+  var ours = 'margin-top ' + MOTION + ', height ' + MOTION;
   if (own && own !== 'none' && own !== 'all 0s ease 0s' && own.indexOf('margin-top') === -1) ours = own + ', ' + ours;
-  root.style.setProperty('transition', ours, 'important');
+  b.style.setProperty('transition', ours, 'important');
 }
+// The strip's return from the handle settles with the spring: a keyframe
+// restarted on every open, removed once it has run so the next open can
+// play it again. Only once motion is armed, and never under reduced motion.
+function bounce() {
+  if (!armed || REDUCED) return;
+  bar.classList.remove('drop');
+  void bar.offsetWidth;
+  bar.classList.add('drop');
+}
+bar.addEventListener('animationend', function () { bar.classList.remove('drop'); });
 function setCollapsed(next, remember) {
+  var opening = collapsed && !next;
   collapsed = !!next;
   applyLayout();
+  if (opening) bounce();
   if (remember) memory.write(collapsed);
   (collapsed ? handle : hideBtn).focus({ preventScroll: true });
 }

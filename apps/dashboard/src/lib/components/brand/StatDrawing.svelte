@@ -1,13 +1,16 @@
 <script lang="ts" module>
-  export type StatDrawingKind = 'decks' | 'opens' | 'members' | 'files' | 'brands' | 'worn' | 'fresh';
+  export type StatDrawingKind =
+    'decks' | 'opens' | 'members' | 'files' | 'brands' | 'worn' | 'fresh' | 'owner' | 'updated';
 </script>
 
 <script lang="ts">
-  /* The small drawing on a figure's card, in the hand of the presentations'
-     figures: three stroke weights (1, 1.2 and one emphasised 1.6), ink at low
-     opacity, boxes filled with a breath of paper, dots filled, and the card's
-     colour used ONCE, on the element that carries the meaning. Each drawing is
-     literal: a fan of slides, an eye, people around a hub, a pile of sheets.
+  /* The small drawing on a figure's card (the overview's StatTile, the deck
+     page's DeckFact), in the hand of the presentations' figures: three
+     stroke weights (1, 1.2 and one emphasised 1.6), ink at low opacity,
+     boxes filled with a breath of paper, dots filled, and the card's colour
+     used ONCE, on the element that carries the meaning. Each drawing is
+     literal: a fan of slides, an eye, people around a hub, a pile of sheets,
+     one person, a clock.
      The movement under the pointer belongs to the card (it sets `.stat:hover`),
      plays once, and is CSS only; a reader who asked for no motion gets the
      still drawing. Ink comes from the tokens, so the dark set just works. */
@@ -104,6 +107,23 @@
       <circle class="ring hop" style="--i: 2" cx="55" cy="77" r="4.2" />
       <circle class="dot dot--c hop" style="--i: 3" cx="68.5" cy="77" r="4.2" />
     </g>
+  {:else if kind === 'owner'}
+    <!-- one person, the deck's: a head, its shoulders, the accent at the heart -->
+    <circle class="ring" cx="48" cy="34" r="13" />
+    <path class="ln" d="M20,84 Q22,58 48,58 Q74,58 76,84" />
+    <circle class="dot dot--c" cx="48" cy="71" r="3" />
+  {:else if kind === 'updated'}
+    <!-- a clock: its ring, four marks, the hands at the last push -->
+    <circle class="ring" cx="48" cy="48" r="26" />
+    <g class="ln ln--thin">
+      <line x1="48" y1="24" x2="48" y2="29" />
+      <line x1="72" y1="48" x2="67" y2="48" />
+      <line x1="48" y1="72" x2="48" y2="67" />
+      <line x1="24" y1="48" x2="29" y2="48" />
+    </g>
+    <line class="ln" x1="48" y1="48" x2="48" y2="33" />
+    <line class="ln ln--c" x1="48" y1="48" x2="60" y2="55" />
+    <circle class="dot" cx="48" cy="48" r="2.4" />
   {:else if kind === 'worn'}
     <!-- a brand, handed to a deck -->
     <circle class="ring" cx="17" cy="50" r="9.5" />

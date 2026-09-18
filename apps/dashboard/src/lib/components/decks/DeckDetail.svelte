@@ -20,6 +20,7 @@
   import VersionsPanel from './VersionsPanel.svelte';
   import DeckMetaPanel from './DeckMetaPanel.svelte';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import DeckFact from './DeckFact.svelte';
   import DeckBannerDrawing from './drawings/DeckBannerDrawing.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
@@ -212,44 +213,32 @@
           {deck.title}
         </h2>
       </div>
-      <!-- The deck's facts, one quiet strip: each a small label over its value
-           under its own hairline, so a phone wraps them two to a line and no
-           line ever ends on a lone separator. -->
-      <dl class="deck-facts">
-        <div>
-          <dt>{t('decks.colKind')}</dt>
-          <dd class="flex flex-wrap gap-1.5">
-            <Tag label={kindLabel(deck.kind)} {...KIND_TAGS[deck.kind] ?? KIND_TAGS.presentation} />
-            {#if deck.interactive}
-              <Tag label={t('decks.badgeInteractive')} tone="amber" icon={MousePointerClick} />
-            {/if}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('decks.colVersion')}</dt>
-          <dd>
-            {#if deck.currentVersion > 0}
-              <span class="figure text-[22px]">v{deck.currentVersion}</span>
-            {:else}
-              <span class="text-muted-foreground">{t('deck.versionNone')}</span>
-            {/if}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('deck.labelOwner')}</dt>
-          <!-- SECURITY: ownerLabel may be a member email (user text) — escaped
-               text interpolation only. -->
-          <dd>{ownerLabel}</dd>
-        </div>
-        <div>
-          <dt>{t('deck.labelTotalViews')}</dt>
-          <dd><span class="figure text-[22px]">{deck.totalViews}</span></dd>
-        </div>
-        <div>
-          <dt>{t('deck.labelUpdated')}</dt>
-          <dd title={formatDateTime(deck.updatedAt)}>{formatTimeAgo(deck.updatedAt)}</dd>
-        </div>
-      </dl>
+      <!-- The deck's facts, five small cards in the overview's spirit
+           (DeckFact): the value, its name, a drawing of the thing. All five
+           on a desk; on a phone the kind alone, then two to a line. -->
+      <div class="deck-facts" role="group" aria-label={t('deck.factsAria')}>
+        <DeckFact label={t('decks.colKind')} drawing="decks">
+          <Tag label={kindLabel(deck.kind)} {...KIND_TAGS[deck.kind] ?? KIND_TAGS.presentation} />
+          {#if deck.interactive}
+            <Tag label={t('decks.badgeInteractive')} tone="amber" icon={MousePointerClick} />
+          {/if}
+        </DeckFact>
+        {#if deck.currentVersion > 0}
+          <DeckFact label={t('decks.colVersion')} value={`v${deck.currentVersion}`} figure drawing="fresh" />
+        {:else}
+          <DeckFact label={t('decks.colVersion')} value={t('deck.versionNone')} muted drawing="fresh" />
+        {/if}
+        <!-- SECURITY: ownerLabel may be a member email (user text) — DeckFact
+             renders it through escaped text interpolation only. -->
+        <DeckFact label={t('deck.labelOwner')} value={ownerLabel} drawing="owner" />
+        <DeckFact label={t('deck.labelTotalViews')} value={String(deck.totalViews)} figure drawing="opens" />
+        <DeckFact
+          label={t('deck.labelUpdated')}
+          value={formatTimeAgo(deck.updatedAt)}
+          title={formatDateTime(deck.updatedAt)}
+          drawing="updated"
+        />
+      </div>
     </div>
 
     <Card.Root>
@@ -309,6 +298,12 @@
       previewedVersion={preview.version}
       onPreview={(version) => void preview.select(version)}
     />
+
+    <!-- Room at the foot, so the last section can scroll up under the bars,
+         closed by the deck's own drawing set very light. -->
+    <div class="deck-foot" aria-hidden="true">
+      <div class="deck-foot-art"><DeckBannerDrawing kind={deck.kind} /></div>
+    </div>
   </div>
 {/if}
 
@@ -354,45 +349,42 @@
   .deck-facts {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px 20px;
-    margin-top: 18px;
-    padding: 0 2px;
+    gap: 10px;
+    margin-top: 12px;
   }
-  /* a last fact alone on its line takes the whole line, rule included */
+  /* the kind's card carries tags, which need the width: on a phone it has
+     the first line to itself, and the four others pair up under it */
   @media (max-width: 767px) {
-    .deck-facts > div:last-child:nth-child(odd) {
+    .deck-facts > :global(:first-child) {
       grid-column: 1 / -1;
     }
   }
   @media (min-width: 768px) {
     .deck-facts {
-      grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(
           0,
           1fr
         );
-      gap: 24px;
+      gap: 12px;
+      margin-top: 14px;
     }
   }
-  .deck-facts > div {
+  .deck-foot {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-    padding-top: 12px;
-    border-top: 1px solid var(--hairline);
+    justify-content: center;
+    padding: 28px 0 0;
+    min-height: 96px;
   }
-  .deck-facts dt {
-    font-size: 12.5px;
-    line-height: 1;
-    color: var(--muted);
+  @media (min-width: 768px) {
+    .deck-foot {
+      padding-top: 44px;
+      min-height: 160px;
+    }
   }
-  .deck-facts dd {
-    display: flex;
-    align-items: center;
-    min-height: 24px;
-    font-size: 14.5px;
-    color: var(--ink);
-    overflow-wrap: anywhere;
+  .deck-foot-art {
+    width: 120px;
+    aspect-ratio: 200 / 132;
+    opacity: 0.22;
   }
   .chip {
     display: inline-flex;

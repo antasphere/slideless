@@ -286,7 +286,12 @@
     <p class="text-sm text-destructive" in:appear>{t('deck.loadFailed', { error: deckError ?? '' })}</p>
   </div>
 {:else}
-  <header class="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3" data-testid="master-bar">
+  <!-- The bar is the shell's plate over the page field (app.css .app-plate),
+       so it reads as the same paper as the rest of the app. -->
+  <header
+    class="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--hairline)] bg-[var(--plate-strong)] px-3 [backdrop-filter:blur(20px)_saturate(1.15)]"
+    data-testid="master-bar"
+  >
     <!-- Left: the title, a menu trigger; or the rename field. -->
     <div class="flex min-w-0 flex-1 items-center gap-2">
       {#if renaming}
@@ -324,7 +329,7 @@
               <button
                 {...props}
                 in:appear
-                class="flex min-w-0 items-center gap-1.5 rounded-btn px-2 py-1 text-left font-display text-base hover:bg-accent"
+                class="flex min-w-0 items-center gap-1.5 rounded-[10px] px-2 py-1 text-left font-display text-base transition-colors duration-[var(--motion-duration)] ease-[var(--motion-ease)] hover:bg-[var(--wash)]"
                 data-testid="master-title"
               >
                 <span class="truncate">{title}</span>
@@ -403,7 +408,7 @@
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
             {#snippet child({ props })}
-              <Button {...props} variant="ghost" size="sm" data-testid="master-downloads">
+              <Button {...props} variant="outline" size="sm" data-testid="master-downloads">
                 <Download class="h-4 w-4" />
                 {t('master.downloadFiles')}
                 <span class="text-muted-foreground">{shownAttachments.length}</span>
@@ -492,8 +497,8 @@
     </div>
   </header>
 
-  <!-- The deck, filling the rest of the viewport. -->
-  <div class="min-h-0 flex-1 bg-[color-mix(in_oklab,var(--ground-2)_60%,transparent)]">
+  <!-- The deck, filling the rest of the viewport, straight on the field. -->
+  <div class="min-h-0 flex-1">
     {#if deck.currentVersion < 1}
       <div class="flex h-full items-center justify-center p-8">
         <p class="max-w-md text-center text-sm text-muted-foreground">{t('deck.previewEmpty')}</p>
@@ -526,7 +531,7 @@
           sandbox={PREVIEW_SANDBOX}
           referrerpolicy="no-referrer"
           allow="fullscreen"
-          class="h-full w-full border-0 bg-background"
+          class="h-full w-full border-0 bg-[var(--ground)]"
           data-testid="deck-preview"
         ></iframe>
       {/key}
@@ -581,3 +586,18 @@
     loading={deleteLoading}
   />
 {/if}
+
+<style>
+  /* The rows of the badge's hover card (VersionList's plain buttons): the
+     float's own row shape, 7px corners and the accent wash under the
+     pointer, in place of the template's grey. The sub-menu's rows are menu
+     items and already carry it. */
+  :global([data-testid='master-version-popover'] [data-testid='version-pick']) {
+    border-radius: var(--r-float-item);
+    transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  :global([data-testid='master-version-popover'] [data-testid='version-pick']:hover),
+  :global([data-testid='master-version-popover'] [data-testid='version-pick']:focus-visible) {
+    background: var(--wash);
+  }
+</style>

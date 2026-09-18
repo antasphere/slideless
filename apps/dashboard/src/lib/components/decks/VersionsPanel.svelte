@@ -2,12 +2,11 @@
   import { createRawSnippet } from 'svelte';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
-  import EmptyTable, { emptyColumns } from './EmptyTable.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
@@ -26,6 +25,11 @@
   }
 
   let { list, currentVersion, previewedVersion, onPreview }: Props = $props();
+
+  // the toolbar's quiet line: how many versions, once they are all here
+  const versionCount = $derived(
+    list.nextCursor || !list.items.length ? undefined : rowCount('versions.countOne', 'versions.count')
+  );
 
   const columns: ColumnDef<PresentationVersion, unknown>[] = $derived([
     {
@@ -95,7 +99,7 @@
   ]);
 </script>
 
-<Card.Root>
+<Card.Root class="deck-section gap-3">
   <DeckSectionHeading
     drawing="versions"
     title={t('versions.title')}
@@ -103,13 +107,20 @@
   />
   <Card.Content>
     {#if list.loading}
-      <TableSkeleton columns={5} rows={2} showSearch={false} />
+      <TableSkeleton columns={5} rows={2} />
     {:else if list.error && !list.items.length}
       <p class="text-sm text-destructive" in:appear>{t('versions.loadFailed', { error: list.error })}</p>
-    {:else if !list.items.length}
-      <EmptyTable message={t('versions.empty')} columns={emptyColumns(columns)} />
     {:else}
-      <DataTable data={list.items} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
+      <DataTable
+        data={list.items}
+        {columns}
+        count={versionCount}
+        emptyMessage={t('versions.empty')}
+        showViewOptions={false}
+        showPagination={false}
+        pageSize={200}
+        sticky={false}
+      />
       {#if list.nextCursor}
         <div class="flex justify-center py-2" transition:reveal>
           <Button

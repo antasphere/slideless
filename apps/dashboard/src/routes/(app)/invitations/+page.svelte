@@ -4,7 +4,7 @@
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
@@ -47,6 +47,10 @@
   });
 
   const invitations = $derived(list.items);
+  // the toolbar's quiet line: how many invitations, once they are all here
+  const invitationCount = $derived(
+    list.nextCursor ? undefined : rowCount('invitations.countOne', 'invitations.count')
+  );
 
   type InviteStatus = 'open' | 'accepted' | 'revoked' | 'expired';
 
@@ -209,16 +213,14 @@
   pageTitle={t('invitations.title')}
   tabs={peopleTabs}
   drawing="graph"
->
-  {#snippet action()}
-    {#if !hubManaged}
-      <Button onclick={openCreateDialog} size="sm" class="gap-1.5">
-        <Plus class="h-4 w-4" />
-        {t('invitations.invite')}
-      </Button>
-    {/if}
-  {/snippet}
-</SectionHero>
+/>
+
+{#snippet inviteAction()}
+  <Button onclick={openCreateDialog} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {t('invitations.invite')}
+  </Button>
+{/snippet}
 
 {#if hubManaged}
   <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>
@@ -252,6 +254,8 @@
     {columns}
     searchColumns={['email']}
     searchPlaceholder={t('invitations.searchPlaceholder')}
+    count={invitationCount}
+    actions={hubManaged ? undefined : inviteAction}
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-4" transition:reveal>

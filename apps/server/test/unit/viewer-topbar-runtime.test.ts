@@ -183,8 +183,8 @@ function run(
         json: () => Promise.resolve({ version: 1, attachments: opts.attachments ?? [] })
       });
     },
-    // No layout in a vm: the body never reads as clipped.
-    getComputedStyle: () => ({ overflowY: 'visible' }),
+    // No layout in a vm: the body carries no transition of its own.
+    getComputedStyle: () => ({ transition: '' }),
     ...extraWindow
   };
   // The sandboxed opaque origin: every storage access throws (ADR 012).
@@ -209,7 +209,11 @@ describe('the runtime, executed', () => {
     expect(r.shadowRoots).toHaveLength(1);
     expect(r.shadowRoots[0]!.mode).toBe('open');
     expect(r.body.children.map((c) => c.id)).toEqual(['__slideless_topbar']);
-    expect(r.root.style.props.get('margin-top')).toBe(`${TOPBAR_HEIGHT_PX}px !important`);
+    // The body is the scroll container under the bar; the root never scrolls.
+    expect(r.body.style.props.get('margin-top')).toBe(`${TOPBAR_HEIGHT_PX}px !important`);
+    expect(r.body.style.props.get('height')).toBe(`calc(100% - ${TOPBAR_HEIGHT_PX}px) !important`);
+    expect(r.body.style.props.get('overflow-y')).toBe('auto !important');
+    expect(r.root.style.props.get('overflow')).toBe('hidden !important');
     expect(r.root.style.props.get(TOPBAR_OFFSET_PROPERTY)).toBe(`${TOPBAR_HEIGHT_PX}px`);
     // A second run of the same script on the same window mounts nothing more.
     const again = /<script[^>]*>([\s\S]*)<\/script>/.exec(topbarScriptTag(CFG))![1]!;
@@ -224,6 +228,7 @@ describe('the runtime, executed', () => {
     expect(r.body.children).toHaveLength(0);
     expect(r.fetches).toHaveLength(0);
     expect(r.root.style.props.size).toBe(0);
+    expect(r.body.style.props.size).toBe(0);
   });
 
   it('calls the attachments list exactly once, cookie-less, relative to the page, with the unlock proof', () => {
@@ -318,30 +323,35 @@ describe('the runtime, executed', () => {
       `:host([data-collapsed]) .handle{visibility:visible;opacity:1;pointer-events:auto;`
     );
     expect(css).toContain(
-      '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;}}'
+      '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;animation:none !important;}'
     );
     // Nothing is hidden with display:none any more: the fold would have nothing to animate.
     expect(css).not.toContain(':host([data-collapsed]) .bar{display:none;}');
     expect(css).not.toContain('.menu{display:none;');
   });
 
-  it('the download button wears the bar’s neutral tones, never the accent', () => {
+  it('the download button is the dashboard’s outline button, never the accent as a fill', () => {
     const css = stylesheet(run(CFG));
     expect(css).not.toContain('#f5b301');
+    // ui/button outline, size sm: 32px, 10px corners, the plate with a hairline.
     expect(css).toContain(
-      '.dl>button{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:8px;'
+      '.dl>button{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;'
     );
-    expect(css).toContain('background:#2b2b36;color:#ededf2;font-weight:600;}');
-    expect(css).toContain('.dl>button{background:#f0f0f4;color:#1d1d24;}');
+    expect(css).toContain(
+      'border:1px solid var(--hairline);background:var(--plate-strong);color:var(--ink);'
+    );
+    // The two token sets the bar copies from tokens.css, light and dark.
+    expect(css).toContain('--plate-strong:rgb(251 249 243 / 0.82);--accent:#7a6652;');
+    expect(css).toContain('--plate-strong:rgb(40 34 28 / 0.84);--accent:#db7d5f;');
   });
 
   it('arms the layout motion only after the first paint, and never in a frame or without a frame clock', () => {
     // No requestAnimationFrame in the vm: the bar mounts with no transition
-    // on the host or the root, so a page never animates its own arrival.
+    // on the host or the body, so a page never animates its own arrival.
     const r = run(CFG);
     const host = r.body.children[0]!;
     expect(host.style.props.has('transition')).toBe(false);
-    expect(r.root.style.props.has('transition')).toBe(false);
+    expect(r.body.style.props.has('transition')).toBe(false);
     // With a frame clock, the two transitions are set after two frames.
     const frames: Array<() => void> = [];
     const clocked = run(CFG, { top: true }, { requestAnimationFrame: (fn: () => void) => frames.push(fn) });
@@ -351,8 +361,8 @@ describe('the runtime, executed', () => {
     expect(clocked.body.children[0]!.style.props.get('transition')).toBe(
       `height ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
     );
-    expect(clocked.root.style.props.get('transition')).toBe(
-      `margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
+    expect(clocked.body.style.props.get('transition')).toBe(
+      `margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING}, height ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
     );
   });
 
@@ -368,22 +378,22 @@ describe('the runtime, executed', () => {
     );
     while (frames.length) frames.shift()!();
     expect(r.body.children[0]!.style.props.has('transition')).toBe(false);
-    expect(r.root.style.props.has('transition')).toBe(false);
+    expect(r.body.style.props.has('transition')).toBe(false);
   });
 
-  it('appends its margin transition to a root transition the deck already has (verifier round 1, F2)', () => {
+  it('appends its margin transition to a body transition the deck already has (verifier round 1, F2)', () => {
     const frames: Array<() => void> = [];
     const r = run(
       CFG,
       { top: true },
       {
         requestAnimationFrame: (fn: () => void) => frames.push(fn),
-        getComputedStyle: () => ({ overflowY: 'visible', transition: 'background 5s ease 0s' })
+        getComputedStyle: () => ({ transition: 'background 5s ease 0s' })
       }
     );
     while (frames.length) frames.shift()!();
-    expect(r.root.style.props.get('transition')).toBe(
-      `background 5s ease 0s, margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
+    expect(r.body.style.props.get('transition')).toBe(
+      `background 5s ease 0s, margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING}, height ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
     );
   });
 

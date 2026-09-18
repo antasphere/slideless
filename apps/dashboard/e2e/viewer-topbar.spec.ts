@@ -198,7 +198,8 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       expect(bg).not.toBe('rgb(255, 0, 0)');
       // PRDCT-2308: the bar's neutral tone, never the accent (the old #f5b301).
       expect(bg).not.toBe('rgb(245, 179, 1)');
-      expect(['rgb(43, 43, 54)', 'rgb(240, 240, 244)']).toContain(bg);
+      // The dashboard's outline button: the plate (tokens.css --plate-strong), light and dark.
+      expect(['rgba(251, 249, 243, 0.82)', 'rgba(40, 34, 28, 0.84)']).toContain(bg);
     });
 
     await test.step('the download menu opens with the product’s one motion and rests where the dashboard’s popovers do', async () => {
@@ -233,7 +234,8 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       );
       expect(offset).toBe(`${barHeight}px`);
       // The bottom of the slide is reachable: scroll to the end, it ends inside the viewport.
-      await recipient.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      // The body is the scroll container under the bar (the window never scrolls).
+      await recipient.evaluate(() => document.body.scrollTo(0, document.body.scrollHeight));
       const bottom = await recipient.locator('#slide').evaluate((el) => el.getBoundingClientRect().bottom);
       const innerHeight = await recipient.evaluate(() => window.innerHeight);
       expect(bottom).toBeLessThanOrEqual(innerHeight + 1);
@@ -241,7 +243,7 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
         .locator('#slide')
         .evaluate((el) => el.getBoundingClientRect().height);
       expect(Math.round(slideHeight)).toBe(innerHeight);
-      await recipient.evaluate(() => window.scrollTo(0, 0));
+      await recipient.evaluate(() => document.body.scrollTo(0, 0));
     });
 
     await test.step('the download menu lists each file with its size and the whole set as a zip', async () => {

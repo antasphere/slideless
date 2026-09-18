@@ -1,14 +1,11 @@
 <script lang="ts">
-  /* The bar under a section's hero (SectionHero). Where sibling pages read as
-     one section (people and their invitations; the instance and the account)
-     it holds their tabs; on a page with no sibling it holds a quiet line of
-     status. Either way the page's one action sits at its right end. At rest
-     it is part of the page: the page's ground, no box, one hairline under it.
-     When the page scrolls it stays at the top of the scroll container, in
-     that same ground made opaque, so nothing reads through. Each tab is a
-     link, so the back button, a reload and a shared URL all land on the
-     right tab. */
-  import type { Snippet } from 'svelte';
+  /* The bar under a section's hero (SectionHero), where sibling pages read as
+     one section (people and their invitations; the instance and the
+     account): their tabs, and nothing else. At rest it is part of the page:
+     the page's ground, no box, one hairline under it. When the page scrolls
+     it stays at the top of the scroll container, in that same ground made
+     opaque, so nothing reads through. Each tab is a link, so the back button,
+     a reload and a shared URL all land on the right tab. */
   import { page } from '$app/state';
   import { stuck } from './stuck';
 
@@ -18,41 +15,26 @@
     count?: number;
   }
   interface Props {
-    tabs?: Tab[];
+    tabs: Tab[];
     label: string;
-    /** One quiet line at the left end of a bar that has no tabs. */
-    status?: string;
-    /** The page's one action, at the right end of the bar. */
-    action?: Snippet;
   }
 
-  let { tabs = [], label, status, action }: Props = $props();
+  let { tabs, label }: Props = $props();
 </script>
 
 <!-- `data-section-bar` is what tells the tables under it how far down to stick
      (app.css: --sticky-top) -->
-<svelte:element
-  this={tabs.length ? 'nav' : 'div'}
-  class="bar"
-  aria-label={tabs.length ? label : undefined}
-  data-section-bar
-  use:stuck
->
-  {#if tabs.length}
-    <div class="tabs">
-      {#each tabs as tab (tab.href)}
-        {@const on = page.url.pathname === tab.href}
-        <a href={tab.href} class="tab" class:on aria-current={on ? 'page' : undefined}>
-          {tab.label}
-          {#if tab.count}<span class="count">{tab.count}</span>{/if}
-        </a>
-      {/each}
-    </div>
-  {:else}
-    <p class="status">{status ?? ''}</p>
-  {/if}
-  {#if action}<div class="action">{@render action()}</div>{/if}
-</svelte:element>
+<nav class="bar" aria-label={label} data-section-bar use:stuck>
+  <div class="tabs">
+    {#each tabs as tab (tab.href)}
+      {@const on = page.url.pathname === tab.href}
+      <a href={tab.href} class="tab" class:on aria-current={on ? 'page' : undefined}>
+        {tab.label}
+        {#if tab.count}<span class="count">{tab.count}</span>{/if}
+      </a>
+    {/each}
+  </div>
+</nav>
 
 <style>
   .bar {
@@ -121,20 +103,5 @@
   .count {
     font-size: 11px;
     color: var(--muted);
-  }
-  .status {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    font-size: 13.5px;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .action {
-    display: flex;
-    flex: none;
-    align-items: center;
   }
 </style>

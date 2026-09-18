@@ -17,8 +17,8 @@
   import ShareLinkStatusCell from './ShareLinkStatusCell.svelte';
   import ShareLinkVersionCell from './ShareLinkVersionCell.svelte';
   import ShareLinkColumnsMenu from './ShareLinkColumnsMenu.svelte';
-  import EmptyTable, { emptyColumns } from '../EmptyTable.svelte';
   import { LinkColumns, type LinkColumnId } from './linkColumns.svelte';
+  import type { Snippet } from 'svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { isPreviewToken, tokenStatus } from '$lib/decks';
@@ -41,7 +41,10 @@
    * columns show is the reader's choice, kept in this browser (LinkColumns).
    * Shared by the admin page's share panel and the master page's share sheet
    * (PRDCT-2279). Creating a link is the sibling ShareLinkCreateDialog. With
-   * no link yet the table still stands, its heads over one quiet row.
+   * no link yet the table still stands, its heads over one quiet row. The
+   * toolbar over it carries the count at the left (how many links still
+   * open, out of how many) and the View button with the host's action at
+   * the right.
    */
   interface Props {
     deckId: string;
@@ -55,14 +58,16 @@
      */
     defaults?: 'full' | 'lean';
     /**
-     * The host's own column choice: it renders the View button itself (the
-     * deck page sets it in the section's head). Without it the table keeps
-     * its own choice and its own View button, on the status line above it.
+     * The host's own column choice: it renders the View button itself, in
+     * `actions`. Without it the table keeps its own choice and its own View
+     * button, in the toolbar over it.
      */
     view?: LinkColumns;
+    /** The host's buttons at the right of the toolbar (View and New share link on the deck page). */
+    actions?: Snippet;
   }
 
-  let { deckId, list, versions, defaults = 'full', view }: Props = $props();
+  let { deckId, list, versions, defaults = 'full', view, actions }: Props = $props();
 
   // The page's own transient preview tokens are plumbing, not shares.
   const tokens = $derived(list.items.filter((token) => !isPreviewToken(token)));
@@ -317,41 +322,37 @@
   );
 </script>
 
+{#snippet toolbarActions()}
+  {#if own}
+    <ShareLinkColumnsMenu view={own} class="h-8" />
+  {/if}
+  {@render actions?.()}
+{/snippet}
+
 {#if list.loading}
   <TableSkeleton columns={10} rows={2} />
 {:else if list.error && !tokens.length}
   <p class="text-sm text-destructive" in:appear>{t('tokens.loadFailed', { error: list.error })}</p>
 {:else}
-  <!-- The status of the section, said quietly above the first row: how many
-       links still open, out of how many. No band, no box. -->
-  {#if tokens.length || own}
-    <div class="links-status">
-      {#if tokens.length}
-        <p data-testid="links-count">
-          {t('tokens.countLine', { active: activeCount, total: tokens.length })}
-        </p>
-      {/if}
-      {#if own}
-        <ShareLinkColumnsMenu view={own} class="ml-auto h-8" />
-      {/if}
-    </div>
-  {/if}
-  {#if !tokens.length}
-    <EmptyTable message={t('tokens.empty')} columns={emptyColumns(columns)} {minWidth} />
-  {:else}
-    <div class="links" style="--links-min: {minWidth}px">
-      <DataTable
-        data={tokens}
-        {columns}
-        showViewOptions={false}
-        showPagination={false}
-        pageSize={200}
-        sticky={false}
-        tableClass="links-table"
-        onRowClick={openPanel}
-      />
-    </div>
-  {/if}
+  <!-- the count says how many links still open, out of how many; with none
+       yet the table still stands, its heads over one quiet row -->
+  <div class="links" style="--links-min: {minWidth}px">
+    <DataTable
+      data={tokens}
+      {columns}
+      count={tokens.length
+        ? () => t('tokens.countLine', { active: activeCount, total: tokens.length })
+        : undefined}
+      actions={toolbarActions}
+      emptyMessage={t('tokens.empty')}
+      showViewOptions={false}
+      showPagination={false}
+      pageSize={200}
+      sticky={false}
+      tableClass="links-table"
+      onRowClick={openPanel}
+    />
+  </div>
   {#if list.nextCursor}
     <div class="flex justify-center py-2" transition:reveal>
       <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
@@ -435,16 +436,6 @@
 />
 
 <style>
-  .links-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 20px;
-    margin-bottom: 10px;
-    padding: 0 2px;
-    font-size: 13px;
-    color: var(--muted);
-  }
   /* every column has a width: the table is at least their sum */
   .links :global(.links-table) {
     min-width: var(--links-min);

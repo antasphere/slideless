@@ -1,7 +1,8 @@
 <script lang="ts">
   /* The share links table's View button: which columns show. It edits a
-     LinkColumns the table reads, so it can sit in a section's head (the deck
-     page) or right above the table (the master page's share sheet). */
+     LinkColumns the table reads, so the section that owns the choice (the
+     deck page) or the table itself (the master page's share sheet) can set
+     it in the toolbar over the table. */
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import Settings2 from '@lucide/svelte/icons/settings-2';

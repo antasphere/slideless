@@ -1,9 +1,9 @@
 /**
  * Which columns the share links table shows: the reader's choice, kept in
  * this browser (per variant). One object, so the menu that edits the choice
- * can live away from the table that reads it: the deck page sets the View
- * button in the section's head, beside "New share link", while the master
- * page's share sheet lets the table render it itself.
+ * can live away from the table that reads it: the deck page's section owns
+ * the View button and hands it to the table's toolbar beside "New share
+ * link", while the master page's share sheet lets the table render it itself.
  *
  * The lean defaults keep who, which version, what a reader may send back,
  * and how much it was read; the link's panel holds everything else. The

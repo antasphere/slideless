@@ -1,3 +1,17 @@
+<script lang="ts" module>
+  import { t, type MessageKey } from '$lib/i18n';
+
+  /**
+   * The quiet count beside a table's search, from a page's own two keys
+   * (`'1 key'`, `'{n} keys'`): the total while nothing filters, `shown of
+   * total` while a search does.
+   */
+  export function rowCount(one: MessageKey, many: MessageKey): (shown: number, total: number) => string {
+    return (shown, total) =>
+      shown !== total ? t('table.countOf', { shown, total }) : total === 1 ? t(one) : t(many, { n: total });
+  }
+</script>
+
 <script lang="ts" generics="TData">
   import type { Snippet } from 'svelte';
   import {
@@ -11,10 +25,9 @@
   } from '@tanstack/table-core';
   import { createSvelteTable, FlexRender } from '$lib/components/ui/data-table/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
-  import { Input } from '$lib/components/ui/input/index.js';
+  import TableToolbar from './TableToolbar.svelte';
   import DataTableViewOptions from './DataTableViewOptions.svelte';
   import DataTablePagination from './DataTablePagination.svelte';
-  import { t } from '$lib/i18n';
 
   import { IsMobile } from '$lib/hooks/is-mobile.svelte';
   import { stuck } from './stuck';
@@ -29,10 +42,17 @@
     searchPlaceholder?: string;
     searchColumns?: string[];
     initialSearch?: string;
+    /** The quiet line beside the search (see `rowCount`), from how many rows show out of how many. */
+    count?: (shown: number, total: number) => string;
+    /** Filters, at the left after the search and the count. */
     toolbar?: Snippet;
-    toolbarActions?: Snippet;
+    /** The page's primary action, at the right after View. */
+    actions?: Snippet;
+    /** What the one quiet row says when there is nothing to list. */
+    emptyMessage?: string;
     onRowClick?: (row: TData) => void;
-    initialColumnVisibility?: VisibilityState;
+    /** Which columns show; a host that renders its own View button binds it. */
+    columnVisibility?: VisibilityState;
     enableRowSelection?: boolean;
     rowSelection?: RowSelectionState;
     getRowId?: (row: TData) => string;
@@ -40,6 +60,8 @@
     tableClass?: string;
     /** The toolbar and the column header stay in place while the page scrolls under them. */
     sticky?: boolean;
+    /** The height of a toolbar the page holds itself above this table (TableToolbar): the header sticks under it. */
+    stickyOffset?: number;
   }
 
   let {
@@ -52,19 +74,21 @@
     searchPlaceholder = t('table.searchPlaceholder'),
     searchColumns,
     initialSearch = '',
+    count,
     toolbar,
-    toolbarActions,
+    actions,
+    emptyMessage = t('table.noResults'),
     onRowClick,
-    initialColumnVisibility = {},
+    columnVisibility = $bindable({}),
     enableRowSelection = false,
     rowSelection = $bindable({}),
     getRowId,
     tableClass,
-    sticky = true
+    sticky = true,
+    stickyOffset = 0
   }: Props = $props();
 
   let sorting = $state<SortingState>([]);
-  let columnVisibility = $state<VisibilityState>(initialColumnVisibility);
   let pageIndex = $state(0);
   // Writable derived: follows the prop, locally overridable by pagination.
   let currentPageSize = $derived(pageSize);
@@ -148,15 +172,17 @@
 
   // The toolbar floats over the table's card and stays at the top of the
   // page's scroll while the rows pass under it; the column header stays
-  // right under the toolbar, so it has to know how tall the toolbar is. A
-  // table with a min width scrolls sideways inside its wrapper, and a
-  // scrolling wrapper cannot let its header stick to the page: that one keeps
-  // a header that travels with it.
-  const hasToolbar = $derived(
-    !!toolbar || !!searchColumns?.length || !!toolbarActions || (showViewOptions && !phone.current)
-  );
+  // right under the toolbar, so it has to know how tall the toolbar is (or
+  // how tall the page's own toolbar above is, `stickyOffset`). A table with
+  // a min width scrolls sideways inside its wrapper, and a scrolling wrapper
+  // cannot let its header stick to the page: that one keeps a header that
+  // travels with it.
+  const showView = $derived(showViewOptions && !phone.current);
+  const hasToolbar = $derived(!!toolbar || !!searchColumns?.length || !!count || !!actions || showView);
   const stickyHead = $derived(sticky && !tableClass);
   let toolbarHeight = $state(0);
+  const headOffset = $derived(hasToolbar && sticky ? toolbarHeight : stickyOffset);
+  const countLine = $derived(count?.(filteredRows.length, allRows.length));
 
   // Reset page when data or search changes
   $effect(() => {
@@ -166,31 +192,22 @@
   });
 </script>
 
-<div class="table-card" style="--toolbar-h: {hasToolbar && sticky ? toolbarHeight : 0}px">
+{#snippet viewButton()}
+  <DataTableViewOptions {table} />
+{/snippet}
+
+<div class="table-card" style="--toolbar-h: {headOffset}px">
   {#if hasToolbar}
-    <div class="table-toolbar" class:is-sticky={sticky} bind:offsetHeight={toolbarHeight} use:stuck>
-      <div class="flex flex-1 flex-wrap items-center gap-2">
-        {#if searchColumns?.length}
-          <Input
-            placeholder={searchPlaceholder}
-            value={searchValue}
-            oninput={(e) => {
-              searchValue = e.currentTarget.value;
-            }}
-            class="h-10 w-full md:h-8 md:w-[180px] lg:w-[260px]"
-          />
-        {/if}
-        {#if toolbar}
-          {@render toolbar()}
-        {/if}
-        {#if toolbarActions}
-          {@render toolbarActions()}
-        {/if}
-      </div>
-      {#if showViewOptions && !phone.current}
-        <DataTableViewOptions {table} />
-      {/if}
-    </div>
+    <TableToolbar
+      searchPlaceholder={searchColumns?.length ? searchPlaceholder : undefined}
+      bind:searchValue
+      count={countLine}
+      filters={toolbar}
+      view={showView ? viewButton : undefined}
+      {actions}
+      {sticky}
+      bind:height={toolbarHeight}
+    />
   {/if}
 
   {#if phone.current}
@@ -240,7 +257,7 @@
             </dl>
           </li>
         {:else}
-          <li class="px-4 py-10 text-center text-sm text-muted-foreground">{t('table.noResults')}</li>
+          <li class="px-4 py-10 text-center text-sm text-muted-foreground">{emptyMessage}</li>
         {/each}
       </ul>
     {/key}
@@ -316,7 +333,7 @@
                   colspan={table.getVisibleLeafColumns().length}
                   class="h-24 text-center !font-normal !text-muted-foreground"
                 >
-                  {t('table.noResults')}
+                  {emptyMessage}
                 </Table.Cell>
               </Table.Row>
             {/each}

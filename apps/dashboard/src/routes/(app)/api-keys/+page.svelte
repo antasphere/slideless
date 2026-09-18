@@ -6,7 +6,7 @@
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
@@ -40,14 +40,8 @@
   });
 
   const keys = $derived(list.items);
-  // the bar's quiet line: how many keys, once they are all here
-  const keyCount = $derived(
-    list.loading || list.nextCursor || !keys.length
-      ? undefined
-      : keys.length === 1
-        ? t('apiKeys.countOne')
-        : t('apiKeys.count', { n: keys.length })
-  );
+  // the toolbar's quiet line: how many keys, once they are all here
+  const keyCount = $derived(list.nextCursor ? undefined : rowCount('apiKeys.countOne', 'apiKeys.count'));
 
   // ── Create dialog ──────────────────────────────────────────────────────
   const expiryOptions = [
@@ -218,16 +212,15 @@
   eyebrow={t('nav.workspace')}
   title={t('apiKeys.title')}
   lede={t('apiKeys.description')}
-  status={keyCount}
   drawing="lattice"
->
-  {#snippet action()}
-    <Button onclick={openCreateDialog} size="sm" class="gap-1.5">
-      <Plus class="h-4 w-4" />
-      {t('apiKeys.create')}
-    </Button>
-  {/snippet}
-</SectionHero>
+/>
+
+{#snippet createAction()}
+  <Button onclick={openCreateDialog} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {t('apiKeys.create')}
+  </Button>
+{/snippet}
 
 <FormError
   message={list.error && keys.length ? t('common.refreshFailedCached', { error: list.error }) : null}
@@ -243,6 +236,8 @@
     {columns}
     searchColumns={['name', 'keyId']}
     searchPlaceholder={t('apiKeys.searchPlaceholder')}
+    count={keyCount}
+    actions={createAction}
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-4" transition:reveal>
@@ -266,21 +261,23 @@
 {/snippet}
 
 <!-- One scope: its switch, its name as the tag the table shows, and under it
-     what a key holding it may do. -->
+     what a key holding it may do. The whole row is the label (app.css
+     `.choice`); the switch is named by the tag alone, never by the hint. -->
 {#snippet scopeOption(id: string, scope: Scope, hint: string, checked: boolean, set: (v: boolean) => void)}
-  <div class="scope">
+  <label for={id} class="choice">
     <Checkbox
       {id}
       {checked}
       onCheckedChange={(v) => set(v === true)}
+      aria-labelledby="{id}-name"
       aria-describedby="{id}-hint"
       class="mt-0.5"
     />
-    <div class="min-w-0 space-y-1">
-      <Label for={id} class="block leading-none"><Tag {...scopeTag(scope)} /></Label>
-      <p id="{id}-hint" class="hint">{hint}</p>
-    </div>
-  </div>
+    <span class="min-w-0 space-y-1">
+      <span id="{id}-name" class="block leading-none"><Tag {...scopeTag(scope)} /></span>
+      <span id="{id}-hint" class="choice-hint block">{hint}</span>
+    </span>
+  </label>
 {/snippet}
 
 <FormDialog
@@ -300,7 +297,7 @@
   </div>
   <fieldset class="space-y-2">
     <legend class="eyebrow pb-2">{t('apiKeys.scopesLegend')}</legend>
-    <div class="scopes">
+    <div class="choices">
       {@render scopeOption(
         'scope-read',
         'presentations:read',
@@ -396,27 +393,3 @@
   onConfirm={() => void submitRevoke()}
   loading={revokeLoading}
 />
-
-<style>
-  .hint {
-    font-size: 12.5px;
-    line-height: 1.5;
-    color: var(--muted);
-    text-wrap: pretty;
-  }
-  /* the scopes, as one ruled list: a hairline between two of them */
-  .scopes {
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
-  }
-  .scope {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 11px 12px;
-  }
-  .scope + .scope {
-    border-top: 1px solid color-mix(in oklab, var(--hairline) 75%, transparent);
-  }
-</style>

@@ -5,7 +5,7 @@
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
@@ -30,14 +30,8 @@
   });
 
   const files = $derived(list.items);
-  // the bar's quiet line: how many files, once they are all here
-  const fileCount = $derived(
-    list.loading || list.nextCursor || !files.length
-      ? undefined
-      : files.length === 1
-        ? t('files.countOne')
-        : t('files.count', { n: files.length })
-  );
+  // the toolbar's quiet line: how many files, once they are all here
+  const fileCount = $derived(list.nextCursor ? undefined : rowCount('files.countOne', 'files.count'));
 
   // ── Upload (raw bytes, filename as query param) ────────────────────────
   let fileInput = $state<HTMLInputElement | null>(null);
@@ -148,16 +142,15 @@
   eyebrow={t('nav.workspace')}
   title={t('files.title')}
   lede={t('files.description')}
-  status={fileCount}
   drawing="contour"
->
-  {#snippet action()}
-    <Button onclick={() => fileInput?.click()} size="sm" class="gap-1.5">
-      <Plus class="h-4 w-4" />
-      {uploading ? t('files.uploading') : t('files.upload')}
-    </Button>
-  {/snippet}
-</SectionHero>
+/>
+
+{#snippet uploadAction()}
+  <Button onclick={() => fileInput?.click()} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {uploading ? t('files.uploading') : t('files.upload')}
+  </Button>
+{/snippet}
 
 <input type="file" class="hidden" bind:this={fileInput} onchange={() => void onFileChosen()} />
 
@@ -175,6 +168,8 @@
     {columns}
     searchColumns={['originalName']}
     searchPlaceholder={t('files.searchPlaceholder')}
+    count={fileCount}
+    actions={uploadAction}
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-4" transition:reveal>

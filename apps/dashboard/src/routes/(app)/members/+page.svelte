@@ -4,7 +4,7 @@
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
@@ -58,6 +58,8 @@
   });
 
   const members = $derived(list.items);
+  // the toolbar's quiet line: how many members, once they are all here
+  const memberCount = $derived(list.nextCursor ? undefined : rowCount('members.countOne', 'members.count'));
 
   // ── Change role dialog ─────────────────────────────────────────────────
   let showRoleDialog = $state(false);
@@ -352,6 +354,7 @@
     {columns}
     searchColumns={['email', 'name']}
     searchPlaceholder={t('members.searchPlaceholder')}
+    count={memberCount}
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-4" transition:reveal>

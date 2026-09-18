@@ -229,6 +229,57 @@
     background: var(--danger-soft);
     color: color-mix(in oklab, var(--danger) 45%, var(--ink));
   }
+  /* A choice in a dialog: its switch, its name and under it what it means.
+     The whole row is the label, so the hand lands anywhere on it and the
+     pointer says so; the switch keeps the keyboard's focus. `.choices` is
+     the ruled list the rows sit in, a hairline between two of them. A row
+     whose switch is locked is faded and refuses the hand. */
+  .choices {
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
+  }
+  .choices > * + * {
+    border-top: 1px solid color-mix(in oklab, var(--hairline) 75%, transparent);
+  }
+  .choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px;
+    cursor: pointer;
+    transition:
+      background-color var(--motion-duration) var(--motion-ease),
+      opacity var(--motion-duration) var(--motion-ease);
+  }
+  @media (hover: hover) {
+    .choice:hover {
+      background: color-mix(in oklab, var(--accent) 5%, transparent);
+    }
+  }
+  .choice:has([data-slot='checkbox']:disabled),
+  .choice[data-disabled] {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+  .choice:has([data-slot='checkbox']:disabled):hover,
+  .choice[data-disabled]:hover {
+    background: transparent;
+  }
+  .choice-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--ink);
+  }
+  .choice-hint {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
   .tile {
     transition:
       transform var(--motion-duration) var(--motion-ease),
@@ -509,25 +560,57 @@
   }
 
   /* -------------------------------------------------------------------
-     A table. The toolbar (search, filters, View) floats over it as a plain
-     row: no box, no edge. A small gap, then the table's card, whose rounded
-     top corners are the column header's. The header is the same light paper
-     as the rows, one hairline between it and the first row. Both stay in
-     place while the rows scroll under them: the toolbar at --sticky-top
-     (under a section's bar when the page has one), the column header right
-     under the toolbar (--toolbar-h, measured by DataTable). Held, the
-     toolbar takes the page's own ground, opaque, so no row reads through,
-     and `.table-cap` redraws the card's rounded top over the held header.
+     A table. The toolbar (TableToolbar: the search with its count and any
+     filter at the left, View and the page's action at the right) floats over
+     it as a plain row: no box, no edge. A small gap, then the table's card,
+     whose rounded top corners are the column header's. The header is the
+     same light paper as the rows, one hairline between it and the first row.
+     Both stay in place while the rows scroll under them: the toolbar at
+     --sticky-top (under a section's bar when the page has one), the column
+     header right under the toolbar (--toolbar-h, measured by the toolbar).
+     Held, the toolbar takes the page's own ground, opaque, so no row reads
+     through, and `.table-cap` redraws the card's rounded top over the held
+     header.
      ------------------------------------------------------------------- */
   .table-toolbar {
     z-index: 20;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 8px 12px;
     /* the gap over the card is padding, so the held toolbar covers it too */
     padding: 8px 0 10px;
     transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  /* on a phone the search has the first line to itself; the count and the
+     acts share the second */
+  @media (max-width: 767px) {
+    .table-toolbar > .toolbar-search {
+      flex-basis: 100%;
+    }
+  }
+  .toolbar-count {
+    flex: none;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* View and the page's action, side by side at the table's right edge */
+  .toolbar-acts {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-left: auto;
+  }
+  /* inside a section's card the heading already gives the room above, and
+     the table follows right under */
+  [data-slot='card-content'] .table-toolbar {
+    padding: 0 0 8px;
   }
   /* only in the page's own scroll: a table inside a dialog or a side sheet
      (portaled out of the shell) keeps a head that travels with it */
