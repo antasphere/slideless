@@ -483,15 +483,31 @@
   --sheet-ground: color-mix(in oklab, #28221c 84%, var(--page-ground));
 }
 @layer components {
+  /* The blur lives on a pseudo-element, never on the float itself: a backdrop
+     filter makes its element the containing block of every fixed descendant,
+     and a menu's sub-menu is one. With the filter on the menu, the sub-menu
+     was placed relative to the menu and clipped by its overflow: the version
+     history of a deck opened as a five-pixel sliver. The host is a stacking
+     context of its own so the pseudo-element stays under its content. */
   .float {
+    position: relative;
+    z-index: 0;
     background: var(--float-bg);
-    backdrop-filter: blur(20px) saturate(1.2);
-    -webkit-backdrop-filter: blur(20px) saturate(1.2);
     color: var(--ink);
     border: 1px solid var(--hairline);
     border-radius: var(--r-float);
     box-shadow: var(--shadow-md);
     outline: none;
+  }
+  .float::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
   }
   .float-item {
     position: relative;
