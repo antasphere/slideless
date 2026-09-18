@@ -16,9 +16,11 @@
   let ownerName = $state('');
   let ownerEmail = $state('');
   let ownerPassword = $state('');
+  // Shown from the start (PRDCT-2389): the claim ALWAYS requires the token on
+  // an unclaimed instance (PRDCT-1347), and this page renders only while the
+  // instance is unclaimed, so there is nothing to discover by being refused.
+  // Presentation only: the server's check and its 403/410 are untouched.
   let setupToken = $state('');
-  // The token field appears only after the API proves it wants one (403).
-  let tokenRequired = $state(false);
   let loading = $state(false);
   let error = $state<string | null>(null);
 
@@ -49,7 +51,6 @@
       await goto('/');
     } catch (e) {
       if (e instanceof PlatformApiError && e.code === 'invalid_setup_token') {
-        tokenRequired = true;
         error = setupToken ? t('setup.errorTokenInvalid') : t('setup.errorTokenRequired');
       } else if (e instanceof PlatformApiError && e.status === 410) {
         error = t('setup.errorAlreadySetUp');
@@ -111,12 +112,13 @@
           <p class="text-xs text-muted-foreground">{t('common.passwordMinHint')}</p>
         </div>
 
-        {#if tokenRequired}
-          <div class="space-y-2">
-            <Label for="setup-token">{t('setup.setupToken')}</Label>
-            <Input id="setup-token" bind:value={setupToken} required />
-          </div>
-        {/if}
+        <Separator />
+
+        <div class="space-y-2">
+          <Label for="setup-token">{t('setup.setupToken')}</Label>
+          <Input id="setup-token" autocomplete="off" spellcheck={false} bind:value={setupToken} required />
+          <p class="text-xs text-muted-foreground">{t('setup.setupTokenHint')}</p>
+        </div>
 
         {#if error}
           <p class="text-sm text-destructive">{error}</p>

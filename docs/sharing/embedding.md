@@ -28,7 +28,7 @@ The placement label is what tells your embeds apart: the same link embedded in t
 ></div>
 ```
 
-The loader is deliberately boring: plain JavaScript, about 2 KB, no framework, no tracking, cacheable for an hour. A div whose URL is not a viewer link is left untouched (with a console warning), and running the script twice never double-mounts an embed.
+The loader is deliberately boring: plain JavaScript, about 2.5 KB, no framework, no tracking, cacheable for an hour. A div whose URL is not a viewer link is left untouched (with a console warning), and running the script twice never double-mounts an embed.
 
 ## The plain iframe
 
@@ -44,7 +44,7 @@ If you'd rather not load a script, embed the frame directly:
 ></iframe>
 ```
 
-This is exactly the frame the loader builds. Keep the `sandbox` attribute exactly as shown — it is the security boundary (below). `allow-popups-to-escape-sandbox` lets a window the deck opens run as a normal page (without it the opened page inherits the deck's isolation and an application there cannot start); it grants the deck itself nothing. To tag the embed in the link analytics, append `?p=your-label` to the `src` URL yourself.
+This carries the same `sandbox`, `referrerpolicy` and `allow` values as the frame the loader builds (the loader adds lazy loading and a title). Keep the `sandbox` attribute exactly as shown — it is the security boundary (below). `allow-popups-to-escape-sandbox` lets a window the deck opens run as a normal page (without it the opened page inherits the deck's isolation and an application there cannot start); it grants the deck itself nothing. To tag the embed in the link analytics, append `?p=your-label` to the `src` URL yourself.
 
 ## From the CLI (for agents)
 
@@ -85,7 +85,7 @@ lists exactly what the pricing page's embed collected. Every embedded respondent
 Slideless decks are user-authored HTML, so the embed is built to guarantee that a deck can never touch the page that embeds it:
 
 - The `sandbox` attribute puts the deck in an **opaque origin**: it gets no cookies, no storage, and no access to your page's DOM or scripts.
-- **Framebusting is impossible** — the sandbox omits every `allow-top-navigation` variant, so a hostile deck cannot navigate your page away or open your site's URLs.
+- **Framebusting is impossible** — the sandbox omits every `allow-top-navigation` variant, so a hostile deck cannot navigate your page away. It can still open new windows on a visitor's click (`allow-popups`), and those run as ordinary pages, outside the sandbox.
 - `referrerpolicy="no-referrer"` means the viewer never learns the URL of the page embedding it.
 - The deck itself is additionally served under `Content-Security-Policy: sandbox` by the viewer, the same double layer the dashboard's own preview uses. The [viewer security model](../security/viewer-security-model.md) has the full story.
 
@@ -96,7 +96,7 @@ Never add `allow-same-origin` to the sandbox. It would collapse the isolation be
 - **Password-protected links don't work in embeds.** The password gate refuses to render inside a frame, by design: a first-party credential form has no business appearing on a third-party page. Embed links without a password (the secret URL is itself the credential).
 - **Annotations never appear in embeds.** The notes overlay and its badge only mount when the deck is the top-level page, even on a link that allows annotations. Recipients who should annotate need the direct link. [Forms](forms.md) are the deliberate exception to embedded interactivity (see above).
 - **Embeds stay bare.** The recipient bar a share link shows over the deck (its title, its version, the [downloads](downloads.md)) never mounts inside an embed or any iframe, whatever the link's `showBar` says: the frame belongs to your page.
-- **View counting is coarser across sites.** The de-dupe cookie that collapses reloads into one view is scoped to the viewer and third-party cookie rules vary by browser, so embedded opens may count somewhat more often than direct opens.
+- **View counting is coarser across sites.** The de-dupe cookie that collapses reloads into one view is `SameSite=Lax`, so it is never sent to a frame on another site: every load of a cross-site embed counts as a view. Embeds on the same site as the viewer de-dupe normally.
 
 ## Self-hosting note
 

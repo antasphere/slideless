@@ -60,3 +60,11 @@ out a link. No PowerPoint export, no static-host glue, no third party holding yo
   **[viewer security model](security/viewer-security-model.md)**: what is enforced, and how untrusted
   HTML is contained.
 - **[Environment reference](reference/env-reference.md)**: every variable.
+
+## License
+
+Slideless is [fair-code](https://faircode.io), distributed under the
+[Sustainable Use License](https://github.com/antasphere/slideless/blob/prod/LICENSE): the source is
+open to read, and you may self-host it, modify it and use it for your own internal business or
+personal purposes, free of charge. You may not sell it or offer it to others as a paid or hosted
+service. It is source-available, not open source.

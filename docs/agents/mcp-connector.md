@@ -1,6 +1,6 @@
 # The MCP connector
 
-Every instance is MCP-capable at boot: the monolith serves a streamable-HTTP
+Every instance is MCP-capable at boot: every instance serves a streamable-HTTP
 MCP endpoint at `/mcp`, protected by the instance's own built-in OAuth 2.1
 authorization server. No companion service, no shared secrets, no
 `aud`/resource URL to keep in sync — the resource identifier is derived at
@@ -22,11 +22,11 @@ token with a rotating refresh token. Deactivating the member kills the
 connector instantly (tokens are re-checked against the live membership on
 every call).
 
-The consent screen names the workspace being granted, and the grant is
-bound to exactly that workspace for its whole life — refreshes included.
-Members of several workspaces pick one at consent; connecting
-the same client to another workspace is a second consent (send
-`prompt=consent` to force the picker past an existing grant).
+**The grant is user-scoped, not workspace-scoped.** A connected client acts
+as you in every workspace you belong to: consent binds no workspace and there
+is no per-workspace consent. Each tool takes an optional `workspace` id and
+defaults to your default workspace. Connect a client only where you would
+trust it with all of them.
 
 ## Claude Code / CLIs (API key)
 
@@ -53,7 +53,9 @@ one call.
 
 ## The tool set
 
-All product tools are prefixed `slideless_` and act as the connected user —
+The endpoint lists 24 tools: the 22 `slideless_` product tools below, plus
+`get_me` (an alias of `slideless_whoami`) and `list_files` (the workspace file
+list, read scope). All of them act as the connected user —
 identity always comes from the verified credential (OAuth token or API key),
 never from a tool parameter. Reads require `presentations:read`, writes
 `presentations:write`; the API's fail-closed allowlist and per-deck read
@@ -61,7 +63,7 @@ privacy apply unchanged (a tool can never read a deck the caller can't).
 
 | Tool                                  | Scope | Does                                                                                                                                                                                                       |
 | ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `slideless_whoami`                    | read  | The connected user, workspace, role, scopes (`get_me` is the chassis alias)                                                                                                                                |
+| `slideless_whoami`                    | read  | The connected user, workspace, role, scopes (`get_me` is its alias)                                                                                                                                        |
 | `slideless_list_presentations`        | read  | Cursor-paginated deck list, scoped by per-deck read privacy                                                                                                                                                |
 | `slideless_get_presentation`          | read  | One deck's metadata                                                                                                                                                                                        |
 | `slideless_update_presentation`       | write | Rename a deck / replace its `metadata` object (full replace, no version push)                                                                                                                              |
@@ -89,10 +91,9 @@ bounded at 768 KiB of decoded content (base64 inflation means anything larger
 cannot fit the JSON-RPC envelope anyway) — the tools answer a clean error
 pointing at `slideless push` / `slideless pull` for bigger decks.
 
-## For products extending the template
+## How the tools are built
 
-Tools live in `apps/server/src/mcp/`. Conventions (ported from a proven
-predecessor MCP template): reads declare `readOnlyHint` and check `presentations:read`;
+Tools live in `apps/server/src/mcp/`. Conventions: reads declare `readOnlyHint` and check `presentations:read`;
 writes describe themselves as confirm-first and check `presentations:write`
 (tool-level checks are UX — the API's fail-closed allowlist in
 `middleware/scopes.ts` is the enforcement point); tools call the instance's

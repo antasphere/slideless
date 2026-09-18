@@ -2,7 +2,7 @@
   "name": "@antasphere/slideless",
   "version": "0.2.4",
   "description": "The Slideless CLI — push, share, pull, and preview decks on a Slideless instance",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -20,11 +20,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "scripts": {
     "build": "rm -rf dist && esbuild src/bin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/bin.js --log-level=warning --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
-    "prepack": "npm run build",
+    "prepack": "npm run build && cp ../../LICENSE LICENSE",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests"

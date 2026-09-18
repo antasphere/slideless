@@ -133,6 +133,8 @@ export const fr: Record<MessageKey, string> = {
   'setup.email': 'E-mail',
   'setup.password': 'Mot de passe',
   'setup.setupToken': 'Jeton d’installation',
+  'setup.setupTokenHint':
+    'Affiché dans le journal du serveur au premier démarrage. Si vous avez lancé setup.sh, c’est SETUP_TOKEN dans votre .env.',
   'setup.creating': 'Configuration…',
   'setup.submit': 'Créer l’instance',
   'setup.errorTokenInvalid': 'Ce jeton d’installation n’est pas valide.',

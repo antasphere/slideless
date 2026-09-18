@@ -1,9 +1,18 @@
 # Contributing
 
-For team members, contractors, and engagement contributors working on
-Slideless. The repo was instantiated from the codika-platform-template;
-improvement ideas that concern the upstream template go in
-[TEMPLATE-FEEDBACK.md](TEMPLATE-FEEDBACK.md), not here.
+Slideless is developed in the open by Antasphere, and outside contributions
+are welcome. It is fair-code under the [Sustainable Use License](LICENSE),
+source-available and not open source: read the license before you contribute.
+
+- **Branches.** `dev` is the day-to-day branch and `prod` is what ships. Branch
+  from `dev` and open your pull request against `dev`.
+- **Security problems never go in an issue or a pull request.** Follow
+  [SECURITY.md](SECURITY.md).
+- **Bigger changes start with an issue**, so the design is agreed before the
+  code is written.
+
+Slideless is built on Antasphere's platform template; improvement ideas that
+concern the template itself go in [TEMPLATE-FEEDBACK.md](TEMPLATE-FEEDBACK.md).
 
 ## Prerequisites
 
@@ -21,9 +30,9 @@ pnpm turbo build
 ## Task rail
 
 ```bash
-pnpm turbo lint typecheck test build   # the CI gate — run before every push
+pnpm turbo lint typecheck test build   # the CI gate, part 1 of 3 — run before every push
 pnpm turbo test:integration            # real Postgres via testcontainers; needs Docker
-pnpm format                            # prettier --write (CI runs format:check)
+pnpm format                            # prettier --write (CI runs format:check, part 2; the drift check below is part 3)
 ```
 
 ## Better Auth schema drift guard
@@ -46,8 +55,8 @@ normalization of the diff).
 
 ## Version pins
 
-ADR 001 (`internal/decisions/001-version-pins.md`) exact-pins the
-`better-auth` / `@better-auth/oauth-provider` / `@better-auth/cli` trio.
+The `better-auth` / `@better-auth/oauth-provider` / `@better-auth/cli` trio
+is exact-pinned.
 **Never bump one of them in isolation** — the oauth-provider peer conflict
 breaks installs and the drift guard fails CI. Bump all three together with
 the drift and integration suites green, or not at all. Dependabot is

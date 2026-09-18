@@ -128,6 +128,8 @@ export const en = {
   'setup.email': 'Email',
   'setup.password': 'Password',
   'setup.setupToken': 'Setup token',
+  'setup.setupTokenHint':
+    'Printed in the server log at first boot. If you ran setup.sh, it is SETUP_TOKEN in your .env.',
   'setup.creating': 'Setting up…',
   'setup.submit': 'Create instance',
   'setup.errorTokenInvalid': 'That setup token is not valid.',

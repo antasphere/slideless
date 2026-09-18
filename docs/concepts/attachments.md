@@ -74,8 +74,9 @@ download counts once, whatever it held.
 ## The size limit
 
 Each file of a deck, attachments included, is capped per file by the instance: `MAX_FILE_SIZE_MB`,
-100 MB by default. The CLI checks every file against the cap before uploading anything, so a file
-over it is refused by name, with the cap, and no byte has left your machine:
+100 MB by default. The CLI checks every file against that 100 MB default before uploading anything
+(an instance's own cap is not yet visible to it, so on a lower cap the server refuses with a 413
+after the upload). A file over the default is refused by name, and no byte has left your machine:
 
 ```
 Error: downloads/video.mp4 is 250.0 MB, over this instance's 100.0 MB per-file cap (MAX_FILE_SIZE_MB) — nothing was uploaded. Shrink or drop the file and push again.

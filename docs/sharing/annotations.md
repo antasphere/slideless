@@ -39,7 +39,7 @@ Opening an annotator link shows the deck with a small annotation layer on top:
 - **Review their notes** — a badge opens a side panel listing the reviewer's notes in _Open_ and _Resolved_ tabs, with _Add a pin_ as the panel's main action. Open notes render as numbered pins on the page; clicking a note jumps to the place it was made and highlights it — including across pages of a multi-page deck.
 - **Adjust their view** — a gear in the panel opens a small settings dialog: a position grid moves the notes button (saved to their link, so it sticks across pages and visits), a switch hides the pins when the deck should read clean (per visit), and a footer shows the link's context — the version being viewed, when the link went live, and its expiry if one is set.
 
-Notes are private per link: a reviewer sees only the notes made with their own link, never another reviewer's. Interacting with the annotation layer never navigates the deck — slide decks that react to clicks or keys stay where they are.
+Notes are private **per link, not per person**: everyone who opens the same link sees every note made through it, author names included. Mint one link per reviewer to keep reviewers apart. Interacting with the annotation layer does not reach deck scripts listening in the usual (bubble) phase, so slide decks that react to clicks or keys stay where they are; a deck listening in the capture phase still sees those events.
 
 ## How capture works
 
@@ -47,7 +47,7 @@ Every capture follows the same three-part pattern, whichever way it starts:
 
 1. **The anchor freezes immediately.** The moment the _Add note_ button appears on a selection, or a pin or region lands in _Add pin_ mode, the anchor — the quote, the element, the exact position — is snapshotted. Nothing you do afterwards (typing, clicking, selecting other text) changes what gets saved: what the composer previews is exactly what is stored.
 2. **The pending note previews itself in place.** While the composer is open you see a pulsing provisional pin carrying the number the note will take, a dashed contour around the DOM element the anchor attaches to, and — for regions — the rectangle you drew. The preview is rendered by re-resolving the frozen anchor through the same lookup a saved note uses later, so it shows precisely where the note will land when the deck is reopened. For a text selection the contour outlines the containing element (typically the paragraph), which is what the anchor stores alongside the quoted text.
-3. **The composer places itself beside the indicator, never on top.** It tries the right side first, then the left, then below, then above, always staying inside the viewport and never covering the pin, the region, or the selection. There is deliberately no placement setting — the auto-placement is the behavior.
+3. **The composer places itself beside the indicator, never on top.** It tries the right side first, then the left, then below, then above, taking the first side that fits the viewport without covering the pin, the region, or the selection. When none fits (a region filling the screen, a very small window) it is clamped near the indicator's bottom-right corner and may overlap it. There is deliberately no placement setting — the auto-placement is the behavior.
 
 ## How anchors work
 
@@ -55,7 +55,7 @@ Each note stores a layered anchor: the page it was made on, a stable element pat
 
 Two current limits are worth knowing:
 
-- Anchors resolve against the version the note was made on; on a _latest_ link the deck may have moved on, in which case resolution falls back as described.
+- A reviewer's panel lists only the notes made on the version the link currently resolves to. On a _latest_ link a new push empties the reviewer's panel; the owner still sees every note, tagged with its version.
 - Content rendered inside a nested iframe within a deck page cannot be annotated yet — the page around it can.
 
 ## The owner workflow

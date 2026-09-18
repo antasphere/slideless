@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Slideless</title>
+    <!-- The tab icon (PRDCT-2401): the Antasphere tile, byte-identical to
+         company/brand's, with its raster sizes from scripts/make-favicons.mjs.
+         Same-origin static files under the existing CSP; the viewer hostname
+         never serves them (host-gate.ts answers 404 outside its allowlist). -->
+    <link rel="icon" href="%sveltekit.assets%/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%sveltekit.assets%/apple-touch-icon.png" />
+    <link rel="manifest" href="%sveltekit.assets%/site.webmanifest" />
     <script>
       // Theme boot: stored choice ?? system preference, applied before first
       // paint so neither splash nor app flashes the wrong ground. The class
@@ -22,7 +30,7 @@
     </script>
     <!-- The Observatory pairing: Sentient (display) over Synonym (the second
          voice, one variable file, 200 to 700). Both ride the Fontshare CDN
-         because this repo is slated for the OSS cut and the ITF FFL forbids
+         because this repo is public and the ITF FFL forbids
          putting the files on publicly accessible servers; private Antasphere
          repos self-host instead (company/brand README carries the rule).
          Product UI chrome only — never a face end users typeset their decks
