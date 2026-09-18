@@ -239,6 +239,13 @@ and points the SMTP driver at it (internal/dev-mailpit.md).
 
 ## Before you change things
 
+**`internal/` is no longer in this repository.** The engineering record moved to the project OS
+when the repo was prepared for open source (PRDCT-1341): every `internal/…` path in this file
+reads at `labs/products/antasphere/tools/slideless/slideless-os/knowledge/internal/` in the
+workspace (`decisions/` for the ADRs, `security-runbooks.md`, `federation.md`, `production-
+readiness.md`, `backup-and-data-sovereignty.md`, `cli-release.md`, `dev-mailpit.md`). Nothing
+under that folder is published; keep it out of this repo.
+
 - **LESSONS.md** — read it before touching auth, MCP, or Docker packaging; it records the traps
   already hit (inherited from the template) and why the current shapes exist.
 - **TEMPLATE-FEEDBACK.md** — friction/improvement ideas that concern the upstream
