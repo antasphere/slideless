@@ -1034,6 +1034,14 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
   in here.}} — an origin mismatch, not an account problem. For a look at a built page, open it on
   the API port (it serves the built dashboard); keep Vite for hot reload of unauthenticated
   pages, or point `PUBLIC_BASE_URL` at the Vite port and lose the viewer URLs.
+- **A Vite proxy key is a prefix, and `/api` is also the start of `/api-keys`.** Through the dev
+  server the API keys page stayed on its boot spinner (`Failed to fetch dynamically imported
+module …/_app/immutable/entry/start.*.js`): the proxy handed the PAGE to the API server, which
+  answered with its own built shell. The key is `/api/`, slash included (rebrand lane, 2026-09-18).
+  The same session: a cookie is scoped to the host, not the port, so a hands-on look at Vite pages
+  signs in on the API port and reads them on the Vite port; only the writes are refused there
+  (the deck preview mints a token with a POST, so it reads {{Preview unavailable: Cross-site
+  requests are not accepted on this API}} through Vite and works on the API port).
 - **`pnpm --filter <pkg> dev -- --port N` does not reach Vite.** The `--` is swallowed and Vite
   boots on 5173, outside every lane band. Use `pnpm --filter <pkg> exec vite dev --port N
 --strictPort`, and `lsof` the band before trusting the log line.

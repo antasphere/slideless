@@ -120,8 +120,8 @@
   --plate: rgb(250 247 240 / 0.62);
   --plate-strong: rgb(251 249 243 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
-  /* a bar content scrolls under: nearly opaque, so nothing reads through */
-  --bar: rgb(250 247 240 / 0.93);
+  /* a bar content scrolls under: opaque, so nothing reads through it */
+  --bar: #faf7f0;
 
   /* the phone navigation bar's height, read by the shell's bottom padding */
   --tabbar-h: 64px;
@@ -180,5 +180,5 @@
   --plate: rgb(36 30 25 / 0.6);
   --plate-strong: rgb(40 34 28 / 0.84);
   --plate-edge: rgb(255 255 255 / 0.07);
-  --bar: rgb(31 27 23 / 0.93);
+  --bar: #1f1b17;
 }

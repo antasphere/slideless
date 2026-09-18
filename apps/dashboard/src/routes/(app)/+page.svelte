@@ -156,7 +156,13 @@
      presentations turning slowly behind the greeting. Decoration only; the
      field never moves for a reader who asked for no motion. -->
 <section class="hero plate-window">
-  <div class="hero-field">
+  <div class="hero-ground">
+    <FieldCanvas palette={heroPalette} shape="latitudes" seed={RECIPE.seed} linework={false} />
+  </div>
+  <!-- the sphere is its own square canvas on the same field, its edge faded
+       into the ground by a mask, so it can sit beside the words on a desk and
+       above them on a phone without a seam -->
+  <div class="hero-sphere">
     <FieldCanvas palette={heroPalette} shape="latitudes" seed={RECIPE.seed} animate />
   </div>
   <div class="hero-text on-field">
@@ -269,11 +275,18 @@
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-sm);
   }
-  /* the field is wider than the band, so the sphere it centres sits to the
-     right of the greeting (above it on a phone) and never under the words */
-  .hero-field {
+  .hero-ground {
     position: absolute;
-    inset: -38% -34% 0 0;
+    inset: 0;
+  }
+  .hero-sphere {
+    position: absolute;
+    top: -40px;
+    right: -34px;
+    width: 176px;
+    aspect-ratio: 1;
+    -webkit-mask-image: radial-gradient(closest-side, #000 78%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 78%, transparent 100%);
   }
   .hero-text {
     position: relative;
@@ -295,11 +308,18 @@
     opacity: 0.82;
   }
   @media (min-width: 768px) {
+    .stat-plate {
+      width: 54px;
+      height: 54px;
+    }
     .hero {
       min-height: 250px;
     }
-    .hero-field {
-      inset: 0 -52% 0 0;
+    .hero-sphere {
+      top: 50%;
+      right: 5%;
+      width: 330px;
+      transform: translateY(-50%);
     }
     .hero-text {
       padding: 32px 34px;
@@ -312,12 +332,17 @@
     padding: 16px 16px 14px;
     overflow: hidden;
   }
+  .stat :global(.overline) {
+    display: block;
+    width: fit-content;
+    max-width: calc(100% - 50px);
+  }
   .stat-plate {
     position: absolute;
     top: 10px;
     right: 10px;
-    width: 54px;
-    height: 54px;
+    width: 46px;
+    height: 46px;
     border-radius: 999px;
     opacity: 0.9;
   }
