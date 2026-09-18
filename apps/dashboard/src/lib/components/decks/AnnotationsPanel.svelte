@@ -1,10 +1,15 @@
 <script lang="ts">
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
+  import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
+  import { rowCount } from '$lib/components/shared/DataTable.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import EmptyTable from './EmptyTable.svelte';
   import * as Select from '$lib/components/ui/select/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
@@ -45,6 +50,12 @@
   });
 
   const hasFilters = $derived(filterVersion !== 'all' || filterStatus !== 'all');
+  // the toolbar's quiet line: how many notes match, once they are all here
+  const noteCount = $derived(
+    list.loading || list.nextCursor || !list.items.length
+      ? undefined
+      : rowCount('annotations.countOne', 'annotations.count')(list.items.length, list.items.length)
+  );
 
   $effect(() => {
     // Track the filters so changing either re-fetches page 1.
@@ -154,87 +165,78 @@
   }
 </script>
 
-<Card.Root>
-  <Card.Header>
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div class="space-y-1">
-        <Card.Title class="text-base">{t('annotations.title')}</Card.Title>
-        <Card.Description>
-          {t('annotations.description')}
-          <a
-            href={ANNOTATIONS_DOCS_URL}
-            target="_blank"
-            rel="noreferrer"
-            class="underline underline-offset-2 hover:text-foreground"
-          >
-            {t('annotations.learnMore')}
-          </a>
-        </Card.Description>
-      </div>
-      <div class="flex items-end gap-3">
-        <div class="space-y-1">
-          <Label for="annotation-filter-version" class="text-xs text-muted-foreground">
-            {t('annotations.filterVersion')}
-          </Label>
-          <Select.Root
-            type="single"
-            value={filterVersion}
-            onValueChange={(v) => {
-              if (v) filterVersion = v;
-            }}
-          >
-            <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
-              {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="all" label={t('annotations.filterAllVersions')} />
-              {#each versions as version (version.version)}
-                <Select.Item value={String(version.version)} label={`v${version.version}`} />
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
-        <div class="space-y-1">
-          <Label for="annotation-filter-status" class="text-xs text-muted-foreground">
-            {t('annotations.filterStatus')}
-          </Label>
-          <Select.Root
-            type="single"
-            value={filterStatus}
-            onValueChange={(v) => {
-              if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
-            }}
-          >
-            <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
-              {filterStatus === 'all'
-                ? t('annotations.filterAll')
-                : filterStatus === 'open'
-                  ? t('annotations.statusOpen')
-                  : t('annotations.statusResolved')}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="all" label={t('annotations.filterAll')} />
-              <Select.Item value="open" label={t('annotations.statusOpen')} />
-              <Select.Item value="resolved" label={t('annotations.statusResolved')} />
-            </Select.Content>
-          </Select.Root>
-        </div>
-      </div>
-    </div>
-  </Card.Header>
+<!-- the two filters, at the left of the toolbar where a search would sit;
+     each select says its own value, its name is for assistive technology -->
+{#snippet filters()}
+  <Label for="annotation-filter-version" class="sr-only">{t('annotations.filterVersion')}</Label>
+  <Select.Root
+    type="single"
+    value={filterVersion}
+    onValueChange={(v) => {
+      if (v) filterVersion = v;
+    }}
+  >
+    <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
+      {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('annotations.filterAllVersions')} />
+      {#each versions as version (version.version)}
+        <Select.Item value={String(version.version)} label={`v${version.version}`} />
+      {/each}
+    </Select.Content>
+  </Select.Root>
+  <Label for="annotation-filter-status" class="sr-only">{t('annotations.filterStatus')}</Label>
+  <Select.Root
+    type="single"
+    value={filterStatus}
+    onValueChange={(v) => {
+      if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
+    }}
+  >
+    <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
+      {filterStatus === 'all'
+        ? t('annotations.filterAll')
+        : filterStatus === 'open'
+          ? t('annotations.statusOpen')
+          : t('annotations.statusResolved')}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('annotations.filterAll')} />
+      <Select.Item value="open" label={t('annotations.statusOpen')} />
+      <Select.Item value="resolved" label={t('annotations.statusResolved')} />
+    </Select.Content>
+  </Select.Root>
+{/snippet}
+
+<Card.Root class="deck-section gap-3">
+  <DeckSectionHeading
+    drawing="annotations"
+    title={t('annotations.title')}
+    description={t('annotations.description')}
+  >
+    <a
+      href={ANNOTATIONS_DOCS_URL}
+      target="_blank"
+      rel="noreferrer"
+      class="underline underline-offset-2 hover:text-foreground"
+    >
+      {t('annotations.learnMore')}
+    </a>
+  </DeckSectionHeading>
   <Card.Content data-testid="annotations-panel">
+    <TableToolbar count={noteCount} {filters} sticky={false} />
     {#if list.loading}
       <TableSkeleton columns={3} rows={2} showSearch={false} />
     {:else if list.error && !list.items.length}
-      <p class="text-sm text-destructive">{t('annotations.loadFailed', { error: list.error })}</p>
+      <p class="text-sm text-destructive" in:appear>{t('annotations.loadFailed', { error: list.error })}</p>
     {:else if !list.items.length}
-      <p class="text-sm text-muted-foreground">
-        {hasFilters ? t('annotations.emptyFiltered') : t('annotations.empty')}
-      </p>
+      <!-- the notes are a list, not a table: the empty section keeps its frame -->
+      <EmptyTable message={hasFilters ? t('annotations.emptyFiltered') : t('annotations.empty')} />
     {:else}
       <ul class="space-y-3">
         {#each list.items as annotation (annotation.id)}
-          <li class="space-y-2 rounded-md border p-4">
+          <li class="space-y-2 rounded-[10px] border border-[var(--hairline)] bg-[var(--plate-strong)] p-4">
             <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <!-- SECURITY: authorLabel() may return the reviewer-controlled
                    authorName — Svelte {…} interpolation renders it as escaped
@@ -244,11 +246,15 @@
                 <span>{t('annotations.viaShareLink')}</span>
               {/if}
               <span>{t('annotations.onVersion', { n: annotation.version })}</span>
-              <Badge variant={annotation.status === 'resolved' ? 'outline' : 'secondary'}>
-                {annotation.status === 'resolved'
-                  ? t('annotations.statusResolved')
-                  : t('annotations.statusOpen')}
-              </Badge>
+              {#key annotation.status}
+                <span class="inline-flex" in:appear>
+                  <Badge variant={annotation.status === 'resolved' ? 'outline' : 'secondary'}>
+                    {annotation.status === 'resolved'
+                      ? t('annotations.statusResolved')
+                      : t('annotations.statusOpen')}
+                  </Badge>
+                </span>
+              {/key}
               <span>{formatTimeAgo(annotation.createdAt)}</span>
             </div>
             <!-- SECURITY: the note body is REVIEWER-CONTROLLED raw text.
@@ -280,23 +286,27 @@
             {/if}
             <div class="flex gap-2 pt-1">
               {#if annotation.status === 'open'}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={mutatingId === annotation.id}
-                  onclick={() => void setStatus(annotation, 'resolved')}
-                >
-                  {t('annotations.actionResolve')}
-                </Button>
+                <span class="inline-flex" in:appear>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={mutatingId === annotation.id}
+                    onclick={() => void setStatus(annotation, 'resolved')}
+                  >
+                    {t('annotations.actionResolve')}
+                  </Button>
+                </span>
               {:else}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={mutatingId === annotation.id}
-                  onclick={() => void setStatus(annotation, 'open')}
-                >
-                  {t('annotations.actionReopen')}
-                </Button>
+                <span class="inline-flex" in:appear>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={mutatingId === annotation.id}
+                    onclick={() => void setStatus(annotation, 'open')}
+                  >
+                    {t('annotations.actionReopen')}
+                  </Button>
+                </span>
               {/if}
               <Button
                 variant="ghost"
@@ -314,7 +324,7 @@
         {/each}
       </ul>
       {#if list.nextCursor}
-        <div class="flex justify-center py-2">
+        <div class="flex justify-center py-2" transition:reveal>
           <Button
             variant="outline"
             size="sm"

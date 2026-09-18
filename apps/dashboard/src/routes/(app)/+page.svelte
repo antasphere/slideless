@@ -1,7 +1,11 @@
 <script lang="ts">
-  import * as Card from '$lib/components/ui/card/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import HeroBand from '$lib/components/brand/HeroBand.svelte';
+  import StatTile from '$lib/components/brand/StatTile.svelte';
+  import BrandSlide from '$lib/components/brands/BrandSlide.svelte';
+  import { BRAND_FONTS_HREF, DEMO_BRANDS } from '$lib/brands-demo';
+  import DeckCard from '$lib/components/decks/DeckCard.svelte';
+  import ArrowRight from '@lucide/svelte/icons/arrow-right';
+  import { THEMES } from '$lib/brand/recipe.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
@@ -22,6 +26,24 @@
   // to the membership surfaces, which keep keying off /me's hubOrigin.
   const overviewDescription = $derived(
     data.instance.edition === 'cloud' ? t('overview.descriptionCloud') : t('overview.description')
+  );
+
+  const workspaceName = $derived(
+    data.me.workspaces.find((w) => w.id === data.me.activeWorkspaceId)?.name ?? data.instance.name
+  );
+  const firstName = $derived(
+    (data.me.user.name || data.me.user.email.split('@')[0] || '').split(' ')[0] ?? ''
+  );
+  const hour = new Date().getHours();
+  const greeting = $derived(
+    t(
+      hour < 12
+        ? 'overview.greetingMorning'
+        : hour < 18
+          ? 'overview.greetingAfternoon'
+          : 'overview.greetingEvening',
+      { name: firstName }
+    )
   );
 
   const decksList = createPagedList<Presentation>(
@@ -71,98 +93,289 @@
       ? null
       : `${decksList.items.length}${decksList.nextCursor ? '+' : ''}`
   );
+
+  // Opens are counted per deck today (PRDCT-2438 will bring the workspace's
+  // own figures); the sum of the loaded page is honest with the same "+".
+  const openCount = $derived(
+    decksList.loading || (decksList.error && !decksList.items.length)
+      ? null
+      : `${decksList.items.reduce((n, d) => n + d.totalViews, 0)}${decksList.nextCursor ? '+' : ''}`
+  );
+  const recentDecks = $derived(
+    [...decksList.items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3)
+  );
+
+  // One drawing and one colour per figure, each colour one of the brand's own themes.
+  const stats = $derived([
+    {
+      id: 'decks',
+      label: t('overview.decksCard'),
+      value: deckCount,
+      href: '/decks',
+      // the link under the recent decks carries its own arrow; the card draws one on hover
+      hint: t('overview.browseDecks').replace(/\s*→$/, ''),
+      drawing: 'decks' as const,
+      color: THEMES.dawn.accent
+    },
+    {
+      id: 'opens',
+      label: t('overview.opensCard'),
+      value: openCount,
+      href: '/decks',
+      hint: t('overview.opensHint'),
+      drawing: 'opens' as const,
+      color: THEMES.solar.accent
+    },
+    ...(isGuest
+      ? []
+      : [
+          {
+            id: 'members',
+            label: t('overview.activeMembers'),
+            value: memberCount,
+            href: '/members',
+            hint: t('overview.manageMembers'),
+            drawing: 'members' as const,
+            color: THEMES.reef.accent
+          },
+          {
+            id: 'files',
+            label: t('overview.filesCard'),
+            value: fileCount,
+            href: '/files',
+            hint: t('overview.browseFiles'),
+            drawing: 'files' as const,
+            color: THEMES.iris.accent
+          }
+        ])
+  ]);
+  const initialsOf = (name: string) =>
+    name
+      .split(/[\s@.]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase();
+  const faces = $derived(membersList.items.filter((m) => m.isActive).slice(0, 4));
+  const isAdmin = $derived(data.me.role === 'owner' || data.me.role === 'admin');
 </script>
 
-<PageHeader title={t('overview.title')} description={overviewDescription} />
+<svelte:head>
+  <title>{t('overview.title')} · {data.instance.name}</title>
+  <link rel="stylesheet" href={BRAND_FONTS_HREF} />
+</svelte:head>
 
-<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-  <Card.Root>
-    <Card.Header>
-      <Card.Description class="overline">{t('overview.instanceCard')}</Card.Description>
-      <Card.Title class="font-display text-2xl font-normal">{data.instance.name}</Card.Title>
-    </Card.Header>
-    <Card.Content class="flex flex-wrap gap-2">
-      <Badge variant="secondary">v{data.instance.version}</Badge>
-      <Badge variant="outline">{data.instance.edition}</Badge>
-      <Badge variant="outline">API {data.instance.apiVersion}</Badge>
-    </Card.Content>
-  </Card.Root>
+<!-- The opening: the workspace on its own field, the sphere of the brand's
+     presentations turning slowly beside the greeting. -->
+<HeroBand>
+  <p class="hero-eyebrow">{workspaceName}</p>
+  <!-- the page keeps its name for a screen reader and for the browser
+       suite; what a person sees in its place is the greeting -->
+  <h1 class="sr-only">{t('overview.title')}</h1>
+  <p class="hero-title">{greeting}</p>
+  <p class="hero-lede">
+    {#if deckCount === null}
+      {overviewDescription}
+    {:else if decksList.items.length}
+      {t('overview.lede', { decks: deckCount, workspace: workspaceName, opens: openCount ?? '0' })}
+    {:else}
+      {t('overview.ledeEmpty')}
+    {/if}
+  </p>
+</HeroBand>
 
-  <Card.Root>
-    <Card.Header>
-      <Card.Description class="overline">{t('overview.decksCard')}</Card.Description>
-      <Card.Title class="font-display text-[28px] font-normal tabular-nums">{deckCount ?? '—'}</Card.Title>
-    </Card.Header>
-    <Card.Content>
-      <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/decks">
-        {t('overview.browseDecks')}
-      </a>
-    </Card.Content>
-  </Card.Root>
-
-  {#if !isGuest}
-    <Card.Root>
-      <Card.Header>
-        <Card.Description class="overline">{t('overview.activeMembers')}</Card.Description>
-        <Card.Title class="font-display text-[28px] font-normal tabular-nums">{memberCount ?? '—'}</Card.Title
-        >
-      </Card.Header>
-      <Card.Content>
-        <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/members">
-          {t('overview.manageMembers')}
-        </a>
-      </Card.Content>
-    </Card.Root>
-
-    <Card.Root>
-      <Card.Header>
-        <Card.Description class="overline">{t('overview.filesCard')}</Card.Description>
-        <Card.Title class="font-display text-[28px] font-normal tabular-nums">{fileCount ?? '—'}</Card.Title>
-      </Card.Header>
-      <Card.Content>
-        <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/files">
-          {t('overview.browseFiles')}
-        </a>
-      </Card.Content>
-    </Card.Root>
-  {/if}
+<div class="mt-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+  {#each stats as stat (stat.id)}
+    <StatTile
+      label={stat.label}
+      value={stat.value}
+      hint={stat.hint}
+      href={stat.href}
+      drawing={stat.drawing}
+      color={stat.color}
+    />
+  {/each}
 </div>
 
-<div class="mt-8 grid gap-4 md:grid-cols-2">
-  <Card.Root>
-    <Card.Header>
-      <Card.Title class="font-display text-base font-normal">{t('overview.apiAccessTitle')}</Card.Title>
-      <Card.Description>
-        {t('overview.apiAccessBody')}
-        <code class="rounded bg-muted px-1 py-0.5 text-xs">/api/v1</code>.
-      </Card.Description>
-    </Card.Header>
-    <Card.Content>
-      <a class="text-sm underline-offset-4 hover:underline" href="/api-keys">{t('overview.manageKeys')}</a>
-    </Card.Content>
-  </Card.Root>
+{#if recentDecks.length}
+  <div class="section-head mt-10 !mb-5 items-center justify-between">
+    <h2>{t('overview.allDecks')}</h2>
+    <a
+      href="/decks"
+      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
+      {t('overview.browseDecks')}
+    </a>
+  </div>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {#each recentDecks as deck (deck.id)}
+      <DeckCard {deck} compact />
+    {/each}
+  </div>
+{/if}
 
-  <Card.Root>
-    <Card.Header>
-      <Card.Title class="font-display text-base font-normal">{t('overview.teamTitle')}</Card.Title>
-      <Card.Description>
-        {t('overview.teamDescription')}
-      </Card.Description>
-    </Card.Header>
-    <Card.Content>
-      {#if data.me.role === 'owner' || data.me.role === 'admin'}
-        {#if hubManaged}
-          <a class="text-sm underline-offset-4 hover:underline" href="/members">
-            {t('overview.manageMembers')}
-          </a>
-        {:else}
-          <a class="text-sm underline-offset-4 hover:underline" href="/invitations">
-            {t('overview.inviteMembers')}
-          </a>
-        {/if}
-      {:else}
-        <p class="text-sm text-muted-foreground">{t('overview.askAdmin')}</p>
-      {/if}
-    </Card.Content>
-  </Card.Root>
+<div class="mt-10 grid gap-4 lg:grid-cols-2">
+  <!-- Brands: a preview of an idea, with made-up brands ($lib/brands-demo.ts) -->
+  <a href="/brands" class="sheet tile lower">
+    <div class="fan" aria-hidden="true">
+      {#each DEMO_BRANDS.slice(0, 3) as brand, i (brand.id)}
+        <div class="fan-slide" style="--i: {i}"><BrandSlide {brand} small /></div>
+      {/each}
+    </div>
+    <div class="lower-copy">
+      <h2 class="lower-title">{t('overview.brandsTitle')}</h2>
+      <p class="lower-body">{t('overview.brandsBody')}</p>
+      <span class="lower-cta">{t('overview.brandsCta')}<ArrowRight class="size-3.5" /></span>
+    </div>
+  </a>
+
+  <!-- P7: a hub workspace's membership is managed at the hub; the members page links out -->
+  <a href={isAdmin && !hubManaged ? '/invitations' : '/members'} class="sheet tile lower">
+    <div class="faces" aria-hidden="true">
+      {#each faces as member, i (member.id)}
+        <span class="face" style="--i: {i}">{initialsOf(member.name || member.email)}</span>
+      {/each}
+      {#each [0, 1, 2].slice(0, Math.max(1, 4 - faces.length)) as n (n)}
+        <span class="face seat" style="--i: {faces.length + n}">+</span>
+      {/each}
+    </div>
+    <div class="lower-copy">
+      <h2 class="lower-title">{t('overview.teamTitle')}</h2>
+      <p class="lower-body">{isAdmin ? t('overview.teamLede') : t('overview.askAdmin')}</p>
+      <span class="lower-cta">
+        {isAdmin && !hubManaged ? t('overview.teamCta') : t('overview.manageMembers')}<ArrowRight
+          class="size-3.5"
+        />
+      </span>
+    </div>
+  </a>
 </div>
+
+<!-- what runs this workspace, for whoever needs it: one quiet line -->
+<p class="mt-8 text-center text-xs text-muted-foreground">
+  {t('overview.aboutInstance')} · {data.instance.name} · v{data.instance.version} · {data.instance.edition} · API
+  {data.instance.apiVersion}
+</p>
+
+<style>
+  .lower {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    align-items: center;
+    padding: 20px;
+    overflow: hidden;
+  }
+  @media (min-width: 640px) {
+    .lower {
+      grid-template-columns: 210px 1fr;
+      gap: 24px;
+      padding: 22px 24px;
+    }
+  }
+  .lower-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lower-title {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .lower-body {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .lower:hover .lower-cta :global(svg) {
+    transform: translateX(3px);
+  }
+  .lower-cta :global(svg) {
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
+  .lower-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    font-size: 13.5px;
+    color: var(--accent-deep);
+  }
+  /* three slides, fanned like the Slideless mark */
+  .fan {
+    position: relative;
+    height: 128px;
+  }
+  .fan-slide {
+    position: absolute;
+    left: calc(8px + var(--i) * 24px);
+    top: calc(26px - var(--i) * 10px);
+    width: 150px;
+    transform: rotate(calc(-7deg + var(--i) * 6deg));
+    box-shadow: var(--shadow-md);
+    border-radius: 6px;
+    transition: transform 320ms var(--motion-ease);
+  }
+  @media (hover: hover) {
+    .lower:hover .fan-slide {
+      transform: rotate(calc(-11deg + var(--i) * 10deg)) translateY(calc(var(--i) * -2px));
+    }
+  }
+  .faces {
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+    height: 96px;
+  }
+  /* under the pointer the faces rise and settle one after the other, the way
+     the three slides beside them fan out, once; then they rest for about four
+     seconds before the next rise (the movement is the first quarter of a
+     five-second loop, the stagger rides on the delay) */
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .lower:hover .face,
+    .lower:focus-visible .face {
+      animation: bob 5s var(--motion-ease) infinite;
+      animation-delay: calc(var(--i) * 0.13s);
+    }
+  }
+  @keyframes bob {
+    0%,
+    26%,
+    100% {
+      transform: translateY(0);
+    }
+    9% {
+      transform: translateY(-9px);
+    }
+    17% {
+      transform: translateY(3px);
+    }
+  }
+  .face {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    margin-left: -10px;
+    border-radius: 999px;
+    border: 2px solid var(--ground);
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    font-family: var(--display);
+    font-size: 17px;
+    z-index: calc(10 - var(--i));
+    backdrop-filter: blur(6px);
+  }
+  .face.seat {
+    border: 1.5px dashed color-mix(in oklab, var(--accent) 45%, var(--hairline));
+    background: var(--plate-strong);
+    color: var(--muted);
+    font-family: var(--ui);
+  }
+</style>

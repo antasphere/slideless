@@ -3,6 +3,7 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { Separator } from '$lib/components/ui/separator/index.js';
@@ -10,10 +11,15 @@
   import { api, PlatformApiError } from '$lib/api';
   import { authClient } from '$lib/auth-client';
   import { refreshSession } from '$lib/session';
+  import NameFields from '$lib/components/shared/NameFields.svelte';
+  import { joinPersonName } from '$lib/person-name';
   import { t } from '$lib/i18n';
 
   let instanceName = $state('');
-  let ownerName = $state('');
+  // First and last name are a view-only split: the API still takes one
+  // `name`, built at submit ($lib/person-name.ts).
+  let ownerFirstName = $state('');
+  let ownerLastName = $state('');
   let ownerEmail = $state('');
   let ownerPassword = $state('');
   // Shown from the start (PRDCT-2389): the claim ALWAYS requires the token on
@@ -34,7 +40,11 @@
     try {
       await api.setup({
         instanceName,
-        owner: { name: ownerName, email: ownerEmail, password: ownerPassword },
+        owner: {
+          name: joinPersonName(ownerFirstName, ownerLastName),
+          email: ownerEmail,
+          password: ownerPassword
+        },
         ...(setupToken ? { setupToken } : {})
       });
 
@@ -92,10 +102,7 @@
 
         <Separator />
 
-        <div class="space-y-2">
-          <Label for="owner-name">{t('setup.yourName')}</Label>
-          <Input id="owner-name" autocomplete="name" bind:value={ownerName} required />
-        </div>
+        <NameFields idPrefix="owner" bind:first={ownerFirstName} bind:last={ownerLastName} />
         <div class="space-y-2">
           <Label for="owner-email">{t('setup.email')}</Label>
           <Input id="owner-email" type="email" autocomplete="email" bind:value={ownerEmail} required />
@@ -120,9 +127,7 @@
           <p class="text-xs text-muted-foreground">{t('setup.setupTokenHint')}</p>
         </div>
 
-        {#if error}
-          <p class="text-sm text-destructive">{error}</p>
-        {/if}
+        <FormError message={error} />
 
         <Button type="submit" class="w-full" disabled={loading}>
           {loading ? t('setup.creating') : t('setup.submit')}

@@ -14,6 +14,6 @@
 
 <DropdownMenuPrimitive.GroupHeading
   bind:ref
-  class={cn('px-2 py-1.5 text-sm font-medium', inset && 'pl-8', className)}
+  class={cn('float-label', inset && 'pl-8', className)}
   {...restProps}
 />

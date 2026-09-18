@@ -14,7 +14,7 @@
 <th
   bind:this={ref}
   class={cn(
-    'text-muted-foreground h-10 overflow-hidden px-2 text-left align-middle font-medium [&:has([role=checkbox])]:pl-4 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+    'table-head text-muted-foreground h-10 overflow-hidden px-4 text-left align-middle text-[11px] font-medium uppercase tracking-[0.08em] [&_button]:text-[11px] [&_button]:font-medium [&_button]:uppercase [&_button]:tracking-[0.08em] [&_button]:text-muted-foreground [&:has([role=checkbox])]:pl-4 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
     className
   )}
   {...restProps}

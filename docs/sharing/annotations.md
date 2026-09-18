@@ -20,7 +20,7 @@ Everything else about share links applies unchanged: pin the link to a version w
 
 ### Placing the notes button
 
-The reviewer's floating notes button sits at the bottom-right by default, which can cover something important in a particular deck. Its position is the one placement you control explicitly, with eight slots: the four corners and the four edge centers (`top-left`, `top`, `top-right`, `right`, `bottom-right`, `bottom`, `bottom-left`, `left`).
+On a link that shows the recipient bar (the default), the reviewer's two entrances, _Annotations_ and _Add a pin_, sit in the bar's right group next to Download, so nothing floats over the deck. The position setting below applies to links whose bar is off: there the overlay keeps a small floating notes button, at the bottom-right by default, which can cover something important in a particular deck. Its position is the one placement you control explicitly, with eight slots: the four corners and the four edge centers (`top-left`, `top`, `top-right`, `right`, `bottom-right`, `bottom`, `bottom-left`, `left`).
 
 - **Dashboard** — a _Notes button position_ select appears in the share-link dialog when annotations are enabled.
 - **CLI** — `slideless share DECK_ID --annotator --badge-position top-left` (also on `share-email`).
@@ -28,7 +28,7 @@ The reviewer's floating notes button sits at the bottom-right by default, which 
 
 An explicit choice is remembered as the deck's default, so the next annotator link on the same deck inherits it automatically; any link can still override it, and updating a link's position updates the deck default too.
 
-Reviewers can also move the button themselves, from the gear in the annotation panel: their choice is saved to their own link only — it never changes the deck default or anyone else's link.
+Reviewers can also move the button themselves, from the gear in the annotation panel (the position grid appears there only on a link without the bar): their choice is saved to their own link only — it never changes the deck default or anyone else's link.
 
 ## What reviewers can do
 
@@ -36,7 +36,7 @@ Opening an annotator link shows the deck with a small annotation layer on top:
 
 - **Select text** anywhere in the deck — an _Add note_ button appears at the selection. The selected quote is captured the moment the composer opens and is saved exactly as previewed.
 - **Pin a spot or mark a region** — the _Add pin_ mode turns the deck static for a moment: a click drops a pin on that element (a button, an image, whitespace), a drag marks a rectangular region. Press _Esc_ or _Done_ to go back to browsing. This is also how non-textual content gets annotated.
-- **Review their notes** — a badge opens a side panel listing the reviewer's notes in _Open_ and _Resolved_ tabs, with _Add a pin_ as the panel's main action. Open notes render as numbered pins on the page; clicking a note jumps to the place it was made and highlights it — including across pages of a multi-page deck.
+- **Review their notes** — the _Annotations_ button in the bar (or the floating notes button on a link without the bar) opens a panel listing the reviewer's notes in _Open_ and _Done_ tabs, with _Add a pin_ as the panel's main action. Open notes render as numbered pins on the page; clicking a note jumps to the place it was made and highlights it — including across pages of a multi-page deck.
 - **Adjust their view** — a gear in the panel opens a small settings dialog: a position grid moves the notes button (saved to their link, so it sticks across pages and visits), a switch hides the pins when the deck should read clean (per visit), and a footer shows the link's context — the version being viewed, when the link went live, and its expiry if one is set.
 
 Notes are private **per link, not per person**: everyone who opens the same link sees every note made through it, author names included. Mint one link per reviewer to keep reviewers apart. Interacting with the annotation layer does not reach deck scripts listening in the usual (bubble) phase, so slide decks that react to clicks or keys stay where they are; a deck listening in the capture phase still sees those events.

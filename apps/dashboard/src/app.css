@@ -17,7 +17,9 @@
     background: var(--ground-2);
     color: var(--ink);
     font-family: var(--ui);
-    font-size: 14.5px;
+    font-weight: var(--ui-weight);
+    letter-spacing: var(--ui-track);
+    font-size: 15px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -57,14 +59,15 @@
     font-weight: 500;
     letter-spacing: 0.07em;
   }
-  /* Sora overline — the second voice */
-  .overline {
+  /* the second voice, as a small label. NOT named `overline`: tailwind owns
+     that word (text-decoration-line: overline) and drew a bar over every one. */
+  .eyebrow {
     font-family: var(--second);
     font-weight: 300;
     font-size: 11px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--ink-soft);
+    color: var(--muted);
   }
   .section-head {
     display: flex;
@@ -132,7 +135,7 @@
 
   /* frosted plate — content sitting ON a canvas field (gate pages) */
   .plate {
-    background: rgb(247 246 244 / 0.72);
+    background: var(--plate-strong);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid rgb(255 255 255 / 0.55);
@@ -140,95 +143,295 @@
     box-shadow: var(--shadow-sm);
   }
   :root.dark .plate {
-    background: rgb(28 27 25 / 0.72);
     border-color: rgb(255 255 255 / 0.12);
   }
 }
 
 /* ---------------------------------------------------------------------
+   The signed-in shell on the page field (PRDCT-2439, PRDCT-2436). The field
+   is the paper; everything a person reads sits on a translucent plate over
+   it, so the field's weather shows at the edges and between the cards.
+   --------------------------------------------------------------------- */
+@layer components {
+  /* the content panel beside the sidebar (the whole screen on a phone) */
+  .app-plate {
+    background: var(--plate) !important;
+    backdrop-filter: blur(26px) saturate(1.15);
+    -webkit-backdrop-filter: blur(26px) saturate(1.15);
+    border-color: var(--plate-edge) !important;
+  }
+  /* A sidebar row under the pointer takes a breath of the accent, never the
+     template's grey: the same wash as the selected row, at half its strength. */
+  [data-sidebar='menu-button']:hover:not([data-active='true']),
+  [data-sidebar='menu-button'][data-state='open']:not([data-active='true']) {
+    background: color-mix(in oklab, var(--accent) 7%, transparent) !important;
+    color: var(--ink) !important;
+  }
+  /* the sidebar sits straight on the field */
+  [data-sidebar='sidebar']:not([data-mobile='true']) {
+    background: transparent;
+  }
+  /* --main-pad-top mirrors the top padding the shell gives the scroll
+     container (`pt-5 md:pt-2` in (app)/+layout.svelte). A stuck element is
+     held at the container's CONTENT edge, under that padding, so everything
+     that sticks subtracts it to sit flush against the top with no gap for
+     rows to show through. */
+  .app-main {
+    --main-pad-top: 20px;
+    --sticky-top: calc(0px - var(--main-pad-top));
+    padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px);
+  }
+  @media (min-width: 768px) {
+    .app-main {
+      --main-pad-top: 8px;
+      padding-bottom: 48px;
+    }
+  }
+
+  /* A card: paper a shade more opaque than the plate under it, one hairline,
+     the smallest shadow. `tile` is the pressable form: it lifts under the
+     pointer and acknowledges the hand. */
+  .sheet {
+    background: var(--plate-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  /* A quiet note set into a page or a dialog: a wash of the second ground
+     under one hairline, the code block's 10px corners. `--warn` and
+     `--danger` take the status washes; an icon first, the words after. */
+  .notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 62%, transparent);
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+  .notice > svg {
+    flex: none;
+    margin-top: 2px;
+    color: currentColor;
+  }
+  .notice--warn {
+    border-color: color-mix(in oklab, var(--warn) 30%, transparent);
+    background: var(--warn-soft);
+    color: color-mix(in oklab, var(--warn) 55%, var(--ink));
+  }
+  .notice--danger {
+    border-color: color-mix(in oklab, var(--danger) 30%, transparent);
+    background: var(--danger-soft);
+    color: color-mix(in oklab, var(--danger) 45%, var(--ink));
+  }
+  /* A choice in a dialog: its switch, its name and under it what it means.
+     The whole row is the label, so the hand lands anywhere on it and the
+     pointer says so; the switch keeps the keyboard's focus. `.choices` is
+     the ruled list the rows sit in, a hairline between two of them. A row
+     whose switch is locked is faded and refuses the hand. */
+  .choices {
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
+  }
+  .choices > * + * {
+    border-top: 1px solid color-mix(in oklab, var(--hairline) 75%, transparent);
+  }
+  .choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px;
+    cursor: pointer;
+    transition:
+      background-color var(--motion-duration) var(--motion-ease),
+      opacity var(--motion-duration) var(--motion-ease);
+  }
+  @media (hover: hover) {
+    .choice:hover {
+      background: color-mix(in oklab, var(--accent) 5%, transparent);
+    }
+  }
+  .choice:has([data-slot='checkbox']:disabled),
+  .choice[data-disabled] {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+  .choice:has([data-slot='checkbox']:disabled):hover,
+  .choice[data-disabled]:hover {
+    background: transparent;
+  }
+  .choice-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--ink);
+  }
+  .choice-hint {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  .tile {
+    transition:
+      transform var(--motion-duration) var(--motion-ease),
+      box-shadow var(--motion-duration) var(--motion-ease),
+      border-color var(--motion-duration) var(--motion-ease);
+  }
+  @media (hover: hover) {
+    .tile:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: color-mix(in oklab, var(--accent) 38%, var(--hairline));
+    }
+  }
+  .tile:active {
+    transform: scale(0.985);
+  }
+  .tile:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+  }
+  /* the drawing inside a card: the nested-radius rule of the brand console */
+  .plate-window {
+    position: relative;
+    overflow: hidden;
+    border-radius: calc(var(--r-lg) - 4px);
+  }
+  /* text set straight on a field keeps its contrast with a paper halo, the
+     way the presentations do; the ink is the field's, not the theme's */
+  .on-field {
+    color: #1c1915;
+    text-shadow:
+      0 0 22px rgb(247 246 244 / 0.95),
+      0 0 8px rgb(247 246 244 / 0.9);
+  }
+  :root.dark .on-field {
+    color: #f7f4ec;
+    text-shadow:
+      0 0 22px rgb(20 16 12 / 0.9),
+      0 0 8px rgb(20 16 12 / 0.85);
+  }
+  /* label and value rows inside a card: a hairline between, the label quiet,
+     the value in ink */
+  .facts > div {
+    padding: 12px 0;
+    border-bottom: 1px solid color-mix(in oklab, var(--hairline) 70%, transparent);
+  }
+  .facts > div:first-child {
+    padding-top: 0;
+  }
+  .facts > div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+  .facts > div > span:first-child {
+    color: var(--muted);
+  }
+  /* a figure is always set in the display serif, as in the presentations */
+  .figure {
+    font-family: var(--display);
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+}
+
+/* ---------------------------------------------------------------------
    The template's shadcn variables, mapped onto the brand (the Exos trick).
-   HSL triplets of the tokens above (tailwind composes them as
-   hsl(var(--x) / alpha)): ground #F7F6F4 · ground-2 #F0EFEC · ground-3
-   #E8E7E3 · hairline #DCDBD6 · ink #1A1918 · ink-soft #333230 · muted
-   #6C6B66 · accent #47799A · accent-ink #F7F4EC · danger #B4552F. The two
+   HSL triplets of the Slideless recipe in tokens.css (tailwind composes
+   them as hsl(var(--x) / alpha)): ground #F7F4EC · ground-2 #F1EDE1 ·
+   ground-3 #EAE5D6 · hairline #E0DACA · ink #1C1915 · ink-soft #35302A ·
+   muted #6E6759 · accent #7A6652 (the default look, paper) · accent-ink
+   #F7F4EC · danger #B4552F. The two
    colliding names are renamed --tpl-accent/--tpl-muted (mirrored in
    tailwind.config.ts) so the brand tokens win. Change a token, change its
    triplet — including the .dark set below (viewer-kit dark constants).
    --------------------------------------------------------------------- */
 @layer base {
   :root {
-    --background: 40 16% 96%;
-    --foreground: 30 4% 10%;
-    --tpl-muted: 48 10% 90%;
-    --muted-foreground: 50 3% 41%;
-    --popover: 40 16% 96%;
-    --popover-foreground: 30 4% 10%;
-    --card: 40 16% 96%;
-    --card-foreground: 30 4% 10%;
-    --border: 50 8% 85%;
-    --input: 50 8% 85%;
-    --primary: 204 37% 44%;
+    --background: 44 41% 95%;
+    --foreground: 34 14% 10%;
+    --tpl-muted: 45 32% 88%;
+    --muted-foreground: 40 11% 39%;
+    --popover: 44 41% 95%;
+    --popover-foreground: 34 14% 10%;
+    --card: 44 41% 95%;
+    --card-foreground: 34 14% 10%;
+    --border: 44 26% 84%;
+    --input: 44 26% 84%;
+    --primary: 30 20% 40%;
     --primary-foreground: 44 41% 95%;
-    --secondary: 48 10% 90%;
-    --secondary-foreground: 40 3% 19%;
-    --tpl-accent: 48 10% 90%;
-    --accent-foreground: 30 4% 10%;
-    --button-hover: 48 10% 90%;
-    --button-hover-foreground: 30 4% 10%;
+    --secondary: 45 32% 88%;
+    --secondary-foreground: 33 12% 19%;
+    --tpl-accent: 45 32% 88%;
+    --accent-foreground: 34 14% 10%;
+    --button-hover: 45 32% 88%;
+    --button-hover-foreground: 34 14% 10%;
     --destructive: 17 59% 45%;
     --destructive-foreground: 44 41% 95%;
-    --ring: 204 37% 44%;
+    --ring: 30 20% 40%;
     --radius: 7px;
-    --sidebar-background: 45 12% 93%;
-    --sidebar-foreground: 40 3% 19%;
-    --sidebar-primary: 30 4% 10%;
-    --sidebar-primary-foreground: 40 16% 96%;
-    --sidebar-accent: 48 10% 90%;
-    --sidebar-accent-foreground: 30 4% 10%;
-    --sidebar-border: 50 8% 85%;
-    --sidebar-ring: 204 37% 44%;
+    --sidebar-background: 45 36% 91%;
+    --sidebar-foreground: 33 12% 19%;
+    --sidebar-primary: 34 14% 10%;
+    --sidebar-primary-foreground: 44 41% 95%;
+    --sidebar-accent: 45 32% 88%;
+    --sidebar-accent-foreground: 34 14% 10%;
+    --sidebar-border: 44 26% 84%;
+    --sidebar-ring: 30 20% 40%;
   }
 
-  /* dark — triplets of the viewer-kit dark constants: ground #1C1B19 ·
-     ground-2 #141311 · ground-3 #272623 · hairline #33322E · ink #F0EEE9 ·
-     ink-soft #D8D5CE · muted #9C9991 · danger #E07A56; slots unchanged. */
+  /* dark — triplets of the recipe's dark set: ground #1F1B17 · ground-2
+     #171310 · ground-3 #28231E · hairline #3E362E · ink #F3EEE6 · ink-soft
+     #DCD4C8 · muted #ACA196 · accent #DB7D5F · accent-ink #2A1D15. */
   .dark {
-    --background: 40 6% 10%;
-    --foreground: 43 19% 93%;
-    --tpl-muted: 45 5% 15%;
-    --muted-foreground: 44 5% 59%;
-    --popover: 45 5% 15%;
-    --popover-foreground: 43 19% 93%;
-    --card: 40 6% 10%;
-    --card-foreground: 43 19% 93%;
-    --border: 48 5% 19%;
-    --input: 48 5% 19%;
-    --primary: 204 37% 44%;
-    --primary-foreground: 44 41% 95%;
-    --secondary: 45 5% 15%;
-    --secondary-foreground: 42 11% 83%;
-    --tpl-accent: 45 5% 15%;
-    --accent-foreground: 43 19% 93%;
-    --button-hover: 45 5% 15%;
-    --button-hover-foreground: 43 19% 93%;
+    --background: 30 15% 11%;
+    --foreground: 37 35% 93%;
+    --tpl-muted: 30 14% 14%;
+    --muted-foreground: 30 12% 63%;
+    --popover: 30 14% 14%;
+    --popover-foreground: 37 35% 93%;
+    --card: 30 15% 11%;
+    --card-foreground: 37 35% 93%;
+    --border: 30 15% 21%;
+    --input: 30 15% 21%;
+    --primary: 15 63% 62%;
+    --primary-foreground: 23 33% 12%;
+    --secondary: 30 14% 14%;
+    --secondary-foreground: 36 22% 82%;
+    --tpl-accent: 30 14% 14%;
+    --accent-foreground: 37 35% 93%;
+    --button-hover: 30 14% 14%;
+    --button-hover-foreground: 37 35% 93%;
     --destructive: 16 69% 61%;
-    --destructive-foreground: 40 8% 7%;
-    --ring: 204 37% 44%;
-    --sidebar-background: 40 8% 7%;
-    --sidebar-foreground: 42 11% 83%;
-    --sidebar-primary: 43 19% 93%;
-    --sidebar-primary-foreground: 40 6% 10%;
-    --sidebar-accent: 45 5% 15%;
-    --sidebar-accent-foreground: 43 19% 93%;
-    --sidebar-border: 48 5% 19%;
-    --sidebar-ring: 204 37% 44%;
+    --destructive-foreground: 26 18% 8%;
+    --ring: 15 63% 62%;
+    --sidebar-background: 26 18% 8%;
+    --sidebar-foreground: 36 22% 82%;
+    --sidebar-primary: 37 35% 93%;
+    --sidebar-primary-foreground: 30 15% 11%;
+    --sidebar-accent: 30 14% 14%;
+    --sidebar-accent-foreground: 37 35% 93%;
+    --sidebar-border: 30 15% 21%;
+    --sidebar-ring: 15 63% 62%;
   }
 }
 
-/* Lighter text-sm for cleaner UI (template convention, kept) */
+/* The template thinned every text-sm to 300 for Onest. Synonym is drawn for
+   450 (the website's correction), so small text keeps the body's weight. */
 @layer utilities {
   .text-sm {
-    @apply font-light;
+    font-weight: var(--ui-weight);
   }
 }
 
@@ -247,19 +450,245 @@
   }
 }
 
-/* Popover styling to match sidebar (template convention, kept — the vars
-   now resolve to brand-mapped triplets) */
+/* ---------------------------------------------------------------------
+   Floating surfaces: every menu, popover, select list and tooltip is cut
+   from the outline button's material, so what opens from a button reads as
+   the same object. The button's paper (plate-strong) laid over a nearly
+   opaque bar colour and a blur, so nothing under it reads through; one
+   hairline; the button's 10px radius, 7px on the rows inside; the md
+   shadow. A row under the pointer takes the accent wash and stays in ink,
+   never grey. The ui/ primitives carry these classes; nothing else should.
+   --------------------------------------------------------------------- */
+:root {
+  --r-float: 10px;
+  --r-float-item: 7px;
+  --float-bg:
+    linear-gradient(var(--plate-strong), var(--plate-strong)),
+    color-mix(in oklab, var(--bar) 72%, transparent);
+  --wash: color-mix(in oklab, var(--accent) 8%, transparent);
+  /* what is stuck above a table's toolbar: the height of a section's bar on
+     the pages that have one (SectionHero), nothing elsewhere */
+  --section-bar-h: 48px;
+  /* The page's own ground as one opaque colour: the plate's paper over the
+     look's field. What stays in place while the page scrolls (a section's
+     bar, a table's toolbar) wears it, so it reads as the page and not as a
+     band of another colour. */
+  --page-ground: color-mix(in oklab, #faf7f0 70%, var(--field-base));
+  /* a card's paper (plate-strong) over that ground, opaque: a held column header */
+  --sheet-ground: color-mix(in oklab, #fbf9f3 82%, var(--page-ground));
+  --sticky-top: 0px;
+}
+:root.dark {
+  --page-ground: color-mix(in oklab, #241e19 60%, var(--field-base));
+  --sheet-ground: color-mix(in oklab, #28221c 84%, var(--page-ground));
+}
 @layer components {
-  [data-bits-dropdown-menu-content] {
-    background-color: hsl(var(--popover)) !important;
-    color: hsl(var(--popover-foreground)) !important;
-    border: 1px solid hsl(var(--sidebar-border)) !important;
+  /* The blur lives on a pseudo-element, never on the float itself: a backdrop
+     filter makes its element the containing block of every fixed descendant,
+     and a menu's sub-menu is one. With the filter on the menu, the sub-menu
+     was placed relative to the menu and clipped by its overflow: the version
+     history of a deck opened as a five-pixel sliver. The host is a stacking
+     context of its own so the pseudo-element stays under its content. */
+  .float {
+    position: relative;
+    z-index: 0;
+    background: var(--float-bg);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-float);
+    box-shadow: var(--shadow-md);
+    outline: none;
+  }
+  .float::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  }
+  .float-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--r-float-item);
+    font-size: 13.5px;
+    color: var(--ink);
+    cursor: default;
+    user-select: none;
+    outline: none;
+    transition:
+      background-color var(--motion-duration) var(--motion-ease),
+      color var(--motion-duration) var(--motion-ease);
+  }
+  .float-item > svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    color: var(--muted);
+  }
+  .float-item[data-highlighted],
+  .float-item[data-state='open'] {
+    background: var(--wash);
+    color: var(--ink);
+  }
+  .float-item[data-highlighted] > svg {
+    color: var(--accent-deep);
+  }
+  .float-item[data-disabled] {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  /* an act that removes something: danger ink, and the danger wash under the
+     hand. `.text-destructive` is what callers outside ui/ already pass. */
+  .float-item[data-variant='destructive'],
+  .float-item.text-destructive,
+  .float-item[data-variant='destructive'] > svg,
+  .float-item.text-destructive > svg {
+    color: var(--danger);
+  }
+  .float-item[data-variant='destructive'][data-highlighted],
+  .float-item.text-destructive[data-highlighted] {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  /* the mark of a checked or selected row is the accent's */
+  .float-mark,
+  .float-item > svg.float-mark {
+    color: var(--accent);
+  }
+  .float-label {
+    padding: 6px 8px 4px;
+    font-family: var(--second);
+    font-weight: 300;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .float-sep {
+    height: 1px;
+    margin: 4px -4px;
+    background: var(--hairline);
   }
 
-  [data-bits-dropdown-menu-item]:hover,
-  [data-bits-dropdown-menu-item][data-highlighted] {
-    background-color: hsl(var(--tpl-accent)) !important;
-    color: hsl(var(--foreground)) !important;
+  /* -------------------------------------------------------------------
+     A table. The toolbar (TableToolbar: the search with its count and any
+     filter at the left, View and the page's action at the right) floats over
+     it as a plain row: no box, no edge. A small gap, then the table's card,
+     whose rounded top corners are the column header's. The header is the
+     same light paper as the rows, one hairline between it and the first row.
+     Both stay in place while the rows scroll under them: the toolbar at
+     --sticky-top (under a section's bar when the page has one), the column
+     header right under the toolbar (--toolbar-h, measured by the toolbar).
+     Held, the toolbar takes the page's own ground, opaque, so no row reads
+     through, and `.table-cap` redraws the card's rounded top over the held
+     header.
+     ------------------------------------------------------------------- */
+  .table-toolbar {
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    /* the gap over the card is padding, so the held toolbar covers it too */
+    padding: 8px 0 10px;
+    transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  /* on a phone the search has the first line to itself; the count and the
+     acts share the second */
+  @media (max-width: 767px) {
+    .table-toolbar > .toolbar-search {
+      flex-basis: 100%;
+    }
+  }
+  .toolbar-count {
+    flex: none;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* View and the page's action, side by side at the table's right edge */
+  .toolbar-acts {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-left: auto;
+  }
+  /* inside a section's card the heading already gives the room above, and
+     the table follows right under */
+  [data-slot='card-content'] .table-toolbar {
+    padding: 0 0 8px;
+  }
+  /* only in the page's own scroll: a table inside a dialog or a side sheet
+     (portaled out of the shell) keeps a head that travels with it */
+  .app-main .table-toolbar.is-sticky {
+    position: sticky;
+    top: var(--sticky-top);
+  }
+  .table-toolbar[data-stuck] {
+    background: var(--page-ground);
+  }
+  /* a phone's table is a list with no column header to close the held
+     toolbar: its own hairline does */
+  @media (max-width: 767px) {
+    .table-toolbar[data-stuck] {
+      box-shadow: 0 1px 0 var(--hairline);
+    }
+  }
+  /* The column header: the rows' own paper and the one hairline the first
+     row meets. Where it is held it is that paper made opaque, because rows
+     pass under it. */
+  .table-head {
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--hairline) 80%, transparent);
+  }
+  .app-main .table-sticky .table-head {
+    background: var(--sheet-ground);
+    position: sticky;
+    top: calc(var(--sticky-top) + var(--toolbar-h, 0px));
+    z-index: 10;
+  }
+  /* A line of no height right over the card, held where the header is held.
+     Held, it draws the card's top again over the header: the hairline with
+     its two rounded corners, the page's ground outside them. */
+  .table-cap {
+    height: 0;
+    z-index: 11;
+    pointer-events: none;
+  }
+  .app-main .table-cap {
+    position: sticky;
+    top: calc(var(--sticky-top) + var(--toolbar-h, 0px));
+  }
+  .table-cap[data-stuck]::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: var(--r-lg);
+    border: 1px solid var(--hairline);
+    border-bottom: 0;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: 0 0 0 8px var(--page-ground);
+    clip-path: inset(0);
+  }
+  /* while the header is held, the rows pass under a soft edge */
+  .table-card:has(> .table-cap[data-stuck]) .table-sticky .table-head {
+    box-shadow:
+      inset 0 -1px 0 var(--hairline),
+      0 10px 12px -12px rgb(28 25 21 / 0.22);
+  }
+
+  /* A section's bar is stuck above everything under it (SectionHero). */
+  .app-main:has([data-section-bar]) {
+    --sticky-top: calc(var(--section-bar-h) - var(--main-pad-top));
   }
 }
 

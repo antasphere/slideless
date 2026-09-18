@@ -26,7 +26,7 @@ import {
   invitationLookupSchema,
   invitationsListSchema
 } from '../schemas/invitations.js';
-import { auditListSchema } from '../schemas/audit.js';
+import { auditListQuerySchema, auditListSchema } from '../schemas/audit.js';
 import {
   cliAuthCompletedSchema,
   cliAuthCompleteSchema,
@@ -617,10 +617,17 @@ export const auditListRoute = createRoute({
   method: 'get',
   path: '/audit',
   tags: ['audit'],
-  summary: 'Read the audit log (admin+, cursor-paginated)',
-  request: { query: cursorPageQuerySchema },
+  summary: 'Read the audit log (admin+, cursor-paginated, filterable)',
+  description:
+    'Every filter is optional and they combine with AND: `q` (actor email or action, case-insensitive), ' +
+    '`action` (comma-separated; an item ending in `.` matches the family), `actorVia` (comma-separated), ' +
+    '`actor` (a user id, or `system`), `resourceType`, `resourceId`, `from`/`to` (ISO 8601). ' +
+    'The cursor stays the last row id; the same filters must ride every page of one listing. ' +
+    '`total` is counted on the first page only.',
+  request: { query: auditListQuerySchema },
   responses: {
     200: jsonBody(auditListSchema, 'Audit entries, newest first'),
+    400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403]
   }

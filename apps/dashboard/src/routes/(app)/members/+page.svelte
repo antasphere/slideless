@@ -1,25 +1,26 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { formatTimeAgo, formatDate, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -57,6 +58,8 @@
   });
 
   const members = $derived(list.items);
+  // the toolbar's quiet line: how many members, once they are all here
+  const memberCount = $derived(list.nextCursor ? undefined : rowCount('members.countOne', 'members.count'));
 
   // ── Change role dialog ─────────────────────────────────────────────────
   let showRoleDialog = $state(false);
@@ -242,11 +245,7 @@
     return actions;
   }
 
-  const roleBadge = (role: WorkspaceRole) =>
-    renderComponent(Badge, {
-      variant: role === 'member' ? ('secondary' as const) : ('default' as const),
-      children: createRawSnippet(() => ({ render: () => `<span>${role}</span>` }))
-    });
+  const roleBadge = (role: WorkspaceRole) => renderComponent(Tag, roleTag(role));
 
   const columns: ColumnDef<Member, unknown>[] = $derived([
     {
@@ -273,13 +272,12 @@
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('members.colStatus') }),
       cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: (row.getValue('isActive') ? 'outline' : 'destructive') as 'outline' | 'destructive',
-          children: createRawSnippet(() => ({
-            render: () =>
-              `<span>${row.original.isActive ? t('members.statusActive') : t('members.statusInactive')}</span>`
-          }))
-        }),
+        renderComponent(
+          Tag,
+          row.original.isActive
+            ? stateTag(t('members.statusActive'), 'ok')
+            : stateTag(t('members.statusInactive'), 'off')
+        ),
       meta: { title: t('members.colStatus'), width: '110px' }
     },
     {
@@ -309,13 +307,30 @@
         ]
       : [])
   ]);
+
+  // People is one section with two tabs (PRDCT-2436). Invitations are local
+  // membership management: absent for a plain member, and on a hub-origin
+  // workspace, whose membership is managed at the hub (P7).
+  const peopleTabs = $derived([
+    { href: '/members', label: t('members.title') },
+    ...((data.me.role === 'owner' || data.me.role === 'admin') && !data.me.workspace.hubOrigin
+      ? [{ href: '/invitations', label: t('invitations.title') }]
+      : [])
+  ]);
 </script>
 
-<PageHeader title={t('members.title')} description={t('members.description')} />
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={t('nav.people')}
+  lede={t('members.description')}
+  pageTitle={t('members.title')}
+  tabs={peopleTabs}
+  drawing="graph"
+/>
 
 {#if hubManaged}
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
-    <p class="text-sm text-muted-foreground">{t('members.hubManagedNotice')}</p>
+  <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>
+    <p class="min-w-0 text-sm">{t('members.hubManagedNotice')}</p>
     {#if me.hubManageUrl}
       <Button variant="outline" size="sm" href={me.hubManageUrl} target="_blank" rel="noopener noreferrer">
         {t('members.hubManagedCta')}
@@ -325,22 +340,24 @@
   </div>
 {/if}
 
-{#if list.error && members.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && members.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={6} />
 {:else if list.error && !members.length}
-  <p class="text-sm text-destructive">{t('members.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('members.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={members}
     {columns}
     searchColumns={['email', 'name']}
     searchPlaceholder={t('members.searchPlaceholder')}
+    count={memberCount}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -393,38 +410,28 @@
     }
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content framed>
     <Dialog.Header>
       <Dialog.Title>{t('members.resetDialogTitle')}</Dialog.Title>
       <Dialog.Description>
         {t('members.resetDialogDescription', { email: resetTarget?.email ?? '' })}
       </Dialog.Description>
     </Dialog.Header>
-    {#if resetLink}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input
-            readonly
-            value={resetLink.resetUrl}
-            class="font-mono text-xs"
-            aria-label={t('members.resetLinkAria')}
-          />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('members.copyResetAria')}
-            onclick={() => void copyText(resetLink!.resetUrl, t('members.resetCopied'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog.Body class="space-y-3">
+      {#if resetLink}
+        <CodeBlock
+          field
+          code={resetLink.resetUrl}
+          ariaLabel={t('members.resetLinkAria')}
+          copyLabel={t('members.copyResetAria')}
+          copiedMessage={t('members.resetCopied')}
+        />
         <p class="text-xs text-muted-foreground">
           {t('common.expires', { date: formatDateTime(resetLink.expiresAt) })}
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showResetDialog = false;
@@ -434,7 +441,7 @@
       >
         {t('common.done')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 
@@ -474,7 +481,7 @@
     }
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content framed>
     <Dialog.Header>
       <Dialog.Title>{t('members.emailLinkTitle')}</Dialog.Title>
       <Dialog.Description>
@@ -483,31 +490,21 @@
         {t('members.emailLinkShareOnly', { email: emailLinkTargetEmail })}
       </Dialog.Description>
     </Dialog.Header>
-    {#if emailLink}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input
-            readonly
-            value={emailLink.verifyUrl}
-            class="font-mono text-xs"
-            aria-label={t('members.emailLinkAria')}
-          />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('members.copyEmailLinkAria')}
-            onclick={() => void copyText(emailLink!.verifyUrl, t('members.emailLinkCopied'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog.Body class="space-y-3">
+      {#if emailLink}
+        <CodeBlock
+          field
+          code={emailLink.verifyUrl}
+          ariaLabel={t('members.emailLinkAria')}
+          copyLabel={t('members.copyEmailLinkAria')}
+          copiedMessage={t('members.emailLinkCopied')}
+        />
         <p class="text-xs text-muted-foreground">
           {t('common.expires', { date: formatDateTime(emailLink.expiresAt) })}
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showEmailLinkDialog = false;
@@ -517,7 +514,7 @@
       >
         {t('common.done')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 

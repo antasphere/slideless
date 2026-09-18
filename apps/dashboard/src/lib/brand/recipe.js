@@ -20,13 +20,17 @@ export const CONSTANTS = {
 
 /* The settled recipe — static, unlike the console's live editor. */
 export const RECIPE = {
-  theme: 'glacier',
+  theme: 'dawn',
   shape: 'caustic',
   seed: 976086463
 };
 
 /* Every theme names an engine palette and the three UI slots it may write. */
 export const THEMES = {
+  /* the website's home screen: the neutral paper field (PALETTES.paper below),
+     with a warm umber for the few things an accent touches. Slideless's
+     default look; not a console theme. */
+  paper: { accent: '#7A6652', accentInk: '#F7F4EC', accentSoft: 'rgba(122,102,82,0.14)' },
   glacier: { accent: '#47799A', accentInk: '#F7F4EC', accentSoft: 'rgba(71,121,154,0.14)' },
   tide: { accent: '#5C7285', accentInk: '#F7F4EC', accentSoft: 'rgba(92,114,133,0.14)' },
   furnace: { accent: '#C25C2E', accentInk: '#F7F4EC', accentSoft: 'rgba(194,92,46,0.12)' },
@@ -60,9 +64,39 @@ Object.assign(PALETTES, {
     base: '#EAF1F5',
     hues: ['#FAFCFD', '#EFF5F8', '#DCE9EF', '#C3D9E4', '#A4C4D6', '#F4F8FA', '#8AB0C8']
   },
+  /* the Labs paper, Slideless's page ground (PRDCT-2439): warm, from nearly
+     bare paper to a felt pool of clay */
+  'labs-field': {
+    light: true,
+    base: '#F6EDE3',
+    hues: ['#FDF8F1', '#F7EEE2', '#F0DFC9', '#E7CBAB', '#DCB48D', '#FAF4EB', '#CC9468']
+  },
+  'labs-field-dark': {
+    light: false,
+    base: '#241A12',
+    hues: ['#1B130C', '#241C13', '#33261A', '#453222', '#5C4129', '#20170F', '#7A4A28']
+  },
   'studio-field-dark': {
     light: false,
     base: '#161B1F',
     hues: ['#10151B', '#1B242C', '#26333E', '#334759', '#41586E', '#141A20', '#47799A']
   }
 });
+
+/* Night twins for the light themes the dashboard paints plates with
+   (PatternCanvas, LogoTile): the engine's own dark themes of the same family,
+   so a plate keeps its temperature when the dark set is on. */
+Object.assign(PALETTES, {
+  'dawn-dark': ENGINE_PALETTES.furnace,
+  'solar-dark': ENGINE_PALETTES.ember,
+  'pearl-dark': ENGINE_PALETTES.tide,
+  'glacier-dark': ENGINE_PALETTES.tide
+});
+
+/* The plates a deck card can sit on, dealt by the deck's own seed so one deck
+   keeps one plate: the tool's dawn first, then its warm and cool neighbours. */
+export const DECK_PALETTES = ['dawn', 'solar', 'dawn', 'pearl', 'labs-field', 'glacier'];
+
+/* One pattern per kind of deck. `slides` (frame -> deck) is Slideless's own
+   mark in motion; the other two are its neighbours in the library. */
+export const DECK_PATTERNS = { presentation: 'slides', app: 'panes', plan: 'written' };

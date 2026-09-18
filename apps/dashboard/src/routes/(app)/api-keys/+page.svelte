@@ -1,26 +1,30 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
+  import { Tag, TagList } from '$lib/components/ui/tag';
+  import { scopeTag, stateTag } from '$lib/tags';
+  import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import Plus from '@lucide/svelte/icons/plus';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { formatDate, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -36,6 +40,8 @@
   });
 
   const keys = $derived(list.items);
+  // the toolbar's quiet line: how many keys, once they are all here
+  const keyCount = $derived(list.nextCursor ? undefined : rowCount('apiKeys.countOne', 'apiKeys.count'));
 
   // ── Create dialog ──────────────────────────────────────────────────────
   const expiryOptions = [
@@ -130,27 +136,23 @@
       accessorKey: 'keyId',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colKeyId') }),
-      cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: 'outline' as const,
-          class: 'font-mono',
-          children: createRawSnippet(() => ({ render: () => `<span>${row.original.keyId}</span>` }))
-        }),
-      meta: { title: t('apiKeys.colKeyId'), width: '120px' }
+      cell: ({ row }) => renderComponent(Tag, { label: row.original.keyId, mono: true, icon: KeyRoundIcon }),
+      meta: { title: t('apiKeys.colKeyId'), width: '130px' }
     },
     {
       accessorKey: 'scopes',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colScopes') }),
-      cell: ({ row }) => (row.getValue('scopes') as string[]).join(', '),
-      meta: { title: t('apiKeys.colScopes'), width: '180px' }
+      cell: ({ row }) =>
+        renderComponent(TagList, { tags: (row.getValue('scopes') as string[]).map(scopeTag) }),
+      meta: { title: t('apiKeys.colScopes'), width: '200px' }
     },
     {
       accessorKey: 'createdAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colCreated') }),
       cell: ({ row }) => formatDate(row.getValue('createdAt') as string),
-      meta: { title: t('apiKeys.colCreated'), width: '120px' }
+      meta: { title: t('apiKeys.colCreated'), width: '112px' }
     },
     {
       accessorKey: 'expiresAt',
@@ -160,29 +162,29 @@
         const expiresAt = row.getValue('expiresAt') as string | null;
         return expiresAt ? formatDate(expiresAt) : '—';
       },
-      meta: { title: t('apiKeys.colExpires'), width: '120px' }
+      meta: { title: t('apiKeys.colExpires'), width: '100px' }
     },
     {
       accessorKey: 'lastUsedAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colLastUsed') }),
       cell: ({ row }) => formatTimeAgo(row.getValue('lastUsedAt') as string | null),
-      meta: { title: t('apiKeys.colLastUsed'), width: '130px' }
+      meta: { title: t('apiKeys.colLastUsed'), width: '108px' }
     },
     {
       accessorKey: 'revokedAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colStatus') }),
       cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: (isExpired(row.original) || row.original.revokedAt ? 'destructive' : 'outline') as
-            'destructive' | 'outline',
-          children: createRawSnippet(() => ({
-            render: () =>
-              `<span>${isExpired(row.original) ? t('apiKeys.statusExpired') : row.original.revokedAt ? t('apiKeys.statusRevoked') : t('apiKeys.statusActive')}</span>`
-          }))
-        }),
-      meta: { title: t('apiKeys.colStatus'), width: '110px' }
+        renderComponent(
+          Tag,
+          isExpired(row.original)
+            ? stateTag(t('apiKeys.statusExpired'), 'wait')
+            : row.original.revokedAt
+              ? stateTag(t('apiKeys.statusRevoked'), 'bad')
+              : stateTag(t('apiKeys.statusActive'), 'ok')
+        ),
+      meta: { title: t('apiKeys.colStatus'), width: '116px' }
     },
     {
       id: 'actions',
@@ -206,29 +208,39 @@
   ]);
 </script>
 
-<PageHeader
+<SectionHero
+  eyebrow={t('nav.workspace')}
   title={t('apiKeys.title')}
-  description={t('apiKeys.description')}
-  onAdd={openCreateDialog}
-  addLabel={t('apiKeys.create')}
+  lede={t('apiKeys.description')}
+  drawing="lattice"
 />
 
-{#if list.error && keys.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+{#snippet createAction()}
+  <Button onclick={openCreateDialog} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {t('apiKeys.create')}
+  </Button>
+{/snippet}
+
+<FormError
+  message={list.error && keys.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={8} />
 {:else if list.error && !keys.length}
-  <p class="text-sm text-destructive">{t('apiKeys.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('apiKeys.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={keys}
     {columns}
     searchColumns={['name', 'keyId']}
     searchPlaceholder={t('apiKeys.searchPlaceholder')}
+    count={keyCount}
+    actions={createAction}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -236,8 +248,42 @@
   {/if}
 {/if}
 
+{#snippet keyAside()}
+  <Dialog.Illustration eyebrow={t('apiKeys.asideEyebrow')} caption={t('apiKeys.asideCaption')}>
+    <DialogDrawing kind="key" />
+  </Dialog.Illustration>
+{/snippet}
+
+{#snippet secretAside()}
+  <Dialog.Illustration eyebrow={t('apiKeys.asideEyebrow')} caption={t('apiKeys.secretAsideCaption')}>
+    <DialogDrawing kind="key" />
+  </Dialog.Illustration>
+{/snippet}
+
+<!-- One scope: its switch, its name as the tag the table shows, and under it
+     what a key holding it may do. The whole row is the label (app.css
+     `.choice`); the switch is named by the tag alone, never by the hint. -->
+{#snippet scopeOption(id: string, scope: Scope, hint: string, checked: boolean, set: (v: boolean) => void)}
+  <label for={id} class="choice">
+    <Checkbox
+      {id}
+      {checked}
+      onCheckedChange={(v) => set(v === true)}
+      aria-labelledby="{id}-name"
+      aria-describedby="{id}-hint"
+      class="mt-0.5"
+    />
+    <span class="min-w-0 space-y-1">
+      <span id="{id}-name" class="block leading-none"><Tag {...scopeTag(scope)} /></span>
+      <span id="{id}-hint" class="choice-hint block">{hint}</span>
+    </span>
+  </label>
+{/snippet}
+
 <FormDialog
   bind:open={showCreateDialog}
+  size="lg"
+  aside={keyAside}
   title={t('apiKeys.createTitle')}
   description={t('apiKeys.createDescription')}
   onClose={() => (showCreateDialog = false)}
@@ -249,25 +295,30 @@
     <Label for="key-name">{t('apiKeys.nameLabel')}</Label>
     <Input id="key-name" bind:value={keyName} placeholder="ci-deploy" required />
   </div>
-  <fieldset class="space-y-3">
-    <legend class="text-sm font-medium">{t('apiKeys.scopesLegend')}</legend>
-    <div class="flex items-center gap-2">
-      <Checkbox id="scope-read" bind:checked={scopeRead} />
-      <Label for="scope-read" class="font-normal">
-        presentations:read <span class="text-muted-foreground">{t('apiKeys.scopeReadDesc')}</span>
-      </Label>
-    </div>
-    <div class="flex items-center gap-2">
-      <Checkbox id="scope-write" bind:checked={scopeWrite} />
-      <Label for="scope-write" class="font-normal">
-        presentations:write <span class="text-muted-foreground">{t('apiKeys.scopeWriteDesc')}</span>
-      </Label>
-    </div>
-    <div class="flex items-center gap-2">
-      <Checkbox id="scope-export" bind:checked={scopeExport} />
-      <Label for="scope-export" class="font-normal">
-        data:export <span class="text-muted-foreground">{t('apiKeys.scopeExportDesc')}</span>
-      </Label>
+  <fieldset class="space-y-2">
+    <legend class="eyebrow pb-2">{t('apiKeys.scopesLegend')}</legend>
+    <div class="choices">
+      {@render scopeOption(
+        'scope-read',
+        'presentations:read',
+        t('apiKeys.scopeReadDesc'),
+        scopeRead,
+        (v) => (scopeRead = v)
+      )}
+      {@render scopeOption(
+        'scope-write',
+        'presentations:write',
+        t('apiKeys.scopeWriteDesc'),
+        scopeWrite,
+        (v) => (scopeWrite = v)
+      )}
+      {@render scopeOption(
+        'scope-export',
+        'data:export',
+        t('apiKeys.scopeExportDesc'),
+        scopeExport,
+        (v) => (scopeExport = v)
+      )}
     </div>
   </fieldset>
   <div class="space-y-2">
@@ -297,34 +348,27 @@
     if (!isOpen) mintedKey = null;
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content size="lg" aside={secretAside} framed>
     <Dialog.Header>
       <Dialog.Title>{t('apiKeys.secretTitle')}</Dialog.Title>
       <Dialog.Description>{t('apiKeys.secretDescription')}</Dialog.Description>
     </Dialog.Header>
-    {#if mintedKey}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input readonly value={mintedKey} class="font-mono text-xs" aria-label={t('apiKeys.secretAria')} />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('apiKeys.copyAria')}
-            onclick={() => void copyText(mintedKey!, t('apiKeys.copiedToast'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
-        <p
-          class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
-        >
-          <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+    <Dialog.Body class="space-y-3">
+      {#if mintedKey}
+        <CodeBlock
+          field
+          code={mintedKey}
+          ariaLabel={t('apiKeys.secretAria')}
+          copyLabel={t('apiKeys.copyAria')}
+          copiedMessage={t('apiKeys.copiedToast')}
+        />
+        <p class="notice notice--danger">
+          <TriangleAlert class="size-4" />
           <span>{t('apiKeys.secretWarning')}</span>
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showSecretDialog = false;
@@ -333,7 +377,7 @@
       >
         {t('apiKeys.savedIt')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 

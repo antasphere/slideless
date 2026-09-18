@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
-  import { copyText } from '$lib/clipboard';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { t } from '$lib/i18n';
 
   /**
@@ -20,41 +18,21 @@
   <p class="text-sm text-muted-foreground">{t('decks.pushDescription')}</p>
   <div class="space-y-2">
     <p class="text-sm">{t('decks.pushConnect')}</p>
-    <div class="flex items-center gap-2">
-      <code
-        class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2 font-mono text-xs"
-      >
-        {loginCommand}
-      </code>
-      <Button
-        size="icon"
-        variant="outline"
-        class="shrink-0"
-        aria-label={t('decks.copyCommandAria')}
-        onclick={() => void copyText(loginCommand, t('decks.commandCopied'))}
-      >
-        <Copy class="h-4 w-4" />
-      </Button>
-    </div>
+    <CodeBlock
+      code={loginCommand}
+      language="shell"
+      copyLabel={t('decks.copyCommandAria')}
+      copiedMessage={t('decks.commandCopied')}
+    />
   </div>
   <div class="space-y-2">
     <p class="text-sm">{t('decks.pushPush')}</p>
-    <div class="flex items-center gap-2">
-      <code
-        class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-3 py-2 font-mono text-xs"
-      >
-        {pushCommand}
-      </code>
-      <Button
-        size="icon"
-        variant="outline"
-        class="shrink-0"
-        aria-label={t('decks.copyCommandAria')}
-        onclick={() => void copyText(pushCommand, t('decks.commandCopied'))}
-      >
-        <Copy class="h-4 w-4" />
-      </Button>
-    </div>
+    <CodeBlock
+      code={pushCommand}
+      language="shell"
+      copyLabel={t('decks.copyCommandAria')}
+      copiedMessage={t('decks.commandCopied')}
+    />
   </div>
   <p class="text-xs text-muted-foreground">{t('decks.pushDocs')}</p>
 </div>

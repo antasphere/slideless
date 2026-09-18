@@ -1,7 +1,11 @@
 <script lang="ts">
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
+  import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
+  import { rowCount } from '$lib/components/shared/DataTable.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import EmptyTable from './EmptyTable.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
@@ -9,6 +13,8 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import Download from '@lucide/svelte/icons/download';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -97,6 +103,26 @@
   }
 
   const hasFilters = $derived(filterForm !== 'all' || filterSource !== 'all');
+  // the toolbar's quiet line: every response on the deck (the summary's
+  // total), or how many of them the filters keep once they are all here
+  const responseCount = $derived.by(() => {
+    if (summaryLoading || !summary || noAccess) return undefined;
+    const total = summary.total;
+    const shown = hasFilters && !list.loading && !list.nextCursor ? list.items.length : total;
+    return rowCount('formResponses.countOne', 'formResponses.count')(shown, total);
+  });
+
+  // The summary table's heads, shared by the table and its empty form.
+  const summaryHeads = $derived(
+    [
+      t('formResponses.colForm'),
+      t('formResponses.colLink'),
+      t('formResponses.colSource'),
+      t('formResponses.colPlacement'),
+      t('formResponses.colCount'),
+      t('formResponses.colLastActivity')
+    ].map((title) => ({ title }))
+  );
 
   $effect(() => {
     // Track the filters so changing either re-fetches page 1.
@@ -287,119 +313,104 @@
   }
 </script>
 
-<Card.Root>
-  <Card.Header>
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div class="space-y-1">
-        <Card.Title class="text-base">{t('formResponses.title')}</Card.Title>
-        <Card.Description>{t('formResponses.description')}</Card.Description>
-      </div>
-      <div class="flex flex-wrap items-end gap-3">
-        <div class="space-y-1">
-          <Label for="response-filter-form" class="text-xs text-muted-foreground">
-            {t('formResponses.filterForm')}
-          </Label>
-          <Select.Root
-            type="single"
-            value={filterForm}
-            onValueChange={(v) => {
-              if (v) filterForm = v;
-            }}
-          >
-            <Select.Trigger id="response-filter-form" class="h-8 w-[150px]">
-              {filterForm === 'all' ? t('formResponses.filterAllForms') : filterForm}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="all" label={t('formResponses.filterAllForms')} />
-              {#each formNames as formName (formName)}
-                <Select.Item value={formName} label={formName} />
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
-        <div class="space-y-1">
-          <Label for="response-filter-source" class="text-xs text-muted-foreground">
-            {t('formResponses.filterSource')}
-          </Label>
-          <Select.Root
-            type="single"
-            value={filterSource}
-            onValueChange={(v) => {
-              if (v === 'all' || v === 'link' || v === 'embed') filterSource = v;
-            }}
-          >
-            <Select.Trigger id="response-filter-source" class="h-8 w-[150px]">
-              {filterSource === 'all' ? t('formResponses.filterAllSources') : sourceLabel(filterSource)}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="all" label={t('formResponses.filterAllSources')} />
-              <Select.Item value="link" label={t('formResponses.sourceLink')} />
-              <Select.Item value="embed" label={t('formResponses.sourceEmbed')} />
-            </Select.Content>
-          </Select.Root>
-        </div>
-        <Button variant="outline" size="sm" class="h-8" onclick={refresh} disabled={list.loading}>
-          <RefreshCw class="mr-2 h-3.5 w-3.5" />
-          {t('formResponses.refresh')}
-        </Button>
-        <Button variant="outline" size="sm" class="h-8" onclick={downloadCsv} disabled={!list.items.length}>
-          <Download class="mr-2 h-3.5 w-3.5" />
-          {t('formResponses.downloadCsv')}
-        </Button>
-        {#if anyFiles}
-          <Button
-            variant="outline"
-            size="sm"
-            class="h-8"
-            onclick={() => void downloadAllFiles()}
-            disabled={downloading === 'all'}
-            data-testid="responses-files-zip"
-          >
-            <Paperclip class="mr-2 h-3.5 w-3.5" />
-            {t('formResponses.downloadAllFiles')}
-          </Button>
-        {/if}
-      </div>
-    </div>
-  </Card.Header>
+<!-- the two filters, at the left of the toolbar where a search would sit;
+     each select says its own value, its name is for assistive technology -->
+{#snippet filters()}
+  <Label for="response-filter-form" class="sr-only">{t('formResponses.filterForm')}</Label>
+  <Select.Root
+    type="single"
+    value={filterForm}
+    onValueChange={(v) => {
+      if (v) filterForm = v;
+    }}
+  >
+    <Select.Trigger id="response-filter-form" class="h-8 w-[150px]">
+      {filterForm === 'all' ? t('formResponses.filterAllForms') : filterForm}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('formResponses.filterAllForms')} />
+      {#each formNames as formName (formName)}
+        <Select.Item value={formName} label={formName} />
+      {/each}
+    </Select.Content>
+  </Select.Root>
+  <Label for="response-filter-source" class="sr-only">{t('formResponses.filterSource')}</Label>
+  <Select.Root
+    type="single"
+    value={filterSource}
+    onValueChange={(v) => {
+      if (v === 'all' || v === 'link' || v === 'embed') filterSource = v;
+    }}
+  >
+    <Select.Trigger id="response-filter-source" class="h-8 w-[150px]">
+      {filterSource === 'all' ? t('formResponses.filterAllSources') : sourceLabel(filterSource)}
+    </Select.Trigger>
+    <Select.Content>
+      <Select.Item value="all" label={t('formResponses.filterAllSources')} />
+      <Select.Item value="link" label={t('formResponses.sourceLink')} />
+      <Select.Item value="embed" label={t('formResponses.sourceEmbed')} />
+    </Select.Content>
+  </Select.Root>
+{/snippet}
+
+<!-- the section's acts, at the right of the toolbar -->
+{#snippet actions()}
+  <Button variant="outline" size="sm" class="h-8" onclick={refresh} disabled={list.loading}>
+    <RefreshCw class="mr-2 h-3.5 w-3.5" />
+    {t('formResponses.refresh')}
+  </Button>
+  <Button variant="outline" size="sm" class="h-8" onclick={downloadCsv} disabled={!list.items.length}>
+    <Download class="mr-2 h-3.5 w-3.5" />
+    {t('formResponses.downloadCsv')}
+  </Button>
+  {#if anyFiles}
+    <Button
+      variant="outline"
+      size="sm"
+      class="h-8"
+      onclick={() => void downloadAllFiles()}
+      disabled={downloading === 'all'}
+      data-testid="responses-files-zip"
+    >
+      <Paperclip class="mr-2 h-3.5 w-3.5" />
+      {t('formResponses.downloadAllFiles')}
+    </Button>
+  {/if}
+{/snippet}
+
+<Card.Root class="deck-section gap-3">
+  <DeckSectionHeading
+    drawing="forms"
+    title={t('formResponses.title')}
+    description={t('formResponses.description')}
+  />
   <Card.Content data-testid="form-responses-panel">
-    {#if notify !== null}
-      <div class="mb-4 flex items-start gap-2" data-testid="form-responses-notify">
-        <Checkbox
-          id="responses-notify"
-          checked={notify}
-          disabled={notifySaving}
-          onCheckedChange={(v) => void setNotify(v === true)}
-        />
-        <Label for="responses-notify" class="font-normal">
-          {t('formResponses.notifyLabel')}
-          <span class="text-muted-foreground">{t('formResponses.notifyHint')}</span>
-        </Label>
-      </div>
-    {/if}
+    <TableToolbar count={responseCount} {filters} {actions} sticky={false} />
     {#if list.loading || summaryLoading}
       <TableSkeleton columns={3} rows={2} showSearch={false} />
     {:else if noAccess}
       <p class="text-sm text-muted-foreground">{t('formResponses.noAccess')}</p>
     {:else if list.error && !list.items.length}
-      <p class="text-sm text-destructive">{t('formResponses.loadFailed', { error: list.error })}</p>
+      <p class="text-sm text-destructive" in:appear>
+        {t('formResponses.loadFailed', { error: list.error })}
+      </p>
     {:else}
       <div class="space-y-4">
-        {#if summaryError}
-          <p class="text-sm text-destructive">
-            {t('formResponses.summaryLoadFailed', { error: summaryError })}
-          </p>
-        {:else if summary && summary.buckets.length}
-          <div class="overflow-x-auto rounded-md border">
+        <FormError
+          message={summaryError ? t('formResponses.summaryLoadFailed', { error: summaryError }) : null}
+        />
+        {#if !summaryError && summary && !summary.buckets.length}
+          <!-- no response on any form yet: the summary table still stands,
+               its heads over one quiet row -->
+          <EmptyTable message={t('formResponses.empty')} columns={summaryHeads} />
+        {:else if !summaryError && summary}
+          <div class="sheet overflow-x-auto">
             <Table.Root>
               <Table.Header>
                 <Table.Row>
-                  <Table.Head>{t('formResponses.colForm')}</Table.Head>
-                  <Table.Head>{t('formResponses.colLink')}</Table.Head>
-                  <Table.Head>{t('formResponses.colSource')}</Table.Head>
-                  <Table.Head>{t('formResponses.colPlacement')}</Table.Head>
-                  <Table.Head>{t('formResponses.colCount')}</Table.Head>
-                  <Table.Head>{t('formResponses.colLastActivity')}</Table.Head>
+                  {#each summaryHeads as head (head.title)}
+                    <Table.Head>{head.title}</Table.Head>
+                  {/each}
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -430,19 +441,21 @@
               </Table.Body>
             </Table.Root>
           </div>
-          <p class="text-xs text-muted-foreground">
-            {t('formResponses.totalCount', { n: summary.total })}
-          </p>
         {/if}
 
         {#if !list.items.length}
-          <p class="text-sm text-muted-foreground">
-            {hasFilters ? t('formResponses.emptyFiltered') : t('formResponses.empty')}
-          </p>
+          <!-- One sentence, once: with no response at all the summary table
+               above already says it. The responses are a list, so here the
+               empty frame stands in for it. -->
+          {#if summaryError || !summary || summary.buckets.length}
+            <EmptyTable message={hasFilters ? t('formResponses.emptyFiltered') : t('formResponses.empty')} />
+          {/if}
         {:else}
           <ul class="space-y-3">
             {#each list.items as response (response.id)}
-              <li class="space-y-2 rounded-md border p-4">
+              <li
+                class="space-y-2 rounded-[10px] border border-[var(--hairline)] bg-[var(--plate-strong)] p-4"
+              >
                 <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <!-- SECURITY: formName/shareTokenName are owner text and
                        placement is visitor-influenced — Svelte {…}
@@ -481,7 +494,10 @@
                   {/each}
                 </dl>
                 {#if response.files.length}
-                  <div class="rounded-md bg-muted/40 px-2.5 py-2 text-xs" data-testid="response-files">
+                  <div
+                    class="rounded-[8px] border border-dashed border-[var(--hairline)] px-3 py-2 text-xs"
+                    data-testid="response-files"
+                  >
                     <div class="mb-1 inline-flex items-center gap-1 font-medium">
                       <Paperclip class="h-3 w-3" />
                       {t('formResponses.filesTitle', { n: response.files.length })}
@@ -520,7 +536,7 @@
                     </dl>
                   </div>
                 {/if}
-                <div class="flex gap-2 pt-1">
+                <div class="-mx-2 flex flex-wrap gap-x-1 gap-y-1 pt-1">
                   {#if response.files.length}
                     <Button
                       variant="ghost"
@@ -554,7 +570,7 @@
             {/each}
           </ul>
           {#if list.nextCursor}
-            <div class="flex justify-center py-2">
+            <div class="flex justify-center py-2" transition:reveal>
               <Button
                 variant="outline"
                 size="sm"
@@ -568,81 +584,110 @@
         {/if}
       </div>
     {/if}
+    {#if notify !== null}
+      <!-- the owner's own switch, after the responses it is about: the whole
+           row is the label (app.css `.choice`), the switch named by the
+           title alone -->
+      <label for="responses-notify" class="choice notify" data-testid="form-responses-notify" in:appear>
+        <Checkbox
+          id="responses-notify"
+          checked={notify}
+          disabled={notifySaving}
+          onCheckedChange={(v) => void setNotify(v === true)}
+          aria-labelledby="responses-notify-name"
+          aria-describedby="responses-notify-hint"
+          class="mt-0.5"
+        />
+        <span class="min-w-0">
+          <span id="responses-notify-name" class="choice-name">{t('formResponses.notifyLabel')}</span>
+          <span id="responses-notify-hint" class="choice-hint block">{t('formResponses.notifyHint')}</span>
+        </span>
+      </label>
+    {/if}
   </Card.Content>
 </Card.Root>
 
 <Dialog.Root bind:open={showHistory}>
-  <Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-xl" data-testid="response-history">
+  <Dialog.Content size="lg" framed data-testid="response-history">
     <Dialog.Header>
       <Dialog.Title>{t('formResponses.historyTitle')}</Dialog.Title>
       <Dialog.Description>{t('formResponses.historyDescription')}</Dialog.Description>
     </Dialog.Header>
-    {#if historyLoading || !history}
-      <TableSkeleton rows={3} />
-    {:else}
-      <ol class="space-y-3">
-        {#each history.versions as revision (revision.revision)}
-          <li class="space-y-2 rounded-md border p-3">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <!-- SECURITY: shareTokenName is owner text and placement is
+    <Dialog.Body>
+      {#if historyLoading || !history}
+        <TableSkeleton rows={3} />
+      {:else}
+        <ol class="space-y-3" in:appear>
+          {#each history.versions as revision (revision.revision)}
+            <li class="space-y-2 rounded-[10px] border border-[var(--hairline)] p-3">
+              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <!-- SECURITY: shareTokenName is owner text and placement is
                    visitor-influenced — {…} interpolation escapes. NEVER {@html}. -->
-              <span class="font-medium text-foreground">
-                {t('formResponses.historyRevision', { n: revision.revision })}
-              </span>
-              <span>{formatTimeAgo(revision.createdAt)}</span>
-              {#if revision.shareTokenName !== null}
-                <span>· {revision.shareTokenName}</span>
-              {:else if revision.shareTokenId === null}
-                <span>· {t('formResponses.linkGone')}</span>
-              {/if}
-              <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
-              {#if revision.placement !== null}
-                <span>· {revision.placement}</span>
-              {/if}
-              <span>{t('formResponses.onVersion', { n: revision.version })}</span>
-            </div>
-            <dl class="space-y-1">
-              {#each versionEntries(revision.payload) as [key, value] (key)}
-                <!-- SECURITY: RAW anonymous-respondent input at every revision.
-                     {…} escapes it; NEVER {@html}, never an attribute. -->
-                <div class="flex gap-2 text-sm">
-                  <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
-                  <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
-                </div>
-              {/each}
-            </dl>
-            {#if revision.files?.length}
-              <!-- A revision keeps the NAMES it held, never a handle on the
-                   bytes: text only, no link. RAW respondent input — {…} only. -->
-              <div class="rounded-md bg-muted/40 px-2.5 py-2 text-xs" data-testid="revision-files">
-                <div class="mb-1 inline-flex items-center gap-1 font-medium">
-                  <Paperclip class="h-3 w-3" />
-                  {t('formResponses.filesTitle', { n: revision.files.length })}
-                </div>
-                <dl class="space-y-1">
-                  {#each groupFilesByField(revision.files) as group (group.field)}
-                    <div class="flex gap-2">
-                      <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
-                      <dd class="min-w-0 flex-1">
-                        <ul class="space-y-0.5">
-                          {#each group.files as file (file.id)}
-                            <li class="flex items-baseline justify-between gap-3">
-                              <span class="min-w-0 truncate font-mono">{file.name}</span>
-                              <span class="shrink-0 text-muted-foreground">{formatBytes(file.sizeBytes)}</span
-                              >
-                            </li>
-                          {/each}
-                        </ul>
-                      </dd>
-                    </div>
-                  {/each}
-                </dl>
+                <span class="font-medium text-foreground">
+                  {t('formResponses.historyRevision', { n: revision.revision })}
+                </span>
+                <span>{formatTimeAgo(revision.createdAt)}</span>
+                {#if revision.shareTokenName !== null}
+                  <span>· {revision.shareTokenName}</span>
+                {:else if revision.shareTokenId === null}
+                  <span>· {t('formResponses.linkGone')}</span>
+                {/if}
+                <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
+                {#if revision.placement !== null}
+                  <span>· {revision.placement}</span>
+                {/if}
+                <span>{t('formResponses.onVersion', { n: revision.version })}</span>
               </div>
-            {/if}
-          </li>
-        {/each}
-      </ol>
-    {/if}
+              <dl class="space-y-1">
+                {#each versionEntries(revision.payload) as [key, value] (key)}
+                  <!-- SECURITY: RAW anonymous-respondent input at every revision.
+                     {…} escapes it; NEVER {@html}, never an attribute. -->
+                  <div class="flex gap-2 text-sm">
+                    <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
+                    <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
+                  </div>
+                {/each}
+              </dl>
+              {#if revision.files?.length}
+                <!-- A revision keeps the NAMES it held, never a handle on the
+                   bytes: text only, no link. RAW respondent input — {…} only. -->
+                <div
+                  class="rounded-[8px] border border-dashed border-[var(--hairline)] px-3 py-2 text-xs"
+                  data-testid="revision-files"
+                >
+                  <div class="mb-1 inline-flex items-center gap-1 font-medium">
+                    <Paperclip class="h-3 w-3" />
+                    {t('formResponses.filesTitle', { n: revision.files.length })}
+                  </div>
+                  <dl class="space-y-1">
+                    {#each groupFilesByField(revision.files) as group (group.field)}
+                      <div class="flex gap-2">
+                        <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
+                        <dd class="min-w-0 flex-1">
+                          <ul class="space-y-0.5">
+                            {#each group.files as file (file.id)}
+                              <li class="flex items-baseline justify-between gap-3">
+                                <span class="min-w-0 truncate font-mono">{file.name}</span>
+                                <span class="shrink-0 text-muted-foreground"
+                                  >{formatBytes(file.sizeBytes)}</span
+                                >
+                              </li>
+                            {/each}
+                          </ul>
+                        </dd>
+                      </div>
+                    {/each}
+                  </dl>
+                </div>
+              {/if}
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
+      <Button onclick={() => (showHistory = false)}>{t('common.done')}</Button>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 
@@ -658,3 +703,13 @@
   onConfirm={() => void submitDelete()}
   loading={deleteLoading}
 />
+
+<style>
+  /* the switch stands alone, in the ruled list's own frame */
+  .notify {
+    margin-top: 16px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
+  }
+</style>

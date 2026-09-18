@@ -36,7 +36,7 @@
     <Sheet.Content
       data-sidebar="sidebar"
       data-mobile="true"
-      class="w-[var(--sidebar-width)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden sidebar-with-faded-border border-r-0"
+      class="w-[var(--sidebar-width)] rounded-none bg-sidebar bg-none p-0 text-sidebar-foreground shadow-lg [&>button]:hidden sidebar-with-faded-border border-r-0"
       style="--sidebar-width: {SIDEBAR_WIDTH_MOBILE}; --sidebar-fade-size: {SIDEBAR_FADE_SIZE};"
       {side}
     >

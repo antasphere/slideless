@@ -5,7 +5,7 @@ import { fontFamily } from 'tailwindcss/defaultTheme';
 /* The semantic color contract reads the shadcn variables that src/app.css maps
    onto the Antasphere brand tokens (the Exos pattern). `muted` and `accent`
    read the --tpl- renamed pair (the bare names belong to the brand). Radii
-   follow the brand's ramp (7 / 12, buttons 16); the default sans is Onest,
+   follow the brand's ramp (7 / 12, buttons 16); the default sans is Synonym,
    the display Sentient. */
 const config: Config = {
   darkMode: ['class'],
@@ -105,7 +105,7 @@ const config: Config = {
         lg: 'var(--shadow-lg)'
       },
       fontFamily: {
-        sans: ['Onest', ...fontFamily.sans],
+        sans: ['Synonym', ...fontFamily.sans],
         display: ['Sentient', ...fontFamily.serif],
         second: ['Synonym', ...fontFamily.sans]
       },

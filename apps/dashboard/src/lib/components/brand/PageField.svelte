@@ -2,19 +2,24 @@
   /* The page's ground: a seeded field with the film grain, fixed to the
 	   viewport and painted behind everything, so the field IS the paper and
 	   every plate floats on it. Rendered once per viewport size, no
-	   linework — the gate pages (login, consent, error) sit on it. Ported
-	   from the website's PageField.astro. */
+	   linework — the gate pages (login, consent, error) and the signed-in
+	   shell sit on it. Ported from the website's PageField.astro. */
   import { buildBlobs, DPR, noiseTile, renderLow } from '$lib/engine/engine.js';
   import { CONSTANTS, PALETTES, RECIPE } from '$lib/brand/recipe.js';
+  import { paletteFor, theme } from '$lib/theme.svelte';
 
   interface Props {
     palette?: string;
     seed?: number;
     /** How much of the field reaches the reader. */
-    strength?: 'full' | 'quiet';
+    strength?: 'full' | 'soft' | 'quiet';
+    /** Overrides for the signed-in shell, where a person sets them (look.svelte.ts):
+        the field's opacity 0..1, and the grain as a factor of the brand's constant. */
+    opacity?: number;
+    grain?: number;
   }
 
-  let { palette = 'studio-field', seed = RECIPE.seed, strength = 'full' }: Props = $props();
+  let { palette = 'labs-field', seed = RECIPE.seed, strength = 'full', opacity, grain = 1 }: Props = $props();
 
   let wrap = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -23,7 +28,9 @@
     if (!wrap || !canvas) return;
     const rect = wrap.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return;
-    const key = PALETTES[palette] ? palette : RECIPE.theme;
+    const named = PALETTES[palette] ? palette : RECIPE.theme;
+    /* the dark set paints the palette's night twin when it has one */
+    const key = paletteFor(named, theme.dark, PALETTES);
     const W = Math.round(rect.width * DPR);
     const H = Math.round(rect.height * DPR);
     canvas.width = W;
@@ -39,7 +46,7 @@
     /* the film pass: overlay on a light ground, screen on a dark one */
     const onDark = !PALETTES[key].light;
     ctx.globalCompositeOperation = onDark ? 'screen' : 'overlay';
-    ctx.globalAlpha = onDark ? CONSTANTS.grain.alpha * 0.5 : CONSTANTS.grain.alpha;
+    ctx.globalAlpha = Math.min(1, (onDark ? CONSTANTS.grain.alpha * 0.5 : CONSTANTS.grain.alpha) * grain);
     const pattern = ctx.createPattern(noiseTile(512, 0.9), 'repeat');
     if (pattern) {
       pattern.setTransform(new DOMMatrix().scale(CONSTANTS.grain.size * DPR));
@@ -49,8 +56,11 @@
   }
 
   $effect(() => {
+    theme.start();
     void palette;
     void seed;
+    void grain;
+    void theme.dark;
     if (!wrap) return;
     const ro = new ResizeObserver(rebuild);
     ro.observe(wrap);
@@ -59,8 +69,14 @@
   });
 </script>
 
-<div class="page-field" class:quiet={strength === 'quiet'} bind:this={wrap} aria-hidden="true">
-  <canvas bind:this={canvas}></canvas>
+<div
+  class="page-field"
+  class:soft={strength === 'soft'}
+  class:quiet={strength === 'quiet'}
+  bind:this={wrap}
+  aria-hidden="true"
+>
+  <canvas bind:this={canvas} style:opacity></canvas>
 </div>
 
 <style>
@@ -75,6 +91,10 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+  /* under an app a person reads all day: the weather, one notch down */
+  .soft canvas {
+    opacity: 0.72;
   }
   .quiet canvas {
     opacity: 0.5;

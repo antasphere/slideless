@@ -2,6 +2,7 @@
   import * as Sheet from '$lib/components/ui/sheet/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import Download from '@lucide/svelte/icons/download';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import VersionThumb from './VersionThumb.svelte';
@@ -80,11 +81,11 @@
     {#if list.loading}
       <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
     {:else if list.error && !list.items.length}
-      <p class="text-sm text-destructive">{t('versions.loadFailed', { error: list.error })}</p>
+      <p class="text-sm text-destructive" in:appear>{t('versions.loadFailed', { error: list.error })}</p>
     {:else if !list.items.length}
       <p class="text-sm text-muted-foreground">{t('versions.empty')}</p>
     {:else}
-      <ol class="divide-y rounded-md border">
+      <ol class="divide-y rounded-[10px] border bg-[var(--plate-strong)]" in:appear>
         {#each list.items as version (version.version)}
           {@const shown = version.version === shownVersion}
           <li class="space-y-2 p-3" data-testid="version-row" data-version={version.version}>
@@ -110,15 +111,21 @@
                 </p>
               </div>
               {#if shown}
-                <Badge variant="secondary">{t('master.historyShowing')}</Badge>
+                <span class="inline-flex shrink-0" in:appear>
+                  <Badge variant="secondary">{t('master.historyShowing')}</Badge>
+                </span>
               {:else}
-                <Button variant="outline" size="sm" onclick={() => show(version.version)}>
-                  {t('master.historyShow')}
-                </Button>
+                <span class="inline-flex shrink-0" in:appear>
+                  <Button variant="outline" size="sm" onclick={() => show(version.version)}>
+                    {t('master.historyShow')}
+                  </Button>
+                </span>
               {/if}
             </div>
             {#if version.hasDownloads}
-              <div class="rounded-md bg-muted/40 px-2.5 py-2 text-xs">
+              <div
+                class="rounded-[10px] border bg-[color-mix(in_oklab,var(--ground-2)_62%,transparent)] px-2.5 py-2 text-xs"
+              >
                 <div class="mb-1 flex items-center justify-between gap-2">
                   <span class="inline-flex items-center gap-1 font-medium">
                     <Paperclip class="h-3 w-3" />
@@ -140,11 +147,13 @@
                   </button>
                 </div>
                 {#if attachmentErrors[version.version]}
-                  <p class="text-destructive">{attachmentErrors[version.version]}</p>
+                  <p class="text-destructive" role="alert" transition:reveal>
+                    {attachmentErrors[version.version]}
+                  </p>
                 {:else if !attachmentsByVersion[version.version]}
                   <p class="text-muted-foreground">{t('common.loading')}</p>
                 {:else}
-                  <ul class="space-y-0.5">
+                  <ul class="space-y-0.5" in:appear>
                     {#each attachmentsByVersion[version.version] as file (file.path)}
                       <!-- SECURITY: file names are DECK-AUTHORED text — escaped
                            {} interpolation only, never {@html}. -->
@@ -172,7 +181,7 @@
         {/each}
       </ol>
       {#if list.nextCursor}
-        <div class="flex justify-center py-2">
+        <div class="flex justify-center py-2" transition:reveal>
           <Button
             variant="outline"
             size="sm"

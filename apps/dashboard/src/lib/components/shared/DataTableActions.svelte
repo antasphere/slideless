@@ -20,18 +20,15 @@
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
-      <Button variant="ghost" size="icon" class="h-8 w-8" {...props}>
+      <Button variant="ghost" size="icon" class="h-10 w-10 md:h-8 md:w-8" {...props}>
         <Ellipsis class="h-4 w-4" />
         <span class="sr-only">{t('table.openMenu')}</span>
       </Button>
     {/snippet}
   </DropdownMenu.Trigger>
-  <DropdownMenu.Content align="end">
+  <DropdownMenu.Content align="end" class="min-w-[176px]">
     {#each actions as action (action.label)}
-      <DropdownMenu.Item
-        onclick={action.onclick}
-        class={action.variant === 'destructive' ? 'text-destructive focus:text-destructive' : ''}
-      >
+      <DropdownMenu.Item onclick={action.onclick} variant={action.variant}>
         {action.label}
       </DropdownMenu.Item>
     {/each}

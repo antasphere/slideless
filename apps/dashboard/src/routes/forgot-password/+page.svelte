@@ -2,6 +2,8 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { appear } from '$lib/components/ui/reveal/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
@@ -51,7 +53,7 @@
     </Card.Header>
     <Card.Content class="space-y-4">
       {#if sent}
-        <p class="text-sm text-muted-foreground">{t('forgot.sent')}</p>
+        <p class="text-sm text-muted-foreground" in:appear>{t('forgot.sent')}</p>
       {:else}
         <form
           class="space-y-4"
@@ -64,9 +66,7 @@
             <Label for="reset-email">{t('forgot.email')}</Label>
             <Input id="reset-email" type="email" autocomplete="email" bind:value={email} required />
           </div>
-          {#if error}
-            <p class="text-sm text-destructive">{error}</p>
-          {/if}
+          <FormError message={error} />
           <Button type="submit" class="w-full" disabled={loading}>
             {loading ? t('common.sending') : t('forgot.submit')}
           </Button>

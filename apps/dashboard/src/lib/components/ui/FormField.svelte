@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormError from '$lib/components/shared/FormError.svelte';
   import InfoTooltip from '$lib/components/ui/InfoTooltip.svelte';
   import { Label } from '$lib/components/ui/label';
   import type { Snippet } from 'svelte';
@@ -58,9 +59,7 @@
   {@render children()}
 
   <!-- Error message -->
-  {#if error}
-    <p class="text-destructive text-sm">{error}</p>
-  {/if}
+  <FormError message={error} />
 
   <!-- Post-description (validation hints) -->
   {#if postDescription}

@@ -22,7 +22,8 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     await page.goto('/');
     await expect(page).toHaveURL(/\/setup$/);
     await page.getByLabel('Instance name').fill(INSTANCE_NAME);
-    await page.getByLabel('Your name').fill(OWNER.name);
+    await page.getByLabel('First name').fill(OWNER.firstName);
+    await page.getByLabel('Last name').fill(OWNER.lastName);
     await page.getByLabel('Email').fill(OWNER.email);
     await page.getByLabel('Password').fill(OWNER.password);
     // The first-boot claim requires a setup token (PRDCT-1347) and the wizard
@@ -53,6 +54,8 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
 
   let inviteUrl = '';
   await test.step('create an invitation and get the copyable link', async () => {
+    // Invitations are a tab of the people section (PRDCT-2436), not a sidebar entry.
+    await page.getByRole('link', { name: 'People', exact: true }).click();
     await page.getByRole('link', { name: 'Invitations', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Invitations' })).toBeVisible();
     await page.getByRole('button', { name: 'Invite member' }).click();
@@ -75,7 +78,8 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     const invitee = await context.newPage();
     await invitee.goto(inviteUrl);
     await expect(invitee.getByText(`Join ${INSTANCE_NAME}`)).toBeVisible();
-    await invitee.getByLabel('Your name').fill(INVITEE.name);
+    await invitee.getByLabel('First name').fill(INVITEE.firstName);
+    await invitee.getByLabel('Last name').fill(INVITEE.lastName);
     await invitee.getByLabel('Choose a password').fill(INVITEE.password);
     await invitee.getByRole('button', { name: 'Create account and join' }).click();
     await expect(invitee.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });

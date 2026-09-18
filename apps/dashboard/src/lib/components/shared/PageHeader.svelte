@@ -14,8 +14,10 @@
 </script>
 
 <!-- The page-title tier of the brand's type register: Sentient at the title
-     size, the hairline underneath doing the separating (no Separator). -->
-<div class="page-head mb-10 items-end justify-between gap-4">
+     size, the hairline underneath doing the separating (no Separator).
+     `data-page-head`: the shell watches it leave the scroll to show the path
+     in the top bar. -->
+<div data-page-head class="page-head mb-6 flex-wrap items-end justify-between gap-x-4 gap-y-3 md:mb-10">
   <div class="min-w-0 space-y-1">
     <h1>{title}</h1>
     {#if description}
@@ -23,8 +25,8 @@
     {/if}
   </div>
   {#if onAdd}
-    <Button onclick={onAdd} size="sm" class="shrink-0">
-      <Plus class="mr-1 h-4 w-4" />
+    <Button onclick={onAdd} size="sm" class="h-10 shrink-0 gap-1.5 px-4 md:h-9">
+      <Plus class="h-4 w-4" />
       {addLabel}
     </Button>
   {/if}

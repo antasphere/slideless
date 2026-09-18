@@ -6,40 +6,68 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
-  import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import { Reveal, appear, reveal } from '$lib/components/ui/reveal/index.js';
   import CapabilityCell from './CapabilityCell.svelte';
   import ShareLinkNameCell from './ShareLinkNameCell.svelte';
+  import ShareLinkPanel, { type LinkAction } from './ShareLinkPanel.svelte';
   import ShareLinkRowActions from './ShareLinkRowActions.svelte';
   import ShareLinkStatusCell from './ShareLinkStatusCell.svelte';
   import ShareLinkVersionCell from './ShareLinkVersionCell.svelte';
+  import ShareLinkColumnsMenu from './ShareLinkColumnsMenu.svelte';
+  import { LinkColumns, type LinkColumnId } from './linkColumns.svelte';
+  import type { Snippet } from 'svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { isPreviewToken, tokenStatus } from '$lib/decks';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { PresentationVersion, ShareToken, ShareTokenView } from '@slideless/contract';
+  import Activity from '@lucide/svelte/icons/activity';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
+  import Paperclip from '@lucide/svelte/icons/paperclip';
+  import Ban from '@lucide/svelte/icons/ban';
+  import type { PresentationVersion, ShareToken } from '@slideless/contract';
 
   /**
    * The deck's share links as a table (rebuilt with PRDCT-2308: the
    * recipient on one line, the version as a tag, one check column per
    * capability, copy and open on every row) with their per-row actions
    * (copy, open, activity, change version, file uploads on/off, revoke) and
-   * the dialogs those open. Shared by the admin page's share panel and the
-   * master page's share sheet (PRDCT-2279). Creating a link is the sibling
-   * ShareLinkCreateDialog.
+   * the dialogs those open. A row opens the link's panel (ShareLinkPanel):
+   * the same facts and the same acts, with the link's activity. Which
+   * columns show is the reader's choice, kept in this browser (LinkColumns).
+   * Shared by the admin page's share panel and the master page's share sheet
+   * (PRDCT-2279). Creating a link is the sibling ShareLinkCreateDialog. With
+   * no link yet the table still stands, its heads over one quiet row. The
+   * toolbar over it carries the count at the left (how many links still
+   * open, out of how many) and the View button with the host's action at
+   * the right.
    */
   interface Props {
     deckId: string;
     /** Page-owned list — shared with the preview's token housekeeping. */
     list: PagedList<ShareToken>;
     versions: PresentationVersion[];
+    /**
+     * Which columns show before the reader chooses: `full` is every column
+     * (the master page's share sheet), `lean` hides the least telling ones
+     * (the deck page). Each keeps its own remembered choice.
+     */
+    defaults?: 'full' | 'lean';
+    /**
+     * The host's own column choice: it renders the View button itself, in
+     * `actions`. Without it the table keeps its own choice and its own View
+     * button, in the toolbar over it.
+     */
+    view?: LinkColumns;
+    /** The host's buttons at the right of the toolbar (View and New share link on the deck page). */
+    actions?: Snippet;
   }
 
-  let { deckId, list, versions }: Props = $props();
+  let { deckId, list, versions, defaults = 'full', view, actions }: Props = $props();
 
   // The page's own transient preview tokens are plumbing, not shares.
   const tokens = $derived(list.items.filter((token) => !isPreviewToken(token)));
@@ -101,53 +129,15 @@
     }
   }
 
-  // ── Per-view activity dialog (PRDCT-1313) ─────────────────────────────
-  // Recent counted views of one link: time, referring site host, placement
-  // label, coarse browser family. All values render through escaped Svelte
-  // interpolation — referrerHost/placement are visitor-influenced text.
-  let showViewsDialog = $state(false);
-  let viewsTarget = $state<ShareToken | null>(null);
-  let viewsRows = $state<ShareTokenView[]>([]);
-  let viewsCursor = $state<string | null>(null);
-  let viewsLoading = $state(false);
-  let viewsLoadingMore = $state(false);
-  let viewsError = $state<string | null>(null);
+  // ── The link's panel ───────────────────────────────────────────────────
+  // A row opens it, and so does the menu's "View activity": the link's
+  // facts, its counted views (PRDCT-1313) and its acts. The panel follows
+  // the list's live row by id, so a change made from it reads back in it.
+  let panelTokenId = $state<string | null>(null);
+  const panelToken = $derived(tokens.find((token) => token.id === panelTokenId) ?? null);
 
-  const VIEWS_PAGE = 25;
-
-  async function openViewsDialog(token: ShareToken) {
-    viewsTarget = token;
-    viewsRows = [];
-    viewsCursor = null;
-    viewsError = null;
-    showViewsDialog = true;
-    viewsLoading = true;
-    try {
-      const page = await api.shareTokenViews(deckId, token.id, { limit: VIEWS_PAGE });
-      viewsRows = page.views;
-      viewsCursor = page.nextCursor;
-    } catch (e) {
-      viewsError = errorMessage(e);
-    } finally {
-      viewsLoading = false;
-    }
-  }
-
-  async function loadMoreViews() {
-    if (!viewsTarget || !viewsCursor) return;
-    viewsLoadingMore = true;
-    try {
-      const page = await api.shareTokenViews(deckId, viewsTarget.id, {
-        limit: VIEWS_PAGE,
-        cursor: viewsCursor
-      });
-      viewsRows = [...viewsRows, ...page.views];
-      viewsCursor = page.nextCursor;
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      viewsLoadingMore = false;
-    }
+  function openPanel(token: ShareToken) {
+    panelTokenId = token.id;
   }
 
   // ── Revoke ─────────────────────────────────────────────────────────────
@@ -171,6 +161,53 @@
     }
   }
 
+  // ── A link's acts, built ONCE ──────────────────────────────────────────
+  // The row menu and the link's panel both show this list, so the two can
+  // never drift: same labels, same handlers.
+  function actionsFor(token: ShareToken): LinkAction[] {
+    if (tokenStatus(token) !== 'active') return [];
+    return [
+      {
+        key: 'version',
+        label: t('tokens.actionChangeVersion'),
+        icon: GitBranch,
+        onclick: () => openVersionDialog(token)
+      },
+      // Uploads need submissions: no switch on a link with forms off.
+      ...(token.canSubmitForms
+        ? [
+            {
+              key: 'uploads' as const,
+              label: token.canUploadFiles ? t('tokens.actionUploadsOff') : t('tokens.actionUploadsOn'),
+              icon: Paperclip,
+              onclick: () => void setUploads(token, !token.canUploadFiles)
+            }
+          ]
+        : []),
+      {
+        key: 'revoke',
+        label: t('tokens.actionRevoke'),
+        icon: Ban,
+        onclick: () => {
+          revokeTarget = token;
+          showRevokeDialog = true;
+        },
+        variant: 'destructive'
+      }
+    ];
+  }
+
+  // ── Which columns show ─────────────────────────────────────────────────
+  // The reader's choice (LinkColumns): the host's when it renders the View
+  // button itself, this table's own otherwise.
+  // svelte-ignore state_referenced_locally
+  const own = view ? null : new LinkColumns(defaults);
+  const columnsView = $derived(view ?? own!);
+  const hidden = $derived(columnsView.hidden);
+
+  const statusShown = $derived(!hidden.includes('revokedAt'));
+  const activeCount = $derived(tokens.filter((token) => tokenStatus(token) === 'active').length);
+
   // One capability, one column: a check or nothing (PRDCT-2308).
   const capability = (
     key: 'downloads' | 'bar' | 'notes' | 'forms' | 'uploads' | 'remembers',
@@ -187,11 +224,11 @@
   // The recipient first and never cut; the version as a tag; the
   // capabilities as checks; the counts; the status with its expiry behind
   // the hover; copy, open and the menu at the end. EVERY column carries a
-  // width and they add up to the table's min width (1132px): in a fixed
+  // width and the visible ones add up to the table's min width: in a fixed
   // table layout the one column without a width gets whatever is left,
   // which was nothing — the cut column Romain reported. A narrower host
   // scrolls the table sideways instead.
-  const columns: ColumnDef<ShareToken, unknown>[] = $derived([
+  const allColumns: ColumnDef<ShareToken, unknown>[] = $derived([
     {
       accessorKey: 'name',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('tokens.colName') }),
@@ -201,9 +238,12 @@
       cell: ({ row }) =>
         renderComponent(ShareLinkNameCell, {
           name: row.original.name,
-          hasPassword: row.original.hasPassword
+          hasPassword: row.original.hasPassword,
+          status: tokenStatus(row.original),
+          showState: !statusShown,
+          onopen: () => openPanel(row.original)
         }),
-      meta: { title: t('tokens.colName'), width: '180px' }
+      meta: { title: t('tokens.colName'), width: statusShown ? '180px' : '260px' }
     },
     {
       accessorKey: 'pinnedVersion',
@@ -235,7 +275,7 @@
       accessorKey: 'accessCount',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('tokens.colViews') }),
       cell: ({ row }) => String(row.original.accessCount),
-      meta: { title: t('tokens.colViews'), width: '64px' }
+      meta: { title: t('tokens.colViews'), width: '88px' }
     },
     {
       accessorKey: 'lastAccessedAt',
@@ -260,60 +300,61 @@
             // View activity stays available on revoked/expired links too —
             // access history deliberately survives revocation.
             {
+              key: 'activity',
               label: t('tokens.actionViews'),
-              onclick: () => void openViewsDialog(row.original)
+              icon: Activity,
+              onclick: () => openPanel(row.original)
             },
-            ...(tokenStatus(row.original) !== 'active'
-              ? []
-              : [
-                  {
-                    label: t('tokens.actionChangeVersion'),
-                    onclick: () => openVersionDialog(row.original)
-                  },
-                  // Uploads need submissions: no switch on a link with forms off.
-                  ...(row.original.canSubmitForms
-                    ? [
-                        {
-                          label: row.original.canUploadFiles
-                            ? t('tokens.actionUploadsOff')
-                            : t('tokens.actionUploadsOn'),
-                          onclick: () => void setUploads(row.original, !row.original.canUploadFiles)
-                        }
-                      ]
-                    : []),
-                  {
-                    label: t('tokens.actionRevoke'),
-                    onclick: () => {
-                      revokeTarget = row.original;
-                      showRevokeDialog = true;
-                    },
-                    variant: 'destructive' as const
-                  }
-                ])
+            ...actionsFor(row.original)
           ]
         }),
       meta: { width: '116px' }
     }
   ]);
+
+  const columnId = (column: ColumnDef<ShareToken, unknown>) =>
+    ('accessorKey' in column ? String(column.accessorKey) : (column.id ?? '')) as LinkColumnId;
+  const columns = $derived(allColumns.filter((column) => !hidden.includes(columnId(column))));
+  // Every column carries a width; the table is never narrower than their sum
+  // (a narrower host scrolls it sideways), and never wider than it has to be.
+  const minWidth = $derived(
+    columns.reduce((sum, column) => sum + parseInt(column.meta?.width ?? '0', 10), 0)
+  );
 </script>
+
+{#snippet toolbarActions()}
+  {#if own}
+    <ShareLinkColumnsMenu view={own} class="h-8" />
+  {/if}
+  {@render actions?.()}
+{/snippet}
 
 {#if list.loading}
   <TableSkeleton columns={10} rows={2} />
 {:else if list.error && !tokens.length}
-  <p class="text-sm text-destructive">{t('tokens.loadFailed', { error: list.error })}</p>
-{:else if !tokens.length}
-  <p class="text-sm text-muted-foreground">{t('tokens.empty')}</p>
+  <p class="text-sm text-destructive" in:appear>{t('tokens.loadFailed', { error: list.error })}</p>
 {:else}
-  <DataTable
-    data={tokens}
-    {columns}
-    showViewOptions={false}
-    showPagination={false}
-    pageSize={200}
-    tableClass="min-w-[1132px]"
-  />
+  <!-- the count says how many links still open, out of how many; with none
+       yet the table still stands, its heads over one quiet row -->
+  <div class="links" style="--links-min: {minWidth}px">
+    <DataTable
+      data={tokens}
+      {columns}
+      count={tokens.length
+        ? () => t('tokens.countLine', { active: activeCount, total: tokens.length })
+        : undefined}
+      actions={toolbarActions}
+      emptyMessage={t('tokens.empty')}
+      showViewOptions={false}
+      showPagination={false}
+      pageSize={200}
+      sticky={false}
+      tableClass="links-table"
+      onRowClick={openPanel}
+    />
+  </div>
   {#if list.nextCursor}
-    <div class="flex justify-center py-2">
+    <div class="flex justify-center py-2" transition:reveal>
       <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -321,67 +362,12 @@
   {/if}
 {/if}
 
-<Dialog.Root
-  bind:open={showViewsDialog}
-  onOpenChange={(isOpen) => {
-    if (!isOpen) {
-      viewsTarget = null;
-      viewsRows = [];
-      viewsCursor = null;
-      viewsError = null;
-    }
-  }}
->
-  <Dialog.Content class="sm:max-w-lg">
-    <Dialog.Header>
-      <Dialog.Title>{t('tokens.viewsTitle')}</Dialog.Title>
-      <Dialog.Description>
-        {t('tokens.viewsDescription', { name: viewsTarget?.name ?? '' })}
-      </Dialog.Description>
-    </Dialog.Header>
-    {#if viewsLoading}
-      <p class="py-4 text-sm text-muted-foreground">{t('common.loading')}</p>
-    {:else if viewsError}
-      <p class="py-4 text-sm text-destructive">{t('tokens.viewsLoadFailed', { error: viewsError })}</p>
-    {:else if !viewsRows.length}
-      <p class="py-4 text-sm text-muted-foreground">{t('tokens.viewsEmpty')}</p>
-    {:else}
-      <div class="max-h-80 space-y-0 overflow-y-auto rounded-md border">
-        {#each viewsRows as view (view.id)}
-          <!-- referrerHost/placement are visitor-influenced: escaped {} only. -->
-          <div class="flex items-baseline justify-between gap-3 border-b px-3 py-2 text-sm last:border-b-0">
-            <span class="shrink-0 text-muted-foreground">{formatTimeAgo(view.occurredAt)}</span>
-            <span class="min-w-0 flex-1 truncate text-right">
-              {view.referrerHost ?? t('tokens.viewsDirect')}
-              {#if view.placement}
-                <span class="text-muted-foreground">· {view.placement}</span>
-              {/if}
-              {#if view.uaFamily}
-                <span class="text-muted-foreground">· {view.uaFamily}</span>
-              {/if}
-              <span class="text-muted-foreground">· v{view.version}</span>
-            </span>
-          </div>
-        {/each}
-      </div>
-      {#if viewsCursor}
-        <div class="flex justify-center pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onclick={() => void loadMoreViews()}
-            disabled={viewsLoadingMore}
-          >
-            {viewsLoadingMore ? t('common.loading') : t('common.loadMore')}
-          </Button>
-        </div>
-      {/if}
-    {/if}
-    <div class="flex justify-end pt-2">
-      <Button onclick={() => (showViewsDialog = false)}>{t('common.close')}</Button>
-    </div>
-  </Dialog.Content>
-</Dialog.Root>
+<ShareLinkPanel
+  {deckId}
+  token={panelToken}
+  actions={panelToken ? actionsFor(panelToken) : []}
+  onClose={() => (panelTokenId = null)}
+/>
 
 <FormDialog
   bind:open={showVersionDialog}
@@ -413,7 +399,7 @@
       </Select.Content>
     </Select.Root>
   </div>
-  {#if editVersionMode === 'pinned'}
+  <Reveal open={editVersionMode === 'pinned'}>
     <div class="space-y-2">
       <Label for="edit-pinned-version">{t('tokens.colVersion')}</Label>
       <Select.Root
@@ -433,7 +419,7 @@
         </Select.Content>
       </Select.Root>
     </div>
-  {/if}
+  </Reveal>
 </FormDialog>
 
 <ConfirmDialog
@@ -448,3 +434,36 @@
   onConfirm={() => void submitRevoke()}
   loading={revokeLoading}
 />
+
+<style>
+  /* every column has a width: the table is at least their sum */
+  .links :global(.links-table) {
+    min-width: var(--links-min);
+  }
+  /* A link that no longer opens is read as such before any word: its row is
+     faded. The name cell keeps its ink (it carries the state tag) and so do
+     the row's buttons. */
+  .links :global(tr:has([data-link-state='revoked'], [data-link-state='expired']) > td) {
+    transition: opacity var(--motion-duration) var(--motion-ease);
+  }
+  .links
+    :global(
+      tr:has([data-link-state='revoked'], [data-link-state='expired'])
+        > td:not([data-actions-cell]):not(:has([data-link-state]))
+    ) {
+    opacity: 0.42;
+  }
+  /* on a phone a link that no longer opens folds to its name and its state:
+     the rest is one tap away, in its panel */
+  .links :global(li:has([data-link-state='revoked'], [data-link-state='expired']) > dl) {
+    display: none;
+  }
+  /* the row opens the link: the name answers the pointer anywhere on it */
+  @media (hover: hover) {
+    .links :global(tbody tr:hover [data-link-state='active'] [data-testid='link-open-panel']) {
+      text-decoration-line: underline;
+      text-decoration-color: color-mix(in oklab, var(--accent) 70%, transparent);
+      text-underline-offset: 3px;
+    }
+  }
+</style>

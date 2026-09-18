@@ -1,12 +1,17 @@
 <script lang="ts">
+  import { Tag } from '$lib/components/ui/tag';
+  import { fileTag } from '$lib/tags';
+  import Plus from '@lucide/svelte/icons/plus';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, PlatformApiError, errorMessage } from '$lib/api';
@@ -26,6 +31,8 @@
   });
 
   const files = $derived(list.items);
+  // the toolbar's quiet line: how many files, once they are all here
+  const fileCount = $derived(list.nextCursor ? undefined : rowCount('files.countOne', 'files.count'));
 
   // ── Upload (raw bytes, filename as query param) ────────────────────────
   let fileInput = $state<HTMLInputElement | null>(null);
@@ -98,7 +105,7 @@
     {
       accessorKey: 'contentType',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('files.colType') }),
-      cell: ({ row }) => row.getValue('contentType'),
+      cell: ({ row }) => renderComponent(Tag, fileTag(String(row.getValue('contentType')))),
       meta: { title: t('files.colType'), width: '200px' }
     },
     {
@@ -106,7 +113,7 @@
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('files.colUploaded') }),
       cell: ({ row }) => formatDateTime(row.getValue('createdAt') as string),
-      meta: { title: t('files.colUploaded'), width: '170px' }
+      meta: { title: t('files.colUploaded'), width: '210px' }
     },
     {
       id: 'actions',
@@ -129,31 +136,41 @@
   ]);
 </script>
 
-<PageHeader
+<SectionHero
+  eyebrow={t('nav.workspace')}
   title={t('files.title')}
-  description={t('files.description')}
-  onAdd={() => fileInput?.click()}
-  addLabel={uploading ? t('files.uploading') : t('files.upload')}
+  lede={t('files.description')}
+  drawing="contour"
 />
+
+{#snippet uploadAction()}
+  <Button onclick={() => fileInput?.click()} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {uploading ? t('files.uploading') : t('files.upload')}
+  </Button>
+{/snippet}
 
 <input type="file" class="hidden" bind:this={fileInput} onchange={() => void onFileChosen()} />
 
-{#if list.error && files.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && files.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={5} />
 {:else if list.error && !files.length}
-  <p class="text-sm text-destructive">{t('files.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('files.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={files}
     {columns}
     searchColumns={['originalName']}
     searchPlaceholder={t('files.searchPlaceholder')}
+    count={fileCount}
+    actions={uploadAction}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>

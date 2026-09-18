@@ -1,10 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
+  import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import { authClient } from '$lib/auth-client';
   import { copyText } from '$lib/clipboard';
   import { refreshSession } from '$lib/session';
@@ -232,11 +236,37 @@
       passwordLoading = false;
     }
   }
+
+  // Settings is one section with two tabs (PRDCT-2441): the instance, and the
+  // person's own account, so nobody has to find it under their name.
+  const settingsTabs = [
+    { href: '/settings', label: t('settings.tabInstance') },
+    { href: '/account', label: t('settings.tabAccount') }
+  ];
 </script>
 
-<PageHeader title={t('account.title')} description={t('account.description')} />
+<SectionHero
+  eyebrow={t('nav.system')}
+  title={t('nav.settings')}
+  lede={t('account.description')}
+  pageTitle={t('account.title')}
+  tabs={settingsTabs}
+  drawing="meridians"
+/>
 
 <div class="grid gap-6 lg:grid-cols-2">
+  <!-- The language is the person's, not the instance's: it is kept in this
+       browser (ADR 007), and this is where a person looks for it (PRDCT-2441). -->
+  <Card.Root class="lg:col-span-2">
+    <Card.Content class="flex flex-wrap items-center justify-between gap-4">
+      <div class="min-w-0">
+        <p class="font-display text-base">{t('account.languageTitle')}</p>
+        <p class="text-sm text-muted-foreground">{t('account.languageDescription')}</p>
+      </div>
+      <LanguageSwitcher />
+    </Card.Content>
+  </Card.Root>
+
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-base">{t('account.profileTitle')}</Card.Title>
@@ -255,21 +285,20 @@
           <Input id="account-name" autocomplete="name" bind:value={name} required />
         </div>
         {#if !emailChangeEnabled}
-          <div class="space-y-2">
+          <div class="space-y-2" in:appear>
             <Label for="account-email">{t('account.email')}</Label>
             <Input id="account-email" type="email" value={data.me.user.email} readonly />
             <p class="text-xs text-muted-foreground">{t('account.emailReadonlyHint')}</p>
           </div>
         {/if}
-        {#if profileError}
-          <p class="text-sm text-destructive">{profileError}</p>
-        {/if}
+        <FormError message={profileError} />
         <Button type="submit" disabled={profileLoading}>
           {profileLoading ? t('common.saving') : t('account.saveChanges')}
         </Button>
       </form>
       {#if emailChangeEnabled}
         <form
+          in:appear
           class="mt-6 space-y-4 border-t pt-6"
           onsubmit={(e) => {
             e.preventDefault();
@@ -283,9 +312,7 @@
               {t('account.emailChangeHint')}
             </p>
           </div>
-          {#if emailError}
-            <p class="text-sm text-destructive">{emailError}</p>
-          {/if}
+          <FormError message={emailError} />
           <Button type="submit" variant="outline" disabled={emailLoading}>
             {emailLoading ? t('common.sending') : t('account.changeEmail')}
           </Button>
@@ -338,9 +365,7 @@
             required
           />
         </div>
-        {#if passwordError}
-          <p class="text-sm text-destructive">{passwordError}</p>
-        {/if}
+        <FormError message={passwordError} />
         <Button type="submit" disabled={passwordLoading}>
           {passwordLoading ? t('account.changingPassword') : t('account.changePassword')}
         </Button>
@@ -358,15 +383,15 @@
         {#if twoFactorEnabled === null}
           <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
         {:else if enrollment}
-          <div class="space-y-4">
+          <div class="space-y-4" in:appear>
             <div class="space-y-2">
-              <Label for="totp-secret">{t('account.twoFactorSecret')}</Label>
-              <div class="flex gap-2">
-                <Input id="totp-secret" class="font-mono" value={enrollment.secret} readonly />
-                <Button type="button" variant="outline" onclick={() => void copyText(enrollment!.secret)}>
-                  {t('account.twoFactorCopySecret')}
-                </Button>
-              </div>
+              <p class="text-sm font-medium leading-none">{t('account.twoFactorSecret')}</p>
+              <CodeBlock
+                field
+                code={enrollment.secret}
+                ariaLabel={t('account.twoFactorSecret')}
+                copyLabel={t('account.twoFactorCopySecret')}
+              />
               <p class="text-xs text-muted-foreground">{t('account.twoFactorSecretHint')}</p>
               <Button
                 type="button"
@@ -378,27 +403,20 @@
               </Button>
             </div>
             <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <Label>{t('account.twoFactorBackupTitle')}</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onclick={() => void copyText(enrollment!.backupCodes.join('\n'))}
-                >
-                  {t('account.twoFactorCopyCodes')}
-                </Button>
-              </div>
-              <div class="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-3 font-mono text-sm">
-                {#each enrollment.backupCodes as code (code)}
-                  <span>{code}</span>
-                {/each}
-              </div>
+              <CodeBlock
+                code={enrollment.backupCodes.join('\n')}
+                label={t('account.twoFactorBackupTitle')}
+                ariaLabel={t('account.twoFactorBackupTitle')}
+                copyLabel={t('account.twoFactorCopyCodes')}
+                class="[--code-max-h:none]"
+              />
               <p class="text-xs text-muted-foreground">{t('account.twoFactorBackupHint')}</p>
             </div>
             {#if enrollmentActivated}
-              <p class="text-sm">{t('account.twoFactorActivated')}</p>
-              <Button type="button" onclick={finishTwoFactorEnrollment}>{t('common.done')}</Button>
+              <div class="space-y-4" in:appear>
+                <p class="text-sm">{t('account.twoFactorActivated')}</p>
+                <Button type="button" onclick={finishTwoFactorEnrollment}>{t('common.done')}</Button>
+              </div>
             {:else}
               <form
                 class="space-y-4"
@@ -417,9 +435,7 @@
                     required
                   />
                 </div>
-                {#if twoFaError}
-                  <p class="text-sm text-destructive">{twoFaError}</p>
-                {/if}
+                <FormError message={twoFaError} />
                 <Button type="submit" disabled={twoFaLoading}>
                   {twoFaLoading ? t('common.working') : t('account.twoFactorActivate')}
                 </Button>
@@ -428,6 +444,7 @@
           </div>
         {:else if twoFactorEnabled}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
@@ -446,15 +463,14 @@
               />
               <p class="text-xs text-muted-foreground">{t('account.twoFactorDisableHint')}</p>
             </div>
-            {#if twoFaError}
-              <p class="text-sm text-destructive">{twoFaError}</p>
-            {/if}
+            <FormError message={twoFaError} />
             <Button type="submit" variant="outline" disabled={twoFaLoading}>
               {twoFaLoading ? t('common.working') : t('account.twoFactorDisable')}
             </Button>
           </form>
         {:else}
           <form
+            in:appear
             class="space-y-4"
             onsubmit={(e) => {
               e.preventDefault();
@@ -473,9 +489,7 @@
               />
               <p class="text-xs text-muted-foreground">{t('account.twoFactorEnableHint')}</p>
             </div>
-            {#if twoFaError}
-              <p class="text-sm text-destructive">{twoFaError}</p>
-            {/if}
+            <FormError message={twoFaError} />
             <Button type="submit" disabled={twoFaLoading}>
               {twoFaLoading ? t('common.working') : t('account.twoFactorStart')}
             </Button>
@@ -516,9 +530,7 @@
             bind:value={deletePassword}
           />
         </div>
-        {#if deleteError}
-          <p class="text-sm text-destructive">{deleteError}</p>
-        {/if}
+        <FormError message={deleteError} />
         <Button type="submit" variant="destructive" disabled={!deleteArmed || deleteLoading}>
           {deleteLoading ? t('account.deleting') : t('account.deleteSubmit')}
         </Button>

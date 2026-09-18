@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildShareTokenCreate, defaultShareLinkForm } from './share-form';
+import {
+  buildShareTokenCreate,
+  defaultShareLinkForm as bareDefaults,
+  UNNAMED_LINK_LABEL,
+  willRememberResponses
+} from './share-form';
+
+// A NAMED link: what every switch test below is about. The unnamed link has
+// its own block at the end.
+const defaultShareLinkForm = (v: number | null) => ({ ...bareDefaults(v), name: 'alice@client.com' });
 
 /**
  * The share-link create body (PRDCT-2299): every capability switch reaches
@@ -89,5 +98,39 @@ describe('buildShareTokenCreate', () => {
     );
     expect(body.expiresAt).toBe('2026-09-21T10:00:00.000Z');
     expect(body.password).toBe('hunter22');
+  });
+
+  it('accepts an empty recipient: a generic label goes out, and the link does not remember', () => {
+    const body = buildShareTokenCreate(bareDefaults(3));
+    expect(body.name).toBe(UNNAMED_LINK_LABEL);
+    // A link for nobody in particular: every submit is a fresh response
+    // (the CLI's rule for `slideless share` without --name).
+    expect(body.remembersResponses).toBe(false);
+    expect('remembersResponses' in body).toBe(true);
+    // every other switch is untouched by the missing name
+    expect(body).toMatchObject({
+      canSubmitForms: true,
+      canUploadFiles: true,
+      canDownload: true,
+      showBar: true
+    });
+  });
+
+  it("treats a name of spaces as no name, trims a real one, and sends the caller's label", () => {
+    const blank = buildShareTokenCreate({ ...bareDefaults(3), name: '   ' }, Date.now(), 'Lien sans nom');
+    expect(blank.name).toBe('Lien sans nom');
+    expect(blank.remembersResponses).toBe(false);
+    const named = buildShareTokenCreate({ ...bareDefaults(3), name: '  Alice  ' });
+    expect(named.name).toBe('Alice');
+    expect(named.remembersResponses).toBe(true);
+  });
+
+  it('says whether the link will remember, for the form to show it', () => {
+    expect(willRememberResponses(bareDefaults(1))).toBe(false);
+    expect(willRememberResponses({ ...bareDefaults(1), name: 'Alice' })).toBe(true);
+    expect(willRememberResponses({ ...bareDefaults(1), name: 'Alice', canSubmitForms: false })).toBe(false);
+    expect(willRememberResponses({ ...bareDefaults(1), name: 'Alice', remembersResponses: false })).toBe(
+      false
+    );
   });
 });

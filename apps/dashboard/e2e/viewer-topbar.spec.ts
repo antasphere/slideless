@@ -198,7 +198,8 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       expect(bg).not.toBe('rgb(255, 0, 0)');
       // PRDCT-2308: the bar's neutral tone, never the accent (the old #f5b301).
       expect(bg).not.toBe('rgb(245, 179, 1)');
-      expect(['rgb(43, 43, 54)', 'rgb(240, 240, 244)']).toContain(bg);
+      // The dashboard's outline button: the plate (tokens.css --plate-strong), light and dark.
+      expect(['rgba(251, 249, 243, 0.82)', 'rgba(40, 34, 28, 0.84)']).toContain(bg);
     });
 
     await test.step('the download menu opens with the product’s one motion and rests where the dashboard’s popovers do', async () => {
@@ -233,7 +234,8 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       );
       expect(offset).toBe(`${barHeight}px`);
       // The bottom of the slide is reachable: scroll to the end, it ends inside the viewport.
-      await recipient.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      // The body is the scroll container under the bar (the window never scrolls).
+      await recipient.evaluate(() => document.body.scrollTo(0, document.body.scrollHeight));
       const bottom = await recipient.locator('#slide').evaluate((el) => el.getBoundingClientRect().bottom);
       const innerHeight = await recipient.evaluate(() => window.innerHeight);
       expect(bottom).toBeLessThanOrEqual(innerHeight + 1);
@@ -241,7 +243,7 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
         .locator('#slide')
         .evaluate((el) => el.getBoundingClientRect().height);
       expect(Math.round(slideHeight)).toBe(innerHeight);
-      await recipient.evaluate(() => window.scrollTo(0, 0));
+      await recipient.evaluate(() => document.body.scrollTo(0, 0));
     });
 
     await test.step('the download menu lists each file with its size and the whole set as a zip', async () => {
@@ -463,13 +465,23 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       expect(slideTop).toBe(0);
     });
 
-    await test.step('the annotation badge sits below the bar when both mount', async () => {
+    await test.step('the annotation controls sit IN the bar when both mount, nothing floats over the deck', async () => {
       await recipient.goto(`${origin}/v/${annotator}/`);
       await expect(recipient.locator(`${BAR} .bar`)).toBeVisible();
-      await expect(recipient.locator('#__sl-badge')).toBeVisible();
+      // The bar hosts the two entrances under the overlay's ids (the shadow
+      // root is open, so the locator reaches them); the overlay creates no
+      // floating button of its own.
+      await expect(recipient.locator(`${BAR} #__sl-badge`)).toBeVisible();
+      await expect(recipient.locator(`${BAR} #__sl-fab-pin`)).toBeVisible();
+      await expect(recipient.locator('#__slideless_annotate #__sl-badge')).toHaveCount(0);
       const bar = await recipient.locator(BAR).boundingBox();
-      const badge = await recipient.locator('#__sl-badge').boundingBox();
-      expect(bar && badge && badge.y >= bar.y + bar.height).toBe(true);
+      const badge = await recipient.locator(`${BAR} #__sl-badge`).boundingBox();
+      expect(bar && badge && badge.y >= bar.y && badge.y + badge.height <= bar.y + bar.height).toBe(true);
+      // The bar's button opens the overlay's panel.
+      await recipient.locator(`${BAR} #__sl-badge`).click();
+      await expect(recipient.locator('#__sl-sheet')).toHaveClass(/open/);
+      await recipient.locator('#__sl-close').click();
+      await expect(recipient.locator('#__sl-sheet')).not.toHaveClass(/open/);
     });
 
     await test.step('an iframe embed stays bare', async () => {

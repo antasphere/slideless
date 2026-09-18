@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
-  import DataTable from '$lib/components/shared/DataTable.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
+  import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
@@ -15,11 +16,14 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
+  import Plus from '@lucide/svelte/icons/plus';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { formatDate, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -43,6 +47,10 @@
   });
 
   const invitations = $derived(list.items);
+  // the toolbar's quiet line: how many invitations, once they are all here
+  const invitationCount = $derived(
+    list.nextCursor ? undefined : rowCount('invitations.countOne', 'invitations.count')
+  );
 
   type InviteStatus = 'open' | 'accepted' | 'revoked' | 'expired';
 
@@ -109,13 +117,6 @@
     }
   }
 
-  const statusVariant: Record<InviteStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    open: 'default',
-    accepted: 'secondary',
-    revoked: 'destructive',
-    expired: 'outline'
-  };
-
   const statusLabels: Record<InviteStatus, string> = {
     open: t('invitations.statusOpen'),
     accepted: t('invitations.statusAccepted'),
@@ -135,11 +136,7 @@
       accessorKey: 'role',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('invitations.colRole') }),
-      cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: 'secondary' as const,
-          children: createRawSnippet(() => ({ render: () => `<span>${row.original.role}</span>` }))
-        }),
+      cell: ({ row }) => renderComponent(Tag, roleTag(row.original.role)),
       meta: { title: t('invitations.colRole'), width: '100px' }
     },
     {
@@ -149,10 +146,13 @@
         renderComponent(DataTableColumnHeader, { column, title: t('invitations.colStatus') }),
       cell: ({ row }) => {
         const status = statusOf(row.original);
-        return renderComponent(Badge, {
-          variant: statusVariant[status],
-          children: createRawSnippet(() => ({ render: () => `<span>${statusLabels[status]}</span>` }))
-        });
+        return renderComponent(
+          Tag,
+          stateTag(
+            statusLabels[status],
+            status === 'open' ? 'wait' : status === 'accepted' ? 'ok' : status === 'revoked' ? 'bad' : 'off'
+          )
+        );
       },
       meta: { title: t('invitations.colStatus'), width: '110px' }
     },
@@ -194,18 +194,37 @@
           } as ColumnDef<InvitationInfo, unknown>
         ])
   ]);
+
+  // People is one section with two tabs (PRDCT-2436). Invitations are local
+  // membership management: absent for a plain member, and on a hub-origin
+  // workspace, whose membership is managed at the hub (P7).
+  const peopleTabs = $derived([
+    { href: '/members', label: t('members.title') },
+    ...((data.me.role === 'owner' || data.me.role === 'admin') && !data.me.workspace.hubOrigin
+      ? [{ href: '/invitations', label: t('invitations.title') }]
+      : [])
+  ]);
 </script>
 
-<PageHeader
-  title={t('invitations.title')}
-  description={t('invitations.description')}
-  onAdd={hubManaged ? undefined : openCreateDialog}
-  addLabel={t('invitations.invite')}
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={t('nav.people')}
+  lede={t('invitations.description')}
+  pageTitle={t('invitations.title')}
+  tabs={peopleTabs}
+  drawing="graph"
 />
 
+{#snippet inviteAction()}
+  <Button onclick={openCreateDialog} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {t('invitations.invite')}
+  </Button>
+{/snippet}
+
 {#if hubManaged}
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
-    <p class="text-sm text-muted-foreground">{t('members.hubManagedNotice')}</p>
+  <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>
+    <p class="min-w-0 text-sm">{t('members.hubManagedNotice')}</p>
     {#if data.me.hubManageUrl}
       <Button
         variant="outline"
@@ -221,22 +240,25 @@
   </div>
 {/if}
 
-{#if list.error && invitations.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && invitations.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={6} />
 {:else if list.error && !invitations.length}
-  <p class="text-sm text-destructive">{t('invitations.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('invitations.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={invitations}
     {columns}
     searchColumns={['email']}
     searchPlaceholder={t('invitations.searchPlaceholder')}
+    count={invitationCount}
+    actions={hubManaged ? undefined : inviteAction}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -244,8 +266,22 @@
   {/if}
 {/if}
 
+{#snippet inviteAside()}
+  <Dialog.Illustration eyebrow={t('invitations.asideEyebrow')} caption={t('invitations.asideCaption')}>
+    <DialogDrawing kind="member" />
+  </Dialog.Illustration>
+{/snippet}
+
+{#snippet linkAside()}
+  <Dialog.Illustration eyebrow={t('invitations.asideEyebrow')} caption={t('invitations.linkAsideCaption')}>
+    <DialogDrawing kind="membered" />
+  </Dialog.Illustration>
+{/snippet}
+
 <FormDialog
   bind:open={showCreateDialog}
+  size="lg"
+  aside={inviteAside}
   title={t('invitations.createTitle')}
   description={t('invitations.createDescription')}
   onClose={() => (showCreateDialog = false)}
@@ -290,7 +326,7 @@
     if (!isOpen) created = null;
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content size="lg" aside={linkAside} framed>
     <Dialog.Header>
       <Dialog.Title>{t('invitations.linkTitle')}</Dialog.Title>
       <Dialog.Description>
@@ -300,26 +336,16 @@
         {/if}
       </Dialog.Description>
     </Dialog.Header>
-    {#if created}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input
-            readonly
-            value={created.acceptUrl}
-            class="font-mono text-xs"
-            aria-label={t('invitations.linkAria')}
-          />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('invitations.copyLinkAria')}
-            onclick={() => void copyText(created!.acceptUrl, t('invitations.linkCopied'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
-        <div class="flex items-center gap-2 text-sm text-muted-foreground">
+    <Dialog.Body class="space-y-3">
+      {#if created}
+        <CodeBlock
+          field
+          code={created.acceptUrl}
+          ariaLabel={t('invitations.linkAria')}
+          copyLabel={t('invitations.copyLinkAria')}
+          copiedMessage={t('invitations.linkCopied')}
+        />
+        <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           {#if created.emailSent}
             <Badge variant="secondary">{t('invitations.badgeEmailSent')}</Badge>
           {:else}
@@ -330,9 +356,9 @@
         <p class="text-xs text-muted-foreground">
           {t('common.expires', { date: formatDateTime(created.invitation.expiresAt) })}
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showLinkDialog = false;
@@ -341,7 +367,7 @@
       >
         {t('common.done')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 

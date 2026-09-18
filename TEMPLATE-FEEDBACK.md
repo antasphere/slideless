@@ -1106,3 +1106,14 @@ calls for Romain, not template bugs. Nothing here is silently fixed.
    worse because ITS fallback expression was the raw path. Template could
    route every consumer (log line, span, metrics label) through the one
    helper and say clearly the guard is for future Hono versions.
+
+6. **The dashboard's dev proxy key `/api` also matches the `/api-keys` page** — through Vite that
+   page is handed to the API server and never loads. The key must be `/api/`. Found by the
+   Slideless rebrand lane (2026-09-18, PRDCT-2439); every product on the chassis carries the
+   same `vite.config.ts`.
+7. **A phone has no navigation of its own on the chassis** — under 768 px the sidebar becomes a
+   drawer of the desk's list and every table scrolls sideways. Slideless now has one navigation
+   model read by the sidebar, a four-entry tab bar and a workspace page, and a `DataTable` that
+   renders a card per row on a phone (PRDCT-2436). Whether that, and the page field under the
+   signed-in shell (PRDCT-2439), go back to the template and to the hub is a decision for whoever
+   owns the template: a product's need is not template machinery by itself.

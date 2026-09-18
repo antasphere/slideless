@@ -7,6 +7,12 @@ import type { ShareTokenCreate } from '@slideless/contract';
  * no browser in the loop.
  */
 export interface ShareLinkForm {
+  /**
+   * The owner's label for the link: who it is for. OPTIONAL in the form. The
+   * API requires a name (`shareTokenCreateSchema.name`, 1 to 200 characters),
+   * so an empty field sends a generic label, exactly as `slideless share`
+   * without `--name` sends "cli".
+   */
   name: string;
   versionMode: 'latest' | 'pinned';
   /** The pinned version as the select holds it (a string); read only when pinned. */
@@ -56,20 +62,45 @@ export function defaultShareLinkForm(firstVersion: number | null): ShareLinkForm
   };
 }
 
+/** The label an unnamed link is sent with when the caller gives none (the dialog passes its translated one). */
+export const UNNAMED_LINK_LABEL = 'Unnamed link';
+
+/** Whether the person said who the link is for. */
+export function isNamedLink(form: Pick<ShareLinkForm, 'name'>): boolean {
+  return form.name.trim().length > 0;
+}
+
+/**
+ * Whether the link will remember its recipient's answers. The CLI's rule,
+ * kept honest here (docs/sharing/forms.md, "A link that remembers its
+ * answers"): a link minted for one NAMED recipient is that person's
+ * response; a link nobody named is a link for nobody in particular, and
+ * every submit through it is a fresh response. Forms off = nothing to
+ * remember.
+ */
+export function willRememberResponses(form: ShareLinkForm): boolean {
+  return form.canSubmitForms && isNamedLink(form) && form.remembersResponses;
+}
+
 /** The create body, every switch carried explicitly so the server never falls back to a default the person did not choose. */
-export function buildShareTokenCreate(form: ShareLinkForm, now: number = Date.now()): ShareTokenCreate {
+export function buildShareTokenCreate(
+  form: ShareLinkForm,
+  now: number = Date.now(),
+  unnamedLabel: string = UNNAMED_LINK_LABEL
+): ShareTokenCreate {
   return {
-    name: form.name,
+    name: isNamedLink(form) ? form.name.trim() : unnamedLabel,
     versionMode: form.versionMode,
     ...(form.versionMode === 'pinned' ? { pinnedVersion: Number(form.pinnedVersion) } : {}),
     canAnnotate: form.canAnnotate,
     canSubmitForms: form.canSubmitForms,
     canDownload: form.canDownload,
     showBar: form.showBar,
-    // Carried explicitly, and OFF when forms are off: a link that refuses
-    // submissions has nothing to remember, and the table must not show a
-    // remembering check on it.
-    remembersResponses: form.canSubmitForms && form.remembersResponses,
+    // Carried explicitly, and OFF when forms are off or the link has no
+    // name: a link that refuses submissions has nothing to remember, a link
+    // for nobody in particular must not hand one visitor the previous one's
+    // answers, and the table must not show a remembering check on either.
+    remembersResponses: willRememberResponses(form),
     // Same rule (PRDCT-2403): uploads need submissions, so a link with forms
     // off never carries an uploads check, and never opens the public write
     // by a server default the person did not choose.

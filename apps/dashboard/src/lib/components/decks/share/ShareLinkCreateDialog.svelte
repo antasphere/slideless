@@ -6,12 +6,19 @@
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { Reveal } from '$lib/components/ui/reveal/index.js';
+  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { api, errorMessage } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { rememberLinkUrl } from '$lib/decks/link-urls.svelte';
-  import { buildShareTokenCreate, defaultShareLinkForm } from '$lib/decks/share-form';
+  import {
+    buildShareTokenCreate,
+    defaultShareLinkForm,
+    isNamedLink,
+    willRememberResponses
+  } from '$lib/decks/share-form';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import type { PresentationVersion } from '@slideless/contract';
@@ -72,7 +79,14 @@
 
   // ── Created dialog: the viewer URL appears exactly once ───────────────
   let createdUrl = $state<string | null>(null);
+  let createdRemembers = $state(false);
   let showCreatedDialog = $state(false);
+  let showEmbed = $state(false);
+
+  // A link nobody named is a link for nobody in particular: it does not
+  // remember answers (the CLI's rule, $lib/decks/share-form.ts). The form
+  // says so where the switch is, instead of sending something else quietly.
+  const named = $derived(isNamedLink(form));
 
   // ── Embed snippets (PRDCT-1312) ────────────────────────────────────────
   // Producible only NOW: secrets are hash-only at rest, so the snippets die
@@ -94,12 +108,17 @@
   async function submitCreate() {
     createLoading = true;
     try {
-      const result = await api.createShareToken(deckId, buildShareTokenCreate(form));
+      const result = await api.createShareToken(
+        deckId,
+        buildShareTokenCreate(form, Date.now(), t('tokens.unnamedLabel'))
+      );
       // The URL exists once, here: the links table's copy and open actions
       // read it from this page-session memory (PRDCT-2308).
       rememberLinkUrl(result.shareToken.id, result.url);
       open = false;
       createdUrl = result.url;
+      createdRemembers = willRememberResponses(form);
+      showEmbed = false;
       showCreatedDialog = true;
       await onCreated();
     } catch (e) {
@@ -110,8 +129,51 @@
   }
 </script>
 
+{#snippet shareAside()}
+  <Dialog.Illustration eyebrow={t('tokens.asideEyebrow')} caption={t('tokens.asideCaption')}>
+    <DialogDrawing kind="share" />
+  </Dialog.Illustration>
+{/snippet}
+
+{#snippet createdAside()}
+  <Dialog.Illustration eyebrow={t('tokens.asideEyebrow')} caption={t('tokens.createdAsideCaption')}>
+    <DialogDrawing kind="shared" />
+  </Dialog.Illustration>
+{/snippet}
+
+<!-- One capability of the link: its switch, its name, and under it what it
+     means. The whole row is the label (app.css `.choice`), so the hand lands
+     anywhere on it; the switch is named by the title alone, and the hint is
+     its description, never part of its name. -->
+{#snippet option(
+  id: string,
+  label: string,
+  hint: string,
+  checked: boolean,
+  set: (v: boolean) => void,
+  disabled?: boolean
+)}
+  <label for={id} class="choice" data-disabled={disabled ? '' : undefined}>
+    <Checkbox
+      {id}
+      {checked}
+      {disabled}
+      onCheckedChange={(v) => set(v === true)}
+      aria-labelledby="{id}-name"
+      aria-describedby="{id}-hint"
+      class="mt-0.5"
+    />
+    <span class="min-w-0">
+      <span id="{id}-name" class="choice-name">{label}</span>
+      <span id="{id}-hint" class="choice-hint block">{hint}</span>
+    </span>
+  </label>
+{/snippet}
+
 <FormDialog
   bind:open
+  size="lg"
+  aside={shareAside}
   title={t('tokens.createTitle')}
   description={t('tokens.createDescription')}
   onClose={() => (open = false)}
@@ -121,8 +183,16 @@
 >
   <div class="space-y-2">
     <Label for="token-name">{t('tokens.nameLabel')}</Label>
-    <Input id="token-name" bind:value={form.name} placeholder={t('tokens.namePlaceholder')} required />
+    <Input
+      id="token-name"
+      bind:value={form.name}
+      placeholder={t('tokens.namePlaceholder')}
+      maxlength={200}
+      aria-describedby="token-name-hint"
+    />
+    <p id="token-name-hint" class="hint">{t('tokens.nameHint')}</p>
   </div>
+
   <div class="space-y-2">
     <Label for="token-version-mode">{t('tokens.versionLabel')}</Label>
     <Select.Root
@@ -141,124 +211,141 @@
       </Select.Content>
     </Select.Root>
   </div>
-  {#if form.versionMode === 'pinned'}
+  <Reveal open={form.versionMode === 'pinned'} class="space-y-2">
+    <Label for="token-pinned-version">{t('tokens.colVersion')}</Label>
+    <Select.Root
+      type="single"
+      value={form.pinnedVersion}
+      onValueChange={(v) => {
+        if (v) form.pinnedVersion = v;
+      }}
+    >
+      <Select.Trigger id="token-pinned-version" class="w-full">
+        {form.pinnedVersion ? `v${form.pinnedVersion}` : '—'}
+      </Select.Trigger>
+      <Select.Content>
+        {#each versions as version (version.version)}
+          <Select.Item value={String(version.version)} label={`v${version.version}`} />
+        {/each}
+      </Select.Content>
+    </Select.Root>
+  </Reveal>
+
+  <fieldset class="space-y-2">
+    <legend class="eyebrow pb-2">{t('tokens.groupCan')}</legend>
+    <div class="choices">
+      {@render option(
+        'token-annotate',
+        t('tokens.annotateLabel'),
+        t('tokens.annotateHint'),
+        form.canAnnotate,
+        (v) => (form.canAnnotate = v)
+      )}
+      <Reveal open={form.canAnnotate} class="nested space-y-2">
+        <Label for="token-badge-position">{t('tokens.badgePositionLabel')}</Label>
+        <Select.Root
+          type="single"
+          value={form.badgePosition}
+          onValueChange={(v) => {
+            if (v) form.badgePosition = v;
+          }}
+        >
+          <Select.Trigger id="token-badge-position" class="w-full">
+            {badgePositionOptions.find((o) => o.value === form.badgePosition)?.label}
+          </Select.Trigger>
+          <Select.Content>
+            {#each badgePositionOptions as option (option.value)}
+              <Select.Item value={option.value} label={option.label} />
+            {/each}
+          </Select.Content>
+        </Select.Root>
+        <p class="hint">{t('tokens.badgePositionHint')}</p>
+      </Reveal>
+
+      {@render option(
+        'token-forms',
+        t('tokens.formsLabel'),
+        t('tokens.formsHint'),
+        form.canSubmitForms,
+        (v) => (form.canSubmitForms = v)
+      )}
+      <Reveal open={form.canSubmitForms} class="nested">
+        {@render option(
+          'token-uploads',
+          t('tokens.uploadsLabel'),
+          t('tokens.uploadsHint'),
+          form.canUploadFiles,
+          (v) => (form.canUploadFiles = v)
+        )}
+        <!-- An unnamed link never remembers: the switch shows it, off and
+             locked, with the reason, rather than staying ticked and lying. -->
+        {@render option(
+          'token-remember',
+          t('tokens.rememberLabel'),
+          named ? t('tokens.rememberHint') : t('tokens.rememberNeedsName'),
+          named && form.remembersResponses,
+          (v) => (form.remembersResponses = v),
+          !named
+        )}
+        <Reveal open={named && form.remembersResponses}>
+          <p class="note note--warn" data-testid="token-remember-warning">
+            <TriangleAlert class="mt-0.5 size-3.5 shrink-0" />
+            <span>{t('tokens.rememberWarning')}</span>
+          </p>
+        </Reveal>
+      </Reveal>
+
+      {@render option(
+        'token-downloads',
+        t('tokens.downloadsLabel'),
+        t('tokens.downloadsHint'),
+        form.canDownload,
+        (v) => (form.canDownload = v)
+      )}
+      {@render option(
+        'token-bar',
+        t('tokens.barLabel'),
+        t('tokens.barHint'),
+        form.showBar,
+        (v) => (form.showBar = v)
+      )}
+    </div>
+  </fieldset>
+
+  <div class="grid gap-4 sm:grid-cols-2">
     <div class="space-y-2">
-      <Label for="token-pinned-version">{t('tokens.colVersion')}</Label>
+      <Label for="token-expiry">{t('tokens.expiryLabel')}</Label>
       <Select.Root
         type="single"
-        value={form.pinnedVersion}
+        value={form.expiresIn}
         onValueChange={(v) => {
-          if (v) form.pinnedVersion = v;
+          if (v) form.expiresIn = v;
         }}
       >
-        <Select.Trigger id="token-pinned-version" class="w-full">
-          {form.pinnedVersion ? `v${form.pinnedVersion}` : '—'}
+        <Select.Trigger id="token-expiry" class="w-full">
+          {expiryOptions.find((o) => o.value === form.expiresIn)?.label}
         </Select.Trigger>
         <Select.Content>
-          {#each versions as version (version.version)}
-            <Select.Item value={String(version.version)} label={`v${version.version}`} />
-          {/each}
-        </Select.Content>
-      </Select.Root>
-    </div>
-  {/if}
-  <div class="flex items-center gap-2">
-    <Checkbox id="token-annotate" bind:checked={form.canAnnotate} />
-    <Label for="token-annotate" class="font-normal">
-      {t('tokens.annotateLabel')}
-      <span class="text-muted-foreground">{t('tokens.annotateHint')}</span>
-    </Label>
-  </div>
-  <div class="flex items-center gap-2">
-    <Checkbox id="token-forms" bind:checked={form.canSubmitForms} />
-    <Label for="token-forms" class="font-normal">
-      {t('tokens.formsLabel')}
-      <span class="text-muted-foreground">{t('tokens.formsHint')}</span>
-    </Label>
-  </div>
-  {#if form.canSubmitForms}
-    <div class="flex items-center gap-2 pl-6">
-      <Checkbox id="token-uploads" bind:checked={form.canUploadFiles} />
-      <Label for="token-uploads" class="font-normal">
-        {t('tokens.uploadsLabel')}
-        <span class="text-muted-foreground">{t('tokens.uploadsHint')}</span>
-      </Label>
-    </div>
-    <div class="space-y-1 pl-6">
-      <div class="flex items-center gap-2">
-        <Checkbox id="token-remember" bind:checked={form.remembersResponses} />
-        <Label for="token-remember" class="font-normal">
-          {t('tokens.rememberLabel')}
-          <span class="text-muted-foreground">{t('tokens.rememberHint')}</span>
-        </Label>
-      </div>
-      {#if form.remembersResponses}
-        <p class="text-xs text-muted-foreground" data-testid="token-remember-warning">
-          {t('tokens.rememberWarning')}
-        </p>
-      {/if}
-    </div>
-  {/if}
-  <div class="flex items-center gap-2">
-    <Checkbox id="token-downloads" bind:checked={form.canDownload} />
-    <Label for="token-downloads" class="font-normal">
-      {t('tokens.downloadsLabel')}
-      <span class="text-muted-foreground">{t('tokens.downloadsHint')}</span>
-    </Label>
-  </div>
-  <div class="flex items-center gap-2">
-    <Checkbox id="token-bar" bind:checked={form.showBar} />
-    <Label for="token-bar" class="font-normal">
-      {t('tokens.barLabel')}
-      <span class="text-muted-foreground">{t('tokens.barHint')}</span>
-    </Label>
-  </div>
-  {#if form.canAnnotate}
-    <div class="space-y-2">
-      <Label for="token-badge-position">{t('tokens.badgePositionLabel')}</Label>
-      <Select.Root
-        type="single"
-        value={form.badgePosition}
-        onValueChange={(v) => {
-          if (v) form.badgePosition = v;
-        }}
-      >
-        <Select.Trigger id="token-badge-position" class="w-full">
-          {badgePositionOptions.find((o) => o.value === form.badgePosition)?.label}
-        </Select.Trigger>
-        <Select.Content>
-          {#each badgePositionOptions as option (option.value)}
+          {#each expiryOptions as option (option.value)}
             <Select.Item value={option.value} label={option.label} />
           {/each}
         </Select.Content>
       </Select.Root>
-      <p class="text-xs text-muted-foreground">{t('tokens.badgePositionHint')}</p>
     </div>
-  {/if}
-  <div class="space-y-2">
-    <Label for="token-expiry">{t('tokens.expiryLabel')}</Label>
-    <Select.Root
-      type="single"
-      value={form.expiresIn}
-      onValueChange={(v) => {
-        if (v) form.expiresIn = v;
-      }}
-    >
-      <Select.Trigger id="token-expiry" class="w-full">
-        {expiryOptions.find((o) => o.value === form.expiresIn)?.label}
-      </Select.Trigger>
-      <Select.Content>
-        {#each expiryOptions as option (option.value)}
-          <Select.Item value={option.value} label={option.label} />
-        {/each}
-      </Select.Content>
-    </Select.Root>
+    <div class="space-y-2">
+      <Label for="token-password">{t('tokens.passwordLabel')}</Label>
+      <Input
+        id="token-password"
+        type="password"
+        autocomplete="off"
+        bind:value={form.password}
+        minlength={4}
+      />
+    </div>
   </div>
-  <div class="space-y-2">
-    <Label for="token-password">{t('tokens.passwordLabel')}</Label>
-    <Input id="token-password" type="password" autocomplete="off" bind:value={form.password} minlength={4} />
-    <p class="text-xs text-muted-foreground">{t('tokens.passwordHint')}</p>
-  </div>
+  <Reveal open={form.password.length > 0}>
+    <p class="hint">{t('tokens.passwordHint')}</p>
+  </Reveal>
 </FormDialog>
 
 <Dialog.Root
@@ -267,78 +354,70 @@
     if (!isOpen) createdUrl = null;
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content size="lg" aside={createdAside} framed>
     <Dialog.Header>
       <Dialog.Title>{t('tokens.createdTitle')}</Dialog.Title>
       <Dialog.Description>{t('tokens.createdDescription')}</Dialog.Description>
     </Dialog.Header>
-    {#if createdUrl}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input readonly value={createdUrl} class="font-mono text-xs" aria-label={t('tokens.urlAria')} />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('tokens.copyUrlAria')}
-            onclick={() => void copyText(createdUrl!, t('tokens.urlCopied'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
-        <p
-          class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
-        >
-          <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+    <Dialog.Body class="space-y-4">
+      {#if createdUrl}
+        <CodeBlock
+          field
+          code={createdUrl}
+          ariaLabel={t('tokens.urlAria')}
+          copyLabel={t('tokens.copyUrlAria')}
+          copiedMessage={t('tokens.urlCopied')}
+        />
+        <p class="note note--danger">
+          <TriangleAlert class="mt-0.5 size-4 shrink-0" />
           <span>{t('tokens.secretWarning')}</span>
         </p>
-        <details class="rounded-md border">
-          <summary class="cursor-pointer select-none px-3 py-2 text-sm font-medium">
-            {t('tokens.embedTitle')}
-          </summary>
-          <div class="space-y-4 border-t p-3">
+
+        <div class="embed">
+          <button
+            type="button"
+            class="embed-toggle"
+            aria-expanded={showEmbed}
+            aria-controls="token-embed"
+            onclick={() => (showEmbed = !showEmbed)}
+          >
+            <span>{t('tokens.embedTitle')}</span>
+            <ChevronDown class="chevron size-4" />
+          </button>
+          <Reveal open={showEmbed} id="token-embed" class="embed-body space-y-4">
+            {#if createdRemembers}
+              <p class="note note--warn">
+                <TriangleAlert class="mt-0.5 size-3.5 shrink-0" />
+                <span>{t('tokens.embedRememberWarning')}</span>
+              </p>
+            {/if}
+            <!-- SECURITY: CodeBlock renders the snippets as text, piece by
+                 piece, through escaped interpolation. Never {@html}. -->
             <div class="space-y-1.5">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-xs font-medium">{t('tokens.embedScriptLabel')}</span>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  class="h-7 w-7 shrink-0"
-                  aria-label={t('tokens.embedCopyScriptAria')}
-                  onclick={() => void copyText(embedScriptSnippet!, t('tokens.embedCopied'))}
-                >
-                  <Copy class="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <!-- Snippets render through escaped {} interpolation — never {@html}. -->
-              <pre class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
-                  >{embedScriptSnippet}</code
-                ></pre>
-              <p class="text-xs text-muted-foreground">{t('tokens.embedScriptHint')}</p>
+              <CodeBlock
+                code={embedScriptSnippet ?? ''}
+                language="html"
+                label={t('tokens.embedScriptLabel')}
+                copyLabel={t('tokens.embedCopyScriptAria')}
+                copiedMessage={t('tokens.embedCopied')}
+              />
+              <p class="hint">{t('tokens.embedScriptHint')}</p>
             </div>
             <div class="space-y-1.5">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-xs font-medium">{t('tokens.embedIframeLabel')}</span>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  class="h-7 w-7 shrink-0"
-                  aria-label={t('tokens.embedCopyIframeAria')}
-                  onclick={() => void copyText(embedIframeSnippet!, t('tokens.embedCopied'))}
-                >
-                  <Copy class="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <pre class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs"><code
-                  >{embedIframeSnippet}</code
-                ></pre>
-              <p class="text-xs text-muted-foreground">{t('tokens.embedIframeHint')}</p>
+              <CodeBlock
+                code={embedIframeSnippet ?? ''}
+                language="html"
+                label={t('tokens.embedIframeLabel')}
+                copyLabel={t('tokens.embedCopyIframeAria')}
+                copiedMessage={t('tokens.embedCopied')}
+              />
+              <p class="hint">{t('tokens.embedIframeHint')}</p>
             </div>
-          </div>
-        </details>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+          </Reveal>
+        </div>
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showCreatedDialog = false;
@@ -347,6 +426,85 @@
       >
         {t('common.done')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<style>
+  .hint {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  /* what a switch opens sits under it, set in from the rule (the rows
+     themselves are app.css `.choices` and `.choice`) */
+  .choices :global(.nested) {
+    padding: 0 12px 12px 38px;
+    border-top: 0;
+  }
+  .choices :global(.nested .choice) {
+    padding: 9px 0;
+  }
+  .choices :global(.nested > .choice + .choice) {
+    border-top: 1px solid color-mix(in oklab, var(--hairline) 60%, transparent);
+  }
+
+  .note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+  .note--warn {
+    border: 1px solid color-mix(in oklab, var(--warn) 30%, transparent);
+    background: var(--warn-soft);
+    color: color-mix(in oklab, var(--warn) 55%, var(--ink));
+    font-size: 12.5px;
+  }
+  .note--danger {
+    border: 1px solid color-mix(in oklab, var(--danger) 30%, transparent);
+    background: var(--danger-soft);
+    color: color-mix(in oklab, var(--danger) 45%, var(--ink));
+  }
+  .note :global(svg) {
+    color: currentColor;
+  }
+
+  .embed {
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
+  }
+  .embed-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 500;
+    text-align: left;
+    transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  .embed-toggle:hover {
+    background: color-mix(in oklab, var(--accent) 6%, transparent);
+  }
+  .embed-toggle :global(.chevron) {
+    flex: none;
+    color: var(--muted);
+    transition: transform calc(var(--motion-duration) * 1.25) var(--motion-ease);
+  }
+  .embed-toggle[aria-expanded='true'] :global(.chevron) {
+    transform: rotate(180deg);
+  }
+  .embed :global(.embed-body) {
+    padding: 4px 12px 12px;
+  }
+</style>

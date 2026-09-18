@@ -7,7 +7,7 @@
   import PageField from './PageField.svelte';
 
   interface Props {
-    /** Field palette: studio-field for gates, paper for error/edge pages. */
+    /** Field palette: labs-field for gates, paper for error/edge pages. */
     palette?: string;
     /** quiet halves the field's reach (error pages). */
     strength?: 'full' | 'quiet';
@@ -19,7 +19,7 @@
   }
 
   let {
-    palette = 'studio-field',
+    palette = 'labs-field',
     strength = 'full',
     width = 'max-w-sm',
     plate = true,

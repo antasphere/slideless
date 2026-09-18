@@ -16,16 +16,13 @@
 <SelectPrimitive.Item
   bind:ref
   {value}
-  class={cn(
-    'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-    className
-  )}
+  class={cn('float-item w-full py-1.5 pl-2 pr-8', className)}
   {...restProps}
 >
   {#snippet children({ selected, highlighted })}
-    <span class="absolute right-2 flex size-3.5 items-center justify-center">
+    <span class="float-mark absolute right-2 flex size-3.5 items-center justify-center">
       {#if selected}
-        <Check class="size-4" />
+        <Check class="size-4" strokeWidth={2.2} />
       {/if}
     </span>
     {#if childrenProp}

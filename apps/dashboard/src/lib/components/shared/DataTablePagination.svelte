@@ -6,6 +6,7 @@
   import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
   import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
   import { t } from '$lib/i18n';
+  import { appear } from '$lib/components/ui/reveal/index.js';
 
   interface Props {
     pageIndex: number;
@@ -52,16 +53,19 @@
   }
 </script>
 
-<div class="flex items-center justify-between px-2 py-4">
+<div class="flex flex-wrap items-center justify-between gap-y-2 px-2 py-4">
   <div class="flex-1 text-sm text-muted-foreground">
     {#if selectedRows != null && selectedRows > 0}
-      {t('table.rowsSelected', { selected: selectedRows, total: totalRows })}
+      <span class="inline-block" in:appear>
+        {t('table.rowsSelected', { selected: selectedRows, total: totalRows })}
+      </span>
     {:else}
-      {t('table.rowCount', { total: totalRows })}
+      <span class="inline-block" in:appear>{t('table.rowCount', { total: totalRows })}</span>
     {/if}
   </div>
   <div class="flex items-center space-x-6 lg:space-x-8">
-    <div class="flex items-center space-x-2">
+    <!-- a phone pages with the two arrows; the page size is a desk control -->
+    <div class="hidden items-center space-x-2 md:flex">
       <p class="text-sm font-medium">{t('table.rowsPerPage')}</p>
       <Select.Root type="single" value={String(pageSize)} onValueChange={handlePageSizeChange}>
         <Select.Trigger class="h-8 w-[70px]">
@@ -88,11 +92,23 @@
         <ChevronsLeft class="h-4 w-4" />
         <span class="sr-only">{t('table.firstPage')}</span>
       </Button>
-      <Button variant="outline" size="icon" class="h-8 w-8" onclick={goPrev} disabled={!canPrev}>
+      <Button
+        variant="outline"
+        size="icon"
+        class="h-10 w-10 md:h-8 md:w-8"
+        onclick={goPrev}
+        disabled={!canPrev}
+      >
         <ChevronLeft class="h-4 w-4" />
         <span class="sr-only">{t('table.previousPage')}</span>
       </Button>
-      <Button variant="outline" size="icon" class="h-8 w-8" onclick={goNext} disabled={!canNext}>
+      <Button
+        variant="outline"
+        size="icon"
+        class="h-10 w-10 md:h-8 md:w-8"
+        onclick={goNext}
+        disabled={!canNext}
+      >
         <ChevronRight class="h-4 w-4" />
         <span class="sr-only">{t('table.nextPage')}</span>
       </Button>

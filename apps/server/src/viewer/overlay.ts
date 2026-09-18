@@ -53,6 +53,8 @@
  * break out.
  */
 
+import { MOTION_DURATION_MS, MOTION_EASING } from '@slideless/contract';
+
 export interface OverlayConfig {
   /** The deck version this view resolved to — what notes anchor against. */
   version: number;
@@ -143,6 +145,7 @@ var indicatorRect = null;  // viewport rect of the pending capture's indicator
                            // not anchor data, and must never be submitted.
 var seenIds = null;        // ids already rendered once (animate only new)
 var isSaving = false;
+var placedId = null;       // the note just saved: its pin pulses once
 
 // ---- DOM helpers -------------------------------------------------------
 function el(tag, cls, text) {
@@ -355,129 +358,187 @@ function anchorRect(a) {
 
 // ---- Styles ------------------------------------------------------------
 var css = [
+  // The dashboard's tokens, copied by value (the overlay cannot import the
+  // app's CSS: another origin, a sandboxed page). Light is the Slideless
+  // recipe of apps/dashboard/src/lib/tokens.css, dark its :root.dark set;
+  // the float material and the wash are app.css (.float, --wash), the
+  // button edges ui/button, the tag tone ui/tag (slate), the motion the
+  // contract's one pair (MOTION_DURATION_MS, MOTION_EASING), zeroed under
+  // reduced motion. Kept in sync by hand with the bar's copy (topbar.ts).
   '#__slideless_annotate{',
-  '  --sl-bg:#17171d; --sl-bg2:#1f1f28; --sl-ink:#ededf2; --sl-muted:#9b9baa;',
-  '  --sl-border:#2b2b36; --sl-border2:#363643; --sl-accent:#f5b301; --sl-accent-ink:#1a1505;',
-  '  --sl-shadow:0 12px 40px rgba(0,0,0,.46);',
-  '  position:fixed; z-index:2147483000;',
-  '  font:13px/1.45 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
-  '  color:var(--sl-ink); -webkit-font-smoothing:antialiased;}',
-  '@media (prefers-color-scheme: light){#__slideless_annotate{',
-  '  --sl-bg:#ffffff; --sl-bg2:#f6f6f9; --sl-ink:#1d1d24; --sl-muted:#6c6c78;',
-  '  --sl-border:#e6e6ec; --sl-border2:#dadae2; --sl-shadow:0 12px 40px rgba(20,20,40,.16);}}',
+  '  --sl-ink:#1c1915;--sl-ink-soft:#35302a;--sl-muted:#6e6759;--sl-hairline:#e0daca;',
+  '  --sl-ground:#f7f4ec;--sl-ground-2:#f1ede1;--sl-paper:#faf7f0;--sl-plate-strong:rgb(251 249 243 / 0.82);',
+  '  --sl-accent:#7a6652;--sl-accent-ink:#f7f4ec;--sl-accent-soft:rgba(122,102,82,.14);--sl-accent-deep:#8a4630;',
+  '  --sl-focus:#b4552f;--sl-danger:#b4552f;--sl-ok:#2e7d52;--sl-ok-soft:#dfece3;',
+  '  --sl-shadow-md:0 4px 6px -1px rgba(28,25,21,.1),0 2px 4px -2px rgba(28,25,21,.1);',
+  '  --sl-shadow-lg:0 10px 15px -3px rgba(28,25,21,.12),0 4px 6px -4px rgba(28,25,21,.1);',
+  '  --sl-scrim:rgba(28,25,21,.28);',
+  '  --sl-float:linear-gradient(var(--sl-plate-strong),var(--sl-plate-strong)),color-mix(in oklab,var(--sl-paper) 72%,transparent);',
+  '  --sl-wash:color-mix(in oklab,var(--sl-accent) 8%,transparent);',
+  '  --sl-hover-edge:color-mix(in oklab,var(--sl-accent) 45%,var(--sl-hairline));',
+  '  --sl-hover-fill:color-mix(in oklab,var(--sl-accent) 6%,var(--sl-plate-strong));',
+  '  --sl-tone:#5c7285;',
+  '  --sl-display:"Sentient",ui-serif,Georgia,"Times New Roman",serif;',
+  '  --sl-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;',
+  '  --sl-motion:${MOTION_DURATION_MS}ms ${MOTION_EASING};',
+  '  position:fixed;z-index:2147483000;',
+  '  font:13.5px/1.45 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
+  '  color:var(--sl-ink);-webkit-font-smoothing:antialiased;}',
+  '@media (prefers-color-scheme: dark){#__slideless_annotate{',
+  '  --sl-ink:#f3eee6;--sl-ink-soft:#dcd4c8;--sl-muted:#aca196;--sl-hairline:#3e362e;',
+  '  --sl-ground:#1f1b17;--sl-ground-2:#171310;--sl-paper:#1f1b17;--sl-plate-strong:rgb(40 34 28 / 0.84);',
+  '  --sl-accent:#db7d5f;--sl-accent-ink:#2a1d15;--sl-accent-soft:rgba(219,125,95,.16);--sl-accent-deep:#f3c7ac;',
+  '  --sl-focus:#d9805a;--sl-danger:#e07a56;--sl-ok:#5db487;--sl-ok-soft:#1d3127;',
+  '  --sl-shadow-md:0 4px 6px -1px rgba(0,0,0,.45),0 2px 4px -2px rgba(0,0,0,.45);',
+  '  --sl-shadow-lg:0 10px 15px -3px rgba(0,0,0,.5),0 4px 6px -4px rgba(0,0,0,.45);',
+  '  --sl-scrim:rgba(0,0,0,.5);}}',
+  '@media (prefers-reduced-motion: reduce){#__slideless_annotate{--sl-motion:0s linear;}}',
   '#__slideless_annotate *{box-sizing:border-box;}',
   '#__slideless_annotate svg{width:15px;height:15px;display:block;flex:none;}',
 
   // Flash highlight on jump-to. Lands on DECK elements (outside the overlay),
-  // so colors are literal — scoped CSS vars are out of reach there.
-  '@keyframes __sl-anno-pulse{0%{outline-color:#f5b301;box-shadow:0 0 0 6px rgba(245,179,1,.34);}',
-  '  68%{outline-color:#f5b301;box-shadow:0 0 0 6px rgba(245,179,1,.16);}',
-  '  100%{outline-color:rgba(245,179,1,0);box-shadow:0 0 0 12px rgba(245,179,1,0);}}',
-  '.__sl-anno-flash{border-radius:5px;outline:2px solid #f5b301;outline-offset:3px;',
+  // so colors are literal, scoped CSS vars being out of reach there. The
+  // clay of the dark set (#db7d5f): it reads on a light deck and on a dark one.
+  '@keyframes __sl-anno-pulse{0%{outline-color:#db7d5f;box-shadow:0 0 0 6px rgba(219,125,95,.34);}',
+  '  68%{outline-color:#db7d5f;box-shadow:0 0 0 6px rgba(219,125,95,.16);}',
+  '  100%{outline-color:rgba(219,125,95,0);box-shadow:0 0 0 12px rgba(219,125,95,0);}}',
+  '.__sl-anno-flash{border-radius:5px;outline:2px solid #db7d5f;outline-offset:3px;',
   '  animation:__sl-anno-pulse 1.5s ease-out forwards;}',
   '@media (prefers-reduced-motion: reduce){.__sl-anno-flash{animation:none;}}',
 
-  // Floating "Add note" pill at the selection
+  // The "Add note" pill at the selection: the one action there, so the ink
+  // primary of ui/button at the small size.
   '#__sl-add{position:fixed;display:none;align-items:center;gap:7px;transform:translateY(7px);',
-  '  background:var(--sl-accent);color:var(--sl-accent-ink);border:0;border-radius:9px;',
-  '  padding:8px 12px;font:600 12.5px/1 inherit;cursor:pointer;box-shadow:var(--sl-shadow);}',
+  '  height:30px;padding:0 11px;border:0;border-radius:10px;background:var(--sl-ink);color:var(--sl-ground);',
+  '  font:500 12.5px/1 inherit;cursor:pointer;box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.14),var(--sl-shadow-md);}',
   '#__sl-add svg{width:14px;height:14px;}',
-  '#__sl-add:hover{filter:brightness(1.05);}',
+  '#__sl-add:hover{box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.14),0 0 0 3px var(--sl-accent-soft),var(--sl-shadow-md);}',
 
-  // Composer popover (shared by text / point / region captures)
-  '#__sl-pop{position:fixed;display:none;width:300px;background:var(--sl-bg);',
-  '  border:1px solid var(--sl-border);border-radius:14px;padding:14px;box-shadow:var(--sl-shadow);}',
-  '#__sl-pop .__sl-cap{font:600 11px/1 inherit;letter-spacing:.06em;text-transform:uppercase;',
-  '  color:var(--sl-muted);margin-bottom:9px;}',
-  '#__sl-pop .__sl-quote{font-size:12px;color:var(--sl-muted);margin-bottom:10px;max-height:46px;',
+  // Composer popover (shared by text / point / region captures): the float
+  // material (app.css .float: the plate over a blur, one hairline), 14px
+  // corners, the lg shadow.
+  '#__sl-pop{position:fixed;display:none;width:300px;max-width:calc(100vw - 16px);background:var(--sl-float);',
+  '  -webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  border:1px solid var(--sl-hairline);border-radius:14px;padding:14px;box-shadow:var(--sl-shadow-lg);}',
+  // The eyebrow voice (app.css .eyebrow): 11px, wide, uppercase, muted.
+  '.__sl-eyebrow{font:300 11px/1 inherit;letter-spacing:.14em;text-transform:uppercase;color:var(--sl-muted);}',
+  '#__sl-pop .__sl-cap{margin-bottom:10px;}',
+  '#__sl-pop .__sl-quote{font-size:12.5px;color:var(--sl-muted);margin-bottom:10px;max-height:46px;',
   '  overflow:hidden;border-left:2px solid var(--sl-accent);padding-left:9px;font-style:italic;}',
-  '#__sl-pop input,#__sl-pop textarea{width:100%;background:var(--sl-bg2);color:var(--sl-ink);',
-  '  border:1px solid var(--sl-border);border-radius:9px;padding:9px;font:inherit;margin-bottom:8px;}',
+  // ui/input: the plate with a hairline, 10px corners, the accent edge and
+  // a 3px accent-soft ring on focus.
+  '#__sl-pop input,#__sl-pop textarea{width:100%;background:var(--sl-plate-strong);color:var(--sl-ink);',
+  '  border:1px solid var(--sl-hairline);border-radius:10px;padding:8px 11px;font:inherit;margin-bottom:8px;',
+  '  transition:border-color var(--sl-motion),box-shadow var(--sl-motion);}',
+  '#__sl-pop input::placeholder,#__sl-pop textarea::placeholder{color:var(--sl-muted);}',
   '#__sl-pop textarea{min-height:74px;resize:vertical;margin-bottom:0;}',
-  '#__sl-pop input:focus,#__sl-pop textarea:focus{outline:none;border-color:var(--sl-accent);}',
+  '#__sl-pop input:hover,#__sl-pop textarea:hover{border-color:color-mix(in oklab,var(--sl-accent) 35%,var(--sl-hairline));}',
+  '#__sl-pop input:focus,#__sl-pop textarea:focus{outline:none;border-color:var(--sl-accent);box-shadow:0 0 0 3px var(--sl-accent-soft);}',
   '#__sl-pop .__sl-row{display:flex;gap:8px;justify-content:flex-end;margin-top:11px;}',
-  '#__sl-pop .__sl-err{color:#e0625e;font-size:12px;margin-top:8px;display:none;}',
-  '.__sl-btn{border:0;border-radius:8px;padding:7px 14px;cursor:pointer;font:600 12.5px/1 inherit;}',
-  '.__sl-btn-primary{background:var(--sl-accent);color:var(--sl-accent-ink);}',
-  '.__sl-btn-primary:hover{filter:brightness(1.05);}',
-  '.__sl-btn-primary[disabled]{opacity:.6;cursor:default;}',
-  '.__sl-btn-ghost{background:transparent;color:var(--sl-muted);border:1px solid var(--sl-border);}',
-  '.__sl-btn-ghost:hover{color:var(--sl-ink);border-color:var(--sl-border2);}',
+  '#__sl-pop .__sl-err{color:var(--sl-danger);font-size:12.5px;margin-top:8px;display:none;}',
+  // ui/button, size sm: 32px, 10px corners. The ink primary is THE action
+  // (Save, Done, Add a pin), the outline the others; the primary lifts and
+  // takes the accent ring under the pointer, the outline the accent edge.
+  '.__sl-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;',
+  '  border:0;border-radius:10px;cursor:pointer;font:500 13px/1 inherit;white-space:nowrap;',
+  '  transition:color var(--sl-motion),background-color var(--sl-motion),border-color var(--sl-motion),',
+  '    box-shadow var(--sl-motion),transform var(--sl-motion);}',
+  '.__sl-btn:active{transform:scale(.97);}',
+  '.__sl-btn-primary{background:var(--sl-ink);color:var(--sl-ground);',
+  '  box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.14),0 1px 2px rgb(28 25 21 / 0.18);}',
+  '.__sl-btn-primary:hover{transform:translateY(-1px);',
+  '  box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.14),0 0 0 3px var(--sl-accent-soft),0 6px 14px -6px rgb(28 25 21 / 0.45);}',
+  '.__sl-btn-primary[disabled]{opacity:.5;cursor:default;transform:none;}',
+  '.__sl-btn-outline{background:var(--sl-plate-strong);color:var(--sl-ink);border:1px solid var(--sl-hairline);}',
+  '.__sl-btn-outline:hover{border-color:var(--sl-hover-edge);background:var(--sl-hover-fill);}',
+  // app.css :focus-visible: the ember ring, offset.
+  '#__slideless_annotate button:focus-visible{outline:2px solid var(--sl-focus);outline-offset:2px;}',
 
-  // Bottom-right badge that expands to explain itself
-  '#__sl-badge{position:fixed;right:20px;bottom:20px;display:inline-flex;align-items:center;',
-  '  background:var(--sl-bg);border:1px solid var(--sl-border);border-radius:999px;padding:10px 13px;',
-  '  cursor:pointer;box-shadow:var(--sl-shadow);user-select:none;color:var(--sl-ink);}',
-  '#__sl-badge:hover{border-color:var(--sl-border2);}',
-  '#__sl-badge .__sl-bicon{display:flex;color:var(--sl-accent);}',
-  '#__sl-badge .__sl-bicon svg{width:18px;height:18px;}',
-  // Label width animates via grid (0fr->1fr) so the easing tracks the real
-  // label width — smoother than animating a fixed max-width past the content.
-  '#__sl-badge .__sl-blabel{display:grid;grid-template-columns:0fr;opacity:0;margin:0;',
-  '  transition:grid-template-columns .5s cubic-bezier(.22,1,.36,1),opacity .36s ease,margin .5s cubic-bezier(.22,1,.36,1);}',
-  '#__sl-badge .__sl-blabel>span{overflow:hidden;white-space:nowrap;font-weight:500;}',
-  '#__sl-badge.__sl-open .__sl-blabel,#__sl-badge:hover .__sl-blabel{',
-  '  grid-template-columns:1fr;opacity:1;margin:0 11px;}',
-  '#__sl-badge .__sl-bcount{display:none;min-width:20px;height:20px;padding:0 6px;border-radius:999px;',
-  '  margin-left:10px;background:var(--sl-accent);color:var(--sl-accent-ink);font:700 11px/20px inherit;',
-  '  text-align:center;transition:margin .5s cubic-bezier(.22,1,.36,1);}',
-  '#__sl-badge.__sl-has .__sl-bcount{display:inline-block;}',
-  '#__sl-badge.__sl-open .__sl-bcount,#__sl-badge:hover .__sl-bcount{margin-left:0;}',
+  // The floating fallback, for a link whose bar is off (viewer/inject.ts:
+  // the bar and the overlay have separate switches): the two entrances as
+  // a small stack at the badge slot, the bar's icon style on the float
+  // material. With a bar mounted neither is created; the bar hosts them
+  // (topbar.ts, the annotation controls note).
+  '#__sl-badge,#__sl-fab-pin{position:fixed;display:inline-flex;align-items:center;justify-content:center;gap:6px;',
+  '  height:36px;min-width:36px;padding:0;border:1px solid var(--sl-hairline);border-radius:10px;',
+  '  background:var(--sl-float);-webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  color:var(--sl-muted);cursor:pointer;box-shadow:var(--sl-shadow-md);user-select:none;font:inherit;',
+  '  transition:color var(--sl-motion),background-color var(--sl-motion),border-color var(--sl-motion);}',
+  '#__sl-badge:hover,#__sl-fab-pin:hover{color:var(--sl-ink);border-color:var(--sl-hover-edge);}',
+  '#__sl-badge.__sl-open,#__sl-fab-pin.__sl-on{color:var(--sl-accent-deep);background:var(--sl-wash);}',
+  '#__sl-badge .__sl-bicon{display:flex;}',
+  '#__sl-badge .__sl-bicon svg,#__sl-fab-pin svg{width:16px;height:16px;}',
+  '#__sl-badge.__sl-has{padding:0 7px 0 8px;}',
+  // The count: the bar's tag (ui/tag, slate tone, at count size).
+  '#__sl-badge .__sl-bcount{display:none;min-width:18px;height:18px;padding:0 5px;border-radius:6px;',
+  '  border:1px solid color-mix(in oklab,var(--sl-tone) 24%,transparent);',
+  '  background:color-mix(in oklab,var(--sl-tone) 11%,var(--sl-plate-strong));',
+  '  color:color-mix(in oklab,var(--sl-tone) 62%,var(--sl-ink));font:500 11px/16px var(--sl-mono);',
+  '  align-items:center;justify-content:center;}',
+  '#__sl-badge.__sl-has .__sl-bcount{display:inline-flex;}',
 
-  // The big + : one-click entry into annotate mode, stacked beside the
-  // badge (follows its slot). Rotates into an × while the mode is active.
-  '#__sl-fab-pin{position:fixed;width:46px;height:46px;border:0;border-radius:14px;',
-  '  background:var(--sl-accent);color:var(--sl-accent-ink);cursor:pointer;box-shadow:var(--sl-shadow);',
-  '  font:300 30px/1 inherit;display:flex;align-items:center;justify-content:center;',
-  '  transition:transform .18s ease;}',
-  '#__sl-fab-pin:hover{filter:brightness(1.05);}',
-  '@media (prefers-reduced-motion: reduce){#__sl-fab-pin{transition:none;}}',
-
-  // Right sliding sheet
-  // Below the recipient bar when one is mounted (PRDCT-2281): the header
-  // with the close button must never sit under it.
-  '#__sl-sheet{position:fixed;top:var(--slideless-topbar,0px);right:0;height:calc(100% - var(--slideless-topbar,0px));width:360px;max-width:92vw;',
-  '  background:var(--sl-bg);border-left:1px solid var(--sl-border);box-shadow:var(--sl-shadow);',
-  '  transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);',
-  '  display:flex;flex-direction:column;}',
-  '#__sl-sheet.open{transform:translateX(0);}',
+  // The panel: the float material (app.css .float), inset from the edges,
+  // 14px corners, the lg shadow, below the recipient bar when one is
+  // mounted (PRDCT-2281). It opens on the one motion, a short slide with a
+  // fade, and leaves the accessibility tree once gone (visibility, delayed
+  // by the motion). On a phone it is a bottom sheet, full width, rounded
+  // at the top.
+  '#__sl-sheet{position:fixed;top:calc(10px + var(--slideless-topbar,0px));right:10px;bottom:10px;width:360px;',
+  '  max-width:calc(100vw - 20px);background:var(--sl-float);',
+  '  -webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  border:1px solid var(--sl-hairline);border-radius:14px;box-shadow:var(--sl-shadow-lg);',
+  '  display:flex;flex-direction:column;overflow:hidden;',
+  '  visibility:hidden;opacity:0;transform:translateX(12px);',
+  '  transition:opacity var(--sl-motion),transform var(--sl-motion),visibility 0s linear ${MOTION_DURATION_MS}ms;}',
+  '#__sl-sheet.open{visibility:visible;opacity:1;transform:none;',
+  '  transition:opacity var(--sl-motion),transform var(--sl-motion),visibility 0s linear 0s;}',
+  '@media (max-width:640px){#__sl-sheet{top:auto;left:0;right:0;bottom:0;width:auto;max-width:none;max-height:72vh;',
+  '  border-radius:16px 16px 0 0;border-bottom:0;transform:translateY(16px);}',
+  '  #__sl-sheet.open{transform:none;}}',
   '@media (prefers-reduced-motion: reduce){#__sl-sheet{transition:none;}}',
-  '#__sl-sheet .__sl-head{display:flex;align-items:center;justify-content:space-between;gap:8px;',
-  '  padding:16px 16px 12px;}',
-  '#__sl-sheet .__sl-head strong{font-size:15px;font-weight:650;flex:1;}',
-  // Root-scoped (not sheet-scoped): the settings dialog reuses this icon
-  // button too. Root prefix keeps it off deck content, which shares the doc.
-  '#__slideless_annotate .__sl-x{display:flex;align-items:center;justify-content:center;',
-  '  width:30px;height:30px;border-radius:8px;cursor:pointer;color:var(--sl-muted);}',
-  '#__slideless_annotate .__sl-x:hover{background:var(--sl-bg2);color:var(--sl-ink);}',
-  // Footer CTA — THE action of the sheet; settings-ish things live behind ⚙.
-  '#__sl-foot{padding:12px 16px 16px;border-top:1px solid var(--sl-border);}',
-  '#__sl-mode{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;',
-  '  background:var(--sl-accent);color:var(--sl-accent-ink);border:0;border-radius:10px;',
-  '  padding:11px;cursor:pointer;font:600 13px/1 inherit;}',
-  '#__sl-mode:hover{filter:brightness(1.05);}',
+  '#__sl-sheet .__sl-head{display:flex;align-items:center;gap:4px;padding:14px 12px 10px 18px;}',
+  // The display serif (tokens.css --display, at the section-head size):
+  // the panel opens on a title, not a caption.
+  '#__sl-sheet .__sl-head strong{flex:1;font:400 19px/1.2 var(--sl-display);letter-spacing:-.01em;color:var(--sl-ink);}',
+  // ui/button ghost, the icon size: the gear and the close here, the close
+  // of the settings dialog. Root-scoped (not sheet-scoped), which keeps it
+  // off deck content, which shares the document.
+  '#__slideless_annotate .__sl-x{display:inline-flex;align-items:center;justify-content:center;flex:none;',
+  '  width:32px;height:32px;padding:0;border:0;border-radius:10px;background:transparent;cursor:pointer;color:var(--sl-muted);',
+  '  transition:color var(--sl-motion),background-color var(--sl-motion);}',
+  '#__slideless_annotate .__sl-x:hover{background:var(--sl-wash);color:var(--sl-ink);}',
+  '#__slideless_annotate .__sl-x svg{width:16px;height:16px;}',
+  // The footer holds THE action of the panel (the ink primary, full width);
+  // viewing preferences sit behind the gear.
+  '#__sl-foot{padding:12px 16px 14px;border-top:1px solid var(--sl-hairline);}',
+  '#__sl-mode{width:100%;height:36px;}',
   '#__sl-mode svg{width:15px;height:15px;}',
 
-  // Settings dialog: badge-position grid + pins switch + link metadata.
-  '#__sl-scrim{position:fixed;inset:0;display:none;background:rgba(0,0,0,.35);}',
+  // Settings dialog: badge-position grid + pins switch + link metadata, on
+  // the float material over a scrim; the eyebrow for its section labels,
+  // the field look on the grid's cells.
+  '#__sl-scrim{position:fixed;inset:0;display:none;background:var(--sl-scrim);}',
   '#__sl-scrim.on{display:block;}',
   '#__sl-settings{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);display:none;',
-  '  width:320px;max-width:92vw;background:var(--sl-bg);border:1px solid var(--sl-border);',
-  '  border-radius:14px;padding:16px;box-shadow:var(--sl-shadow);}',
+  '  width:320px;max-width:calc(100vw - 20px);background:var(--sl-float);',
+  '  -webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  border:1px solid var(--sl-hairline);border-radius:14px;padding:14px 16px 16px;box-shadow:var(--sl-shadow-lg);}',
   '#__sl-settings.on{display:block;}',
-  '#__sl-settings .__sl-shead{display:flex;align-items:center;justify-content:space-between;',
-  '  margin-bottom:6px;}',
-  '#__sl-settings .__sl-shead strong{font-size:14px;font-weight:650;}',
-  '.__sl-slabel{font:600 11px/1 inherit;letter-spacing:.06em;text-transform:uppercase;',
-  '  color:var(--sl-muted);margin:12px 0 8px;}',
+  '#__sl-settings .__sl-shead{display:flex;align-items:center;justify-content:space-between;margin:0 -6px 4px 0;}',
+  '#__sl-settings .__sl-shead strong{font:400 19px/1.2 var(--sl-display);letter-spacing:-.01em;}',
+  '.__sl-slabel{margin:14px 0 8px;}',
+  // The position section belongs to the floating fallback: with the bar
+  // hosting the controls there is nothing to move (.__sl-hosted, at mount).
+  '#__slideless_annotate.__sl-hosted .__sl-pos{display:none;}',
   '#__sl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}',
-  '#__sl-grid button{height:34px;border:1px solid var(--sl-border);border-radius:8px;',
-  '  background:var(--sl-bg2);cursor:pointer;position:relative;padding:0;}',
-  '#__sl-grid button:hover{border-color:var(--sl-border2);}',
-  '#__sl-grid button.active{border-color:var(--sl-accent);background:var(--sl-accent);}',
+  '#__sl-grid button{height:34px;border:1px solid var(--sl-hairline);border-radius:10px;',
+  '  background:var(--sl-plate-strong);cursor:pointer;position:relative;padding:0;',
+  '  transition:border-color var(--sl-motion),background-color var(--sl-motion);}',
+  '#__sl-grid button:hover{border-color:var(--sl-hover-edge);background:var(--sl-hover-fill);}',
+  '#__sl-grid button.active{border-color:var(--sl-accent);background:var(--sl-accent-soft);}',
   '#__sl-grid button::after{content:"";position:absolute;width:8px;height:8px;border-radius:999px;',
   '  background:var(--sl-muted);}',
-  '#__sl-grid button.active::after{background:var(--sl-accent-ink);}',
+  '#__sl-grid button.active::after{background:var(--sl-accent);}',
   '#__sl-grid button[data-slot="top-left"]::after{top:5px;left:5px;}',
   '#__sl-grid button[data-slot="top"]::after{top:5px;left:50%;margin-left:-4px;}',
   '#__sl-grid button[data-slot="top-right"]::after{top:5px;right:5px;}',
@@ -489,86 +550,139 @@ var css = [
   '#__sl-grid .__sl-void{border:0;background:transparent;cursor:default;pointer-events:none;}',
   '#__sl-grid .__sl-void::after{display:none;}',
   '.__sl-setrow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;}',
-  '.__sl-setrow span{font-size:13px;}',
-  '#__sl-pinvis{width:38px;height:22px;flex:none;border-radius:999px;border:1px solid var(--sl-border);',
-  '  background:var(--sl-bg2);position:relative;cursor:pointer;padding:0;}',
+  '.__sl-setrow span{font-size:13.5px;color:var(--sl-ink-soft);}',
+  // ui/switch: the hairline track on the second ground, the accent when on.
+  '#__sl-pinvis{width:38px;height:22px;flex:none;border-radius:999px;border:1px solid var(--sl-hairline);',
+  '  background:var(--sl-ground-2);position:relative;cursor:pointer;padding:0;',
+  '  transition:background-color var(--sl-motion),border-color var(--sl-motion);}',
   '#__sl-pinvis::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;',
-  '  border-radius:999px;background:var(--sl-muted);transition:left .15s ease,background .15s ease;}',
+  '  border-radius:999px;background:var(--sl-muted);transition:left var(--sl-motion),background-color var(--sl-motion);}',
   '#__sl-pinvis.on{background:var(--sl-accent);border-color:var(--sl-accent);}',
   '#__sl-pinvis.on::after{left:18px;background:var(--sl-accent-ink);}',
-  '#__sl-smeta{margin-top:14px;padding-top:12px;border-top:1px solid var(--sl-border);',
-  '  font-size:11.5px;color:var(--sl-muted);line-height:1.7;}',
-  '#__sl-serr{color:#e0625e;font-size:11.5px;margin-top:8px;display:none;}',
-  '#__sl-tabs{display:flex;gap:4px;margin:2px 16px 8px;padding:3px;background:var(--sl-bg2);',
-  '  border-radius:10px;}',
-  '.__sl-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;text-align:center;',
-  '  padding:7px;border-radius:8px;cursor:pointer;color:var(--sl-muted);',
-  '  font-weight:600;font-size:12.5px;transition:background .15s,color .15s;}',
+  '#__sl-smeta{margin-top:14px;padding-top:12px;border-top:1px solid var(--sl-hairline);',
+  '  font:400 11.5px/1.8 var(--sl-mono);color:var(--sl-muted);}',
+  '#__sl-serr{color:var(--sl-danger);font-size:12px;margin-top:8px;display:none;}',
+  // The two tabs: the eyebrow voice, the active one in ink over an accent
+  // rule; the counts in the mono face.
+  '#__sl-tabs{display:flex;gap:18px;margin:0 18px;border-bottom:1px solid var(--sl-hairline);}',
+  '.__sl-tab{display:flex;align-items:center;gap:6px;padding:6px 0 9px;margin-bottom:-1px;cursor:pointer;',
+  '  color:var(--sl-muted);font:300 11px/1 inherit;letter-spacing:.14em;text-transform:uppercase;',
+  '  border-bottom:2px solid transparent;transition:color var(--sl-motion),border-color var(--sl-motion);}',
   '.__sl-tab:hover{color:var(--sl-ink);}',
-  '.__sl-tab.active{background:var(--sl-bg);color:var(--sl-ink);box-shadow:0 1px 3px rgba(0,0,0,.16);}',
-  '.__sl-tab .__sl-tcount{opacity:.55;font-weight:600;}',
-  '#__sl-list{flex:1;overflow:auto;padding:6px 16px 20px;}',
-  '.__sl-item{position:relative;background:var(--sl-bg2);border:1px solid var(--sl-border);',
-  '  border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;',
-  '  transition:border-color .15s,background .15s;}',
-  '.__sl-item:hover{border-color:var(--sl-border2);}',
-  '.__sl-item.__sl-focus{border-color:var(--sl-accent);}',
-  '.__sl-item .__sl-ihead{display:flex;align-items:center;gap:7px;margin-bottom:7px;}',
-  '.__sl-item .__sl-num{flex:none;min-width:18px;height:18px;border-radius:999px;background:var(--sl-accent);',
-  '  color:var(--sl-accent-ink);font:700 10.5px/18px inherit;text-align:center;padding:0 4px;}',
-  '.__sl-item .__sl-where{font-size:11px;color:var(--sl-muted);font-weight:500;flex:1;overflow:hidden;',
+  '.__sl-tab.active{color:var(--sl-ink);border-bottom-color:var(--sl-accent);}',
+  '.__sl-tab .__sl-tcount{font:400 11px/1 var(--sl-mono);letter-spacing:0;text-transform:none;color:var(--sl-muted);}',
+  '#__sl-list{flex:1;overflow:auto;padding:4px 10px 12px;}',
+  // A note is a row: a hairline between two, the wash under the pointer,
+  // the accent on its left edge while it is the one just jumped to.
+  '.__sl-item{position:relative;padding:12px 8px 12px 10px;border-radius:7px;cursor:pointer;',
+  '  transition:background-color var(--sl-motion),box-shadow var(--sl-motion);}',
+  '.__sl-item+.__sl-item::before{content:"";position:absolute;left:10px;right:8px;top:0;height:1px;background:var(--sl-hairline);}',
+  '.__sl-item:hover{background:var(--sl-wash);}',
+  '.__sl-item.__sl-focus{box-shadow:inset 2px 0 0 var(--sl-accent);}',
+  '.__sl-item .__sl-ihead{display:flex;align-items:center;gap:8px;margin-bottom:6px;}',
+  // The number of the pin, as on the deck: a ringed dot in the accent, the mono face.
+  '.__sl-item .__sl-num{flex:none;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:var(--sl-accent);',
+  '  color:var(--sl-accent-ink);font:600 10px/18px var(--sl-mono);text-align:center;',
+  '  box-shadow:0 0 0 1.5px var(--sl-paper),0 0 0 2.5px color-mix(in oklab,var(--sl-accent) 45%,transparent);}',
+  '.__sl-item .__sl-where{font-size:11.5px;color:var(--sl-muted);flex:1;overflow:hidden;',
   '  text-overflow:ellipsis;white-space:nowrap;}',
-  '.__sl-item .__sl-quote{font-size:11.5px;color:var(--sl-muted);border-left:2px solid var(--sl-border2);',
+  '.__sl-item .__sl-quote{font-size:12px;color:var(--sl-muted);border-left:2px solid var(--sl-accent);',
   '  padding-left:8px;margin-bottom:8px;max-height:36px;overflow:hidden;font-style:italic;}',
-  '.__sl-item .__sl-note{white-space:pre-wrap;word-break:break-word;font-size:13.5px;}',
-  '.__sl-item .__sl-meta{margin-top:7px;font-size:11px;color:var(--sl-muted);font-weight:500;}',
-  '@keyframes __sl-in{from{opacity:0;transform:translateY(-7px) scale(.96);}to{opacity:1;transform:none;}}',
-  '.__sl-item.__sl-enter{animation:__sl-in .28s cubic-bezier(.2,.8,.2,1);}',
-  '@media (prefers-reduced-motion: reduce){.__sl-item.__sl-enter{animation:none;}}',
-  '.__sl-empty{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--sl-muted);',
-  '  text-align:center;padding:48px 18px;}',
-  '.__sl-empty svg{width:34px;height:34px;opacity:.5;}',
+  '.__sl-item .__sl-note{white-space:pre-wrap;word-break:break-word;font-size:13.5px;color:var(--sl-ink);}',
+  '.__sl-item .__sl-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;',
+  '  font-size:11.5px;color:var(--sl-muted);}',
+  // ui/tag as a state: the dot in place of the glyph, the ok tone for a
+  // resolved note. Capitalised by the stylesheet, so the text stays the
+  // status word the API sends.
+  '.__sl-tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:6px;',
+  '  border:1px solid color-mix(in oklab,var(--sl-tone) 24%,transparent);',
+  '  background:color-mix(in oklab,var(--sl-tone) 11%,var(--sl-plate-strong));',
+  '  color:color-mix(in oklab,var(--sl-tone) 62%,var(--sl-ink));font:500 11px/1 inherit;',
+  '  text-transform:capitalize;white-space:nowrap;}',
+  '.__sl-tag::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--sl-tone);',
+  '  box-shadow:0 0 0 2.5px color-mix(in oklab,var(--sl-tone) 18%,transparent);margin:0 1px;}',
+  '.__sl-tag.__sl-tag-ok{--sl-tone:var(--sl-ok);}',
+  '@keyframes __sl-in{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}',
+  '.__sl-item.__sl-enter{animation:__sl-in var(--sl-motion);}',
+  '.__sl-empty{padding:36px 14px;color:var(--sl-muted);text-align:center;font-size:13px;line-height:1.5;text-wrap:pretty;}',
 
   // Pins layer: one fixed pass-through layer; only the pins themselves are
-  // interactive. Region anchors draw a dashed outline plus a corner pin.
+  // interactive. A pin is a ringed dot in the accent (a paper gap, then the
+  // accent ring) with its number in the mono face; the one just placed
+  // pulses once. Region anchors draw their outline plus a corner pin.
   '#__sl-pins{position:fixed;inset:0;pointer-events:none;}',
   '.__sl-pin{position:fixed;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:999px;',
-  '  background:var(--sl-accent);color:var(--sl-accent-ink);font:700 11px/22px inherit;text-align:center;',
-  '  box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer;pointer-events:auto;user-select:none;}',
-  '.__sl-pin:hover{filter:brightness(1.05);}',
-  '.__sl-region{position:fixed;border:2px dashed var(--sl-accent);border-radius:6px;',
-  '  background:rgba(245,179,1,.08);}',
+  '  background:var(--sl-accent);color:var(--sl-accent-ink);font:600 10.5px/18px var(--sl-mono);text-align:center;',
+  '  border:2px solid var(--sl-paper);box-shadow:0 0 0 1.5px var(--sl-accent),var(--sl-shadow-md);',
+  '  cursor:pointer;pointer-events:auto;user-select:none;transition:transform var(--sl-motion);}',
+  '.__sl-pin:hover{transform:scale(1.12);}',
+  '@keyframes __sl-placed{from{box-shadow:0 0 0 1.5px var(--sl-accent),0 0 0 0 color-mix(in oklab,var(--sl-accent) 45%,transparent);}',
+  '  to{box-shadow:0 0 0 1.5px var(--sl-accent),0 0 0 14px color-mix(in oklab,var(--sl-accent) 0%,transparent);}}',
+  '.__sl-pin.__sl-placed{animation:__sl-placed .9s cubic-bezier(0.2,0,0,1) 1;}',
+  '@media (prefers-reduced-motion: reduce){.__sl-pin.__sl-placed{animation:none;}}',
+  '.__sl-region{position:fixed;border:1.5px solid var(--sl-accent);border-radius:6px;',
+  '  background:color-mix(in oklab,var(--sl-accent) 10%,transparent);}',
 
   // Pending-capture preview: while the composer is open for a point/region,
   // a provisional pin marks the exact spot, and a dashed contour outlines
   // the DOM element the anchor resolves to — what you see is literally
   // anchorRect() re-resolving the frozen snapshot, i.e. what re-opening the
   // note will find later.
+  // The contour takes the picker's blue (below): the element the box was
+  // framing a moment ago keeps the same frame once the click lands on it.
   '#__sl-preview{position:fixed;inset:0;pointer-events:none;}',
-  '.__sl-target{position:fixed;border:2px dashed var(--sl-accent);border-radius:8px;',
-  '  pointer-events:none;}',
-  '@keyframes __sl-ghost-pulse{0%,100%{box-shadow:0 2px 8px rgba(0,0,0,.35),0 0 0 0 rgba(245,179,1,.45);}',
-  '  50%{box-shadow:0 2px 8px rgba(0,0,0,.35),0 0 0 7px rgba(245,179,1,0);}}',
+  '.__sl-target{position:fixed;border:1.5px solid var(--sl-pick);border-radius:8px;',
+  '  background:var(--sl-pick-fill);pointer-events:none;}',
+  '@keyframes __sl-ghost-pulse{0%,100%{box-shadow:0 0 0 1.5px var(--sl-accent),0 0 0 0 color-mix(in oklab,var(--sl-accent) 45%,transparent);}',
+  '  50%{box-shadow:0 0 0 1.5px var(--sl-accent),0 0 0 8px color-mix(in oklab,var(--sl-accent) 0%,transparent);}}',
   '.__sl-pin.__sl-ghost{animation:__sl-ghost-pulse 1.4s ease-out infinite;}',
   '@media (prefers-reduced-motion: reduce){.__sl-pin.__sl-ghost{animation:none;}}',
 
   // Annotate mode: capture layer + instruction banner + live drag rect
   '#__sl-layer{position:fixed;inset:0;display:none;cursor:crosshair;}',
   '#__sl-layer.on{display:block;}',
-  '#__sl-drag{position:fixed;display:none;border:2px dashed var(--sl-accent);border-radius:6px;',
-  '  background:rgba(245,179,1,.1);pointer-events:none;}',
+  '#__sl-drag{position:fixed;display:none;border:1.5px solid var(--sl-pick);border-radius:6px;',
+  '  background:var(--sl-pick-fill);pointer-events:none;}',
+
+  // The picker: ONE box that travels to the element under the pointer while
+  // a pin is being placed (fitHighlight). A calm selection blue, deliberately
+  // not the amber accent (amber on the deck reads as a problem). Only
+  // transform, size and radius move, on the product's motion curve; a fresh
+  // show jumps into place (.__sl-hl-jump) and fades in rather than sliding
+  // from wherever the box last sat. The chip names the element in plain
+  // words and flips under the box when the top of the viewport is too close.
+  '#__slideless_annotate{--sl-pick:#4a78b0;--sl-pick-fill:rgba(71,121,154,.10);',
+  '  --sl-pick-glow:0 0 0 4px rgba(71,121,154,.14);}',
+  '#__sl-hl{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;opacity:0;',
+  '  border:1.5px solid var(--sl-pick);border-radius:6px;background:var(--sl-pick-fill);',
+  '  box-shadow:var(--sl-pick-glow);will-change:transform,width,height;',
+  '  transition:transform .18s cubic-bezier(.2,0,0,1),width .18s cubic-bezier(.2,0,0,1),',
+  '    height .18s cubic-bezier(.2,0,0,1),border-radius .18s cubic-bezier(.2,0,0,1),opacity .14s ease;}',
+  '#__sl-hl.on{opacity:1;}',
+  '#__sl-hl.__sl-hl-jump{transition:none;}',
+  '@media (prefers-reduced-motion: reduce){#__sl-hl{transition:none;}}',
+  '#__sl-hl-tag{position:absolute;left:-1.5px;top:-7px;transform:translateY(-100%);',
+  '  max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+  '  background:#fbf9f3;color:#1c1915;border:1px solid rgba(71,121,154,.4);border-radius:7px;',
+  '  padding:3px 7px;font:600 11px/1.2 inherit;letter-spacing:.01em;',
+  '  box-shadow:0 1px 3px rgba(20,20,40,.14);}',
+  '#__sl-hl.__sl-hl-below #__sl-hl-tag{top:auto;bottom:-7px;transform:translateY(100%);}',
+  // The instruction banner of the placing mode: a pill on the float
+  // material, Done as the ink primary.
   '#__sl-banner{position:fixed;top:calc(14px + var(--slideless-topbar,0px));left:50%;transform:translateX(-50%);display:none;',
-  '  align-items:center;gap:10px;background:var(--sl-bg);border:1px solid var(--sl-border);',
-  '  border-radius:999px;padding:8px 8px 8px 15px;font-size:12.5px;font-weight:500;',
-  '  box-shadow:var(--sl-shadow);white-space:nowrap;max-width:92vw;}',
+  '  align-items:center;gap:12px;background:var(--sl-float);',
+  '  -webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  border:1px solid var(--sl-hairline);border-radius:999px;padding:6px 6px 6px 16px;font-size:13px;color:var(--sl-ink-soft);',
+  '  box-shadow:var(--sl-shadow-md);white-space:nowrap;max-width:calc(100vw - 20px);}',
   '#__sl-banner.on{display:inline-flex;}',
-  '#__sl-banner .__sl-btn{padding:6px 11px;}',
+  '#__sl-banner .__sl-btn{height:28px;padding:0 12px;border-radius:999px;}',
 
   // Transient toast (e.g. when a jumped-to section no longer exists)
-  '#__sl-toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%) translateY(10px);',
-  '  background:var(--sl-bg);color:var(--sl-ink);border:1px solid var(--sl-border);border-radius:10px;',
-  '  padding:10px 15px;font-size:12.5px;font-weight:500;box-shadow:var(--sl-shadow);opacity:0;',
-  '  pointer-events:none;max-width:80vw;transition:opacity .25s ease,transform .25s ease;}',
+  '#__sl-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);',
+  '  background:var(--sl-float);-webkit-backdrop-filter:blur(20px) saturate(1.2);backdrop-filter:blur(20px) saturate(1.2);',
+  '  color:var(--sl-ink);border:1px solid var(--sl-hairline);border-radius:10px;',
+  '  padding:9px 14px;font-size:13px;box-shadow:var(--sl-shadow-md);opacity:0;',
+  '  pointer-events:none;max-width:80vw;transition:opacity var(--sl-motion),transform var(--sl-motion);}',
   '#__sl-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}'
 ].join('\n');
 
@@ -577,6 +691,9 @@ var ICONS = {
   mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  // The two entrances of the floating fallback, the bar's own drawings (topbar.ts ICONS).
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5a2 2 0 0 1-2 2H8l-4 3.5v-14a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z"/></svg>',
+  pinAdd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.2-6-11a6 6 0 0 1 12 0c0 5.8-6 11-6 11Z"/><path d="M12 7.5v5"/><path d="M9.5 10h5"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
 };
@@ -595,7 +712,7 @@ addBtn.appendChild(el('span', null, 'Add note'));
 
 var pop = el('div');
 pop.id = '__sl-pop';
-var popCap = el('div', '__sl-cap', 'New annotation');
+var popCap = el('div', '__sl-cap __sl-eyebrow', 'New annotation');
 var popQuote = el('div', '__sl-quote');
 var popName = doc.createElement('input');
 popName.maxLength = 120;
@@ -605,7 +722,7 @@ popText.maxLength = 10000;
 popText.placeholder = 'What should change here?';
 var popErr = el('div', '__sl-err', 'Could not save your note — please try again.');
 var popRow = el('div', '__sl-row');
-var popCancel = el('button', '__sl-btn __sl-btn-ghost', 'Cancel');
+var popCancel = el('button', '__sl-btn __sl-btn-outline', 'Cancel');
 popCancel.type = 'button';
 var popSave = el('button', '__sl-btn __sl-btn-primary', 'Save');
 popSave.type = 'button';
@@ -618,25 +735,29 @@ pop.appendChild(popText);
 pop.appendChild(popErr);
 pop.appendChild(popRow);
 
-var badge = el('div');
+// The floating fallback's two entrances (the stylesheet note): created
+// here, mounted only when no recipient bar hosts them.
+var badge = el('button');
 badge.id = '__sl-badge';
+badge.type = 'button';
+badge.title = 'Annotations';
+badge.setAttribute('aria-label', 'Annotations');
 var bIcon = el('span', '__sl-bicon');
-bIcon.innerHTML = ICONS.mark;
-var bLabel = el('span', '__sl-blabel');
-var bLabelText = el('span');
-bLabel.appendChild(bLabelText);
+bIcon.innerHTML = ICONS.notes;
 var bCount = el('span', '__sl-bcount');
+bCount.setAttribute('aria-hidden', 'true');
 badge.appendChild(bIcon);
-badge.appendChild(bLabel);
 badge.appendChild(bCount);
 
-// The big + FAB: one click into annotate mode, no sheet detour. Lives next
+// The pin button: one click into annotate mode, no sheet detour. Lives next
 // to the badge and follows its slot.
 var fabPin = el('button');
 fabPin.id = '__sl-fab-pin';
 fabPin.type = 'button';
 fabPin.title = 'Add a pin';
-fabPin.textContent = '+';
+fabPin.setAttribute('aria-label', 'Add a pin');
+fabPin.setAttribute('aria-pressed', 'false');
+fabPin.innerHTML = ICONS.pinAdd;
 
 // ---- Badge placement -----------------------------------------------------
 // Server-resolved slot (link override ?? deck's remembered default): the 4
@@ -647,8 +768,9 @@ fabPin.textContent = '+';
 // + FAB stacks toward the viewport center from the badge's slot.
 // The three TOP slots add the recipient bar's height (PRDCT-2281): the bar
 // publishes it as --slideless-topbar on the root (0 when absent or
-// collapsed), so the badge never sits under the bar and follows a collapse
-// live, with no coupling between the two runtimes.
+// collapsed). Only the floating fallback uses the slots (a bar hosts the
+// entrances itself, see the bar handshake below); the offset still serves
+// the panel, the banner and the pins.
 var TOP_OFFSET = 'var(--slideless-topbar, 0px)';
 var BADGE_SLOTS = {
   'top-left': { top: 'calc(20px + ' + TOP_OFFSET + ')', left: '20px' },
@@ -661,19 +783,25 @@ var BADGE_SLOTS = {
   left: { left: '20px', top: '50%', transform: 'translateY(-50%)' }
 };
 var FAB_SLOTS = {
-  'top-left': { top: 'calc(74px + ' + TOP_OFFSET + ')', left: '20px' },
-  top: { top: 'calc(74px + ' + TOP_OFFSET + ')', left: '50%', transform: 'translateX(-50%)' },
-  'top-right': { top: 'calc(74px + ' + TOP_OFFSET + ')', right: '20px' },
-  right: { right: '20px', top: 'calc(50% - 62px)', transform: 'translateY(-50%)' },
-  'bottom-right': { bottom: '74px', right: '20px' },
-  bottom: { bottom: '74px', left: '50%', transform: 'translateX(-50%)' },
-  'bottom-left': { bottom: '74px', left: '20px' },
-  left: { left: '20px', top: 'calc(50% - 62px)', transform: 'translateY(-50%)' }
+  'top-left': { top: 'calc(64px + ' + TOP_OFFSET + ')', left: '20px' },
+  top: { top: 'calc(64px + ' + TOP_OFFSET + ')', left: '50%', transform: 'translateX(-50%)' },
+  'top-right': { top: 'calc(64px + ' + TOP_OFFSET + ')', right: '20px' },
+  right: { right: '20px', top: 'calc(50% - 44px)', transform: 'translateY(-50%)' },
+  'bottom-right': { bottom: '64px', right: '20px' },
+  bottom: { bottom: '64px', left: '50%', transform: 'translateX(-50%)' },
+  'bottom-left': { bottom: '64px', left: '20px' },
+  left: { left: '20px', top: 'calc(50% - 44px)', transform: 'translateY(-50%)' }
 };
 var currentBadge = BADGE_SLOTS[CFG.badge] ? CFG.badge : 'bottom-right';
 var fabBaseTransform = '';
+// The pin button reads pressed while the placing mode is on.
 function syncFabTransform() {
-  fabPin.style.transform = fabBaseTransform + (mode === 'annotate' ? ' rotate(45deg)' : '');
+  fabPin.style.transform = fabBaseTransform;
+  var placing = mode === 'annotate';
+  fabPin.classList.toggle('__sl-on', placing);
+  fabPin.setAttribute('aria-pressed', placing ? 'true' : 'false');
+  fabPin.title = placing ? 'Done placing pins' : 'Add a pin';
+  fabPin.setAttribute('aria-label', fabPin.title);
 }
 function applyBadgeSlot(pos) {
   var slot = BADGE_SLOTS[pos] || BADGE_SLOTS['bottom-right'];
@@ -698,12 +826,17 @@ var head = el('div', '__sl-head');
 head.appendChild(el('strong', null, 'Annotations'));
 // Lean header: title · ⚙ · ✕. Actions live elsewhere — "Add a pin" is the
 // sheet's footer CTA, viewing preferences sit behind the gear.
-var gearBtn = el('div', '__sl-x');
+var gearBtn = el('button', '__sl-x');
 gearBtn.id = '__sl-gear';
+gearBtn.type = 'button';
 gearBtn.title = 'Annotation settings';
+gearBtn.setAttribute('aria-label', 'Annotation settings');
 gearBtn.innerHTML = ICONS.gear;
-var headClose = el('div', '__sl-x');
+var headClose = el('button', '__sl-x');
 headClose.id = '__sl-close';
+headClose.type = 'button';
+headClose.title = 'Close';
+headClose.setAttribute('aria-label', 'Close the annotations');
 headClose.innerHTML = ICONS.close;
 head.appendChild(gearBtn);
 head.appendChild(headClose);
@@ -725,7 +858,7 @@ var list = el('div');
 list.id = '__sl-list';
 var foot = el('div');
 foot.id = '__sl-foot';
-var modeBtn = el('button');
+var modeBtn = el('button', '__sl-btn __sl-btn-primary');
 modeBtn.id = '__sl-mode';
 modeBtn.type = 'button';
 modeBtn.innerHTML = ICONS.pin;
@@ -743,11 +876,18 @@ var settings = el('div');
 settings.id = '__sl-settings';
 var shead = el('div', '__sl-shead');
 shead.appendChild(el('strong', null, 'Settings'));
-var settingsClose = el('div', '__sl-x');
+var settingsClose = el('button', '__sl-x');
+settingsClose.type = 'button';
+settingsClose.title = 'Close';
+settingsClose.setAttribute('aria-label', 'Close the settings');
 settingsClose.innerHTML = ICONS.close;
 shead.appendChild(settingsClose);
 settings.appendChild(shead);
-settings.appendChild(el('div', '__sl-slabel', 'Notes button position'));
+// The position section (label, grid, error) is the floating fallback's;
+// the stylesheet hides it while the bar hosts the controls.
+var posSection = el('div', '__sl-pos');
+settings.appendChild(posSection);
+posSection.appendChild(el('div', '__sl-slabel __sl-eyebrow', 'Notes button position'));
 var grid = el('div');
 grid.id = '__sl-grid';
 // 3×3 spatial picker: the 8 slots around an empty center. Saved to THIS
@@ -767,11 +907,11 @@ grid.id = '__sl-grid';
     grid.appendChild(cell);
   }
 );
-settings.appendChild(grid);
+posSection.appendChild(grid);
 var settingsErr = el('div');
 settingsErr.id = '__sl-serr';
 settingsErr.textContent = 'Could not save the position — it will reset on reload.';
-settings.appendChild(settingsErr);
+posSection.appendChild(settingsErr);
 var pinsRow = el('div', '__sl-setrow');
 pinsRow.appendChild(el('span', null, 'Show pins on the deck'));
 // Per-visit only: the opaque origin has no storage (ADR 012), so this
@@ -840,6 +980,11 @@ var previewLayer = el('div');
 previewLayer.id = '__sl-preview';
 var layer = el('div');
 layer.id = '__sl-layer';
+var hl = el('div');
+hl.id = '__sl-hl';
+var hlTag = el('span');
+hlTag.id = '__sl-hl-tag';
+hl.appendChild(hlTag);
 var dragBox = el('div');
 dragBox.id = '__sl-drag';
 var banner = el('div');
@@ -861,6 +1006,38 @@ toast.id = '__sl-toast';
   'touchstart', 'touchend', 'keydown', 'keyup', 'keypress', 'wheel'
 ].forEach(function (type) {
   root.addEventListener(type, function (ev) { ev.stopPropagation(); });
+});
+
+// ---- The bar handshake --------------------------------------------------
+// The recipient bar (viewer/topbar.ts, the annotation controls note) hosts
+// the two entrances on an annotating link. Two custom events on the
+// document, nothing else: the overlay announces its state on mount and on
+// every change, the bar sends an action. A bar mounted BEFORE this script
+// is found in the DOM at mount; one that mounts after says so with a
+// state query, and the floating fallback leaves. Deck JS can fire the
+// same events, as it could already click the overlay's own buttons.
+var STATE_EVENT = 'slideless:annotations-state';
+var ACTION_EVENT = 'slideless:annotations';
+var hosted = false;
+function announce() {
+  try {
+    doc.dispatchEvent(new CustomEvent(STATE_EVENT, {
+      detail: { count: notes.length, open: openCount(), panel: sheet.classList.contains('open'), mode: mode }
+    }));
+  } catch (e) {}
+}
+function hostByBar() {
+  if (hosted) return;
+  hosted = true;
+  root.classList.add('__sl-hosted');
+  if (badge.parentNode) badge.parentNode.removeChild(badge);
+  if (fabPin.parentNode) fabPin.parentNode.removeChild(fabPin);
+}
+doc.addEventListener(ACTION_EVENT, function (e) {
+  var action = e && e.detail && typeof e.detail === 'object' ? e.detail.action : null;
+  if (action === 'panel') toggleSheet();
+  else if (action === 'pin') setMode(mode === 'annotate' ? 'browse' : 'annotate');
+  else if (action === 'state') { hostByBar(); announce(); }
 });
 
 function showToast(msg) {
@@ -1058,7 +1235,9 @@ popSave.addEventListener('click', function () {
   popSave.disabled = true;
   popSave.textContent = 'Saving…';
   popErr.style.display = 'none';
-  apiCreate(payload).then(function () {
+  apiCreate(payload).then(function (created) {
+    // The pin of the note just saved pulses once when it lands (renderPins).
+    placedId = created && typeof created.id === 'string' ? created.id : null;
     closeComposer();
     try { window.getSelection().removeAllRanges(); } catch (e) {}
     return refresh();
@@ -1102,8 +1281,10 @@ function setMode(next) {
   layer.classList.toggle('on', next === 'annotate');
   banner.classList.toggle('on', next === 'annotate');
   if (next === 'annotate') { hideAdd(); closeComposer(); toggleSheet(false); toggleSettings(false); }
+  else hideHighlight();
   syncFabTransform();
   renderPins();
+  announce();
 }
 modeBtn.addEventListener('click', function () {
   setMode(mode === 'annotate' ? 'browse' : 'annotate');
@@ -1168,6 +1349,107 @@ function dragRect(e) {
   return { left: x1, top: y1, width: x2 - x1, height: y2 - y1 };
 }
 
+// ---- The picker's highlight box ----------------------------------------
+// While annotate mode is on and nothing else holds the pointer (no drag,
+// no composer), #__sl-hl frames the element a click would pin, resolved by
+// the SAME deckElementAt() the pin itself uses, so what the box frames is
+// what gets anchored. One box moves rather than an outline per element:
+// pointermove only records the point and queues a frame; the frame resolves
+// the target, measures it, and writes transform + size, which the
+// stylesheet transitions. A scroll or a resize re-fits under the still
+// pointer (the content moved, the pointer did not), a ResizeObserver
+// follows the framed element's own size, and the label is textContent
+// only, never markup from the deck.
+var HL_PAD = 4;
+var hlPoint = null;      // last pointer position over the layer
+var hlTarget = null;     // the element the box frames, null while hidden
+var hlQueued = false;
+var hlObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(function () { queueHighlight(); })
+  : null;
+var HL_WORDY = { h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, p: 1, a: 1, button: 1, li: 1, label: 1,
+  figcaption: 1, summary: 1, th: 1, td: 1, blockquote: 1 };
+/** "h1 · First words", "img · alt", or the bare tag: the words are the element's own, cut at 28. */
+function describeElement(node) {
+  var tag = node.tagName.toLowerCase();
+  var words = '';
+  try {
+    words = node.getAttribute('aria-label') || '';
+    if (!words && tag === 'img') words = node.getAttribute('alt') || '';
+    if (!words && HL_WORDY[tag]) words = String(node.textContent || '');
+    // A container is named by the heading it holds, when it holds one.
+    if (!words && !HL_WORDY[tag] && node.querySelector) {
+      var h = node.querySelector('h1,h2,h3,h4,h5,h6');
+      if (h) words = String(h.textContent || '');
+    }
+  } catch (e) {}
+  words = words.replace(/\s+/g, ' ').trim();
+  if (!words) return tag;
+  var room = 28 - tag.length - 3;
+  if (words.length > room) words = words.slice(0, Math.max(0, room - 1)).replace(/\s+$/, '') + '…';
+  return tag + ' · ' + words;
+}
+/** Skipped targets: the document itself (a box round everything says nothing) and every overlay surface. */
+function pickable(node) {
+  if (!node || node === doc.body || node === doc.documentElement) return false;
+  if (root.contains(node) || node.id === '__slideless_topbar') return false;
+  return true;
+}
+function queueHighlight() {
+  if (hlQueued) return;
+  hlQueued = true;
+  requestAnimationFrame(function () {
+    hlQueued = false;
+    fitHighlight();
+  });
+}
+function hideHighlight() {
+  hlPoint = null;
+  if (hlTarget && hlObserver) hlObserver.unobserve(hlTarget);
+  hlTarget = null;
+  hl.classList.remove('on');
+}
+function fitHighlight() {
+  if (mode !== 'annotate' || !hlPoint || dragStart || pop.style.display === 'block') {
+    hideHighlight();
+    return;
+  }
+  var target = deckElementAt(hlPoint.x, hlPoint.y);
+  if (!pickable(target)) { hideHighlight(); return; }
+  var r = target.getBoundingClientRect();
+  if (target !== hlTarget) {
+    if (hlObserver) {
+      if (hlTarget) hlObserver.unobserve(hlTarget);
+      hlObserver.observe(target);
+    }
+    hlTarget = target;
+    hlTag.textContent = describeElement(target);
+    var radius = 0;
+    try { radius = parseFloat(getComputedStyle(target).borderTopLeftRadius) || 0; } catch (e) {}
+    hl.style.borderRadius = Math.max(4, Math.min(12, radius > 0 ? radius + HL_PAD : 0)) + 'px';
+  }
+  var fresh = !hl.classList.contains('on');
+  if (fresh) hl.classList.add('__sl-hl-jump');
+  hl.style.transform = 'translate(' + (r.left - HL_PAD) + 'px,' + (r.top - HL_PAD) + 'px)';
+  hl.style.width = r.width + 2 * HL_PAD + 'px';
+  hl.style.height = r.height + 2 * HL_PAD + 'px';
+  // The chip sits above the box unless that would put it under the bar or off the top.
+  hl.classList.toggle('__sl-hl-below', r.top - HL_PAD - 7 - (hlTag.offsetHeight || 22) < topInset() + 4);
+  if (fresh) {
+    void hl.offsetWidth; // flush the jump before the transition comes back
+    hl.classList.remove('__sl-hl-jump');
+    hl.classList.add('on');
+  }
+}
+layer.addEventListener('pointermove', function (e) {
+  hlPoint = { x: e.clientX, y: e.clientY };
+  queueHighlight();
+});
+layer.addEventListener('pointerdown', hideHighlight);
+layer.addEventListener('pointerleave', hideHighlight);
+window.addEventListener('scroll', function () { if (hlPoint) queueHighlight(); }, true);
+window.addEventListener('resize', function () { if (hlPoint) queueHighlight(); });
+
 // ---- Pins layer --------------------------------------------------------
 // Open notes anchored on THIS page get a numbered pin (and regions their
 // outline). Repositioned on scroll/resize (capture-phase scroll catches
@@ -1229,6 +1511,7 @@ function renderPins() {
     var pin = el('div', '__sl-pin', String(p.note.__num));
     pin.style.left = p.x + 'px';
     pin.style.top = p.y + 'px';
+    if (placedId && p.note.id === placedId) { pin.classList.add('__sl-placed'); placedId = null; }
     pin.addEventListener('click', function () {
       sheet.classList.add('open');
       // Focus the card only after the open-triggered refresh re-rendered it.
@@ -1285,6 +1568,8 @@ function jumpFromHash() {
 function toggleSheet(open) {
   var willOpen = open != null ? open : !sheet.classList.contains('open');
   sheet.classList.toggle('open', willOpen);
+  badge.classList.toggle('__sl-open', willOpen);
+  announce();
   if (willOpen) refresh();
 }
 badge.addEventListener('click', function () { toggleSheet(); });
@@ -1335,11 +1620,15 @@ function renderItem(a) {
     item.appendChild(el('div', '__sl-quote', '“' + String(anchor.quote).slice(0, 120) + '”'));
   }
   item.appendChild(el('div', '__sl-note', a.body));
+  // Who, when, on which version; a resolved note carries its state as a tag.
+  var meta = el('div', '__sl-meta');
   var metaBits = [];
   if (a.authorName) metaBits.push(a.authorName);
+  if (a.createdAt) metaBits.push(fmtDate(a.createdAt));
   metaBits.push('v' + a.version);
-  if (a.status === 'resolved') metaBits.push('resolved');
-  item.appendChild(el('div', '__sl-meta', metaBits.join(' · ')));
+  meta.appendChild(el('span', null, metaBits.join(' · ')));
+  if (a.status === 'resolved') meta.appendChild(el('span', '__sl-tag __sl-tag-ok', 'resolved'));
+  item.appendChild(meta);
   // The whole card jumps (reviewers have no other per-note actions: edits,
   // deletes and status flips are owner-surface capabilities).
   item.addEventListener('click', function (e) {
@@ -1357,7 +1646,6 @@ function renderList() {
   });
   if (!shown.length) {
     var empty = el('div', '__sl-empty');
-    empty.innerHTML = ICONS.empty;
     empty.appendChild(el('div', null, filter === 'open'
       ? 'No open notes yet. Select text, or use “Add pin” to mark a spot.'
       : 'Nothing resolved yet. Notes move here when the deck owner resolves them.'));
@@ -1368,15 +1656,16 @@ function renderList() {
 }
 
 function updateBadge() {
-  var open = 0;
-  for (var i = 0; i < notes.length; i++) { if (notes[i].status === 'open') open++; }
+  var open = openCount();
   bCount.textContent = String(open);
-  badge.classList.toggle('__sl-has', notes.length > 0);
-  bLabelText.textContent = notes.length === 0
-    ? 'Select text or pin a spot to leave a note'
-    : (open > 0 ? 'Review your notes' : 'All notes resolved');
+  badge.classList.toggle('__sl-has', open > 0);
+  badge.title = notes.length === 0
+    ? 'Annotations. Select text or pin a spot to leave a note'
+    : (open > 0 ? 'Annotations, ' + open + ' open' : 'Annotations, all resolved');
+  badge.setAttribute('aria-label', badge.title);
   tabOpen._count.textContent = '(' + open + ')';
   tabDone._count.textContent = '(' + (notes.length - open) + ')';
+  announce();
 }
 
 function refresh() {
@@ -1404,26 +1693,23 @@ function mount() {
   root.appendChild(pins);
   root.appendChild(previewLayer);
   root.appendChild(layer);
+  root.appendChild(hl);
   root.appendChild(dragBox);
   root.appendChild(addBtn);
   root.appendChild(pop);
-  root.appendChild(badge);
-  root.appendChild(fabPin);
+  // The bar mounts before this script runs (its tag precedes ours in the
+  // plan): found, it hosts the two entrances and the floating fallback is
+  // never created.
+  if (doc.getElementById('__slideless_topbar')) hostByBar();
+  else { root.appendChild(badge); root.appendChild(fabPin); }
   root.appendChild(sheet);
   root.appendChild(scrim);
   root.appendChild(settings);
   root.appendChild(banner);
   root.appendChild(toast);
   doc.body.appendChild(root);
+  announce();
   refresh().then(jumpFromHash);
-  // Teach once per load: gently expand the badge to reveal the hint, then
-  // collapse. Skipped when we arrived via a cross-page jump.
-  if (!/__slanno=/.test(location.hash || '')) {
-    setTimeout(function () {
-      badge.classList.add('__sl-open');
-      setTimeout(function () { badge.classList.remove('__sl-open'); }, 4200);
-    }, 700);
-  }
 }
 if (doc.readyState === 'loading') {
   doc.addEventListener('DOMContentLoaded', mount);

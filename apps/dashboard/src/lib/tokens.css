@@ -48,7 +48,11 @@
      never from disk, because this repo is slated for the OSS cut and the
      brand README's license rule keeps planned-public repos on the CDN */
   --second: 'Synonym', system-ui, sans-serif;
-  --ui: 'Onest', system-ui, sans-serif;
+  /* the body face is the website's: Synonym at 450 with -0.008em (its
+     global.css); Onest, the template's face, is gone */
+  --ui: 'Synonym', system-ui, sans-serif;
+  --ui-weight: 450;
+  --ui-track: -0.008em;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* motion — the product's ONE duration and easing, mirrored from the
@@ -91,6 +95,44 @@
   --field-base: #e9f0f3;
 }
 
+/* =====================================================================
+   The Slideless recipe (PRDCT-2439). The brand's map gives every tool a
+   ground and a theme: Slideless is a Labs product, so it sits on the
+   CREME paper (the console's warm ground scale, brand.js GROUNDS.creme)
+   and holds the DAWN theme (website recipe.ts, lab.ts: "Slideless holds
+   dawn"). Only the ground scale and the four slots are rewritten; every
+   other constant above stays the console's.
+   ===================================================================== */
+:root {
+  --ground: #f7f4ec;
+  --ground-2: #f1ede1;
+  --ground-3: #eae5d6;
+  --ink: #1c1915;
+  --ink-soft: #35302a;
+  --muted: #6e6759;
+  --hairline: #e0daca;
+
+  /* the default look is the beige of the website's home screen (look.svelte.ts
+     `paper`); a person's pick rewrites these four from the recipe box */
+  --accent: #7a6652;
+  --accent-ink: #f7f4ec;
+  --accent-soft: rgba(122, 102, 82, 0.14);
+  --field-base: #efeeea;
+  /* the tool's deep hue (toolMarks.ts TOOL_INKS.slideless): the mark's ink */
+  --accent-deep: #8a4630;
+
+  /* A plate is content sitting on the page field: translucent paper, so the
+     field's weather shows through. Three strengths. */
+  --plate: rgb(250 247 240 / 0.62);
+  --plate-strong: rgb(251 249 243 / 0.82);
+  --plate-edge: rgb(255 255 255 / 0.6);
+  /* a bar content scrolls under: opaque, so nothing reads through it */
+  --bar: #faf7f0;
+
+  /* the phone navigation bar's height, read by the shell's bottom padding */
+  --tabbar-h: 64px;
+}
+
 /* a reader who asked for no motion gets none: the duration goes to zero
    everywhere the token is read */
 @media (prefers-reduced-motion: reduce) {
@@ -126,4 +168,23 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.45), 0 2px 4px -2px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
+
+  /* the Slideless recipe, dark: the website's Labs section at night
+     (brand.css [data-section='labs'] dark) */
+  --ground: #1f1b17;
+  --ground-2: #171310;
+  --ground-3: #28231e;
+  --ink: #f3eee6;
+  --ink-soft: #dcd4c8;
+  --muted: #aca196;
+  --hairline: #3e362e;
+  --accent: #db7d5f;
+  --accent-ink: #2a1d15;
+  --accent-soft: rgba(219, 125, 95, 0.16);
+  --field-base: #241a12;
+  --accent-deep: #f3c7ac;
+  --plate: rgb(36 30 25 / 0.6);
+  --plate-strong: rgb(40 34 28 / 0.84);
+  --plate-edge: rgb(255 255 255 / 0.07);
+  --bar: #1f1b17;
 }

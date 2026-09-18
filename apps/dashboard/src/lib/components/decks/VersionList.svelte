@@ -7,6 +7,7 @@
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
+  import { appear } from '$lib/components/ui/reveal/index.js';
   import type { PresentationVersionSummary } from '@slideless/contract';
 
   /**
@@ -57,7 +58,9 @@
   {#if list.loading}
     <p class="px-2 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
   {:else if list.error && !list.items.length}
-    <p class="px-2 py-2 text-sm text-destructive">{t('versions.loadFailed', { error: list.error })}</p>
+    <p class="px-2 py-2 text-sm text-destructive" in:appear>
+      {t('versions.loadFailed', { error: list.error })}
+    </p>
   {:else if !list.items.length}
     <p class="px-2 py-2 text-sm text-muted-foreground">{t('versions.empty')}</p>
   {:else}

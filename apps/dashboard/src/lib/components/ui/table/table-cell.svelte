@@ -14,7 +14,7 @@
 <td
   bind:this={ref}
   class={cn(
-    'p-2 align-middle [&:has([role=checkbox])]:pl-4 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+    'text-ink-soft px-4 py-3.5 align-middle first:font-medium first:text-ink [&:has([role=checkbox])]:pl-4 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
     className
   )}
   {...restProps}

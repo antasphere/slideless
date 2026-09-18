@@ -30,7 +30,12 @@
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
-          <Button variant="ghost" size="sm" class="-ml-3 h-8 data-[state=open]:bg-accent" {...props}>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="-ml-3 h-8 data-[state=open]:bg-[var(--wash)] data-[state=open]:!text-[var(--ink)]"
+            {...props}
+          >
             <span>{title}</span>
             {#if column.getIsSorted() === 'desc'}
               <ArrowDown class="ml-2 h-4 w-4" />
@@ -44,17 +49,17 @@
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="start">
         <DropdownMenu.Item onclick={() => column.toggleSorting(false)}>
-          <ArrowUp class="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+          <ArrowUp />
           {t('table.sortAsc')}
         </DropdownMenu.Item>
         <DropdownMenu.Item onclick={() => column.toggleSorting(true)}>
-          <ArrowDown class="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+          <ArrowDown />
           {t('table.sortDesc')}
         </DropdownMenu.Item>
         {#if column.getCanHide()}
           <DropdownMenu.Separator />
           <DropdownMenu.Item onclick={() => column.toggleVisibility(false)}>
-            <EyeOff class="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <EyeOff />
             {t('table.hideColumn')}
           </DropdownMenu.Item>
         {/if}

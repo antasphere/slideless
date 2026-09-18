@@ -1,21 +1,33 @@
 <script lang="ts">
+  /* The person at the foot of the sidebar, and the card that opens from them.
+     The card says who is signed in and as what (the name in the display serif,
+     the email, the role in this workspace as its tag), then where they can go
+     from here, each destination with a line on what it holds, and last, apart
+     and quiet, the way out. The language is not here: it lives on the account
+     page, first card. */
   import { goto } from '$app/navigation';
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
   import LogOut from '@lucide/svelte/icons/log-out';
   import UserRound from '@lucide/svelte/icons/user-round';
-  import * as Avatar from '$lib/components/ui/avatar/index.js';
+  import Settings from '@lucide/svelte/icons/settings';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-  import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { roleTag } from '$lib/tags';
   import { signOutToLogin } from '$lib/session';
   import { t } from '$lib/i18n';
+  import type { WorkspaceRole } from '@slideless/contract';
 
   interface Props {
     user: { name: string; email: string };
+    /** The person's role in the workspace this session targets. */
+    role: WorkspaceRole;
+    /** That workspace's name (the instance's, for a single-membership user). */
+    workspaceName: string;
   }
 
-  let { user }: Props = $props();
+  let { user, role, workspaceName }: Props = $props();
 
   const sidebar = useSidebar();
 
@@ -28,6 +40,11 @@
       .toUpperCase()
       .slice(0, 2)
   );
+
+  const destinations = $derived([
+    { href: '/account', icon: UserRound, title: t('nav.myAccount'), blurb: t('userMenu.accountBlurb') },
+    { href: '/settings', icon: Settings, title: t('nav.settings'), blurb: t('userMenu.settingsBlurb') }
+  ]);
 </script>
 
 <Sidebar.Menu class="px-1">
@@ -38,54 +55,139 @@
           <Sidebar.MenuButton
             {...props}
             size="default"
-            class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground {sidebar.state ===
-            'collapsed'
+            class="!h-auto {sidebar.state === 'collapsed'
               ? '!mx-auto !w-9 !justify-center !p-0'
-              : '!px-1 !py-2'}"
+              : '!gap-2.5 !px-1.5 !py-1.5'}"
           >
-            <Avatar.Root class="{sidebar.state === 'collapsed' ? 'h-9 w-9' : 'h-7 w-7'} shrink-0 rounded-md">
-              <Avatar.Fallback class="rounded-md text-xs">{initials}</Avatar.Fallback>
-            </Avatar.Root>
+            <span class="disc" class:lone={sidebar.state === 'collapsed'}>{initials}</span>
             {#if sidebar.state !== 'collapsed'}
-              <span class="truncate text-sm font-medium">{displayName}</span>
-              <ChevronsUpDown class="ml-auto size-4 shrink-0" />
+              <span class="grid min-w-0 flex-1 text-left leading-tight">
+                <span class="truncate text-[13.5px] font-medium text-[var(--ink)]">{displayName}</span>
+                <span class="truncate text-[11.5px] text-[var(--muted)]">{user.email}</span>
+              </span>
+              <ChevronsUpDown class="ml-auto !size-3.5 shrink-0 text-[var(--muted)] opacity-70" />
             {/if}
           </Sidebar.MenuButton>
         {/snippet}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content
-        class="w-[var(--bits-dropdown-menu-anchor-width)] min-w-56 rounded-lg"
+        class="w-[300px] max-w-[calc(100vw-24px)] p-0"
         side={sidebar.isMobile ? 'bottom' : 'right'}
         align="end"
-        sideOffset={4}
+        sideOffset={8}
       >
-        <DropdownMenu.Label class="p-0 font-normal">
-          <div class="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-            <Avatar.Root class="h-8 w-8 rounded-lg">
-              <Avatar.Fallback class="rounded-lg">{initials}</Avatar.Fallback>
-            </Avatar.Root>
-            <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-medium">{displayName}</span>
-              <span class="truncate text-xs">{user.email}</span>
-            </div>
+        <!-- who, and as what. SECURITY: the name, the email and the workspace
+             name are user-authored: text interpolation only. -->
+        <div class="who">
+          <span class="disc big">{initials}</span>
+          <div class="min-w-0 flex-1">
+            <p class="name truncate">{displayName}</p>
+            <p class="truncate text-[12.5px] text-[var(--muted)]">{user.email}</p>
           </div>
-        </DropdownMenu.Label>
-        <DropdownMenu.Item onclick={() => goto('/account')}>
-          <UserRound class="mr-2 h-4 w-4" />
-          {t('nav.myAccount')}
-        </DropdownMenu.Item>
-        <DropdownMenu.Separator />
-        <!-- Not a menu item: picking a language reloads the page anyway. -->
-        <div class="flex items-center justify-between px-2 py-1.5 text-sm">
-          <span class="text-muted-foreground">{t('common.language')}</span>
-          <LanguageSwitcher />
         </div>
-        <DropdownMenu.Separator />
-        <DropdownMenu.Item onclick={() => signOutToLogin()}>
-          <LogOut class="mr-2 h-4 w-4" />
-          {t('nav.signOut')}
-        </DropdownMenu.Item>
+        <div class="as">
+          <Tag {...roleTag(role)} />
+          <span class="truncate">{workspaceName}</span>
+        </div>
+
+        <div class="p-1">
+          {#each destinations as place (place.href)}
+            <DropdownMenu.Item class="!items-start !gap-3 px-2 py-2" onclick={() => goto(place.href)}>
+              <span class="well"><place.icon class="size-4" strokeWidth={1.7} /></span>
+              <span class="grid min-w-0 leading-snug">
+                <span class="text-[13.5px] font-medium">{place.title}</span>
+                <span class="text-[12.5px] text-[var(--muted)]">{place.blurb}</span>
+              </span>
+            </DropdownMenu.Item>
+          {/each}
+        </div>
+
+        <!-- the way out: apart, quiet at rest, the danger tone under the hand -->
+        <div class="out">
+          <DropdownMenu.Item
+            variant="destructive"
+            class="px-2 py-2 [&:not([data-highlighted])>svg]:!text-[var(--muted)] [&:not([data-highlighted])]:!text-[var(--muted)]"
+            onclick={() => signOutToLogin()}
+          >
+            <LogOut />
+            {t('nav.signOut')}
+          </DropdownMenu.Item>
+        </div>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   </Sidebar.MenuItem>
 </Sidebar.Menu>
+
+<style>
+  /* the initials, as on the phone's top bar: a small disc of paper */
+  .disc {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--ground);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+  }
+  .disc.lone {
+    width: 34px;
+    height: 34px;
+  }
+  /* in the card the disc takes the accent's wash: this is the person, lit */
+  .disc.big {
+    width: 42px;
+    height: 42px;
+    border-color: color-mix(in oklab, var(--accent) 30%, var(--hairline));
+    background: var(--accent-soft);
+    font-family: var(--display);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--accent-deep);
+  }
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 16px 10px;
+  }
+  .name {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    color: var(--ink);
+  }
+  .as {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 16px 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .well {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 30px;
+    height: 30px;
+    margin-top: 1px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+  }
+  .out {
+    padding: 4px;
+    border-top: 1px solid var(--hairline);
+  }
+</style>

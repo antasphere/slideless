@@ -1,21 +1,27 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { and, eq, lt, desc } from 'drizzle-orm';
+import { count, eq, lt, desc } from 'drizzle-orm';
 import { auditListRoute } from '@slideless/contract/routes';
 import { auditLog, user as userTable, type Db } from '@slideless/db';
 import { requireRole } from '../middleware/auth-context.js';
+import { auditFilterConditions, auditWhere, cursorId } from '../audit/filters.js';
 
 export function registerAuditRoutes(api: OpenAPIHono, db: Db): void {
   api.use('/audit', requireRole('admin'));
   api.openapi(auditListRoute, async (c) => {
     const principal = c.get('principal')!;
-    const { cursor, limit } = c.req.valid('query');
+    const query = c.req.valid('query');
+    const { limit } = query;
 
-    // Malformed cursors are ignored (page 1), and so are out-of-range ones:
-    // Number('99999999999999999999') is finite but past bigint precision, and
-    // sending it to the `lt(id, …)` comparison overflows in Postgres → 500.
-    // Safe-integer is the honest bound for a JS-roundtripped bigserial id.
-    const parsed = cursor ? Number(cursor) : null;
-    const cursorId = parsed !== null && Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+    // SECURITY: the scope is the caller's workspace and nothing in the
+    // query can widen it; every filter narrows within it, as a bound
+    // parameter (audit/filters.ts). The cursor stays the last row id, so
+    // a page is "the next `limit` rows older than the cursor that match
+    // the same filters": a client that changes a filter starts over.
+    const scope = eq(auditLog.workspaceId, principal.workspaceId);
+    const filters = auditFilterConditions(query);
+    const cursor = cursorId(query.cursor);
+    const where = auditWhere(scope, filters, cursor !== null ? lt(auditLog.id, cursor) : null);
+
     const rows = await db
       .select({
         id: auditLog.id,
@@ -33,13 +39,22 @@ export function registerAuditRoutes(api: OpenAPIHono, db: Db): void {
       })
       .from(auditLog)
       .leftJoin(userTable, eq(auditLog.actorUserId, userTable.id))
-      .where(
-        cursorId !== null
-          ? and(eq(auditLog.workspaceId, principal.workspaceId), lt(auditLog.id, cursorId))
-          : eq(auditLog.workspaceId, principal.workspaceId)
-      )
+      .where(where)
       .orderBy(desc(auditLog.id))
       .limit(limit + 1);
+
+    // The total is counted once per listing, on the first page: the count
+    // walks the same join and WHERE without the cursor, and a client keeps
+    // the figure while it loads the pages after.
+    let total: number | null = null;
+    if (cursor === null) {
+      const [counted] = await db
+        .select({ n: count() })
+        .from(auditLog)
+        .leftJoin(userTable, eq(auditLog.actorUserId, userTable.id))
+        .where(auditWhere(scope, filters, null));
+      total = counted?.n ?? 0;
+    }
 
     const page = rows.slice(0, limit);
     const nextCursor = rows.length > limit ? String(page[page.length - 1]?.id ?? '') : null;
@@ -59,7 +74,8 @@ export function registerAuditRoutes(api: OpenAPIHono, db: Db): void {
           metadata: r.metadata,
           createdAt: r.createdAt.toISOString()
         })),
-        nextCursor
+        nextCursor,
+        total
       },
       200
     );

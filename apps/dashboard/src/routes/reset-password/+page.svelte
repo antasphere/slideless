@@ -4,6 +4,7 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
@@ -105,9 +106,7 @@
               required
             />
           </div>
-          {#if error}
-            <p class="text-sm text-destructive">{error}</p>
-          {/if}
+          <FormError message={error} />
           <Button type="submit" class="w-full" disabled={loading}>
             {loading ? t('reset.updating') : t('reset.submit')}
           </Button>

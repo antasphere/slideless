@@ -98,13 +98,14 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     await page.getByRole('link', { name: 'Decks', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
     // The literal "<b>" text must be visible — meaning it was escaped.
-    await expect(page.getByRole('cell', { name: DECK_TITLE })).toBeVisible();
-    // …and no <b> element was created from it anywhere in the table.
-    expect(await page.locator('tbody b').count()).toBe(0);
+    // the decks page shows one card per deck (PRDCT-2437); the card's heading is the title
+    await expect(page.getByRole('heading', { name: DECK_TITLE })).toBeVisible();
+    // …and no <b> element was created from it anywhere on the page.
+    expect(await page.locator('main b').count()).toBe(0);
   });
 
   await test.step('deck detail: sandboxed preview iframe WITHOUT allow-same-origin', async () => {
-    await page.getByRole('cell', { name: DECK_TITLE }).click();
+    await page.getByRole('heading', { name: DECK_TITLE }).click();
     await expect(page.getByRole('heading', { name: DECK_TITLE })).toBeVisible();
 
     const iframe = page.getByTestId('deck-preview');
@@ -175,7 +176,8 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     const claimer = await context.newPage();
     await claimer.goto(claimUrl);
     await expect(claimer.getByText('Collaborate on')).toBeVisible();
-    await claimer.getByLabel('Your name').fill('Collab One');
+    await claimer.getByLabel('First name').fill('Collab');
+    await claimer.getByLabel('Last name').fill('One');
     await claimer.getByLabel('Choose a password').fill('collab-password-123');
     await claimer.getByRole('button', { name: 'Create account and claim' }).click();
     // Claiming lands on the deck detail — the collaborator can read it.

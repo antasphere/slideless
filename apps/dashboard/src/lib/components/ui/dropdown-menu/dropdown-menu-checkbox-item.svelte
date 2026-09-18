@@ -21,18 +21,15 @@
   bind:ref
   bind:checked
   bind:indeterminate
-  class={cn(
-    'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-    className
-  )}
+  class={cn('float-item py-1.5 pl-8 pr-2', className)}
   {...restProps}
 >
   {#snippet children({ checked, indeterminate })}
-    <span class="absolute left-2 flex size-3.5 items-center justify-center">
+    <span class="float-mark absolute left-2 flex size-3.5 items-center justify-center">
       {#if indeterminate}
-        <Minus class="size-4" />
+        <Minus class="size-4" strokeWidth={2.2} />
       {:else}
-        <Check class={cn('size-4', !checked && 'text-transparent')} />
+        <Check class={cn('size-4', !checked && 'text-transparent')} strokeWidth={2.2} />
       {/if}
     </span>
     {@render childrenProp?.()}

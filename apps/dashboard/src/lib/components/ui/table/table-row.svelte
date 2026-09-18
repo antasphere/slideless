@@ -13,7 +13,10 @@
 
 <tr
   bind:this={ref}
-  class={cn('hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors', className)}
+  class={cn(
+    'border-b border-[color-mix(in_oklab,var(--hairline)_70%,transparent)] transition-colors last:border-0 hover:bg-[color-mix(in_oklab,var(--accent)_5%,transparent)] hover:[&>td:first-child]:shadow-[inset_2px_0_0_var(--accent)] data-[state=selected]:bg-[var(--accent-soft)]',
+    className
+  )}
   {...restProps}
 >
   {@render children?.()}
