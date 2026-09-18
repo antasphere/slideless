@@ -860,14 +860,14 @@ function addFiles(form, input, fileList) {
   var incoming = [];
   for (var i = 0; i < fileList.length; i++) incoming.push(fileList[i]);
   if (!incoming.length) return;
-  // A single-file field: the new file replaces the one in place.
-  if (rules.max === 1) {
-    incoming = [incoming[0]];
-    while (state.files.length) removeFile(state, state.files[0]);
-  }
+  // A single-file field: the new file replaces the one in place, but only
+  // once it is ACCEPTED. A refused file (a wrong type, too big) leaves the
+  // field as it was, with the reason under it.
+  var single = rules.max === 1;
+  if (single) incoming = [incoming[0]];
   for (var j = 0; j < incoming.length; j++) {
     var file = incoming[j];
-    if (liveCount(state) >= rules.max) {
+    if (!single && liveCount(state) >= rules.max) {
       setFieldMessage(state, text(form, 'uploadTooMany', { max: rules.max }));
       break;
     }
@@ -878,6 +878,9 @@ function addFiles(form, input, fileList) {
     if (file.size > rules.maxBytes) {
       setFieldMessage(state, text(form, 'uploadTooLarge', { name: file.name, size: fmtSize(rules.maxBytes) }));
       continue;
+    }
+    if (single) {
+      while (state.files.length) removeFile(state, state.files[0]);
     }
     startUpload(form, input, state, file);
   }

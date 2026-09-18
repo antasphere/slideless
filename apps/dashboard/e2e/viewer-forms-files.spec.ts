@@ -182,6 +182,30 @@ test('a file field: refusals in the page, a drop and a pick upload, the owner re
     await expect(respondent.locator('body')).not.toHaveAttribute('data-deck-drop', '1');
   });
 
+  await test.step('a single-file field: a refused file leaves the file in place, an accepted one replaces it', async () => {
+    const logoFiles = respondent.locator('[data-slideless-files="logo"] li');
+    await dropOn(respondent, '[data-slideless-drop="logo"]', [
+      { name: 'logo.png', type: 'image/png', bytes: PNG }
+    ]);
+    await expect(
+      respondent.locator('[data-slideless-files="logo"] li[data-slideless-file="done"]')
+    ).toHaveCount(1);
+    await dropOn(respondent, '[data-slideless-drop="logo"]', [
+      { name: 'huge.png', type: 'image/png', bytes: Buffer.alloc(1024 * 1024 + 1, 1) }
+    ]);
+    await expect(logoMsg).toContainText('huge.png dépasse 1 MB');
+    await expect(logoFiles).toHaveCount(1);
+    await expect(logoFiles.first()).toContainText('logo.png');
+    await dropOn(respondent, '[data-slideless-drop="logo"]', [
+      { name: 'logo-2.png', type: 'image/png', bytes: PNG }
+    ]);
+    await expect(logoFiles).toHaveCount(1);
+    await expect(logoFiles.first()).toContainText('logo-2.png');
+    // Taken back before sending, so the owner's read below stays the two documents.
+    await logoFiles.first().locator('button').click();
+    await expect(logoFiles).toHaveCount(0);
+  });
+
   await test.step('a drop that misses the panels, with two on screen, adds nothing and never leaves the page', async () => {
     const before = respondent.url();
     await dropOn(respondent, '#title', [{ name: 'stray.pdf', type: 'application/pdf', bytes: PDF }]);
