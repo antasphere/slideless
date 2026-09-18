@@ -8,7 +8,10 @@ restore — and the drill that proves your backups actually work.
 1. **The database** — users, workspaces, keys, audit, file metadata, jobs.
 2. **The `/data` volume** — uploaded file blobs (local storage driver), the
    erasure tombstone (see below) and, on installs that never set
-   `AUTH_SECRET`, the auto-generated auth secret.
+   `AUTH_SECRET`, the auto-generated auth secret. The files respondents
+   upload into form file fields are blobs on the same volume, so they are in
+   the same backup; they can weigh up to `FORMS_MAX_UPLOADS_MB_PER_DECK` per
+   deck ([deployment-profiles.md](../self-hosting/deployment-profiles.md#sizing-storage-for-form-uploads)).
 3. **`.env`** — your secrets and configuration.
 
 With `STORAGE_DRIVER=s3`, the blobs live in the bucket: use the bucket's own

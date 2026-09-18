@@ -16,7 +16,7 @@ out a link. No PowerPoint export, no static-host glue, no third party holding yo
   version. [Versions](concepts/versions.md)
 - **Links are made on top.** A share link is a secret URL that opens the deck for whoever holds it, under a slim bar naming
   the deck, its version and its files, following the latest version or pinned to one, with its own
-  switches (annotations, forms, downloads, the bar), an expiry, a password, view counts and instant
+  switches (annotations, forms, file uploads, downloads, the bar), an expiry, a password, view counts and instant
   revocation. A link is public to anyone
   with its URL; a deck with no link is private. [Share links](concepts/links.md)
 - **Files travel with the version.** Whatever you put in a `downloads/` folder is the version's
