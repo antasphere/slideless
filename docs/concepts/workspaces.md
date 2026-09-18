@@ -23,6 +23,14 @@ The first workspace of a self-hosted instance is created at setup. After that, a
 creates another one from the workspace switcher, and becomes its owner. It starts empty: no deck, no
 member and no audit row is carried over, and the workspace you were in is not told.
 
+In the dashboard, open the workspace menu at the top of the sidebar and choose **New workspace**. Give
+it a name; once it is created the dashboard switches to it, so you land in the new workspace. The menu
+is there as soon as you may create a workspace, even if you belong to only one. When creation is
+closed and you belong to one workspace, the sidebar shows the instance name and no menu. Someone who
+is signed in but belongs to no workspace yet is offered the same dialog on the page that says so.
+Files you download from the dashboard (deck attachments, files sent through a form, exports) always
+come from the workspace you are in.
+
 ```http
 POST /api/v1/workspaces
 Content-Type: application/json
