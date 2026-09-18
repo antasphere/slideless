@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
 import { FakeHub, type HubTokenOverrides, type HubUserFixture } from '../fake-hub.js';
+import { HUB_SSO_SCOPES } from '../../src/identity/hub-sso.js';
 import * as sso from './sso-helpers.js';
 
 /**
@@ -152,6 +153,12 @@ describe('cloud edition: the SSO entrance', () => {
     const scope = new URL(url).searchParams.get('scope') ?? '';
     expect(scope).toContain('offline_access');
     expect(scope).toContain('account:read');
+    // PRDCT-2443: the hub's dedicated scope for POST /orgs — and the list is
+    // EXACTLY the stated one (a scope the hub does not know fails the whole
+    // sign-in, so nothing rides along unannounced; account:write never does).
+    expect(scope.split(' ').sort()).toEqual([...HUB_SSO_SCOPES].sort());
+    expect(scope.split(' ')).toContain('orgs:create');
+    expect(scope.split(' ')).not.toContain('account:write');
   });
 
   it('persists the offline grant ENCRYPTED on the account row (never plaintext at rest)', async () => {

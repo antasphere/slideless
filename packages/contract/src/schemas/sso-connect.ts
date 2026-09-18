@@ -9,7 +9,10 @@ import { z } from 'zod';
  * mints a hub API key once; the hub exchanges it for a short-lived RS256 JWT
  * (`aud` = THIS instance's resource URL, `purpose: 'sso-connect'`, unique
  * `jti`) PLUS a one-time raw offline-grant refresh token (`hubRefreshToken`,
- * scopes `offline_access account:read`), and this endpoint turns the pair
+ * scopes `offline_access account:read` — the HUB mints it, so it carries no
+ * `orgs:create`: a CLI connect REPLACES the stored grant, and the person's
+ * next workspace creation answers `hub_reauth_required` until they sign in
+ * with the browser again), and this endpoint turns the pair
  * into an ordinary USER-scoped local API key — no tool-specific login, and
  * the stored grant drives the same live as-the-user hub org reads as a
  * browser SSO login's. PUBLIC path (the hub JWT IS the credential),

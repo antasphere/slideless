@@ -190,6 +190,15 @@ deploys) + `dev` (day-to-day work).
   (`jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
   membership row — whole-user delete or nothing, else the reconciler's fail-open `no_link`
   branch becomes reachable for hub-origin principals.
+- **Cloud sign-in requests `orgs:create`, and THE HUB DEPLOYS FIRST (PRDCT-2443)**: the scope list
+  is stated once (`HUB_SSO_SCOPES`, `identity/hub-sso.ts`): `openid profile email offline_access
+account:read orgs:create`. The hub's authorize endpoint refuses an unknown requested scope with
+  `invalid_scope`, which fails the WHOLE sign-in for every user, so a scope is added here only
+  AFTER the hub lists it for the tool client. `orgs:create` is the hub's dedicated scope for
+  `POST /orgs`; `account:write` does not open it and is never requested. A grant without the scope
+  (minted before this shipped, or replaced by a CLI connect, whose hub-minted grant carries no
+  `orgs:create`) gets 403 `insufficient_scope` from the hub, mapped to 401 `hub_reauth_required`:
+  a browser sign-in heals it. `/me.canCreateWorkspace` stays true for such a person, on purpose.
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
