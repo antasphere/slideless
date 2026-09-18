@@ -81,6 +81,7 @@ import {
 } from '../schemas/collaborators.js';
 import {
   formResponseDetailSchema,
+  formResponseFilesZipQuerySchema,
   formResponseSchema,
   formResponsesListQuerySchema,
   formResponsesListSchema,
@@ -1288,6 +1289,29 @@ export const formResponsesSummaryRoute = createRoute({
   }
 });
 
+// ── The files of form responses (PRDCT-2403) ─────────────────────────────────
+// What respondents uploaded into a form's file fields. ONE capability of the
+// API: the dashboard, the CLI and the MCP tool are three clients of these
+// routes. Gated exactly like the responses they belong to (canWrite, 404
+// never 403). Bytes are served `attachment` + `nosniff`, never rendered.
+// The literal `/responses/files.zip` MUST register before `{responseId}`.
+
+/** Every file of the deck's responses, one folder per response, as one zip. */
+export const formResponsesFilesZipRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/responses/files.zip',
+  tags: ['forms'],
+  summary:
+    "Every uploaded file of a presentation's form responses as a streamed store-only zip " +
+    '(`<form>/<response>/<field>/<file>`); filter by form, link or since. 404 no_files when none match.',
+  request: { params: uuidParams, query: formResponseFilesZipQuerySchema },
+  responses: {
+    200: { description: 'Zip archive stream (application/zip, attachment)' },
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
 /**
  * One response with its edit history (PRDCT-2329): the current row plus
  * every revision, newest first. Owner surface only — the respondent wire
@@ -1320,6 +1344,39 @@ export const formResponseDeleteRoute = createRoute({
     // Deliberately NO 403 (the responses-list posture, PRDCT-1393): an
     // ordinary member gets the same 404 an outsider would.
     404: errorResponses[404]
+  }
+});
+
+const formResponseFileParams = z.object({ id: z.uuid(), responseId: z.uuid(), fileId: z.uuid() });
+
+/** One response's files as one zip (`<field>/<file>`). Registered before the single-file route. */
+export const formResponseFilesZipRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/responses/{responseId}/files.zip',
+  tags: ['forms'],
+  summary:
+    "One form response's uploaded files as a streamed store-only zip. 404 no_files when it holds none.",
+  request: { params: formResponseParams },
+  responses: {
+    200: { description: 'Zip archive stream (application/zip, attachment)' },
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
+export const formResponseFileDownloadRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/responses/{responseId}/files/{fileId}',
+  tags: ['forms'],
+  summary: 'Download one file a respondent uploaded (attachment + nosniff; Range supported)',
+  request: { params: formResponseFileParams },
+  responses: {
+    200: { description: 'File bytes' },
+    206: { description: 'Partial content' },
+    304: { description: 'Not modified' },
+    401: errorResponses[401],
+    404: errorResponses[404],
+    416: { description: 'Range not satisfiable' }
   }
 });
 

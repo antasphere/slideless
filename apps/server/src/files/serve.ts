@@ -10,6 +10,12 @@ export interface ServeBlobOptions {
   logger: Logger;
   workspaceId: string;
   sha256: string;
+  /**
+   * The blob's storage key when it is NOT a content-addressed workspace
+   * file (a form upload lives under its own key, forms/uploads.ts). Unset =
+   * `blobKey(workspaceId, sha256)`. The ETag stays the sha either way.
+   */
+  storageKey?: string;
   sizeBytes: number;
   contentType: string;
   filename: string;
@@ -70,7 +76,7 @@ export async function serveBlob(c: Context, opts: ServeBlobOptions): Promise<Res
   // the real file (scale drill, I2). The clean 404 is a safety net, not a
   // supported topology: multi-replica requires shared storage
   // (STORAGE_DRIVER=s3), docs/self-hosting/deployment-profiles.md.
-  const key = blobKey(opts.workspaceId, opts.sha256);
+  const key = opts.storageKey ?? blobKey(opts.workspaceId, opts.sha256);
   if (!(await opts.storage.exists(key))) {
     opts.logger.error(
       { key, driver: opts.storage.name },

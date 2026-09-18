@@ -197,6 +197,12 @@ const envObjectSchema = z.object({
   HSTS_MAX_AGE: numeric(z.coerce.number().int().min(0).default(15552000)),
   /** Instance-level cap read by the default AllowAllEntitlements. */
   MAX_FILE_SIZE_MB: numeric(z.coerce.number().int().min(1).default(100)),
+  /** Size ceiling, in MB, of ONE file a respondent uploads into a form's file field (PRDCT-2403) — an anonymous write path, so it has its own knob. Never above MAX_FILE_SIZE_MB (the lower of the two applies). 0 switches form file uploads off instance-wide: file fields show as unavailable and the rest of the form still submits. */
+  FORMS_MAX_UPLOAD_MB: numeric(z.coerce.number().int().min(0).default(100)),
+  /** How many files ONE form response can hold, all file fields together — the instance's ceiling behind the maximum a deck author sets on a field (an author who sets none gets this one). */
+  FORMS_MAX_FILES_PER_RESPONSE: numeric(z.coerce.number().int().min(1).max(1000).default(100)),
+  /** Total weight, in MB, of the form uploads ONE deck can hold (attached and not yet submitted together). Past it the upload route answers 403 `uploads_full` until the owner deletes responses. The bound on what a share link can write to the instance's disk. */
+  FORMS_MAX_UPLOADS_MB_PER_DECK: numeric(z.coerce.number().int().min(1).default(5120)),
   /** General per-principal API quota: sustained requests/minute allowed to every authenticated /api/v1 principal (API key, OAuth token, session). 0 disables the general limiter. */
   API_RATE_LIMIT_PER_MINUTE: numeric(z.coerce.number().int().min(0).default(600)),
   /** Spike cap for the general API quota: max requests per principal in any 1-second burst. 0 disables burst smoothing (the per-minute window still applies). */

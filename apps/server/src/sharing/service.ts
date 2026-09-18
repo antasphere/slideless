@@ -99,6 +99,12 @@ export class ShareTokenService {
      * remembering resolver refuses previews by purpose regardless.
      */
     remembersResponses: boolean;
+    /**
+     * Respondents may upload files into the form's file fields (PRDCT-2403).
+     * The share route passes the contract default (true); the preview mint
+     * passes false, and the upload route refuses previews by purpose too.
+     */
+    canUploadFiles: boolean;
     /** Explicit badge slot for this link, or null = inherit the deck default. */
     badgePosition: BadgePosition | null;
     expiresAt: Date | null;
@@ -119,6 +125,7 @@ export class ShareTokenService {
         canDownload: opts.canDownload,
         showBar: opts.showBar,
         remembersResponses: opts.remembersResponses,
+        canUploadFiles: opts.canUploadFiles,
         badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
@@ -250,6 +257,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
   canDownload: boolean;
   showBar: boolean;
   remembersResponses: boolean;
+  canUploadFiles: boolean;
   badgePosition: BadgePosition | null;
   expiresAt: string | null;
   hasPassword: boolean;
@@ -271,6 +279,7 @@ export function shareTokenToWire(t: ShareTokenRow): {
     canDownload: t.canDownload,
     showBar: t.showBar,
     remembersResponses: t.remembersResponses,
+    canUploadFiles: t.canUploadFiles,
     badgePosition: t.badgePosition,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     hasPassword: t.passwordHash !== null,

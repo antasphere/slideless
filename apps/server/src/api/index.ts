@@ -63,7 +63,8 @@ import { ShareTokenViewService } from '../sharing/view-events.js';
 import type { CollaboratorService } from '../collaborators/service.js';
 import type { FormResponseService } from '../forms/service.js';
 import type { FormResponseNotifier } from '../forms/notify.js';
-import { registerViewerFormRoutes } from '../viewer/forms-api.js';
+import { isViewerFormUploadPath, registerViewerFormRoutes } from '../viewer/forms-api.js';
+import type { FormUploadService } from '../forms/uploads.js';
 import { registerViewerAttachmentRoutes } from '../viewer/attachments-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
 import type { ShareTokenService } from '../sharing/service.js';
@@ -216,6 +217,7 @@ export interface ApiDeps {
   /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
   sharing: ShareTokenService;
   forms: FormResponseService;
+  formUploads: FormUploadService;
   /** Owner notifications for form responses (PRDCT-2330). */
   formsNotifier: FormResponseNotifier;
   /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
@@ -358,9 +360,12 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     onError: (c) =>
       c.json(err('file_too_large', `Asset exceeds the ${env.MAX_FILE_SIZE_MB} MB instance cap`), 413)
   });
+  //  - the viewer's form file upload (PRDCT-2403): one raw streamed file per
+  //    request, capped MID-STREAM by the form-upload ceiling in its handler.
   api.use('*', (c, next) => {
     const path = c.req.path;
     if (path.startsWith('/api/v1/files')) return next();
+    if (isViewerFormUploadPath(path)) return next();
     if (path === '/api/v1/presentations/assets') return assetBodyLimit(c, next);
     if (path.startsWith('/api/v1/presentations')) return manifestBodyLimit(c, next);
     return jsonBodyLimit(c, next);
@@ -370,7 +375,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // it): `JSON.parse` accepts any depth but `JSON.stringify` is recursive, so
   // a small body of nothing but `[` turns any echo/audit/log of it into a
   // RangeError 500 inside the shipped node:22-alpine image.
-  api.use('*', jsonDepthLimit());
+  // The form file upload is exempt: its body is a FILE, never parsed, and a
+  // respondent's `.json` sent with a JSON content type would otherwise be
+  // cloned into memory whole (up to the upload ceiling) by the scan.
+  const depthLimit = jsonDepthLimit();
+  api.use('*', (c, next) => (isViewerFormUploadPath(c.req.path) ? next() : depthLimit(c, next)));
 
   // ── Auth-surface rate limits: registered FIRST so they run before auth
   // resolution — abusive traffic is rejected before it costs a DB query.
@@ -973,6 +982,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     views: new ShareTokenViewService(db, logger),
     annotations: annotationService,
     forms: deps.forms,
+    formUploads: deps.formUploads,
     fileService: deps.fileService,
     storage: deps.storage,
     registry,
@@ -1025,7 +1035,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     formEmailLimiter: limiters.viewerFormEmail,
     passwordLimiter: limiters.viewerPassword,
     clientIp,
-    notifier: deps.formsNotifier
+    notifier: deps.formsNotifier,
+    uploads: deps.formUploads,
+    formUploadLimiter: limiters.viewerFormUpload
   });
   // The PUBLIC viewer-token attachments list (PRDCT-2278): the read-only
   // third sibling — same resolver, same containment. Unknown-secret probes

@@ -1,8 +1,17 @@
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Context } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
-import { formNameSchema, formResponsePayloadSchema, formResponseSourceSchema } from '@slideless/contract';
+import {
+  formFileFieldNameSchema,
+  formNameSchema,
+  formResponsePayloadSchema,
+  formResponseSourceSchema,
+  formSubmitFilesSchema,
+  isValidMediaType
+} from '@slideless/contract';
 import type { FormResponseRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import type { Env } from '../env.js';
@@ -19,6 +28,14 @@ import {
   type FormResponseService
 } from '../forms/service.js';
 import type { FormResponseNotifier } from '../forms/notify.js';
+import {
+  EmptyFileError,
+  FormFilesClaimError,
+  FormUploadsFullError,
+  sanitizeUploadName,
+  type FormUploadService
+} from '../forms/uploads.js';
+import { FileTooLargeError } from '../files/spool.js';
 import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 /**
@@ -64,9 +81,32 @@ import { resolveTokenSession, type TokenSessionView } from './token-session.js';
  *    bucket; the email leg has its own tight per-IP+token AND per-address
  *    bucket; a hard per-deck response cap backstops it all. Responses are
  *    not audited (the viewer's documented non-goal); owner deletes are.
+ *  - FILE FIELDS (PRDCT-2403): `POST …/forms/{form}/uploads` takes ONE
+ *    file as a raw streamed body and answers a PENDING upload id; a submit
+ *    then names its uploads (`files`), claimed in the response's own
+ *    transaction and only through the SAME link, form and deck. Gated by
+ *    `can_submit_forms` AND `can_upload_files` (new links on, links from
+ *    before the feature off) AND the instance knob (FORMS_MAX_UPLOAD_MB, 0 =
+ *    off). Bounded per file (mid-stream), per response (count), per deck
+ *    (byte total under an advisory lock) and by its own per-IP+token bucket.
+ *    The bytes never enter the workspace's content-addressed `files` pool,
+ *    and NO route on this surface serves them back: the respondent wire
+ *    carries names and sizes only, so a remembering link's secret never
+ *    becomes a download URL. Anything the deck document can do here the
+ *    link holder could already do with curl — the upload id is no grant
+ *    beyond the link's own.
  *  - CORS: wildcard, like every token-session route — the opaque origin
  *    sends `Origin: null` and nothing here is cookie-authenticated.
  */
+
+/**
+ * The ONE path whose body is a respondent's file (PRDCT-2403). api/index.ts
+ * exempts it from the JSON body cap and the JSON depth scan; the handler
+ * caps it mid-stream. Exact shape, so nothing else rides the exemption.
+ */
+export function isViewerFormUploadPath(path: string): boolean {
+  return /^\/api\/v1\/viewer\/[^/]+\/forms\/[^/]+\/uploads$/.test(path);
+}
 
 /** Serialized-payload byte cap (a form answer, not a document). */
 export const MAX_FORM_PAYLOAD_JSON_BYTES = 32 * 1024;
@@ -79,7 +119,9 @@ const formSubmitBody = z.object({
   version: z.number().int().min(1).optional(),
   /** Serving-document context, echoed from the injected config. Attribution-grade. */
   source: formResponseSourceSchema.default('link'),
-  placement: z.string().max(200).optional()
+  placement: z.string().max(200).optional(),
+  /** The uploads this response holds, per file field (PRDCT-2403). */
+  files: formSubmitFilesSchema.optional()
 });
 
 /**
@@ -92,7 +134,9 @@ const formUpdateBody = z.object({
   payload: formResponsePayloadSchema,
   version: z.number().int().min(1).optional(),
   source: formResponseSourceSchema.optional(),
-  placement: z.string().max(200).optional()
+  placement: z.string().max(200).optional(),
+  /** The FULL set of files the response keeps; absent = files untouched (PRDCT-2403). */
+  files: formSubmitFilesSchema.optional()
 });
 
 const formEmailBody = z.object({
@@ -119,10 +163,14 @@ export interface ViewerFormDeps {
   clientIp: ClientIpFn;
   /** Owner notifications (PRDCT-2330): best-effort, never awaited by the respondent's answer. */
   notifier: FormResponseNotifier;
+  /** Form file uploads (PRDCT-2403): storage, the byte caps, the claim. */
+  uploads: FormUploadService;
+  /** File uploads and pending-upload removals consume here (per IP + token). */
+  formUploadLimiter: RateLimiterAbstract;
 }
 
 export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps): void {
-  const { sharing, presentations, forms, authSecret, clientIp } = deps;
+  const { sharing, presentations, forms, authSecret, clientIp, uploads } = deps;
 
   async function resolveSubmitter(
     c: Context
@@ -279,6 +327,17 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     return { ok: true, version: claimed };
   }
 
+  /** A submit that names an unclaimable upload is the client's error, never a 500. */
+  function claimRefusal(c: Context, e: unknown): Response | null {
+    if (!(e instanceof FormFilesClaimError)) return null;
+    return c.json(err(e.code, e.message), 400);
+  }
+
+  /** The respondent wire with the names and sizes of the files the row holds. */
+  async function respondentWire(row: FormResponseRow) {
+    return formResponseToRespondentWire(row, await uploads.listForResponse(row.id));
+  }
+
   /** The respondent's personal edit link: their share URL + the fragment secret. */
   function editUrl(c: Context, editSecret: string): string {
     const shareSecret = c.req.param('secret') ?? '';
@@ -368,11 +427,23 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       shareTokenId: token.id,
       source: body.source,
       placement: viewPlacement(body.placement),
-      payload: body.payload
+      payload: body.payload,
+      // A link without the upload capability never attaches a file, whatever
+      // the body says (an id minted while the switch was on stays pending
+      // and is purged).
+      files: token.canUploadFiles ? body.files : undefined
     };
 
     if (remembering) {
-      const { row, created } = await forms.upsertRemembered(attribution);
+      let upserted;
+      try {
+        upserted = await forms.upsertRemembered(attribution);
+      } catch (e) {
+        const refused = claimRefusal(c, e);
+        if (refused) return refused;
+        throw e;
+      }
+      const { row, created } = upserted;
       deps.logger.info(
         { presentationId, shareTokenId: token.id, responseId: row.id, formName: formName.name, created },
         created ? 'viewer form response created (remembered)' : 'viewer form response updated (remembered)'
@@ -381,12 +452,20 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       // No edit secret on the wire: the LINK is the handle, and the
       // respondent wire never carries a revision or a history.
       return c.json(
-        { response: formResponseToRespondentWire(row), emailSent: false, remembered: true, edited: !created },
+        { response: await respondentWire(row), emailSent: false, remembered: true, edited: !created },
         created ? 201 : 200
       );
     }
 
-    const { row, editSecret } = await forms.create(attribution);
+    let createdRow;
+    try {
+      createdRow = await forms.create(attribution);
+    } catch (e) {
+      const refused = claimRefusal(c, e);
+      if (refused) return refused;
+      throw e;
+    }
+    const { row, editSecret } = createdRow;
 
     deps.logger.info(
       {
@@ -405,7 +484,7 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     // submit into a mail to a stranger's real address (PRDCT-1331).
     return c.json(
       {
-        response: formResponseToRespondentWire(row),
+        response: await respondentWire(row),
         editSecret,
         emailSent: false,
         remembered: false,
@@ -428,7 +507,11 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       return c.json(err('not_found', 'This link does not remember responses.'), 404);
     }
     const rows = await forms.listRemembered(resolved.view.token.id);
-    return c.json({ responses: rows.map(formResponseToRespondentWire) }, 200);
+    const files = await uploads.listForResponses(rows.map((r) => r.id));
+    return c.json(
+      { responses: rows.map((r) => formResponseToRespondentWire(r, files.get(r.id) ?? [])) },
+      200
+    );
   });
 
   // ── GET (form-agnostic): resolve an arriving edit secret ONCE per page ───
@@ -439,14 +522,14 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
   api.get('/viewer/:secret/forms/responses/me', async (c) => {
     const resolved = await resolveOwnRow(c);
     if (!resolved.ok) return resolved.res;
-    return c.json({ response: formResponseToRespondentWire(resolved.row) }, 200);
+    return c.json({ response: await respondentWire(resolved.row) }, 200);
   });
 
   // ── GET: the respondent's own row (prefill on return visits) ─────────────
   api.get('/viewer/:secret/forms/:form/responses/me', async (c) => {
     const resolved = await resolveOwnResponse(c);
     if (!resolved.ok) return resolved.res;
-    return c.json({ response: formResponseToRespondentWire(resolved.row) }, 200);
+    return c.json({ response: await respondentWire(resolved.row) }, 200);
   });
 
   // ── PUT: update the own row (the one evolving answer) ────────────────────
@@ -490,19 +573,137 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     // different link, source or placement must not keep the creator's.
     const claimed = resolveClaimedVersion(c, view, parsed.data.version);
     if (!claimed.ok) return claimed.res;
-    const updated =
-      (await forms.updatePayload(row.id, parsed.data.payload, {
-        version: claimed.version,
-        shareTokenId: view.token.id,
-        ...(parsed.data.source !== undefined ? { source: parsed.data.source } : {}),
-        placement: viewPlacement(parsed.data.placement)
-      })) ?? row;
+    let updated: FormResponseRow;
+    try {
+      updated =
+        (await forms.updatePayload(row.id, parsed.data.payload, {
+          version: claimed.version,
+          shareTokenId: view.token.id,
+          ...(parsed.data.source !== undefined ? { source: parsed.data.source } : {}),
+          placement: viewPlacement(parsed.data.placement),
+          files: view.token.canUploadFiles ? parsed.data.files : undefined
+        })) ?? row;
+    } catch (e) {
+      const refused = claimRefusal(c, e);
+      if (refused) return refused;
+      throw e;
+    }
     deps.logger.info(
       { presentationId: view.presentationId, shareTokenId: view.token.id, responseId: row.id },
       'viewer form response updated'
     );
     deps.notifier.fire({ kind: 'edited', row: updated, shareTokenName: view.token.name });
-    return c.json({ response: formResponseToRespondentWire(updated) }, 200);
+    return c.json({ response: await respondentWire(updated) }, 200);
+  });
+
+  // ── POST: upload ONE file into a form's file field (PRDCT-2403) ──────────
+  // Raw streamed body (never multipart, never buffered): `?field=` is the
+  // file input's name, `?name=` the file's display name, `?type=` its media
+  // type. The runtime sends `Content-Type: application/octet-stream` whatever
+  // the file is, so no JSON-sniffing middleware ever reads the body; the path
+  // is exempt from the JSON body cap (api/index.ts) and capped mid-stream
+  // here. Answers the PENDING upload's id, which the submit then names.
+  api.post('/viewer/:secret/forms/:form/uploads', async (c) => {
+    const resolved = await resolveSubmitter(c);
+    if (!resolved.ok) return resolved.res;
+    const { token, presentationId } = resolved.view;
+    const formName = parseFormName(c);
+    if (!formName.ok) return formName.res;
+
+    if (!token.canUploadFiles || token.purpose !== 'share' || uploads.caps.maxFileBytes === 0) {
+      return c.json(err('uploads_disabled', 'This share link does not accept file uploads.'), 403);
+    }
+    try {
+      await deps.formUploadLimiter.consume(`${clientIp(c)}:${token.id}`);
+    } catch {
+      return c.json(err('rate_limited', 'Too many uploads — slow down.'), 429);
+    }
+
+    const field = formFileFieldNameSchema.safeParse(c.req.query('field'));
+    if (!field.success) {
+      return c.json(
+        err('validation_error', 'field must be 1-128 characters with no control characters'),
+        400
+      );
+    }
+    const rawName = c.req.query('name') ?? '';
+    if (rawName.length > 1024) {
+      return c.json(err('validation_error', 'name must be at most 1024 characters'), 400);
+    }
+    const declaredType = (c.req.query('type') ?? '').slice(0, 255);
+    const contentType = isValidMediaType(declaredType) ? declaredType : 'application/octet-stream';
+
+    // Declared size first (a cheap refusal); the mid-stream cap is the law.
+    const declared = Number(c.req.header('content-length') ?? '0');
+    if (Number.isFinite(declared) && declared > uploads.caps.maxFileBytes) {
+      return c.json(fileTooLarge(), 413);
+    }
+    if (!c.req.raw.body) {
+      return c.json(err('empty_file', 'A file body is required.'), 400);
+    }
+
+    try {
+      const row = await uploads.upload({
+        workspaceId: token.workspaceId,
+        presentationId,
+        shareTokenId: token.id,
+        formName: formName.name,
+        fieldName: field.data,
+        filename: sanitizeUploadName(rawName),
+        contentType,
+        body: Readable.fromWeb(c.req.raw.body as WebReadableStream)
+      });
+      deps.logger.info(
+        { presentationId, shareTokenId: token.id, uploadId: row.id, sizeBytes: row.sizeBytes },
+        'viewer form file uploaded'
+      );
+      return c.json(
+        { file: { id: row.id, field: row.fieldName, name: row.filename, sizeBytes: row.sizeBytes } },
+        201
+      );
+    } catch (e) {
+      if (e instanceof FileTooLargeError) return c.json(fileTooLarge(), 413);
+      if (e instanceof EmptyFileError)
+        return c.json(err('empty_file', 'An uploaded file must not be empty.'), 400);
+      if (e instanceof FormUploadsFullError) {
+        deps.logger.warn({ presentationId }, 'form uploads refused: the deck reached its upload total');
+        return c.json(err('uploads_full', 'This deck cannot take more uploaded files.'), 403);
+      }
+      throw e;
+    }
+  });
+
+  function fileTooLarge() {
+    const mb = Math.floor(uploads.caps.maxFileBytes / (1024 * 1024));
+    return {
+      error: {
+        code: 'file_too_large',
+        message: `A file must be at most ${mb} MB.`,
+        details: { maxBytes: uploads.caps.maxFileBytes }
+      }
+    };
+  }
+
+  // ── DELETE: the respondent removes a file they just dropped ──────────────
+  // PENDING uploads of THIS link and form only: a file a response already
+  // holds leaves through the submit that stops naming it. Unknown, foreign
+  // and attached ids all answer the same 404.
+  api.delete('/viewer/:secret/forms/:form/uploads/:uploadId', async (c) => {
+    const resolved = await resolveSubmitter(c);
+    if (!resolved.ok) return resolved.res;
+    const formName = parseFormName(c);
+    if (!formName.ok) return formName.res;
+    try {
+      await deps.formUploadLimiter.consume(`${clientIp(c)}:${resolved.view.token.id}`);
+    } catch {
+      return c.json(err('rate_limited', 'Too many requests — slow down.'), 429);
+    }
+    const id = z.uuid().safeParse(c.req.param('uploadId'));
+    const removed = id.success
+      ? await uploads.deletePending(id.data, resolved.view.token.id, formName.name)
+      : false;
+    if (!removed) return c.json(err('not_found', 'No pending upload matches.'), 404);
+    return c.json({ deleted: true }, 200);
   });
 
   // ── POST: mail the respondent their own edit link (leg 2 opt-in) ─────────
