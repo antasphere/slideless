@@ -34,6 +34,13 @@ export interface RateLimiters {
   workspaceExport: RateLimiterAbstract;
   /** Break-glass superadmin recovery — a rare operator action, tight per IP. */
   breakGlass: RateLimiterAbstract;
+  /**
+   * Workspace creation — a rare human act, keyed per IP AND per user. The
+   * general quota never sees the cloud zero-membership session (no
+   * principal), and on cloud every attempt is a call to the hub: this wall
+   * is what bounds it.
+   */
+  workspaceCreate: RateLimiterAbstract;
   /** The unauthenticated OpenAPI document — cheap now that it is a boot-time buffer, but still anonymous. */
   openapiDoc: RateLimiterAbstract;
   /**
@@ -109,6 +116,7 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     passwordReset: make('pw-reset', 5, 10 * 60),
     workspaceExport: make('ws-export', 5, 600),
     breakGlass: make('break-glass', 10, 60 * 60),
+    workspaceCreate: make('ws-create', 60, 60 * 60),
     openapiDoc: make('openapi', 60, 60),
     viewerPassword: make('viewer-pw', 10, 15 * 60),
     viewerAnnotate: make('viewer-annot', 60, 10 * 60),

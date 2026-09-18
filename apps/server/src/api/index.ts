@@ -912,6 +912,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     registry,
     logger,
     clientIp,
+    limiter: limiters.workspaceCreate,
     maxPerUser: env.MAX_WORKSPACES_PER_USER,
     cloud: deps.workspaceCloud
   });

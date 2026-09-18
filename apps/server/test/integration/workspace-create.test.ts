@@ -349,4 +349,20 @@ describe('MAX_WORKSPACES_PER_USER=0 closes creation for everyone', () => {
     const count = await closed.db.pool.query(`SELECT count(*)::int AS n FROM workspaces`);
     expect(count.rows[0].n).toBe(1);
   });
+  it('is walled: 60 attempts per hour per IP and per user, then 429 — refused attempts count too', async () => {
+    const headers = { cookie, 'x-forwarded-for': '10.63.0.1' };
+    const statuses: number[] = [];
+    for (let i = 0; i < 61; i++) {
+      const res = await closed.app.request('/api/v1/workspaces', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ name: `Wall ${i}` })
+      });
+      statuses.push(res.status);
+    }
+    // The per-USER key already spent one point in the test above (another
+    // IP, the same person): 59 more are judged, then the wall answers.
+    expect(statuses.filter((st) => st === 403)).toHaveLength(59);
+    expect(statuses.slice(59)).toEqual([429, 429]);
+  });
 });

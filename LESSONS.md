@@ -1116,3 +1116,32 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
 - **CI failing "already" is not the same as CI failing the same way.** Compare the FAILING JOB NAMES
   against the previous commits on the base, not the red/green of the run: three drills had been red
   since 12 September, which is exactly what hides a fourth job going red for the first time.
+
+## Workspace creation from inside the product (PRDCT-2444 / PRDCT-2443, 2026-09-18)
+
+- **The route's audit row belongs to the NEW workspace, and the generic audit middleware has to be
+  told to stay out.** `auditMiddleware` attributes every mutation to `principal.workspaceId`, the
+  workspace the caller happens to be in. For `POST /workspaces` that is the wrong trail: a workspace
+  never learns what its members do elsewhere. The path is in `isAuditExempt` and the handler writes
+  its one `workspace.create` row itself, the setup pattern. Any future route whose effect lands
+  OUTSIDE the caller's current workspace needs the same two moves, or the event leaks into a log
+  its readers have no standing over.
+- **`/me.canCreateWorkspace` and the route share ONE function** (`workspaceCreationRefusal`,
+  `api/workspaces.ts`), and the route calls it INSIDE the locked transaction. A flag computed by a
+  second copy of the rule promises what the route refuses the first time one of them moves.
+- **A POST to the hub is never re-posted on an ambiguous answer.** The read path
+  (`HubUserClient.orgs`) retries once after a 401 OR a 403, which is harmless for a GET. For
+  `createOrg` only a 401 earns the retry (the hub refused the token before doing anything); a 403
+  is a policy answer, and a timeout or a 5xx may hide a committed creation, so a second POST is a
+  second organization. The `commit_then_500` mode of the fake hub pins it: one POST, a 403
+  `hub_unavailable`, and the organization arrives by the next reconcile pass.
+- **The Write tool turns a unicode NUL escape (backslash, `u0000`) inside a string literal into a
+  real NUL byte in the file.** The test still "worked" (a NUL is a control character) but the
+  source carried a raw NUL. Write such escapes through a script and byte-scan the file before
+  committing.
+- **Opening creation changes what an owner can do for a member.** A `user` row is instance-global:
+  the moment a member owns a second workspace, `mintRefusal` answers `cross_workspace_target` and
+  the delete answers `member_of_other_workspaces` for them in the FIRST workspace too. That is the
+  guard working, not a regression: it is documented for operators in
+  `docs/self-hosting/deployment-profiles.md`, and `MAX_WORKSPACES_PER_USER=0` is the switch for an
+  instance that wants to stay one team's.

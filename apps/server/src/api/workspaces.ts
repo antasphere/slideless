@@ -9,7 +9,7 @@ import { projectOrgMembership } from '../identity/hub-projection.js';
 import type { ReconcilePassOutcome } from '../identity/hub-reconcile.js';
 import type { HubOrgCreator } from '../identity/hub-user-client.js';
 import type { Logger } from '../logger.js';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import { rateLimit, type ClientIpFn, type RateLimiters } from '../middleware/rate-limit.js';
 import type { PlatformRegistry } from '../platform/registry.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
@@ -135,6 +135,7 @@ export interface WorkspaceRouteDeps {
   registry: PlatformRegistry;
   logger: Logger;
   clientIp: ClientIpFn;
+  limiter: RateLimiters['workspaceCreate'];
   maxPerUser: number;
   cloud?: WorkspaceCloudDeps | undefined;
 }
@@ -148,6 +149,18 @@ export function workspaceCreationPolicy(
 export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDeps): void {
   const { db, auth, audit, registry, logger, cloud } = deps;
   const policy = workspaceCreationPolicy(deps);
+
+  // A rare human act: 60 per hour per IP AND per user. Registered after
+  // authContext, so the user key exists whenever a principal resolved; the
+  // cloud zero-membership session (no principal, so outside the general
+  // quota) is bounded by the IP key — on cloud every attempt reaches the hub.
+  api.use(
+    '/workspaces',
+    rateLimit(deps.limiter, deps.clientIp, async (c) => {
+      const principal = c.get('principal');
+      return principal ? [`u:${principal.userId}`] : [];
+    })
+  );
 
   api.openapi(workspaceCreateRoute, async (c) => {
     const principal = c.get('principal');

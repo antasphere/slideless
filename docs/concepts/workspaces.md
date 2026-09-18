@@ -66,6 +66,7 @@ client shows or hides its "new workspace" entry from that one flag.
 | `403 hub_link_required`           | Cloud: the account is not linked to Antasphere                            |
 | `403 hub_unavailable`             | Cloud: Antasphere could not be reached; check your workspaces, then retry |
 | `403 hub_refused`                 | Cloud: Antasphere did not accept the creation                             |
+| `429 rate_limited`                | More than 60 attempts in an hour from one address or one person           |
 | `409`                             | The `Idempotency-Key` was reused with another body, or is in flight       |
 
 ## On Slideless cloud

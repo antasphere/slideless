@@ -219,7 +219,8 @@ export const workspaceCreateRoute = createRoute({
       apiErrorSchema,
       'session_required, guest_forbidden, workspace_creation_disabled, workspace_limit_reached, hub_link_required, hub_unavailable, hub_refused'
     ),
-    409: jsonBody(apiErrorSchema, 'Idempotency conflict')
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    429: errorResponses[429]
   }
 });
 
