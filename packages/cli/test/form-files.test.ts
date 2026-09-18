@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { run } from '../src/index.js';
 import { responsesCsv } from '../src/commands/sharing.js';
 import {
@@ -12,6 +12,11 @@ import {
   uniqueRelPath
 } from '../src/commands/response-files.js';
 import { DECK, routedHarness, type Route } from './harness.js';
+
+// Every test here hashes and writes real files, and the CI runner runs this
+// file beside the whole monorepo's suites: 0.5 s on a laptop, 3.6 to 6.5 s
+// there, where one test crossed the 5 s default (PR #48, first CI run).
+vi.setConfig({ testTimeout: 20_000 });
 
 /**
  * PRDCT-2403 at the terminal: a form's FILE FIELD. The per-link upload
