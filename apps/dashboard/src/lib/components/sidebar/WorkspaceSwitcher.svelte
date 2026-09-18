@@ -2,9 +2,11 @@
   import Check from '@lucide/svelte/icons/check';
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import Plus from '@lucide/svelte/icons/plus';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import LogoTile from '$lib/components/brand/LogoTile.svelte';
+  import CreateWorkspaceDialog from './CreateWorkspaceDialog.svelte';
   import { useSidebar } from '$lib/components/ui/sidebar/index.js';
   import { switchWorkspace } from '$lib/api';
   import { t } from '$lib/i18n';
@@ -12,9 +14,11 @@
 
   /**
    * Sidebar workspace switcher (ADR 014 / user-scoped federation). Rendered
-   * ONLY for users with more than one active membership — single-membership
-   * users (every self-host) keep the plain instance-name header,
-   * byte-identical to before. Switching persists the choice (localStorage)
+   * for users with more than one active membership, and for a person with ONE
+   * workspace who may create another (`canCreateWorkspace`, PRDCT-2443 /
+   * PRDCT-2444): they are the ones who most need the "New workspace" entry.
+   * A single-membership user who may NOT create keeps the plain
+   * instance-name header, byte-identical to before. Switching persists the choice (localStorage)
    * and reloads, so every loader and paged store restarts against the new
    * workspace. Per-entry signals come straight off /me: `hubOrigin`
    * (Antasphere badge), `suspended` (disabled + badge — visible but
@@ -28,9 +32,13 @@
     activeWorkspaceId: string;
     /** The hub console origin (P7 link-out); null on oss / local actives. */
     hubManageUrl?: string | null;
+    /** /me's flag: the "New workspace" entry exists only while it is true. */
+    canCreateWorkspace?: boolean;
   }
 
-  let { workspaces, activeWorkspaceId, hubManageUrl = null }: Props = $props();
+  let { workspaces, activeWorkspaceId, hubManageUrl = null, canCreateWorkspace = false }: Props = $props();
+
+  let showCreateDialog = $state(false);
 
   const sidebar = useSidebar();
 
@@ -120,6 +128,13 @@
             {/if}
           </DropdownMenu.Item>
         {/each}
+        {#if canCreateWorkspace}
+          <DropdownMenu.Separator />
+          <DropdownMenu.Item onclick={() => (showCreateDialog = true)} data-testid="workspace-create">
+            <Plus class="h-4 w-4 shrink-0" />
+            <span class="truncate">{t('workspace.create')}</span>
+          </DropdownMenu.Item>
+        {/if}
         {#if hubManageUrl}
           <DropdownMenu.Separator />
           <!-- The default org lives at the hub (per-user setting): change it
@@ -133,3 +148,7 @@
     </DropdownMenu.Root>
   </Sidebar.MenuItem>
 </Sidebar.Menu>
+
+{#if canCreateWorkspace}
+  <CreateWorkspaceDialog bind:open={showCreateDialog} />
+{/if}

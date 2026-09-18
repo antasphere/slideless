@@ -32,6 +32,17 @@ responsible for, and the rules that govern rendering user content.
 - **Live authorization.** Every request re-checks the workspace membership
   row — deactivating a member instantly kills their sessions, API keys, and
   OAuth tokens, regardless of cookie/token age.
+- **Workspaces are isolated from each other, on one instance too.** Any
+  signed-in member who is not a guest can create another workspace
+  ([Workspaces](../concepts/workspaces.md)); its decks, files, members,
+  invitations, keys pinned to it, audit log and export are unreadable from
+  every other workspace, the instance's first one included, and a request
+  that names a workspace the caller does not belong to answers the same 401
+  as a workspace that does not exist. Creation is a session act only (API
+  keys, OAuth tokens and MCP agents are refused), is capped per person by
+  `MAX_WORKSPACES_PER_USER` (`0` closes it), and is recorded in the new
+  workspace's audit log alone: a workspace is never told what its members
+  do elsewhere.
 - **Fail-closed machine access.** API keys and OAuth tokens reach only the
   endpoints consciously listed in `middleware/scopes.ts`, each behind its
   scope. New endpoints are unreachable to machine credentials until opened.

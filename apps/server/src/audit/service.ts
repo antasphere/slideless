@@ -81,6 +81,11 @@ function isAuditExempt(path: string): boolean {
     path.startsWith('/api/v1/auth/') ||
     path === '/api/v1/setup' ||
     path === '/api/v1/invitations/accept' ||
+    // Workspace creation self-audits into the NEW workspace's own trail
+    // (api/workspaces.ts). The generic row would land in the workspace the
+    // person happened to be in — and a workspace never learns what its
+    // members do elsewhere.
+    path === '/api/v1/workspaces' ||
     // Share-token viewer surface (annotations/forms/badge): the SECRET rides
     // the path, and these writes are documented as unaudited — token
     // recipients are not principals. Without this exemption a visitor who

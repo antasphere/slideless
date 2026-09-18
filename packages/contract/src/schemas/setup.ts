@@ -3,7 +3,8 @@ import { plainText } from './common.js';
 
 /**
  * POST /api/v1/setup — one-shot first-boot wizard: creates the owner user
- * and, on the OSS edition, the single pinned workspace. Guarded by the
+ * and, on the OSS edition, the instance's FIRST workspace (later ones come
+ * from `POST /workspaces`). Guarded by the
  * singleton instance_settings row (second attempt → 410) and, optionally, a
  * SETUP_TOKEN. On the CLOUD edition setup creates NO workspace (the
  * response's `workspaceId` is null): every cloud workspace is a hub-org

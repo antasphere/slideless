@@ -49,7 +49,15 @@ export default defineConfig({
     // PRDCT-2268: windows a deck opens escape the sandbox; the deck does not.
     { name: 'viewer-popups', testMatch: /viewer-popups\.spec\.ts/, dependencies: ['smoke'] },
     // PRDCT-2281 (lane D): the recipient bar over a shared deck.
-    { name: 'viewer-topbar', testMatch: /viewer-topbar\.spec\.ts/, dependencies: ['smoke'] }
+    { name: 'viewer-topbar', testMatch: /viewer-topbar\.spec\.ts/, dependencies: ['smoke'] },
+    // PRDCT-2444 / PRDCT-2443 / PRDCT-2426: a workspace created from the sidebar,
+    // and every dashboard download from that NON-default workspace. Declared
+    // LAST on purpose: the projects run in declaration order (one worker), and
+    // this one leaves the owner with a second workspace, which no other project
+    // has to know about. It depends on `smoke` alone: depending on every project
+    // makes Playwright schedule them in reverse, and `decks` needs to run before
+    // the projects that leave a deck behind.
+    { name: 'workspaces', testMatch: /workspaces\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,

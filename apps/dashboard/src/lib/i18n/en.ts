@@ -49,6 +49,13 @@ export const en = {
   'common.hubGrantExpired':
     'Your Antasphere sign-in on this instance has expired — sign in with Antasphere again.',
 
+  // ── Downloads ($lib/download, PRDCT-2426) ────────────────────────────
+  'download.preparing': 'Preparing your download…',
+  'download.notFound': 'This file is no longer available. Reload the page to see what is there now.',
+  'download.timedOut': 'The download took too long and was stopped. Try again.',
+  'download.network': 'The download did not start. Check your connection and try again.',
+  'download.failed': 'The download failed. Try again.',
+
   // ── No-organization zero state (user-scoped federation) ─────────────
   'noOrg.title': 'No organization yet',
   'noOrg.body':
@@ -56,6 +63,10 @@ export const en = {
   'noOrg.bodyLocal':
     'Your account is signed in but belongs to no workspace on this instance. Ask an administrator to invite you.',
   'noOrg.cta': 'Create an organization at Antasphere',
+  // The same zero state when the person may create a workspace right here.
+  'noOrg.titleCreate': 'No workspace yet',
+  'noOrg.bodyCreate':
+    'Your account is signed in but has no workspace yet. Create one to start publishing decks, or ask a teammate for an invitation to theirs.',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',
@@ -211,8 +222,39 @@ export const en = {
   'workspace.hubBadgeTitle': 'Managed on Antasphere',
   'workspace.suspendedBadge': 'Suspended',
   'workspace.defaultBadge': 'Default',
-  'workspace.defaultBadgeTitle': 'Your default organization (used when a request names none)',
+  'workspace.defaultBadgeTitle': 'Your default workspace (used when a request names none)',
   'workspace.setDefaultHub': 'Change default organization on Antasphere',
+  // Creating a workspace (PRDCT-2443 / PRDCT-2444). One wording on both
+  // editions: a Slideless workspace, never where it lives behind the scenes.
+  'workspace.create': 'New workspace',
+  'workspace.createTitle': 'New workspace',
+  'workspace.createDescription':
+    'A separate space with its own decks, members and API keys. You will be its owner, and you can switch between your workspaces from this menu.',
+  'workspace.nameLabel': 'Workspace name',
+  'workspace.namePlaceholder': 'Marketing team',
+  'workspace.createSubmit': 'Create workspace',
+  'workspace.creating': 'Creating…',
+  'workspace.signInAgain': 'Sign in again',
+  'workspace.createErrorName': 'This name cannot be used. Choose a name of 1 to 120 characters.',
+  'workspace.createErrorLimit':
+    'You already own as many workspaces as one person can have here, so another one cannot be created.',
+  'workspace.createErrorDisabled':
+    'Creating workspaces is turned off on this instance. Ask its administrator.',
+  'workspace.createErrorGuest':
+    'Your access covers the decks you were invited to, so you cannot create a workspace with this account.',
+  'workspace.createErrorUnconfirmed':
+    'We could not confirm that the workspace was created. Wait a minute and reload this page before trying again: it may already be in your list.',
+  'workspace.createErrorRefused': 'The workspace could not be created. Try another name, or try again later.',
+  'workspace.createErrorLinkRequired':
+    'The way you signed in does not allow creating a workspace. Sign out, sign in the usual way, then try again.',
+  'workspace.createErrorFreshSignIn':
+    'Creating a workspace needs a new sign-in. Sign in again, then create it.',
+  'workspace.createErrorSignInAgain': 'Your sign-in has expired, so the workspace was not created.',
+  'workspace.createErrorRateLimited':
+    'Too many workspaces were created in a short time. Wait a while and try again.',
+  'workspace.createErrorInFlight':
+    'Your workspace is still being created. Wait a moment, then reload this page.',
+  'workspace.createErrorGeneric': 'The workspace could not be created. Check your connection and try again.',
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Overview',

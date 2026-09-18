@@ -28,6 +28,8 @@
     hubOrigin?: boolean;
     /** Hub console origin — the switcher's set-default link-out (null on oss). */
     hubManageUrl?: string | null;
+    /** /me's flag: a person who may create a workspace gets the menu with ONE workspace too. */
+    canCreateWorkspace?: boolean;
   }
 
   let {
@@ -38,12 +40,13 @@
     activeWorkspaceId = '',
     origin = 'local',
     hubOrigin = false,
-    hubManageUrl = null
+    hubManageUrl = null,
+    canCreateWorkspace = false
   }: Props = $props();
 
-  // The switcher exists ONLY with several memberships — a single-membership
-  // user (every self-host) keeps the plain instance-name header unchanged.
-  const showSwitcher = $derived(workspaces.length > 1 && activeWorkspaceId !== '');
+  // The switcher exists with several memberships, or when the person may create
+  // a workspace — otherwise the plain instance-name header stays unchanged.
+  const showSwitcher = $derived((workspaces.length > 1 || canCreateWorkspace) && activeWorkspaceId !== '');
 
   const isAdmin = $derived(role === 'owner' || role === 'admin');
   // A guest is an external per-deck collaborator (D2): the member roster and
@@ -88,7 +91,7 @@
 <Sidebar.Root variant="inset" collapsible="icon">
   <Sidebar.Header>
     {#if showSwitcher}
-      <WorkspaceSwitcher {workspaces} {activeWorkspaceId} {hubManageUrl} />
+      <WorkspaceSwitcher {workspaces} {activeWorkspaceId} {hubManageUrl} {canCreateWorkspace} />
     {:else}
       <!-- The identity block: a contained header (the template convention the
            bare version drifted from), the initial on a small brand field. -->

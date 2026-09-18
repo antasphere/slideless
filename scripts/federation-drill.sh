@@ -22,28 +22,50 @@
 #      tears the family down as reuse detection always did.
 #   5. OIDC audit (PRDCT-1376) — the hub's audit log carries rows for the
 #      authorize, token, revoke and consent surfaces the drill exercised.
+#   6. Workspace creation (PRDCT-2443, Phase 3b) — the login's grant carries
+#      orgs:create, POST /workspaces creates the organization AT THE HUB as
+#      the user and projects it (owner, hubOrigin), the hub's audit row names
+#      the tool client, an slk_ key is refused; and the deploy-order fact:
+#      the hub refuses a sign-in that requests a scope it does not list.
 #
 # Usage: ./scripts/federation-drill.sh
 #   FEDERATION_HUB_DIR=<path>  hub checkout to build (default ../../../hub, see the compose file)
 #   DRILL_SKIP_BUILD=1         reuse antasphere-hub:federation-dev + slideless:federation-dev (CI pre-builds)
 #   DRILL_KEEP=1               leave the stack up after a PASS (inspect; `down -v` yourself)
 #
+# A second copy beside a busy machine's standing stacks (PRDCT-2443): every
+# fixed value is an env variable the compose files read too, today's value
+# as the default — unset, CI's run is byte-for-byte what it always was.
+#   FEDERATION_PROJECT=slideless-federation         compose project name
+#   FEDERATION_HUB_PORT=3300                        hub port (host = PORT = hostname port)
+#   FEDERATION_SL_PORT=3310                         Slideless port (same rule)
+#   FEDERATION_HOP_PORT=8474                        the delay hop's admin port
+#   FEDERATION_MAIL_PORT=8030                       Mailpit UI host port
+#   FEDERATION_SUBNET_PREFIX=172.30.250             the /24's first three octets
+#   FEDERATION_HUB_IMAGE=antasphere-hub:federation-dev
+#   FEDERATION_SL_IMAGE=slideless:federation-dev
+#
 # Everything else is throwaway: the compose project's volumes go with
 # `down -v` on exit, pass or fail.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT=slideless-federation
-HUB=http://hub.localhost:3300
-SL=http://slideless.localhost:3310
-HOP=http://127.0.0.1:8474
+PROJECT=${FEDERATION_PROJECT:-slideless-federation}
+HUB_PORT=${FEDERATION_HUB_PORT:-3300}
+SL_PORT=${FEDERATION_SL_PORT:-3310}
+HOP_PORT=${FEDERATION_HOP_PORT:-8474}
+HUB_IMAGE=${FEDERATION_HUB_IMAGE:-antasphere-hub:federation-dev}
+SL_IMAGE=${FEDERATION_SL_IMAGE:-slideless:federation-dev}
+HUB=http://hub.localhost:$HUB_PORT
+SL=http://slideless.localhost:$SL_PORT
+HOP=http://127.0.0.1:$HOP_PORT
 SL_CLIENT_ID=tool-slideless-cloud
 SL_CLIENT_SECRET=federation-dev-client-secret-0001
 SECOND_CLIENT_ID=tool-drill-second
 SECOND_CLIENT_SECRET=federation-dev-client-secret-0002
 SECOND_RESOURCE=http://second.localhost:3320/mcp
 SECOND_REDIRECT=http://second.localhost:3320/callback
-SL_RESOURCE=http://slideless.localhost:3310/mcp
+SL_RESOURCE=http://slideless.localhost:$SL_PORT/mcp
 PASS_COUNT=0
 
 say() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
@@ -60,9 +82,9 @@ fail() {
 for bin in docker jq curl openssl; do
   command -v "$bin" >/dev/null || fail "required tool missing: $bin"
 done
-for port in 3300 3310 8474; do
+for port in "$HUB_PORT" "$SL_PORT" "$HOP_PORT"; do
   if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$port/" 2>/dev/null; then
-    fail "port $port already answers — refusing to run (the harness needs 3300, 3310 and 8474)"
+    fail "port $port already answers — refusing to run (the harness needs $HUB_PORT, $SL_PORT and $HOP_PORT)"
   fi
 done
 
@@ -75,7 +97,7 @@ dc() {
     -f "$REPO/docker-compose.federation.yml" -f "$REPO/docker-compose.federation.drill.yml" "$@"
 }
 # *.localhost resolves in browsers by RFC 6761 but not in every curl: pin both names.
-CURL=(curl -sS --max-time 60 --resolve hub.localhost:3300:127.0.0.1 --resolve slideless.localhost:3310:127.0.0.1)
+CURL=(curl -sS --max-time 60 --resolve "hub.localhost:$HUB_PORT:127.0.0.1" --resolve "slideless.localhost:$SL_PORT:127.0.0.1")
 hubdb() { dc exec -T hub-db psql -U antasphere -d antasphere -v ON_ERROR_STOP=1 -Atc "$1"; }
 sldb() { dc exec -T db psql -U slideless -d slideless -v ON_ERROR_STOP=1 -Atc "$1"; }
 applogs() { dc logs --no-log-prefix "$1" 2>/dev/null || true; }
@@ -131,8 +153,8 @@ family() { # client_id user_id
 # ── Phase 0 — images ─────────────────────────────────────────────────────────
 say "Phase 0 — images (hub from ${FEDERATION_HUB_DIR:-../../../hub}, Slideless from this repo)"
 if [ "${DRILL_SKIP_BUILD:-}" = "1" ] \
-  && docker image inspect antasphere-hub:federation-dev >/dev/null 2>&1 \
-  && docker image inspect slideless:federation-dev >/dev/null 2>&1; then
+  && docker image inspect "$HUB_IMAGE" >/dev/null 2>&1 \
+  && docker image inspect "$SL_IMAGE" >/dev/null 2>&1; then
   note "DRILL_SKIP_BUILD=1 and both images exist — reusing"
 else
   dc build
@@ -192,6 +214,98 @@ grant_row=$(sldb "SELECT (refresh_token IS NOT NULL)::int FROM account WHERE pro
 read -r fam_total fam_live _ <<<"$(family "$SL_CLIENT_ID" "$HUB_USER_ID")"
 [ "$fam_total" = 1 ] && [ "$fam_live" = 1 ] || fail "expected exactly one live refresh row at the hub after login, got total=$fam_total live=$fam_live"
 pass "SSO login through the proxy hop: Slideless session + encrypted grant; hub family = 1 live row"
+
+# ── Phase 3b — workspace creation through the hub (PRDCT-2443) ──────────────
+say "Phase 3b — a signed-in person creates a workspace: an organization at the hub, as them"
+# The deploy-order fact first (CLAUDE.md: THE HUB DEPLOYS FIRST). The hub's
+# authorize endpoint validates every requested scope against the CLIENT's
+# registered scopes, so a Slideless that requests a scope the hub does not
+# list for it fails the WHOLE sign-in — recorded here with a scope no hub
+# knows, on the same client, the same session and the same redirect URI the
+# real sign-in used. The redirect is read, never followed: Slideless sees
+# nothing of it.
+unknown_scope_authz="$HUB/api/v1/auth/oauth2/authorize?response_type=code&client_id=$SL_CLIENT_ID&redirect_uri=$(printf '%s' "$SL/api/v1/auth/oauth2/callback/antasphere" | jq -sRr @uri)&scope=openid%20drill%3Aunknown-scope&state=drill-unknown-scope"
+unknown_status=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/unknown-scope.out" -w '%{http_code} %{redirect_url}' "$unknown_scope_authz")
+note "authorize with an unknown scope: $unknown_status"
+case "$unknown_status" in
+  *invalid_scope*) ;;
+  *) grep -q invalid_scope "$SCRATCH/unknown-scope.out" \
+    || fail "the hub did not refuse an unknown requested scope with invalid_scope: $unknown_status $(head -c 400 "$SCRATCH/unknown-scope.out")" ;;
+esac
+pass "deploy order: a sign-in requesting a scope the hub does not list for the client is refused whole (invalid_scope)"
+
+# What the hub granted this login, and what the registry row allows — the
+# facts a failed creation is diagnosed against.
+grant_scopes=$(hubdb "SELECT array_to_string(scopes, ' ') FROM oauth_refresh_token WHERE client_id = '$SL_CLIENT_ID' AND user_id = '$HUB_USER_ID' AND revoked IS NULL")
+client_scopes=$(hubdb "SELECT array_to_string(scopes, ' ') FROM oauth_client WHERE client_id = '$SL_CLIENT_ID'")
+note "hub grant scopes: $grant_scopes"
+note "registry client scopes: $client_scopes"
+case " $grant_scopes " in
+  *" orgs:create "*) ;;
+  *) fail "the login's grant carries no orgs:create at the hub (grant='$grant_scopes', client='$client_scopes')" ;;
+esac
+pass "the login's hub grant carries orgs:create"
+
+me_before=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/me-before.json" -w '%{http_code}' "$SL/api/v1/me")
+[ "$me_before" = 200 ] && jq -e '.canCreateWorkspace == true' "$SCRATCH/me-before.json" >/dev/null \
+  || fail "GET /me before creation: $me_before $(cat "$SCRATCH/me-before.json")"
+ws_before=$(jq -r '.workspaces | length' "$SCRATCH/me-before.json")
+pass "GET /me: canCreateWorkspace is true ($ws_before workspace(s) listed before)"
+
+create_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/ws-create.json" -w '%{http_code}' -X POST "$SL/api/v1/workspaces" \
+  -H "Origin: $SL" -H 'content-type: application/json' -d '{"name":"Drill Workspace"}')
+if [ "$create_status" != 201 ]; then
+  echo "    hub-side diagnosis — grant scopes: '$grant_scopes'; client scopes: '$client_scopes'" >&2
+  echo "    hub access tokens for the client: $(hubdb "SELECT count(*) || ' rows, scopes: ' || string_agg(array_to_string(scopes, ' '), ' | ') FROM oauth_access_token WHERE client_id = '$SL_CLIENT_ID' AND user_id = '$HUB_USER_ID'")" >&2
+  fail "POST /workspaces answered $create_status (expected 201): $(cat "$SCRATCH/ws-create.json")"
+fi
+WS_ID=$(jq -r '.workspace.id // empty' "$SCRATCH/ws-create.json")
+[ -n "$WS_ID" ] || fail "201 without a workspace id: $(cat "$SCRATCH/ws-create.json")"
+jq -e '.workspace.name == "Drill Workspace"' "$SCRATCH/ws-create.json" >/dev/null || fail "201 with the wrong name: $(cat "$SCRATCH/ws-create.json")"
+pass "POST /workspaces {name: Drill Workspace} → 201, local workspace $WS_ID"
+
+me_after=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/me-after.json" -w '%{http_code}' "$SL/api/v1/me")
+[ "$me_after" = 200 ] || fail "GET /me after creation answered $me_after: $(cat "$SCRATCH/me-after.json")"
+jq -e --arg id "$WS_ID" '.workspaces[] | select(.id == $id) | (.hubOrigin == true and .role == "owner" and .name == "Drill Workspace")' \
+  "$SCRATCH/me-after.json" >/dev/null || fail "GET /me does not list $WS_ID as a hub-origin workspace owned by the caller: $(jq -c '.workspaces' "$SCRATCH/me-after.json")"
+[ "$(jq -r '.workspaces | length' "$SCRATCH/me-after.json")" = "$((ws_before + 1))" ] \
+  || fail "GET /me lists $(jq -r '.workspaces | length' "$SCRATCH/me-after.json") workspaces, expected $((ws_before + 1))"
+pass "GET /me lists the new workspace: hubOrigin true, role owner"
+
+members_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/members.json" -w '%{http_code}' -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/members")
+[ "$members_status" = 200 ] || fail "GET /members in the new workspace answered $members_status: $(cat "$SCRATCH/members.json")"
+jq -e --arg u "$SL_USER_ID" '.members[] | select(.userId == $u) | (.role == "owner" and .isActive == true)' "$SCRATCH/members.json" >/dev/null \
+  || fail "the caller is not the active owner of $WS_ID: $(jq -c '.members' "$SCRATCH/members.json")"
+[ "$(jq -r '.members | length' "$SCRATCH/members.json")" = 1 ] || fail "expected exactly one member, got $(jq -c '.members' "$SCRATCH/members.json")"
+pass "a workspace-scoped read (X-Workspace-Id: $WS_ID, GET /members) → 200, the caller its only member, owner"
+
+# The hub side, read AS THE USER through the hub session: the organization
+# is theirs, and its genesis audit row names the tool client as the channel.
+hub_orgs=$("${CURL[@]}" -b "$HUB_JAR" "$HUB/api/v1/orgs")
+HUB_ORG_ID=$(echo "$hub_orgs" | jq -r '[.orgs[] | select(.name == "Drill Workspace" and .role == "owner")][0].id // empty')
+[ -n "$HUB_ORG_ID" ] || fail "the hub does not list 'Drill Workspace' owned by the user: $hub_orgs"
+projected=$(sldb "SELECT central_account_id FROM workspaces WHERE id = '$WS_ID'")
+[ "$projected" = "$HUB_ORG_ID" ] || fail "the local workspace projects hub org '$projected', the hub says '$HUB_ORG_ID'"
+pass "the hub lists the organization ($HUB_ORG_ID) for the user as owner, and the local workspace projects exactly it"
+read -r audit_via audit_client audit_tool <<<"$(hubdb "SELECT actor_via || ' ' || coalesce(metadata->>'oauthClientId', '-') || ' ' || coalesce(metadata->>'viaTool', '-') FROM audit_log WHERE action = 'workspace.create' AND workspace_id = '$HUB_ORG_ID'")"
+[ "$audit_via" = oauth ] && [ "$audit_client" = "$SL_CLIENT_ID" ] && [ "$audit_tool" = true ] \
+  || fail "the hub's workspace.create row for $HUB_ORG_ID does not name the tool client: actor_via='$audit_via' oauthClientId='$audit_client' viaTool='$audit_tool'"
+pass "the hub's audit log: workspace.create for $HUB_ORG_ID, actor_via oauth, oauthClientId $SL_CLIENT_ID"
+
+# A machine credential never creates a workspace: an slk_ key minted in the
+# new workspace by its owner is refused (POST /workspaces is unlisted in the
+# fail-closed allowlist).
+key_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/key.json" -w '%{http_code}' -X POST "$SL/api/v1/api-keys" \
+  -H "Origin: $SL" -H "X-Workspace-Id: $WS_ID" -H 'content-type: application/json' \
+  -d '{"name":"drill key","scopes":["presentations:read","presentations:write"]}')
+[ "$key_status" = 201 ] || fail "minting an API key in the new workspace answered $key_status: $(cat "$SCRATCH/key.json")"
+SLK=$(jq -r '.key' "$SCRATCH/key.json")
+case "$SLK" in slk_*) ;; *) fail "the minted key does not carry the slk_ prefix" ;; esac
+key_create=$("${CURL[@]}" -o "$SCRATCH/key-create.json" -w '%{http_code}' -X POST "$SL/api/v1/workspaces" \
+  -H "Authorization: Bearer $SLK" -H 'content-type: application/json' -d '{"name":"Key Workspace"}')
+[ "$key_create" = 403 ] || fail "POST /workspaces with an slk_ key answered $key_create (expected 403): $(cat "$SCRATCH/key-create.json")"
+! grep -q '"workspace"' "$SCRATCH/key-create.json" || fail "the 403 carries a workspace: $(cat "$SCRATCH/key-create.json")"
+pass "POST /workspaces with an slk_ key → 403 ($(jq -r '.error.code' "$SCRATCH/key-create.json"))"
 
 # ── Phase 4 — AUTH-3: the provider grant is never handed out ────────────────
 say "Phase 4 — AUTH-3: the provider-grant routes are closed on cloud"

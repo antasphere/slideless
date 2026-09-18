@@ -8,6 +8,7 @@ groups:
       - getting-started/antasphere-account
   - title: Concepts
     pages:
+      - concepts/workspaces
       - concepts/artifact
       - concepts/versions
       - concepts/links

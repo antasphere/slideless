@@ -6,8 +6,8 @@
   import { Separator } from '$lib/components/ui/separator/index.js';
   import Download from '@lucide/svelte/icons/download';
   import LogOut from '@lucide/svelte/icons/log-out';
-  import { toast } from 'svelte-sonner';
-  import { api, errorMessage } from '$lib/api';
+  import { api } from '$lib/api';
+  import { download } from '$lib/download';
   import { signOutToLogin } from '$lib/session';
   import { t } from '$lib/i18n';
 
@@ -28,28 +28,19 @@
   }
 
   /**
-   * Export via the SDK, not a plain <a href>: an anchor cannot carry the
-   * X-Workspace-Id header, so on a multi-workspace account it would export
-   * the DEFAULT workspace instead of the active one (ADR 014). Trade-off:
-   * the zip is buffered as a Blob before the save dialog — fine for
-   * deck-scale exports; multi-GB exports should move to a server-tokenized
-   * download URL.
+   * Export through $lib/download, the dashboard's one download path, not a
+   * plain <a href>: an anchor cannot carry the X-Workspace-Id header, so on
+   * a multi-workspace account it would export the DEFAULT workspace instead
+   * of the active one (ADR 014). The file keeps the name the server gives it;
+   * the dated name below is only the fallback. The helper's trade-off (the
+   * zip is one Blob before the save dialog) is stated there.
    */
   async function handleExport() {
     exporting = true;
     try {
-      const res = await api.downloadExport();
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `workspace-export-${new Date().toISOString().slice(0, 10)}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      toast.error(errorMessage(e));
+      await download(() => api.downloadExport(), {
+        fallbackName: `workspace-export-${new Date().toISOString().slice(0, 10)}.zip`
+      });
     } finally {
       exporting = false;
     }

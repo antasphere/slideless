@@ -21,17 +21,23 @@
 #    touching the Slideless user's.
 #
 # DEV/CI ONLY — inline secrets, localhost-bound ports.
+#
+# Beside the harness's FEDERATION_* variables (see docker-compose.federation.yml)
+# this overlay takes, with today's values as defaults:
+#   FEDERATION_HOP_PORT       the hop's admin port on the host   8474
+#   FEDERATION_SUBNET_PREFIX  the first three octets of the /24  172.30.250
+#                             (subnet <prefix>.0/24, hop <prefix>.250)
 
 services:
   hubhop:
-    image: slideless:federation-dev
+    image: ${FEDERATION_SL_IMAGE:-slideless:federation-dev}
     restart: unless-stopped
     entrypoint: ['node', '/delay-proxy.mjs']
     environment:
-      - LISTEN=3300
+      - LISTEN=${FEDERATION_HUB_PORT:-3300}
       - UPSTREAM_HOST=hub
-      - UPSTREAM_PORT=3300
-      - ADMIN=8474
+      - UPSTREAM_PORT=${FEDERATION_HUB_PORT:-3300}
+      - ADMIN=${FEDERATION_HOP_PORT:-8474}
     volumes:
       - ./scripts/lib/delay-proxy.mjs:/delay-proxy.mjs:ro
     # The image's own healthcheck probes the Slideless port; the hop has none.
@@ -39,23 +45,23 @@ services:
       disable: true
     networks:
       default:
-        ipv4_address: 172.30.250.250
+        ipv4_address: ${FEDERATION_SUBNET_PREFIX:-172.30.250}.250
     ports:
-      - '127.0.0.1:8474:8474'
+      - '127.0.0.1:${FEDERATION_HOP_PORT:-8474}:${FEDERATION_HOP_PORT:-8474}'
 
   app:
     depends_on:
       hubhop:
         condition: service_started
     extra_hosts:
-      - 'hub.localhost:172.30.250.250'
+      - 'hub.localhost:${FEDERATION_SUBNET_PREFIX:-172.30.250}.250'
 
   hub:
     environment:
-      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:3310/mcp","redirectUris":["http://slideless.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"},{"slug":"drill-second","name":"Second tool (drill)","resourceUrl":"http://second.localhost:3320/mcp","redirectUris":["http://second.localhost:3320/callback"],"clientId":"tool-drill-second","clientSecret":"federation-dev-client-secret-0002"}]'
+      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/mcp","redirectUris":["http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"},{"slug":"drill-second","name":"Second tool (drill)","resourceUrl":"http://second.localhost:3320/mcp","redirectUris":["http://second.localhost:3320/callback"],"clientId":"tool-drill-second","clientSecret":"federation-dev-client-secret-0002"}]'
 
 networks:
   default:
     ipam:
       config:
-        - subnet: 172.30.250.0/24
+        - subnet: ${FEDERATION_SUBNET_PREFIX:-172.30.250}.0/24

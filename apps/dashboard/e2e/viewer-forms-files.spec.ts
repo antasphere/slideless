@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 
 /**
  * PRDCT-2403 — a form's FILE FIELD through a direct share link, in a real
@@ -66,11 +66,8 @@ test('a file field: refusals in the page, a drop and a pick upload, the owner re
   browser
 }) => {
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    // The shared sign-in waits the sign-in throttle out once (LESSONS.md, the Playwright suite).
+    await signInAsOwner(page);
   });
 
   let deckId = '';

@@ -16,6 +16,9 @@ import type { Logger } from '../logger.js';
  * failures. Memory backend per replica by default; Redis when REDIS_URL is
  * set so limits hold across replicas (Profile B).
  */
+/** Workspace-creation attempts one person gets per hour; an address gets ten times that. */
+export const WORKSPACE_CREATE_PER_PERSON = 60;
+
 export interface RateLimiters {
   login: RateLimiterAbstract;
   otp: RateLimiterAbstract;
@@ -34,6 +37,23 @@ export interface RateLimiters {
   workspaceExport: RateLimiterAbstract;
   /** Break-glass superadmin recovery — a rare operator action, tight per IP. */
   breakGlass: RateLimiterAbstract;
+  /**
+   * Workspace creation, the PER-PERSON bucket (key `u:<userId>`) — a rare
+   * human act; on cloud every attempt is a call to the hub, and the cloud
+   * zero-membership session resolves no principal, so the general quota
+   * never sees it. Spent by the handler (api/workspaces.ts) once the caller
+   * is IDENTIFIED — never by an unauthenticated request, never by a method
+   * that is not the POST.
+   */
+  workspaceCreate: RateLimiterAbstract;
+  /**
+   * Workspace creation, the PER-ADDRESS bucket — ten people's worth of the
+   * per-person one, spent only by identified callers the per-person bucket
+   * let through. One colleague can therefore take at most a tenth of it:
+   * an office behind one NAT address is never locked out by one person,
+   * while a farm of accounts behind one address is still bounded.
+   */
+  workspaceCreateAddress: RateLimiterAbstract;
   /** The unauthenticated OpenAPI document — cheap now that it is a boot-time buffer, but still anonymous. */
   openapiDoc: RateLimiterAbstract;
   /**
@@ -109,6 +129,8 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     passwordReset: make('pw-reset', 5, 10 * 60),
     workspaceExport: make('ws-export', 5, 600),
     breakGlass: make('break-glass', 10, 60 * 60),
+    workspaceCreate: make('ws-create', WORKSPACE_CREATE_PER_PERSON, 60 * 60),
+    workspaceCreateAddress: make('ws-create-ip', WORKSPACE_CREATE_PER_PERSON * 10, 60 * 60),
     openapiDoc: make('openapi', 60, 60),
     viewerPassword: make('viewer-pw', 10, 15 * 60),
     viewerAnnotate: make('viewer-annot', 60, 10 * 60),

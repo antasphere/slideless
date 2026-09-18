@@ -97,13 +97,11 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     await expect(page.getByRole('cell', { name: INVITEE.email })).toBeVisible();
   });
 
-  await test.step('no workspace switcher for a single-membership user (ADR 014)', async () => {
-    // Self-host UX invariant: the sidebar keeps the plain instance-name
-    // header; the switcher only exists with several active memberships.
-    await expect(page.getByTestId('workspace-switcher')).toHaveCount(0);
-    await expect(
-      page.locator('[data-sidebar="sidebar"]').getByText(INSTANCE_NAME, { exact: true })
-    ).toBeVisible();
+  await test.step('one workspace and creation open: the workspace menu, named after the instance (ADR 014, PRDCT-2444)', async () => {
+    // The operator's cap is at its default, so the owner may create another
+    // workspace and gets the menu with ONE workspace too. With creation closed
+    // the plain instance-name header stays: workspaces.spec.ts pins that side.
+    await expect(page.getByTestId('workspace-switcher')).toContainText(INSTANCE_NAME);
   });
 
   await test.step('sign out, then sign back in', async () => {

@@ -1116,3 +1116,53 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
 - **CI failing "already" is not the same as CI failing the same way.** Compare the FAILING JOB NAMES
   against the previous commits on the base, not the red/green of the run: three drills had been red
   since 12 September, which is exactly what hides a fourth job going red for the first time.
+
+## Workspace creation from inside the product (PRDCT-2444 / PRDCT-2443, 2026-09-18)
+
+- **The route's audit row belongs to the NEW workspace, and the generic audit middleware has to be
+  told to stay out.** `auditMiddleware` attributes every mutation to `principal.workspaceId`, the
+  workspace the caller happens to be in. For `POST /workspaces` that is the wrong trail: a workspace
+  never learns what its members do elsewhere. The path is in `isAuditExempt` and the handler writes
+  its one `workspace.create` row itself, the setup pattern. Any future route whose effect lands
+  OUTSIDE the caller's current workspace needs the same two moves, or the event leaks into a log
+  its readers have no standing over.
+- **`/me.canCreateWorkspace` and the route share ONE function** (`workspaceCreationRefusal`,
+  `api/workspaces.ts`), and the route calls it INSIDE the locked transaction. A flag computed by a
+  second copy of the rule promises what the route refuses the first time one of them moves.
+- **A POST to the hub is never re-posted on an ambiguous answer.** The read path
+  (`HubUserClient.orgs`) retries once after a 401 OR a 403, which is harmless for a GET. For
+  `createOrg` only a 401 earns the retry (the hub refused the token before doing anything); a 403
+  is a policy answer, and a timeout or a 5xx may hide a committed creation, so a second POST is a
+  second organization. The `commit_then_500` mode of the fake hub pins it: one POST, a 403
+  `hub_unavailable`, and the organization arrives by the next reconcile pass.
+- **The Write tool turns a unicode NUL escape (backslash, `u0000`) inside a string literal into a
+  real NUL byte in the file.** The test still "worked" (a NUL is a control character) but the
+  source carried a raw NUL. Write such escapes through a script and byte-scan the file before
+  committing.
+- **Opening creation changes what an owner can do for a member.** A `user` row is instance-global:
+  the moment a member owns a second workspace, `mintRefusal` answers `cross_workspace_target` and
+  the delete answers `member_of_other_workspaces` for them in the FIRST workspace too. That is the
+  guard working, not a regression: it is documented for operators in
+  `docs/self-hosting/deployment-profiles.md`, and `MAX_WORKSPACES_PER_USER=0` is the switch for an
+  instance that wants to stay one team's.
+- **A rate wall mounted on a PATH counts everything that touches the path.** The first wall on
+  `POST /workspaces` was `api.use('/workspaces', rateLimit(...))` on arrival: OPTIONS, HEAD and
+  anonymous POSTs (all of them 404/401, none of them a creation) each spent the address's budget, so
+  61 preflights locked a person out of a route they had never used, and `/me` still said they could
+  create. The wall now lives IN the handler, after the caller is identified: the per-person bucket
+  is judged first and a person it refuses never reaches the per-address one, which is ten people's
+  worth, so one colleague takes at most a tenth of an office's NAT address. `/me.canCreateWorkspace`
+  reads both buckets (no spend). Rule: a wall protecting an authenticated act is spent by the
+  handler, keyed on who it identified; path mounts are for surfaces whose cost IS the arrival.
+- **The deploy-order refusal lands on the TOOL's callback, not on a hub page.** Verified live by
+  the federation drill's Phase 3b (hub `lane/org-create-for-tools` beside this branch, 2026-09-18):
+  an authorize that requests a scope the hub does not list for the client answers a 302 to
+  Slideless's own callback carrying `error=invalid_scope` and an `error_description` naming the
+  scope — no code, no consent screen, the whole sign-in over. So a Slideless that ships
+  `orgs:create` before the hub lists it does not "lose workspace creation", it locks every user out
+  at the door, and the symptom shows in Slideless's callback logs, not the hub's. The hub first.
+- **The drill's "next /24" is not a free subnet on a busy machine.** `172.30.250.0/24` overlapped
+  a standing `172.30.0.0/16` compose network here, and so would `172.30.251.0/24`: Docker's default
+  pool hands out /16s, so any neighbour inside the same /16 swallows every /24 of it. To run the
+  drill beside other stacks, set `FEDERATION_SUBNET_PREFIX` OUTSIDE the pool (`10.99.250` worked),
+  and read `docker network inspect` for the real masks before picking, not just the prefixes.

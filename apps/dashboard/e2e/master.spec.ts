@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { test, expect, type Page } from '@playwright/test';
 import { deckMasterPath, VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
 import { signInAsOwner } from './accounts';
@@ -161,10 +162,16 @@ test('master page: full-page deck under the bar — rename, version history with
     const menu = page.getByRole('menu');
     await expect(menu.getByRole('menuitem', { name: 'All files (zip)' })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: 'notes.md' })).toBeVisible();
-    const zipHref = await menu.getByRole('menuitem', { name: 'All files (zip)' }).getAttribute('href');
-    expect(zipHref).toBe(`/api/v1/presentations/${deckId}/versions/3/downloads.zip`);
-    await page.keyboard.press('Escape');
-    const zip = await page.request.get(zipHref!);
+    // No entry is a plain anchor (PRDCT-2426): an anchor cannot carry the
+    // active workspace, so each one fetches through the API client and saves.
+    expect(await menu.locator('a[href]').count()).toBe(0);
+    const [saved] = await Promise.all([
+      page.waitForEvent('download'),
+      menu.getByRole('menuitem', { name: 'All files (zip)' }).click()
+    ]);
+    // The server's own name for the archive: <deck-title-slug>-v<n>.zip.
+    expect(saved.suggestedFilename()).toMatch(/-v3\.zip$/);
+    const zip = await page.request.get(`/api/v1/presentations/${deckId}/versions/3/downloads.zip`);
     expect(zip.status()).toBe(200);
     expect(zip.headers()['content-type']).toBe('application/zip');
     expect(zip.headers()['content-disposition']).toContain('attachment');
@@ -256,17 +263,23 @@ test('master page: full-page deck under the bar — rename, version history with
     await expect(v3).toContainText('0 views');
     const v2 = sheet.locator('[data-testid="version-row"][data-version="2"]');
     await expect(v2).toContainText('Showing');
-    await expect(v3.getByRole('link', { name: 'notes.md' })).toBeVisible();
-    await expect(v3.getByRole('link', { name: 'annex.pdf' })).toBeVisible();
-    expect(await v3.getByRole('link').count()).toBe(5); // zip + 4 files
+    await expect(v3.getByRole('button', { name: 'notes.md' })).toBeVisible();
+    await expect(v3.getByRole('button', { name: 'annex.pdf' })).toBeVisible();
+    await expect(v3.getByTestId('version-files-zip')).toHaveCount(1);
+    await expect(v3.getByTestId('version-file')).toHaveCount(4);
 
     const v1 = sheet.locator('[data-testid="version-row"][data-version="1"]');
-    await expect(v1.getByRole('link', { name: 'figures.csv' })).toBeVisible();
-    expect(await v1.getByRole('link', { name: 'notes.md' }).count()).toBe(0);
-    expect(await v1.getByRole('link').count()).toBe(4); // zip + 3 files
-    expect(await v1.getByRole('link', { name: 'annex.pdf' }).getAttribute('href')).toBe(
-      `/api/v1/presentations/${deckId}/versions/1/downloads/annex.pdf`
-    );
+    await expect(v1.getByRole('button', { name: 'figures.csv' })).toBeVisible();
+    expect(await v1.getByRole('button', { name: 'notes.md' }).count()).toBe(0);
+    await expect(v1.getByTestId('version-files-zip')).toHaveCount(1);
+    await expect(v1.getByTestId('version-file')).toHaveCount(3);
+    // A version's file is THAT version's bytes: v1's annex, not the current one.
+    const [annex] = await Promise.all([
+      page.waitForEvent('download'),
+      v1.getByRole('button', { name: 'annex.pdf' }).click()
+    ]);
+    expect(annex.suggestedFilename()).toBe('annex.pdf');
+    expect(await readFile(await annex.path(), 'utf8')).toBe(ANNEX_V1);
 
     await v1.getByRole('button', { name: 'Show' }).click();
     // No Escape: the sheet leaves on its own once a version is shown.

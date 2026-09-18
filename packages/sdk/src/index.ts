@@ -58,6 +58,7 @@ import type {
   ShareTokenUpdate,
   ShareTokenView,
   SsoCliConnect,
+  WorkspaceCreated,
   SsoLogoutResponse,
   UploadSession,
   UploadSessionCommit,
@@ -303,6 +304,22 @@ export class PlatformClient {
     return this.request('POST', '/me/onboarding/dismiss');
   }
 
+  /**
+   * Create ANOTHER workspace with the caller as its owner. Sessions only
+   * (API keys and OAuth bearers answer 403); offer it only while `/me`'s
+   * `canCreateWorkspace` is true. Self-hosted creates it locally under the
+   * operator's per-person cap; cloud creates the organization at Antasphere
+   * as the caller. Either way `workspace.id` is the id to pass as
+   * `X-Workspace-Id` (`setWorkspace`). Refusals (403 unless noted):
+   * `session_required`, `guest_forbidden`, `workspace_creation_disabled`,
+   * `workspace_limit_reached`, `hub_link_required`, `hub_unavailable`,
+   * `hub_refused`, 401 `hub_grant_expired`, 401 `hub_reauth_required` (both
+   * healed by signing in again), 400 `validation_error`, 429 `rate_limited`.
+   */
+  createWorkspace(name: string, opts: IdempotentRequestOptions = {}): Promise<WorkspaceCreated> {
+    return this.request('POST', '/workspaces', { name }, idempotencyHeader(opts));
+  }
+
   /** Better Auth session probe — null when signed out. */
   async session(): Promise<{ user: { id: string; email: string; name: string } } | null> {
     return this.request('GET', '/auth/get-session');
@@ -521,6 +538,16 @@ export class PlatformClient {
   /** URL of the streamed (Range-capable) content endpoint for a file. */
   fileContentUrl(id: string): string {
     return `${this.baseUrl}/api/v1/files/${encodeURIComponent(id)}/content`;
+  }
+
+  /**
+   * Downloads a file's bytes with the client's own headers (credential and
+   * active workspace). Raw Response so callers can stream it; a non-2xx
+   * answer throws PlatformApiError like every other method. A browser anchor
+   * on `fileContentUrl` cannot carry `X-Workspace-Id` (PRDCT-2426).
+   */
+  async downloadFileContent(id: string): Promise<Response> {
+    return this.rawDownload(this.fileContentUrl(id));
   }
 
   // ── Presentations ─────────────────────────────────────────────────────────

@@ -26,6 +26,10 @@ import { apiError } from '../api/errors.js';
  *   POST /api/v1/presentations/{id}/tokens
  *   POST /api/v1/presentations/{id}/duplicate (PRDCT-2279: one click mints
  *     one deck; a network-blip retry must not mint a second copy)
+ *   POST /api/v1/workspaces (PRDCT-2444/2443: one click mints one workspace;
+ *     on cloud the retry would otherwise create a second organization at
+ *     the hub. The claim is scoped to the caller's CURRENT workspace + user;
+ *     the cloud zero-membership session has no principal and runs unclaimed)
  *   POST /api/v1/presentations/uploads (a retried reserve must not leak a
  *     second session + reserved deck id)
  * Deliberate NON-targets:
@@ -57,7 +61,12 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 
 const KEY_MAX_LENGTH = 200;
 
-const TARGET_PATHS = new Set(['/api/v1/api-keys', '/api/v1/invitations', '/api/v1/presentations/uploads']);
+const TARGET_PATHS = new Set([
+  '/api/v1/api-keys',
+  '/api/v1/invitations',
+  '/api/v1/presentations/uploads',
+  '/api/v1/workspaces'
+]);
 // The two member routes that MINT a credential for another user. Both are
 // covered (FUZZ-7): a replayed mint hands out a second live secret, and the
 // change-email JWT is stateless, so it cannot even be revoked afterwards.
