@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Tag } from '$lib/components/ui/tag';
+  import { fileTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
@@ -100,7 +102,7 @@
     {
       accessorKey: 'contentType',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('files.colType') }),
-      cell: ({ row }) => row.getValue('contentType'),
+      cell: ({ row }) => renderComponent(Tag, fileTag(String(row.getValue('contentType')))),
       meta: { title: t('files.colType'), width: '200px' }
     },
     {

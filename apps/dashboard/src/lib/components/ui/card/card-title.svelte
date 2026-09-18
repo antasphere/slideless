@@ -19,7 +19,7 @@
   aria-level={level}
   bind:this={ref}
   data-slot="card-title"
-  class={cn('font-display font-normal leading-none', className)}
+  class={cn('font-display text-[18px] font-normal leading-tight tracking-[-0.01em]', className)}
   {...restProps}
 >
   {@render children?.()}

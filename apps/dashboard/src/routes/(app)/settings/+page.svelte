@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Tag, TagList } from '$lib/components/ui/tag';
+  import { methodTag, roleTag } from '$lib/tags';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
   import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
-  import { Separator } from '$lib/components/ui/separator/index.js';
   import Download from '@lucide/svelte/icons/download';
   import LogOut from '@lucide/svelte/icons/log-out';
   import { toast } from 'svelte-sonner';
@@ -64,8 +64,8 @@
   ];
 </script>
 
-<PageHeader title={t('settings.title')} description={t('settings.description')} />
 <SectionTabs label={t('nav.settings')} tabs={settingsTabs} />
+<PageHeader title={t('settings.title')} description={t('settings.description')} />
 
 <div class="grid gap-6 lg:grid-cols-2">
   <Card.Root>
@@ -73,34 +73,26 @@
       <Card.Title class="text-base">{t('settings.instanceTitle')}</Card.Title>
       <Card.Description>{t('settings.instanceDescription')}</Card.Description>
     </Card.Header>
-    <Card.Content class="space-y-3 text-sm">
+    <Card.Content class="facts text-sm">
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.name')}</span>
         <span class="font-medium">{data.instance.name}</span>
       </div>
-      <Separator />
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.version')}</span>
         <span>{data.instance.version}</span>
       </div>
-      <Separator />
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.edition')}</span>
         <span>{data.instance.edition}</span>
       </div>
-      <Separator />
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.instanceId')}</span>
         <code class="text-xs">{data.instance.instanceId ?? '—'}</code>
       </div>
-      <Separator />
       <div class="flex items-center justify-between gap-4">
         <span class="text-muted-foreground">{t('settings.signInMethods')}</span>
-        <span class="flex flex-wrap justify-end gap-1">
-          {#each data.instance.auth.methods as method (method)}
-            <Badge variant="outline">{method}</Badge>
-          {/each}
-        </span>
+        <span class="flex justify-end"><TagList tags={data.instance.auth.methods.map(methodTag)} /></span>
       </div>
     </Card.Content>
   </Card.Root>
@@ -110,22 +102,19 @@
       <Card.Title class="text-base">{t('settings.accountTitle')}</Card.Title>
       <Card.Description>{t('settings.signedInVia', { via: data.me.via })}</Card.Description>
     </Card.Header>
-    <Card.Content class="space-y-3 text-sm">
+    <Card.Content class="facts text-sm">
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.name')}</span>
         <span class="font-medium">{data.me.user.name}</span>
       </div>
-      <Separator />
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.email')}</span>
         <span>{data.me.user.email}</span>
       </div>
-      <Separator />
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.role')}</span>
-        <Badge variant={data.me.role === 'member' ? 'secondary' : 'default'}>{data.me.role}</Badge>
+        <Tag {...roleTag(data.me.role)} />
       </div>
-      <Separator />
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.workspace')}</span>
         <span>{data.me.workspace.name}</span>

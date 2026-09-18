@@ -243,8 +243,8 @@
   ];
 </script>
 
-<PageHeader title={t('account.title')} description={t('account.description')} />
 <SectionTabs label={t('nav.settings')} tabs={settingsTabs} />
+<PageHeader title={t('account.title')} description={t('account.description')} />
 
 <div class="grid gap-6 lg:grid-cols-2">
   <!-- The language is the person's, not the instance's: it is kept in this

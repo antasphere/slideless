@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
@@ -110,13 +111,6 @@
     }
   }
 
-  const statusVariant: Record<InviteStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    open: 'default',
-    accepted: 'secondary',
-    revoked: 'destructive',
-    expired: 'outline'
-  };
-
   const statusLabels: Record<InviteStatus, string> = {
     open: t('invitations.statusOpen'),
     accepted: t('invitations.statusAccepted'),
@@ -136,11 +130,7 @@
       accessorKey: 'role',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('invitations.colRole') }),
-      cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: 'secondary' as const,
-          children: createRawSnippet(() => ({ render: () => `<span>${row.original.role}</span>` }))
-        }),
+      cell: ({ row }) => renderComponent(Tag, roleTag(row.original.role)),
       meta: { title: t('invitations.colRole'), width: '100px' }
     },
     {
@@ -150,10 +140,13 @@
         renderComponent(DataTableColumnHeader, { column, title: t('invitations.colStatus') }),
       cell: ({ row }) => {
         const status = statusOf(row.original);
-        return renderComponent(Badge, {
-          variant: statusVariant[status],
-          children: createRawSnippet(() => ({ render: () => `<span>${statusLabels[status]}</span>` }))
-        });
+        return renderComponent(
+          Tag,
+          stateTag(
+            statusLabels[status],
+            status === 'open' ? 'wait' : status === 'accepted' ? 'ok' : status === 'revoked' ? 'bad' : 'off'
+          )
+        );
       },
       meta: { title: t('invitations.colStatus'), width: '110px' }
     },
@@ -207,13 +200,13 @@
   ]);
 </script>
 
+<SectionTabs label={t('nav.people')} tabs={peopleTabs} />
 <PageHeader
   title={t('invitations.title')}
   description={t('invitations.description')}
   onAdd={hubManaged ? undefined : openCreateDialog}
   addLabel={t('invitations.invite')}
 />
-<SectionTabs label={t('nav.people')} tabs={peopleTabs} />
 
 {#if hubManaged}
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">

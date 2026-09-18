@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { Tag } from '$lib/components/ui/tag';
+  import { viaTag } from '$lib/tags';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import * as Table from '$lib/components/ui/table/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
@@ -32,13 +33,6 @@
   });
 
   const entries = $derived(list.items);
-
-  const viaVariant: Record<AuditEntry['actorVia'], 'default' | 'secondary' | 'outline'> = {
-    session: 'secondary',
-    api_key: 'default',
-    oauth: 'default',
-    system: 'outline'
-  };
 
   // On a phone (PRDCT-2440) a line says three things: what happened, who did
   // it, roughly when. How it arrived, what it touched and the request that
@@ -105,7 +99,7 @@
     <Table.Root>
       <Table.Header>
         <Table.Row>
-          <Table.Head class="w-[170px]">{t('audit.colTime')}</Table.Head>
+          <Table.Head class="w-[190px]">{t('audit.colTime')}</Table.Head>
           <Table.Head>{t('audit.colActor')}</Table.Head>
           <Table.Head class="w-[90px]">{t('audit.colVia')}</Table.Head>
           <Table.Head>{t('audit.colAction')}</Table.Head>
@@ -128,14 +122,19 @@
               }
             }}
           >
-            <Table.Cell class="whitespace-nowrap text-muted-foreground">
-              {formatDateTime(entry.createdAt)}
+            <Table.Cell class="whitespace-nowrap">
+              <span class="block">{formatTimeAgo(entry.createdAt)}</span>
+              <span class="block text-xs font-normal text-muted-foreground"
+                >{formatDateTime(entry.createdAt)}</span
+              >
             </Table.Cell>
             <Table.Cell>{entry.actorEmail ?? t('audit.system')}</Table.Cell>
             <Table.Cell>
-              <Badge variant={viaVariant[entry.actorVia]}>{entry.actorVia}</Badge>
+              <Tag {...viaTag(entry.actorVia)} />
             </Table.Cell>
-            <Table.Cell><code class="text-xs">{entry.action}</code></Table.Cell>
+            <Table.Cell class="max-w-[340px]"
+              ><span class="action block truncate" title={entry.action}>{entry.action}</span></Table.Cell
+            >
             <Table.Cell class="max-w-[220px] truncate text-muted-foreground">
               {entry.resourceType}{entry.resourceId ? ` · ${entry.resourceId}` : ''}
             </Table.Cell>
@@ -191,7 +190,7 @@
         <dt>{t('audit.colActor')}</dt>
         <dd>{opened.actorEmail ?? t('audit.system')}</dd>
         <dt>{t('audit.colVia')}</dt>
-        <dd><Badge variant={viaVariant[opened.actorVia]}>{opened.actorVia}</Badge></dd>
+        <dd><Tag {...viaTag(opened.actorVia)} /></dd>
         <dt>{t('audit.colResource')}</dt>
         <dd class="break-all">{opened.resourceType}{opened.resourceId ? ` · ${opened.resourceId}` : ''}</dd>
         {#if opened.requestId}
@@ -213,6 +212,12 @@
 </Sheet.Root>
 
 <style>
+  /* the action is what the line is about: the mono face, in ink, on a faint well */
+  .action {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+  }
   .line {
     display: flex;
     align-items: center;

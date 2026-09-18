@@ -48,7 +48,11 @@
      never from disk, because this repo is slated for the OSS cut and the
      brand README's license rule keeps planned-public repos on the CDN */
   --second: 'Synonym', system-ui, sans-serif;
-  --ui: 'Onest', system-ui, sans-serif;
+  /* the body face is the website's: Synonym at 450 with -0.008em (its
+     global.css); Onest, the template's face, is gone */
+  --ui: 'Synonym', system-ui, sans-serif;
+  --ui-weight: 450;
+  --ui-track: -0.008em;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* motion — the product's ONE duration and easing, mirrored from the

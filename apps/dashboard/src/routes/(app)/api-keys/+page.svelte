@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
+  import { Tag, TagList } from '$lib/components/ui/tag';
+  import { scopeTag, stateTag } from '$lib/tags';
+  import KeyRoundIcon from '@lucide/svelte/icons/key-round';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
@@ -10,7 +12,6 @@
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
@@ -130,20 +131,16 @@
       accessorKey: 'keyId',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colKeyId') }),
-      cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: 'outline' as const,
-          class: 'font-mono',
-          children: createRawSnippet(() => ({ render: () => `<span>${row.original.keyId}</span>` }))
-        }),
-      meta: { title: t('apiKeys.colKeyId'), width: '120px' }
+      cell: ({ row }) => renderComponent(Tag, { label: row.original.keyId, mono: true, icon: KeyRoundIcon }),
+      meta: { title: t('apiKeys.colKeyId'), width: '150px' }
     },
     {
       accessorKey: 'scopes',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colScopes') }),
-      cell: ({ row }) => (row.getValue('scopes') as string[]).join(', '),
-      meta: { title: t('apiKeys.colScopes'), width: '180px' }
+      cell: ({ row }) =>
+        renderComponent(TagList, { tags: (row.getValue('scopes') as string[]).map(scopeTag) }),
+      meta: { title: t('apiKeys.colScopes'), width: '260px' }
     },
     {
       accessorKey: 'createdAt',
@@ -174,14 +171,14 @@
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colStatus') }),
       cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: (isExpired(row.original) || row.original.revokedAt ? 'destructive' : 'outline') as
-            'destructive' | 'outline',
-          children: createRawSnippet(() => ({
-            render: () =>
-              `<span>${isExpired(row.original) ? t('apiKeys.statusExpired') : row.original.revokedAt ? t('apiKeys.statusRevoked') : t('apiKeys.statusActive')}</span>`
-          }))
-        }),
+        renderComponent(
+          Tag,
+          isExpired(row.original)
+            ? stateTag(t('apiKeys.statusExpired'), 'wait')
+            : row.original.revokedAt
+              ? stateTag(t('apiKeys.statusRevoked'), 'bad')
+              : stateTag(t('apiKeys.statusActive'), 'ok')
+        ),
       meta: { title: t('apiKeys.colStatus'), width: '110px' }
     },
     {

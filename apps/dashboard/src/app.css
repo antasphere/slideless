@@ -17,7 +17,9 @@
     background: var(--ground-2);
     color: var(--ink);
     font-family: var(--ui);
-    font-size: 14.5px;
+    font-weight: var(--ui-weight);
+    letter-spacing: var(--ui-track);
+    font-size: 15px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -226,6 +228,22 @@
       0 0 22px rgb(20 16 12 / 0.9),
       0 0 8px rgb(20 16 12 / 0.85);
   }
+  /* label and value rows inside a card: a hairline between, the label quiet,
+     the value in ink */
+  .facts > div {
+    padding: 12px 0;
+    border-bottom: 1px solid color-mix(in oklab, var(--hairline) 70%, transparent);
+  }
+  .facts > div:first-child {
+    padding-top: 0;
+  }
+  .facts > div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+  .facts > div > span:first-child {
+    color: var(--muted);
+  }
   /* a figure is always set in the display serif, as in the presentations */
   .figure {
     font-family: var(--display);
@@ -316,10 +334,11 @@
   }
 }
 
-/* Lighter text-sm for cleaner UI (template convention, kept) */
+/* The template thinned every text-sm to 300 for Onest. Synonym is drawn for
+   450 (the website's correction), so small text keeps the body's weight. */
 @layer utilities {
   .text-sm {
-    @apply font-light;
+    font-weight: var(--ui-weight);
   }
 }
 

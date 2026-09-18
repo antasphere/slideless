@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { createRawSnippet } from 'svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
@@ -11,7 +12,6 @@
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
@@ -243,11 +243,7 @@
     return actions;
   }
 
-  const roleBadge = (role: WorkspaceRole) =>
-    renderComponent(Badge, {
-      variant: role === 'member' ? ('secondary' as const) : ('default' as const),
-      children: createRawSnippet(() => ({ render: () => `<span>${role}</span>` }))
-    });
+  const roleBadge = (role: WorkspaceRole) => renderComponent(Tag, roleTag(role));
 
   const columns: ColumnDef<Member, unknown>[] = $derived([
     {
@@ -274,13 +270,12 @@
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('members.colStatus') }),
       cell: ({ row }) =>
-        renderComponent(Badge, {
-          variant: (row.getValue('isActive') ? 'outline' : 'destructive') as 'outline' | 'destructive',
-          children: createRawSnippet(() => ({
-            render: () =>
-              `<span>${row.original.isActive ? t('members.statusActive') : t('members.statusInactive')}</span>`
-          }))
-        }),
+        renderComponent(
+          Tag,
+          row.original.isActive
+            ? stateTag(t('members.statusActive'), 'ok')
+            : stateTag(t('members.statusInactive'), 'off')
+        ),
       meta: { title: t('members.colStatus'), width: '110px' }
     },
     {
@@ -322,8 +317,8 @@
   ]);
 </script>
 
-<PageHeader title={t('members.title')} description={t('members.description')} />
 <SectionTabs label={t('nav.people')} tabs={peopleTabs} />
+<PageHeader title={t('members.title')} description={t('members.description')} />
 
 {#if hubManaged}
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
