@@ -276,6 +276,14 @@ describe('Ann (owner of 1) reads NOTHING of workspace 2', () => {
     expect(dup.status).toBe(404);
     const delFile = await app.app.request(`/api/v1/files/${file2}`, { method: 'DELETE', headers: ann });
     expect(delFile.status).toBe(404);
+    // "Already present" is not an existence oracle across workspaces: 2's
+    // bytes read as MISSING from workspace 1.
+    const precheck = await app.app.request(
+      '/api/v1/presentations/precheck',
+      json({ sha256: [shaOf(HTML2), shaOf(HTML1)] }, ann)
+    );
+    expect(precheck.status).toBe(200);
+    expect((await readJson(precheck)).missing).toEqual([shaOf(HTML2)]);
     // A commit in workspace 1 cannot adopt workspace 2's blob by its sha.
     const reserve = await readJson(
       await app.app.request('/api/v1/presentations/uploads', { method: 'POST', headers: ann })
