@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
-import { OWNER } from './accounts';
+import { signInAsOwner } from './accounts';
 
 /**
  * ADR 022 §2 — a deck form submits from INSIDE an official embed, proven
@@ -59,11 +59,8 @@ test('embedded form: submits cross-origin from the iframe; the row records sourc
   browser
 }) => {
   await test.step('sign in as the owner', async () => {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(OWNER.email);
-    await page.getByLabel('Password').fill(OWNER.password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
+    // The shared sign-in waits the sign-in throttle out once (LESSONS.md, the Playwright suite).
+    await signInAsOwner(page);
   });
 
   let deckId = '';
