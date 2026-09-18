@@ -61,6 +61,15 @@ describe('SDK downloads carry the active workspace', () => {
     expect((calls[0]!.init.headers as Record<string, string>)['x-workspace-id']).toBe(WORKSPACE);
   });
 
+  it('builds the form-file requests from ids only, each one percent-encoded', async () => {
+    const { client, calls } = recordingClient();
+    // An id is never trusted to be a clean segment: no path or query break-out.
+    await client.downloadFormResponseFile('d/1', 'r?1', '../f#1');
+    await client.downloadFormResponsesFilesZip('d1', { form: 'a&token=x' });
+    expect(calls[0]!.url).toBe('http://x/api/v1/presentations/d%2F1/responses/r%3F1/files/..%2Ff%231');
+    expect(calls[1]!.url).toBe('http://x/api/v1/presentations/d1/responses/files.zip?form=a%26token%3Dx');
+  });
+
   it('follows setWorkspace, and sends no header once it is cleared', async () => {
     const { client, calls } = recordingClient();
     client.setWorkspace('other');

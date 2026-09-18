@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FormResponse, FormResponseFile } from '@slideless/contract';
-import {
-  buildResponsesCsv,
-  fileFieldColumn,
-  formResponseFilesZipUrl,
-  formResponseFileUrl,
-  formResponsesFilesZipUrl,
-  groupFilesByField
-} from './form-responses';
+import { buildResponsesCsv, fileFieldColumn, groupFilesByField } from './form-responses';
 
 function file(overrides: Partial<FormResponseFile>): FormResponseFile {
   return {
@@ -43,30 +36,10 @@ function response(overrides: Partial<FormResponse>): FormResponse {
 
 /**
  * The files of a response (PRDCT-2403). A file's name and field are RAW
- * anonymous respondent input: the URLs are built from ids only, and the CSV
- * guards the names like every other cell.
+ * anonymous respondent input: the CSV guards the names like every other cell.
+ * The download requests are the SDK's (ids only, each percent-encoded:
+ * packages/sdk/test/download-headers.test.ts).
  */
-describe('the file download URLs', () => {
-  it('are same-origin API paths built from ids, each one percent-encoded', () => {
-    expect(formResponseFileUrl('d1', 'r1', 'f1')).toBe('/api/v1/presentations/d1/responses/r1/files/f1');
-    expect(formResponseFilesZipUrl('d1', 'r1')).toBe('/api/v1/presentations/d1/responses/r1/files.zip');
-    // An id is never trusted to be a clean segment: no path or query break-out.
-    expect(formResponseFileUrl('d/1', 'r?1', '../f#1')).toBe(
-      '/api/v1/presentations/d%2F1/responses/r%3F1/files/..%2Ff%231'
-    );
-  });
-
-  it('narrows the whole-deck zip to the panel’s form filter, and only then', () => {
-    expect(formResponsesFilesZipUrl('d1')).toBe('/api/v1/presentations/d1/responses/files.zip');
-    expect(formResponsesFilesZipUrl('d1', { form: 'apply' })).toBe(
-      '/api/v1/presentations/d1/responses/files.zip?form=apply'
-    );
-    expect(formResponsesFilesZipUrl('d1', { form: 'a&token=x' })).toBe(
-      '/api/v1/presentations/d1/responses/files.zip?form=a%26token%3Dx'
-    );
-  });
-});
-
 describe('groupFilesByField', () => {
   it('groups per file field, fields in first-seen order and files in upload order', () => {
     const groups = groupFilesByField([
