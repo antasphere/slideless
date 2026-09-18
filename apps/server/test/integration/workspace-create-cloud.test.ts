@@ -301,6 +301,38 @@ describe('cloud: the hub call faked at the function boundary', () => {
     expect(scriptedCalls).toEqual([{ userId, name: 'Trim me' }]);
   });
 
+  it('HOSTILE input cannot steer it: headers and body fields naming another user or another name are ignored', async () => {
+    const victim = await scripted.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [OPERATOR.email]);
+    const victimId = victim.rows[0].id as string;
+    expect(victimId).not.toBe(userId);
+    nextScripted = { kind: 'limit_reached' };
+    const res = await scripted.app.request('/api/v1/workspaces', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie,
+        'x-target-user': victimId,
+        'x-target-name': 'Steered by header',
+        'x-user-id': victimId,
+        'x-owner-id': victimId
+      },
+      body: JSON.stringify({
+        name: '  Mine  ',
+        ownerId: victimId,
+        userId: victimId,
+        owner: victimId,
+        ownerUserId: victimId,
+        targetUser: victimId,
+        org: { name: 'Steered by body', ownerId: victimId }
+      })
+    });
+    expect(res.status).toBe(403); // the scripted cap: the call was made
+    // The call's arguments: the SESSION's user and the validated, trimmed name. Nothing else exists.
+    expect(scriptedCalls).toEqual([{ userId, name: 'Mine' }]);
+    expect(JSON.stringify(scriptedCalls)).not.toContain(victimId);
+    expect(JSON.stringify(scriptedCalls)).not.toContain('Steered');
+  });
+
   it.each([
     [{ kind: 'limit_reached' }, 403, 'workspace_limit_reached'],
     [{ kind: 'refused', status: 403, code: 'forbidden' }, 403, 'hub_refused'],
