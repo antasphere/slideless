@@ -208,11 +208,13 @@ const envObjectSchema = z.object({
   /** Spike cap for the general API quota: max requests per principal in any 1-second burst. 0 disables burst smoothing (the per-minute window still applies). */
   API_RATE_LIMIT_BURST: numeric(z.coerce.number().int().min(0).default(100)),
   /** Email delivery. `none` (default) never blocks a flow: links stay copyable. */
-  EMAIL_DRIVER: z.preprocess(blankToUndefined, z.enum(['none', 'smtp', 'resend']).default('none')),
+  EMAIL_DRIVER: z.preprocess(blankToUndefined, z.enum(['none', 'smtp', 'resend', 'brevo']).default('none')),
   /** smtp(s)://user:pass@host:port — required when EMAIL_DRIVER=smtp. */
   SMTP_URL: optionalString(z.string().min(1)),
   /** Required when EMAIL_DRIVER=resend. */
   RESEND_API_KEY: optionalString(z.string().min(1)),
+  /** Required when EMAIL_DRIVER=brevo. */
+  BREVO_API_KEY: optionalString(z.string().min(1)),
   /** Sender, e.g. `Slideless <noreply@slideless.app>`. Required when a driver delivers. */
   EMAIL_FROM: optionalString(z.string().min(3)),
   /** When set, rate limits (and later caches) are shared across replicas. */

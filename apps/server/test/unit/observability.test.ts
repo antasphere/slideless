@@ -23,6 +23,7 @@ describe('pino redaction (secrets never reach the stream)', () => {
         body: { password: 'hunter2', token: 'tok_123', secret: 's3cr3t' },
         DATABASE_URL: 'postgres://u:p@h/db',
         RESEND_API_KEY: 're_live_deadbeef',
+        BREVO_API_KEY: 'xkeysib-deadbeef',
         S3_SECRET_ACCESS_KEY: 's3-super-secret',
         SETUP_TOKEN: 'setup-deadbeef'
       },
@@ -36,6 +37,7 @@ describe('pino redaction (secrets never reach the stream)', () => {
     expect(out).not.toContain('tok_123');
     expect(out).not.toContain('postgres://u:p@h/db');
     expect(out).not.toContain('re_live_deadbeef');
+    expect(out).not.toContain('xkeysib-deadbeef');
     expect(out).not.toContain('s3-super-secret');
     expect(out).not.toContain('setup-deadbeef');
     expect(out).toContain('[redacted]');

@@ -37,6 +37,7 @@ export const REDACT_PATHS = [
   'METRICS_TOKEN',
   'SMTP_URL',
   'RESEND_API_KEY',
+  'BREVO_API_KEY',
   'S3_SECRET_ACCESS_KEY',
   'S3_ACCESS_KEY_ID',
   // Optional social credential — read in env.ts, so any "here is the parsed

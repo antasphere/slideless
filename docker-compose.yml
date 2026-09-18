@@ -28,6 +28,7 @@ services:
       - EMAIL_DRIVER=${EMAIL_DRIVER:-none}
       - SMTP_URL=${SMTP_URL:-}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-}
       - REDIS_URL=${REDIS_URL:-}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
