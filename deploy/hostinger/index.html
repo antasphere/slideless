@@ -197,8 +197,14 @@
       </p>
 
       <ol>
-        <li>Prepare a dedicated Hostinger VPS and point a lowercase subdomain at its IP address.</li>
-        <li>Deploy the template and set <code>SLIDELESS_DOMAIN</code> to that hostname.</li>
+        <li>
+          Get a dedicated Hostinger VPS (plain Ubuntu, with Docker Manager) and point a lowercase subdomain at
+          its IP address.
+        </li>
+        <li>
+          In Docker Manager, import the template from the URL below and set <code>SLIDELESS_DOMAIN</code>
+          to that hostname.
+        </li>
         <li>
           Open your HTTPS address, take the setup token from the app's log, and create your owner account.
         </li>
@@ -216,8 +222,11 @@
       </div>
 
       <section class="section">
-        <h2>Already have a VPS?</h2>
-        <p>In Docker Manager, choose <strong>Compose from URL</strong> and paste:</p>
+        <h2>The template</h2>
+        <p>
+          In Docker Manager, choose <strong>Compose from URL</strong> and paste — on a new VPS too, once it is
+          provisioned:
+        </p>
         <a class="url" href="docker-compose.yml"
           >https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml</a
         >
