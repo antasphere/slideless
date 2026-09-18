@@ -132,7 +132,7 @@
 
   /* frosted plate — content sitting ON a canvas field (gate pages) */
   .plate {
-    background: rgb(247 246 244 / 0.72);
+    background: var(--plate-strong);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid rgb(255 255 255 / 0.55);
@@ -140,7 +140,6 @@
     box-shadow: var(--shadow-sm);
   }
   :root.dark .plate {
-    background: rgb(28 27 25 / 0.72);
     border-color: rgb(255 255 255 / 0.12);
   }
 }

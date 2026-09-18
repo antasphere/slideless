@@ -4,4 +4,4 @@ import root from '../../eslint.config.js';
    field engine is copied VERBATIM from the brand console (its header says
    "do not edit here: fix it in the brand console and re-copy"), so it is
    exempted rather than reformatted to local rules. */
-export default [{ ignores: ['src/lib/engine/engine.js'] }, ...root];
+export default [{ ignores: ['src/lib/engine/engine.js', 'src/lib/brand/animations.js'] }, ...root];

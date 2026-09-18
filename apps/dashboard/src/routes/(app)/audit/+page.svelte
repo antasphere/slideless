@@ -87,12 +87,11 @@
           <button type="button" class="line" onclick={() => (opened = entry)}>
             <span class="well"><Glyph class="size-4" strokeWidth={1.6} /></span>
             <span class="min-w-0 flex-1 text-left">
-              <code class="block truncate text-[13px] text-foreground">{entry.action}</code>
-              <span class="block truncate text-[13px] text-muted-foreground">
-                {entry.actorEmail ?? t('audit.system')}
+              <code class="block break-words text-[12.5px] leading-snug text-foreground">{entry.action}</code>
+              <span class="mt-0.5 block truncate text-[13px] text-muted-foreground">
+                {entry.actorEmail ?? t('audit.system')} · {formatTimeAgo(entry.createdAt)}
               </span>
             </span>
-            <span class="shrink-0 text-xs text-muted-foreground">{formatTimeAgo(entry.createdAt)}</span>
             <ChevronRight class="size-4 shrink-0 text-muted-foreground/60" />
           </button>
         </li>

@@ -161,7 +161,10 @@
   </div>
   <div class="hero-text on-field">
     <p class="overline !text-current opacity-70">{workspaceName}</p>
-    <h1 class="hero-title">{greeting}</h1>
+    <!-- the page keeps its name for a screen reader and for the browser
+         suite; what a person sees in its place is the greeting -->
+    <h1 class="sr-only">{t('overview.title')}</h1>
+    <p class="hero-title">{greeting}</p>
     <p class="hero-lede">
       {#if deckCount === null}
         {overviewDescription}

@@ -62,9 +62,9 @@ const eachCell = (W, H, u, fn) => {
           cx: (i + 0.5) * cellW,
           cy: (j + 0.5) * cellH,
           ph,
-          parity: (i + j) & 1 ? 1 : -1,
+          parity: (i + j) & 1 ? 1 : -1
         },
-        base * BREATHE(u.t, ph, u.hover),
+        base * BREATHE(u.t, ph, u.hover)
       );
     }
 };
@@ -104,7 +104,7 @@ const rectPts = (cx, cy, hw, hh) => [
   { x: cx - hw, y: cy - hh },
   { x: cx + hw, y: cy - hh },
   { x: cx + hw, y: cy + hh },
-  { x: cx - hw, y: cy + hh },
+  { x: cx - hw, y: cy + hh }
 ];
 
 /* ── The draws ────────────────────────────────────────────────────────── */
@@ -129,7 +129,7 @@ const crosses = (ctx, W, H, u) => {
     { x: -w, y: w },
     { x: -R, y: w },
     { x: -R, y: -w },
-    { x: -w, y: -w },
+    { x: -w, y: -w }
   ];
   eachCell(W, H, u, (c, R) => {
     const Rb = R * grow;
@@ -329,590 +329,779 @@ const rings = (ctx, W, H, u) => {
    the deck and grounds on the active theme here like everything else. */
 
 /* GRID · MORPH — Cushion */
-const portico = function(ctx,W,H,u){
-    var hover=u.hover;
-    // grid tuned to ~5x3 for the 16:10 card (near-square cells)
-    var cols=5, rows=3;
-    var cellW=W/cols, cellH=H/rows;
-    ctx.lineWidth=Math.max(1,u.DPR*0.9);
-    ctx.lineJoin="round"; ctx.lineCap="round";
-    // superellipse exponent morphs squircle -> pinched cushion/star
-    var n=u.lerp(4.5,0.7,hover);
-    var e=2/n;
-    var steps=112;
-    var grow=u.lerp(1.0,1.12,hover);              // cells swell slightly to interlock
-    var fill=0.9;                                  // half-extent as fraction of half-cell
-    var aBase=cellW*0.5*fill*grow;
-    var bBase=cellH*0.5*fill*grow;
-    var alpha=u.lerp(0.26,0.44,hover);
-    var sgn=function(v){return v<0?-1:v>0?1:0;};
-    // one extra ring on every side so the field bleeds past the edges
-    for(var j=-1;j<=rows;j++){
-      for(var i=-1;i<=cols;i++){
-        var cx=(i+0.5)*cellW;
-        var cy=(j+0.5)*cellH;
-        var ph=u.rnd()*u.TAU;                       // stable per-cell breathing phase
-        var breathe=1+Math.sin(u.t*1.3+ph)*0.03*hover;
-        var a=aBase*breathe, b=bBase*breathe;
-        ctx.strokeStyle=u.ink(alpha);
+const portico = function (ctx, W, H, u) {
+  var hover = u.hover;
+  // grid tuned to ~5x3 for the 16:10 card (near-square cells)
+  var cols = 5,
+    rows = 3;
+  var cellW = W / cols,
+    cellH = H / rows;
+  ctx.lineWidth = Math.max(1, u.DPR * 0.9);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // superellipse exponent morphs squircle -> pinched cushion/star
+  var n = u.lerp(4.5, 0.7, hover);
+  var e = 2 / n;
+  var steps = 112;
+  var grow = u.lerp(1.0, 1.12, hover); // cells swell slightly to interlock
+  var fill = 0.9; // half-extent as fraction of half-cell
+  var aBase = cellW * 0.5 * fill * grow;
+  var bBase = cellH * 0.5 * fill * grow;
+  var alpha = u.lerp(0.26, 0.44, hover);
+  var sgn = function (v) {
+    return v < 0 ? -1 : v > 0 ? 1 : 0;
+  };
+  // one extra ring on every side so the field bleeds past the edges
+  for (var j = -1; j <= rows; j++) {
+    for (var i = -1; i <= cols; i++) {
+      var cx = (i + 0.5) * cellW;
+      var cy = (j + 0.5) * cellH;
+      var ph = u.rnd() * u.TAU; // stable per-cell breathing phase
+      var breathe = 1 + Math.sin(u.t * 1.3 + ph) * 0.03 * hover;
+      var a = aBase * breathe,
+        b = bBase * breathe;
+      ctx.strokeStyle = u.ink(alpha);
+      ctx.beginPath();
+      for (var s = 0; s <= steps; s++) {
+        var th = (s / steps) * u.TAU;
+        var ct = Math.cos(th),
+          st = Math.sin(th);
+        var x = a * sgn(ct) * Math.pow(Math.abs(ct), e);
+        var y = b * sgn(st) * Math.pow(Math.abs(st), e);
+        if (s === 0) ctx.moveTo(cx + x, cy + y);
+        else ctx.lineTo(cx + x, cy + y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      // faint nested inner cushion fades in on hover
+      if (hover > 0.01) {
+        var isc = u.lerp(0.8, 0.5, hover);
+        var ia = a * isc,
+          ib = b * isc;
+        ctx.strokeStyle = u.ink(alpha * 0.34 * hover);
         ctx.beginPath();
-        for(var s=0;s<=steps;s++){
-          var th=(s/steps)*u.TAU;
-          var ct=Math.cos(th), st=Math.sin(th);
-          var x=a*sgn(ct)*Math.pow(Math.abs(ct),e);
-          var y=b*sgn(st)*Math.pow(Math.abs(st),e);
-          if(s===0)ctx.moveTo(cx+x,cy+y); else ctx.lineTo(cx+x,cy+y);
+        for (var s2 = 0; s2 <= steps; s2++) {
+          var th2 = (s2 / steps) * u.TAU;
+          var c2 = Math.cos(th2),
+            t2 = Math.sin(th2);
+          var x2 = ia * sgn(c2) * Math.pow(Math.abs(c2), e);
+          var y2 = ib * sgn(t2) * Math.pow(Math.abs(t2), e);
+          if (s2 === 0) ctx.moveTo(cx + x2, cy + y2);
+          else ctx.lineTo(cx + x2, cy + y2);
         }
-        ctx.closePath(); ctx.stroke();
-        // faint nested inner cushion fades in on hover
-        if(hover>0.01){
-          var isc=u.lerp(0.8,0.5,hover);
-          var ia=a*isc, ib=b*isc;
-          ctx.strokeStyle=u.ink(alpha*0.34*hover);
-          ctx.beginPath();
-          for(var s2=0;s2<=steps;s2++){
-            var th2=(s2/steps)*u.TAU;
-            var c2=Math.cos(th2), t2=Math.sin(th2);
-            var x2=ia*sgn(c2)*Math.pow(Math.abs(c2),e);
-            var y2=ib*sgn(t2)*Math.pow(Math.abs(t2),e);
-            if(s2===0)ctx.moveTo(cx+x2,cy+y2); else ctx.lineTo(cx+x2,cy+y2);
-          }
-          ctx.closePath(); ctx.stroke();
-        }
+        ctx.closePath();
+        ctx.stroke();
       }
     }
-  };
+  }
+};
 
 /* WAVE · SHIFT — Weave */
-const weave = function(ctx,W,H,u){
-    var hover=u.hover;
-    var SQ=Math.SQRT1_2;                 // 1/sqrt(2)
-    var dx=SQ, dy=SQ;                     // diagonal run: top-left -> bottom-right
-    var pxn=SQ, pyn=-SQ;                  // perpendicular (spacing axis)
-    var cx=W/2, cy=H/2;
-    ctx.lineWidth=Math.max(1,u.DPR*0.8);
-    ctx.lineJoin="round"; ctx.lineCap="round";
-    var span=(W+H)*SQ;                    // perpendicular extent to blanket
-    var spacing=span/13;                 // even gaps (unchanged by hover)
-    var half=Math.ceil(span/spacing/2)+2;
-    var L=(W+H)*0.85;                     // half length along the diagonal
-    var segs=88;
-    var lam=u.lerp(W*0.44,W*0.34,hover);  // waves shorten -> S-curves steepen
-    var freq=u.TAU/lam;
-    var amp=spacing*u.lerp(0.15,0.45,hover); // waves deepen, gaps stay put
-    var drift=u.t*hover*70*freq;          // crest slides diagonally while hovered
-    var alpha=u.lerp(0.30,0.46,hover);
-    ctx.strokeStyle=u.ink(alpha);
-    for(var k=-half;k<=half;k++){
-      var o=k*spacing;
-      var jit=(u.rnd()-0.5)*0.5;          // stable faint per-line phase jitter
-      var phase=k*0.55 + jit + drift;     // per-line offset -> undulates as a sheet
-      ctx.beginPath();
-      for(var s=0;s<=segs;s++){
-        var t=-L+(2*L)*(s/segs);
-        var disp=o+amp*Math.sin(freq*t+phase);
-        var X=cx+t*dx+disp*pxn;
-        var Y=cy+t*dy+disp*pyn;
-        if(s===0)ctx.moveTo(X,Y); else ctx.lineTo(X,Y);
-      }
-      ctx.stroke();
-    }
-  };
-
-/* LINE · BEND — Blinds */
-const chevron = function(ctx,W,H,u){
-    var lw=Math.max(1,u.DPR*0.8);
-    var N=14;                              // evenly spaced columns
-    var sp=W/N;                            // even column spacing (constant)
-    var amp=sp*0.44*u.hover;               // bend amplitude, grows with hover
-    var cyc=2.6;                           // zigzag cycles down the height
-    var k=u.TAU*cyc/H;                     // vertical angular frequency
-    var colStep=0.80;                      // static phase shear per column
-    var travel=u.t*1.7*u.hover;            // cascade left->right, frozen at rest
-    var steps=52;
-    var yTop=-H*0.08, yBot=H*1.08;         // bleed past top/bottom edges
-    function tri(p){return Math.asin(Math.sin(p))*(2/Math.PI);} // [-1,1] chevron
-    ctx.lineWidth=lw; ctx.lineJoin="round"; ctx.lineCap="round";
-    for(var i=-1;i<=N+1;i++){
-      var x0=(i+0.5)*sp;
-      var phase=i*colStep - travel;
-      // crest of this column's wave sits near the middle; subtle brightness lift on bend
-      var a=0.30+0.20*u.hover;
-      ctx.strokeStyle=u.ink(a);
-      ctx.beginPath();
-      for(var s=0;s<=steps;s++){
-        var y=yTop+(yBot-yTop)*s/steps;
-        var dx=amp*tri(y*k+phase);
-        if(s===0) ctx.moveTo(x0+dx,y); else ctx.lineTo(x0+dx,y);
-      }
-      ctx.stroke();
-    }
-  };
-
-/* BAND · CASCADE — Bands */
-const aurora = function(ctx,W,H,u){
-    var lw=Math.max(1,u.DPR*0.85);
-    var M=11;                              // evenly spaced horizontal bands
-    var sp=H/M;                            // even vertical spacing (constant)
-    var restAmp=sp*0.12;                   // gentle sine at rest
-    var maxAmp=sp*0.50;                    // swell reach on hover
-    var cyc=1.55;                          // horizontal sine cycles across width
-    var kx=u.TAU*cyc/W;
-    var steps=64;
-    var xL=-W*0.06, xR=W*1.06;             // bleed past left/right edges
-    ctx.lineWidth=lw; ctx.lineJoin="round"; ctx.lineCap="round";
-    for(var i=-1;i<=M+1;i++){
-      var y0=(i+0.5)*sp;
-      var yNorm=i/M;
-      // rolling swell envelope travels top->bottom as t advances (frozen at rest)
-      var roll=0.5+0.5*Math.sin(yNorm*u.TAU*1.5 - u.t*1.25*u.hover);
-      var amp=restAmp + u.hover*(maxAmp*(0.32+0.68*roll));
-      var drift=i*0.55 + u.t*0.9*u.hover;  // static per-band offset + hover phase drift
-      var a=0.22 + u.hover*(0.10+0.34*roll); // brighter where the band crests
-      ctx.strokeStyle=u.ink(a);
-      ctx.beginPath();
-      for(var s=0;s<=steps;s++){
-        var x=xL+(xR-xL)*s/steps;
-        var dy=amp*Math.sin(x*kx+drift);
-        if(s===0) ctx.moveTo(x,y0+dy); else ctx.lineTo(x,y0+dy);
-      }
-      ctx.stroke();
-    }
-  };
-
-/* GRID · REVEAL — Stagger */
-const stagger = function(ctx,W,H,u){
-    function cl(v){return v<0?0:v>1?1:v;}
-    function rr(x,y,w,h,r){r=Math.min(r,w*0.5,h*0.5);ctx.beginPath();
-      if(ctx.roundRect){ctx.roundRect(x,y,w,h,r);}else{
-        ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
-        ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}}
-    var cols=10, s=W/cols, rows=Math.ceil(H/s)+1;
-    var cx=W*0.5, cy=H*0.5, maxD=Math.sqrt(cx*cx+cy*cy);
-    var band=0.5, thr=u.hover*(1+band);
-    var speed=2.1, k=6.5, pad=s*0.10;
-    ctx.lineWidth=Math.max(1,u.DPR*0.8);
-    for(var row=-1;row<rows;row++){
-      for(var col=-1;col<=cols;col++){
-        var jit=u.rnd();                          // consumed every cell -> deterministic
-        var x=col*s, y=row*s;
-        var dx=(x+s*0.5-cx), dy=(y+s*0.5-cy);
-        var d=Math.sqrt(dx*dx+dy*dy)/maxD;        // 0..1 from centre
-        var reveal=u.ease(cl((thr-d)/band));      // staggered radial arrival
-        var ox=x+pad, oy=y+pad, os=s-pad*2;
-        if(os<=0.5) continue;
-        rr(ox,oy,os,os,Math.min(6*u.DPR,os*0.18));
-        ctx.strokeStyle=u.ink(0.10+0.12*reveal);  // outlines always faintly present
-        ctx.stroke();
-        if(reveal>0.002){
-          var shimmer=0.55+0.45*Math.sin(u.t*speed - d*k + jit*1.3); // breathes in & out
-          var a=reveal*shimmer*0.42;
-          var inset=u.lerp(os*0.34, os*0.05, reveal);  // fill blooms open as it arrives
-          var fs=os-inset*2;
-          if(fs>0.6 && a>0.004){
-            rr(ox+inset, oy+inset, fs, fs, Math.min(5*u.DPR,fs*0.22));
-            ctx.fillStyle=u.ink(a);
-            ctx.fill();
-          }
-        }
-      }
-    }
-  };
-
-/* CELL · SWEEP — Departures */
-const checker = function(ctx,W,H,u){
-    function cl(v){return v<0?0:v>1?1:v;}
-    function rr(x,y,w,h,r){r=Math.min(r,w*0.5,h*0.5);ctx.beginPath();
-      if(ctx.roundRect){ctx.roundRect(x,y,w,h,r);}else{
-        ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
-        ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}}
-    var cols=8, s=W/cols, rows=Math.ceil(H/s)+1;
-    var maxDiag=(cols-1)+(rows-1);
-    var band=0.5, thr=u.hover*(1+band);
-    var speed=0.8, bw=0.13, range=1.4, pad=s*0.055, rad=Math.min(5*u.DPR,s*0.16);
-    var f=((u.t*speed)%range)-0.2;                // travelling diagonal front, loops
-    for(var row=-1;row<rows;row++){
-      for(var col=-1;col<=cols;col++){
-        var parity=(((col+row)%2)+2)%2;
-        var diag=(col+row)/maxDiag;               // 0..1 corner->corner
-        var base=parity?0.11:0.035;               // faint resting checker
-        var reveal=u.ease(cl((thr-diag)/band));    // staggered diagonal arrival
-        var dist=diag-f, pulse=Math.exp(-(dist*dist)/(2*bw*bw)); // bright travelling band
-        var a=cl(base + reveal*0.20 + pulse*u.hover*0.30);
-        var x=col*s+pad, y=row*s+pad, w=s-pad*2;
-        if(w<=0.6||a<=0.003) continue;
-        rr(x,y,w,w,rad);
-        ctx.fillStyle=u.ink(a);
-        ctx.fill();
-      }
-    }
-  };
-
-/* DOT · WAVEFRONT — Wavefront */
-const wavefront = function(ctx,W,H,u){
-    var gap  = Math.max(14, Math.round(22 * u.DPR));   // dot pitch
-    var base = Math.max(1, 1.45 * u.DPR);              // resting dot radius
-    var speed = 0.42;                                  // wavefront loops / sec
-    var bandW = 0.16;                                  // crest half-width (phase units)
-    var hv = u.hover;
-    var front = (u.t * speed) % 1;                     // travelling crest, loops while hovered
-    for (var y = -gap; y <= H + gap; y += gap) {
-      for (var x = -gap; x <= W + gap; x += gap) {
-        var jitter = (u.rnd() - 0.5) * 0.03;           // soften the front into an organic ripple
-        var phase  = (x + y) / (W + H) + jitter;       // diagonal position, top-left -> bottom-right
-        var d = front - phase;
-        d = d - Math.round(d);                         // circular distance, [-0.5, 0.5]
-        var a = 0;
-        if (Math.abs(d) < bandW) a = 0.5 * (1 + Math.cos(Math.PI * d / bandW)); // smooth pulse
-        a *= hv;                                        // gated by hover -> still at rest
-        var r     = base * (1 + a * 2.4);              // crest dots swell
-        var alpha = 0.10 + a * 0.50;                   // crest dots brighten
-        ctx.fillStyle = u.ink(alpha);
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, u.TAU);
-        ctx.fill();
-      }
-    }
-  };
-
-/* RING · DRAW-ON — Written */
-const written = function(ctx,W,H,u){
-    var gap = Math.max(20, Math.round(32 * u.DPR));    // ring pitch
-    var r0  = Math.max(3, 6.5 * u.DPR);                // ring radius
-    var band = 0.34;                                   // fraction of hover each ring takes to draw
-    var hv = u.hover;
-    var start = -Math.PI / 2;                          // begin the stroke at 12 o'clock
-    ctx.lineWidth = Math.max(1, 1.15 * u.DPR);
-    ctx.lineCap = "round";
-    for (var y = -gap; y <= H + gap; y += gap) {
-      for (var x = -gap; x <= W + gap; x += gap) {
-        var ph = u.rnd() * u.TAU;                      // per-ring breathe phase
-        var delay = (x / W + y / H) * 0.5;             // diagonal cascade from top-left, 0..1
-        var p = u.ease(Math.max(0, Math.min(1, (hv * (1 + band) - delay) / band)));
-        // faint ghost ring, always present -> intentional resting matrix
-        ctx.strokeStyle = u.ink(0.06);
-        ctx.beginPath();
-        ctx.arc(x, y, r0, 0, u.TAU);
-        ctx.stroke();
-        if (p > 0.001) {                               // the ink being written on
-          var breathe = 0.5 + 0.5 * Math.sin(u.t * 1.5 + ph);
-          var rr = r0 * (1 + 0.05 * breathe * p * hv); // completed rings breathe gently
-          var alpha = (0.16 + 0.30 * p) * (0.85 + 0.15 * breathe);
-          ctx.strokeStyle = u.ink(alpha);
-          ctx.beginPath();
-          ctx.arc(x, y, rr, start, start + p * u.TAU);
-          ctx.stroke();
-        }
-      }
-    }
-  };
-
-/* TRUSS · FLOW — Truss */
-const truss = function(ctx,W,H,u){
-    var DPR=u.DPR, hover=u.hover, t=u.t, TAU=u.TAU;
-    // --- grid geometry (bleeds one cell beyond every edge) ---
-    var cell = Math.max(30*DPR, W/12);
-    var ox = -cell, oy = -cell;
-    var cols = Math.ceil((W + 2*cell)/cell);
-    var rows = Math.ceil((H + 2*cell)/cell);
-    var amp = cell*0.30*hover;            // flow displacement, gated by hover
-    // --- displaced node field (smooth flow) ---
-    var nodes = new Array(rows+1);
-    for(var j=0;j<=rows;j++){
-      nodes[j]=new Array(cols+1);
-      for(var i=0;i<=cols;i++){
-        var bx = ox + i*cell, by = oy + j*cell;
-        var dx = amp*Math.sin(j*0.85 + i*0.30 + t*1.30);
-        var dy = amp*Math.cos(i*0.85 - j*0.30 + t*1.05);
-        nodes[j][i] = { x: bx+dx, y: by+dy };
-      }
-    }
-    // --- orthogonal lattice (uniform faint alpha, one batched path) ---
-    ctx.lineWidth = Math.max(1, DPR*0.75);
-    ctx.lineCap = "round";
-    ctx.strokeStyle = u.ink(0.12 + 0.05*hover);
+const weave = function (ctx, W, H, u) {
+  var hover = u.hover;
+  var SQ = Math.SQRT1_2; // 1/sqrt(2)
+  var dx = SQ,
+    dy = SQ; // diagonal run: top-left -> bottom-right
+  var pxn = SQ,
+    pyn = -SQ; // perpendicular (spacing axis)
+  var cx = W / 2,
+    cy = H / 2;
+  ctx.lineWidth = Math.max(1, u.DPR * 0.8);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  var span = (W + H) * SQ; // perpendicular extent to blanket
+  var spacing = span / 13; // even gaps (unchanged by hover)
+  var half = Math.ceil(span / spacing / 2) + 2;
+  var L = (W + H) * 0.85; // half length along the diagonal
+  var segs = 88;
+  var lam = u.lerp(W * 0.44, W * 0.34, hover); // waves shorten -> S-curves steepen
+  var freq = u.TAU / lam;
+  var amp = spacing * u.lerp(0.15, 0.45, hover); // waves deepen, gaps stay put
+  var drift = u.t * hover * 70 * freq; // crest slides diagonally while hovered
+  var alpha = u.lerp(0.3, 0.46, hover);
+  ctx.strokeStyle = u.ink(alpha);
+  for (var k = -half; k <= half; k++) {
+    var o = k * spacing;
+    var jit = (u.rnd() - 0.5) * 0.5; // stable faint per-line phase jitter
+    var phase = k * 0.55 + jit + drift; // per-line offset -> undulates as a sheet
     ctx.beginPath();
-    for(j=0;j<=rows;j++) for(i=0;i<cols;i++){
-      var h1=nodes[j][i], h2=nodes[j][i+1];
-      ctx.moveTo(h1.x,h1.y); ctx.lineTo(h2.x,h2.y);
-    }
-    for(i=0;i<=cols;i++) for(j=0;j<rows;j++){
-      var v1=nodes[j][i], v2=nodes[j+1][i];
-      ctx.moveTo(v1.x,v1.y); ctx.lineTo(v2.x,v2.y);
+    for (var s = 0; s <= segs; s++) {
+      var t = -L + 2 * L * (s / segs);
+      var disp = o + amp * Math.sin(freq * t + phase);
+      var X = cx + t * dx + disp * pxn;
+      var Y = cy + t * dy + disp * pyn;
+      if (s === 0) ctx.moveTo(X, Y);
+      else ctx.lineTo(X, Y);
     }
     ctx.stroke();
-    // --- diagonal braces carrying a travelling brightness wave ---
-    ctx.lineWidth = Math.max(1, DPR*0.7);
-    for(j=0;j<rows;j++) for(i=0;i<cols;i++){
-      var alt = ((i+j)&1)===0;
-      var dA = alt ? nodes[j][i]   : nodes[j][i+1];
-      var dB = alt ? nodes[j+1][i+1] : nodes[j+1][i];
-      var wave = 0.5 + 0.5*Math.sin((i+j)*0.55 - t*2.6);
-      var da = 0.06 + (0.02 + 0.24*wave)*hover;
-      ctx.strokeStyle = u.ink(da);
-      ctx.beginPath(); ctx.moveTo(dA.x,dA.y); ctx.lineTo(dB.x,dB.y); ctx.stroke();
-    }
-    // --- nodes: brighten & swell along the same wave ---
-    for(j=0;j<=rows;j++) for(i=0;i<=cols;i++){
-      var nd = nodes[j][i];
-      var w2 = 0.5 + 0.5*Math.sin((i+j)*0.55 - t*2.6);
-      var na = 0.16 + (0.10 + 0.44*w2)*hover;
-      var r  = DPR*(1.0 + 1.1*hover*w2);
-      ctx.fillStyle = u.ink(na);
-      ctx.beginPath(); ctx.arc(nd.x, nd.y, r, 0, TAU); ctx.fill();
-    }
-  };
+  }
+};
 
-/* PULSE · EXPAND — Sonar */
-const sonar = function(ctx,W,H,u){
-    var DPR=u.DPR, hover=u.hover, t=u.t, TAU=u.TAU;
-    var cx=W/2, cy=H/2;
-    var maxR = Math.hypot(W,H)/2 * 1.18;   // rings bleed past the corners
-    var N = 11;                            // ring slots
-    var gap = maxR/N;
-    var speed = 0.16;                      // rings/sec travelling outward
-    var ph = t*speed;                      // continuous outward phase
-    var frac = ph - Math.floor(ph);
-    var samples = 76;
-    ctx.lineWidth = Math.max(1, DPR*1.0);
-    ctx.lineJoin = "round";
-    for(var k=0;k<=N;k++){
-      var rr = gap*(k + frac);
-      if(rr < gap*0.12) continue;          // still buried in the centre
-      var nr = rr/maxR;
-      // fade in as it leaves the centre, fade out as it nears/exceeds the edge
-      var fadeIn  = Math.min(1, rr/(gap*1.15));
-      var fo = 1 - Math.min(1, Math.max(0,(nr-0.52)/0.48));
-      var fadeOut = fo*fo*(3-2*fo);
-      var a = (0.10 + 0.30*hover) * fadeIn * fadeOut;
-      if(a <= 0.003) continue;
-      // superellipse exponent morphs: squarer at centre, rounder outward
-      var expo = u.lerp(4.4, 2.5, Math.min(1,nr));
-      var p = 2/expo;
-      ctx.strokeStyle = u.ink(a);
-      ctx.beginPath();
-      for(var s=0;s<=samples;s++){
-        var th = s/samples*TAU;
-        var c=Math.cos(th), sn=Math.sin(th);
-        var x = cx + rr*Math.sign(c)*Math.pow(Math.abs(c),p);
-        var y = cy + rr*Math.sign(sn)*Math.pow(Math.abs(sn),p);
-        if(s===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+/* LINE · BEND — Blinds */
+const chevron = function (ctx, W, H, u) {
+  var lw = Math.max(1, u.DPR * 0.8);
+  var N = 14; // evenly spaced columns
+  var sp = W / N; // even column spacing (constant)
+  var amp = sp * 0.44 * u.hover; // bend amplitude, grows with hover
+  var cyc = 2.6; // zigzag cycles down the height
+  var k = (u.TAU * cyc) / H; // vertical angular frequency
+  var colStep = 0.8; // static phase shear per column
+  var travel = u.t * 1.7 * u.hover; // cascade left->right, frozen at rest
+  var steps = 52;
+  var yTop = -H * 0.08,
+    yBot = H * 1.08; // bleed past top/bottom edges
+  function tri(p) {
+    return Math.asin(Math.sin(p)) * (2 / Math.PI);
+  } // [-1,1] chevron
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (var i = -1; i <= N + 1; i++) {
+    var x0 = (i + 0.5) * sp;
+    var phase = i * colStep - travel;
+    // crest of this column's wave sits near the middle; subtle brightness lift on bend
+    var a = 0.3 + 0.2 * u.hover;
+    ctx.strokeStyle = u.ink(a);
+    ctx.beginPath();
+    for (var s = 0; s <= steps; s++) {
+      var y = yTop + ((yBot - yTop) * s) / steps;
+      var dx = amp * tri(y * k + phase);
+      if (s === 0) ctx.moveTo(x0 + dx, y);
+      else ctx.lineTo(x0 + dx, y);
+    }
+    ctx.stroke();
+  }
+};
+
+/* BAND · CASCADE — Bands */
+const aurora = function (ctx, W, H, u) {
+  var lw = Math.max(1, u.DPR * 0.85);
+  var M = 11; // evenly spaced horizontal bands
+  var sp = H / M; // even vertical spacing (constant)
+  var restAmp = sp * 0.12; // gentle sine at rest
+  var maxAmp = sp * 0.5; // swell reach on hover
+  var cyc = 1.55; // horizontal sine cycles across width
+  var kx = (u.TAU * cyc) / W;
+  var steps = 64;
+  var xL = -W * 0.06,
+    xR = W * 1.06; // bleed past left/right edges
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (var i = -1; i <= M + 1; i++) {
+    var y0 = (i + 0.5) * sp;
+    var yNorm = i / M;
+    // rolling swell envelope travels top->bottom as t advances (frozen at rest)
+    var roll = 0.5 + 0.5 * Math.sin(yNorm * u.TAU * 1.5 - u.t * 1.25 * u.hover);
+    var amp = restAmp + u.hover * (maxAmp * (0.32 + 0.68 * roll));
+    var drift = i * 0.55 + u.t * 0.9 * u.hover; // static per-band offset + hover phase drift
+    var a = 0.22 + u.hover * (0.1 + 0.34 * roll); // brighter where the band crests
+    ctx.strokeStyle = u.ink(a);
+    ctx.beginPath();
+    for (var s = 0; s <= steps; s++) {
+      var x = xL + ((xR - xL) * s) / steps;
+      var dy = amp * Math.sin(x * kx + drift);
+      if (s === 0) ctx.moveTo(x, y0 + dy);
+      else ctx.lineTo(x, y0 + dy);
+    }
+    ctx.stroke();
+  }
+};
+
+/* GRID · REVEAL — Stagger */
+const stagger = function (ctx, W, H, u) {
+  function cl(v) {
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w * 0.5, h * 0.5);
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+  }
+  var cols = 10,
+    s = W / cols,
+    rows = Math.ceil(H / s) + 1;
+  var cx = W * 0.5,
+    cy = H * 0.5,
+    maxD = Math.sqrt(cx * cx + cy * cy);
+  var band = 0.5,
+    thr = u.hover * (1 + band);
+  var speed = 2.1,
+    k = 6.5,
+    pad = s * 0.1;
+  ctx.lineWidth = Math.max(1, u.DPR * 0.8);
+  for (var row = -1; row < rows; row++) {
+    for (var col = -1; col <= cols; col++) {
+      var jit = u.rnd(); // consumed every cell -> deterministic
+      var x = col * s,
+        y = row * s;
+      var dx = x + s * 0.5 - cx,
+        dy = y + s * 0.5 - cy;
+      var d = Math.sqrt(dx * dx + dy * dy) / maxD; // 0..1 from centre
+      var reveal = u.ease(cl((thr - d) / band)); // staggered radial arrival
+      var ox = x + pad,
+        oy = y + pad,
+        os = s - pad * 2;
+      if (os <= 0.5) continue;
+      rr(ox, oy, os, os, Math.min(6 * u.DPR, os * 0.18));
+      ctx.strokeStyle = u.ink(0.1 + 0.12 * reveal); // outlines always faintly present
+      ctx.stroke();
+      if (reveal > 0.002) {
+        var shimmer = 0.55 + 0.45 * Math.sin(u.t * speed - d * k + jit * 1.3); // breathes in & out
+        var a = reveal * shimmer * 0.42;
+        var inset = u.lerp(os * 0.34, os * 0.05, reveal); // fill blooms open as it arrives
+        var fs = os - inset * 2;
+        if (fs > 0.6 && a > 0.004) {
+          rr(ox + inset, oy + inset, fs, fs, Math.min(5 * u.DPR, fs * 0.22));
+          ctx.fillStyle = u.ink(a);
+          ctx.fill();
+        }
       }
+    }
+  }
+};
+
+/* CELL · SWEEP — Departures */
+const checker = function (ctx, W, H, u) {
+  function cl(v) {
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w * 0.5, h * 0.5);
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+  }
+  var cols = 8,
+    s = W / cols,
+    rows = Math.ceil(H / s) + 1;
+  var maxDiag = cols - 1 + (rows - 1);
+  var band = 0.5,
+    thr = u.hover * (1 + band);
+  var speed = 0.8,
+    bw = 0.13,
+    range = 1.4,
+    pad = s * 0.055,
+    rad = Math.min(5 * u.DPR, s * 0.16);
+  var f = ((u.t * speed) % range) - 0.2; // travelling diagonal front, loops
+  for (var row = -1; row < rows; row++) {
+    for (var col = -1; col <= cols; col++) {
+      var parity = (((col + row) % 2) + 2) % 2;
+      var diag = (col + row) / maxDiag; // 0..1 corner->corner
+      var base = parity ? 0.11 : 0.035; // faint resting checker
+      var reveal = u.ease(cl((thr - diag) / band)); // staggered diagonal arrival
+      var dist = diag - f,
+        pulse = Math.exp(-(dist * dist) / (2 * bw * bw)); // bright travelling band
+      var a = cl(base + reveal * 0.2 + pulse * u.hover * 0.3);
+      var x = col * s + pad,
+        y = row * s + pad,
+        w = s - pad * 2;
+      if (w <= 0.6 || a <= 0.003) continue;
+      rr(x, y, w, w, rad);
+      ctx.fillStyle = u.ink(a);
+      ctx.fill();
+    }
+  }
+};
+
+/* DOT · WAVEFRONT — Wavefront */
+const wavefront = function (ctx, W, H, u) {
+  var gap = Math.max(14, Math.round(22 * u.DPR)); // dot pitch
+  var base = Math.max(1, 1.45 * u.DPR); // resting dot radius
+  var speed = 0.42; // wavefront loops / sec
+  var bandW = 0.16; // crest half-width (phase units)
+  var hv = u.hover;
+  var front = (u.t * speed) % 1; // travelling crest, loops while hovered
+  for (var y = -gap; y <= H + gap; y += gap) {
+    for (var x = -gap; x <= W + gap; x += gap) {
+      var jitter = (u.rnd() - 0.5) * 0.03; // soften the front into an organic ripple
+      var phase = (x + y) / (W + H) + jitter; // diagonal position, top-left -> bottom-right
+      var d = front - phase;
+      d = d - Math.round(d); // circular distance, [-0.5, 0.5]
+      var a = 0;
+      if (Math.abs(d) < bandW) a = 0.5 * (1 + Math.cos((Math.PI * d) / bandW)); // smooth pulse
+      a *= hv; // gated by hover -> still at rest
+      var r = base * (1 + a * 2.4); // crest dots swell
+      var alpha = 0.1 + a * 0.5; // crest dots brighten
+      ctx.fillStyle = u.ink(alpha);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, u.TAU);
+      ctx.fill();
+    }
+  }
+};
+
+/* RING · DRAW-ON — Written */
+const written = function (ctx, W, H, u) {
+  var gap = Math.max(20, Math.round(32 * u.DPR)); // ring pitch
+  var r0 = Math.max(3, 6.5 * u.DPR); // ring radius
+  var band = 0.34; // fraction of hover each ring takes to draw
+  var hv = u.hover;
+  var start = -Math.PI / 2; // begin the stroke at 12 o'clock
+  ctx.lineWidth = Math.max(1, 1.15 * u.DPR);
+  ctx.lineCap = 'round';
+  for (var y = -gap; y <= H + gap; y += gap) {
+    for (var x = -gap; x <= W + gap; x += gap) {
+      var ph = u.rnd() * u.TAU; // per-ring breathe phase
+      var delay = (x / W + y / H) * 0.5; // diagonal cascade from top-left, 0..1
+      var p = u.ease(Math.max(0, Math.min(1, (hv * (1 + band) - delay) / band)));
+      // faint ghost ring, always present -> intentional resting matrix
+      ctx.strokeStyle = u.ink(0.06);
+      ctx.beginPath();
+      ctx.arc(x, y, r0, 0, u.TAU);
+      ctx.stroke();
+      if (p > 0.001) {
+        // the ink being written on
+        var breathe = 0.5 + 0.5 * Math.sin(u.t * 1.5 + ph);
+        var rr = r0 * (1 + 0.05 * breathe * p * hv); // completed rings breathe gently
+        var alpha = (0.16 + 0.3 * p) * (0.85 + 0.15 * breathe);
+        ctx.strokeStyle = u.ink(alpha);
+        ctx.beginPath();
+        ctx.arc(x, y, rr, start, start + p * u.TAU);
+        ctx.stroke();
+      }
+    }
+  }
+};
+
+/* TRUSS · FLOW — Truss */
+const truss = function (ctx, W, H, u) {
+  var DPR = u.DPR,
+    hover = u.hover,
+    t = u.t,
+    TAU = u.TAU;
+  // --- grid geometry (bleeds one cell beyond every edge) ---
+  var cell = Math.max(30 * DPR, W / 12);
+  var ox = -cell,
+    oy = -cell;
+  var cols = Math.ceil((W + 2 * cell) / cell);
+  var rows = Math.ceil((H + 2 * cell) / cell);
+  var amp = cell * 0.3 * hover; // flow displacement, gated by hover
+  // --- displaced node field (smooth flow) ---
+  var nodes = new Array(rows + 1);
+  for (var j = 0; j <= rows; j++) {
+    nodes[j] = new Array(cols + 1);
+    for (var i = 0; i <= cols; i++) {
+      var bx = ox + i * cell,
+        by = oy + j * cell;
+      var dx = amp * Math.sin(j * 0.85 + i * 0.3 + t * 1.3);
+      var dy = amp * Math.cos(i * 0.85 - j * 0.3 + t * 1.05);
+      nodes[j][i] = { x: bx + dx, y: by + dy };
+    }
+  }
+  // --- orthogonal lattice (uniform faint alpha, one batched path) ---
+  ctx.lineWidth = Math.max(1, DPR * 0.75);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = u.ink(0.12 + 0.05 * hover);
+  ctx.beginPath();
+  for (j = 0; j <= rows; j++)
+    for (i = 0; i < cols; i++) {
+      var h1 = nodes[j][i],
+        h2 = nodes[j][i + 1];
+      ctx.moveTo(h1.x, h1.y);
+      ctx.lineTo(h2.x, h2.y);
+    }
+  for (i = 0; i <= cols; i++)
+    for (j = 0; j < rows; j++) {
+      var v1 = nodes[j][i],
+        v2 = nodes[j + 1][i];
+      ctx.moveTo(v1.x, v1.y);
+      ctx.lineTo(v2.x, v2.y);
+    }
+  ctx.stroke();
+  // --- diagonal braces carrying a travelling brightness wave ---
+  ctx.lineWidth = Math.max(1, DPR * 0.7);
+  for (j = 0; j < rows; j++)
+    for (i = 0; i < cols; i++) {
+      var alt = ((i + j) & 1) === 0;
+      var dA = alt ? nodes[j][i] : nodes[j][i + 1];
+      var dB = alt ? nodes[j + 1][i + 1] : nodes[j + 1][i];
+      var wave = 0.5 + 0.5 * Math.sin((i + j) * 0.55 - t * 2.6);
+      var da = 0.06 + (0.02 + 0.24 * wave) * hover;
+      ctx.strokeStyle = u.ink(da);
+      ctx.beginPath();
+      ctx.moveTo(dA.x, dA.y);
+      ctx.lineTo(dB.x, dB.y);
       ctx.stroke();
     }
-  };
+  // --- nodes: brighten & swell along the same wave ---
+  for (j = 0; j <= rows; j++)
+    for (i = 0; i <= cols; i++) {
+      var nd = nodes[j][i];
+      var w2 = 0.5 + 0.5 * Math.sin((i + j) * 0.55 - t * 2.6);
+      var na = 0.16 + (0.1 + 0.44 * w2) * hover;
+      var r = DPR * (1.0 + 1.1 * hover * w2);
+      ctx.fillStyle = u.ink(na);
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r, 0, TAU);
+      ctx.fill();
+    }
+};
+
+/* PULSE · EXPAND — Sonar */
+const sonar = function (ctx, W, H, u) {
+  var DPR = u.DPR,
+    hover = u.hover,
+    t = u.t,
+    TAU = u.TAU;
+  var cx = W / 2,
+    cy = H / 2;
+  var maxR = (Math.hypot(W, H) / 2) * 1.18; // rings bleed past the corners
+  var N = 11; // ring slots
+  var gap = maxR / N;
+  var speed = 0.16; // rings/sec travelling outward
+  var ph = t * speed; // continuous outward phase
+  var frac = ph - Math.floor(ph);
+  var samples = 76;
+  ctx.lineWidth = Math.max(1, DPR * 1.0);
+  ctx.lineJoin = 'round';
+  for (var k = 0; k <= N; k++) {
+    var rr = gap * (k + frac);
+    if (rr < gap * 0.12) continue; // still buried in the centre
+    var nr = rr / maxR;
+    // fade in as it leaves the centre, fade out as it nears/exceeds the edge
+    var fadeIn = Math.min(1, rr / (gap * 1.15));
+    var fo = 1 - Math.min(1, Math.max(0, (nr - 0.52) / 0.48));
+    var fadeOut = fo * fo * (3 - 2 * fo);
+    var a = (0.1 + 0.3 * hover) * fadeIn * fadeOut;
+    if (a <= 0.003) continue;
+    // superellipse exponent morphs: squarer at centre, rounder outward
+    var expo = u.lerp(4.4, 2.5, Math.min(1, nr));
+    var p = 2 / expo;
+    ctx.strokeStyle = u.ink(a);
+    ctx.beginPath();
+    for (var s = 0; s <= samples; s++) {
+      var th = (s / samples) * TAU;
+      var c = Math.cos(th),
+        sn = Math.sin(th);
+      var x = cx + rr * Math.sign(c) * Math.pow(Math.abs(c), p);
+      var y = cy + rr * Math.sign(sn) * Math.pow(Math.abs(sn), p);
+      if (s === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+};
 
 /* HEX · MORPH — Snowflake */
-const hexpinch = function(ctx,W,H,u){
-    var hover=u.hover;
-    ctx.lineJoin="round"; ctx.lineCap="round";
-    ctx.lineWidth=Math.max(1,u.DPR*0.9);
-    var cols=5;
-    var R=W/(cols*Math.sqrt(3));         // hex circumradius (pointy-top)
-    var dx=Math.sqrt(3)*R;               // column pitch = W/cols
-    var dy=1.5*R;                        // row pitch (offset honeycomb)
-    var apo=R*Math.cos(Math.PI/6);       // apothem (edge-midpoint radius)
-    var grow=u.lerp(1.0,1.08,hover);
-    var depth=u.lerp(1.06,0.40,hover);   // edge-mid radius / apothem : plump convex -> concave star
-    var alpha=u.lerp(0.24,0.42,hover);
-    var innerA=u.ease(hover)*0.26;       // nested inner hex fades in on hover
-    // build one hex/star as 6 quadratic edges; control pulled along each edge-mid ray
-    function hexPath(cx,cy,Rr,ap,dp){
-      var vx=new Array(6),vy=new Array(6);
-      for(var k=0;k<6;k++){var a=-Math.PI/2+k*(Math.PI/3);vx[k]=cx+Rr*Math.cos(a);vy[k]=cy+Rr*Math.sin(a);}
-      var cmag=2*ap*dp-ap;               // so curve mid-radius == ap*dp (dp=1 => straight edge)
-      ctx.beginPath(); ctx.moveTo(vx[0],vy[0]);
-      for(var k2=0;k2<6;k2++){
-        var ma=-Math.PI/3+k2*(Math.PI/3);
-        var qx=cx+cmag*Math.cos(ma), qy=cy+cmag*Math.sin(ma);
-        var n=(k2+1)%6;
-        ctx.quadraticCurveTo(qx,qy,vx[n],vy[n]);
-      }
-      ctx.closePath();
+const hexpinch = function (ctx, W, H, u) {
+  var hover = u.hover;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1, u.DPR * 0.9);
+  var cols = 5;
+  var R = W / (cols * Math.sqrt(3)); // hex circumradius (pointy-top)
+  var dx = Math.sqrt(3) * R; // column pitch = W/cols
+  var dy = 1.5 * R; // row pitch (offset honeycomb)
+  var apo = R * Math.cos(Math.PI / 6); // apothem (edge-midpoint radius)
+  var grow = u.lerp(1.0, 1.08, hover);
+  var depth = u.lerp(1.06, 0.4, hover); // edge-mid radius / apothem : plump convex -> concave star
+  var alpha = u.lerp(0.24, 0.42, hover);
+  var innerA = u.ease(hover) * 0.26; // nested inner hex fades in on hover
+  // build one hex/star as 6 quadratic edges; control pulled along each edge-mid ray
+  function hexPath(cx, cy, Rr, ap, dp) {
+    var vx = new Array(6),
+      vy = new Array(6);
+    for (var k = 0; k < 6; k++) {
+      var a = -Math.PI / 2 + k * (Math.PI / 3);
+      vx[k] = cx + Rr * Math.cos(a);
+      vy[k] = cy + Rr * Math.sin(a);
     }
-    var rows=Math.ceil(H/dy)+2;
-    for(var row=-1;row<=rows;row++){
-      for(var col=-1;col<=cols+1;col++){
-        var cx=col*dx+((row&1)?dx/2:0);
-        var cy=row*dy;
-        var ph=u.rnd()*u.TAU;
-        var breathe=1+Math.sin(u.t*1.25+ph)*0.03*hover;
-        var Rr=R*grow*breathe, ap=apo*grow*breathe;
-        hexPath(cx,cy,Rr,ap,depth);
-        ctx.strokeStyle=u.ink(alpha); ctx.stroke();
-        if(innerA>0.004){
-          hexPath(cx,cy,Rr*0.52,ap*0.52,depth);
-          ctx.strokeStyle=u.ink(innerA); ctx.stroke();
-        }
+    var cmag = 2 * ap * dp - ap; // so curve mid-radius == ap*dp (dp=1 => straight edge)
+    ctx.beginPath();
+    ctx.moveTo(vx[0], vy[0]);
+    for (var k2 = 0; k2 < 6; k2++) {
+      var ma = -Math.PI / 3 + k2 * (Math.PI / 3);
+      var qx = cx + cmag * Math.cos(ma),
+        qy = cy + cmag * Math.sin(ma);
+      var n = (k2 + 1) % 6;
+      ctx.quadraticCurveTo(qx, qy, vx[n], vy[n]);
+    }
+    ctx.closePath();
+  }
+  var rows = Math.ceil(H / dy) + 2;
+  for (var row = -1; row <= rows; row++) {
+    for (var col = -1; col <= cols + 1; col++) {
+      var cx = col * dx + (row & 1 ? dx / 2 : 0);
+      var cy = row * dy;
+      var ph = u.rnd() * u.TAU;
+      var breathe = 1 + Math.sin(u.t * 1.25 + ph) * 0.03 * hover;
+      var Rr = R * grow * breathe,
+        ap = apo * grow * breathe;
+      hexPath(cx, cy, Rr, ap, depth);
+      ctx.strokeStyle = u.ink(alpha);
+      ctx.stroke();
+      if (innerA > 0.004) {
+        hexPath(cx, cy, Rr * 0.52, ap * 0.52, depth);
+        ctx.strokeStyle = u.ink(innerA);
+        ctx.stroke();
       }
     }
-  };
+  }
+};
 
 /* RHOMBUS · MORPH — Diamond */
-const diamond = function(ctx,W,H,u){
-    var hover=u.hover;
-    ctx.lineJoin="round"; ctx.lineCap="round";
-    ctx.lineWidth=Math.max(1,u.DPR*0.9);
-    var cols=6;
-    var rx=W/(2*cols), ry=rx;            // rotated squares, tips touching
-    var sx=2*rx, sy=2*ry;
-    var p=u.lerp(1.0,2.6,hover);         // superellipse exponent : diamond(1) -> cushion(2.6)
-    var e=2/p;
-    var grow=u.lerp(1.0,1.14,hover);     // swell to interlock
-    var alpha=u.lerp(0.26,0.44,hover);
-    var innerA=u.ease(hover)*0.24;
-    var steps=120;
-    function sgn(v){return v<0?-1:v>0?1:0;}
-    function blob(cx,cy,a,b){
-      ctx.beginPath();
-      for(var s=0;s<=steps;s++){
-        var th=(s/steps)*u.TAU, ct=Math.cos(th), st=Math.sin(th);
-        var x=a*sgn(ct)*Math.pow(Math.abs(ct),e);
-        var y=b*sgn(st)*Math.pow(Math.abs(st),e);
-        if(s===0)ctx.moveTo(cx+x,cy+y);else ctx.lineTo(cx+x,cy+y);
-      }
-      ctx.closePath();
+const diamond = function (ctx, W, H, u) {
+  var hover = u.hover;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1, u.DPR * 0.9);
+  var cols = 6;
+  var rx = W / (2 * cols),
+    ry = rx; // rotated squares, tips touching
+  var sx = 2 * rx,
+    sy = 2 * ry;
+  var p = u.lerp(1.0, 2.6, hover); // superellipse exponent : diamond(1) -> cushion(2.6)
+  var e = 2 / p;
+  var grow = u.lerp(1.0, 1.14, hover); // swell to interlock
+  var alpha = u.lerp(0.26, 0.44, hover);
+  var innerA = u.ease(hover) * 0.24;
+  var steps = 120;
+  function sgn(v) {
+    return v < 0 ? -1 : v > 0 ? 1 : 0;
+  }
+  function blob(cx, cy, a, b) {
+    ctx.beginPath();
+    for (var s = 0; s <= steps; s++) {
+      var th = (s / steps) * u.TAU,
+        ct = Math.cos(th),
+        st = Math.sin(th);
+      var x = a * sgn(ct) * Math.pow(Math.abs(ct), e);
+      var y = b * sgn(st) * Math.pow(Math.abs(st), e);
+      if (s === 0) ctx.moveTo(cx + x, cy + y);
+      else ctx.lineTo(cx + x, cy + y);
     }
-    var rows=Math.ceil(H/sy)+2;
-    for(var row=-1;row<=rows;row++){
-      for(var col=-1;col<=cols+1;col++){
-        var cx=col*sx, cy=row*sy;
-        var ph=u.rnd()*u.TAU;
-        var breathe=1+Math.sin(u.t*1.3+ph)*0.03*hover;
-        var a=rx*grow*breathe, b=ry*grow*breathe;
-        blob(cx,cy,a,b);
-        ctx.strokeStyle=u.ink(alpha); ctx.stroke();
-        if(innerA>0.004){
-          blob(cx,cy,a*0.55,b*0.55);
-          ctx.strokeStyle=u.ink(innerA); ctx.stroke();
-        }
+    ctx.closePath();
+  }
+  var rows = Math.ceil(H / sy) + 2;
+  for (var row = -1; row <= rows; row++) {
+    for (var col = -1; col <= cols + 1; col++) {
+      var cx = col * sx,
+        cy = row * sy;
+      var ph = u.rnd() * u.TAU;
+      var breathe = 1 + Math.sin(u.t * 1.3 + ph) * 0.03 * hover;
+      var a = rx * grow * breathe,
+        b = ry * grow * breathe;
+      blob(cx, cy, a, b);
+      ctx.strokeStyle = u.ink(alpha);
+      ctx.stroke();
+      if (innerA > 0.004) {
+        blob(cx, cy, a * 0.55, b * 0.55);
+        ctx.strokeStyle = u.ink(innerA);
+        ctx.stroke();
       }
     }
-  };
+  }
+};
 
 /* TRI · TURN — Star */
-const triangle = function(ctx,W,H,u){
-    var hover=u.hover; var cols=6,rows=4; var cellW=W/cols,cellH=H/rows;
-    ctx.lineWidth=Math.max(1,u.DPR*0.9); ctx.lineJoin="round"; ctx.lineCap="round";
-    var TAU=u.TAU; var base=Math.min(cellW,cellH)*0.5;
-    var rot=u.lerp(0,TAU/6,hover);            // main triangle turns 60deg (up -> down)
-    var round=u.lerp(0,base*0.16,hover);      // corners round slightly as they turn
-    var alpha=u.lerp(0.26,0.42,hover);
-    var nestAlpha=u.lerp(0.0,0.34,hover);     // nested inverted triangle fades in
-    var up=[-Math.PI/2, -Math.PI/2+TAU/3, -Math.PI/2+2*TAU/3];
-    function mid(a,b){return {x:(a.x+b.x)/2,y:(a.y+b.y)/2};}
-    function tri(cx,cy,R,ang,rr){ var p=[];
-      for(var k=0;k<3;k++){ var a=up[k]+ang; p.push({x:cx+R*Math.cos(a), y:cy+R*Math.sin(a)}); }
-      var s=mid(p[2],p[0]); ctx.beginPath(); ctx.moveTo(s.x,s.y);
-      for(var k2=0;k2<3;k2++){ var cur=p[k2], nx=p[(k2+1)%3], m=mid(cur,nx);
-        ctx.arcTo(cur.x,cur.y,m.x,m.y,rr); }
-      ctx.closePath(); }
-    for(var j=-1;j<=rows;j++)for(var i=-1;i<=cols;i++){
-      var cx=(i+0.5)*cellW, cy=(j+0.5)*cellH; var ph=u.rnd()*TAU;
-      var breathe=1+Math.sin(u.t*1.2+ph)*0.025*hover; var R=base*breathe;
-      ctx.strokeStyle=u.ink(alpha); tri(cx,cy,R,rot,round); ctx.stroke();
-      if(nestAlpha>0.005){ ctx.strokeStyle=u.ink(nestAlpha); tri(cx,cy,R,0,round); ctx.stroke(); }
+const triangle = function (ctx, W, H, u) {
+  var hover = u.hover;
+  var cols = 6,
+    rows = 4;
+  var cellW = W / cols,
+    cellH = H / rows;
+  ctx.lineWidth = Math.max(1, u.DPR * 0.9);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  var TAU = u.TAU;
+  var base = Math.min(cellW, cellH) * 0.5;
+  var rot = u.lerp(0, TAU / 6, hover); // main triangle turns 60deg (up -> down)
+  var round = u.lerp(0, base * 0.16, hover); // corners round slightly as they turn
+  var alpha = u.lerp(0.26, 0.42, hover);
+  var nestAlpha = u.lerp(0.0, 0.34, hover); // nested inverted triangle fades in
+  var up = [-Math.PI / 2, -Math.PI / 2 + TAU / 3, -Math.PI / 2 + (2 * TAU) / 3];
+  function mid(a, b) {
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+  function tri(cx, cy, R, ang, rr) {
+    var p = [];
+    for (var k = 0; k < 3; k++) {
+      var a = up[k] + ang;
+      p.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
     }
-  };
+    var s = mid(p[2], p[0]);
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    for (var k2 = 0; k2 < 3; k2++) {
+      var cur = p[k2],
+        nx = p[(k2 + 1) % 3],
+        m = mid(cur, nx);
+      ctx.arcTo(cur.x, cur.y, m.x, m.y, rr);
+    }
+    ctx.closePath();
+  }
+  for (var j = -1; j <= rows; j++)
+    for (var i = -1; i <= cols; i++) {
+      var cx = (i + 0.5) * cellW,
+        cy = (j + 0.5) * cellH;
+      var ph = u.rnd() * TAU;
+      var breathe = 1 + Math.sin(u.t * 1.2 + ph) * 0.025 * hover;
+      var R = base * breathe;
+      ctx.strokeStyle = u.ink(alpha);
+      tri(cx, cy, R, rot, round);
+      ctx.stroke();
+      if (nestAlpha > 0.005) {
+        ctx.strokeStyle = u.ink(nestAlpha);
+        tri(cx, cy, R, 0, round);
+        ctx.stroke();
+      }
+    }
+};
 
 /* ── The library ──────────────────────────────────────────────────────── */
 
 export const ANIMATIONS = [
   {
-    key: "crosses", name: "Cross", tag: "SQUARE → CROSS",
-    note: "Soft squares bloom into rounded crosses, arms reaching past the cell edge to interlock with their neighbours: the building block growing connectors.",
-    draw: crosses,
+    key: 'crosses',
+    name: 'Cross',
+    tag: 'SQUARE → CROSS',
+    note: 'Soft squares bloom into rounded crosses, arms reaching past the cell edge to interlock with their neighbours: the building block growing connectors.',
+    draw: crosses
   },
   {
-    key: "blooms", name: "Bloom", tag: "CIRCLE → QUATREFOIL",
-    note: "Circles bloom into turning quatrefoils, a nested one fading in.",
-    draw: blooms,
+    key: 'blooms',
+    name: 'Bloom',
+    tag: 'CIRCLE → QUATREFOIL',
+    note: 'Circles bloom into turning quatrefoils, a nested one fading in.',
+    draw: blooms
   },
   {
-    key: "gears", name: "Gear", tag: "HEXAGON → GEAR",
-    note: "Each hexagon grows teeth and turns as a gear, neighbours counter-rotating checkerwise, so adjacent gears mesh as one train.",
-    draw: gears,
+    key: 'gears',
+    name: 'Gear',
+    tag: 'HEXAGON → GEAR',
+    note: 'Each hexagon grows teeth and turns as a gear, neighbours counter-rotating checkerwise, so adjacent gears mesh as one train.',
+    draw: gears
   },
   {
-    key: "slides", name: "Fan", tag: "FRAME → DECK",
-    note: "A single landscape frame fans into a deck of three, the whole stack growing past the cell edge: versions of one artifact, the deck being dealt.",
-    draw: slides,
+    key: 'slides',
+    name: 'Fan',
+    tag: 'FRAME → DECK',
+    note: 'A single landscape frame fans into a deck of three, the whole stack growing past the cell edge: versions of one artifact, the deck being dealt.',
+    draw: slides
   },
   {
-    key: "panes", name: "Split", tag: "BLOCK → PANES",
-    note: "A block of three touching panes splits apart, each pane growing tall past the cell edge and bobbing against its neighbours: sessions side by side, each with a life of its own.",
-    draw: panes,
+    key: 'panes',
+    name: 'Split',
+    tag: 'BLOCK → PANES',
+    note: 'A block of three touching panes splits apart, each pane growing tall past the cell edge and bobbing against its neighbours: sessions side by side, each with a life of its own.',
+    draw: panes
   },
   {
-    key: "rings", name: "Mesh", tag: "RING → MESH",
-    note: "One circle grows past the half-cell line until neighbouring rings overlap, nested rings and a centre dot fading in: one identity, radiating access.",
-    draw: rings,
+    key: 'rings',
+    name: 'Mesh',
+    tag: 'RING → MESH',
+    note: 'One circle grows past the half-cell line until neighbouring rings overlap, nested rings and a centre dot fading in: one identity, radiating access.',
+    draw: rings
   },
   {
-    key: "portico", name: "Cushion", tag: "GRID · MORPH",
-    note: "Cushion grid: a field of squircles whose superellipse exponent collapses on hover, squircle to pinched cushion, a nested one fading in.",
-    draw: portico,
+    key: 'portico',
+    name: 'Cushion',
+    tag: 'GRID · MORPH',
+    note: 'Cushion grid: a field of squircles whose superellipse exponent collapses on hover, squircle to pinched cushion, a nested one fading in.',
+    draw: portico
   },
   {
-    key: "weave", name: "Weave", tag: "WAVE · SHIFT",
-    note: "Diagonal weave: a sheet of diagonal lines whose waves deepen and slide as one fabric, the gaps never moving.",
-    draw: weave,
+    key: 'weave',
+    name: 'Weave',
+    tag: 'WAVE · SHIFT',
+    note: 'Diagonal weave: a sheet of diagonal lines whose waves deepen and slide as one fabric, the gaps never moving.',
+    draw: weave
   },
   {
-    key: "chevron", name: "Blinds", tag: "LINE · BEND",
-    note: "Sheared blinds: straight columns bend into travelling chevrons, the cascade running left to right.",
-    draw: chevron,
+    key: 'chevron',
+    name: 'Blinds',
+    tag: 'LINE · BEND',
+    note: 'Sheared blinds: straight columns bend into travelling chevrons, the cascade running left to right.',
+    draw: chevron
   },
   {
-    key: "aurora", name: "Bands", tag: "BAND · CASCADE",
-    note: "Rolling bands: horizontal bands that swell and roll downward in a slow cascade.",
-    draw: aurora,
+    key: 'aurora',
+    name: 'Bands',
+    tag: 'BAND · CASCADE',
+    note: 'Rolling bands: horizontal bands that swell and roll downward in a slow cascade.',
+    draw: aurora
   },
   {
-    key: "stagger", name: "Stagger", tag: "GRID · REVEAL",
-    note: "Cells that bloom outward: a grid revealing itself from the centre, each cell a beat behind its neighbour.",
-    draw: stagger,
+    key: 'stagger',
+    name: 'Stagger',
+    tag: 'GRID · REVEAL',
+    note: 'Cells that bloom outward: a grid revealing itself from the centre, each cell a beat behind its neighbour.',
+    draw: stagger
   },
   {
-    key: "checker", name: "Departures", tag: "CELL · SWEEP",
-    note: "A diagonal departures flip: cells flip over in a sweep, the board updating itself.",
-    draw: checker,
+    key: 'checker',
+    name: 'Departures',
+    tag: 'CELL · SWEEP',
+    note: 'A diagonal departures flip: cells flip over in a sweep, the board updating itself.',
+    draw: checker
   },
   {
-    key: "wavefront", name: "Wavefront", tag: "DOT · WAVEFRONT",
-    note: "Bloom in sequence: a matrix of resting dots, each swelling as the diagonal wavefront passes through it.",
-    draw: wavefront,
+    key: 'wavefront',
+    name: 'Wavefront',
+    tag: 'DOT · WAVEFRONT',
+    note: 'Bloom in sequence: a matrix of resting dots, each swelling as the diagonal wavefront passes through it.',
+    draw: wavefront
   },
   {
-    key: "written", name: "Written", tag: "RING · DRAW-ON",
+    key: 'written',
+    name: 'Written',
+    tag: 'RING · DRAW-ON',
     note: "Written in circles: a matrix of small rings, each drawing itself on from twelve o'clock in a diagonal cascade.",
-    draw: written,
+    draw: written
   },
   {
-    key: "truss", name: "Truss", tag: "TRUSS · FLOW",
-    note: "Living lattice: a triangulated truss whose joints drift and whose members re-tension, the structure staying a structure.",
-    draw: truss,
+    key: 'truss',
+    name: 'Truss',
+    tag: 'TRUSS · FLOW',
+    note: 'Living lattice: a triangulated truss whose joints drift and whose members re-tension, the structure staying a structure.',
+    draw: truss
   },
   {
-    key: "sonar", name: "Sonar", tag: "PULSE · EXPAND",
-    note: "Sonar topography: closed contours pulsing outward from their poles, the map sounding its own depths.",
-    draw: sonar,
+    key: 'sonar',
+    name: 'Sonar',
+    tag: 'PULSE · EXPAND',
+    note: 'Sonar topography: closed contours pulsing outward from their poles, the map sounding its own depths.',
+    draw: sonar
   },
   {
-    key: "hexpinch", name: "Snowflake", tag: "HEX · MORPH",
-    note: "Snowflake honeycomb: hexagons pinch into six-pointed flakes and back, the comb crystallising.",
-    draw: hexpinch,
+    key: 'hexpinch',
+    name: 'Snowflake',
+    tag: 'HEX · MORPH',
+    note: 'Snowflake honeycomb: hexagons pinch into six-pointed flakes and back, the comb crystallising.',
+    draw: hexpinch
   },
   {
-    key: "diamond", name: "Diamond", tag: "RHOMBUS · MORPH",
-    note: "Diamond bloom: rhombi open into four-point stars, facets catching as they turn.",
-    draw: diamond,
+    key: 'diamond',
+    name: 'Diamond',
+    tag: 'RHOMBUS · MORPH',
+    note: 'Diamond bloom: rhombi open into four-point stars, facets catching as they turn.',
+    draw: diamond
   },
   {
-    key: "triangle", name: "Star", tag: "TRI · TURN",
-    note: "Verdigris star: triangles turn against their neighbours and interlace into six-point stars.",
-    draw: triangle,
-  },
+    key: 'triangle',
+    name: 'Star',
+    tag: 'TRI · TURN',
+    note: 'Verdigris star: triangles turn against their neighbours and interlace into six-point stars.',
+    draw: triangle
+  }
 ];
 
 export function animationByKey(key) {

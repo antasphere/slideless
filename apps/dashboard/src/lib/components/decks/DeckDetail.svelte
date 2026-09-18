@@ -1,4 +1,7 @@
 <script lang="ts">
+  import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
+  import { DECK_PALETTES, DECK_PATTERNS } from '$lib/brand/recipe.js';
+  import { seedOf } from '$lib/brand/seed';
   import { onDestroy } from 'svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
@@ -118,6 +121,8 @@
     if (userId === me.user.id) return me.user.email;
     return memberLabels[userId] ?? `${userId.slice(0, 8)}…`;
   }
+
+  let bannerPlayed = $state(false);
 </script>
 
 {#if loading}
@@ -139,25 +144,43 @@
 {:else}
   <div class="space-y-6">
     <div>
-      <div class="mb-2 flex items-center justify-between gap-4">
-        <a
-          href="/decks"
-          class="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:underline"
+      <!-- The deck's banner (PRDCT-2439): the same plate its card carries on
+           the decks page, so a deck keeps one face from the list to its page. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="banner plate-window"
+        onpointerenter={() => (bannerPlayed = true)}
+        onpointerleave={() => (bannerPlayed = false)}
+      >
+        <div class="absolute inset-0">
+          <PatternCanvas
+            pattern={DECK_PATTERNS[deck.kind] ?? 'slides'}
+            palette={DECK_PALETTES[seedOf(deck.id) % DECK_PALETTES.length]}
+            seed={seedOf(deck.id)}
+            active={bannerPlayed}
+          />
+        </div>
+        <div class="relative flex items-center justify-between gap-4">
+          <a href="/decks" class="chip">
+            <ArrowLeft class="h-3.5 w-3.5" />
+            {t('deck.backToDecks')}
+          </a>
+          <!-- The deck's own page (PRDCT-2279): the presentation full-page with
+               the artifact bar, at the path the CLI opens after a push. -->
+          <a href={deckMasterPath(deck.id)} class="chip">
+            <Presentation class="h-4 w-4" />
+            {t('deck.openMaster')}
+          </a>
+        </div>
+        <!-- SECURITY: the deck title is USER-AUTHORED — Svelte {…} interpolation
+             renders it as escaped text. NEVER switch this to {@html}. -->
+        <h2
+          class="on-field relative mt-auto font-display text-[28px] font-light leading-[1.1] tracking-[-0.015em] md:text-[38px]"
         >
-          <ArrowLeft class="h-3.5 w-3.5" />
-          {t('deck.backToDecks')}
-        </a>
-        <!-- The deck's own page (PRDCT-2279): the presentation full-page with
-             the artifact bar, at the path the CLI opens after a push. -->
-        <Button variant="outline" size="sm" href={deckMasterPath(deck.id)}>
-          <Presentation class="mr-2 h-4 w-4" />
-          {t('deck.openMaster')}
-        </Button>
+          {deck.title}
+        </h2>
       </div>
-      <!-- SECURITY: the deck title is USER-AUTHORED — Svelte {…} interpolation
-           renders it as escaped text. NEVER switch this to {@html}. -->
-      <h2 class="font-display text-2xl font-normal tracking-[-0.01em]">{deck.title}</h2>
-      <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <Badge variant="secondary">{kindLabel(deck.kind)}</Badge>
         {#if deck.interactive}
           <Badge variant="outline">{t('decks.badgeInteractive')}</Badge>
@@ -243,3 +266,41 @@
     />
   </div>
 {/if}
+
+<style>
+  .banner {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    min-height: 170px;
+    padding: 14px 16px 18px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  @media (min-width: 768px) {
+    .banner {
+      min-height: 200px;
+      padding: 16px 22px 24px;
+    }
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--control-h-sm);
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--plate-strong);
+    border: 1px solid var(--plate-edge);
+    font-size: 13px;
+    color: var(--ink-soft);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  .chip:hover {
+    background: var(--ground);
+    color: var(--ink);
+  }
+</style>

@@ -53,6 +53,8 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
 
   let inviteUrl = '';
   await test.step('create an invitation and get the copyable link', async () => {
+    // Invitations are a tab of the people section (PRDCT-2436), not a sidebar entry.
+    await page.getByRole('link', { name: 'People', exact: true }).click();
     await page.getByRole('link', { name: 'Invitations', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Invitations' })).toBeVisible();
     await page.getByRole('button', { name: 'Invite member' }).click();
