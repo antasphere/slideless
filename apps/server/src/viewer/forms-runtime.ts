@@ -1008,11 +1008,12 @@ function prefillFiles(form, files) {
 
 // What the submit names: { field: [upload ids] } for EVERY file field of the
 // form, empty arrays included (an edit that removed every file must say so).
-// Returns null when the form has no file field or uploads are off here, and
-// { error } when a rule the author set does not hold yet.
+// Returns null when the form has no file field, and { error } when a rule the
+// author set does not hold yet. With uploads OFF on the link the fields are
+// still named: the server keeps and removes held files whatever the switch.
 function collectFiles(form) {
   var inputs = fileInputs(form);
-  if (!inputs.length || !CFG.uploads) return null;
+  if (!inputs.length) return null;
   mountUploads(form);
   var out = {};
   for (var i = 0; i < inputs.length; i++) {
@@ -1025,7 +1026,10 @@ function collectFiles(form) {
       if (entry.state === 'done' && entry.id) ids.push(entry.id);
     }
     var rules = input.__slDrop.rules;
-    if (ids.length < rules.min) {
+    // With uploads off here nothing can be added, so the author's minimum
+    // cannot be asked for; what the answer already holds is still named, so
+    // a file the respondent removes is really removed.
+    if (CFG.uploads && ids.length < rules.min) {
       return { error: rules.min === 1 ? text(form, 'uploadRequired') : text(form, 'uploadTooFew', { min: rules.min }), state: state };
     }
     out[input.name] = ids;

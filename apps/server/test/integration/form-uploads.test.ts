@@ -503,24 +503,111 @@ describe('the claim binds an upload to its link, its form, its field, once', () 
     );
   });
 
-  it('a link whose switch was turned off refuses a submit that names files, out loud, and takes the rest', async () => {
-    const link = await createToken({ name: 'switched off' });
-    const f = await uploadOk(link.secret, 'kyc', bytesOf(8));
-    await owner(`/tokens/${link.id}`, {
+  const switchOff = (linkId: string) =>
+    owner(`/tokens/${linkId}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ canUploadFiles: false })
     });
+
+  it('a link whose switch was turned off refuses a NEW file out loud, on a submit and on an edit alike', async () => {
+    const link = await createToken({ name: 'switched off' });
+    const held = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'held.pdf' });
+    const created = await readJson(
+      await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [held.id] } })
+    );
+    const pending = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'late.pdf' });
+    expect((await switchOff(link.id)).status).toBe(200);
+
     const before = (await app.db.db.select().from(formResponses)).length;
-    const refused = await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [f.id] } });
-    expect(refused.status).toBe(403);
-    expect((await readJson(refused)).error.code).toBe('uploads_disabled');
+    const post = await submit(link.secret, 'kyc', { payload: { who: 'y' }, files: { docs: [pending.id] } });
+    expect(post.status).toBe(403);
+    expect((await readJson(post)).error.code).toBe('uploads_disabled');
     expect((await app.db.db.select().from(formResponses)).length).toBe(before);
-    // Untouched file fields (empty lists) and no `files` at all still submit.
-    const empty = await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [] } });
-    expect(empty.status).toBe(201);
-    expect((await readJson(empty)).response.files).toEqual([]);
-    expect((await submit(link.secret, 'kyc', { payload: { who: 'y' } })).status).toBe(201);
+
+    // The EDIT leg: the page that was open when the owner flipped the switch
+    // usually holds a response already, so it edits (verifier round 2, R4).
+    const put = await putMe(
+      link.secret,
+      'kyc',
+      { payload: { who: 'edited' }, files: { docs: [held.id, pending.id] } },
+      created.editSecret
+    );
+    expect(put.status).toBe(403);
+    expect((await readJson(put)).error.code).toBe('uploads_disabled');
+    // Refused WHOLE: the text did not change, the held file is still held, the late one still pending.
+    const detail = await readJson(await owner(`/responses/${created.response.id}`));
+    expect(detail.response.payload).toEqual({ who: 'x' });
+    expect(detail.response.revision).toBe(1);
+    expect(detail.response.files.map((f: { id: string }) => f.id)).toEqual([held.id]);
+    const [late] = await app.db.db
+      .select()
+      .from(formResponseFiles)
+      .where(eq(formResponseFiles.id, pending.id));
+    expect(late!.responseId).toBeNull();
+
+    // No file, or untouched file fields on a fresh response: the form still submits.
+    expect((await submit(link.secret, 'kyc', { payload: { who: 'z' } })).status).toBe(201);
+    expect((await submit(link.secret, 'kyc', { payload: { who: 'z' }, files: { docs: [] } })).status).toBe(
+      201
+    );
+  });
+
+  it('with the switch off a respondent still KEEPS and REMOVES the files the answer holds: never a silent 200', async () => {
+    // Verifier round 2, the blocker: `files` used to be coerced to
+    // "untouched" on such a link, so a removal answered 200 and kept the file.
+    const link = await createToken({ name: 'take it back' });
+    const keep = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'keep.pdf' });
+    const cv = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'cv.pdf' });
+    const created = await readJson(
+      await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [keep.id, cv.id] } })
+    );
+    const [cvRow] = await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, cv.id));
+    expect((await switchOff(link.id)).status).toBe(200);
+
+    const kept = await putMe(
+      link.secret,
+      'kyc',
+      { payload: { who: 'x' }, files: { docs: [keep.id] } },
+      created.editSecret
+    );
+    expect(kept.status).toBe(200);
+    expect((await readJson(kept)).response.files.map((f: { name: string }) => f.name)).toEqual(['keep.pdf']);
+    expect(
+      await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, cv.id))
+    ).toHaveLength(0);
+    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    expect(await createStorageDriver(app.env).exists(cvRow!.storageKey)).toBe(false);
+
+    const cleared = await putMe(
+      link.secret,
+      'kyc',
+      { payload: { who: 'x' }, files: { docs: [] } },
+      created.editSecret
+    );
+    expect(cleared.status).toBe(200);
+    expect((await readJson(cleared)).response.files).toEqual([]);
+    expect((await readJson(await owner(`/responses/${created.response.id}`))).response.files).toEqual([]);
+  });
+
+  it('the same holds on a remembering link, whose every submit is a POST', async () => {
+    const link = await createToken({ name: 'Remy off', remembersResponses: true });
+    const one = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'one.pdf' });
+    const two = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'two.pdf' });
+    await submit(link.secret, 'kyc', { payload: {}, files: { docs: [one.id, two.id] } });
+    const late = await uploadOk(link.secret, 'kyc', bytesOf(8), { name: 'late.pdf' });
+    expect((await switchOff(link.id)).status).toBe(200);
+
+    const refused = await submit(link.secret, 'kyc', { payload: {}, files: { docs: [one.id, late.id] } });
+    expect(refused.status).toBe(403);
+    const removed = await submit(link.secret, 'kyc', { payload: {}, files: { docs: [one.id] } });
+    expect(removed.status).toBe(200);
+    expect((await readJson(removed)).response.files.map((f: { name: string }) => f.name)).toEqual([
+      'one.pdf'
+    ]);
+    expect(
+      await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, two.id))
+    ).toHaveLength(0);
   });
 });
 
@@ -729,6 +816,32 @@ describe("the deck's upload total", () => {
     });
     expect(del.status).toBe(200);
     expect((await up(900 * 1024)).status).toBe(201);
+  });
+
+  it('six uploads fired at the route at once never pass the total, and each refusal is a 403 uploads_full', async () => {
+    // The route's own leg (its bucket, its capability gate, the error
+    // mapping). In-process requests may not overlap inside the insert
+    // window, so the LOCK is pinned by the forced-overlap test below.
+    const deck = await uploadDeck('Race deck (route)');
+    const link = await createToken({ name: 'race route' }, deck);
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        app.app.request(`/api/v1/viewer/${link.secret}/forms/kyc/uploads?field=docs&name=race.bin`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/octet-stream',
+            origin: 'null',
+            'x-forwarded-for': nextIp()
+          },
+          body: bytesOf(700 * 1024)
+        })
+      )
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(2);
+    for (const r of results.filter((x) => x.status !== 201)) {
+      expect(r.status).toBe(403);
+      expect((await readJson(r)).error.code).toBe('uploads_full');
+    }
   });
 
   it('concurrent uploads cannot all pass a nearly full total', async () => {

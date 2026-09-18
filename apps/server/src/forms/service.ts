@@ -82,6 +82,8 @@ export interface FormResponseCreate {
    * submit (FormFilesClaimError) and nothing is written.
    */
   files?: FormSubmitFiles | undefined;
+  /** Whether the link may attach NEW files (`canUploadFiles`); keeping and removing held files never needs it. */
+  allowNewFiles?: boolean;
   /**
    * The link's ONE remembered row for this form (PRDCT-2328). Only the
    * remembering create path sets it; the partial unique index refuses a
@@ -106,6 +108,8 @@ export interface FormResponseAttribution {
    * runtime from before the feature).
    */
   files?: FormSubmitFiles | undefined;
+  /** Whether the link may attach NEW files (`canUploadFiles`); keeping and removing held files never needs it. */
+  allowNewFiles?: boolean;
 }
 
 export interface FormResponseFilters {
@@ -194,7 +198,8 @@ export class FormResponseService {
               presentationId: opts.presentationId,
               shareTokenId: opts.shareTokenId,
               formName: opts.formName,
-              files: opts.files
+              files: opts.files,
+              allowNew: opts.allowNewFiles === true
             })
           : { current: [] };
       // Revision 1 is the create (PRDCT-2329): the history starts with what
@@ -262,7 +267,8 @@ export class FormResponseService {
         shareTokenId: opts.shareTokenId,
         source: opts.source,
         placement: opts.placement,
-        files: opts.files
+        files: opts.files,
+        allowNewFiles: opts.allowNewFiles === true
       });
       return { row: updated ?? existing, created: false, editSecret: null };
     }
@@ -278,7 +284,8 @@ export class FormResponseService {
         shareTokenId: opts.shareTokenId,
         source: opts.source,
         placement: opts.placement,
-        files: opts.files
+        files: opts.files,
+        allowNewFiles: opts.allowNewFiles === true
       });
       return { row: updated ?? winner, created: false, editSecret: null };
     }
@@ -344,7 +351,8 @@ export class FormResponseService {
           presentationId: row.presentationId,
           shareTokenId: attribution.shareTokenId,
           formName: row.formName,
-          files: attribution.files
+          files: attribution.files,
+          allowNew: attribution.allowNewFiles === true
         });
         current = claim.current;
         detached = claim.detached;

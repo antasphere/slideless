@@ -330,24 +330,9 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
   /** A submit that names an unclaimable upload is the client's error, never a 500. */
   function claimRefusal(c: Context, e: unknown): Response | null {
     if (!(e instanceof FormFilesClaimError)) return null;
-    return c.json(err(e.code, e.message), 400);
-  }
-
-  /**
-   * A submit that NAMES files on a link that takes none is refused out loud
-   * (verifier round 1): dropping them silently answered 201 and the
-   * respondent believed their documents had arrived. Reachable when the
-   * owner turns the switch off while a page is open, or without the page.
-   * Empty lists are what a form with untouched file fields sends: no refusal.
-   */
-  function uploadsRefusal(
-    c: Context,
-    view: TokenSessionView,
-    files: Record<string, string[]> | undefined
-  ): Response | null {
-    if (files === undefined || view.token.canUploadFiles) return null;
-    if (!Object.values(files).some((ids) => ids.length > 0)) return null;
-    return c.json(err('uploads_disabled', 'This share link does not accept file uploads.'), 403);
+    // A new file on a link that takes none is a capability refusal (403, the
+    // upload route's own code); anything else is a malformed claim (400).
+    return c.json(err(e.code, e.message), e.code === 'uploads_disabled' ? 403 : 400);
   }
 
   /** The respondent wire with the names and sizes of the files the row holds. */
@@ -419,8 +404,6 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     }
     const claimed = resolveClaimedVersion(c, resolved.view, body.version);
     if (!claimed.ok) return claimed.res;
-    const noUploads = uploadsRefusal(c, resolved.view, body.files);
-    if (noUploads) return noUploads;
 
     // PRDCT-2328: a DIRECT navigation on a remembering link submits INTO
     // the link's remembered row (created on the first submit, updated
@@ -447,10 +430,11 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       source: body.source,
       placement: viewPlacement(body.placement),
       payload: body.payload,
-      // A link without the upload capability never attaches a file (a submit
-      // naming some was refused above; an id minted while the switch was on
-      // stays pending and is purged).
-      files: token.canUploadFiles ? body.files : undefined
+      // `files` always reaches the claim (verifier round 2): a link with
+      // uploads off still keeps and REMOVES the files its response holds as
+      // named, and only a NEW file refuses the submit (403, below).
+      files: body.files,
+      allowNewFiles: token.canUploadFiles
     };
 
     if (remembering) {
@@ -592,8 +576,6 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     // different link, source or placement must not keep the creator's.
     const claimed = resolveClaimedVersion(c, view, parsed.data.version);
     if (!claimed.ok) return claimed.res;
-    const noUploads = uploadsRefusal(c, view, parsed.data.files);
-    if (noUploads) return noUploads;
     let updated: FormResponseRow;
     try {
       updated =
@@ -602,7 +584,8 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
           shareTokenId: view.token.id,
           ...(parsed.data.source !== undefined ? { source: parsed.data.source } : {}),
           placement: viewPlacement(parsed.data.placement),
-          files: view.token.canUploadFiles ? parsed.data.files : undefined
+          files: parsed.data.files,
+          allowNewFiles: view.token.canUploadFiles
         })) ?? row;
     } catch (e) {
       const refused = claimRefusal(c, e);

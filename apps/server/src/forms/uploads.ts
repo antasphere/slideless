@@ -67,7 +67,7 @@ export class EmptyFileError extends Error {
 /** A submit named an upload that is not claimable here (unknown, foreign link/form/deck, or already attached elsewhere). */
 export class FormFilesClaimError extends Error {
   constructor(
-    public readonly code: 'invalid_files' | 'too_many_files',
+    public readonly code: 'invalid_files' | 'too_many_files' | 'uploads_disabled',
     message: string
   ) {
     super(message);
@@ -282,6 +282,16 @@ export class FormUploadService {
       shareTokenId: string;
       formName: string;
       files: FormSubmitFiles;
+      /**
+       * Whether this navigation may attach NEW files (the link's
+       * `canUploadFiles`). False never silences the submit: files the
+       * response already holds are kept or removed exactly as named — a
+       * respondent can always take a document back — and only a pending id
+       * refuses the whole submit, out loud (verifier round 2: coercing
+       * `files` to "untouched" on such a link answered 200 to a removal and
+       * kept the file).
+       */
+      allowNew: boolean;
     }
   ): Promise<{ current: FormResponseFileRow[]; detached: FormResponseFileRow[] }> {
     const wanted = new Map<string, string>(); // id → field
@@ -308,6 +318,9 @@ export class FormUploadService {
     const attachedIds = new Set(attached.map((r) => r.id));
     const toClaim = [...wanted.keys()].filter((id) => !attachedIds.has(id));
 
+    if (toClaim.length > 0 && !opts.allowNew) {
+      throw new FormFilesClaimError('uploads_disabled', 'This share link does not accept file uploads.');
+    }
     if (toClaim.length > 0) {
       const claimed = await tx
         .update(formResponseFiles)

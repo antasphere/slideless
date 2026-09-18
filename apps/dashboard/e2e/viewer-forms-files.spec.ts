@@ -224,5 +224,64 @@ test('a file field: refusals in the page, a drop and a pick upload, the owner re
     await expect(closed.locator('[data-slideless-dialog="dossier"]')).toBeVisible();
   });
 
+  await test.step('the owner turns uploads off while a page is open: a new file is refused in French, a held file can still be taken back', async () => {
+    const made = await page.request.post(`/api/v1/presentations/${deckId}/tokens`, {
+      data: { name: 'e2e-remembers', remembersResponses: true }
+    });
+    expect(made.status()).toBe(201);
+    const { secret: remy, shareToken } = await made.json();
+    const open = await (await browser.newContext()).newPage();
+    open.on('pageerror', (e) => pageErrors.push(e.message));
+    await open.goto(`${origin}/v/${remy}/`);
+    await open.locator('#f-name').fill('Remy');
+    await dropOn(open, '[data-slideless-drop="documents"]', [
+      { name: 'held.pdf', type: 'application/pdf', bytes: PDF }
+    ]);
+    await expect(
+      open.locator('[data-slideless-files="documents"] li[data-slideless-file="done"]')
+    ).toHaveCount(1);
+    await open.locator('#f-send').click();
+    await expect(open.locator('[data-slideless-dialog="dossier"]')).toBeVisible();
+    await open.keyboard.press('Escape');
+
+    // A second file is uploaded, THEN the owner closes the link's uploads.
+    await dropOn(open, '[data-slideless-drop="documents"]', [
+      { name: 'late.pdf', type: 'application/pdf', bytes: PDF }
+    ]);
+    await expect(
+      open.locator('[data-slideless-files="documents"] li[data-slideless-file="done"]')
+    ).toHaveCount(2);
+    const off = await page.request.patch(`/api/v1/presentations/${deckId}/tokens/${shareToken.id}`, {
+      data: { canUploadFiles: false }
+    });
+    expect(off.status()).toBe(200);
+    await open.locator('#f-send').click();
+    // The form's own error line (the two file fields have one each, empty here).
+    await expect(
+      open.locator('form[data-slideless-form="dossier"] > .sl-forms-err', {
+        hasText: "L'envoi de fichiers n'est pas disponible sur ce lien."
+      })
+    ).toBeVisible();
+    await expect(open.locator('[data-slideless-dialog="dossier"]')).toHaveCount(0);
+
+    // Reopened with uploads off: the panel is unavailable, the held file is
+    // listed, and removing it really removes it.
+    await open.goto(`${origin}/v/${remy}/`);
+    await expect(open.locator('[data-slideless-drop="documents"]')).toContainText(
+      "L'envoi de fichiers n'est pas disponible sur ce lien."
+    );
+    const heldRows = open.locator('[data-slideless-files="documents"] li');
+    await expect(heldRows).toHaveCount(1);
+    await expect(heldRows.first()).toContainText('held.pdf');
+    await heldRows.first().locator('button').click();
+    await open.locator('#f-send').click();
+    await expect(open.locator('[data-slideless-dialog="dossier"]')).toBeVisible();
+    const listed = await (
+      await page.request.get(`/api/v1/presentations/${deckId}/responses?token=${shareToken.id}`)
+    ).json();
+    expect(listed.responses).toHaveLength(1);
+    expect(listed.responses[0].files).toEqual([]);
+  });
+
   expect(pageErrors).toEqual([]);
 });
