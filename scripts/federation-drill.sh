@@ -28,22 +28,39 @@
 #   DRILL_SKIP_BUILD=1         reuse antasphere-hub:federation-dev + slideless:federation-dev (CI pre-builds)
 #   DRILL_KEEP=1               leave the stack up after a PASS (inspect; `down -v` yourself)
 #
+# A second copy beside a busy machine's standing stacks (PRDCT-2443): every
+# fixed value is an env variable the compose files read too, today's value
+# as the default — unset, CI's run is byte-for-byte what it always was.
+#   FEDERATION_PROJECT=slideless-federation         compose project name
+#   FEDERATION_HUB_PORT=3300                        hub port (host = PORT = hostname port)
+#   FEDERATION_SL_PORT=3310                         Slideless port (same rule)
+#   FEDERATION_HOP_PORT=8474                        the delay hop's admin port
+#   FEDERATION_MAIL_PORT=8030                       Mailpit UI host port
+#   FEDERATION_SUBNET_PREFIX=172.30.250             the /24's first three octets
+#   FEDERATION_HUB_IMAGE=antasphere-hub:federation-dev
+#   FEDERATION_SL_IMAGE=slideless:federation-dev
+#
 # Everything else is throwaway: the compose project's volumes go with
 # `down -v` on exit, pass or fail.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT=slideless-federation
-HUB=http://hub.localhost:3300
-SL=http://slideless.localhost:3310
-HOP=http://127.0.0.1:8474
+PROJECT=${FEDERATION_PROJECT:-slideless-federation}
+HUB_PORT=${FEDERATION_HUB_PORT:-3300}
+SL_PORT=${FEDERATION_SL_PORT:-3310}
+HOP_PORT=${FEDERATION_HOP_PORT:-8474}
+HUB_IMAGE=${FEDERATION_HUB_IMAGE:-antasphere-hub:federation-dev}
+SL_IMAGE=${FEDERATION_SL_IMAGE:-slideless:federation-dev}
+HUB=http://hub.localhost:$HUB_PORT
+SL=http://slideless.localhost:$SL_PORT
+HOP=http://127.0.0.1:$HOP_PORT
 SL_CLIENT_ID=tool-slideless-cloud
 SL_CLIENT_SECRET=federation-dev-client-secret-0001
 SECOND_CLIENT_ID=tool-drill-second
 SECOND_CLIENT_SECRET=federation-dev-client-secret-0002
 SECOND_RESOURCE=http://second.localhost:3320/mcp
 SECOND_REDIRECT=http://second.localhost:3320/callback
-SL_RESOURCE=http://slideless.localhost:3310/mcp
+SL_RESOURCE=http://slideless.localhost:$SL_PORT/mcp
 PASS_COUNT=0
 
 say() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
@@ -60,9 +77,9 @@ fail() {
 for bin in docker jq curl openssl; do
   command -v "$bin" >/dev/null || fail "required tool missing: $bin"
 done
-for port in 3300 3310 8474; do
+for port in "$HUB_PORT" "$SL_PORT" "$HOP_PORT"; do
   if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$port/" 2>/dev/null; then
-    fail "port $port already answers — refusing to run (the harness needs 3300, 3310 and 8474)"
+    fail "port $port already answers — refusing to run (the harness needs $HUB_PORT, $SL_PORT and $HOP_PORT)"
   fi
 done
 
@@ -75,7 +92,7 @@ dc() {
     -f "$REPO/docker-compose.federation.yml" -f "$REPO/docker-compose.federation.drill.yml" "$@"
 }
 # *.localhost resolves in browsers by RFC 6761 but not in every curl: pin both names.
-CURL=(curl -sS --max-time 60 --resolve hub.localhost:3300:127.0.0.1 --resolve slideless.localhost:3310:127.0.0.1)
+CURL=(curl -sS --max-time 60 --resolve "hub.localhost:$HUB_PORT:127.0.0.1" --resolve "slideless.localhost:$SL_PORT:127.0.0.1")
 hubdb() { dc exec -T hub-db psql -U antasphere -d antasphere -v ON_ERROR_STOP=1 -Atc "$1"; }
 sldb() { dc exec -T db psql -U slideless -d slideless -v ON_ERROR_STOP=1 -Atc "$1"; }
 applogs() { dc logs --no-log-prefix "$1" 2>/dev/null || true; }
@@ -131,8 +148,8 @@ family() { # client_id user_id
 # ── Phase 0 — images ─────────────────────────────────────────────────────────
 say "Phase 0 — images (hub from ${FEDERATION_HUB_DIR:-../../../hub}, Slideless from this repo)"
 if [ "${DRILL_SKIP_BUILD:-}" = "1" ] \
-  && docker image inspect antasphere-hub:federation-dev >/dev/null 2>&1 \
-  && docker image inspect slideless:federation-dev >/dev/null 2>&1; then
+  && docker image inspect "$HUB_IMAGE" >/dev/null 2>&1 \
+  && docker image inspect "$SL_IMAGE" >/dev/null 2>&1; then
   note "DRILL_SKIP_BUILD=1 and both images exist — reusing"
 else
   dc build

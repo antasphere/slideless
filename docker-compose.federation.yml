@@ -41,12 +41,25 @@
 # The hub repo is a sibling checkout; override FEDERATION_HUB_DIR if your
 # layout differs:
 #   FEDERATION_HUB_DIR=/path/to/hub docker compose -f docker-compose.federation.yml up -d --build
+#
+# Every fixed value below is an env variable with today's value as its
+# default, so a second copy of the harness can run beside a busy machine's
+# standing stacks (PRDCT-2443). Unset, the rendering is byte-identical:
+#   FEDERATION_PROJECT   compose project name       slideless-federation
+#   FEDERATION_HUB_PORT  hub host port = PORT       3300
+#   FEDERATION_SL_PORT   Slideless host port = PORT 3310
+#   FEDERATION_MAIL_PORT Mailpit UI host port       8030
+#   FEDERATION_HUB_IMAGE hub image tag              antasphere-hub:federation-dev
+#   FEDERATION_SL_IMAGE  Slideless image tag        slideless:federation-dev
+# (the drill overlay adds FEDERATION_HOP_PORT and FEDERATION_SUBNET_PREFIX).
+# The ports are also the *.localhost hostnames' ports, so PUBLIC_BASE_URL,
+# HUB_ISSUER_URL and the TOOL_REGISTRY entry follow them.
 
-name: slideless-federation
+name: ${FEDERATION_PROJECT:-slideless-federation}
 
 services:
   hub:
-    image: antasphere-hub:federation-dev
+    image: ${FEDERATION_HUB_IMAGE:-antasphere-hub:federation-dev}
     build: ${FEDERATION_HUB_DIR:-../../../hub}
     restart: unless-stopped
     stop_grace_period: 60s
@@ -60,25 +73,25 @@ services:
         aliases:
           - hub.localhost
     environment:
-      - PORT=3300
+      - PORT=${FEDERATION_HUB_PORT:-3300}
       - DATABASE_URL=postgres://antasphere:federation-dev@hub-db:5432/antasphere
-      - PUBLIC_BASE_URL=http://hub.localhost:3300
+      - PUBLIC_BASE_URL=http://hub.localhost:${FEDERATION_HUB_PORT:-3300}
       - EMAIL_DRIVER=smtp
       - SMTP_URL=smtp://mailpit:1025
       - EMAIL_FROM=Antasphere Federation Dev <dev@antasphere.local>
       - LOG_LEVEL=info
       # Seeds the Slideless cloud tool client at boot (idempotent upsert).
       # Dev twin of the production recipe in internal/federation.md.
-      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:3310/mcp","redirectUris":["http://slideless.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"}]'
+      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/mcp","redirectUris":["http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"}]'
     ports:
-      - '127.0.0.1:3300:3300'
+      - '127.0.0.1:${FEDERATION_HUB_PORT:-3300}:${FEDERATION_HUB_PORT:-3300}'
     read_only: true
     volumes:
       - hub_app_data:/data
     tmpfs:
       - /tmp
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3300/healthz']
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:${FEDERATION_HUB_PORT:-3300}/healthz']
       interval: 15s
       timeout: 5s
       retries: 5
@@ -101,7 +114,7 @@ services:
       start_period: 15s
 
   app:
-    image: slideless:federation-dev
+    image: ${FEDERATION_SL_IMAGE:-slideless:federation-dev}
     build: .
     restart: unless-stopped
     stop_grace_period: 60s
@@ -115,12 +128,12 @@ services:
         aliases:
           - slideless.localhost
     environment:
-      - PORT=3310
+      - PORT=${FEDERATION_SL_PORT:-3310}
       - DATABASE_URL=postgres://slideless:federation-dev@db:5432/slideless
-      - PUBLIC_BASE_URL=http://slideless.localhost:3310
+      - PUBLIC_BASE_URL=http://slideless.localhost:${FEDERATION_SL_PORT:-3310}
       # ── The cloud edition (internal/federation.md) ──────────────────────────
       - EDITION=cloud
-      - HUB_ISSUER_URL=http://hub.localhost:3300
+      - HUB_ISSUER_URL=http://hub.localhost:${FEDERATION_HUB_PORT:-3300}
       - HUB_CLIENT_ID=tool-slideless-cloud
       - HUB_CLIENT_SECRET=federation-dev-client-secret-0001
       - EMAIL_DRIVER=smtp
@@ -128,14 +141,14 @@ services:
       - EMAIL_FROM=Slideless Federation Dev <dev@slideless.local>
       - LOG_LEVEL=info
     ports:
-      - '127.0.0.1:3310:3310'
+      - '127.0.0.1:${FEDERATION_SL_PORT:-3310}:${FEDERATION_SL_PORT:-3310}'
     read_only: true
     volumes:
       - app_data:/data
     tmpfs:
       - /tmp
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3310/healthz']
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:${FEDERATION_SL_PORT:-3310}/healthz']
       interval: 15s
       timeout: 5s
       retries: 5
@@ -163,7 +176,7 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - '127.0.0.1:8030:8025'
+      - '127.0.0.1:${FEDERATION_MAIL_PORT:-8030}:8025'
     environment:
       - MP_SMTP_AUTH_ACCEPT_ANY=1
       - MP_SMTP_AUTH_ALLOW_INSECURE=1
