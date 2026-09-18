@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
-import { and, asc, eq, gte, inArray, isNull, lt, sql, sum } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, sql, sum } from 'drizzle-orm';
 import {
   formResponseFiles,
   formResponses,
+  presentations,
   type Db,
   type DbConn,
   type FormResponseFileRow,
@@ -485,10 +486,32 @@ export class FormUploadService {
    * The sweep (`form-upload-purge`, nightly): every row no response holds,
    * once older than the pending window — uploads never submitted, files an
    * edit removed whose immediate removal failed, and rows a response or deck
-   * delete detached through the `set null` cascade.
+   * delete detached through the `set null` cascade — and the files of a
+   * deck soft-deleted more than a day ago.
    */
   async purgeUnattached(now: Date = new Date(), batch = 500): Promise<number> {
     const cutoff = new Date(now.getTime() - FORM_UPLOAD_PENDING_TTL_MS);
+    // A deck delete is a SOFT delete (no cascade fires, nothing restores it,
+    // and no route reaches its responses any more): without this pass the
+    // files of a deleted deck would hold their disk for ever. A day after
+    // the delete they are detached here, and the loop below removes them
+    // with everything else no response holds. The text answers stay with
+    // the soft-deleted deck, like its versions do.
+    await this.db
+      .update(formResponseFiles)
+      .set({ responseId: null, attachedAt: null })
+      .where(
+        and(
+          isNotNull(formResponseFiles.responseId),
+          inArray(
+            formResponseFiles.presentationId,
+            this.db
+              .select({ id: presentations.id })
+              .from(presentations)
+              .where(and(isNotNull(presentations.deletedAt), lt(presentations.deletedAt, cutoff)))
+          )
+        )
+      );
     let total = 0;
     for (;;) {
       const rows = await this.db

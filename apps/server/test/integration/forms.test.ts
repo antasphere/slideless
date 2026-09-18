@@ -543,9 +543,7 @@ describe('public form submit (token-authed, cross-origin)', () => {
     expect(body.editSecret).toMatch(/^[A-Za-z0-9_-]{64}$/);
     expect(body.emailSent).toBe(false); // anonymous: nothing to auto-mail
     // The respondent wire is the deliberate subset — no foreign ids, ever.
-    expect(Object.keys(body.response).sort()).toEqual(
-      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
-    );
+    expect(Object.keys(body.response).sort()).toEqual([...RESPONDENT_WIRE_KEYS].sort());
     expect(body.response).toMatchObject({
       formName: 'rsvp',
       version: 1,
@@ -825,9 +823,7 @@ describe('own-row read/update via the edit secret', () => {
       formName: 'rsvp',
       payload: { name: 'Eve', dish: 'pie' }
     });
-    expect(Object.keys(body.response).sort()).toEqual(
-      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
-    );
+    expect(Object.keys(body.response).sort()).toEqual([...RESPONDENT_WIRE_KEYS].sort());
   });
 
   it('an invalid share secret answers 404 before the form name is even looked at', async () => {
@@ -862,9 +858,7 @@ describe('own-row read/update via the edit secret', () => {
       payload: { name: 'Eve', dish: 'pie' }
     });
     // Same wire shape as the form-bound read: nothing extra leaks here.
-    expect(Object.keys(body.response).sort()).toEqual(
-      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
-    );
+    expect(Object.keys(body.response).sort()).toEqual([...RESPONDENT_WIRE_KEYS].sort());
     // Missing / malformed / unknown / foreign-token secrets: the same 404.
     expect((await resolveMe(secretA)).status).toBe(404);
     expect((await resolveMe(secretA, { 'x-slideless-response': 'short' })).status).toBe(404);

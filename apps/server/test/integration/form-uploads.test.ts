@@ -617,6 +617,8 @@ describe('edits, removals and the bytes behind them', () => {
       await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, f.id))
     ).toHaveLength(0);
     expect(row!.storageKey).toMatch(new RegExp(`^forms/[0-9a-f-]+/${deckId}/${f.id}$`));
+    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    expect(await createStorageDriver(app.env).exists(row!.storageKey)).toBe(false);
   });
 
   it('the purge sweep removes what no response holds once it is a day old, and nothing else', async () => {
@@ -649,6 +651,48 @@ describe('edits, removals and the bytes behind them', () => {
     expect(left).not.toContain(stale.id);
     expect(left).toContain(fresh.id);
     expect(left).toContain(held.id);
+  });
+});
+
+describe('a deleted deck', () => {
+  it('its files are removed by the sweep a day after the delete, the text answers stay', async () => {
+    const deck = await uploadDeck('Doomed deck');
+    const link = await createToken({ name: 'doomed' }, deck);
+    const f = await uploadOk(link.secret, 'kyc', bytesOf(64), { name: 'doomed.pdf' });
+    const created = await readJson(
+      await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [f.id] } })
+    );
+    const del = await app.app.request(`/api/v1/presentations/${deck}`, {
+      method: 'DELETE',
+      headers: { cookie }
+    });
+    expect(del.status).toBeLessThan(300);
+
+    const { FormUploadService, formUploadCaps } = await import('../../src/forms/uploads.js');
+    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const storage = createStorageDriver(app.env);
+    const service = new FormUploadService(
+      app.db.db,
+      storage,
+      `${app.env.DATA_DIR}/tmp`,
+      app.logger,
+      formUploadCaps(app.env)
+    );
+    const [row] = await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, f.id));
+
+    // The day of the delete: nothing moves.
+    await service.purgeUnattached();
+    expect(await storage.exists(row!.storageKey)).toBe(true);
+
+    // A day later (the sweep's clock moved forward, the file is older than a day too).
+    await service.purgeUnattached(new Date(Date.now() + 25 * 60 * 60 * 1000));
+    expect(
+      await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, f.id))
+    ).toHaveLength(0);
+    expect(await storage.exists(row!.storageKey)).toBe(false);
+    expect(
+      await app.db.db.select().from(formResponses).where(eq(formResponses.id, created.response.id))
+    ).toHaveLength(1);
   });
 });
 
