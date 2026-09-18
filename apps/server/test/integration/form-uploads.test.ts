@@ -407,7 +407,7 @@ describe('what the upload route refuses', () => {
         method: 'POST',
         headers: { 'content-type': 'application/octet-stream', origin: 'null', 'x-forwarded-for': nextIp() },
         body: stream,
-        // @ts-expect-error undici needs it for a streamed request body
+        // undici needs `duplex` for a streamed request body.
         duplex: 'half'
       }
     );
