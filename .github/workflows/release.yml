@@ -174,7 +174,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # main → next + sha-…; tag vX.Y.Z → X.Y.Z, X.Y, X, latest
+          # prod → next + sha-…; tag vX.Y.Z → X.Y.Z, X.Y, X, latest
           tags: |
             type=raw,value=next,enable={{is_default_branch}}
             type=sha,prefix=sha-
@@ -207,7 +207,7 @@ jobs:
 
       # Hand the published image to the fleet (PRDCT-2326). The roll itself lives in
       # the fleet repository's deploy workflow, never here: this repository is going
-      # open source and carries no infrastructure — no project id, no registry path,
+      # fair-code, source-available, and carries no infrastructure — no project id, no registry path,
       # no service name — and a fork's pull request must never reach it. Only a prod
       # BRANCH push rolls (the promotion is the decision); a v-tag publishes the semver
       # aliases and nothing else. The credential is the `antasphere-fleet-dispatch`
