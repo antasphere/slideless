@@ -38,8 +38,7 @@ Hostinger VPS runs). The pin names a released version on purpose: the image
 reports that version on `GET /instance`, so a customer and a support session
 agree on which build is running. The historical `v0.3.0` tag predates automatic
 setup-token generation and must not be used for this installation flow. The
-companion images (`pgvector/pgvector:pg17`, `caddy:2-alpine`) are digest-pinned
-too, so the Pages gate inspects exactly what customers will pull.
+companion images (`pgvector/pgvector:0.8.6-pg17`, `caddy:2.11.4-alpine`) are pinned on IMMUTABLE version tags with their digests — never on a floating tag like `caddy:2-alpine`: `docker manifest inspect tag@digest` resolves the tag first, so the Pages gate fails the day upstream moves it (2026-09-18). The gate then inspects exactly what customers will pull.
 
 Before its first successful run:
 
