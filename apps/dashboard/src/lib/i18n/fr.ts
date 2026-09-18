@@ -112,8 +112,6 @@ export const fr: Record<MessageKey, string> = {
   // brands, a preview with made-up data; the overview's lower cards
   'brands.title': 'Marques',
   'nav.blurb.brands': 'Le look et la voix que vos présentations peuvent prendre.',
-  'brands.description':
-    'Une marque, c’est tout ce qui rend une présentation vôtre : ses polices, ses couleurs, ce qu’il y a derrière une slide, sa façon de bouger et de parler.',
   'brands.preview': 'Aperçu',
   'brands.previewNote':
     'Une illustration de là où va Slideless. Les trois marques sont des exemples ; rien ici n’est encore appliqué à vos présentations.',
@@ -129,9 +127,6 @@ export const fr: Record<MessageKey, string> = {
   'brands.voice': 'Voix',
   'brands.newTitle': 'Ajouter une marque',
   'brands.newBody': 'Depuis un site web, un PDF de votre charte, ou à la main.',
-  'brands.fileTitle': 'Une marque est un petit fichier',
-  'brands.fileBody':
-    'Un agent ou la ligne de commande habillerait n’importe quelle présentation en {brand} avec une seule option.',
   'overview.brandsTitle': 'Vos présentations, à vos couleurs',
   'overview.brandsBody':
     'Choisissez une marque une fois : ses polices, ses couleurs et sa voix habillent chaque présentation que vous poussez.',
@@ -153,6 +148,30 @@ export const fr: Record<MessageKey, string> = {
   'tags.fileSheet': 'Tableur',
   'tags.fileText': 'Texte',
   'tags.fileOther': 'Fichier',
+  'brands.heroTitle': 'Chaque présentation, de votre main',
+  'brands.heroLede':
+    'Une marque est une présentation comme une autre : ses pages disent qui vous êtes, ses fichiers sont ce qu’il faut à une présentation pour vous ressembler.',
+  'brands.statBrands': 'Marques',
+  'brands.statBrandsHint': '{brand} est la marque par défaut',
+  'brands.statDecks': 'Présentations habillées',
+  'brands.statDecksHint': 'Habillées au moment du push',
+  'brands.statFaces': 'Polices',
+  'brands.statFacesHint': 'Portées par les présentations de marque',
+  'brands.statColours': 'Couleurs',
+  'brands.statColoursHint': 'Sept niveaux par marque',
+  'brands.deckLine': 'Une présentation de {pages} pages · {versions} versions · portée par {used}',
+  'brands.newToast': 'Les marques sont un aperçu : rien à ajouter pour l’instant.',
+  'brands.fromSite': 'Depuis un site web',
+  'brands.fromPdf': 'Depuis un PDF de charte',
+  'brands.fromDeck': 'Depuis une présentation que vous aimez',
+  'brands.ideaTitle': 'Une marque est une présentation',
+  'brands.ideaBody':
+    'Pas une page de réglages. Vous poussez une marque comme une présentation, elle garde ses versions, et vous la partagez par un lien.',
+  'brands.idea1':
+    'Ses pages décrivent la marque à une personne, et à l’agent qui écrira votre prochaine présentation.',
+  'brands.idea2': 'Ses fichiers sont la marque elle-même : le logo, les polices, les styles, la voix.',
+  'brands.idea3':
+    'Toute présentation peut la porter. Changez la marque, et les présentations qui la portent suivent.',
   'nav.workspace': 'Espace de travail',
   'nav.people': 'Personnes',
   'nav.primary': 'Navigation principale',

@@ -1,14 +1,11 @@
 <script lang="ts">
-  import FieldCanvas from '$lib/components/brand/FieldCanvas.svelte';
-  import StatGlyph from '$lib/components/brand/StatGlyph.svelte';
+  import HeroBand from '$lib/components/brand/HeroBand.svelte';
+  import StatTile from '$lib/components/brand/StatTile.svelte';
   import BrandSlide from '$lib/components/brands/BrandSlide.svelte';
-  import { Button } from '$lib/components/ui/button/index.js';
   import { BRAND_FONTS_HREF, DEMO_BRANDS } from '$lib/brands-demo';
-  import { heroPalette as heroFor, look } from '$lib/look.svelte';
   import DeckCard from '$lib/components/decks/DeckCard.svelte';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
-  import { RECIPE, THEMES } from '$lib/brand/recipe.js';
-  import { theme } from '$lib/theme.svelte';
+  import { THEMES } from '$lib/brand/recipe.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
@@ -48,9 +45,6 @@
       { name: firstName }
     )
   );
-
-  $effect(() => theme.start());
-  const heroPalette = $derived(heroFor(look.value.theme, theme.dark));
 
   const decksList = createPagedList<Presentation>(
     async (p) => {
@@ -164,7 +158,6 @@
       .toUpperCase();
   const faces = $derived(membersList.items.filter((m) => m.isActive).slice(0, 4));
   const isAdmin = $derived(data.me.role === 'owner' || data.me.role === 'admin');
-  let played = $state<string | null>(null);
 </script>
 
 <svelte:head>
@@ -173,54 +166,34 @@
 </svelte:head>
 
 <!-- The opening: the workspace on its own field, the sphere of the brand's
-     presentations turning slowly behind the greeting. Decoration only; the
-     field never moves for a reader who asked for no motion. -->
-<section class="hero plate-window">
-  <div class="hero-ground">
-    <FieldCanvas palette={heroPalette} shape="latitudes" seed={RECIPE.seed} linework={false} />
-  </div>
-  <!-- the sphere is its own square canvas on the same field, its edge faded
-       into the ground by a mask, so it can sit beside the words on a desk and
-       above them on a phone without a seam -->
-  <div class="hero-sphere">
-    <FieldCanvas palette={heroPalette} shape="latitudes" seed={RECIPE.seed} animate />
-  </div>
-  <div class="hero-text on-field">
-    <p class="overline !text-current opacity-70">{workspaceName}</p>
-    <!-- the page keeps its name for a screen reader and for the browser
-         suite; what a person sees in its place is the greeting -->
-    <h1 class="sr-only">{t('overview.title')}</h1>
-    <p class="hero-title">{greeting}</p>
-    <p class="hero-lede">
-      {#if deckCount === null}
-        {overviewDescription}
-      {:else if decksList.items.length}
-        {t('overview.lede', { decks: deckCount, workspace: workspaceName, opens: openCount ?? '0' })}
-      {:else}
-        {t('overview.ledeEmpty')}
-      {/if}
-    </p>
-  </div>
-</section>
+     presentations turning slowly beside the greeting. -->
+<HeroBand>
+  <p class="hero-eyebrow">{workspaceName}</p>
+  <!-- the page keeps its name for a screen reader and for the browser
+       suite; what a person sees in its place is the greeting -->
+  <h1 class="sr-only">{t('overview.title')}</h1>
+  <p class="hero-title">{greeting}</p>
+  <p class="hero-lede">
+    {#if deckCount === null}
+      {overviewDescription}
+    {:else if decksList.items.length}
+      {t('overview.lede', { decks: deckCount, workspace: workspaceName, opens: openCount ?? '0' })}
+    {:else}
+      {t('overview.ledeEmpty')}
+    {/if}
+  </p>
+</HeroBand>
 
 <div class="mt-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
   {#each stats as stat (stat.id)}
-    <a
+    <StatTile
+      label={stat.label}
+      value={stat.value}
+      hint={stat.hint}
       href={stat.href}
-      class="sheet tile stat"
-      onpointerenter={() => (played = stat.id)}
-      onpointerleave={() => (played = null)}
-      onfocus={() => (played = stat.id)}
-      onblur={() => (played = null)}
-    >
-      <span class="stat-wash" style="--c: {stat.color}"></span>
-      <div class="stat-plate">
-        <StatGlyph form={stat.form} color={stat.color} active={played === stat.id} />
-      </div>
-      <p class="overline">{stat.label}</p>
-      <p class="figure stat-figure">{stat.value ?? '—'}</p>
-      <p class="stat-hint">{stat.hint}</p>
-    </a>
+      form={stat.form}
+      color={stat.color}
+    />
   {/each}
 </div>
 
@@ -256,7 +229,8 @@
     </div>
   </a>
 
-  <section class="sheet lower">
+  <!-- P7: a hub workspace's membership is managed at the hub; the members page links out -->
+  <a href={isAdmin && !hubManaged ? '/invitations' : '/members'} class="sheet tile lower">
     <div class="faces" aria-hidden="true">
       {#each faces as member, i (member.id)}
         <span class="face" style="--i: {i}">{initialsOf(member.name || member.email)}</span>
@@ -267,17 +241,14 @@
     </div>
     <div class="lower-copy">
       <h2 class="lower-title">{t('overview.teamTitle')}</h2>
-      <p class="lower-body">{t('overview.teamLede')}</p>
-      {#if isAdmin}
-        <!-- P7: a hub workspace's membership is managed at the hub; the members page links out -->
-        <Button href={hubManaged ? '/members' : '/invitations'} size="sm" class="mt-1 w-fit">
-          {hubManaged ? t('overview.manageMembers') : t('overview.teamCta')}
-        </Button>
-      {:else}
-        <p class="text-sm text-muted-foreground">{t('overview.askAdmin')}</p>
-      {/if}
+      <p class="lower-body">{isAdmin ? t('overview.teamLede') : t('overview.askAdmin')}</p>
+      <span class="lower-cta">
+        {isAdmin && !hubManaged ? t('overview.teamCta') : t('overview.manageMembers')}<ArrowRight
+          class="size-3.5"
+        />
+      </span>
     </div>
-  </section>
+  </a>
 </div>
 
 <!-- what runs this workspace, for whoever needs it: one quiet line -->
@@ -287,98 +258,6 @@
 </p>
 
 <style>
-  .hero {
-    position: relative;
-    min-height: 210px;
-    display: flex;
-    align-items: flex-end;
-    border: 1px solid var(--hairline);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-sm);
-  }
-  .hero-ground {
-    position: absolute;
-    inset: 0;
-  }
-  .hero-sphere {
-    position: absolute;
-    top: -40px;
-    right: -34px;
-    width: 176px;
-    aspect-ratio: 1;
-    -webkit-mask-image: radial-gradient(closest-side, #000 78%, transparent 100%);
-    mask-image: radial-gradient(closest-side, #000 78%, transparent 100%);
-  }
-  .hero-text {
-    position: relative;
-    padding: 24px 22px;
-    max-width: 640px;
-  }
-  .hero-title {
-    font-family: var(--display);
-    font-weight: 300;
-    font-size: clamp(28px, 5.4vw, 42px);
-    line-height: 1.08;
-    letter-spacing: -0.015em;
-    margin-top: 8px;
-  }
-  .hero-lede {
-    margin-top: 10px;
-    font-size: 15px;
-    line-height: 1.45;
-    opacity: 0.82;
-  }
-  @media (min-width: 768px) {
-    .stat-plate {
-      width: 52px;
-      height: 52px;
-    }
-    .hero {
-      min-height: 250px;
-    }
-    .hero-sphere {
-      top: 50%;
-      right: 5%;
-      width: 330px;
-      transform: translateY(-50%);
-    }
-    .hero-text {
-      padding: 32px 34px;
-    }
-  }
-
-  .stat {
-    position: relative;
-    display: block;
-    padding: 16px 16px 14px;
-    overflow: hidden;
-  }
-  .stat :global(.overline) {
-    display: block;
-    width: fit-content;
-    max-width: calc(100% - 50px);
-  }
-  .stat-plate {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 46px;
-    height: 46px;
-  }
-  /* a breath of the figure's own colour in its corner, under the grain */
-  .stat-wash {
-    position: absolute;
-    inset: 0;
-    background:
-      var(--grain),
-      radial-gradient(70% 90% at 100% 0%, color-mix(in oklab, var(--c) 22%, transparent), transparent 70%);
-    background-blend-mode: overlay, normal;
-    pointer-events: none;
-  }
-  .stat > :global(p) {
-    position: relative;
-  }
-
   .lower {
     display: grid;
     grid-template-columns: 1fr;
@@ -412,6 +291,12 @@
     line-height: 1.5;
     color: var(--muted);
   }
+  .lower:hover .lower-cta :global(svg) {
+    transform: translateX(3px);
+  }
+  .lower-cta :global(svg) {
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
   .lower-cta {
     display: inline-flex;
     align-items: center;
@@ -444,7 +329,28 @@
     display: flex;
     align-items: center;
     padding-left: 10px;
-    height: 84px;
+    height: 96px;
+  }
+  /* under the pointer the faces rise and settle one after the other, the way
+     the three slides beside them fan out */
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .lower:hover .face,
+    .lower:focus-visible .face {
+      animation: bob 1.5s var(--motion-ease) infinite;
+      animation-delay: calc(var(--i) * 0.13s);
+    }
+  }
+  @keyframes bob {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    35% {
+      transform: translateY(-9px);
+    }
+    65% {
+      transform: translateY(3px);
+    }
   }
   .face {
     display: flex;
@@ -467,15 +373,5 @@
     background: var(--plate-strong);
     color: var(--muted);
     font-family: var(--ui);
-  }
-  .stat-figure {
-    font-size: clamp(34px, 7vw, 44px);
-    margin-top: 14px;
-  }
-  .stat-hint {
-    margin-top: 10px;
-    font-size: 12.5px;
-    line-height: 1.35;
-    color: var(--muted);
   }
 </style>

@@ -59,8 +59,9 @@
     font-weight: 500;
     letter-spacing: 0.07em;
   }
-  /* Sora overline — the second voice */
-  .overline {
+  /* the second voice, as a small label. NOT named `overline`: tailwind owns
+     that word (text-decoration-line: overline) and drew a bar over every one. */
+  .eyebrow {
     font-family: var(--second);
     font-weight: 300;
     font-size: 11px;

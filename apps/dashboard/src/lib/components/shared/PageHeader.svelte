@@ -23,8 +23,8 @@
     {/if}
   </div>
   {#if onAdd}
-    <Button onclick={onAdd} size="sm" class="h-10 shrink-0 px-4 text-sm md:h-8 md:px-3 md:text-xs">
-      <Plus class="mr-1 h-4 w-4" />
+    <Button onclick={onAdd} size="sm" class="h-10 shrink-0 gap-1.5 px-4 md:h-9">
+      <Plus class="h-4 w-4" />
       {addLabel}
     </Button>
   {/if}

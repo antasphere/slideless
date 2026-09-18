@@ -33,6 +33,12 @@ export interface DeckBrand {
   motion: { kind: 'still' | 'calm' | 'lively'; label: string };
   /** How it speaks: three words, and a slide written that way. */
   voice: { tone: string[]; eyebrow: string; title: string; body: string };
+  /**
+   * A brand IS a deck: its pages say the brand to a person (and to an agent
+   * reading them), and the files attached to it are what a deck needs to wear
+   * it. Pushed, versioned and shared like any other deck.
+   */
+  deck: { pages: number; versions: number; files: string[]; usedBy: number };
 }
 
 /** One stylesheet for the six faces the three brands use (Google Fonts, already allowed by the CSP). */
@@ -66,6 +72,12 @@ export const DEMO_BRANDS: DeckBrand[] = [
       eyebrow: 'Third quarter',
       title: 'A quiet quarter, on purpose',
       body: 'We shipped less and kept more of it. Here is what stayed.'
+    },
+    deck: {
+      pages: 9,
+      versions: 4,
+      files: ['logo.svg', 'Fraunces.woff2', 'DMSans.woff2', 'voice.md'],
+      usedBy: 3
     }
   },
   {
@@ -94,6 +106,12 @@ export const DEMO_BRANDS: DeckBrand[] = [
       eyebrow: '// roadmap.h2',
       title: 'Ship the boring parts first',
       body: 'p99 under 40 ms before any new surface. Three milestones, no slides about vision.'
+    },
+    deck: {
+      pages: 12,
+      versions: 7,
+      files: ['mark.svg', 'SpaceGrotesk.woff2', 'charts.css', 'voice.md'],
+      usedBy: 1
     }
   },
   {
@@ -122,32 +140,15 @@ export const DEMO_BRANDS: DeckBrand[] = [
       eyebrow: 'Autumn',
       title: 'The collection, in twelve pieces',
       body: 'Blown in small series. Available from October.'
+    },
+    deck: {
+      pages: 7,
+      versions: 2,
+      files: ['monogram.svg', 'InstrumentSerif.woff2', 'lookbook.pdf'],
+      usedBy: 1
     }
   }
 ];
 
-/** The brand as the file a deck would carry: what `slideless push --brand` would read. */
-export function brandFile(b: DeckBrand): string {
-  return JSON.stringify(
-    {
-      brand: b.id,
-      fonts: {
-        display: `${b.fonts.display.family} ${b.fonts.display.weight}${b.fonts.display.italic ? ' italic' : ''}`,
-        body: `${b.fonts.body.family} ${b.fonts.body.weight}`,
-        label: b.fonts.label.family
-      },
-      colors: {
-        ground: b.colors.ground,
-        ink: b.colors.ink,
-        accent: b.colors.accent,
-        accent2: b.colors.accent2
-      },
-      background: { kind: b.background.kind, grain: b.background.grain },
-      shape: { radius: b.shape.radius, stroke: b.shape.stroke },
-      motion: b.motion.kind,
-      voice: b.voice.tone.map((w) => w.toLowerCase())
-    },
-    null,
-    2
-  );
-}
+/** The pages a brand deck carries, in the order a person reads a house style. */
+export const BRAND_DECK_PAGES = ['Cover', 'Colours', 'Type', 'Voice', 'Layouts'] as const;

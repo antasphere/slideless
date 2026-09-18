@@ -3,6 +3,10 @@
      in the order a person would describe a house style: how it looks, how it
      is set, how it moves, how it speaks. */
   import BrandSlide from './BrandSlide.svelte';
+  import BrandPages from './BrandPages.svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { fileTag } from '$lib/tags';
+  import Layers from '@lucide/svelte/icons/layers';
   import Check from '@lucide/svelte/icons/check';
   import type { DeckBrand } from '$lib/brands-demo';
   import { t } from '$lib/i18n';
@@ -13,6 +17,15 @@
     onSelect?: () => void;
   }
   let { brand, selected = false, onSelect }: Props = $props();
+
+  const MIME: Record<string, string> = {
+    svg: 'image/svg+xml',
+    woff2: 'font/woff2',
+    md: 'text/markdown',
+    css: 'text/css',
+    pdf: 'application/pdf'
+  };
+  const mimeOf = (file: string) => MIME[file.split('.').pop() ?? ''] ?? 'application/octet-stream';
 
   const swatches = $derived([
     brand.colors.ground,
@@ -76,6 +89,23 @@
         {/each}
       </dd>
     </dl>
+
+    <div class="deck">
+      <p class="deck-line">
+        <Layers class="size-3.5" />
+        {t('brands.deckLine', {
+          pages: String(brand.deck.pages),
+          versions: String(brand.deck.versions),
+          used: String(brand.deck.usedBy)
+        })}
+      </p>
+      <BrandPages {brand} />
+      <div class="flex flex-wrap gap-1.5">
+        {#each brand.deck.files as file (file)}
+          <Tag {...fileTag(mimeOf(file))} label={file} />
+        {/each}
+      </div>
+    </div>
 
     {#if onSelect}
       <button type="button" class="use" disabled={selected} onclick={onSelect}>
@@ -150,10 +180,24 @@
     font-size: 12px;
     color: var(--ink-soft);
   }
+  .deck {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hairline);
+  }
+  .deck-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
   .use {
     margin-top: auto;
     height: var(--control-h-md);
-    border-radius: var(--r-btn);
+    border-radius: 10px;
     border: 1px solid var(--hairline);
     font-size: 13.5px;
     transition: background-color var(--motion-duration) var(--motion-ease);

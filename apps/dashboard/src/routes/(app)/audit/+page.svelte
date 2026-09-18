@@ -73,7 +73,7 @@
   <p class="text-sm text-destructive">{list.error}</p>
 {:else if phone.current}
   {#each days as group (group.day)}
-    <h2 class="overline mb-2 mt-6 first:mt-0">{group.day}</h2>
+    <h2 class="eyebrow mb-2 mt-6 first:mt-0">{group.day}</h2>
     <ul class="sheet divide-y divide-[var(--hairline)] overflow-hidden">
       {#each group.entries as entry (entry.id)}
         {@const Glyph = glyph(entry)}
@@ -204,7 +204,7 @@
       </dl>
       {#if opened.metadata}
         <!-- SECURITY: metadata may carry user-authored strings; text interpolation only. -->
-        <p class="overline mb-2 mt-5">{t('audit.colDetails')}</p>
+        <p class="eyebrow mb-2 mt-5">{t('audit.colDetails')}</p>
         <pre class="meta">{pretty(opened.metadata)}</pre>
       {/if}
     {/if}
