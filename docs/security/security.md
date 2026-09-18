@@ -3,7 +3,7 @@
 What a Slideless instance enforces out of the box, what its operator is
 responsible for, and the rules that govern rendering user content.
 
-## Enforced by the chassis
+## Enforced by every instance
 
 - **Closed sign-up.** Accounts enter through first-boot setup or invitations
   only: the HTTP sign-up endpoint is disabled, OTP signs in existing
@@ -31,7 +31,7 @@ responsible for, and the rules that govern rendering user content.
   still be proven. An address is never marked verified without proof.
 - **Live authorization.** Every request re-checks the workspace membership
   row — deactivating a member instantly kills their sessions, API keys, and
-  (M6) OAuth tokens, regardless of cookie/token age.
+  OAuth tokens, regardless of cookie/token age.
 - **Fail-closed machine access.** API keys and OAuth tokens reach only the
   endpoints consciously listed in `middleware/scopes.ts`, each behind its
   scope. New endpoints are unreachable to machine credentials until opened.
@@ -43,7 +43,8 @@ responsible for, and the rules that govern rendering user content.
   renders on the app origin. Everything carries `nosniff`; HTML we serve is
   locked behind a hash-based CSP with `frame-ancestors 'none'`.
 - **Retry-safe creates.** An `Idempotency-Key` header on the create POSTs
-  (api-keys, invitations, reset links) replays the original response instead
+  (API keys, invitations, reset and change-email links, upload sessions,
+  share-link creation, deck duplicate) replays the original response instead
   of double-creating; cached responses are AES-256-GCM encrypted because
   they carry one-shot secrets.
 - **Auth-surface rate limits** (login per-IP+email, OTP per-IP+email, setup,
@@ -89,14 +90,19 @@ responsible for, and the rules that govern rendering user content.
 - **Container hardening.** Non-root user, tini PID 1, read-only rootfs
   (only `/data` and `/tmp` writable), no secrets in image layers, CI image
   vulnerability scan gating every release.
-- **Zero phone-home.** Nothing leaves the instance unless an operator
-  configures an exporter (`OTEL_EXPORTER_OTLP_ENDPOINT`) or a rail sink —
-  verifiable in code: no other outbound calls exist.
-- **GDPR export + delete.** `GET /workspace/export` streams the whole
-  workspace as a zip (tables as JSON, audit log as NDJSON, every live blob;
-  invitation token hashes and API-key secret hashes never leave) — for an
-  admin+ session, or an API key deliberately granted the opt-in
-  `data:export` scope (never implied by `presentations:read`, or any admin read key
+- **Zero phone-home.** No telemetry, no update check. The instance talks only
+  to what you configure: the mail driver (SMTP or Resend), an S3 bucket,
+  Redis, Google sign-in, an OTLP exporter (`OTEL_EXPORTER_OTLP_ENDPOINT`),
+  and on the cloud edition the Antasphere hub.
+- **Workspace export + account deletion.** `GET /workspace/export` streams a
+  zip of the workspace record, its member roster, invitations, workspace-pinned
+  API keys, the audit log (NDJSON), file metadata and every live blob
+  (invitation token hashes and API-key secret hashes never leave). **It is not
+  yet a complete data-portability export:** decks, versions, share links,
+  collaborators, annotations, form responses and view events are not in it;
+  read those through the API or the CLI. It answers an admin or owner only, by
+  session or by a key of theirs that also carries the opt-in `data:export`
+  scope (never implied by `presentations:read`, or any admin read key
   would double as a whole-tenant exfiltration tool). A `presentations:read`
   key is bounded by its owner's own reach: for a plain member that is the
   decks they own or collaborate on, down to the raw blobs
@@ -108,8 +114,11 @@ responsible for, and the rules that govern rendering user content.
   unlisted in the scope allowlist and absent from the CLI — a conscious
   choice, deleting people is a human act. The cascade removes the person
   (sessions, membership, API keys, invitations they issued) while **files
-  they uploaded stay with the workspace**, uploader anonymized to NULL, and
-  audit history is kept anonymized. The last-owner rule is **race-free**: a
+  they uploaded stay with the workspace**, uploader anonymized to NULL. **Audit
+  history is kept, and it is not fully anonymized:** earlier rows keep their
+  action, IP and metadata with the actor link nulled, the deletion itself is
+  recorded with the erased email, and per-deck collaborator rows keep the
+  invited email. The last-owner rule is **race-free**: a
   `workspace_members` trigger (migration 0009) makes a zero-active-owner
   end state impossible under any concurrency, and the HTTP surfaces
   serialize on a per-workspace advisory lock so a concurrent-race loser
@@ -124,16 +133,16 @@ responsible for, and the rules that govern rendering user content.
 - **CSRF posture.** Better Auth's routes are Origin-checked: any
   cookie-bearing or fetch-metadata-bearing request is validated against the
   trusted origins, and sign-in additionally rejects a foreign `Origin`
-  outright even on cookieless requests (M9 — closes the legacy-browser
+  outright even on cookieless requests (closes the legacy-browser
   login-CSRF/session-fixation window; CLI/SDK/MCP calls carry no Origin and
   are unaffected). The fresh-session (under 24 h) no-password `/delete-user`
   window is a Better Auth default: blocked cross-site by that Origin guard
   and by SameSite=Lax, it is only self-triggerable. The custom `/api/v1`
   routes are covered by a **cross-site gate of their own**
-  (`middleware/cross-site.ts`, PRDCT-1375): every unsafe method under
+  (`middleware/cross-site.ts`): every unsafe method under
   `/api/v1` is refused when `Sec-Fetch-Site` says `cross-site`, or when an
   `Origin` arrives that is neither the serving origin nor `PUBLIC_BASE_URL`
-  — and, when `VIEWER_BASE_URL` splits the origins (PRDCT-1352), the viewer
+  — and, when `VIEWER_BASE_URL` splits the origins, the viewer
   origin is refused outright, even when it is the serving origin: deck script
   lives there, and `middleware/host-gate.ts` keeps the dashboard, sign-in and
   the cookie-authed API off that hostname altogether.
@@ -144,7 +153,7 @@ responsible for, and the rules that govern rendering user content.
   client calls from inside the sandboxed iframe whose Origin is the opaque
   `null`. The **share-link viewer itself (`/v/:secret`) is mounted on the root
   app and is not behind this gate at all** — it is deliberately embeddable
-  cross-origin (ADR 021, `/embed.js`), password-form POST included. Neither
+  cross-origin (`/embed.js`), password-form POST included. Neither
   viewer surface is cookie-authenticated: the share secret in the path is the
   credential, so neither is the ambient-credential class this closes.
 - **The raw request path never reaches the log stream or a trace.** This was
@@ -249,7 +258,7 @@ responsible for, and the rules that govern rendering user content.
   current secret is refused at a preflight with the remedy in the message —
   never a booted instance that 500s on every token mint.
 
-## The rule for products built on this template
+## The rule for rendering user content
 
 **Never render user-uploaded or user-authored markup on the app origin.**
 On a single-origin self-hosted box, rendered user content plus dashboard
@@ -327,12 +336,13 @@ surface, `GET|POST /api/v1/viewer/{secret}/annotations`
 ### Per-deck collaborators
 
 Dev collaborators are per-deck email grants claimed through the
-invitations pattern: hash-only two-token storage (the emailed token proves
+invitations pattern (a deck owner can invite colleagues; inviting an outside
+email needs a workspace admin or owner): hash-only two-token storage (the emailed token proves
 mailbox control and may set `emailVerified`; the copyable link never does),
-14-day pending TTL, 10 live grants per deck. Claiming makes a new account an
-ordinary workspace MEMBER (the platform authenticates through memberships) —
-so a collaborator can read workspace-scoped listings like any member, while
-deck WRITE stays gated: an active dev can push versions (recorded as
+14-day pending TTL, 10 live grants per deck. Claiming gives a new account a
+`guest`-origin membership that exists only so it can authenticate: it opens
+that one deck's surfaces and nothing workspace-level (no file cabinet, no
+roster, no export, no deck creation). Deck WRITE stays gated: an active dev can push versions (recorded as
 `created_by_role = 'dev'`), manage the deck's share tokens and annotations,
 but never delete the deck or alter its collaborator roster (owner/admin
 only). `/collaborators/lookup` + `/collaborators/claim` are public

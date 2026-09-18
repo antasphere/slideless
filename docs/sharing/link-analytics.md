@@ -12,11 +12,12 @@ An event is recorded under exactly the same rule that increments a link's view c
 
 ## What each event stores — and what it never stores
 
-Each view event carries exactly four facts:
+Each view event carries exactly five facts:
 
 | Field          | What it is                                                                              |
 | -------------- | --------------------------------------------------------------------------------------- |
 | `occurredAt`   | When the view happened                                                                  |
+| `version`      | The deck version that was served                                                        |
 | `referrerHost` | The **host** of the referring page (e.g. `docs.example.com`), or empty for direct opens |
 | `placement`    | The link's `?p=` label, if the opened URL carried one (see below)                       |
 | `uaFamily`     | A coarse browser family: `chrome`, `firefox`, `safari`, `edge`, `bot`, or `other`       |
@@ -48,7 +49,7 @@ The same link can carry different labels in different places — the label is pa
 - **API** — `GET /api/v1/presentations/{id}/tokens/{tokenId}/views`, cursor-paginated, newest first. Reading a link's views takes the same permission as listing the deck's links.
 - **MCP** — the `slideless_list_token_views` tool.
 
-Deleting a share link keeps its recorded history in the database (the events survive for deck-level statistics), but revoking a link — the normal way to end access — keeps it fully browsable in the dashboard.
+A share link is never deleted, only revoked, and a revoked link keeps its full history, browsable in the dashboard. Deleting the deck removes its view events with it.
 
 ## Retention
 

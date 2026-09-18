@@ -11,8 +11,14 @@ restore — and the drill that proves your backups actually work.
    `AUTH_SECRET`, the auto-generated auth secret.
 3. **`.env`** — your secrets and configuration.
 
-With `STORAGE_DRIVER=s3`, blobs live in the bucket; use the bucket's own
-replication/versioning and back up only 1 + 3.
+With `STORAGE_DRIVER=s3`, the blobs live in the bucket: use the bucket's own
+replication/versioning for them. **Keep backing up 1 + 2 + 3 all the same**
+(`backup.sh` does): `/data` still holds the erasure tombstone and, on
+generated-secret installs, the pepper root, whatever the storage driver.
+
+**Only the config archive is encrypted.** The database dump (emails, password
+and key hashes, sessions, the audit log) and the data tarball are cleartext
+gzip. Encrypt the off-site copy yourself (restic, age, an encrypted bucket).
 
 **3 is not optional — and it happens only with `BACKUP_PASSPHRASE` set.**
 `AUTH_SECRET` is the pepper root: API-key hashes, share-link and edit-secret
@@ -73,8 +79,8 @@ versions of `backup.sh`, the legacy cleartext `config-<stamp>.tar.gz`.
 ### The generated pepper root never rides in the data tarball
 
 On installs where the server generated its own auth secret into
-`/data/secret`, that file **is** the pepper root — and the data tarball is
-the one artifact that is not encrypted. With `BACKUP_PASSPHRASE` set,
+`/data/secret`, that file **is** the pepper root — and the data tarball, like
+the database dump, is not encrypted. With `BACKUP_PASSPHRASE` set,
 `backup.sh` therefore leaves `/data/secret` **out** of `data-<stamp>.tar.gz`
 and carries it inside the encrypted config archive instead (as
 `data-secret`, beside `.env`). No backup artifact holds the root in
@@ -87,8 +93,11 @@ so loudly; that is the conscious choice the flag exists for.
 
 ```bash
 ls /var/backups/slideless          # find the <STAMP>
-./scripts/restore.sh <STAMP>      # prompts before replacing anything
+BACKUP_PASSPHRASE=… ./scripts/restore.sh <STAMP>      # prompts before replacing anything
 ```
+
+The passphrase is the one the backup was taken with: without it the restore
+stops at the encrypted config archive, before anything is touched.
 
 The restore is staged, so a bad backup cannot take the instance down:
 
@@ -105,8 +114,9 @@ The restore is staged, so a bad backup cannot take the instance down:
    number of rows the dump actually carries.
 3. **Swap.** `/data` is extracted beside the live tree and swapped, keeping
    the old tree until the end; the scratch database is renamed into place and
-   the previous one is kept as `slideless_prev_<stamp>`.
-4. **Put the pepper root back**, from whichever of its two homes the backup
+   the previous one is kept as `slideless_prev_<stamp>`, the stamp's `-`
+   replaced by `_` (`restore.sh` prints the exact name when it finishes).
+4. **Put the pepper root back**, from whichever of its three homes the backup
    carries it in. Only pepper material moves: the live `POSTGRES_PASSWORD`
    belongs to the database container on this host, and overwriting it with the
    backup's would lock the app out of its own database.
@@ -150,14 +160,14 @@ config_env | data_volume | config_secret | none`):
 | None of them                                                | Refuses the restore, unless you pass `--no-config`.                                                     |
 
 If you would rather never depend on `/data` for this, set `AUTH_SECRET`
-explicitly and keep it in a secret manager — the reasoning is in the
-repository's internal design note on backup and data sovereignty.
+explicitly and keep it in a secret manager: an env value wins over the
+file, and `.env` only ever travels inside the encrypted archive.
 
 Drop the kept database once you have verified the instance:
 
 ```bash
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U slideless -d postgres \
-  -c 'DROP DATABASE "slideless_prev_<stamp>";'
+  -c 'DROP DATABASE "slideless_prev_<stamp with - as _>";'
 ```
 
 Rotating `AUTH_SECRET` afterwards is a separate, deliberate operation — see
@@ -190,8 +200,9 @@ its next boot.
 taken before the handover that made the erasure possible brings the subject
 back as the sole active owner. The replay refuses to delete them (the workspace
 must keep one active owner and the product cannot decide who inherits it), and
-the instance then **refuses to serve**: `/readyz` is 503 with the reason, every
-other route answers `503 service_closed`, and a `user.erasure_replay_refused`
+the instance then **refuses to serve**: `/readyz` is 503 with the reason,
+`/healthz` and `/metrics` keep answering, every other route answers
+`503 service_closed`, and a `user.erasure_replay_refused`
 audit row names the user. Nothing about the subject is touched (no half-erased
 account). To resolve it, promote another member to owner in the database, then
 restart; the next boot replays the tombstone under the guard and serves:
@@ -231,8 +242,9 @@ Quarterly, on a scratch machine:
 ```bash
 git clone … slideless && cd slideless
 ./setup.sh                                   # fresh secrets, fresh volumes
+sudo mkdir -p /var/backups/slideless
 cp /path/to/backups/{db,data,config}-<stamp>.* /var/backups/slideless/
-./scripts/restore.sh <stamp> --yes
+BACKUP_PASSPHRASE=… ./scripts/restore.sh <stamp> --yes
 ```
 
 Then verify, and mean it:

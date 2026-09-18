@@ -20,8 +20,8 @@ nothing left to do). `/readyz` stays 503 until the schema is current.
 APP_IMAGE=ghcr.io/antasphere/slideless:1.2.3
 ```
 
-Tags published per release: `latest`, `X`, `X.Y`, `X.Y.Z`; the main branch
-publishes `next` and `sha-<commit>` for early testing.
+Tags published per release (a `vX.Y.Z` tag): `latest`, `X`, `X.Y`, `X.Y.Z`; every
+push to `prod` publishes `next` and `sha-<commit>` for early testing.
 
 ## Rollback
 

@@ -12,7 +12,10 @@ that is made safe, what the guarantees are, and the one hardening knob.
 
 - The secret is a **384-bit random path token, stored hash-only** — the
   database never holds the URL, and a leaked database does not leak working
-  links. The URL is shown once at creation and is never retrievable again.
+  links. The URL is shown once at creation and is never retrievable again, with
+  one exception: a create sent with an `Idempotency-Key` can be replayed with
+  that same key for 24 hours (the cached response is encrypted under the auth
+  secret).
 - Links are **per-recipient**: each can carry its own expiry, viewer
   password (scrypt-hashed), pinned version or follow-latest mode, and view
   stats. Revocation is instant — viewer entries are served `no-store` and
@@ -119,7 +122,8 @@ Deck reads are **private by construction**, never workspace-wide:
 - **Machines authenticate with `slk_` API keys or the instance's own OAuth
   2.1 tokens**, and reach only the endpoints consciously allowlisted for
   their scopes — everything else fails closed with 403. Each instance is
-  its own OAuth authorization server; no central identity exists.
+  its own OAuth authorization server; on a self-hosted instance no central
+  identity exists (the cloud edition signs people in through the Antasphere hub).
 - Annotator share links use a deliberately public, token-authed annotation
   API bounded by rate limits — the token in the URL is the whole
   credential, and it can only write notes on its own deck+version.

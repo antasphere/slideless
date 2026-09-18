@@ -95,7 +95,7 @@ A share link minted for one named recipient **is that person's response**. Reope
 This is the default for every link you name: the dashboard's share form (**Remember answers on this link**, ticked), the API and the MCP tool (`remembersResponses`, default `true`), `slideless share <id> --name "Alice"` and every link `share-email` mints. Two shapes never remember, on purpose:
 
 - **The unnamed quick link.** `slideless share <id>` without `--name` mints the generic `cli` label, and a link nobody named is a link for nobody in particular: every submit through it is a fresh response, as before. Pass `--remember` to make it remember, `--no-remember` on a named link to make it not.
-- **Embeds.** A deck embedded on a website is opened by everyone who visits the page, all through the same link, so an embedded form never brings back the previous visitor's answers and never updates them: every embedded submission is its own response. The same link opened directly still remembers.
+- **Embeds.** A deck embedded on a website is opened by everyone who visits the page, all through the same link, so an embedded form never brings back the previous visitor's answers and never updates them: every embedded submission is its own response. The same link opened directly still remembers. **Never embed a remembering link:** an embed publishes the link's secret in your page source, so anyone can open that link directly and read or change the remembered answer. Mint the embed's link with `--no-remember` (or untick _Remember answers on this link_).
 
 **Read this before you forward such a link.** On a remembering link the link secret is a bearer credential for the answers, not just for the deck: whoever holds the link can read what was answered through it and change it. Hand it to the one person it was minted for. For a link you will post publicly, or pass around a team, untick the switch (or `--no-remember`): every submit is then a separate response, and the personal edit link on the confirmation card is the only way back to one of them.
 
@@ -162,7 +162,7 @@ On a link with forms off, no submission wiring is served and direct submission a
 Two embed rules carry over:
 
 - **Password-protected links stay unusable in embeds.** The password gate never renders inside a frame, so such a link's forms are unreachable there too. Embed links without a password.
-- **Responses stay anonymous**, exactly as they do on a direct link, unless the form itself asks. The confirmation dialog opens inside the frame, the personal edit link and the email option work the same from there, and the loader ignores any `#…` fragment on a `data-slideless-embed` URL, so an embedding page cannot point visitors at somebody else's response.
+- **Responses stay anonymous**, exactly as they do on a direct link, unless the form itself asks. The confirmation dialog opens inside the frame, the personal edit link and the email option work the same from there, and the loader drops any `#…` fragment on a `data-slideless-embed` URL. A hand-written iframe carrying a fragment only triggers the ask-first prompt, which defaults to a new response: a fragment is never silently adopted.
 
 ## Limits
 

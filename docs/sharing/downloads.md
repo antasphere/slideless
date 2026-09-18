@@ -21,7 +21,7 @@ On a share link, the attachments are reachable relative to the deck's own URL:
 | `/v/SECRET/downloads.zip`           | Every attachment of the version as one zip, named `<deck-title>-v<n>.zip`, streamed as it is built, stored without compression                           |
 | `/api/v1/viewer/SECRET/attachments` | The list the recipient bar renders, readable by any script on the page too: `{ version, attachments: [{ name, path, sizeBytes, contentType, sha256 }] }` |
 
-The three are behind the same rules as the deck itself: a revoked link answers 403, an expired one 410, an unknown one 404, and a password-protected link takes the password the same way the deck does (the unlock cookie in a browser, the `x-viewer-password` header for a script). Nothing here sets or reads a session; the link secret is the whole credential.
+The three are behind the same rules as the deck itself: a revoked link answers 403, an expired one 410, an unknown one 404, and a password-protected link takes the password: the two `/v/` URLs the same way the deck does (the unlock cookie in a browser, the `x-viewer-password` header for a script); the list endpoint is cookie-less and takes the `x-slideless-unlock` proof the bar is handed, or `x-viewer-password`. Nothing here sets or reads a session; the link secret is the whole credential.
 
 ## The per-link switch
 
@@ -29,6 +29,7 @@ Every share link carries `canDownload`, **on by default**: files were put in `do
 
 - **API** — `canDownload: false` on `POST /api/v1/presentations/{id}/tokens`, or on a `PATCH` of an existing link.
 - **MCP** — the `canDownload` argument of `slideless_add_share_token`.
+- **CLI** — `--no-download` on `slideless share` and `slideless share-email`.
 
 With downloads off, the deck still opens. The file and zip URLs answer 404 and the attachments list answers an empty `attachments` array with a 200, never a 403: the link is public, only the capability is absent, and a link holder learns nothing about a folder you chose not to hand out.
 

@@ -92,7 +92,7 @@ selection, never part of the credential):
 
 ```bash
 antasphere login                       # once, for the whole tool family
-slideless list --api-url https://app.slideless.ai   # exchanges + caches on first use
+slideless list --api-url https://slideless.antasphere.com   # exchanges + caches on first use
 slideless list                                      # served from the cache — no hub call, no new key
 ```
 
@@ -169,7 +169,7 @@ slideless push ./deck --no-open                  # never open, even on the first
 slideless open ./deck                            # open the linked deck's page (--json prints the URL)
 slideless pull <id> ./out                        # byte-exact download of the latest version
 slideless pull <id> ./out --at 1                 # …or any pinned version
-slideless pull ./deck                            # no id: the folder's .slideless.json names the deck
+cd deck && slideless pull                        # no id: the current folder's .slideless.json names the deck
 slideless pull-annotations [id] [--version N] [--status open|resolved] [--out notes.json]
 slideless annotation resolve <id> <annotationId> # mark a note resolved
 slideless annotation reopen <id> <annotationId>  # …and flip it back open
@@ -244,10 +244,10 @@ re-uploaded.
   Error: downloads/video.mp4 is 250.0 MB, over this instance's 100.0 MB per-file cap (MAX_FILE_SIZE_MB) — nothing was uploaded. Shrink or drop the file and push again.
   ```
 
-  The cap is `limits.maxFileSizeMb` from
-  `GET /api/v1/instance` when the instance exposes it, else the documented
-  default of 100 MB. Without this check the instance answered `413` to the
-  oversized blob only after its upload, with the smaller files already stored.
+  The cap the CLI checks against is the 100 MB default: no instance publishes
+  its own `MAX_FILE_SIZE_MB` yet. On an instance configured with a lower cap the
+  server stays the enforcement point and still answers `413` to the oversized
+  blob after its upload, with the smaller files already stored.
 
 - Flags: `--title`, `--entry`, `--kind presentation|app|plan`,
   `--interactive`, `--id`, `--new`, `--open` / `--no-open`.
@@ -266,17 +266,22 @@ byte-identical to what was pushed, attachments under `downloads/` included
 so a later `push` in that folder targets the same deck. It treats the
 instance's answer as untrusted input: every manifest path is re-validated
 locally, each blob is capped at the size the manifest declared and must hash
-to the sha256 the manifest claims before anything is written, writes refuse
-to follow a symlink (file or directory) and never leave a file executable,
+to the sha256 the manifest claims before anything is written, deck file writes
+refuse to follow a symlink (file or directory) and never leave a file executable
+(the `.slideless.json` link file itself is written plainly),
 and a destination whose `.slideless.json` names a _different_ instance errors
 loudly — the same refusal `push` has always had.
 
-**dev** serves the folder locally with the **exact** public-viewer posture —
+**dev** serves the folder locally under the same sandbox headers as the public viewer —
 `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox
-allow-modals allow-downloads`, `nosniff`, `no-referrer`, `no-store` — so what
-you preview is exactly what share-link recipients get (same isolation, same
-relative paths). Live reload is injected into HTML responses; any file change
-reloads the browser. No backend, no credentials.
+allow-modals allow-downloads`, `nosniff`, `no-referrer`, `no-store` — so isolation
+and relative paths match what share-link recipients get. It is not the hosted
+viewer: it injects live reload and nothing else (no recipient bar, no annotation
+layer, no forms runtime, so a marked form submits nowhere), it serves
+`downloads/` files inline and has no `downloads.zip`, it serves files a push
+would ignore, and a root-absolute URL (`/style.css`) resolves locally but breaks
+under `/v/<secret>/`. Test forms, notes and downloads on a real share link. Any
+file change reloads the browser. No backend, no credentials.
 
 It serves the deck folder and nothing else: a path is resolved with
 `realpath` and re-checked against the root, so a symlink inside the folder
@@ -443,7 +448,7 @@ slideless completion fish | source      # fish
 
 ## Machine use
 
-Add `--json` to any command for the wire shape; every error prints to stderr
+Add `--json` to any command except `files download` for the wire shape; every error prints to stderr
 and exits non-zero. Typical agent loop:
 
 ```bash

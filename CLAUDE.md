@@ -15,6 +15,9 @@ deploys) + `dev` (day-to-day work).
   `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
 - API key prefix `slk` (`apps/server/src/apikeys/service.ts`).
 - Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
+- License: fair-code under the Sustainable Use License 1.0, licensor Antasphere (`LICENSE`; every
+  `package.json` says `SEE LICENSE IN LICENSE`, the CLI included). Say fair-code or source-available,
+  never open source (PRDCT-1350).
 - Docker image `ghcr.io/antasphere/slideless`; Postgres role/db `slideless`; port 3000; `EDITION=oss`.
 
 ## Layout
@@ -240,7 +243,7 @@ and points the SMTP driver at it (internal/dev-mailpit.md).
 ## Before you change things
 
 **`internal/` is no longer in this repository.** The engineering record moved to the project OS
-when the repo was prepared for open source (PRDCT-1341): every `internal/…` path in this file
+when the repo was prepared for publication (PRDCT-1341): every `internal/…` path in this file
 reads at `labs/products/antasphere/tools/slideless/slideless-os/knowledge/internal/` in the
 workspace (`decisions/` for the ADRs, `security-runbooks.md`, `federation.md`, `production-
 readiness.md`, `backup-and-data-sovereignty.md`, `cli-release.md`, `dev-mailpit.md`). Nothing

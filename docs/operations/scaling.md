@@ -5,7 +5,7 @@ horizontally because the app container holds no state. Claims rot; this drill
 is the executable proof. It stands up real multi-replica stacks with Docker
 Compose and asserts every scaling invariant with direct evidence (Postgres
 lock tables, DDL logs, cross-replica HTTP round-trips, pg-boss internals).
-CI runs it on every push and PR (the `scale-drill` job in
+CI runs it on every push to `prod` or `dev` and on every PR (the `scale-drill` job in
 `.github/workflows/ci.yml`), so the proof cannot silently regress.
 
 ## Run it locally
@@ -19,7 +19,7 @@ DRILL_SKIP_BUILD=1 ./scripts/scale-drill.sh   # reuse an existing image (CI does
 Needs Docker, `jq`, `curl`, `openssl`, and free localhost ports 3801-3803 and
 3811-3813. Everything is isolated and throwaway: compose project
 `scale-drill`, a separate `docker-compose.scale.yml` (never the operator
-stack), generated secrets in a mktemp dir, tmpfs data volumes, and a
+stack), generated secrets in a mktemp dir, anonymous per-container data volumes, and a
 teardown (`down -v`, image removal, scratch cleanup) that runs on exit —
 pass or fail. It never reads a committed `.env`.
 

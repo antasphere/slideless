@@ -2,15 +2,18 @@
 
 ## Reporting a vulnerability
 
-Report vulnerabilities privately to **security@codika.io**. Never open a
-public issue or PR for a security problem — that discloses it before a fix
-exists. Include reproduction steps and your assessment of impact; you will
-get an acknowledgement and a remediation timeline.
+Report vulnerabilities privately through GitHub's
+[private vulnerability reporting](https://github.com/antasphere/slideless/security/advisories/new).
+Never open a public issue or pull request for a security problem: that
+discloses it before a fix exists. Include reproduction steps and your
+assessment of impact.
 
 ## Supported versions
 
-The latest `main` is the only supported version. Instantiated products are
-responsible for pulling fixes into their own trees.
+The latest release is the only supported version: the head of the `prod`
+branch and the newest `ghcr.io/antasphere/slideless` tag. Self-hosted
+instances upgrade with `./update.sh`
+([docs/self-hosting/upgrade.md](docs/self-hosting/upgrade.md)).
 
 ## Posture
 

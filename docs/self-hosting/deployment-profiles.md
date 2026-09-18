@@ -1,6 +1,6 @@
 # Deployment profiles
 
-One template, one statelessness invariant, two documented shapes. Scaling is
+One image, one statelessness invariant, two documented shapes. Scaling is
 a deployment choice, not an architecture change: the app container holds no
 state (sessions in Postgres, jobs in pg-boss, files behind the
 StorageDriver, counters append-and-aggregate, graceful drain on SIGTERM,
@@ -19,14 +19,14 @@ backup scripts assume.
 The same image, N autoscaling replicas (e.g. Cloud Run), with the state
 moved to managed services:
 
-| Concern     | Profile A                                    | Profile B                                                                                              |
-| ----------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Postgres    | compose `db` container                       | managed Postgres behind a connection pooler (PgBouncer/RDS Proxy/Neon)                                 |
-| Files       | `STORAGE_DRIVER=local` (single replica only) | `STORAGE_DRIVER=s3` (S3/MinIO/R2) **required** + CDN in front of the immutable content-addressed paths |
-| Rate limits | per-replica memory                           | `REDIS_URL` (shared buckets)                                                                           |
-| Secret      | auto-generated in `/data`                    | set `AUTH_SECRET` explicitly — all replicas must share it                                              |
-| Roles       | one container, `SERVICE_ROLE=all`            | API pool `SERVICE_ROLE=api`, worker pool `SERVICE_ROLE=worker`                                         |
-| pgvector    | included in the compose image                | enable the extension on the managed instance; products run `CREATE EXTENSION`                          |
+| Concern     | Profile A                                                                                      | Profile B                                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Postgres    | compose `db` container                                                                         | managed Postgres behind a connection pooler (PgBouncer/RDS Proxy/Neon)                                 |
+| Files       | `STORAGE_DRIVER=local` (single replica only)                                                   | `STORAGE_DRIVER=s3` (S3/MinIO/R2) **required** + CDN in front of the immutable content-addressed paths |
+| Rate limits | per-replica memory                                                                             | `REDIS_URL` (shared buckets)                                                                           |
+| Secret      | `AUTH_SECRET` in `.env` (written by `setup.sh`); generated into `/data/secret` only when unset | set `AUTH_SECRET` explicitly — all replicas must share it                                              |
+| Roles       | one container, `SERVICE_ROLE=all`                                                              | API pool `SERVICE_ROLE=api`, worker pool `SERVICE_ROLE=worker`                                         |
+| pgvector    | included in the compose image                                                                  | enable the extension on the managed instance if you need it                                            |
 
 **Profile B requires shared storage.** `STORAGE_DRIVER=local` is
 single-replica only: each replica has a private disk, so a blob uploaded
@@ -35,7 +35,7 @@ blob answers a clean `404 not_found` on the content route — that is a safety
 net against silent corruption, not a supported mode of operation. Any
 multi-replica deployment must set `STORAGE_DRIVER=s3` (S3, MinIO, R2).
 
-Requirements that make B safe are already the template's invariants:
+Requirements that make B safe are already Slideless invariants:
 `AUTO_MIGRATE` under an advisory lock means one replica migrates while
 others wait; pg-boss's own install DDL (schema + queue partitions) is
 serialized the same way under a second advisory lock (key 7432004,
@@ -47,7 +47,7 @@ job supervision (note: it still applies the app migrations unless you set
 
 These claims are not just documented — they are exercised as a real
 multi-replica stack by the scale drill (`scripts/scale-drill.sh`, run in CI
-on every push): the migration-lock race, cross-replica sessions and API
+on every push to `prod` or `dev` and on every pull request): the migration-lock race, cross-replica sessions and API
 keys, Redis-shared rate limits (with the in-memory contrast), and the
 api/worker split. See [scaling.md](../operations/scaling.md), including its findings on
 first-boot ordering (a fresh database needs one `all`/`worker` boot before
@@ -60,7 +60,7 @@ connections per replica, `statement_timeout` 30 s,
 accordingly. Behind PgBouncer in **transaction mode** the two timeouts do
 not stick: they are session-level settings, and transaction pooling hands
 each transaction a different server session. Set them server-side instead
-(`ALTER DATABASE platform SET statement_timeout = '30s'`, same for
+(`ALTER DATABASE slideless SET statement_timeout = '30s'`, same for
 `idle_in_transaction_session_timeout`) or run the pooler in session mode.
 
 Kubernetes is an ops preference some enterprises impose, never a scale

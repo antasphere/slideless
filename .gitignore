@@ -27,5 +27,3 @@ backups
 .vscode
 *.local.json
 .playwright-mcp/
-# The CLI tarball ships the root license: prepack copies it here, the root file is the only source.
-packages/cli/LICENSE

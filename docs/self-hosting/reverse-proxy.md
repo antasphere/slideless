@@ -15,9 +15,6 @@ sudo apt install -y caddy    # or: docker run caddy (see below)
 ```caddyfile
 slides.example.com {
     reverse_proxy localhost:3000
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    }
 }
 ```
 
@@ -30,13 +27,22 @@ PUBLIC_BASE_URL=https://slides.example.com   # https ⇒ Secure cookies
 TRUST_PROXY=true                               # trust Caddy's x-forwarded-for
 ```
 
-and `docker compose up -d`. With the proxy in place, close port 3000 to the
-outside (`sudo ufw delete allow 3000/tcp`) so all traffic flows through TLS.
+and `docker compose up -d`.
+
+**The bind address is what keeps port 3000 off the internet, not the
+firewall.** The compose file publishes the app on `127.0.0.1` by default
+(`APP_BIND`), so on a default or `--domain` install nothing needs closing. If
+you installed with `--expose-port`, the app is published on `0.0.0.0`: set
+`APP_BIND=127.0.0.1` and `ALLOW_INSECURE_SETUP=false` in `.env` and run
+`docker compose up -d`. A ufw rule cannot close a port Docker publishes:
+Docker writes its own NAT rules, which are evaluated before ufw's. Removing
+the rule afterwards (`sudo ufw delete allow 3000/tcp`) is tidiness only.
 
 Notes:
 
-- **HSTS lives at the proxy** (above), where TLS terminates. The app already
-  sends `nosniff`, `Referrer-Policy`, and a CSP on HTML.
+- **The app sends HSTS itself** whenever `PUBLIC_BASE_URL` is https
+  (`HSTS_MAX_AGE`, default 180 days, `0` disables), plus `nosniff`,
+  `Referrer-Policy`, and a CSP on HTML. No proxy header block is needed.
 - **`TRUST_PROXY=true` only behind a proxy you control.** The app reads the
   **rightmost** `x-forwarded-for` hop — the one your proxy sets. No Caddyfile
   directive is needed: Caddy ≥2.5 discards client-supplied `X-Forwarded-*` by
@@ -100,5 +106,6 @@ caddy:
     - caddy_data:/data
 ```
 
-with a `Caddyfile` of `slides.example.com { reverse_proxy app:3000 }`, and
-remove the app's host port mapping.
+with a `Caddyfile` of `slides.example.com { reverse_proxy app:3000 }`. Declare
+`caddy_data:` under the file's top-level `volumes:` (Compose refuses an
+undeclared named volume), and remove the app's host port mapping.

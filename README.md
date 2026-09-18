@@ -13,8 +13,12 @@ a typed CLI, a versioned HTTP API (`/api/v1`), and a bundled MCP endpoint
 (`/mcp`) behind the instance's **own built-in OAuth 2.1 authorization
 server** — no central service anywhere in the loop.
 
-> Licensing: see [LICENSE](LICENSE). The code is currently proprietary to
-> Codika; open-sourcing is planned but not yet in effect.
+> **License.** Slideless is [fair-code](https://faircode.io), distributed under the
+> [Sustainable Use License](LICENSE): the source is open to read, and you may
+> self-host it, modify it and use it for your own internal business or personal
+> purposes, free of charge. You may not sell it or offer it to others as a paid
+> or hosted service. It is source-available, not open source.
+> Copyright (c) 2026 Antasphere.
 
 ## Five-minute quick start
 
@@ -25,8 +29,9 @@ button, automatic HTTPS, and browser setup.
 ```bash
 git clone <this-repo> slideless && cd slideless
 ./setup.sh                # generates secrets + a setup token, writes .env (mode 600), starts the stack
-                          # (a bare `docker compose up` works too: the server then generates the
-                          #  setup token itself and prints it in the container log)
+                          # (with only POSTGRES_PASSWORD set in .env, `docker compose up` works too:
+                          #  the server generates its secret and the setup token itself and prints
+                          #  the token in the container log)
 open http://localhost:3000
 ```
 
@@ -34,8 +39,7 @@ open http://localhost:3000
    name + owner account. It asks for the setup token `setup.sh` printed.
 2. **Connect the CLI.** Get the `slideless` binary (from this repo:
    `pnpm install && pnpm --filter @antasphere/slideless... build`, then alias
-   `node packages/cli/dist/bin.js`; or `npm i -g @antasphere/slideless` once
-   published). Mint an API key in the dashboard (API keys → New) and save it
+   `node packages/cli/dist/bin.js`; or `npm i -g @antasphere/slideless`). Mint an API key in the dashboard (API keys → New) and save it
    as a profile:
 
    ```bash
@@ -79,7 +83,7 @@ Fresh VPS? There is a one-liner installer — see [docs/self-hosting/install.md]
   can push new versions of one deck) and reviewer annotations captured
   straight from annotator share links into the owner's inbox.
 - **Agents as first-class users.** The `slideless` CLI
-  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 18 `slideless_`
+  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 22 `slideless_`
   tools ([docs/agents/mcp-connector.md](docs/agents/mcp-connector.md)), scoped `slk_` API
   keys, and a browserless email-OTP → API-key login. Start at
   [docs/getting-started/connect-an-agent.md](docs/getting-started/connect-an-agent.md).
@@ -102,7 +106,8 @@ here:
 - **No billing or plans.** Entitlements default to allow-all with
   instance-level caps (`MAX_FILE_SIZE_MB`, API quotas).
 - **No unified accounts.** The Antasphere cloud edition (hosted instances,
-  central accounts) is a separate product; this code never contacts it.
+  central accounts) runs this same code with `EDITION=cloud`; the default
+  `oss` edition has no hub surface and never contacts it.
 
 ## Repository layout
 
@@ -115,7 +120,6 @@ here:
 | `packages/sdk`      | Typed fetch client over the contract                                                      |
 | `packages/cli`      | Typed CLI over the SDK; the `slideless` binary ([docs/agents/cli.md](docs/agents/cli.md)) |
 | `docs/`             | Public product docs ([docs/index.md](docs/index.md) is the landing page)                  |
-| `internal/`         | Engineering docs + ADRs ([internal/decisions/](internal/decisions/))                      |
 
 ## Operating an instance
 
@@ -145,8 +149,7 @@ DATABASE_URL=postgres://slideless:<pw>@localhost:5432/slideless pnpm --filter @s
 For local development with a real, inspectable mail-catcher (Mailpit — the
 OTP and invitation emails land in a local inbox), run the dev overlay:
 `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
-([internal/dev-mailpit.md](internal/dev-mailpit.md)).
+(the Mailpit inbox is on `http://localhost:8025` unless `MAILPIT_UI_PORT` says otherwise).
 
-Built on the codika-platform-template chassis (instantiated at template
-commit `b0dcd13`). Template-level friction discovered while building
-Slideless is logged in [TEMPLATE-FEEDBACK.md](TEMPLATE-FEEDBACK.md).
+Built on Antasphere's platform template. Template-level friction discovered
+while building Slideless is logged in [TEMPLATE-FEEDBACK.md](TEMPLATE-FEEDBACK.md).
