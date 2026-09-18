@@ -1292,7 +1292,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   api.openapi(formResponsesFilesZipRoute, async (c) => {
     const principal = c.get('principal')!;
     const { id } = c.req.valid('param');
-    const { form, token, since } = c.req.valid('query');
+    const { form, token, source, placement, since } = c.req.valid('query');
     const deck = await service.get(principal.workspaceId, id);
     if (!deck || !(await service.canWrite(principal, deck))) {
       return c.json(err('not_found', 'Presentation not found'), 404);
@@ -1300,6 +1300,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const rows = await formUploads.listForDeck(principal.workspaceId, id, {
       form,
       token,
+      source,
+      placement,
       since: since !== undefined ? new Date(since) : undefined
     });
     if (rows.length === 0) return c.json(err('no_files', 'No uploaded files match.'), 404);

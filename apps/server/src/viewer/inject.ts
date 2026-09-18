@@ -78,6 +78,7 @@ export interface EntryTransformContext {
     | 'canDownload'
     | 'showBar'
     | 'remembersResponses'
+    | 'canUploadFiles'
     | 'createdAt'
     | 'expiresAt'
   >;
@@ -119,6 +120,8 @@ export interface EntryTransformContext {
   versionHasForms: boolean;
   /** Whether the instance's mail driver delivers (shows the email opt-in). */
   emailAvailable: boolean;
+  /** The instance's form-upload ceilings (PRDCT-2403); `maxFileBytes` 0 = uploads off. */
+  formUploadCaps: { maxFileBytes: number; maxFilesPerResponse: number };
   /**
    * Mints the signed unlock proof for password-protected tokens
    * (viewer/unlock.ts MAC), or null for password-less tokens. Called only
@@ -205,7 +208,16 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
       // note): THE rule, `linkRemembers` in forms/service.ts, called rather
       // than re-spelled (verifier round 1, F8) so the document and the API
       // can never disagree about whether a link remembers.
-      remembers: linkRemembers(ctx.token)
+      remembers: linkRemembers(ctx.token),
+      // PRDCT-2403: whether this link takes files, and the two ceilings the
+      // drop panel states. Context, not capability: the upload route applies
+      // the same three conditions to every request whatever the document
+      // says, and both numbers are ones a link holder learns from one
+      // refused upload. Null = the panel shows file fields as unavailable.
+      uploads:
+        ctx.token.canUploadFiles && ctx.token.purpose === 'share' && ctx.formUploadCaps.maxFileBytes > 0
+          ? { maxBytes: ctx.formUploadCaps.maxFileBytes, maxFiles: ctx.formUploadCaps.maxFilesPerResponse }
+          : null
     });
   }
   if (body === '') return null;

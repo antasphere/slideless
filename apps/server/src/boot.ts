@@ -788,7 +788,8 @@ export async function boot(
     // request's session here and injected a signed assertion of the viewer's
     // identity into the deck document, which deck JS could lift
     // (PRDCT-1331). Never reintroduce a session read on this path.
-    emailDelivers: email.delivers
+    emailDelivers: email.delivers,
+    formUploadCaps: formUploads.caps
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.

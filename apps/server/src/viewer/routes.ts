@@ -120,6 +120,8 @@ export interface ViewerDeps {
   viewDedupeWindowMs: number;
   /** Whether the instance's mail driver delivers — the forms runtime's email opt-in flag. */
   emailDelivers: boolean;
+  /** The instance's form-upload ceilings (PRDCT-2403): the two numbers the runtime's drop panel states. */
+  formUploadCaps: { maxFileBytes: number; maxFilesPerResponse: number };
 }
 
 /** Everything resolved about one viewer request before bytes are served. */
@@ -440,6 +442,7 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       // a form, so a form-less deck keeps its streaming ETag serve.
       versionHasForms: version.hasForms,
       emailAvailable: deps.emailDelivers,
+      formUploadCaps: deps.formUploadCaps,
       mintUnlockProof: () =>
         token.passwordHash ? mintUnlockValue(deps.authSecret, token.id, token.passwordHash) : null
     };

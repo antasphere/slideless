@@ -38,12 +38,24 @@ describe('forms runtime: the language catalogue', () => {
     }
   });
 
-  it('{date} is the one placeholder, and only the resume title carries it', () => {
+  it('every key carries exactly the placeholders the runtime fills, in every language', () => {
+    // The runtime replaces only the names it passes; a hole a translation
+    // adds or drops would reach the respondent as literal braces.
+    const HOLES: Partial<Record<(typeof FORMS_TEXT_KEYS)[number], string[]>> = {
+      resumeTitle: ['{date}'],
+      uploadHintTypes: ['{types}'],
+      uploadHintSize: ['{size}'],
+      uploadHintMax: ['{max}'],
+      uploadTooLarge: ['{name}', '{size}'],
+      uploadWrongType: ['{name}', '{types}'],
+      uploadTooMany: ['{max}'],
+      uploadTooFew: ['{min}'],
+      uploadFailed: ['{name}']
+    };
     for (const lang of FORMS_LANGUAGES) {
       for (const key of FORMS_TEXT_KEYS) {
-        const holes = FORMS_CATALOGUE[lang][key].match(/\{\w+\}/g) ?? [];
-        if (key === 'resumeTitle') expect(holes, `${lang}.${key}`).toEqual(['{date}']);
-        else expect(holes, `${lang}.${key}`).toEqual([]);
+        const holes = (FORMS_CATALOGUE[lang][key].match(/\{\w+\}/g) ?? []).sort();
+        expect(holes, `${lang}.${key}`).toEqual((HOLES[key] ?? []).slice().sort());
       }
     }
   });
@@ -55,7 +67,8 @@ describe('forms runtime: the language catalogue', () => {
       source: 'link',
       placement: null,
       emailAvailable: false,
-      remembers: false
+      remembers: false,
+      uploads: null
     });
     expect(tag).toContain('var CATALOGUE=');
     expect(tag).toContain(`var TEXT_MAX=${FORMS_TEXT_MAX};`);

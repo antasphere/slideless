@@ -197,7 +197,16 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
     'get /presentations/{id}/responses/{responseId}': () =>
       shot(`${P}/responses/${realResponseId}`, 'GET', cookie),
     'delete /presentations/{id}/responses/{responseId}': () =>
-      shot(`${P}/responses/${realResponseId}`, 'DELETE', cookie)
+      shot(`${P}/responses/${realResponseId}`, 'DELETE', cookie),
+    // PRDCT-2403: the files respondents uploaded, same 404 posture as the
+    // responses they belong to (a plain member never learns a deck, a
+    // response or a file exists). The file id is a well-formed unknown one:
+    // the deck gate answers before any file lookup.
+    'get /presentations/{id}/responses/files.zip': () => shot(`${P}/responses/files.zip`, 'GET', cookie),
+    'get /presentations/{id}/responses/{responseId}/files.zip': () =>
+      shot(`${P}/responses/${realResponseId}/files.zip`, 'GET', cookie),
+    'get /presentations/{id}/responses/{responseId}/files/{fileId}': () =>
+      shot(`${P}/responses/${realResponseId}/files/${UNKNOWN_DECK}`, 'GET', cookie)
   };
 }
 

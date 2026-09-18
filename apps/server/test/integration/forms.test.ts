@@ -189,7 +189,8 @@ const remembered = (secret: string) =>
   });
 
 /** The exact respondent wire (PRDCT-2329): never a revision, never a history, never an id beyond its own. */
-const RESPONDENT_WIRE_KEYS = ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'];
+// `files` (PRDCT-2403): names and sizes of what the respondent uploaded, never a handle on the bytes.
+const RESPONDENT_WIRE_KEYS = ['createdAt', 'files', 'formName', 'id', 'payload', 'updatedAt', 'version'];
 
 const fetchEntry = (secret: string, headers: Record<string, string> = {}) =>
   app.app.request(`/v/${secret}/`, { headers: { accept: 'text/html', ...headers } });
@@ -378,8 +379,12 @@ describe('forms runtime injection', () => {
     // identity. `remembers` (PRDCT-2328) is a BOOLEAN the deck could learn
     // by calling the remembered-answers route without a secret; it names
     // nobody and grants nothing the share secret in the URL does not.
+    // `uploads` (PRDCT-2403) is null or the two ceilings of the file fields
+    // (bytes per file, files per response): numbers a link holder learns
+    // from one refused upload, and no credential — the upload route
+    // re-decides the capability on every request.
     expect(Object.keys(JSON.parse(config!)).sort()).toEqual(
-      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'version'].sort()
+      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'uploads', 'version'].sort()
     );
     expect(JSON.parse(config!).remembers).toBe(false);
     // Nothing anywhere in the served document names the signed-in viewer.
@@ -1652,7 +1657,7 @@ describe('remembering links (PRDCT-2328)', () => {
     const cfg = JSON.parse(config!);
     expect(cfg.remembers).toBe(true);
     expect(Object.keys(cfg).sort()).toEqual(
-      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'version'].sort()
+      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'uploads', 'version'].sort()
     );
     // Nothing identifying anywhere in the served document, remembering or not.
     expect(html).not.toContain(ownerUserId);

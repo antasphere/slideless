@@ -415,7 +415,13 @@ export class FormUploadService {
   async listForDeck(
     workspaceId: string,
     presentationId: string,
-    filters: { form?: string | undefined; token?: string | undefined; since?: Date | undefined }
+    filters: {
+      form?: string | undefined;
+      token?: string | undefined;
+      source?: 'link' | 'embed' | undefined;
+      placement?: string | undefined;
+      since?: Date | undefined;
+    }
   ): Promise<{ file: FormResponseFileRow; responseCreatedAt: Date }[]> {
     return this.db
       .select({ file: formResponseFiles, responseCreatedAt: formResponses.createdAt })
@@ -427,6 +433,8 @@ export class FormUploadService {
           eq(formResponses.workspaceId, workspaceId),
           ...(filters.form !== undefined ? [eq(formResponses.formName, filters.form)] : []),
           ...(filters.token !== undefined ? [eq(formResponses.shareTokenId, filters.token)] : []),
+          ...(filters.source !== undefined ? [eq(formResponses.source, filters.source)] : []),
+          ...(filters.placement !== undefined ? [eq(formResponses.placement, filters.placement)] : []),
           ...(filters.since !== undefined ? [gte(formResponses.updatedAt, filters.since)] : [])
         )
       )

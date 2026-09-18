@@ -223,6 +223,8 @@ export type FormResponsesSummaryBucket = z.infer<typeof formResponsesSummaryBuck
 export const formResponseFilesZipQuerySchema = z.object({
   form: formNameSchema.optional(),
   token: z.uuid().optional(),
+  source: formResponseSourceSchema.optional(),
+  placement: noControlChars(z.string().max(64)).optional(),
   since: z.iso.datetime().optional()
 });
 export type FormResponseFilesZipQuery = z.infer<typeof formResponseFilesZipQuerySchema>;
