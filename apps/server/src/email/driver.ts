@@ -9,7 +9,7 @@ export interface EmailMessage {
 }
 
 export interface EmailDriver {
-  readonly name: 'none' | 'smtp' | 'resend';
+  readonly name: 'none' | 'smtp' | 'resend' | 'brevo';
   /** True when this driver actually delivers mail. */
   readonly delivers: boolean;
   send(message: EmailMessage): Promise<void>;
@@ -68,8 +68,56 @@ class ResendDriver implements EmailDriver {
   }
 }
 
+/**
+ * Brevo over its REST API, no SDK: the endpoint takes one JSON body and answers
+ * 2xx or an error, and a dependency buys nothing on top of that. Brevo is the
+ * house provider across the Antasphere templates (PRDCT-2431); `resend` and
+ * `smtp` stay supported for the instances already on them.
+ */
+class BrevoDriver implements EmailDriver {
+  readonly name = 'brevo' as const;
+  readonly delivers = true;
+  constructor(
+    private readonly apiKey: string,
+    private readonly from: string
+  ) {}
+  async send(message: EmailMessage): Promise<void> {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': this.apiKey,
+        'content-type': 'application/json',
+        accept: 'application/json'
+      },
+      body: JSON.stringify({
+        sender: parseSender(this.from),
+        to: [{ email: message.to }],
+        subject: message.subject,
+        htmlContent: message.html,
+        ...(message.text ? { textContent: message.text } : {})
+      })
+    });
+    if (res.ok) return;
+    // The body names the reason (bad key, unverified sender, malformed
+    // recipient) and may echo the request, so it never reaches the thrown
+    // message a caller might relay onward.
+    if (res.status === 401) throw new Error('brevo: authentication failed');
+    if (res.status === 429) throw new Error('brevo: rate limited');
+    if (res.status >= 500) throw new Error('brevo: temporarily unavailable');
+    throw new Error(`brevo: refused the message (${res.status})`);
+  }
+}
+
+/** `Name <addr>` → Brevo's split `{ name, email }`; a bare address passes through. */
+function parseSender(from: string): { name?: string; email: string } {
+  const match = /^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/.exec(from);
+  if (!match) return { email: from.trim() };
+  const [, name, email] = match;
+  return name ? { name, email: email!.trim() } : { email: email!.trim() };
+}
+
 export function createEmailDriver(
-  env: Pick<Env, 'EMAIL_DRIVER' | 'SMTP_URL' | 'RESEND_API_KEY' | 'EMAIL_FROM'>,
+  env: Pick<Env, 'EMAIL_DRIVER' | 'SMTP_URL' | 'RESEND_API_KEY' | 'BREVO_API_KEY' | 'EMAIL_FROM'>,
   logger: Logger
 ): EmailDriver {
   switch (env.EMAIL_DRIVER) {
@@ -81,6 +129,10 @@ export function createEmailDriver(
       if (!env.RESEND_API_KEY) throw new Error('EMAIL_DRIVER=resend requires RESEND_API_KEY');
       if (!env.EMAIL_FROM) throw new Error('EMAIL_DRIVER=resend requires EMAIL_FROM');
       return new ResendDriver(env.RESEND_API_KEY, env.EMAIL_FROM);
+    case 'brevo':
+      if (!env.BREVO_API_KEY) throw new Error('EMAIL_DRIVER=brevo requires BREVO_API_KEY');
+      if (!env.EMAIL_FROM) throw new Error('EMAIL_DRIVER=brevo requires EMAIL_FROM');
+      return new BrevoDriver(env.BREVO_API_KEY, env.EMAIL_FROM);
     default:
       return new NoneDriver(logger);
   }

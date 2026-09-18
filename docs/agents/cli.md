@@ -122,7 +122,7 @@ it refuses — the CLI detects cloud via discovery and steers you to
 `antasphere login` (see "Cloud instances" above); server-side the endpoints
 answer `403 cli_otp_disabled` (cloud instances are hub-login-only). The
 flow needs the instance to have a delivering email driver
-(`EMAIL_DRIVER=smtp|resend`); it signs in **existing accounts only** — sign-up
+(`EMAIL_DRIVER=smtp|resend|brevo`); it signs in **existing accounts only** — sign-up
 stays closed (accounts enter via setup, workspace invitations, or
 collaborator claims):
 

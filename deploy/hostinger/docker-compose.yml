@@ -96,6 +96,14 @@ services:
       ALLOW_INSECURE_SETUP: 'false'
       AUTO_MIGRATE: 'true'
       STORAGE_DRIVER: local
+      # Mail is optional: with `none` every invitation and sign-in link stays
+      # copyable from the dashboard, so nothing is blocked without it. To send
+      # mail instead, set EMAIL_DRIVER to brevo (the house provider), resend or
+      # smtp, add the matching credential and an EMAIL_FROM whose domain is
+      # verified at the provider (SPF + DKIM), then redeploy:
+      #   EMAIL_DRIVER: brevo
+      #   BREVO_API_KEY: <your key>
+      #   EMAIL_FROM: Slideless <noreply@example.com>
       EMAIL_DRIVER: none
     # Keep the image's tini entrypoint and replace the shell with the server.
     # The generated credential is never interpolated into the Compose file.
