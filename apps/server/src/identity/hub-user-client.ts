@@ -44,6 +44,74 @@ export interface HubOrg {
 export type HubOrgsResult =
   { kind: 'ok'; orgs: HubOrg[] } | { kind: 'no_link' } | { kind: 'grant_dead' } | { kind: 'inconclusive' };
 
+/**
+ * The answer of one as-the-user org creation (PRDCT-2443):
+ *  - 'created': the hub answered 201 with a well-formed org;
+ *  - 'limit_reached': the hub's own per-user organization cap refused it;
+ *  - 'invalid': the hub refused the NAME (its validation, not ours);
+ *  - 'refused': any other definitive refusal (the hub does not let this
+ *    grant create organizations) — `code` is the hub's, for the log only;
+ *  - 'no_link' / 'grant_dead': the grant verdicts, verbatim from
+ *    HubGrantService;
+ *  - 'inconclusive': network/timeout/5xx/malformed. The organization MAY
+ *    exist at the hub (it commits before it answers); the caller never
+ *    retries by itself, and the next reconcile pass projects it if so.
+ */
+export type HubCreateOrgResult =
+  | { kind: 'created'; org: { id: string; name: string | null; role: WorkspaceRole | null } }
+  | { kind: 'limit_reached' }
+  | { kind: 'invalid' }
+  | { kind: 'refused'; status: number; code: string | null }
+  | { kind: 'no_link' }
+  | { kind: 'grant_dead' }
+  | { kind: 'inconclusive' };
+
+/** The one-function boundary the workspace-creation route depends on (its test seam). */
+export type HubOrgCreator = (localUserId: string, name: string) => Promise<HubCreateOrgResult>;
+
+/** The hub's cap refusal codes — today's (`org_limit_reached`) and the `*_cap_reached` spelling. */
+const HUB_ORG_LIMIT_CODES = new Set(['org_limit_reached', 'org_cap_reached']);
+
+/**
+ * THE ONE PLACE that knows the shape of the hub's `POST /api/v1/orgs` answer
+ * (hub contract `orgCreatedSchema`: 201 `{ org: { id, name, role, … } }`;
+ * refusals in the common `{ error: { code } }` envelope). Pure, so the
+ * shape is adjustable — and testable — without touching the transport.
+ */
+export function classifyHubOrgCreateAnswer(status: number, body: unknown): HubCreateOrgResult {
+  const code =
+    typeof (body as { error?: { code?: unknown } } | null)?.error?.code === 'string'
+      ? (body as { error: { code: string } }).error.code
+      : null;
+  if (status === 201 || status === 200) {
+    const raw = ((body as { org?: unknown } | null)?.org ?? null) as {
+      id?: unknown;
+      name?: unknown;
+      role?: unknown;
+    } | null;
+    // A 2xx without a valid org id is unusable AND ambiguous (something was
+    // probably created): inconclusive, never a guess at the id.
+    if (!raw || typeof raw.id !== 'string' || !UUID_RE.test(raw.id)) return { kind: 'inconclusive' };
+    return {
+      kind: 'created',
+      org: {
+        id: raw.id,
+        name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : null,
+        role:
+          typeof raw.role === 'string' && (workspaceRoles as readonly string[]).includes(raw.role)
+            ? (raw.role as WorkspaceRole)
+            : null
+      }
+    };
+  }
+  if ((status === 403 || status === 409) && code !== null && HUB_ORG_LIMIT_CODES.has(code)) {
+    return { kind: 'limit_reached' };
+  }
+  if (status === 400 || status === 422) return { kind: 'invalid' };
+  if (status >= 400 && status < 500) return { kind: 'refused', status, code };
+  return { kind: 'inconclusive' };
+}
+
 /** Strict UUID shape — a malformed hub entry must never reach Postgres' uuid cast. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -60,6 +128,12 @@ export interface HubUserClientOptions {
   logger: Logger;
   /** Per-fetch timeout — tight, because reconcile passes are awaited in the identity path. */
   timeoutMs: number;
+  /**
+   * POST /orgs fetch timeout. A creation is a deliberate human act awaited
+   * once, not an identity-path read: it gets the token-endpoint budget
+   * rather than the tight reconcile one. Defaults to `timeoutMs`.
+   */
+  createTimeoutMs?: number | undefined;
   /** Test seam. */
   fetchImpl?: typeof fetch;
 }
@@ -163,6 +237,79 @@ export class HubUserClient {
       });
     }
     return { kind: 'ok', orgs };
+  }
+
+  /**
+   * Create an organization at the hub AS THE USER (PRDCT-2443): `POST
+   * <hub>/api/v1/orgs` `{ name }` presented with the user's OWN grant token,
+   * obtained through the SAME HubGrantService path `orgs()` uses (cache →
+   * single-flighted refresh; the PRDCT-1370 presentation record and probe
+   * live inside it). No service key, no target-user parameter: the hub makes
+   * the BEARER the owner, so the only organization this can ever create is
+   * the caller's own.
+   *
+   * Retry posture, deliberately narrower than the read's: ONLY a 401 earns
+   * the one forced-refresh retry (the hub refused the token before doing
+   * anything, so nothing was created). A 403 is a definitive policy answer
+   * (the cap, or a hub that does not open creation to grants) and a
+   * network/timeout/5xx answer is NEVER retried — the hub commits before it
+   * answers, so a blind second POST could create a second organization.
+   */
+  async createOrg(localUserId: string, name: string): Promise<HubCreateOrgResult> {
+    const access = await this.opts.grant.accessToken(localUserId);
+    if (access.kind !== 'ok') return { kind: access.kind };
+
+    let res = await this.post(access.accessToken, name);
+    if (res.kind === 'error') return { kind: 'inconclusive' };
+    if (res.response.status === 401) {
+      this.opts.grant.invalidateAccess(localUserId);
+      const refreshed: GrantAccess = await this.opts.grant.refresh(localUserId);
+      if (refreshed.kind !== 'ok') return { kind: refreshed.kind };
+      res = await this.post(refreshed.accessToken, name);
+      if (res.kind === 'error') return { kind: 'inconclusive' };
+      if (res.response.status === 401) {
+        this.opts.logger.error(
+          'hub POST /orgs refused a FRESHLY refreshed token — the hub is rejecting this tool’s grants'
+        );
+        return { kind: 'refused', status: 401, code: null };
+      }
+    }
+    let body: unknown = null;
+    try {
+      body = await res.response.json();
+    } catch {
+      body = null;
+    }
+    const result = classifyHubOrgCreateAnswer(res.response.status, body);
+    if (result.kind === 'inconclusive' || result.kind === 'refused') {
+      this.opts.logger.warn(
+        { status: res.response.status, code: result.kind === 'refused' ? result.code : undefined },
+        'hub POST /orgs did not create the organization'
+      );
+    }
+    return result;
+  }
+
+  private async post(
+    token: string,
+    name: string
+  ): Promise<{ kind: 'ok'; response: Response } | { kind: 'error' }> {
+    try {
+      const response = await this.fetchImpl(`${this.base}/api/v1/orgs`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: 'application/json',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ name }),
+        signal: AbortSignal.timeout(this.opts.createTimeoutMs ?? this.opts.timeoutMs)
+      });
+      return { kind: 'ok', response };
+    } catch (err) {
+      this.opts.logger.warn({ err }, 'hub POST /orgs fetch failed — the organization may or may not exist');
+      return { kind: 'error' };
+    }
   }
 
   private async get(token: string): Promise<{ kind: 'ok'; response: Response } | { kind: 'error' }> {
