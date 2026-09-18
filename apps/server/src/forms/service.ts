@@ -6,14 +6,16 @@ import {
   formResponses,
   shareTokens,
   type Db,
+  type FormResponseFileRow,
   type FormResponseRow,
   type FormResponseSource,
   type FormResponseVersionRow,
   type ShareTokenRow
 } from '@slideless/db';
-import type { FormResponsePayload } from '@slideless/contract';
+import type { FormResponsePayload, FormSubmitFiles } from '@slideless/contract';
 import type { PepperRegistry } from '../apikeys/peppers.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import { formFileSnapshot, type FormUploadService } from './uploads.js';
 
 /**
  * Deck-embedded form responses (ADR 022). A row is one respondent's
@@ -75,6 +77,14 @@ export interface FormResponseCreate {
   placement: string | null;
   payload: FormResponsePayload;
   /**
+   * The uploads this submit names, per file field (PRDCT-2403). Claimed in
+   * the response's own transaction: one unclaimable id refuses the whole
+   * submit (FormFilesClaimError) and nothing is written.
+   */
+  files?: FormSubmitFiles | undefined;
+  /** Whether the link may attach NEW files (`canUploadFiles`); keeping and removing held files never needs it. */
+  allowNewFiles?: boolean;
+  /**
    * The link's ONE remembered row for this form (PRDCT-2328). Only the
    * remembering create path sets it; the partial unique index refuses a
    * second one per (link, form).
@@ -92,6 +102,14 @@ export interface FormResponseAttribution {
   shareTokenId: string;
   source?: FormResponseSource;
   placement: string | null;
+  /**
+   * The FULL set of files the response holds after this edit (PRDCT-2403);
+   * undefined = the files are untouched (a form with no file field, or a
+   * runtime from before the feature).
+   */
+  files?: FormSubmitFiles | undefined;
+  /** Whether the link may attach NEW files (`canUploadFiles`); keeping and removing held files never needs it. */
+  allowNewFiles?: boolean;
 }
 
 export interface FormResponseFilters {
@@ -111,6 +129,8 @@ export interface FormResponseListed {
   id: string;
   response: FormResponseRow;
   shareTokenName: string | null;
+  /** The files the response holds now (PRDCT-2403); absent on a caller that did not load them = none. */
+  files?: FormResponseFileRow[];
 }
 
 /** One revision with its link's label joined (PRDCT-2329). */
@@ -138,7 +158,8 @@ export interface FormResponseSummaryBucket {
 export class FormResponseService {
   constructor(
     private readonly db: Db,
-    private readonly peppers: PepperRegistry
+    private readonly peppers: PepperRegistry,
+    private readonly uploads: FormUploadService
   ) {}
 
   /**
@@ -170,6 +191,17 @@ export class FormResponseService {
         })
         .returning();
       if (!inserted) throw new Error('form response insert failed');
+      const claimed =
+        opts.files !== undefined
+          ? await this.uploads.claimInTx(tx, {
+              responseId: inserted.id,
+              presentationId: opts.presentationId,
+              shareTokenId: opts.shareTokenId,
+              formName: opts.formName,
+              files: opts.files,
+              allowNew: opts.allowNewFiles === true
+            })
+          : { current: [] };
       // Revision 1 is the create (PRDCT-2329): the history starts with what
       // was first said, in the same transaction as the row.
       await tx.insert(formResponseVersions).values({
@@ -180,6 +212,7 @@ export class FormResponseService {
         source: inserted.source,
         placement: inserted.placement,
         payload: inserted.payload,
+        files: formFileSnapshot(claimed.current),
         createdAt: inserted.createdAt
       });
       return inserted;
@@ -233,7 +266,9 @@ export class FormResponseService {
         version: opts.version,
         shareTokenId: opts.shareTokenId,
         source: opts.source,
-        placement: opts.placement
+        placement: opts.placement,
+        files: opts.files,
+        allowNewFiles: opts.allowNewFiles === true
       });
       return { row: updated ?? existing, created: false, editSecret: null };
     }
@@ -248,7 +283,9 @@ export class FormResponseService {
         version: opts.version,
         shareTokenId: opts.shareTokenId,
         source: opts.source,
-        placement: opts.placement
+        placement: opts.placement,
+        files: opts.files,
+        allowNewFiles: opts.allowNewFiles === true
       });
       return { row: updated ?? winner, created: false, editSecret: null };
     }
@@ -284,7 +321,8 @@ export class FormResponseService {
     payload: FormResponsePayload,
     attribution: FormResponseAttribution
   ): Promise<FormResponseRow | null> {
-    return this.db.transaction(async (tx) => {
+    let detached: FormResponseFileRow[] = [];
+    const updated = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(formResponses)
         .set({
@@ -302,6 +340,25 @@ export class FormResponseService {
         .where(eq(formResponses.id, responseId))
         .returning();
       if (!row) return null;
+      // PRDCT-2403: the edit names the FULL set of files it keeps; what it
+      // leaves out is detached here and its bytes removed after the commit.
+      // The claim binds to the row's OWN deck and form and to the link of
+      // THIS navigation.
+      let current: FormResponseFileRow[];
+      if (attribution.files !== undefined) {
+        const claim = await this.uploads.claimInTx(tx, {
+          responseId: row.id,
+          presentationId: row.presentationId,
+          shareTokenId: attribution.shareTokenId,
+          formName: row.formName,
+          files: attribution.files,
+          allowNew: attribution.allowNewFiles === true
+        });
+        current = claim.current;
+        detached = claim.detached;
+      } else {
+        current = await this.uploads.listForResponse(row.id, tx);
+      }
       await tx.insert(formResponseVersions).values({
         responseId: row.id,
         revision: row.revision,
@@ -310,6 +367,7 @@ export class FormResponseService {
         source: row.source,
         placement: row.placement,
         payload: row.payload,
+        files: formFileSnapshot(current),
         createdAt: row.updatedAt
       });
       // Retention: keep revision 1 and the latest FORM_RESPONSE_MAX_REVISIONS-1.
@@ -327,6 +385,8 @@ export class FormResponseService {
       }
       return row;
     });
+    if (detached.length > 0) await this.uploads.remove(detached);
+    return updated;
   }
 
   /** The owner's history read (PRDCT-2329): every kept revision, newest first, the link label joined. */
@@ -418,7 +478,8 @@ export class FormResponseService {
         )
       )
       .limit(1);
-    return row ?? null;
+    if (!row) return null;
+    return { ...row, files: await this.uploads.listForResponse(row.id) };
   }
 
   /** Per-deck owner listing, newest first, keyset-paginated, filterable. */
@@ -475,7 +536,9 @@ export class FormResponseService {
       .orderBy(desc(formResponses.createdAt), desc(formResponses.id))
       .limit(opts.limit + 1);
     const { page, nextCursor } = pageOf(rows, opts.limit);
-    return { responses: page, nextCursor };
+    // One extra query for the whole page, never one per row.
+    const files = await this.uploads.listForResponses(page.map((r) => r.id));
+    return { responses: page.map((r) => ({ ...r, files: files.get(r.id) ?? [] })), nextCursor };
   }
 
   /**
@@ -526,11 +589,42 @@ export class FormResponseService {
     return { buckets, total };
   }
 
-  /** Hard delete (owner moderation); returns the final snapshot (null = gone). */
-  async delete(responseId: string): Promise<FormResponseRow | null> {
+  /**
+   * Hard delete (owner moderation); returns the final snapshot (null =
+   * gone) with the files it held. The row delete DETACHES the files (`set
+   * null`), then their bytes are removed — a failed removal is left for the
+   * purge sweep, never a reason to fail the delete.
+   */
+  async delete(responseId: string): Promise<{ row: FormResponseRow; files: FormResponseFileRow[] } | null> {
+    const files = await this.uploads.listForResponse(responseId);
     const [row] = await this.db.delete(formResponses).where(eq(formResponses.id, responseId)).returning();
-    return row ?? null;
+    if (!row) return null;
+    if (files.length > 0) await this.uploads.remove(files);
+    return { row, files };
   }
+}
+
+export interface FormResponseFileWire {
+  id: string;
+  field: string;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
+/** One uploaded file on the OWNER wire. ⚠️ RAW CONTENT: field, name and contentType are respondent input. */
+export function formResponseFileToWire(f: FormResponseFileRow): FormResponseFileWire {
+  return {
+    id: f.id,
+    field: f.fieldName,
+    name: f.filename,
+    contentType: f.contentType,
+    sizeBytes: f.sizeBytes,
+    sha256: f.sha256,
+    createdAt: f.createdAt.toISOString()
+  };
 }
 
 /**
@@ -554,6 +648,7 @@ export function formResponseToWire(r: FormResponseListed): {
   placement: string | null;
   payload: Record<string, string | string[]>;
   revision: number;
+  files: FormResponseFileWire[];
   createdAt: string;
   updatedAt: string;
 } {
@@ -568,6 +663,7 @@ export function formResponseToWire(r: FormResponseListed): {
     placement: r.response.placement,
     payload: r.response.payload,
     revision: r.response.revision,
+    files: (r.files ?? []).map(formResponseFileToWire),
     createdAt: r.response.createdAt.toISOString(),
     updatedAt: r.response.updatedAt.toISOString()
   };
@@ -582,6 +678,7 @@ export function formResponseVersionToWire(v: FormResponseVersionListed): {
   source: FormResponseSource;
   placement: string | null;
   payload: Record<string, string | string[]>;
+  files: { id: string; field: string; name: string; sizeBytes: number }[] | null;
   createdAt: string;
 } {
   return {
@@ -592,6 +689,7 @@ export function formResponseVersionToWire(v: FormResponseVersionListed): {
     source: v.version.source,
     placement: v.version.placement,
     payload: v.version.payload,
+    files: v.version.files ?? null,
     createdAt: v.version.createdAt.toISOString()
   };
 }
@@ -620,11 +718,15 @@ function isUniqueViolation(e: unknown): boolean {
  *
  * ⚠️ RAW CONTENT — same warning as formResponseToWire above.
  */
-export function formResponseToRespondentWire(r: FormResponseRow): {
+export function formResponseToRespondentWire(
+  r: FormResponseRow,
+  files: FormResponseFileRow[] = []
+): {
   id: string;
   formName: string;
   version: number;
   payload: Record<string, string | string[]>;
+  files: { id: string; field: string; name: string; sizeBytes: number }[];
   createdAt: string;
   updatedAt: string;
 } {
@@ -633,6 +735,11 @@ export function formResponseToRespondentWire(r: FormResponseRow): {
     formName: r.formName,
     version: r.version,
     payload: r.payload,
+    // PRDCT-2403: what the respondent themselves uploaded, by name and size,
+    // so a return visit shows the files the answer already holds. NEVER a
+    // way to read the bytes back — no sha, no URL: on a remembering link the
+    // share secret reads this wire, and it must not become a download link.
+    files: formFileSnapshot(files),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString()
   };

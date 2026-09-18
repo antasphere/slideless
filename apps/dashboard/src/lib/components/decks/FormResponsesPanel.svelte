@@ -10,11 +10,18 @@
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import Download from '@lucide/svelte/icons/download';
+  import Paperclip from '@lucide/svelte/icons/paperclip';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { buildCsv } from '$lib/csv';
-  import { formatTimeAgo } from '$lib/format';
+  import {
+    buildResponsesCsv,
+    formResponseFilesZipUrl,
+    formResponseFileUrl,
+    formResponsesFilesZipUrl,
+    groupFilesByField
+  } from '$lib/decks/form-responses';
+  import { formatBytes, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import type {
@@ -34,6 +41,12 @@
    * Svelte's `{value}` text interpolation, which escapes. NEVER introduce
    * {@html}, innerHTML, or createRawSnippet on these fields. The CSV export
    * routes every cell through the formula-injection guard in $lib/csv.
+   *
+   * The same holds for an uploaded file's `field`, `name` and `contentType`
+   * (PRDCT-2403): text interpolation only. A download `href` is built from
+   * IDS ONLY ($lib/decks/form-responses), never from a name, and the server
+   * answers `attachment` + `nosniff`, so a respondent's bytes are saved,
+   * never rendered on this origin.
    */
 
   interface Props {
@@ -128,6 +141,18 @@
     ]);
   }
 
+  // ── Files (PRDCT-2403) ─────────────────────────────────────────────────
+  // Downloads are plain same-origin anchors, the deck attachments' way
+  // (DeckMaster, VersionHistorySheet): the session cookie rides the
+  // navigation, the browser saves what the server sends as `attachment`.
+  // The bare `download` attribute names nothing (the server's
+  // Content-Disposition keeps the file name): it only keeps the SvelteKit
+  // router off the click and the person on this page if the answer is a 404.
+  const anyFiles = $derived(list.items.some((response) => response.files.length > 0));
+  const allFilesZipUrl = $derived(
+    formResponsesFilesZipUrl(deckId, filterForm !== 'all' ? { form: filterForm } : {})
+  );
+
   function isUpdated(response: FormResponse): boolean {
     return new Date(response.updatedAt).getTime() > new Date(response.createdAt).getTime();
   }
@@ -199,37 +224,9 @@
   function downloadCsv() {
     const rows = list.items;
     if (!rows.length) return;
-    // Respondent-chosen payload keys become extra columns (union, in first-
-    // seen order). buildCsv guards EVERY cell — keys included — against
-    // formula injection.
-    const payloadKeys = [...new Set(rows.flatMap((r) => Object.keys(r.payload)))];
-    const header = [
-      'form',
-      'link',
-      'source',
-      'placement',
-      'version',
-      'createdAt',
-      'updatedAt',
-      ...payloadKeys
-    ];
-    const csv = buildCsv(
-      header,
-      rows.map((r) => [
-        r.formName,
-        r.shareTokenName ?? '',
-        r.source,
-        r.placement ?? '',
-        String(r.version),
-        r.createdAt,
-        r.updatedAt,
-        ...payloadKeys.map((key) => {
-          const value = r.payload[key];
-          if (value === undefined) return '';
-          return Array.isArray(value) ? value.join(', ') : value;
-        })
-      ])
-    );
+    // Payload keys and file fields become extra columns; every cell is
+    // guarded against formula injection ($lib/decks/form-responses).
+    const csv = buildResponsesCsv(rows);
     // Filename: only the server-validated form slug may appear (defense in
     // depth — the charset gate already holds at the contract).
     const formPart =
@@ -325,6 +322,19 @@
           <Download class="mr-2 h-3.5 w-3.5" />
           {t('formResponses.downloadCsv')}
         </Button>
+        {#if anyFiles}
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-8"
+            href={allFilesZipUrl}
+            download
+            data-testid="responses-files-zip"
+          >
+            <Paperclip class="mr-2 h-3.5 w-3.5" />
+            {t('formResponses.downloadAllFiles')}
+          </Button>
+        {/if}
       </div>
     </div>
   </Card.Header>
@@ -446,7 +456,58 @@
                     </div>
                   {/each}
                 </dl>
+                {#if response.files.length}
+                  <div class="rounded-md bg-muted/40 px-2.5 py-2 text-xs" data-testid="response-files">
+                    <div class="mb-1 inline-flex items-center gap-1 font-medium">
+                      <Paperclip class="h-3 w-3" />
+                      {t('formResponses.filesTitle', { n: response.files.length })}
+                    </div>
+                    <dl class="space-y-1">
+                      {#each groupFilesByField(response.files) as group (group.field)}
+                        <!-- SECURITY: field and file names are RAW anonymous-
+                             respondent input — escaped {…} only, NEVER {@html}.
+                             The href carries ids only, never a name. -->
+                        <div class="flex gap-2">
+                          <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
+                          <dd class="min-w-0 flex-1">
+                            <ul class="space-y-0.5">
+                              {#each group.files as file (file.id)}
+                                <li class="flex items-baseline justify-between gap-3">
+                                  <a
+                                    href={formResponseFileUrl(deckId, response.id, file.id)}
+                                    download
+                                    class="inline-flex min-w-0 items-baseline gap-1 underline-offset-4 hover:underline"
+                                    title={t('formResponses.downloadFile')}
+                                    data-testid="response-file"
+                                  >
+                                    <Download class="h-3 w-3 shrink-0 self-center text-muted-foreground" />
+                                    <span class="min-w-0 truncate font-mono">{file.name}</span>
+                                  </a>
+                                  <span class="shrink-0 text-muted-foreground">
+                                    {formatBytes(file.sizeBytes)}
+                                  </span>
+                                </li>
+                              {/each}
+                            </ul>
+                          </dd>
+                        </div>
+                      {/each}
+                    </dl>
+                  </div>
+                {/if}
                 <div class="flex gap-2 pt-1">
+                  {#if response.files.length}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      href={formResponseFilesZipUrl(deckId, response.id)}
+                      download
+                      data-testid="response-files-zip"
+                    >
+                      <Download class="h-3.5 w-3.5" />
+                      {t('formResponses.downloadFiles')}
+                    </Button>
+                  {/if}
                   {#if response.revision > 1}
                     <Button variant="ghost" size="sm" onclick={() => void openHistory(response)}>
                       {t('formResponses.actionHistory')}
@@ -525,6 +586,34 @@
                 </div>
               {/each}
             </dl>
+            {#if revision.files?.length}
+              <!-- A revision keeps the NAMES it held, never a handle on the
+                   bytes: text only, no link. RAW respondent input — {…} only. -->
+              <div class="rounded-md bg-muted/40 px-2.5 py-2 text-xs" data-testid="revision-files">
+                <div class="mb-1 inline-flex items-center gap-1 font-medium">
+                  <Paperclip class="h-3 w-3" />
+                  {t('formResponses.filesTitle', { n: revision.files.length })}
+                </div>
+                <dl class="space-y-1">
+                  {#each groupFilesByField(revision.files) as group (group.field)}
+                    <div class="flex gap-2">
+                      <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
+                      <dd class="min-w-0 flex-1">
+                        <ul class="space-y-0.5">
+                          {#each group.files as file (file.id)}
+                            <li class="flex items-baseline justify-between gap-3">
+                              <span class="min-w-0 truncate font-mono">{file.name}</span>
+                              <span class="shrink-0 text-muted-foreground">{formatBytes(file.sizeBytes)}</span
+                              >
+                            </li>
+                          {/each}
+                        </ul>
+                      </dd>
+                    </div>
+                  {/each}
+                </dl>
+              </div>
+            {/if}
           </li>
         {/each}
       </ol>

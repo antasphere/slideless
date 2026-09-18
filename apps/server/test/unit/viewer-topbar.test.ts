@@ -27,6 +27,7 @@ function ctx(over: Partial<EntryTransformContext> = {}): EntryTransformContext {
       canDownload: true,
       showBar: true,
       remembersResponses: false,
+      canUploadFiles: false,
       createdAt: new Date('2026-09-13T10:00:00Z'),
       expiresAt: null
     },
@@ -41,6 +42,7 @@ function ctx(over: Partial<EntryTransformContext> = {}): EntryTransformContext {
     placement: null,
     versionHasForms: false,
     emailAvailable: false,
+    formUploadCaps: { maxFileBytes: 0, maxFilesPerResponse: 100 },
     mintUnlockProof: () => null,
     ...over
   };

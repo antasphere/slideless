@@ -17,6 +17,8 @@ export interface ShareLinkForm {
   showBar: boolean;
   /** The link remembers its recipient's answers (PRDCT-2328); moot with forms off. */
   remembersResponses: boolean;
+  /** Respondents may add files to the form's file fields (PRDCT-2403); moot with forms off. */
+  canUploadFiles: boolean;
   /** A badge slot, or 'default' for the deck's own; sent only with annotations on. */
   badgePosition: string;
   /** 'never' or a number of days as a string. */
@@ -44,6 +46,10 @@ export function defaultShareLinkForm(firstVersion: number | null): ShareLinkForm
     // that person's response; the toggle is the per-link opt-out for a link
     // many people will open.
     remembersResponses: true,
+    // ON by default (PRDCT-2403): a file field is the deck's own intended
+    // interaction, like the form around it; the toggle is the per-link
+    // opt-out.
+    canUploadFiles: true,
     badgePosition: 'default',
     expiresIn: 'never',
     password: ''
@@ -64,6 +70,10 @@ export function buildShareTokenCreate(form: ShareLinkForm, now: number = Date.no
     // submissions has nothing to remember, and the table must not show a
     // remembering check on it.
     remembersResponses: form.canSubmitForms && form.remembersResponses,
+    // Same rule (PRDCT-2403): uploads need submissions, so a link with forms
+    // off never carries an uploads check, and never opens the public write
+    // by a server default the person did not choose.
+    canUploadFiles: form.canSubmitForms && form.canUploadFiles,
     ...(form.canAnnotate && form.badgePosition !== 'default'
       ? { badgePosition: form.badgePosition as ShareTokenCreate['badgePosition'] }
       : {}),

@@ -1,6 +1,8 @@
 import { constants as FS } from 'node:fs';
-import { mkdir, open, realpath } from 'node:fs/promises';
+import { mkdir, open, realpath, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 /**
  * Writing SERVER-CHOSEN paths to a developer's disk, safely.
@@ -94,5 +96,41 @@ export async function writeNoFollow(target: string, bytes: Uint8Array): Promise<
     await handle.chmod(0o644).catch(() => undefined);
   } finally {
     await handle.close();
+  }
+}
+
+/**
+ * Stream `source` to `root`/`relPath` under the same three rules as
+ * `writeContained`, for a body too large to buffer (a zip of respondent
+ * uploads). Returns the absolute path and the byte count. A failed stream
+ * removes the partial file — a truncated archive must not look like a
+ * finished one.
+ */
+export async function streamContained(
+  root: string,
+  relPath: string,
+  source: Readable
+): Promise<{ path: string; sizeBytes: number }> {
+  const target = resolveInside(root, relPath);
+  await prepareParent(root, target);
+  let handle;
+  try {
+    handle = await open(target, FS.O_WRONLY | FS.O_CREAT | FS.O_TRUNC | FS.O_NOFOLLOW, 0o644);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ELOOP' || code === 'EMLINK') {
+      throw new UnsafeWriteError(`Refusing to write through the symlink at ${target}`);
+    }
+    throw e;
+  }
+  try {
+    await handle.chmod(0o644).catch(() => undefined);
+    const sink = handle.createWriteStream();
+    await pipeline(source, sink);
+    return { path: target, sizeBytes: sink.bytesWritten };
+  } catch (e) {
+    await handle.close().catch(() => undefined);
+    await unlink(target).catch(() => undefined);
+    throw e;
   }
 }

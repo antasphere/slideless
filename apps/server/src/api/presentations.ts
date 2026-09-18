@@ -14,6 +14,9 @@ import {
   assetPrecheckRoute,
   assetUploadRoute,
   formResponseDeleteRoute,
+  formResponseFileDownloadRoute,
+  formResponseFilesZipRoute,
+  formResponsesFilesZipRoute,
   formResponseGetRoute,
   formResponsesListRoute,
   formResponsesSummaryRoute,
@@ -57,7 +60,8 @@ import { encodeContentDisposition } from '../files/http.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
 import { manifestHasForms } from '../forms/detect.js';
-import { attachmentsZipFilename, serveAttachmentsZip } from '../presentations/attachments.js';
+import { attachmentsZipFilename, serveAttachmentsZip, serveZip } from '../presentations/attachments.js';
+import { responseZipFolder, uniqueZipPath, zipSegment, type FormUploadService } from '../forms/uploads.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import {
   buildViewerUrl,
@@ -129,6 +133,7 @@ export interface PresentationRouteDeps {
   views: ShareTokenViewService;
   annotations: AnnotationService;
   forms: FormResponseService;
+  formUploads: FormUploadService;
   fileService: FileService;
   storage: StorageDriver;
   registry: PlatformRegistry;
@@ -139,8 +144,20 @@ export interface PresentationRouteDeps {
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
-  const { service, sharing, views, annotations, forms, fileService, storage, registry, env, email, logger } =
-    deps;
+  const {
+    service,
+    sharing,
+    views,
+    annotations,
+    forms,
+    formUploads,
+    fileService,
+    storage,
+    registry,
+    env,
+    email,
+    logger
+  } = deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   api.use('/presentations', requireAuth());
@@ -839,6 +856,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // recipient's response); the column default stays OFF for every link
       // minted before the switch existed.
       remembersResponses: body.remembersResponses,
+      canUploadFiles: body.canUploadFiles,
       badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
@@ -864,6 +882,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         canDownload: row.canDownload,
         showBar: row.showBar,
         remembersResponses: row.remembersResponses,
+        canUploadFiles: row.canUploadFiles,
         badgePosition: row.badgePosition,
         hasPassword: row.passwordHash !== null,
         expiresAt: row.expiresAt?.toISOString() ?? null
@@ -924,6 +943,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       canSubmitForms: false,
       // …nor remember any (PRDCT-2328); the resolver refuses by purpose too.
       remembersResponses: false,
+      // …nor take a file from the owner's own preview (PRDCT-2403).
+      canUploadFiles: false,
       // Downloads ON: the preview shows what a default link shows (the
       // recipient bar's download button included). Preview downloads are
       // never counted — the viewer keys the exclusion on `purpose`, like
@@ -990,6 +1011,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (patch.canDownload !== undefined) set.canDownload = patch.canDownload;
     if (patch.showBar !== undefined) set.showBar = patch.showBar;
     if (patch.remembersResponses !== undefined) set.remembersResponses = patch.remembersResponses;
+    if (patch.canUploadFiles !== undefined) set.canUploadFiles = patch.canUploadFiles;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
       // Explicit slot → new deck default (explicit null just falls back),
@@ -1259,6 +1281,57 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     return c.json({ responses: responses.map(formResponseToWire), nextCursor }, 200);
   });
 
+  // ── The files of form responses (PRDCT-2403) ─────────────────────────────
+  // What respondents uploaded into the form's file fields: one capability,
+  // read the same way by the dashboard, the CLI and the MCP tool. Same gate
+  // and 404 posture as the responses themselves. Always `attachment` +
+  // `nosniff`, whatever type the respondent declared: an anonymous
+  // stranger's bytes never render on the app origin, not even a PDF or an
+  // image the generic policy would show inline. The literal `files.zip`
+  // registers BEFORE the `{responseId}` param route.
+  api.openapi(formResponsesFilesZipRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const { form, token, source, placement, since } = c.req.valid('query');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const rows = await formUploads.listForDeck(principal.workspaceId, id, {
+      form,
+      token,
+      source,
+      placement,
+      since: since !== undefined ? new Date(since) : undefined
+    });
+    if (rows.length === 0) return c.json(err('no_files', 'No uploaded files match.'), 404);
+    const taken = new Set<string>();
+    const entries = rows.map(({ file, responseCreatedAt }) => ({
+      key: file.storageKey,
+      name: uniqueZipPath(
+        `${zipSegment(file.formName)}/${responseZipFolder(file.responseId!, responseCreatedAt)}/${zipSegment(file.fieldName)}/`,
+        zipSegment(file.filename),
+        taken
+      ),
+      mtime: file.createdAt
+    }));
+    c.set('audit', {
+      action: 'presentation.form_response_files_download',
+      resourceType: 'presentation',
+      resourceId: id,
+      metadata: { files: rows.length, ...(form !== undefined ? { formName: form } : {}) }
+    });
+    return serveZip(c, {
+      storage,
+      logger,
+      workspaceId: principal.workspaceId,
+      entries,
+      filename: attachmentsZipFilename(deck.title, 0).replace(/-v0\.zip$/, '-form-files.zip'),
+      headOnly: false,
+      what: 'form files'
+    });
+  });
+
   // The owner's per-response read with its history (PRDCT-2329). Same
   // gate, same 404 posture; registered after the literal summary route.
   api.openapi(formResponseGetRoute, async (c) => {
@@ -1291,9 +1364,74 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       action: 'presentation.form_response_delete',
       resourceType: 'form_response',
       resourceId: existing.response.id,
-      metadata: { presentationId: id, formName: existing.response.formName }
+      metadata: {
+        presentationId: id,
+        formName: existing.response.formName,
+        files: existing.files?.length ?? 0
+      }
     });
     return c.json(formResponseToWire(existing), 200);
+  });
+
+  // One response's files as one zip (`<field>/<file>`). Registered before the
+  // single-file route: `files.zip` is its own segment, never a `{fileId}`.
+  api.openapi(formResponseFilesZipRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, responseId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const existing = await forms.get(principal.workspaceId, id, responseId);
+    if (!existing) return c.json(err('not_found', 'Response not found'), 404);
+    const files = existing.files ?? [];
+    if (files.length === 0) return c.json(err('no_files', 'This response holds no files.'), 404);
+    const taken = new Set<string>();
+    const entries = files.map((file) => ({
+      key: file.storageKey,
+      name: uniqueZipPath(`${zipSegment(file.fieldName)}/`, zipSegment(file.filename), taken),
+      mtime: file.createdAt
+    }));
+    c.set('audit', {
+      action: 'presentation.form_response_files_download',
+      resourceType: 'form_response',
+      resourceId: existing.response.id,
+      metadata: { presentationId: id, files: files.length }
+    });
+    return serveZip(c, {
+      storage,
+      logger,
+      workspaceId: principal.workspaceId,
+      entries,
+      filename: `${zipSegment(existing.response.formName)}-${responseZipFolder(existing.response.id, existing.response.createdAt)}.zip`,
+      headOnly: false,
+      what: 'form files'
+    });
+  });
+
+  api.openapi(formResponseFileDownloadRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, responseId, fileId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canWrite(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    const file = await formUploads.getAttached(principal.workspaceId, id, responseId, fileId);
+    if (!file) return c.json(err('not_found', 'File not found'), 404);
+    return serveBlob(c, {
+      storage,
+      logger,
+      workspaceId: principal.workspaceId,
+      sha256: file.sha256,
+      storageKey: file.storageKey,
+      sizeBytes: file.sizeBytes,
+      contentType: file.contentType,
+      filename: file.filename,
+      headOnly: false,
+      // ALWAYS attachment (see the block comment above), never the generic
+      // inline-for-passive-media policy.
+      contentDisposition: encodeContentDisposition('attachment', file.filename)
+    });
   });
 
   // Workspace-wide inbox: admins/owners see every live deck's annotations;

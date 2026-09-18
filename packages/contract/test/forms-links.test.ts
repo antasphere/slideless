@@ -47,6 +47,7 @@ describe('form responses: revisions on the owner wire', () => {
     source: 'link',
     placement: null,
     payload: { name: 'a' },
+    files: [],
     createdAt: '2026-09-15T00:00:00.000Z',
     updatedAt: '2026-09-15T00:00:00.000Z'
   };
@@ -69,6 +70,7 @@ describe('form responses: revisions on the owner wire', () => {
           source: 'link',
           placement: null,
           payload: { name: 'b' },
+          files: [{ id: 'f1', field: 'docs', name: 'scan.pdf', sizeBytes: 12 }],
           createdAt: '2026-09-15T00:01:00.000Z'
         },
         {
@@ -79,6 +81,8 @@ describe('form responses: revisions on the owner wire', () => {
           source: 'embed',
           placement: 'site',
           payload: { name: 'a' },
+          // A revision written before file fields existed.
+          files: null,
           createdAt: '2026-09-15T00:00:00.000Z'
         }
       ]
@@ -91,5 +95,35 @@ describe('presentations: notifyOnResponse', () => {
   it('is a valid PATCH on its own, and an empty PATCH is still refused', () => {
     expect(presentationUpdateSchema.safeParse({ notifyOnResponse: false }).success).toBe(true);
     expect(presentationUpdateSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('form file fields (PRDCT-2403)', () => {
+  const NUL = String.fromCharCode(0);
+
+  it('a submit names uploads per field: uuids only, field names with no control characters', async () => {
+    const { formSubmitFilesSchema } = await import('../src/schemas/forms.js');
+    const id = '33333333-3333-4333-8333-333333333333';
+    expect(formSubmitFilesSchema.safeParse({ docs: [id], logo: [] }).success).toBe(true);
+    expect(formSubmitFilesSchema.safeParse({ docs: ['not-a-uuid'] }).success).toBe(false);
+    expect(formSubmitFilesSchema.safeParse({ [`do${NUL}cs`]: [id] }).success).toBe(false);
+    expect(formSubmitFilesSchema.safeParse({ '': [id] }).success).toBe(false);
+    expect(formSubmitFilesSchema.safeParse({ ['k'.repeat(129)]: [id] }).success).toBe(false);
+  });
+
+  it('a new link takes uploads unless told otherwise, and a patch may carry the switch alone', async () => {
+    const { shareTokenCreateSchema, shareTokenUpdateSchema } = await import('../src/schemas/share-tokens.js');
+    expect(shareTokenCreateSchema.parse({ name: 'x' }).canUploadFiles).toBe(true);
+    expect(shareTokenCreateSchema.parse({ name: 'x', canUploadFiles: false }).canUploadFiles).toBe(false);
+    expect(shareTokenUpdateSchema.safeParse({ canUploadFiles: true }).success).toBe(true);
+  });
+
+  it("the deck zip takes the listing's filters and refuses a control character in the placement", async () => {
+    const { formResponseFilesZipQuerySchema } = await import('../src/schemas/forms.js');
+    expect(
+      formResponseFilesZipQuerySchema.safeParse({ form: 'kyc', source: 'embed', placement: 'site' }).success
+    ).toBe(true);
+    expect(formResponseFilesZipQuerySchema.safeParse({ placement: `a${NUL}b` }).success).toBe(false);
+    expect(formResponseFilesZipQuerySchema.safeParse({ form: 'bad name!' }).success).toBe(false);
   });
 });

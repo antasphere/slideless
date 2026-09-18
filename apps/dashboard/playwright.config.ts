@@ -44,6 +44,8 @@ export default defineConfig({
       dependencies: ['smoke']
     },
     { name: 'embed-forms', testMatch: /embed-forms\.spec\.ts/, dependencies: ['smoke'] },
+    // PRDCT-2403: a form's file field, the drop panel inside a deck with its own handlers.
+    { name: 'forms-files', testMatch: /viewer-forms-files\.spec\.ts/, dependencies: ['smoke'] },
     // PRDCT-2268: windows a deck opens escape the sandbox; the deck does not.
     { name: 'viewer-popups', testMatch: /viewer-popups\.spec\.ts/, dependencies: ['smoke'] },
     // PRDCT-2281 (lane D): the recipient bar over a shared deck.

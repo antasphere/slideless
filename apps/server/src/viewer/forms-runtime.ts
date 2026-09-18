@@ -121,6 +121,15 @@ export interface FormsConfig {
    * embed the runtime ignores it — a website's visitors share the link.
    */
   remembers: boolean;
+  /**
+   * File fields (PRDCT-2403): whether this link takes uploads, with the two
+   * ceilings the drop panel states (bytes per file, files per response).
+   * Null = uploads are off here (the link's switch, a preview, or the
+   * instance knob) and a file field shows as unavailable. Context, never
+   * capability: the upload route re-decides on every request, and both
+   * numbers are what a link holder learns from one refused upload.
+   */
+  uploads: { maxBytes: number; maxFiles: number } | null;
 }
 
 /** Attribute marking the injected script — tests and humans grep for it. */
@@ -158,7 +167,21 @@ export const FORMS_TEXT_KEYS = [
   'errorGeneric',
   'errorNetwork',
   'close',
-  'show'
+  'show',
+  'uploadPrompt',
+  'uploadPromptOne',
+  'uploadHintTypes',
+  'uploadHintSize',
+  'uploadHintMax',
+  'uploadTooLarge',
+  'uploadWrongType',
+  'uploadTooMany',
+  'uploadRequired',
+  'uploadTooFew',
+  'uploadFailed',
+  'uploadUnavailable',
+  'uploadBusy',
+  'uploadRemove'
 ] as const;
 
 /** An authored string longer than this is cut: a dialog, not a page. */
@@ -195,7 +218,21 @@ export const FORMS_CATALOGUE: Record<FormsLanguage, Record<FormsTextKey, string>
     errorGeneric: 'Something went wrong. Please try again.',
     errorNetwork: 'Network error. Please try again.',
     close: 'Close',
-    show: 'Show confirmation'
+    show: 'Show confirmation',
+    uploadPrompt: 'Drop files here, or click to choose',
+    uploadPromptOne: 'Drop a file here, or click to choose',
+    uploadHintTypes: 'Accepted: {types}',
+    uploadHintSize: 'Up to {size} per file',
+    uploadHintMax: '{max} files at most',
+    uploadTooLarge: '{name} is larger than {size}.',
+    uploadWrongType: '{name} is not an accepted type ({types}).',
+    uploadTooMany: 'You can add at most {max} files here.',
+    uploadRequired: 'Please add a file.',
+    uploadTooFew: 'Please add at least {min} files.',
+    uploadFailed: '{name} could not be uploaded. Please try again.',
+    uploadUnavailable: 'File upload is not available on this link.',
+    uploadBusy: 'Please wait for the uploads to finish.',
+    uploadRemove: 'Remove'
   },
   fr: {
     success: 'Votre réponse a bien été enregistrée.',
@@ -219,7 +256,21 @@ export const FORMS_CATALOGUE: Record<FormsLanguage, Record<FormsTextKey, string>
     errorGeneric: 'Une erreur est survenue. Veuillez réessayer.',
     errorNetwork: 'Erreur réseau. Veuillez réessayer.',
     close: 'Fermer',
-    show: 'Afficher la confirmation'
+    show: 'Afficher la confirmation',
+    uploadPrompt: 'Déposez des fichiers ici, ou cliquez pour les choisir',
+    uploadPromptOne: 'Déposez un fichier ici, ou cliquez pour le choisir',
+    uploadHintTypes: 'Formats acceptés : {types}',
+    uploadHintSize: '{size} maximum par fichier',
+    uploadHintMax: '{max} fichiers au maximum',
+    uploadTooLarge: '{name} dépasse {size}.',
+    uploadWrongType: "{name} n'est pas d'un format accepté ({types}).",
+    uploadTooMany: 'Vous pouvez ajouter {max} fichiers au maximum ici.',
+    uploadRequired: 'Veuillez ajouter un fichier.',
+    uploadTooFew: 'Veuillez ajouter au moins {min} fichiers.',
+    uploadFailed: "{name} n'a pas pu être envoyé. Veuillez réessayer.",
+    uploadUnavailable: "L'envoi de fichiers n'est pas disponible sur ce lien.",
+    uploadBusy: "Veuillez attendre la fin de l'envoi des fichiers.",
+    uploadRemove: 'Retirer'
   },
   nl: {
     success: 'Uw antwoord is opgeslagen.',
@@ -244,7 +295,21 @@ export const FORMS_CATALOGUE: Record<FormsLanguage, Record<FormsTextKey, string>
     errorGeneric: 'Er is iets misgegaan. Probeer het opnieuw.',
     errorNetwork: 'Netwerkfout. Probeer het opnieuw.',
     close: 'Sluiten',
-    show: 'Bevestiging tonen'
+    show: 'Bevestiging tonen',
+    uploadPrompt: 'Sleep bestanden hierheen, of klik om ze te kiezen',
+    uploadPromptOne: 'Sleep een bestand hierheen, of klik om het te kiezen',
+    uploadHintTypes: 'Toegestaan: {types}',
+    uploadHintSize: 'Maximaal {size} per bestand',
+    uploadHintMax: 'Maximaal {max} bestanden',
+    uploadTooLarge: '{name} is groter dan {size}.',
+    uploadWrongType: '{name} is geen toegestaan type ({types}).',
+    uploadTooMany: 'U kunt hier maximaal {max} bestanden toevoegen.',
+    uploadRequired: 'Voeg een bestand toe.',
+    uploadTooFew: 'Voeg minstens {min} bestanden toe.',
+    uploadFailed: '{name} kon niet worden geüpload. Probeer het opnieuw.',
+    uploadUnavailable: 'Bestanden uploaden is niet beschikbaar op deze link.',
+    uploadBusy: 'Wacht tot de uploads klaar zijn.',
+    uploadRemove: 'Verwijderen'
   },
   de: {
     success: 'Ihre Antwort wurde gespeichert.',
@@ -269,7 +334,21 @@ export const FORMS_CATALOGUE: Record<FormsLanguage, Record<FormsTextKey, string>
     errorGeneric: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
     errorNetwork: 'Netzwerkfehler. Bitte versuchen Sie es erneut.',
     close: 'Schließen',
-    show: 'Bestätigung anzeigen'
+    show: 'Bestätigung anzeigen',
+    uploadPrompt: 'Dateien hier ablegen oder klicken, um sie auszuwählen',
+    uploadPromptOne: 'Datei hier ablegen oder klicken, um sie auszuwählen',
+    uploadHintTypes: 'Erlaubt: {types}',
+    uploadHintSize: 'Bis zu {size} pro Datei',
+    uploadHintMax: 'Höchstens {max} Dateien',
+    uploadTooLarge: '{name} ist größer als {size}.',
+    uploadWrongType: '{name} hat keinen erlaubten Typ ({types}).',
+    uploadTooMany: 'Sie können hier höchstens {max} Dateien hinzufügen.',
+    uploadRequired: 'Bitte fügen Sie eine Datei hinzu.',
+    uploadTooFew: 'Bitte fügen Sie mindestens {min} Dateien hinzu.',
+    uploadFailed: '{name} konnte nicht hochgeladen werden. Bitte versuchen Sie es erneut.',
+    uploadUnavailable: 'Das Hochladen von Dateien ist über diesen Link nicht möglich.',
+    uploadBusy: 'Bitte warten Sie, bis die Uploads abgeschlossen sind.',
+    uploadRemove: 'Entfernen'
   },
   es: {
     success: 'Su respuesta ha sido registrada.',
@@ -294,7 +373,21 @@ export const FORMS_CATALOGUE: Record<FormsLanguage, Record<FormsTextKey, string>
     errorGeneric: 'Algo ha fallado. Vuelva a intentarlo.',
     errorNetwork: 'Error de red. Vuelva a intentarlo.',
     close: 'Cerrar',
-    show: 'Mostrar la confirmación'
+    show: 'Mostrar la confirmación',
+    uploadPrompt: 'Suelte archivos aquí, o haga clic para elegirlos',
+    uploadPromptOne: 'Suelte un archivo aquí, o haga clic para elegirlo',
+    uploadHintTypes: 'Aceptados: {types}',
+    uploadHintSize: 'Hasta {size} por archivo',
+    uploadHintMax: '{max} archivos como máximo',
+    uploadTooLarge: '{name} supera {size}.',
+    uploadWrongType: '{name} no es de un tipo aceptado ({types}).',
+    uploadTooMany: 'Puede añadir {max} archivos como máximo aquí.',
+    uploadRequired: 'Añada un archivo.',
+    uploadTooFew: 'Añada al menos {min} archivos.',
+    uploadFailed: '{name} no se ha podido subir. Vuelva a intentarlo.',
+    uploadUnavailable: 'La subida de archivos no está disponible en este enlace.',
+    uploadBusy: 'Espere a que terminen las subidas.',
+    uploadRemove: 'Quitar'
   }
 };
 
@@ -441,7 +534,34 @@ style.textContent =
   '.sl-forms-status .sl-forms-btn-2{padding:4px 10px;font-size:12px}' +
   '.sl-forms-status-floating{position:fixed;left:12px;bottom:12px;z-index:2147483646;' +
   'background:#fff;border:1px solid #e4e4e7;border-radius:8px;padding:8px 10px;margin:0;' +
-  'box-shadow:0 4px 16px rgba(0,0,0,.15);max-width:calc(100vw - 24px);box-sizing:border-box}';
+  'box-shadow:0 4px 16px rgba(0,0,0,.15);max-width:calc(100vw - 24px);box-sizing:border-box}' +
+  // The file field's drop panel (PRDCT-2403). The author's own input stays
+  // in the DOM, visually hidden: it is what opens the system file picker.
+  '.sl-forms-file-hidden{position:absolute!important;width:1px!important;height:1px!important;' +
+  'opacity:0!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;pointer-events:none!important}' +
+  '.sl-forms-drop{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;' +
+  'border:2px dashed #d4d4d8;border-radius:10px;background:#fafafa;color:#3f3f46;' +
+  'padding:18px 14px;margin:6px 0;text-align:center;cursor:pointer;font-size:14px;line-height:1.45;' +
+  'transition:border-color .12s,background .12s;box-sizing:border-box;outline:none}' +
+  '.sl-forms-drop:hover,.sl-forms-drop:focus{border-color:#a1a1aa;background:#f4f4f5}' +
+  '.sl-forms-drop-armed{border-color:#71717a;background:#f4f4f5}' +
+  '.sl-forms-drop-over{border-color:#18181b;background:#e4e4e7}' +
+  '.sl-forms-drop-off{cursor:not-allowed;opacity:.65}' +
+  '.sl-forms-drop-prompt{font-weight:600;color:#18181b}' +
+  '.sl-forms-drop-hint{font-size:12px;color:#71717a;margin-top:4px}' +
+  '.sl-forms-files{list-style:none;margin:6px 0;padding:0;font-family:-apple-system,Segoe UI,Roboto,' +
+  'Helvetica,Arial,sans-serif;font-size:13px;color:#18181b;text-align:left}' +
+  '.sl-forms-file{position:relative;display:flex;gap:8px;align-items:center;border:1px solid #e4e4e7;' +
+  'border-radius:8px;background:#fff;padding:7px 10px;margin:4px 0;overflow:hidden}' +
+  '.sl-forms-file-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+  '.sl-forms-file-size{color:#71717a;font-size:12px;white-space:nowrap}' +
+  '.sl-forms-file-bar{position:absolute;left:0;bottom:0;height:3px;width:0;background:#18181b;' +
+  'transition:width .15s}' +
+  '.sl-forms-file-err{border-color:#fca5a5;background:#fef2f2}' +
+  '.sl-forms-file-err .sl-forms-file-size{color:#dc2626;white-space:normal}' +
+  '.sl-forms-file-x{border:0;background:transparent;color:#71717a;cursor:pointer;font-size:12px;' +
+  'padding:2px 6px;border-radius:6px;font-family:inherit}' +
+  '.sl-forms-file-x:hover,.sl-forms-file-x:focus{background:#f4f4f5;color:#18181b;outline:none}';
 doc.documentElement.appendChild(style);
 
 // ---- deck-handler shield -----------------------------------------------
@@ -459,9 +579,10 @@ function shield(el) {
 }
 
 // ---- payload serialization --------------------------------------------
-// FormData -> flat { name: string | string[] }. Files are skipped (out of
-// scope v1); repeated names accumulate into arrays — the server validates
-// shape and size, never meaning.
+// FormData -> flat { name: string | string[] }. File values are skipped
+// HERE: a file field's files travel on their own requests and the submit
+// names them (the file fields section below). Repeated names accumulate
+// into arrays — the server validates shape and size, never meaning.
 function serialize(form) {
   var out = {};
   var fd = new FormData(form);
@@ -498,6 +619,433 @@ function prefill(form, payload) {
       }
     }
   });
+}
+
+// ---- file fields (PRDCT-2403) -------------------------------------------
+// A plain <input type="file" name="..."> inside a marked form becomes a drop
+// panel: drop files on it, or click it for the system file picker. The
+// author's constraints are read off the input: accept (extensions such as
+// .pdf, or media types such as image/*), required (at least one file),
+// multiple (more than one), data-slideless-min / data-slideless-max (the
+// count) and data-slideless-max-mb (a size ceiling under the instance's).
+// They are enforced HERE, like required on a text field; the server holds
+// the instance's ceilings and never reads a form's markup.
+//
+// A file uploads the moment it is added (one request per file, with a
+// progress bar) and the submit then NAMES the uploaded files. The state is
+// keyed by FORM NAME + FIELD NAME, the same discriminators the server binds
+// an upload to, and lives outside the elements: a deck that rebuilds its
+// slide gets the same files back on the new input (the dialog lane's
+// lesson), and two forms on one page can never see each other's files.
+var UPLOADS = {};
+var UP_SEQ = 0;
+
+function upState(form, input) {
+  var key = form.getAttribute('data-slideless-form') + '\n' + input.name;
+  if (!hasOwn.call(UPLOADS, key)) UPLOADS[key] = { files: [], message: null, input: null, form: null };
+  return UPLOADS[key];
+}
+
+function fileInputs(form) {
+  var all = form.querySelectorAll('input[type="file"][name]');
+  var out = [];
+  for (var i = 0; i < all.length; i++) if (all[i].name) out.push(all[i]);
+  return out;
+}
+
+function intAttr(el, name) {
+  var v = el.getAttribute(name);
+  if (v == null || !/^\d{1,7}$/.test(v.trim())) return null;
+  return parseInt(v.trim(), 10);
+}
+
+// The field's rules, read once per mount. No max set on a multiple field =
+// the instance's own ceiling, which is the "no real upper limit" case.
+function upRules(input) {
+  var ceiling = CFG.uploads ? CFG.uploads.maxFiles : 0;
+  var min = intAttr(input, 'data-slideless-min');
+  if (min == null) min = input.__slRequired ? 1 : 0;
+  var max = intAttr(input, 'data-slideless-max');
+  if (max == null) max = input.multiple ? ceiling : 1;
+  if (max < 1) max = 1;
+  if (max > ceiling && ceiling > 0) max = ceiling;
+  if (min > max) min = max;
+  var maxBytes = CFG.uploads ? CFG.uploads.maxBytes : 0;
+  var ownMb = intAttr(input, 'data-slideless-max-mb');
+  if (ownMb != null && ownMb > 0 && ownMb * 1048576 < maxBytes) maxBytes = ownMb * 1048576;
+  var accept = [];
+  var raw = (input.getAttribute('accept') || '').split(',');
+  for (var i = 0; i < raw.length; i++) {
+    var t = raw[i].trim().toLowerCase();
+    if (t) accept.push(t);
+  }
+  return { min: min, max: max, maxBytes: maxBytes, accept: accept };
+}
+
+function accepts(rules, file) {
+  if (!rules.accept.length) return true;
+  var name = String(file.name || '').toLowerCase();
+  var type = String(file.type || '').toLowerCase();
+  for (var i = 0; i < rules.accept.length; i++) {
+    var t = rules.accept[i];
+    if (t.charAt(0) === '.') {
+      if (name.length > t.length && name.slice(-t.length) === t) return true;
+    } else if (t.slice(-2) === '/*') {
+      if (type && type.indexOf(t.slice(0, -1)) === 0) return true;
+    } else if (type === t) return true;
+  }
+  return false;
+}
+
+function fmtSize(bytes) {
+  if (bytes >= 1073741824) return (Math.round(bytes / 107374182.4) / 10) + ' GB';
+  if (bytes >= 1048576) return (Math.round(bytes / 104857.6) / 10) + ' MB';
+  if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
+  return bytes + ' B';
+}
+
+function liveCount(state) {
+  var n = 0;
+  for (var i = 0; i < state.files.length; i++) if (state.files[i].state !== 'error') n++;
+  return n;
+}
+
+function mountUploads(form) {
+  var inputs = fileInputs(form);
+  for (var i = 0; i < inputs.length; i++) mountUpload(form, inputs[i]);
+}
+
+function mountUpload(form, input) {
+  if (input.__slDrop) return;
+  // A hidden required control blocks the native submit before any event
+  // fires ("not focusable"): the rule moves to the runtime's own check.
+  input.__slRequired = input.required === true;
+  input.required = false;
+  var state = upState(form, input);
+  state.input = input;
+  state.form = form;
+  var rules = upRules(input);
+  var off = !CFG.uploads;
+
+  var panel = doc.createElement('div');
+  panel.className = 'sl-forms-drop' + (off ? ' sl-forms-drop-off' : '');
+  panel.setAttribute('data-slideless-drop', input.name);
+  panel.setAttribute('role', 'button');
+  panel.tabIndex = off ? -1 : 0;
+  if (off) panel.setAttribute('aria-disabled', 'true');
+  var prompt = doc.createElement('div');
+  prompt.className = 'sl-forms-drop-prompt';
+  prompt.textContent = off ? text(form, 'uploadUnavailable')
+    : text(form, rules.max === 1 ? 'uploadPromptOne' : 'uploadPrompt');
+  panel.appendChild(prompt);
+  if (!off) {
+    var bits = [];
+    if (rules.accept.length) bits.push(text(form, 'uploadHintTypes', { types: rules.accept.join(', ') }));
+    bits.push(text(form, 'uploadHintSize', { size: fmtSize(rules.maxBytes) }));
+    if (rules.max > 1 && intAttr(input, 'data-slideless-max') != null) {
+      bits.push(text(form, 'uploadHintMax', { max: rules.max }));
+    }
+    var hint = doc.createElement('div');
+    hint.className = 'sl-forms-drop-hint';
+    hint.textContent = bits.join(' · ');
+    panel.appendChild(hint);
+  }
+  var list = doc.createElement('ul');
+  list.className = 'sl-forms-files';
+  list.setAttribute('data-slideless-files', input.name);
+  var msg = doc.createElement('p');
+  msg.className = 'sl-forms-err';
+  msg.setAttribute('role', 'alert');
+  msg.style.display = 'none';
+
+  input.className = (input.className ? input.className + ' ' : '') + 'sl-forms-file-hidden';
+  input.tabIndex = -1;
+  input.setAttribute('aria-hidden', 'true');
+  var after = input.nextSibling;
+  input.parentNode.insertBefore(panel, after);
+  input.parentNode.insertBefore(list, after);
+  input.parentNode.insertBefore(msg, after);
+  input.__slDrop = { panel: panel, list: list, msg: msg, rules: rules };
+
+  if (!off) {
+    // preventDefault: inside a <label>, the click would ALSO activate the
+    // input natively and open the picker twice.
+    panel.addEventListener('click', function (e) { e.preventDefault(); input.click(); });
+    panel.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
+    input.addEventListener('change', function () {
+      if (input.files && input.files.length) addFiles(form, input, input.files);
+      // So the same file can be chosen again after a removal.
+      try { input.value = ''; } catch (e) { /* read-only in some engines */ }
+    });
+    panel.addEventListener('dragenter', function (e) { if (hasFiles(e)) { stop(e); panel.classList.add('sl-forms-drop-over'); } });
+    panel.addEventListener('dragover', function (e) { if (hasFiles(e)) { stop(e); panel.classList.add('sl-forms-drop-over'); } });
+    panel.addEventListener('dragleave', function (e) { stop(e); panel.classList.remove('sl-forms-drop-over'); });
+    panel.addEventListener('drop', function (e) {
+      if (!hasFiles(e)) return;
+      stop(e);
+      disarm();
+      addFiles(form, input, e.dataTransfer.files);
+    });
+  }
+  renderFiles(state);
+}
+
+function stop(e) { e.preventDefault(); e.stopPropagation(); }
+
+function hasFiles(e) {
+  var dt = e.dataTransfer;
+  if (!dt || !dt.types) return false;
+  for (var i = 0; i < dt.types.length; i++) if (dt.types[i] === 'Files') return true;
+  return false;
+}
+
+// A file dragged anywhere over the page arms every panel on screen, and a
+// drop that misses is never the browser's: it would navigate the tab to the
+// file and lose the answers typed so far. With exactly ONE panel on screen
+// the whole page is its drop target.
+function visiblePanels() {
+  var all = doc.querySelectorAll('.sl-forms-drop');
+  var out = [];
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].offsetParent !== null && all[i].className.indexOf('sl-forms-drop-off') === -1) out.push(all[i]);
+  }
+  return out;
+}
+function disarm() {
+  var all = doc.querySelectorAll('.sl-forms-drop');
+  for (var i = 0; i < all.length; i++) all[i].classList.remove('sl-forms-drop-armed', 'sl-forms-drop-over');
+}
+var armTimer = null;
+doc.addEventListener('dragover', function (e) {
+  if (!hasFiles(e) || !doc.querySelector('.sl-forms-drop')) return;
+  e.preventDefault();
+  var panels = visiblePanels();
+  for (var i = 0; i < panels.length; i++) panels[i].classList.add('sl-forms-drop-armed');
+  // dragleave is unreliable at the document level: disarm when the
+  // dragover stream stops.
+  if (armTimer) clearTimeout(armTimer);
+  armTimer = setTimeout(disarm, 250);
+});
+doc.addEventListener('drop', function (e) {
+  if (!hasFiles(e) || !doc.querySelector('.sl-forms-drop')) return;
+  e.preventDefault();
+  disarm();
+  var panels = visiblePanels();
+  if (panels.length !== 1) return;
+  var name = panels[0].getAttribute('data-slideless-drop');
+  for (var key in UPLOADS) {
+    if (!hasOwn.call(UPLOADS, key)) continue;
+    var st = UPLOADS[key];
+    if (st.input && st.input.__slDrop && st.input.__slDrop.panel === panels[0] && st.input.name === name) {
+      addFiles(st.form, st.input, e.dataTransfer.files);
+      return;
+    }
+  }
+});
+
+function setFieldMessage(state, message) {
+  state.message = message;
+  var drop = state.input && state.input.__slDrop;
+  if (!drop) return;
+  drop.msg.textContent = message || '';
+  drop.msg.style.display = message ? '' : 'none';
+}
+
+function addFiles(form, input, fileList) {
+  var state = upState(form, input);
+  var rules = input.__slDrop.rules;
+  setFieldMessage(state, null);
+  var incoming = [];
+  for (var i = 0; i < fileList.length; i++) incoming.push(fileList[i]);
+  if (!incoming.length) return;
+  // A single-file field: the new file replaces the one in place, but only
+  // once it is ACCEPTED. A refused file (a wrong type, too big) leaves the
+  // field as it was, with the reason under it.
+  var single = rules.max === 1;
+  if (single) incoming = [incoming[0]];
+  for (var j = 0; j < incoming.length; j++) {
+    var file = incoming[j];
+    if (!single && liveCount(state) >= rules.max) {
+      setFieldMessage(state, text(form, 'uploadTooMany', { max: rules.max }));
+      break;
+    }
+    if (!accepts(rules, file)) {
+      setFieldMessage(state, text(form, 'uploadWrongType', { name: file.name, types: rules.accept.join(', ') }));
+      continue;
+    }
+    if (file.size > rules.maxBytes) {
+      setFieldMessage(state, text(form, 'uploadTooLarge', { name: file.name, size: fmtSize(rules.maxBytes) }));
+      continue;
+    }
+    if (single) {
+      while (state.files.length) removeFile(state, state.files[0]);
+    }
+    startUpload(form, input, state, file);
+  }
+  renderFiles(state);
+}
+
+function startUpload(form, input, state, file) {
+  var entry = { key: ++UP_SEQ, id: null, name: String(file.name || 'file'), size: file.size,
+    state: 'uploading', progress: 0, attached: false, xhr: null, error: null };
+  state.files.push(entry);
+  var xhr = new XMLHttpRequest();
+  entry.xhr = xhr;
+  xhr.open('POST', formApi(form, '/uploads') +
+    '?field=' + encodeURIComponent(input.name) +
+    '&name=' + encodeURIComponent(entry.name) +
+    '&type=' + encodeURIComponent(file.type || ''));
+  xhr.withCredentials = false;
+  // ALWAYS octet-stream, whatever the file is: the body is a file, never a
+  // document the server parses. The file's own type rides the query.
+  xhr.setRequestHeader('content-type', 'application/octet-stream');
+  if (CFG.unlock) xhr.setRequestHeader('x-slideless-unlock', CFG.unlock);
+  xhr.upload.onprogress = function (e) {
+    if (e.lengthComputable && e.total > 0) { entry.progress = e.loaded / e.total; paintProgress(entry); }
+  };
+  function fail(code) {
+    entry.state = 'error';
+    entry.xhr = null;
+    entry.error = code === 'file_too_large'
+      ? text(form, 'uploadTooLarge', { name: entry.name, size: fmtSize(input.__slDrop ? input.__slDrop.rules.maxBytes : file.size) })
+      : code === 'uploads_disabled' ? text(form, 'uploadUnavailable')
+      : text(form, 'uploadFailed', { name: entry.name });
+    renderFiles(state);
+  }
+  xhr.onload = function () {
+    var data = null;
+    try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+    if (xhr.status === 201 && data && data.file && data.file.id) {
+      entry.id = data.file.id;
+      entry.state = 'done';
+      entry.progress = 1;
+      entry.xhr = null;
+      renderFiles(state);
+      return;
+    }
+    fail(data && data.error ? data.error.code : null);
+  };
+  xhr.onerror = function () { fail(null); };
+  xhr.onabort = function () { entry.xhr = null; };
+  xhr.send(file);
+}
+
+function removeFile(state, entry) {
+  var at = state.files.indexOf(entry);
+  if (at !== -1) state.files.splice(at, 1);
+  if (entry.xhr) { try { entry.xhr.abort(); } catch (e) { /* already settled */ } }
+  // A file no response holds yet is removed server-side right away (it would
+  // be purged anyway); a file the response already holds leaves through the
+  // next submit, which stops naming it.
+  if (entry.id && !entry.attached && state.form) {
+    fetchFn(formApi(state.form, '/uploads/' + encodeURIComponent(entry.id)), {
+      method: 'DELETE', mode: 'cors', credentials: 'omit', headers: headers(null)
+    }).then(function () {}, function () {});
+  }
+  setFieldMessage(state, null);
+  renderFiles(state);
+}
+
+function paintProgress(entry) {
+  if (entry.bar) entry.bar.style.width = Math.round(entry.progress * 100) + '%';
+}
+
+function renderFiles(state) {
+  var drop = state.input && state.input.__slDrop;
+  if (!drop) return;
+  var list = drop.list;
+  while (list.firstChild) list.removeChild(list.firstChild);
+  state.files.forEach(function (entry) {
+    var li = doc.createElement('li');
+    li.className = 'sl-forms-file' + (entry.state === 'error' ? ' sl-forms-file-err' : '');
+    li.setAttribute('data-slideless-file', entry.state);
+    var name = doc.createElement('span');
+    name.className = 'sl-forms-file-name';
+    name.textContent = entry.name;
+    li.appendChild(name);
+    var size = doc.createElement('span');
+    size.className = 'sl-forms-file-size';
+    size.textContent = entry.state === 'error' ? entry.error : fmtSize(entry.size);
+    li.appendChild(size);
+    var x = doc.createElement('button');
+    x.type = 'button';
+    x.className = 'sl-forms-file-x';
+    x.textContent = text(state.form, 'uploadRemove');
+    x.addEventListener('click', function (e) { e.preventDefault(); removeFile(state, entry); });
+    li.appendChild(x);
+    if (entry.state === 'uploading') {
+      var bar = doc.createElement('span');
+      bar.className = 'sl-forms-file-bar';
+      entry.bar = bar;
+      li.appendChild(bar);
+      paintProgress(entry);
+    } else {
+      entry.bar = null;
+    }
+    list.appendChild(li);
+  });
+  drop.msg.textContent = state.message || '';
+  drop.msg.style.display = state.message ? '' : 'none';
+}
+
+// The files a returning respondent's answer already holds (names and sizes
+// from the respondent wire), shown as files in place: removable, and kept by
+// the next submit unless removed.
+function prefillFiles(form, files) {
+  if (!files || !files.length) return;
+  mountUploads(form);
+  var inputs = fileInputs(form);
+  for (var i = 0; i < inputs.length; i++) {
+    var state = upState(form, inputs[i]);
+    if (state.files.length) continue;
+    for (var j = 0; j < files.length; j++) {
+      if (files[j].field !== inputs[i].name) continue;
+      state.files.push({ key: ++UP_SEQ, id: files[j].id, name: String(files[j].name), size: files[j].sizeBytes,
+        state: 'done', progress: 1, attached: true, xhr: null, error: null });
+    }
+    renderFiles(state);
+  }
+}
+
+// What the submit names: { field: [upload ids] } for EVERY file field of the
+// form, empty arrays included (an edit that removed every file must say so).
+// Returns null when the form has no file field, and { error } when a rule the
+// author set does not hold yet. With uploads OFF on the link the fields are
+// still named: the server keeps and removes held files whatever the switch.
+function collectFiles(form) {
+  var inputs = fileInputs(form);
+  if (!inputs.length) return null;
+  mountUploads(form);
+  var out = {};
+  for (var i = 0; i < inputs.length; i++) {
+    var input = inputs[i];
+    var state = upState(form, input);
+    var ids = [];
+    for (var j = 0; j < state.files.length; j++) {
+      var entry = state.files[j];
+      if (entry.state === 'uploading') return { error: text(form, 'uploadBusy'), state: state };
+      if (entry.state === 'done' && entry.id) ids.push(entry.id);
+    }
+    var rules = input.__slDrop.rules;
+    // With uploads off here nothing can be added, so the author's minimum
+    // cannot be asked for; what the answer already holds is still named, so
+    // a file the respondent removes is really removed.
+    if (CFG.uploads && ids.length < rules.min) {
+      return { error: rules.min === 1 ? text(form, 'uploadRequired') : text(form, 'uploadTooFew', { min: rules.min }), state: state };
+    }
+    out[input.name] = ids;
+  }
+  return { files: out };
+}
+
+function markFilesAttached(form) {
+  var inputs = fileInputs(form);
+  for (var i = 0; i < inputs.length; i++) {
+    var state = upState(form, inputs[i]);
+    for (var j = 0; j < state.files.length; j++) if (state.files[j].state === 'done') state.files[j].attached = true;
+  }
 }
 
 // ---- the dialog (PRDCT-2343) -------------------------------------------
@@ -848,13 +1396,25 @@ function submitForm(form) {
   // row by secret, exactly as before.
   var own = form.__slOwn === true && !!form.__slSecret;
   var url = own ? formApi(form, '/responses/me') : formApi(form, '/responses');
+  // File fields (PRDCT-2403): the submit names the files already uploaded.
+  // An upload still running, or a count under the author's minimum, stops
+  // the submit with the reason under the field itself.
+  var picked = collectFiles(form);
+  if (picked && picked.error) {
+    form.__slBusy = false;
+    setFieldMessage(picked.state, picked.error);
+    var panelEl = picked.state.input && picked.state.input.__slDrop ? picked.state.input.__slDrop.panel : null;
+    if (panelEl && panelEl.focus) { try { panelEl.focus(); } catch (e) { /* focus is a nicety */ } }
+    return;
+  }
   // source/placement/version ride BOTH verbs: an edited row used to keep the
   // creator's attribution forever (PRDCT-1332, related finding).
   var body = {
     payload: serialize(form),
     version: CFG.version,
     source: CFG.source,
-    placement: CFG.placement || undefined
+    placement: CFG.placement || undefined,
+    files: picked ? picked.files : undefined
   };
   fetchFn(url, {
     method: own ? 'PUT' : 'POST',
@@ -870,11 +1430,16 @@ function submitForm(form) {
         // A remembering POST never hands the runtime a secret to keep: the
         // link is the handle. Keep the form on the POST path.
         if (!(data && data.remembered === true)) form.__slOwn = true;
+        markFilesAttached(form);
         card(form, own === true || (data && data.edited === true));
       }, function () { card(form, own === true); });
     }
     return res.json().then(function (data) {
-      var msg = data && data.error && data.error.message
+      // The owner turned file uploads off while this page was open: say it
+      // in the deck's language rather than the server's English.
+      var msg = data && data.error && data.error.code === 'uploads_disabled'
+        ? text(form, 'uploadUnavailable')
+        : data && data.error && data.error.message
         ? data.error.message
         : text(form, 'errorGeneric');
       showError(form, msg);
@@ -912,6 +1477,7 @@ function wire(form) {
   if (form.__slWired) return;
   form.__slWired = true;
   shield(form);
+  mountUploads(form);
   if (candidateSecret) offerResume(form);
   else if (remembering()) prefillRemembered(form);
 }
@@ -950,6 +1516,7 @@ function prefillRemembered(form) {
       if (rows[i].formName !== name) continue;
       if (form.__slBusy || form.__slDialog) return;
       prefill(form, rows[i].payload || {});
+      prefillFiles(form, rows[i].files);
       form.__slRemembered = true;
       return;
     }
@@ -958,7 +1525,11 @@ function prefillRemembered(form) {
 
 function wireAll() {
   var forms = doc.querySelectorAll(SELECTOR);
-  for (var i = 0; i < forms.length; i++) wire(forms[i]);
+  for (var i = 0; i < forms.length; i++) {
+    wire(forms[i]);
+    // A deck that rebuilds a slide inside the same form brings new inputs.
+    mountUploads(forms[i]);
+  }
 }
 // Coalesced: a slide deck mutates its DOM constantly and wireAll runs a
 // document-wide query.
@@ -1050,6 +1621,7 @@ function renderResume(form, row) {
     form.__slSecret = candidateSecret;
     form.__slOwn = true;
     prefill(form, row.payload || {});
+    prefillFiles(form, row.files);
     el.parentNode && el.parentNode.removeChild(el);
     form.__slResume = null;
   });
@@ -1086,7 +1658,8 @@ export function formsScriptTag(cfg: FormsConfig): string {
     source: cfg.source,
     placement: cfg.placement,
     emailAvailable: cfg.emailAvailable,
-    remembers: cfg.remembers
+    remembers: cfg.remembers,
+    uploads: cfg.uploads
   });
   // The catalogue rides the same way: server-authored, `<` escaped so no
   // string could ever close the script (none carries one; the unit test

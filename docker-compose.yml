@@ -41,6 +41,11 @@ services:
       # Path-style addressing — required by MinIO and most S3-compatibles.
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-true}
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-100}
+      # Form file uploads by respondents: per-file MB (0 = off), files per
+      # response, total MB per deck. Empty means the app defaults (100/100/5120).
+      - FORMS_MAX_UPLOAD_MB=${FORMS_MAX_UPLOAD_MB:-}
+      - FORMS_MAX_FILES_PER_RESPONSE=${FORMS_MAX_FILES_PER_RESPONSE:-}
+      - FORMS_MAX_UPLOADS_MB_PER_DECK=${FORMS_MAX_UPLOADS_MB_PER_DECK:-}
       # General per-principal API quota (requests/minute + 1s spike cap).
       # Empty means the app defaults (600 + 100); 0 disables consciously.
       - API_RATE_LIMIT_PER_MINUTE=${API_RATE_LIMIT_PER_MINUTE:-}

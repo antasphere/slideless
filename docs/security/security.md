@@ -41,7 +41,10 @@ responsible for, and the rules that govern rendering user content.
 - **Safe serving of uploads.** Browser-renderable ACTIVE content (HTML, SVG,
   XML) is always `Content-Disposition: attachment` — user content never
   renders on the app origin. Everything carries `nosniff`; HTML we serve is
-  locked behind a hash-based CSP with `frame-ancestors 'none'`.
+  locked behind a hash-based CSP with `frame-ancestors 'none'`. Files that
+  share-link respondents upload into a form's file field are held to a
+  stricter rule: always `attachment`, whatever their type (see "The form
+  surface and the files it takes" below).
 - **Retry-safe creates.** An `Idempotency-Key` header on the create POSTs
   (API keys, invitations, reset and change-email links, upload sessions,
   share-link creation, deck duplicate) replays the original response instead
@@ -332,6 +335,68 @@ surface, `GET|POST /api/v1/viewer/{secret}/annotations`
   URL; the unlock MAC only unlocks annotation calls for this same token),
   so a malicious deck gains no capability beyond spamming its own reviewers'
   notes into its own owner's inbox — bounded by the rate limit.
+
+### The form surface and the files it takes
+
+A share link with forms on (`can_submit_forms`) gets a forms client injected
+the same way, talking to the same kind of public, token-authed surface under
+`/api/v1/viewer/{secret}/forms/…`: the share secret is the credential, every
+call re-resolves it, no cookie or principal is ever consulted, CORS is `*`,
+and a machine credential dies at the scope gate. Submissions are zod-validated
+(128 fields, 32 KiB serialized), rate-limited per IP and token (30/10 min) and
+capped at 10,000 responses per deck.
+
+A form with a file field adds the one **anonymous write path that takes
+bytes**: `POST /api/v1/viewer/{secret}/forms/{form}/uploads`, one file per
+request as a raw streamed body. What bounds it:
+
+- **Three conditions, re-checked on every request.** The link has forms on,
+  the link has uploads on (`can_upload_files`), and the instance allows them
+  (`FORMS_MAX_UPLOAD_MB` above 0). New links have uploads on; every link
+  minted before file fields existed has them off until its owner turns them
+  on, so an upgrade never gives a link in circulation a write capability.
+  Preview tokens never take a file. Anything else answers
+  `403 uploads_disabled`.
+- **Three byte ceilings, all the instance's.** One file
+  (`FORMS_MAX_UPLOAD_MB`, default 100, never above `MAX_FILE_SIZE_MB`),
+  enforced while the body streams, whatever `Content-Length` said; the files
+  one response can hold (`FORMS_MAX_FILES_PER_RESPONSE`, default 100); and
+  the total weight of one deck's form uploads
+  (`FORMS_MAX_UPLOADS_MB_PER_DECK`, default 5120), which counts files not yet
+  submitted and is re-checked under a per-deck lock so concurrent uploads
+  cannot pass it together. That last number is the bound on what a share
+  link can write to the instance's disk.
+- **Its own rate bucket**: uploads and removals, per IP and token
+  (60/10 min).
+- **An upload is bound to where it came from.** A submit attaches an upload
+  only through the same link, on the same form and field, on the same deck,
+  once. An id that does not match refuses the whole submit. A file nobody
+  submitted is deleted by a nightly job once it is 24 hours old.
+- **The author's rules are not a server control.** The accepted types and
+  the counts a deck author writes on the input are enforced in the
+  respondent's browser. Someone who calls the route directly can store any
+  type of file within the ceilings above. The server does not inspect or
+  scan what it stores: whoever downloads a respondent's file should treat it
+  as untrusted.
+- **The bytes never come back through the viewer surface.** No token-authed
+  route serves an uploaded file: a returning respondent gets names and
+  sizes. A share secret, even one that remembers answers, is never a
+  download URL for what was sent through it.
+- **Never rendered, anywhere.** The owner-side downloads
+  (`/api/v1/presentations/{id}/responses/…/files/{fileId}` and the two zip
+  routes) are gated like the responses themselves (404, never 403) and
+  always answer `Content-Disposition: attachment` with `nosniff`, PDFs and
+  images included. An anonymous stranger's bytes never render on the app
+  origin. Both zip downloads are audited.
+- **Stored apart from deck content.** These files never enter the
+  workspace's content-addressed file pool: no dedupe (so "already present"
+  can never tell an anonymous caller that some bytes exist), no listing on
+  the generic `/files` surface, and nothing a deck version can reference. A
+  respondent cannot plant an asset in a deck.
+- **Names are untrusted text.** The file name is cut to a base name with no
+  control or bidi characters and no leading dot; the zip routes rebuild every
+  entry path from single sanitized segments; the CLI never joins a
+  server-provided name into a path. Every sink still escapes them.
 
 ### Per-deck collaborators
 

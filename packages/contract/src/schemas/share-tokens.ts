@@ -105,6 +105,13 @@ export const shareTokenSchema = z.object({
    * preview token.
    */
   remembersResponses: z.boolean(),
+  /**
+   * Whether respondents on this link may upload files into the deck's form
+   * file fields (PRDCT-2403). Needs `canSubmitForms` too. Off = the upload
+   * route answers 403 and the runtime shows the file field as unavailable;
+   * the rest of the form still submits. Never true on a preview token.
+   */
+  canUploadFiles: z.boolean(),
   /** Per-link badge slot; null = deck default (then bottom-right). */
   badgePosition: badgePositionSchema.nullable(),
   expiresAt: z.string().nullable(),
@@ -167,6 +174,15 @@ export const shareTokenCreateSchema = z
      */
     remembersResponses: z.boolean().default(true),
     /**
+     * File uploads ON by default for a NEW link (PRDCT-2403): a file field
+     * is the deck's own intended interaction, like the form around it, so
+     * push + share yields a working drop panel with zero flags. Opt out per
+     * link. Links minted before the switch existed stay OFF until their
+     * owner turns them on — a link already in circulation never gains a
+     * public write capability by itself.
+     */
+    canUploadFiles: z.boolean().default(true),
+    /**
      * Explicit badge slot for this link. Also becomes the deck's remembered
      * default for future links. Omitted = inherit the deck's remembered
      * position.
@@ -181,7 +197,7 @@ export const shareTokenCreateSchema = z
   });
 /**
  * The CLIENT-facing shape: the schema's INPUT, so every field the server
- * defaults (versionMode, canAnnotate, canSubmitForms, canDownload, showBar) is
+ * defaults (versionMode, canAnnotate, canSubmitForms, canDownload, showBar, …) is
  * optional to a caller. A client that had to spell out every default would
  * break at typecheck each time the contract gained one (PRDCT-2278 did);
  * the server validates against the schema and reads the output type.
@@ -225,6 +241,7 @@ export const shareTokenUpdateSchema = z
     canDownload: z.boolean().optional(),
     showBar: z.boolean().optional(),
     remembersResponses: z.boolean().optional(),
+    canUploadFiles: z.boolean().optional(),
     /**
      * Explicit slot (also updates the deck's remembered default) or null to
      * fall back to the deck default again.

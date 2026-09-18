@@ -42,6 +42,29 @@ export function attachmentsZipFilename(title: string, version: number): string {
   return `${slug === '' ? 'deck' : slug}-v${version}.zip`;
 }
 
+export interface ZipEntry {
+  /** The blob's storage key. */
+  key: string;
+  /** The entry's path inside the archive — already safe (the caller's duty). */
+  name: string;
+  mtime: Date;
+}
+
+export interface ServeZipOptions {
+  storage: StorageDriver;
+  logger: Logger;
+  /** For the log lines only. */
+  workspaceId: string;
+  entries: ZipEntry[];
+  /** The download filename. */
+  filename: string;
+  headOnly: boolean;
+  /** Headers merged over the defaults (the viewer passes the ADR 012 sandbox set). */
+  extraHeaders?: Record<string, string>;
+  /** What the archive is, for the log lines ("attachments", "form files"). */
+  what: string;
+}
+
 export interface ServeAttachmentsZipOptions {
   storage: StorageDriver;
   logger: Logger;
@@ -57,6 +80,24 @@ export interface ServeAttachmentsZipOptions {
   extraHeaders?: Record<string, string>;
 }
 
+/** The attachments of one version as one archive (the recipient route and the owner route). */
+export async function serveAttachmentsZip(c: Context, opts: ServeAttachmentsZipOptions): Promise<Response> {
+  return serveZip(c, {
+    storage: opts.storage,
+    logger: opts.logger,
+    workspaceId: opts.workspaceId,
+    entries: opts.attachments.map((a) => ({
+      key: blobKey(opts.workspaceId, a.sha256),
+      name: a.name,
+      mtime: opts.mtime
+    })),
+    filename: opts.filename,
+    headOnly: opts.headOnly,
+    ...(opts.extraHeaders ? { extraHeaders: opts.extraHeaders } : {}),
+    what: 'attachments'
+  });
+}
+
 /**
  * Stream the archive. Every blob is checked for presence BEFORE the status
  * line goes out: a missing one is a clean 404 (the serveBlob posture — with
@@ -64,16 +105,16 @@ export interface ServeAttachmentsZipOptions {
  * disk), never a 200 that dies mid-body. `attachment` + `nosniff` always;
  * `no-store` because the archive is assembled per request and the viewer
  * URL is not content-addressed. No Content-Length: the size of a streamed
- * store archive is only known at the end.
+ * store archive is only known at the end. Shared by the attachments zip
+ * above and the form-response files zips (PRDCT-2403, api/presentations.ts).
  */
-export async function serveAttachmentsZip(c: Context, opts: ServeAttachmentsZipOptions): Promise<Response> {
-  const { storage, logger, workspaceId } = opts;
-  for (const attachment of opts.attachments) {
-    const key = blobKey(workspaceId, attachment.sha256);
-    if (!(await storage.exists(key))) {
+export async function serveZip(c: Context, opts: ServeZipOptions): Promise<Response> {
+  const { storage, logger, workspaceId, what } = opts;
+  for (const entry of opts.entries) {
+    if (!(await storage.exists(entry.key))) {
       logger.error(
-        { key, driver: storage.name },
-        'attachment blob unreachable: manifest names it but storage has no bytes'
+        { key: entry.key, driver: storage.name },
+        `${what} blob unreachable: a row names it but storage has no bytes`
       );
       return c.json({ error: { code: 'not_found', message: 'File content not available' } }, 404);
     }
@@ -96,26 +137,26 @@ export async function serveAttachmentsZip(c: Context, opts: ServeAttachmentsZipO
   let currentBlobStream: Readable | null = null;
   c.req.raw.signal.addEventListener('abort', () => {
     currentBlobStream?.destroy();
-    output.destroy(new Error('client aborted the attachments download'));
+    output.destroy(new Error(`client aborted the ${what} download`));
   });
 
   void (async () => {
-    for (const attachment of opts.attachments) {
+    for (const entry of opts.entries) {
       // Destroying yazl's output does not stop the pump (the export lesson):
       // check the signal explicitly or a cancelled download keeps reading.
-      if (c.req.raw.signal.aborted) throw new Error('client aborted the attachments download');
-      const stream = await storage.getStream(blobKey(workspaceId, attachment.sha256));
+      if (c.req.raw.signal.aborted) throw new Error(`client aborted the ${what} download`);
+      const stream = await storage.getStream(entry.key);
       currentBlobStream = stream;
-      zip.addReadStream(stream, attachment.name, { compress: false, mtime: opts.mtime });
+      zip.addReadStream(stream, entry.name, { compress: false, mtime: entry.mtime });
       await finished(stream);
       currentBlobStream = null;
     }
     zip.end();
   })().catch((err: unknown) => {
     if (c.req.raw.signal.aborted) {
-      logger.info({ workspaceId }, 'attachments download cancelled by the client');
+      logger.info({ workspaceId }, `${what} download cancelled by the client`);
     } else {
-      logger.error({ err, workspaceId }, 'attachments zip pump failed — download truncated');
+      logger.error({ err, workspaceId }, `${what} zip pump failed — download truncated`);
     }
     currentBlobStream?.destroy();
     output.destroy(err instanceof Error ? err : new Error(String(err)));

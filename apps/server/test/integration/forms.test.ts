@@ -189,7 +189,8 @@ const remembered = (secret: string) =>
   });
 
 /** The exact respondent wire (PRDCT-2329): never a revision, never a history, never an id beyond its own. */
-const RESPONDENT_WIRE_KEYS = ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'];
+// `files` (PRDCT-2403): names and sizes of what the respondent uploaded, never a handle on the bytes.
+const RESPONDENT_WIRE_KEYS = ['createdAt', 'files', 'formName', 'id', 'payload', 'updatedAt', 'version'];
 
 const fetchEntry = (secret: string, headers: Record<string, string> = {}) =>
   app.app.request(`/v/${secret}/`, { headers: { accept: 'text/html', ...headers } });
@@ -378,8 +379,12 @@ describe('forms runtime injection', () => {
     // identity. `remembers` (PRDCT-2328) is a BOOLEAN the deck could learn
     // by calling the remembered-answers route without a secret; it names
     // nobody and grants nothing the share secret in the URL does not.
+    // `uploads` (PRDCT-2403) is null or the two ceilings of the file fields
+    // (bytes per file, files per response): numbers a link holder learns
+    // from one refused upload, and no credential — the upload route
+    // re-decides the capability on every request.
     expect(Object.keys(JSON.parse(config!)).sort()).toEqual(
-      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'version'].sort()
+      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'uploads', 'version'].sort()
     );
     expect(JSON.parse(config!).remembers).toBe(false);
     // Nothing anywhere in the served document names the signed-in viewer.
@@ -538,9 +543,7 @@ describe('public form submit (token-authed, cross-origin)', () => {
     expect(body.editSecret).toMatch(/^[A-Za-z0-9_-]{64}$/);
     expect(body.emailSent).toBe(false); // anonymous: nothing to auto-mail
     // The respondent wire is the deliberate subset — no foreign ids, ever.
-    expect(Object.keys(body.response).sort()).toEqual(
-      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
-    );
+    expect(Object.keys(body.response).sort()).toEqual([...RESPONDENT_WIRE_KEYS].sort());
     expect(body.response).toMatchObject({
       formName: 'rsvp',
       version: 1,
@@ -820,9 +823,7 @@ describe('own-row read/update via the edit secret', () => {
       formName: 'rsvp',
       payload: { name: 'Eve', dish: 'pie' }
     });
-    expect(Object.keys(body.response).sort()).toEqual(
-      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
-    );
+    expect(Object.keys(body.response).sort()).toEqual([...RESPONDENT_WIRE_KEYS].sort());
   });
 
   it('an invalid share secret answers 404 before the form name is even looked at', async () => {
@@ -857,9 +858,7 @@ describe('own-row read/update via the edit secret', () => {
       payload: { name: 'Eve', dish: 'pie' }
     });
     // Same wire shape as the form-bound read: nothing extra leaks here.
-    expect(Object.keys(body.response).sort()).toEqual(
-      ['createdAt', 'formName', 'id', 'payload', 'updatedAt', 'version'].sort()
-    );
+    expect(Object.keys(body.response).sort()).toEqual([...RESPONDENT_WIRE_KEYS].sort());
     // Missing / malformed / unknown / foreign-token secrets: the same 404.
     expect((await resolveMe(secretA)).status).toBe(404);
     expect((await resolveMe(secretA, { 'x-slideless-response': 'short' })).status).toBe(404);
@@ -1652,7 +1651,7 @@ describe('remembering links (PRDCT-2328)', () => {
     const cfg = JSON.parse(config!);
     expect(cfg.remembers).toBe(true);
     expect(Object.keys(cfg).sort()).toEqual(
-      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'version'].sort()
+      ['emailAvailable', 'placement', 'remembers', 'source', 'unlock', 'uploads', 'version'].sort()
     );
     // Nothing identifying anywhere in the served document, remembering or not.
     expect(html).not.toContain(ownerUserId);

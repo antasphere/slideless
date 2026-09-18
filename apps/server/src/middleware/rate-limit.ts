@@ -61,6 +61,13 @@ export interface RateLimiters {
    */
   viewerFormEmail: RateLimiterAbstract;
   /**
+   * Form file uploads (PRDCT-2403) on the token-session viewer surface: an
+   * anonymous write-BYTES path, keyed per IP + token. 60 per 10 minutes
+   * covers a respondent filling several file fields; the byte bounds are the
+   * per-file, per-response and per-deck ceilings, not this bucket.
+   */
+  viewerFormUpload: RateLimiterAbstract;
+  /**
    * Shared factory riding the same backend (Redis when REDIS_URL is set,
    * memory otherwise) for buckets sized at runtime — the per-principal
    * request quota creates one limiter per distinct quota tier through this.
@@ -107,6 +114,7 @@ export async function createRateLimiters(env: Pick<Env, 'REDIS_URL'>, logger: Lo
     viewerAnnotate: make('viewer-annot', 60, 10 * 60),
     viewerFormSubmit: make('viewer-form', 30, 10 * 60),
     viewerFormEmail: make('viewer-form-mail', 5, 15 * 60),
+    viewerFormUpload: make('viewer-form-upload', 60, 10 * 60),
     make
   };
 }

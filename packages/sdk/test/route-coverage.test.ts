@@ -18,6 +18,7 @@ import { PlatformClient } from '../src/index.js';
 
 const SAMPLE_ID = '11111111-1111-1111-1111-111111111111';
 const SAMPLE_CHILD_ID = '22222222-2222-2222-2222-222222222222';
+const SAMPLE_FILE_ID = '33333333-3333-3333-3333-333333333333';
 const SAMPLE_TOKEN = 'x'.repeat(24);
 const SAMPLE_SHA256 = 'a'.repeat(64);
 const SAMPLE_VERSION = 3;
@@ -119,7 +120,12 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /annotations': (c) => c.annotationInbox(),
   'GET /presentations/{id}/responses': (c) => c.formResponses(SAMPLE_ID),
   'GET /presentations/{id}/responses/summary': (c) => c.formResponsesSummary(SAMPLE_ID),
+  'GET /presentations/{id}/responses/files.zip': (c) => c.downloadFormResponsesFilesZip(SAMPLE_ID),
   'GET /presentations/{id}/responses/{responseId}': (c) => c.formResponse(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'GET /presentations/{id}/responses/{responseId}/files.zip': (c) =>
+    c.downloadFormResponseFilesZip(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'GET /presentations/{id}/responses/{responseId}/files/{fileId}': (c) =>
+    c.downloadFormResponseFile(SAMPLE_ID, SAMPLE_CHILD_ID, SAMPLE_FILE_ID),
   'DELETE /presentations/{id}/responses/{responseId}': (c) => c.deleteFormResponse(SAMPLE_ID, SAMPLE_CHILD_ID)
 };
 
@@ -157,6 +163,7 @@ function expectedPath(contractPath: string): string {
   return `/api/v1${contractPath
     .replace('{id}', SAMPLE_ID)
     .replace(/\{(tokenId|collaboratorId|annotationId|responseId)\}/, SAMPLE_CHILD_ID)
+    .replace('{fileId}', SAMPLE_FILE_ID)
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)
     .replace('{name}', encodeURIComponent(SAMPLE_ATTACHMENT))}`;

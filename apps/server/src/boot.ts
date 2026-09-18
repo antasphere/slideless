@@ -57,6 +57,7 @@ import { clearGeneratedSetupToken, resolveAuthSecret, resolveSetupToken } from '
 import { ShareTokenService } from './sharing/service.js';
 import { FormResponseService } from './forms/service.js';
 import { FormResponseNotifier } from './forms/notify.js';
+import { FormUploadService, formUploadCaps } from './forms/uploads.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
 import { ShareTokenDownloadService } from './sharing/download-events.js';
 import { PresentationService } from './presentations/service.js';
@@ -622,13 +623,17 @@ export async function boot(
 
   // Jobs: pg-boss (durable queue). The registry's UsageSink emits into it;
   // the worker side hands batches to the downstream sink (no-op locally).
+  // The form-upload purge needs the storage driver, which is probed further
+  // down; the job reads the service through this holder at RUN time (nightly).
+  const formUploadsRef: { current: FormUploadService | null } = { current: null };
   const jobs = await createJobs(
     env,
     db.db,
     logger,
     overrides.usageDownstream ?? new NoopUsageSink(),
     auth,
-    audit
+    audit,
+    { purgeFormUploads: async () => (await formUploadsRef.current?.purgeUnattached()) ?? 0 }
   );
 
   // The edition split (internal/federation.md): the local defaults below are the
@@ -680,9 +685,27 @@ export async function boot(
   // Share-token secrets ride the SAME versioned pepper registry as API keys
   // (ADR 008): sha256(secret + pepper), fail-closed across rotations.
   const sharing = new ShareTokenService(db.db, pepperRegistry);
+  // Storage: probed at boot — /readyz stays red on an unwritable volume.
+  state.reason = 'probing storage';
+  const storage = createStorageDriver(env);
+  await storage.healthcheck();
+  logger.info({ driver: storage.name }, 'storage writable');
+  const fileService = new FileService(db.db, storage, join(env.DATA_DIR, 'tmp'), logger);
+
+  // Form file uploads (PRDCT-2403): what respondents drop into a form's file
+  // fields — stored apart from the workspace's content-addressed files,
+  // bounded by the three FORMS_* instance ceilings.
+  const formUploads = new FormUploadService(
+    db.db,
+    storage,
+    join(env.DATA_DIR, 'tmp'),
+    logger,
+    formUploadCaps(env)
+  );
+  formUploadsRef.current = formUploads;
   // Form-response edit secrets: the same credential pattern one level down
   // (ADR 022) — one registry, one rotation story for every peppered secret.
-  const forms = new FormResponseService(db.db, pepperRegistry);
+  const forms = new FormResponseService(db.db, pepperRegistry, formUploads);
   // Owner mails on new and edited responses (PRDCT-2330): fire-and-forget
   // after the viewer write, per-deck switch, one mail per deck per window.
   const formsNotifier = new FormResponseNotifier({
@@ -708,13 +731,6 @@ export async function boot(
     }
   });
 
-  // Storage: probed at boot — /readyz stays red on an unwritable volume.
-  state.reason = 'probing storage';
-  const storage = createStorageDriver(env);
-  await storage.healthcheck();
-  logger.info({ driver: storage.name }, 'storage writable');
-  const fileService = new FileService(db.db, storage, join(env.DATA_DIR, 'tmp'), logger);
-
   // OAuth-bearer verification: local JWKS (we minted the token) + live
   // membership re-check. One instance, shared by the API and /mcp gates.
   const oauthJwt = new OauthJwtVerifier(auth, db.db, env.PUBLIC_BASE_URL, onWorkspaceMiss);
@@ -738,6 +754,7 @@ export async function boot(
     accountDeletion,
     sharing,
     forms,
+    formUploads,
     formsNotifier,
     collaborators: collaboratorService,
     hubSso,
@@ -771,7 +788,8 @@ export async function boot(
     // request's session here and injected a signed assertion of the viewer's
     // identity into the deck document, which deck JS could lift
     // (PRDCT-1331). Never reintroduce a session read on this path.
-    emailDelivers: email.delivers
+    emailDelivers: email.delivers,
+    formUploadCaps: formUploads.caps
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.

@@ -57,7 +57,7 @@ import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 export const VIEWER_API_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Viewer-Password, X-Slideless-Unlock, X-Slideless-Response',
   'Access-Control-Max-Age': '86400'
 } as const;

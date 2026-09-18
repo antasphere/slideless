@@ -127,12 +127,28 @@ Deck reads are **private by construction**, never workspace-wide:
 - Annotator share links use a deliberately public, token-authed annotation
   API bounded by rate limits — the token in the URL is the whole
   credential, and it can only write notes on its own deck+version.
+- Share links with forms on use the same kind of public, token-authed API
+  for form responses. It is the one place an anonymous visitor can **write
+  files** to the instance: a form's file field, when the link has uploads on.
+  The instance bounds it (size per file, files per response, total per deck,
+  a rate limit), stores the files apart from deck assets, never serves them
+  back to a link holder, and hands them to the deck's owner as downloads
+  only, never rendered on the app origin. The accepted types a deck author
+  lists are checked in the respondent's browser, not by the server, so treat
+  what arrives as untrusted. Details in
+  [security.md](security.md#the-form-surface-and-the-files-it-takes) and
+  [Forms](../sharing/forms.md#file-fields).
 
 ## Operator checklist
 
 - Serve the instance over **HTTPS behind a reverse proxy**
   ([reverse-proxy.md](../self-hosting/reverse-proxy.md)) — share secrets travel in URLs.
 - Consider `VIEWER_BASE_URL` (above) once share links leave your team.
+- Size the disk for form uploads, or switch them off: each deck can hold up
+  to `FORMS_MAX_UPLOADS_MB_PER_DECK` (default 5120 MB) of files sent by
+  anonymous respondents. `FORMS_MAX_UPLOAD_MB=0` turns the feature off for
+  the whole instance
+  ([deployment-profiles.md](../self-hosting/deployment-profiles.md#sizing-storage-for-form-uploads)).
 - Never hand out `data:export`-scoped keys casually; never share the
   `/v/{secret}` URL of anything sensitive without an expiry or password.
 - Treat any code change touching `apps/server/src/viewer/routes.ts` or the

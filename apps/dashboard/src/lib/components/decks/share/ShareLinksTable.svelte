@@ -27,9 +27,9 @@
    * The deck's share links as a table (rebuilt with PRDCT-2308: the
    * recipient on one line, the version as a tag, one check column per
    * capability, copy and open on every row) with their per-row actions
-   * (copy, open, activity, change version, revoke) and the dialogs those
-   * open. Shared by the admin page's share panel and the master page's
-   * share sheet (PRDCT-2279). Creating a link is the sibling
+   * (copy, open, activity, change version, file uploads on/off, revoke) and
+   * the dialogs those open. Shared by the admin page's share panel and the
+   * master page's share sheet (PRDCT-2279). Creating a link is the sibling
    * ShareLinkCreateDialog.
    */
   interface Props {
@@ -77,6 +77,27 @@
       toast.error(errorMessage(e, t('tokens.updateFailed')));
     } finally {
       versionLoading = false;
+    }
+  }
+
+  // ── File uploads on an existing link (PRDCT-2403) ──────────────────────
+  // A link minted before file fields existed has uploads OFF (a link already
+  // in circulation never gains a public write by itself): this is where its
+  // owner turns them on, and off again. One PATCH, no dialog; the check in
+  // the table is the read-back.
+  let uploadsSaving = $state(false);
+
+  async function setUploads(token: ShareToken, value: boolean) {
+    if (uploadsSaving) return;
+    uploadsSaving = true;
+    try {
+      await api.updateShareToken(deckId, token.id, { canUploadFiles: value });
+      toast.success(t(value ? 'tokens.uploadsOnToast' : 'tokens.uploadsOffToast', { name: token.name }));
+      await list.refresh();
+    } catch (e) {
+      toast.error(errorMessage(e, t('tokens.updateFailed')));
+    } finally {
+      uploadsSaving = false;
     }
   }
 
@@ -152,8 +173,9 @@
 
   // One capability, one column: a check or nothing (PRDCT-2308).
   const capability = (
-    key: 'downloads' | 'bar' | 'notes' | 'forms' | 'remembers',
-    field: 'canDownload' | 'showBar' | 'canAnnotate' | 'canSubmitForms' | 'remembersResponses',
+    key: 'downloads' | 'bar' | 'notes' | 'forms' | 'uploads' | 'remembers',
+    field:
+      'canDownload' | 'showBar' | 'canAnnotate' | 'canSubmitForms' | 'canUploadFiles' | 'remembersResponses',
     label: string
   ): ColumnDef<ShareToken, unknown> => ({
     accessorKey: field,
@@ -162,10 +184,10 @@
     meta: { title: label, width: '80px', align: 'center' }
   });
 
-  // The recipient first and never cut; the version as a tag; the four
+  // The recipient first and never cut; the version as a tag; the
   // capabilities as checks; the counts; the status with its expiry behind
   // the hover; copy, open and the menu at the end. EVERY column carries a
-  // width and they add up to the table's min width (1052px): in a fixed
+  // width and they add up to the table's min width (1132px): in a fixed
   // table layout the one column without a width gets whatever is left,
   // which was nothing — the cut column Romain reported. A narrower host
   // scrolls the table sideways instead.
@@ -194,6 +216,18 @@
     capability('bar', 'showBar', t('tokens.colBar')),
     capability('notes', 'canAnnotate', t('tokens.colNotes')),
     capability('forms', 'canSubmitForms', t('tokens.colForms')),
+    // PRDCT-2403: file uploads, right after the forms they belong to. Shown
+    // only with forms on — uploads need submissions, so a link that refuses
+    // them never carries a misleading check.
+    {
+      ...capability('uploads', 'canUploadFiles', t('tokens.colUploads')),
+      cell: ({ row }) =>
+        renderComponent(CapabilityCell, {
+          key: 'uploads',
+          on: row.original.canSubmitForms && row.original.canUploadFiles,
+          label: t('tokens.colUploads')
+        })
+    },
     // PRDCT-2328: the link remembers its answers — shown as a fifth check so
     // the state is never unverifiable from the table (PRDCT-1337's lesson).
     capability('remembers', 'remembersResponses', t('tokens.colRemembers')),
@@ -236,6 +270,17 @@
                     label: t('tokens.actionChangeVersion'),
                     onclick: () => openVersionDialog(row.original)
                   },
+                  // Uploads need submissions: no switch on a link with forms off.
+                  ...(row.original.canSubmitForms
+                    ? [
+                        {
+                          label: row.original.canUploadFiles
+                            ? t('tokens.actionUploadsOff')
+                            : t('tokens.actionUploadsOn'),
+                          onclick: () => void setUploads(row.original, !row.original.canUploadFiles)
+                        }
+                      ]
+                    : []),
                   {
                     label: t('tokens.actionRevoke'),
                     onclick: () => {
@@ -265,7 +310,7 @@
     showViewOptions={false}
     showPagination={false}
     pageSize={200}
-    tableClass="min-w-[1052px]"
+    tableClass="min-w-[1132px]"
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-2">

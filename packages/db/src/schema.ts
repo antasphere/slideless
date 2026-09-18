@@ -705,6 +705,17 @@ export const shareTokens = pgTable(
      */
     remembersResponses: boolean('remembers_responses').notNull().default(false),
     /**
+     * Whether respondents on this link may UPLOAD FILES into the deck's form
+     * file fields (PRDCT-2403). Rides under `canSubmitForms`: both must hold.
+     * The contract default is TRUE on every new mint (a file field is the
+     * deck's own intended interaction, like the form around it); the COLUMN
+     * default is FALSE so every link minted before the switch existed stays
+     * closed — a link already in circulation must never gain an anonymous
+     * write-bytes capability without its owner's word (the PRDCT-1335 item 6
+     * lesson). Preview tokens are minted false.
+     */
+    canUploadFiles: boolean('can_upload_files').notNull().default(false),
+    /**
      * Per-link badge slot override for the annotation overlay. Null = use
      * the deck's remembered `annotation_badge_position`, else bottom-right.
      */
@@ -954,12 +965,80 @@ export const formResponseVersions = pgTable(
     source: text('source', { enum: formResponseSources }).notNull().default('link'),
     placement: text('placement'),
     payload: jsonb('payload').$type<Record<string, string | string[]>>().notNull(),
+    /**
+     * The files the response held AT this revision (PRDCT-2403): names and
+     * sizes only, a record of what was attached, never a handle on bytes — a
+     * file removed by a later edit is gone from storage while its name stays
+     * here. Null on revisions written before the feature.
+     */
+    files: jsonb('files').$type<FormResponseFileSnapshot[]>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [
     // One row per revision; serves the owner's history read (revision DESC)
     // and the retention prune (revision ASC after the first).
     uniqueIndex('form_response_versions_response_revision_uniq').on(t.responseId, t.revision)
+  ]
+);
+
+/** One entry of a revision's files snapshot (PRDCT-2403). */
+export interface FormResponseFileSnapshot {
+  id: string;
+  field: string;
+  name: string;
+  sizeBytes: number;
+}
+
+/**
+ * The files a respondent uploaded into a form's file fields (PRDCT-2403).
+ *
+ * Deliberately NOT rows of `files`: that table is the workspace's
+ * content-addressed pool, deduplicated per (workspace, sha256), which deck
+ * version commits resolve shas against and which `blobReadScope` guards.
+ * Bytes sent by an ANONYMOUS share-link respondent never enter that pool —
+ * no dedupe (so no existence oracle), no possession question, no in-use
+ * guard. Each upload owns its bytes under its own `storage_key`.
+ *
+ * Lifecycle: a row is born PENDING (`response_id` null) when the runtime
+ * uploads a dropped file, and is ATTACHED when a submit on the same link and
+ * form claims it. Every parent reference is `set null`: deleting a response
+ * (or the deck cascade deleting it) DETACHES the row instead of dropping it,
+ * because the blob must be removed from storage too and a cascade cannot do
+ * that. The purge job (`form-upload-purge`) sweeps every row with no
+ * response once it is older than the pending window, blob first.
+ */
+export const formResponseFiles = pgTable(
+  'form_response_files',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id').references(() => presentations.id, { onDelete: 'set null' }),
+    responseId: uuid('response_id').references(() => formResponses.id, { onDelete: 'set null' }),
+    /** The link the bytes came through: a pending row is claimable through THIS link only. */
+    shareTokenId: uuid('share_token_id').references(() => shareTokens.id, { onDelete: 'set null' }),
+    formName: text('form_name').notNull(),
+    /** The file input's `name` — RAW respondent-side input, like a payload key. */
+    fieldName: text('field_name').notNull(),
+    /** The file's display name, sanitized at the API (basename, no control characters) — still untrusted text. */
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    attachedAt: timestamp('attached_at', { withTimezone: true })
+  },
+  (t) => [
+    // Serves the per-response read (owner wire, respondent wire, zip).
+    index('form_response_files_response_idx').on(t.responseId),
+    // Serves the per-deck byte-total cap and the whole-form zip.
+    index('form_response_files_presentation_idx').on(t.presentationId),
+    // Serves the purge sweep: unattached rows by age.
+    index('form_response_files_unattached_idx')
+      .on(t.createdAt)
+      .where(sql`${t.responseId} is null`)
   ]
 );
 
@@ -1108,6 +1187,7 @@ export type CollaboratorRow = typeof collaborators.$inferSelect;
 export type AnnotationRow = typeof annotations.$inferSelect;
 export type FormResponseRow = typeof formResponses.$inferSelect;
 export type FormResponseVersionRow = typeof formResponseVersions.$inferSelect;
+export type FormResponseFileRow = typeof formResponseFiles.$inferSelect;
 export type FormResponseMailStateRow = typeof formResponseMailState.$inferSelect;
 export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
 export type ShareTokenDownloadRow = typeof shareTokenDownloads.$inferSelect;

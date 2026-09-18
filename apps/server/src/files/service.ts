@@ -1,21 +1,14 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createReadStream } from 'node:fs';
+import { mkdir, stat } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
-import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
 import { fileUploaders, files, type Db, type DbConn, type FileRow } from '@slideless/db';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import type { Logger } from '../logger.js';
+import { FileTooLargeError, spoolUpload } from './spool.js';
 
-export class FileTooLargeError extends Error {
-  constructor(public readonly limitBytes: number) {
-    super(`file exceeds the ${limitBytes}-byte limit`);
-  }
-}
+export { FileTooLargeError };
 
 /**
  * Through-app streamed uploads: the body is spooled to DATA_DIR/tmp while
@@ -40,27 +33,12 @@ export class FileService {
     body: Readable;
     maxBytes: number;
   }): Promise<{ file: FileRow; deduplicated: boolean }> {
-    await mkdir(this.spoolDir, { recursive: true });
-    const spoolPath = join(this.spoolDir, randomUUID());
-    const hash = createHash('sha256');
-    let size = 0;
-
-    const meter = new Transform({
-      transform(chunk: Buffer, _enc, cb) {
-        size += chunk.length;
-        if (size > opts.maxBytes) {
-          cb(new FileTooLargeError(opts.maxBytes));
-          return;
-        }
-        hash.update(chunk);
-        cb(null, chunk);
-      }
-    });
+    const spool = await spoolUpload(opts.body, opts.maxBytes, this.spoolDir);
+    const spoolPath = spool.path;
+    const size = spool.sizeBytes;
+    const sha256 = spool.sha256;
 
     try {
-      await pipeline(opts.body, meter, createWriteStream(spoolPath, { flags: 'wx' }));
-      const sha256 = hash.digest('hex');
-
       // Idempotent per (workspace, sha): reuse (and revive) an existing row.
       const [existing] = await this.db
         .select()
@@ -102,7 +80,7 @@ export class FileService {
       await this.recordUploader(row!.id, opts.createdBy);
       return { file: row!, deduplicated: false };
     } finally {
-      await rm(spoolPath, { force: true });
+      await spool.cleanup();
     }
   }
 

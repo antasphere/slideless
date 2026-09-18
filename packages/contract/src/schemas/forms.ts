@@ -56,6 +56,57 @@ export const formResponsePayloadSchema = z
   });
 export type FormResponsePayload = z.infer<typeof formResponsePayloadSchema>;
 
+/**
+ * A form FILE FIELD's name (PRDCT-2403): the file input's `name`, the same
+ * caps as a payload key, and no control characters (it lands in a text
+ * column, a zip entry path and a directory name on the owner's disk).
+ */
+export const formFileFieldNameSchema = noControlChars(z.string().min(1).max(FORM_PAYLOAD_MAX_KEY_CHARS));
+
+/** The longest display name an uploaded file keeps. */
+export const FORM_FILE_NAME_MAX_CHARS = 255;
+
+/**
+ * The files a submit names, per file field: ids the upload route answered
+ * on the SAME link and form. On an update the map is the FULL new set — an
+ * attached file left out is removed; the key absent altogether leaves the
+ * response's files untouched. The per-response count ceiling is the
+ * instance's (`FORMS_MAX_FILES_PER_RESPONSE`), enforced in-handler.
+ */
+export const formSubmitFilesSchema = z.record(formFileFieldNameSchema, z.array(z.uuid()).max(1000));
+export type FormSubmitFiles = z.infer<typeof formSubmitFilesSchema>;
+
+/**
+ * One file a respondent uploaded into a form's file field (PRDCT-2403), on
+ * the OWNER wire.
+ *
+ * ⚠️ RAW CONTENT — `field`, `name` and `contentType` are respondent-side
+ * input (the name is reduced to a basename with no control characters, and
+ * that is all). Escape them wherever they render; never join `name` into a
+ * filesystem path (the CLI writes through its contained-write helper).
+ * The bytes are served `attachment` + `nosniff`, never rendered.
+ */
+export const formResponseFileSchema = z.object({
+  id: z.string(),
+  /** The file input's `name` in the form. */
+  field: z.string(),
+  name: z.string(),
+  contentType: z.string(),
+  sizeBytes: z.number().int(),
+  sha256: z.string(),
+  createdAt: z.string()
+});
+export type FormResponseFile = z.infer<typeof formResponseFileSchema>;
+
+/** A revision's record of the files it held: names and sizes, never a handle on bytes. */
+export const formResponseFileSnapshotSchema = z.object({
+  id: z.string(),
+  field: z.string(),
+  name: z.string(),
+  sizeBytes: z.number().int()
+});
+export type FormResponseFileSnapshot = z.infer<typeof formResponseFileSnapshotSchema>;
+
 export const formResponseSchema = z.object({
   id: z.string(),
   presentationId: z.string(),
@@ -82,6 +133,14 @@ export const formResponseSchema = z.object({
    * `versions`; the respondent-facing wire carries neither.
    */
   revision: z.number().int().min(1),
+  /**
+   * The files the response holds now (PRDCT-2403), in upload order; empty
+   * when the form has no file field. Download one through
+   * `…/responses/{responseId}/files/{fileId}`, a response's set through
+   * `…/responses/{responseId}/files.zip`, a whole deck's through
+   * `…/responses/files.zip`.
+   */
+  files: z.array(formResponseFileSchema),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -102,6 +161,8 @@ export const formResponseVersionSchema = z.object({
   source: formResponseSourceSchema,
   placement: z.string().nullable(),
   payload: formResponsePayloadSchema,
+  /** The files the response held at this revision; null on revisions from before file fields existed. */
+  files: z.array(formResponseFileSnapshotSchema).nullable(),
   createdAt: z.string()
 });
 export type FormResponseVersion = z.infer<typeof formResponseVersionSchema>;
@@ -157,6 +218,16 @@ export const formResponsesSummaryBucketSchema = z.object({
   lastResponseAt: z.string()
 });
 export type FormResponsesSummaryBucket = z.infer<typeof formResponsesSummaryBucketSchema>;
+
+/** Filters of the whole-deck files zip: the listing's own, minus the paging. */
+export const formResponseFilesZipQuerySchema = z.object({
+  form: formNameSchema.optional(),
+  token: z.uuid().optional(),
+  source: formResponseSourceSchema.optional(),
+  placement: noControlChars(z.string().max(64)).optional(),
+  since: z.iso.datetime().optional()
+});
+export type FormResponseFilesZipQuery = z.infer<typeof formResponseFilesZipQuerySchema>;
 
 export const formResponsesSummarySchema = z.object({
   buckets: z.array(formResponsesSummaryBucketSchema),

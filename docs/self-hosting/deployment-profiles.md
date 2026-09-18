@@ -53,6 +53,39 @@ api/worker split. See [scaling.md](../operations/scaling.md), including its find
 first-boot ordering (a fresh database needs one `all`/`worker` boot before
 api-only replicas can start).
 
+## Sizing storage for form uploads
+
+Deck content is written by people with an account. Form uploads are the one
+thing anonymous share-link visitors write to storage: a deck form can carry a
+file field, and every respondent on a link with uploads on can add files to
+it ([Forms](../sharing/forms.md#file-fields)). They land in the same storage
+as everything else (the `app_data` volume with `STORAGE_DRIVER=local`, the
+bucket with `s3`), under their own `forms/` prefix, and three variables bound
+them:
+
+| Variable                        | Default | What it bounds                                                                                               |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `FORMS_MAX_UPLOAD_MB`           | `100`   | One uploaded file. The lower of this and `MAX_FILE_SIZE_MB` applies. `0` switches form uploads off entirely. |
+| `FORMS_MAX_FILES_PER_RESPONSE`  | `100`   | The files one response can hold, all file fields together.                                                   |
+| `FORMS_MAX_UPLOADS_MB_PER_DECK` | `5120`  | The total weight of one deck's form uploads, files not yet submitted included.                               |
+
+The worst case on disk is the number of decks that have a form with a file
+field and a live link with uploads on, times
+`FORMS_MAX_UPLOADS_MB_PER_DECK`: at the defaults, 5 GB per such deck. Nothing
+caps the sum across decks, so either size the volume for that, lower the
+per-deck total, or set `FORMS_MAX_UPLOAD_MB=0` on an instance that should
+never take files from the public. A deck that reaches its total refuses new
+uploads (`403 uploads_full`) and keeps serving; nothing else on the instance
+is affected. Deleting responses frees their space at once; deleting a deck
+frees the space of its uploaded files at the nightly purge, a day after the
+delete.
+
+An upload in flight is first written to `$DATA_DIR/tmp`, then copied to
+storage, so with `s3` the local volume still needs room for the uploads
+being received at one moment. Files that were uploaded and never submitted
+are removed by a nightly job once they are 24 hours old. It runs on
+the replicas that run jobs (`SERVICE_ROLE=all` or `worker`).
+
 Connection pooling: the app's `pg.Pool` ships conservative defaults (max 10
 connections per replica, `statement_timeout` 30 s,
 `idle_in_transaction_session_timeout` 30 s), so N replicas hold at most

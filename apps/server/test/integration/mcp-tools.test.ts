@@ -922,6 +922,92 @@ describe('remembering links, revision history and the owner-mail switch through 
     expect(foreign.text).toContain('404');
   });
 
+  it('slideless_add_share_token takes canUploadFiles, and the responses tool lists uploaded files without their bytes (PRDCT-2403)', async () => {
+    const closed = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'No uploads',
+      canUploadFiles: false
+    });
+    expect(closed.isError, closed.text).toBe(false);
+    expect(closed.data.shareToken.canUploadFiles).toBe(false);
+    const refused = await app.app.request(
+      `/api/v1/viewer/${closed.data.secret}/forms/rsvp/uploads?field=docs&name=a.pdf&type=application/pdf`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream', origin: 'null', 'x-forwarded-for': nextIp() },
+        body: new Uint8Array([1, 2, 3])
+      }
+    );
+    expect(refused.status).toBe(403);
+
+    const open = await callTool(ownerKey, 'slideless_add_share_token', {
+      presentationId: deckId,
+      name: 'Carol'
+    });
+    expect(open.isError, open.text).toBe(false);
+    expect(open.data.shareToken.canUploadFiles).toBe(true);
+    const secret: string = open.data.secret;
+    const ip = nextIp();
+    const uploaded = await app.app.request(
+      `/api/v1/viewer/${secret}/forms/rsvp/uploads?field=docs&name=${encodeURIComponent('../id card.pdf')}&type=application/pdf`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream', origin: 'null', 'x-forwarded-for': ip },
+        body: new Uint8Array([37, 80, 68, 70])
+      }
+    );
+    expect(uploaded.status).toBe(201);
+    const fileId = (await readJson(uploaded)).file.id as string;
+    const sent = await app.app.request(`/api/v1/viewer/${secret}/forms/rsvp/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': ip },
+      body: JSON.stringify({ payload: { n: 'carol' }, files: { docs: [fileId] } })
+    });
+    expect(sent.status).toBe(201);
+    const responseId = (await readJson(sent)).response.id as string;
+
+    const listed = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      token: open.data.shareToken.id
+    });
+    expect(listed.isError, listed.text).toBe(false);
+    expect(listed.data.responses).toHaveLength(1);
+    expect(listed.data.responses[0].files).toEqual([
+      expect.objectContaining({
+        id: fileId,
+        field: 'docs',
+        name: 'id card.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 4
+      })
+    ]);
+    // Metadata only: nothing on the MCP wire is a handle on the bytes.
+    expect(Object.keys(listed.data.responses[0].files[0]).sort()).toEqual(
+      ['contentType', 'createdAt', 'field', 'id', 'name', 'sha256', 'sizeBytes'].sort()
+    );
+
+    const detail = await callTool(ownerKey, 'slideless_list_form_responses', {
+      presentationId: deckId,
+      responseId
+    });
+    expect(detail.isError, detail.text).toBe(false);
+    expect(detail.data.response.files.map((f: { name: string }) => f.name)).toEqual(['id card.pdf']);
+    expect(detail.data.versions[0].files).toEqual([
+      { id: fileId, field: 'docs', name: 'id card.pdf', sizeBytes: 4 }
+    ]);
+
+    const tokens = await callTool(ownerKey, 'slideless_list_share_tokens', { presentationId: deckId });
+    expect(tokens.isError, tokens.text).toBe(false);
+    const byName = new Map<string, boolean>(
+      tokens.data.shareTokens.map((t: { name: string; canUploadFiles: boolean }) => [
+        t.name,
+        t.canUploadFiles
+      ])
+    );
+    expect(byName.get('No uploads')).toBe(false);
+    expect(byName.get('Carol')).toBe(true);
+  });
+
   it('slideless_update_presentation switches the owner mails off and on, alone', async () => {
     const off = await callTool(ownerKey, 'slideless_update_presentation', {
       presentationId: deckId,

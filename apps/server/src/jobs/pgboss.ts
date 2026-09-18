@@ -29,6 +29,7 @@ export const IDEMPOTENCY_PURGE_QUEUE = 'idempotency-purge';
 export const ORPHAN_USER_PURGE_QUEUE = 'orphan-user-purge';
 export const UPLOAD_SESSION_PURGE_QUEUE = 'upload-session-purge';
 export const VIEW_EVENTS_PURGE_QUEUE = 'view-events-purge';
+export const FORM_UPLOAD_PURGE_QUEUE = 'form-upload-purge';
 
 /**
  * Upload sessions carry a ~1 h TTL (ADR 011), so the table is bounded by an
@@ -104,7 +105,9 @@ export async function createJobs(
   /** Orphan purge deletes through Better Auth's own internalAdapter (FK-safe cascade). */
   auth: Auth,
   /** System-actor audit rows for the orphan purge. */
-  audit: AuditService
+  audit: AuditService,
+  /** Purges owned by services built after the jobs (they need the storage driver). */
+  hooks: { purgeFormUploads?: () => Promise<number> } = {}
 ): Promise<Jobs> {
   const isWorker = env.SERVICE_ROLE === 'all' || env.SERVICE_ROLE === 'worker';
 
@@ -147,6 +150,8 @@ export async function createJobs(
       await boss.schedule(IDEMPOTENCY_PURGE_QUEUE, '0 3 * * *');
       await boss.createQueue(UPLOAD_SESSION_PURGE_QUEUE);
       await boss.schedule(UPLOAD_SESSION_PURGE_QUEUE, '0 3 * * *');
+      await boss.createQueue(FORM_UPLOAD_PURGE_QUEUE);
+      await boss.schedule(FORM_UPLOAD_PURGE_QUEUE, '0 3 * * *');
       // Per-view analytics retention: 0 = keep forever; the queue always
       // exists so the schedule can be flipped later (audit-purge pattern).
       await boss.createQueue(VIEW_EVENTS_PURGE_QUEUE);
@@ -231,6 +236,13 @@ export async function createJobs(
     await boss.work(UPLOAD_SESSION_PURGE_QUEUE, async () => {
       const deleted = await purgeExpiredUploadSessions(db);
       logger.info({ deleted }, 'upload session purge ran');
+    });
+
+    // Form upload purge (PRDCT-2403): files a respondent dropped and never
+    // submitted, files an edit or a delete detached — bytes first, row second.
+    await boss.work(FORM_UPLOAD_PURGE_QUEUE, async () => {
+      const removed = (await hooks.purgeFormUploads?.()) ?? 0;
+      logger.info({ removed }, 'form upload purge ran');
     });
 
     // Per-view analytics retention (PRDCT-1313): share_token_views grows one
