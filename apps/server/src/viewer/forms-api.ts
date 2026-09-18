@@ -333,6 +333,23 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     return c.json(err(e.code, e.message), 400);
   }
 
+  /**
+   * A submit that NAMES files on a link that takes none is refused out loud
+   * (verifier round 1): dropping them silently answered 201 and the
+   * respondent believed their documents had arrived. Reachable when the
+   * owner turns the switch off while a page is open, or without the page.
+   * Empty lists are what a form with untouched file fields sends: no refusal.
+   */
+  function uploadsRefusal(
+    c: Context,
+    view: TokenSessionView,
+    files: Record<string, string[]> | undefined
+  ): Response | null {
+    if (files === undefined || view.token.canUploadFiles) return null;
+    if (!Object.values(files).some((ids) => ids.length > 0)) return null;
+    return c.json(err('uploads_disabled', 'This share link does not accept file uploads.'), 403);
+  }
+
   /** The respondent wire with the names and sizes of the files the row holds. */
   async function respondentWire(row: FormResponseRow) {
     return formResponseToRespondentWire(row, await uploads.listForResponse(row.id));
@@ -402,6 +419,8 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     }
     const claimed = resolveClaimedVersion(c, resolved.view, body.version);
     if (!claimed.ok) return claimed.res;
+    const noUploads = uploadsRefusal(c, resolved.view, body.files);
+    if (noUploads) return noUploads;
 
     // PRDCT-2328: a DIRECT navigation on a remembering link submits INTO
     // the link's remembered row (created on the first submit, updated
@@ -428,9 +447,9 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       source: body.source,
       placement: viewPlacement(body.placement),
       payload: body.payload,
-      // A link without the upload capability never attaches a file, whatever
-      // the body says (an id minted while the switch was on stays pending
-      // and is purged).
+      // A link without the upload capability never attaches a file (a submit
+      // naming some was refused above; an id minted while the switch was on
+      // stays pending and is purged).
       files: token.canUploadFiles ? body.files : undefined
     };
 
@@ -573,6 +592,8 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
     // different link, source or placement must not keep the creator's.
     const claimed = resolveClaimedVersion(c, view, parsed.data.version);
     if (!claimed.ok) return claimed.res;
+    const noUploads = uploadsRefusal(c, view, parsed.data.files);
+    if (noUploads) return noUploads;
     let updated: FormResponseRow;
     try {
       updated =

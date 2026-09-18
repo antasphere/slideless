@@ -503,7 +503,7 @@ describe('the claim binds an upload to its link, its form, its field, once', () 
     );
   });
 
-  it('a link whose switch was turned off attaches nothing, whatever the submit names', async () => {
+  it('a link whose switch was turned off refuses a submit that names files, out loud, and takes the rest', async () => {
     const link = await createToken({ name: 'switched off' });
     const f = await uploadOk(link.secret, 'kyc', bytesOf(8));
     await owner(`/tokens/${link.id}`, {
@@ -511,9 +511,16 @@ describe('the claim binds an upload to its link, its form, its field, once', () 
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ canUploadFiles: false })
     });
-    const res = await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [f.id] } });
-    expect(res.status).toBe(201);
-    expect((await readJson(res)).response.files).toEqual([]);
+    const before = (await app.db.db.select().from(formResponses)).length;
+    const refused = await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [f.id] } });
+    expect(refused.status).toBe(403);
+    expect((await readJson(refused)).error.code).toBe('uploads_disabled');
+    expect((await app.db.db.select().from(formResponses)).length).toBe(before);
+    // Untouched file fields (empty lists) and no `files` at all still submit.
+    const empty = await submit(link.secret, 'kyc', { payload: { who: 'x' }, files: { docs: [] } });
+    expect(empty.status).toBe(201);
+    expect((await readJson(empty)).response.files).toEqual([]);
+    expect((await submit(link.secret, 'kyc', { payload: { who: 'y' } })).status).toBe(201);
   });
 });
 
@@ -725,28 +732,70 @@ describe("the deck's upload total", () => {
   });
 
   it('concurrent uploads cannot all pass a nearly full total', async () => {
+    // Verifier round 1: six requests through app.request never overlapped
+    // inside the count-then-insert window, so this test stayed green with
+    // the per-deck lock REMOVED. The overlap is now forced: the storage
+    // driver holds every upload at its `put` until all six have arrived, so
+    // all six reach the insert transaction at the same instant, each having
+    // already passed the cheap unlocked pre-check against an empty deck.
     const deck = await uploadDeck('Race deck');
     const link = await createToken({ name: 'race' }, deck);
-    const results = await Promise.all(
-      Array.from({ length: 6 }, () =>
-        app.app.request(`/api/v1/viewer/${link.secret}/forms/kyc/uploads?field=docs&name=race.bin`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/octet-stream',
-            origin: 'null',
-            'x-forwarded-for': nextIp()
-          },
-          body: bytesOf(700 * 1024)
+    const { FormUploadService, FormUploadsFullError, formUploadCaps } =
+      await import('../../src/forms/uploads.js');
+    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const { Readable } = await import('node:stream');
+    const real = createStorageDriver(app.env);
+    const N = 6;
+    let arrived = 0;
+    let release!: () => void;
+    const allArrived = new Promise<void>((resolve) => (release = resolve));
+    const gated = new Proxy(real, {
+      get(target, prop, receiver) {
+        if (prop !== 'put') return Reflect.get(target, prop, receiver);
+        return async (...args: Parameters<typeof real.put>) => {
+          if (++arrived === N) release();
+          await allArrived;
+          return target.put(...args);
+        };
+      }
+    });
+    const service = new FormUploadService(
+      app.db.db,
+      gated,
+      `${app.env.DATA_DIR}/tmp`,
+      app.logger,
+      formUploadCaps(app.env)
+    );
+    const [token] = await app.db.db.select().from(shareTokens).where(eq(shareTokens.id, link.id));
+    const results = await Promise.allSettled(
+      Array.from({ length: N }, (_, i) =>
+        service.upload({
+          workspaceId: token!.workspaceId,
+          presentationId: deck,
+          shareTokenId: link.id,
+          formName: 'kyc',
+          fieldName: 'docs',
+          filename: `race-${i}.bin`,
+          contentType: 'application/octet-stream',
+          body: Readable.from([Buffer.alloc(700 * 1024, 1)])
         })
       )
     );
-    const ok = results.filter((r) => r.status === 201).length;
-    expect(ok).toBe(2); // 2 × 700 KB fit under 2 MB, a third does not
-    expect(results.filter((r) => r.status === 403).length).toBe(4);
+    expect(arrived).toBe(N);
+    const stored = results.filter((r) => r.status === 'fulfilled');
+    const refused = results.filter((r) => r.status === 'rejected');
+    expect(stored).toHaveLength(2); // 2 × 700 KB fit under 2 MB, a third does not
+    expect(refused).toHaveLength(4);
+    for (const r of refused) expect((r as PromiseRejectedResult).reason).toBeInstanceOf(FormUploadsFullError);
     const rows = await app.db.db
       .select()
       .from(formResponseFiles)
       .where(eq(formResponseFiles.presentationId, deck));
     expect(rows).toHaveLength(2);
+    // The four refused uploads left no bytes behind.
+    for (const r of stored)
+      expect(await real.exists((r as PromiseFulfilledResult<{ storageKey: string }>).value.storageKey)).toBe(
+        true
+      );
   });
 });

@@ -167,7 +167,7 @@ File upload is a per-link capability, **on** for every new link, like the form a
 - **CLI**: `slideless share DECK_ID --no-uploads` (also on `share-email`); `slideless uploads DECK_ID TOKEN_ID --on` or `--off` for an existing link, and without a flag it prints the current state.
 - **API and MCP**: `canUploadFiles: false` when creating the token (`slideless_add_share_token` takes the same field), or `PATCH /api/v1/presentations/{id}/tokens/{tokenId}` on an existing link.
 
-**Links created before file fields existed have uploads off** until their owner turns them on. With uploads on, whoever holds the link can write files to the instance, inside the ceilings above, and a link already in circulation does not gain that by itself. On a link with uploads off, the upload route answers `403 uploads_disabled` and a submit attaches nothing, whatever it names.
+**Links created before file fields existed have uploads off** until their owner turns them on. With uploads on, whoever holds the link can write files to the instance, inside the ceilings above, and a link already in circulation does not gain that by itself. On a link with uploads off, the upload route answers `403 uploads_disabled`, and so does a submit that names files: it is refused whole, so a respondent never believes documents arrived that did not. A submit with no file still goes through.
 
 ### Getting the files
 

@@ -1428,7 +1428,11 @@ function submitForm(form) {
       }, function () { card(form, own === true); });
     }
     return res.json().then(function (data) {
-      var msg = data && data.error && data.error.message
+      // The owner turned file uploads off while this page was open: say it
+      // in the deck's language rather than the server's English.
+      var msg = data && data.error && data.error.code === 'uploads_disabled'
+        ? text(form, 'uploadUnavailable')
+        : data && data.error && data.error.message
         ? data.error.message
         : text(form, 'errorGeneric');
       showError(form, msg);
