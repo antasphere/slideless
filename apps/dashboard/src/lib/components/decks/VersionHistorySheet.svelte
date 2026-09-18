@@ -8,6 +8,7 @@
   import type { ThumbnailController } from '$lib/decks/preview.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
+  import { download } from '$lib/download';
   import { formatBytes, formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
   import type { Attachment, PresentationVersionSummary } from '@slideless/contract';
@@ -123,13 +124,20 @@
                     <Paperclip class="h-3 w-3" />
                     {t('master.historyFiles')}
                   </span>
-                  <a
-                    href={api.versionAttachmentsZipUrl(deckId, version.version)}
+                  <!-- Through $lib/download, never a plain anchor (PRDCT-2426):
+                       an anchor cannot carry the active workspace. -->
+                  <button
+                    type="button"
+                    onclick={() =>
+                      void download(() => api.downloadVersionAttachmentsZip(deckId, version.version), {
+                        fallbackName: `v${version.version}.zip`
+                      })}
                     class="inline-flex items-center gap-1 text-muted-foreground underline-offset-4 hover:underline"
+                    data-testid="version-files-zip"
                   >
                     <Download class="h-3 w-3" />
                     {t('master.downloadAll')}
-                  </a>
+                  </button>
                 </div>
                 {#if attachmentErrors[version.version]}
                   <p class="text-destructive">{attachmentErrors[version.version]}</p>
@@ -141,12 +149,18 @@
                       <!-- SECURITY: file names are DECK-AUTHORED text — escaped
                            {} interpolation only, never {@html}. -->
                       <li class="flex items-baseline justify-between gap-3">
-                        <a
-                          href={api.versionAttachmentUrl(deckId, version.version, file.name)}
-                          class="min-w-0 truncate font-mono underline-offset-4 hover:underline"
+                        <button
+                          type="button"
+                          onclick={() =>
+                            void download(
+                              () => api.downloadVersionAttachment(deckId, version.version, file.name),
+                              { fallbackName: file.name }
+                            )}
+                          class="min-w-0 truncate text-left font-mono underline-offset-4 hover:underline"
+                          data-testid="version-file"
                         >
                           {file.name}
-                        </a>
+                        </button>
                         <span class="shrink-0 text-muted-foreground">{formatBytes(file.sizeBytes)}</span>
                       </li>
                     {/each}
