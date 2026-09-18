@@ -2,41 +2,18 @@ import type { FormResponse, FormResponseFile } from '@slideless/contract';
 import { buildCsv } from '$lib/csv';
 
 /**
- * The pure half of the form-responses panel (PRDCT-2403): the URLs of a
- * response's files, their grouping per file field, and the CSV export. Kept
+ * The pure half of the form-responses panel (PRDCT-2403): the grouping of a
+ * response's files per file field, and the CSV export. Kept
  * apart from the component so each has a unit test with no browser.
  *
  * SECURITY: a file's `field`, `name` and `contentType` are RAW anonymous
- * respondent input. The URLs below are built from IDS ONLY (deck, response,
- * file), each one percent-encoded: a name never reaches an `href`.
+ * respondent input: text interpolation and guarded CSV cells only.
  *
- * Downloads are plain same-origin anchors, the way the deck's attachments
- * are (`api.versionAttachmentUrl` in DeckMaster / VersionHistorySheet): the
- * session cookie rides the navigation and the server answers `attachment` +
- * `nosniff`, so the browser saves the bytes and never renders them. The SDK
- * is same-origin here (an empty base URL), hence the bare `/api/v1` prefix.
+ * The bytes themselves are fetched by the API client's download methods
+ * through `$lib/download` (PRDCT-2426): a plain anchor cannot carry the
+ * active workspace, so this module builds NO download URL. The requests are
+ * made from IDS ONLY (deck, response, file): a name never reaches a URL.
  */
-const API = '/api/v1';
-
-function responsesBase(deckId: string): string {
-  return `${API}/presentations/${encodeURIComponent(deckId)}/responses`;
-}
-
-/** One uploaded file of one response. */
-export function formResponseFileUrl(deckId: string, responseId: string, fileId: string): string {
-  return `${responsesBase(deckId)}/${encodeURIComponent(responseId)}/files/${encodeURIComponent(fileId)}`;
-}
-
-/** Every file of one response, as one zip. */
-export function formResponseFilesZipUrl(deckId: string, responseId: string): string {
-  return `${responsesBase(deckId)}/${encodeURIComponent(responseId)}/files.zip`;
-}
-
-/** Every file of the deck's responses as one zip, narrowed to one form when the panel is. */
-export function formResponsesFilesZipUrl(deckId: string, filter: { form?: string } = {}): string {
-  const query = filter.form !== undefined ? `?form=${encodeURIComponent(filter.form)}` : '';
-  return `${responsesBase(deckId)}/files.zip${query}`;
-}
 
 /** A response's files per file field, fields in first-seen order, files in upload order. */
 export function groupFilesByField<F extends { field: string }>(files: F[]): { field: string; files: F[] }[] {

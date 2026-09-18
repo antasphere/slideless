@@ -34,6 +34,7 @@
   } from '$lib/decks/preview.svelte';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
+  import { download } from '$lib/download';
   import { t } from '$lib/i18n';
   import { deckMasterPath } from '@slideless/contract';
   import type {
@@ -416,23 +417,29 @@
             {/snippet}
           </DropdownMenu.Trigger>
           <DropdownMenu.Content align="end" class="w-72">
-            <DropdownMenu.Item>
-              {#snippet child({ props })}
-                <a {...props} href={api.versionAttachmentsZipUrl(deckId, shownVersion)}>
-                  <Download />
-                  {t('master.downloadAll')}
-                </a>
-              {/snippet}
+            <!-- Through $lib/download, never a plain anchor (PRDCT-2426): an
+                 anchor cannot carry the active workspace. -->
+            <DropdownMenu.Item
+              onclick={() =>
+                void download(() => api.downloadVersionAttachmentsZip(deckId, shownVersion), {
+                  fallbackName: `v${shownVersion}.zip`
+                })}
+              data-testid="master-download-all"
+            >
+              <Download />
+              {t('master.downloadAll')}
             </DropdownMenu.Item>
             <DropdownMenu.Separator />
             {#each shownAttachments as file (file.path)}
               <!-- SECURITY: file names are DECK-AUTHORED text — escaped {} only. -->
-              <DropdownMenu.Item>
-                {#snippet child({ props })}
-                  <a {...props} href={api.versionAttachmentUrl(deckId, shownVersion, file.name)}>
-                    <span class="truncate font-mono text-xs">{file.name}</span>
-                  </a>
-                {/snippet}
+              <DropdownMenu.Item
+                onclick={() =>
+                  void download(() => api.downloadVersionAttachment(deckId, shownVersion, file.name), {
+                    fallbackName: file.name
+                  })}
+                data-testid="master-download-file"
+              >
+                <span class="truncate font-mono text-xs">{file.name}</span>
               </DropdownMenu.Item>
             {/each}
           </DropdownMenu.Content>

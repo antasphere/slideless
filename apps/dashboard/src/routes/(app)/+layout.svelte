@@ -54,6 +54,7 @@
     activeWorkspaceId={data.me.activeWorkspaceId}
     origin={data.me.origin}
     hubManageUrl={data.me.hubManageUrl}
+    canCreateWorkspace={data.me.canCreateWorkspace}
   />
   <Sidebar.Inset class="app-plate">
     <!-- a phone has no sidebar: its own header, and the tab bar below -->

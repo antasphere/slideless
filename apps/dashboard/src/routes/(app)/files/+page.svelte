@@ -17,6 +17,7 @@
   import { api, PlatformApiError, errorMessage } from '$lib/api';
   import { formatBytes, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
+  import { download } from '$lib/download';
   import { t } from '$lib/i18n';
   import type { FileInfo } from '@slideless/contract';
 
@@ -61,13 +62,10 @@
     }
   }
 
-  function download(file: FileInfo) {
-    const a = document.createElement('a');
-    a.href = api.fileContentUrl(file.id);
-    a.download = file.originalName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  // Through $lib/download, never an anchor on the content URL (PRDCT-2426):
+  // the anchor asked the DEFAULT workspace for a file of the active one.
+  function downloadFile(file: FileInfo) {
+    void download(() => api.downloadFileContent(file.id), { fallbackName: file.originalName });
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────
@@ -122,7 +120,7 @@
       cell: ({ row }) =>
         renderComponent(DataTableActions, {
           actions: [
-            { label: t('files.actionDownload'), onclick: () => download(row.original) },
+            { label: t('files.actionDownload'), onclick: () => downloadFile(row.original) },
             {
               label: t('files.actionDelete'),
               onclick: () => {

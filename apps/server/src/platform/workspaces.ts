@@ -5,10 +5,10 @@ import { workspaceMembers, workspaces, type DbConn } from '@slideless/db';
  * creates the FIRST workspace through it; products that open their own
  * workspace-creation flow (a hub's sign-up, a cloud edition's lazy org
  * projection) call it via the platform registry instead of hand-rolling
- * the two inserts. The template deliberately exposes NO HTTP endpoint for
- * this: workspace creation is a product decision, and the fail-closed
- * posture (nothing new is reachable until consciously opened) applies to
- * workspaces like everything else.
+ * the two inserts. The template exposed no HTTP endpoint for this (workspace
+ * creation is a product decision); Slideless took that decision with
+ * `POST /workspaces` (api/workspaces.ts, PRDCT-2444): sessions only, capped
+ * per person, and still through THIS service — never a second insert path.
  */
 export class WorkspaceService {
   constructor(private readonly db: DbConn) {}

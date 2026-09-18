@@ -53,6 +53,35 @@ api/worker split. See [scaling.md](../operations/scaling.md), including its find
 first-boot ordering (a fresh database needs one `all`/`worker` boot before
 api-only replicas can start).
 
+## Limiting workspace creation
+
+Setup creates the instance's first workspace. After that, any signed-in member who is not a guest
+can create another one from the dashboard and owns it ([Workspaces](../concepts/workspaces.md)). One
+variable bounds that:
+
+| Variable                  | Default | What it bounds                                                                               |
+| ------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `MAX_WORKSPACES_PER_USER` | `10`    | The workspaces one person can OWN, the setup one included. `0` closes creation for everyone. |
+
+Workspaces are isolated from each other: the owner of one reads nothing of another, and that
+includes you as the owner of the first. What you keep as the operator is the instance itself: the
+database, the backups, and [break-glass recovery](../security/security.md), which can make a
+superadmin an owner of any workspace and says so in that workspace's audit log. Once the instance
+holds more than one workspace, a break-glass ownership claim has to name its workspace.
+
+One consequence to know before you leave creation open: an account is one person across the whole
+instance, so once a member also belongs to another workspace, an owner can no longer generate a
+password-reset or change-email link for them (`403 cross_workspace_target`), nor delete their
+account (`409 member_of_other_workspaces`); the owner deactivates the membership instead. On an
+instance with no email delivery, the owner's reset link is the only way back in for a member who
+forgot their password, and such a member no longer has it: configure an email driver so people can
+reset their own password, or keep creation closed.
+
+Set `MAX_WORKSPACES_PER_USER=0` on an instance that should stay a single team's. Workspaces that
+already exist are unaffected by a lower value; only new creations are refused. The API quota is per
+credential, not per workspace, so more workspaces do not raise it. Storage has no per-workspace
+ceiling: size the volume for the instance as a whole.
+
 ## Sizing storage for form uploads
 
 Deck content is written by people with an account. Form uploads are the one

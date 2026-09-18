@@ -20,13 +20,8 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import {
-    buildResponsesCsv,
-    formResponseFilesZipUrl,
-    formResponseFileUrl,
-    formResponsesFilesZipUrl,
-    groupFilesByField
-  } from '$lib/decks/form-responses';
+  import { buildResponsesCsv, groupFilesByField } from '$lib/decks/form-responses';
+  import { download, saveBlob } from '$lib/download';
   import { formatBytes, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -49,10 +44,10 @@
    * routes every cell through the formula-injection guard in $lib/csv.
    *
    * The same holds for an uploaded file's `field`, `name` and `contentType`
-   * (PRDCT-2403): text interpolation only. A download `href` is built from
-   * IDS ONLY ($lib/decks/form-responses), never from a name, and the server
-   * answers `attachment` + `nosniff`, so a respondent's bytes are saved,
-   * never rendered on this origin.
+   * (PRDCT-2403): text interpolation only. A download is requested by IDS
+   * ONLY (deck, response, file), never by a name, and goes through
+   * $lib/download, which saves a respondent's bytes as octet-stream: they
+   * are never rendered on this origin.
    */
 
   interface Props {
@@ -168,16 +163,48 @@
   }
 
   // ── Files (PRDCT-2403) ─────────────────────────────────────────────────
-  // Downloads are plain same-origin anchors, the deck attachments' way
-  // (DeckMaster, VersionHistorySheet): the session cookie rides the
-  // navigation, the browser saves what the server sends as `attachment`.
-  // The bare `download` attribute names nothing (the server's
-  // Content-Disposition keeps the file name): it only keeps the SvelteKit
-  // router off the click and the person on this page if the answer is a 404.
+  // Downloads go through $lib/download, never a plain anchor (PRDCT-2426):
+  // an anchor cannot carry X-Workspace-Id, so in any workspace but the
+  // default one it answered 404. The API client fetches (active workspace
+  // included), the server's Content-Disposition names the file, and a
+  // refusal is said on screen.
   const anyFiles = $derived(list.items.some((response) => response.files.length > 0));
-  const allFilesZipUrl = $derived(
-    formResponsesFilesZipUrl(deckId, filterForm !== 'all' ? { form: filterForm } : {})
-  );
+  // One download at a time per control: a zip takes a while, and a second
+  // click would fetch it twice.
+  let downloading = $state<string | null>(null);
+
+  async function runDownload(key: string, fetcher: () => Promise<Response>, fallbackName: string) {
+    if (downloading === key) return;
+    downloading = key;
+    try {
+      await download(fetcher, { fallbackName });
+    } finally {
+      if (downloading === key) downloading = null;
+    }
+  }
+
+  function downloadAllFiles() {
+    const filter = filterForm !== 'all' ? { form: filterForm } : {};
+    return runDownload('all', () => api.downloadFormResponsesFilesZip(deckId, filter), 'form-files.zip');
+  }
+
+  function downloadResponseFiles(response: FormResponse) {
+    return runDownload(
+      `zip:${response.id}`,
+      () => api.downloadFormResponseFilesZip(deckId, response.id),
+      'response-files.zip'
+    );
+  }
+
+  function downloadResponseFile(response: FormResponse, file: FormResponse['files'][number]) {
+    // The fallback is the respondent's name for the file: $lib/download
+    // flattens it to one safe path segment before it names anything.
+    return runDownload(
+      `file:${file.id}`,
+      () => api.downloadFormResponseFile(deckId, response.id, file.id),
+      file.name
+    );
+  }
 
   function isUpdated(response: FormResponse): boolean {
     return new Date(response.updatedAt).getTime() > new Date(response.createdAt).getTime();
@@ -257,13 +284,10 @@
     // depth — the charset gate already holds at the contract).
     const formPart =
       filterForm !== 'all' && /^[A-Za-z0-9._-]{1,64}$/.test(filterForm) ? `-${filterForm}` : '';
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `responses${formPart}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveBlob(
+      new Blob([csv], { type: 'text/csv' }),
+      `responses${formPart}-${new Date().toISOString().slice(0, 10)}.csv`
+    );
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────
@@ -344,8 +368,8 @@
       variant="outline"
       size="sm"
       class="h-8"
-      href={allFilesZipUrl}
-      download
+      onclick={() => void downloadAllFiles()}
+      disabled={downloading === 'all'}
       data-testid="responses-files-zip"
     >
       <Paperclip class="mr-2 h-3.5 w-3.5" />
@@ -482,23 +506,24 @@
                       {#each groupFilesByField(response.files) as group (group.field)}
                         <!-- SECURITY: field and file names are RAW anonymous-
                              respondent input — escaped {…} only, NEVER {@html}.
-                             The href carries ids only, never a name. -->
+                             The request carries ids only, never a name. -->
                         <div class="flex gap-2">
                           <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
                           <dd class="min-w-0 flex-1">
                             <ul class="space-y-0.5">
                               {#each group.files as file (file.id)}
                                 <li class="flex items-baseline justify-between gap-3">
-                                  <a
-                                    href={formResponseFileUrl(deckId, response.id, file.id)}
-                                    download
-                                    class="inline-flex min-w-0 items-baseline gap-1 underline-offset-4 hover:underline"
+                                  <button
+                                    type="button"
+                                    onclick={() => void downloadResponseFile(response, file)}
+                                    disabled={downloading === `file:${file.id}`}
+                                    class="inline-flex min-w-0 items-baseline gap-1 text-left underline-offset-4 hover:underline disabled:opacity-60"
                                     title={t('formResponses.downloadFile')}
                                     data-testid="response-file"
                                   >
                                     <Download class="h-3 w-3 shrink-0 self-center text-muted-foreground" />
                                     <span class="min-w-0 truncate font-mono">{file.name}</span>
-                                  </a>
+                                  </button>
                                   <span class="shrink-0 text-muted-foreground">
                                     {formatBytes(file.sizeBytes)}
                                   </span>
@@ -516,8 +541,8 @@
                     <Button
                       variant="ghost"
                       size="sm"
-                      href={formResponseFilesZipUrl(deckId, response.id)}
-                      download
+                      onclick={() => void downloadResponseFiles(response)}
+                      disabled={downloading === `zip:${response.id}`}
                       data-testid="response-files-zip"
                     >
                       <Download class="h-3.5 w-3.5" />

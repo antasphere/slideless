@@ -33,7 +33,9 @@ import type { LoginAccessToken } from './hub-user-client.js';
  * login path entirely; the hub's caller-scoped `GET /orgs` is the ONE
  * source of org/membership truth. Refresh + between-logins reads live in
  * hub-grant.ts / hub-user-client.ts; SSO scopes carry `offline_access
- * account:read` so the grant persists on the account row.
+ * account:read` so the grant persists on the account row, plus
+ * `orgs:create` (HUB_SSO_SCOPES below) for the one write Slideless makes at
+ * the hub as the user.
  */
 
 /**
@@ -150,6 +152,37 @@ interface LoginScope {
 const loginScope = new AsyncLocalStorage<LoginScope>();
 
 /**
+ * The scopes Slideless requests at hub sign-in — the ONE statement of the
+ * list (the provider entry below spreads it; tests import it).
+ *
+ *  - `openid profile email`: the id_token identity.
+ *  - `offline_access account:read`: the stored grant and its as-the-user
+ *    `GET /orgs` reads (hub-grant.ts, hub-user-client.ts).
+ *  - `orgs:create` (PRDCT-2443): the hub's DEDICATED scope for `POST /orgs`
+ *    — it opens that one route, to a tool-registry client only.
+ *    `account:write` does NOT open it and is deliberately not requested: a
+ *    tool holds the narrowest write it needs, nothing account-wide.
+ *
+ * DEPLOY ORDER — THE HUB FIRST. The hub's authorize endpoint
+ * (@better-auth/oauth-provider) validates every requested scope against the
+ * CLIENT's registered scopes (its tool registry seeds them) and answers
+ * `error=invalid_scope` for an unknown one — the WHOLE sign-in fails, for
+ * every user, not just workspace creation. A hub that does not yet list
+ * `orgs:create` for this client must never meet a Slideless that requests
+ * it. A grant minted BEFORE this shipped simply lacks the scope: the hub
+ * answers 403 `insufficient_scope` on create, which the route maps to 401
+ * `hub_reauth_required` — one sign-in heals it.
+ */
+export const HUB_SSO_SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'offline_access',
+  'account:read',
+  'orgs:create'
+] as const;
+
+/**
  * Strict whitelist for per-call authorize params (the SL-1 silent-connect
  * seam): the dashboard's silent auto-connect passes
  * `additionalData: { prompt: 'none' }` on `POST /sign-in/oauth2`, and the
@@ -240,10 +273,11 @@ export class HubSsoService {
    * The genericOAuth provider entry for the hub. Notes that are POSTURE,
    * not accident:
    *
-   *  - `scopes` carry `offline_access account:read`: the grant IS the
-   *    between-logins credential — better-auth persists the refresh token
-   *    on the account row (encrypted; identity/better-auth.ts), and
-   *    hub-grant.ts keeps it alive.
+   *  - `scopes` (HUB_SSO_SCOPES) carry `offline_access account:read`: the
+   *    grant IS the between-logins credential — better-auth persists the
+   *    refresh token on the account row (encrypted; identity/better-auth.ts),
+   *    and hub-grant.ts keeps it alive — and `orgs:create`, the hub's
+   *    DEDICATED scope for `POST /orgs` (PRDCT-2443).
    *  - `tokenUrlParams.resource` (RFC 8707) is `tokenResource` — `<hub>/mcp`
    *    — so the minted access token is a bearer for the HUB's own API (the
    *    login reconcile + every between-logins read), never for ours.
@@ -260,7 +294,7 @@ export class HubSsoService {
       discoveryUrl: this.opts.issuerUrl.replace(/\/+$/, '') + '/.well-known/openid-configuration',
       clientId: this.opts.clientId,
       clientSecret: this.opts.clientSecret,
-      scopes: ['openid', 'profile', 'email', 'offline_access', 'account:read'],
+      scopes: [...HUB_SSO_SCOPES],
       pkce: true,
       ...(this.opts.tokenResource ? { tokenUrlParams: { resource: this.opts.tokenResource } } : {}),
       // Per-call prompt=none passthrough for the silent auto-connect — the

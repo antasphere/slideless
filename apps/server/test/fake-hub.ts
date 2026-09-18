@@ -56,7 +56,18 @@ export interface HubTokenOverrides {
    * on (sid-less hints hard-fail at the end-session endpoint).
    */
   idTokenSid?: string | undefined;
+  /**
+   * The scope string this user's grant carries, whatever the sign-in
+   * requested — e.g. `LEGACY_GRANT_SCOPE` for a person who signed in before
+   * the tool asked for `orgs:create`.
+   */
+  scope?: string | undefined;
 }
+
+/** What the tool requested before PRDCT-2443 — and what the hub's H3 connect grant carries. */
+export const LEGACY_GRANT_SCOPE = 'openid profile email offline_access account:read';
+/** The hub's DEDICATED scope for POST /api/v1/orgs. `account:write` does NOT open it. */
+export const ORG_CREATE_SCOPE = 'orgs:create';
 
 export interface HubUserFixture {
   sub: string;
@@ -89,6 +100,8 @@ interface AccessTokenRecord {
   sub: string;
   aud: string[];
   expMs: number;
+  /** Space-separated granted scopes — what POST /api/v1/orgs is judged on. */
+  scope: string;
 }
 
 interface RefreshTokenRecord {
@@ -96,10 +109,14 @@ interface RefreshTokenRecord {
   clientId: string;
   family: string;
   rotatedOut: boolean;
+  /** The grant's scopes: a refresh re-mints EXACTLY these, never more. */
+  scope: string;
 }
 
 export class FakeHub {
   readonly codes = new Map<string, HubUserFixture>();
+  /** code → the scope string the grant will carry (see mintCode). */
+  private readonly codeScopes = new Map<string, string>();
   /** Body of the most recent token request — pins the `resource` passthrough. */
   lastTokenRequest: URLSearchParams | null = null;
 
@@ -117,6 +134,16 @@ export class FakeHub {
   orgsMode: 'ok' | 'http500' | 'network' = 'ok';
   /** Hold every /orgs answer this long (single-flight/race tests). */
   orgsDelayMs = 0;
+  /**
+   * POST /api/v1/orgs behavior (the as-the-user org creation, PRDCT-2443).
+   * `limit` = the hub's per-user cap (403 org_limit_reached, the real hub's
+   * answer); `forbidden` = a hub that does not open creation to this grant;
+   * `commit_then_500` creates the org and THEN answers 500 — the ambiguity
+   * the tool must never resolve by re-posting.
+   */
+  orgCreateMode: 'ok' | 'limit' | 'forbidden' | 'http500' | 'network' | 'commit_then_500' = 'ok';
+  /** Every POST /api/v1/orgs: the presented Authorization header + parsed body. */
+  readonly orgCreateRequests: Array<{ auth: string | null; body: unknown }> = [];
   /**
    * Token endpoint behavior (both grants). `hang` never answers (the request
    * is parked, nothing consumed); `commit_then_hang` consumes the presented
@@ -221,15 +248,23 @@ export class FakeHub {
   }
 
   /** Register a one-shot authorization code for the given user fixture. */
-  mintCode(fixture: HubUserFixture): string {
+  /**
+   * `requestedScope` is the `scope` parameter of the tool's authorize URL
+   * (sso-helpers reads it off the real sign-in leg): like the real hub, the
+   * grant carries WHAT WAS REQUESTED and nothing else. A caller that skips
+   * it gets the legacy grant — the fake never hands out `orgs:create`
+   * unasked, so a tool that stops requesting it turns the create suites red.
+   */
+  mintCode(fixture: HubUserFixture, requestedScope?: string | null): string {
     const code = `code_${randomUUID()}`;
     this.codes.set(code, fixture);
+    this.codeScopes.set(code, fixture.overrides?.scope ?? requestedScope ?? LEGACY_GRANT_SCOPE);
     return code;
   }
 
   /** Sign an access token directly (no HTTP dance); recorded as a live bearer. */
   async signAccessToken(fixture: HubUserFixture, resource: string): Promise<string> {
-    return this.accessToken(fixture, resource);
+    return this.accessToken(fixture, resource, fixture.overrides?.scope ?? LEGACY_GRANT_SCOPE);
   }
 
   /**
@@ -293,7 +328,13 @@ export class FakeHub {
     // A fresh H3 exchange is a FRESH grant, like a fresh consent: a past
     // reuse-detection teardown must not shadow a new connect.
     this.deadFamilies.delete(`${fixture.sub}:tool-slideless-cloud`);
-    const hubRefreshToken = this.mintRefreshToken(fixture.sub, 'tool-slideless-cloud');
+    // The hub mints the H3 grant itself: the tool requests nothing here, so
+    // it carries the legacy scopes — never orgs:create.
+    const hubRefreshToken = this.mintRefreshToken(
+      fixture.sub,
+      'tool-slideless-cloud',
+      fixture.overrides?.scope ?? LEGACY_GRANT_SCOPE
+    );
     return { token, jti, hubRefreshToken };
   }
 
@@ -319,6 +360,9 @@ export class FakeHub {
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/orgs') {
       return this.handleOrgs(req, res);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/orgs') {
+      return this.handleOrgCreate(req, res);
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/auth/oauth2/token') {
       return this.handleToken(req, res);
@@ -360,6 +404,72 @@ export class FakeHub {
     return sendJson(res, 200, { orgs });
   }
 
+  // ── POST /api/v1/orgs: create an org AS THE BEARER ────────────────────
+  // Mirrors the hub's api/orgs.ts: the bearer's subject becomes the owner —
+  // the body carries a name and nothing that could name another user.
+  private async handleOrgCreate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: unknown = null;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      body = null;
+    }
+    this.orgCreateRequests.push({ auth: req.headers.authorization ?? null, body });
+    if (this.orgCreateMode === 'network') {
+      req.destroy();
+      return;
+    }
+    if (this.orgCreateMode === 'http500') return sendJson(res, 500, { error: { code: 'internal' } });
+    const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? null;
+    const record = bearer ? this.accessTokens.get(bearer) : undefined;
+    if (!record || record.expMs <= Date.now() || !record.aud.includes(this.apiResource)) {
+      return sendJson(res, 401, { error: { code: 'invalid_token', message: 'Unauthorized' } });
+    }
+    // The real hub's entrance rule (api/orgs.ts `orgCreateRefusal`): a tool
+    // grant creates an organization ONLY with the dedicated scope. A legacy
+    // grant (account:read), and one carrying account:write, are refused the
+    // same way — 403 insufficient_scope, before the cap is even looked at.
+    if (!record.scope.split(' ').includes(ORG_CREATE_SCOPE)) {
+      return sendJson(res, 403, {
+        error: {
+          code: 'insufficient_scope',
+          message: `This credential was not granted "${ORG_CREATE_SCOPE}"`
+        }
+      });
+    }
+    if (this.orgCreateMode === 'limit') {
+      return sendJson(res, 403, { error: { code: 'org_limit_reached', message: 'cap' } });
+    }
+    if (this.orgCreateMode === 'forbidden') {
+      return sendJson(res, 403, { error: { code: 'forbidden', message: 'sessions only' } });
+    }
+    const name = (body as { name?: unknown } | null)?.name;
+    if (typeof name !== 'string' || !name.trim()) {
+      return sendJson(res, 400, { error: { code: 'validation_error', message: 'name' } });
+    }
+    const id = randomUUID();
+    this.setUserOrg(record.sub, id, { name: name.trim(), role: 'owner' });
+    if (this.orgCreateMode === 'commit_then_500') {
+      return sendJson(res, 500, { error: { code: 'internal' } });
+    }
+    return sendJson(res, 201, {
+      org: {
+        id,
+        name: name.trim(),
+        role: 'owner',
+        personal: false,
+        status: 'active',
+        isDefault: false,
+        createdAt: new Date().toISOString()
+      }
+    });
+  }
+
+  /** The org ids the hub holds for a subject (what a test asserts creation against). */
+  orgIdsOf(sub: string): string[] {
+    return [...(this.userOrgs.get(sub)?.keys() ?? [])];
+  }
+
   // ── POST /api/v1/auth/oauth2/token: both grants ───────────────────────
   private async handleToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = new URLSearchParams(await readBody(req));
@@ -385,7 +495,9 @@ export class FakeHub {
     if (!fixture) {
       return sendJson(res, 400, { error: 'invalid_grant', error_description: 'unknown code' });
     }
+    const grantScope = this.codeScopes.get(body.get('code')!) ?? LEGACY_GRANT_SCOPE;
     this.codes.delete(body.get('code')!); // one-shot, like the real thing
+    this.codeScopes.delete(body.get('code')!);
     // The code's fixture seeds the sub's org registry (the hub knows the
     // orgs its own users SSO from) — name/role from the fixture, while the
     // registry-level extras (`status`, `isDefault` — managed via
@@ -407,16 +519,16 @@ export class FakeHub {
     // isJwtAccessToken on the real hub); otherwise opaque.
     const accessToken =
       resource && !fixture.overrides?.forceOpaque
-        ? await this.accessToken(fixture, resource)
+        ? await this.accessToken(fixture, resource, grantScope)
         : `opaque_${randomUUID()}`;
-    const refreshToken = this.mintRefreshToken(fixture.sub, clientId);
+    const refreshToken = this.mintRefreshToken(fixture.sub, clientId, grantScope);
     return sendJson(res, 200, {
       access_token: accessToken,
       id_token: await this.idToken(fixture, clientId),
       refresh_token: refreshToken,
       token_type: 'Bearer',
       expires_in: fixture.overrides?.expiresInSeconds ?? this.accessTokenTtlSeconds,
-      scope: 'openid profile email offline_access account:read'
+      scope: grantScope
     });
   }
 
@@ -449,7 +561,7 @@ export class FakeHub {
       });
     }
     record.rotatedOut = true;
-    const rotated = this.mintRefreshToken(record.sub, record.clientId);
+    const rotated = this.mintRefreshToken(record.sub, record.clientId, record.scope);
     // The slow-but-alive hub: the rotation above is committed and the
     // answer never leaves. Whoever presented `presented` now holds a
     // rotated-out token without knowing it.
@@ -459,7 +571,8 @@ export class FakeHub {
       const accessToken = resource
         ? await this.accessToken(
             { sub: record.sub, email: 'refresh@fake.hub', workspaceId: '', role: 'member' },
-            resource
+            resource,
+            record.scope
           )
         : `opaque_${randomUUID()}`;
       sendJson(res, 200, {
@@ -467,7 +580,7 @@ export class FakeHub {
         refresh_token: rotated,
         token_type: 'Bearer',
         expires_in: this.accessTokenTtlSeconds,
-        scope: 'openid profile email offline_access account:read'
+        scope: record.scope
       });
     };
     void respond();
@@ -519,9 +632,9 @@ export class FakeHub {
     });
   }
 
-  private mintRefreshToken(sub: string, clientId: string): string {
+  private mintRefreshToken(sub: string, clientId: string, scope: string): string {
     const token = `rt_${randomUUID()}`;
-    this.refreshTokens.set(token, { sub, clientId, family: `${sub}:${clientId}`, rotatedOut: false });
+    this.refreshTokens.set(token, { sub, clientId, family: `${sub}:${clientId}`, rotatedOut: false, scope });
     return token;
   }
 
@@ -531,7 +644,7 @@ export class FakeHub {
     return key;
   }
 
-  private async accessToken(fixture: HubUserFixture, resource: string): Promise<string> {
+  private async accessToken(fixture: HubUserFixture, resource: string, scope: string): Promise<string> {
     const key = this.signingKey();
     const o = fixture.overrides ?? {};
     const rawAud = o.accessAud ?? [resource, `${this.issuer}/api/v1/auth/oauth2/userinfo`];
@@ -546,7 +659,7 @@ export class FakeHub {
       ...(fixture.workspaceName === null ? {} : { workspace_name: fixture.workspaceName ?? 'Fake Org' }),
       email: fixture.email,
       azp: 'tool-slideless-cloud',
-      scope: 'openid profile email offline_access account:read',
+      scope,
       aud
     })
       .setProtectedHeader({ alg: 'RS256', kid: key.kid })
@@ -557,7 +670,7 @@ export class FakeHub {
       .sign(key.privateKey);
     // Recorded so /api/v1/orgs can resolve the bearer to its subject —
     // with the REAL exp/aud so wrong-audience and expiry refuse honestly.
-    this.accessTokens.set(token, { sub: fixture.sub, aud, expMs: exp * 1000 });
+    this.accessTokens.set(token, { sub: fixture.sub, aud, expMs: exp * 1000, scope });
     return token;
   }
 

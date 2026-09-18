@@ -3,6 +3,7 @@ import { apiErrorSchema, cursorPageQuerySchema, versionParamSchema } from '../sc
 import { instanceInfoSchema } from '../schemas/instance.js';
 import { setupRequestSchema, setupResponseSchema } from '../schemas/setup.js';
 import { meResponseSchema, onboardingDismissedSchema } from '../schemas/me.js';
+import { workspaceCreatedSchema, workspaceCreateSchema } from '../schemas/workspaces.js';
 import {
   memberChangeEmailLinkRequestSchema,
   memberChangeEmailLinkSchema,
@@ -195,6 +196,34 @@ export const onboardingDismissRoute = createRoute({
     200: jsonBody(onboardingDismissedSchema, 'Dismissal recorded — firstRunPending is now false'),
     401: errorResponses[401],
     403: errorResponses[403]
+  }
+});
+
+// ── Workspace creation (PRDCT-2444 / PRDCT-2443) ────────────────────────────
+// SESSION-ONLY: deliberately UNLISTED in the machine scope allowlist
+// (fail-closed 403 for keys/tokens) and re-checked in the handler. One route
+// for both editions: local creation on self-hosted, creation at the hub AS
+// THE CALLER + immediate local projection on cloud.
+
+export const workspaceCreateRoute = createRoute({
+  method: 'post',
+  path: '/workspaces',
+  tags: ['workspaces'],
+  summary: 'Create another workspace with the caller as its owner (sessions only)',
+  request: { body: jsonRequestBody(workspaceCreateSchema, 'The new workspace'), headers: idempotencyHeaders },
+  responses: {
+    201: jsonBody(workspaceCreatedSchema, 'The created workspace (its LOCAL id)'),
+    400: errorResponses[400],
+    401: jsonBody(
+      apiErrorSchema,
+      'Not authenticated; hub_grant_expired or hub_reauth_required on cloud — both healed by signing in again'
+    ),
+    403: jsonBody(
+      apiErrorSchema,
+      'session_required, guest_forbidden, workspace_creation_disabled, workspace_limit_reached, hub_link_required, hub_unavailable, hub_refused'
+    ),
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    429: errorResponses[429]
   }
 });
 

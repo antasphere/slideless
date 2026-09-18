@@ -79,6 +79,10 @@ export function requiredScopeFor(path: string, method: string): Scope | null {
   //  - /sso/logout (cloud) — single logout is a BROWSER act: a machine
   //    credential must never be able to end its user's sessions. Never
   //    list it.
+  //  - POST /workspaces — creating a workspace (on cloud: an organization at
+  //    the hub, as the user) is a HUMAN act from the dashboard. A key or a
+  //    token must never be able to mint tenants for its holder; the handler
+  //    re-checks `via === 'session'` on top (api/workspaces.ts). Never list it.
   //  - /me/onboarding/dismiss (cloud) — the first-run welcome is a browser
   //    concern; machines carry no banner to dismiss.
   return null;

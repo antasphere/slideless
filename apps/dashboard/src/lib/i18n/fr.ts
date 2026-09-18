@@ -54,6 +54,14 @@ export const fr: Record<MessageKey, string> = {
   'common.hubGrantExpired':
     'Votre connexion Antasphere sur cette instance a expiré — reconnectez-vous avec Antasphere.',
 
+  // ── Téléchargements ($lib/download, PRDCT-2426) ──────────────────────
+  'download.preparing': 'Préparation du téléchargement…',
+  'download.notFound':
+    'Ce fichier n’est plus disponible. Rechargez la page pour voir ce qui s’y trouve à présent.',
+  'download.timedOut': 'Le téléchargement a pris trop de temps et a été interrompu. Réessayez.',
+  'download.network': 'Le téléchargement n’a pas démarré. Vérifiez votre connexion puis réessayez.',
+  'download.failed': 'Le téléchargement a échoué. Réessayez.',
+
   // ── État vide « aucune organisation » (fédération user-scoped) ──────
   'noOrg.title': 'Aucune organisation pour l’instant',
   'noOrg.body':
@@ -61,6 +69,10 @@ export const fr: Record<MessageKey, string> = {
   'noOrg.bodyLocal':
     'Votre compte est connecté mais n’appartient à aucun espace de travail sur cette instance. Demandez une invitation à un administrateur.',
   'noOrg.cta': 'Créer une organisation sur Antasphere',
+  // Le même état vide quand la personne peut créer un espace de travail ici.
+  'noOrg.titleCreate': 'Aucun espace de travail pour l’instant',
+  'noOrg.bodyCreate':
+    'Votre compte est connecté mais n’a pas encore d’espace de travail. Créez-en un pour commencer à publier des decks, ou demandez à un collègue de vous inviter dans le sien.',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',
@@ -430,8 +442,41 @@ export const fr: Record<MessageKey, string> = {
   'workspace.suspendedBadge': 'Suspendue',
   'workspace.defaultBadge': 'Défaut',
   'workspace.defaultBadgeTitle':
-    'Votre organisation par défaut (utilisée quand une requête n’en nomme aucune)',
+    'Votre espace de travail par défaut (utilisé quand une requête n’en nomme aucun)',
   'workspace.setDefaultHub': 'Changer l’organisation par défaut sur Antasphere',
+  // Créer un espace de travail (PRDCT-2443 / PRDCT-2444). Un seul vocabulaire
+  // sur les deux éditions : un espace de travail Slideless, rien d’autre.
+  'workspace.create': 'Nouvel espace de travail',
+  'workspace.createTitle': 'Nouvel espace de travail',
+  'workspace.createDescription':
+    'Un espace séparé, avec ses propres decks, ses membres et ses clés API. Vous en serez propriétaire, et vous passerez d’un espace à l’autre depuis ce menu.',
+  'workspace.nameLabel': 'Nom de l’espace de travail',
+  'workspace.namePlaceholder': 'Équipe marketing',
+  'workspace.createSubmit': 'Créer l’espace de travail',
+  'workspace.creating': 'Création…',
+  'workspace.signInAgain': 'Se reconnecter',
+  'workspace.createErrorName': 'Ce nom ne peut pas être utilisé. Choisissez un nom de 1 à 120 caractères.',
+  'workspace.createErrorLimit':
+    'Vous possédez déjà autant d’espaces de travail qu’une personne peut en avoir ici : impossible d’en créer un autre.',
+  'workspace.createErrorDisabled':
+    'La création d’espaces de travail est désactivée sur cette instance. Adressez-vous à son administrateur.',
+  'workspace.createErrorGuest':
+    'Votre accès couvre les decks auxquels vous avez été invité : ce compte ne peut pas créer d’espace de travail.',
+  'workspace.createErrorUnconfirmed':
+    'Nous n’avons pas pu confirmer la création de l’espace de travail. Patientez une minute et rechargez cette page avant de réessayer : il figure peut-être déjà dans votre liste.',
+  'workspace.createErrorRefused':
+    'L’espace de travail n’a pas pu être créé. Essayez un autre nom, ou réessayez plus tard.',
+  'workspace.createErrorLinkRequired':
+    'Votre mode de connexion ne permet pas de créer un espace de travail. Déconnectez-vous, reconnectez-vous de la manière habituelle, puis réessayez.',
+  'workspace.createErrorFreshSignIn':
+    'La création d’un espace de travail demande une nouvelle connexion. Reconnectez-vous, puis créez-le.',
+  'workspace.createErrorSignInAgain': 'Votre connexion a expiré : l’espace de travail n’a pas été créé.',
+  'workspace.createErrorRateLimited':
+    'Trop d’espaces de travail ont été créés en peu de temps. Patientez un moment puis réessayez.',
+  'workspace.createErrorInFlight':
+    'Votre espace de travail est encore en cours de création. Patientez un instant, puis rechargez cette page.',
+  'workspace.createErrorGeneric':
+    'L’espace de travail n’a pas pu être créé. Vérifiez votre connexion puis réessayez.',
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Vue d’ensemble',

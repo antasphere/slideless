@@ -37,3 +37,16 @@ describe('requiredScopeFor — duplicate (PRDCT-2279)', () => {
     expect(requiredScopeFor(`${DECK}/duplicate`, 'GET')).toBe('presentations:read');
   });
 });
+
+describe('requiredScopeFor — workspace creation (PRDCT-2444 / PRDCT-2443)', () => {
+  it('stays UNLISTED for every method and every neighbouring spelling: sessions only', () => {
+    for (const method of ['POST', 'GET', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
+      expect(requiredScopeFor('/api/v1/workspaces', method)).toBeNull();
+      expect(requiredScopeFor('/api/v1/workspaces/', method)).toBeNull();
+      expect(requiredScopeFor('/api/v1/workspaces/11111111-2222-3333-4444-555555555555', method)).toBeNull();
+    }
+    // The export keeps its own singular path and its own scope — the new
+    // plural route must never ride it.
+    expect(requiredScopeFor('/api/v1/workspace/export', 'GET')).toBe('data:export');
+  });
+});

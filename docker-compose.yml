@@ -47,6 +47,9 @@ services:
       - FORMS_MAX_UPLOAD_MB=${FORMS_MAX_UPLOAD_MB:-}
       - FORMS_MAX_FILES_PER_RESPONSE=${FORMS_MAX_FILES_PER_RESPONSE:-}
       - FORMS_MAX_UPLOADS_MB_PER_DECK=${FORMS_MAX_UPLOADS_MB_PER_DECK:-}
+      # Workspaces one person can own (any member can create another one from
+      # the dashboard). Empty means the app default (10); 0 closes creation.
+      - MAX_WORKSPACES_PER_USER=${MAX_WORKSPACES_PER_USER:-}
       # General per-principal API quota (requests/minute + 1s spike cap).
       # Empty means the app defaults (600 + 100); 0 disables consciously.
       - API_RATE_LIMIT_PER_MINUTE=${API_RATE_LIMIT_PER_MINUTE:-}

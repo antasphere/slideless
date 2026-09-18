@@ -4,6 +4,7 @@ export * from './schemas/common.js';
 export * from './schemas/instance.js';
 export * from './schemas/setup.js';
 export * from './schemas/me.js';
+export * from './schemas/workspaces.js';
 export * from './schemas/members.js';
 export * from './schemas/api-keys.js';
 export * from './schemas/cli-auth.js';

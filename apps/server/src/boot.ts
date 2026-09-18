@@ -25,7 +25,7 @@ import { createAuth, mcpResourceUrl, type AccountEvent, type Auth } from './iden
 import { HubSsoService } from './identity/hub-sso.js';
 import { HubGrantService } from './identity/hub-grant.js';
 import { HubLogoutService } from './identity/hub-logout.js';
-import { hubApiResource, HubUserClient } from './identity/hub-user-client.js';
+import { hubApiResource, HubUserClient, type HubOrgCreator } from './identity/hub-user-client.js';
 import {
   DEFAULT_FEDERATION_DIALS,
   HubOrgReconciler,
@@ -89,6 +89,12 @@ export interface BootOverrides {
    * runs the fixed default.
    */
   formsMailCooldownMs?: number;
+  /**
+   * Replaces the ONE hub call POST /workspaces makes on cloud
+   * (`HubUserClient.createOrg`) — the function boundary its tests fake to
+   * drive every hub answer without a hub. Ignored on oss.
+   */
+  hubCreateOrg?: HubOrgCreator;
 }
 
 export interface BootResult {
@@ -595,16 +601,26 @@ export async function boot(
         discoveryTimeoutMs: hubDials.orgsTimeoutMs
       })
     : undefined;
-  const hubReconciler =
+  // The ONE as-the-user hub client: the reconciler's GET /orgs reads and
+  // POST /workspaces' organization creation both present the user's own
+  // grant through it (never a second, hand-rolled token path).
+  const hubUserClient =
     hub && hubGrant
+      ? new HubUserClient({
+          grant: hubGrant,
+          issuerUrl: hub.issuerUrl,
+          logger,
+          timeoutMs: hubDials.orgsTimeoutMs,
+          // A creation is one deliberate human act, not an identity-path
+          // read: it rides the token-endpoint budget, not the tight one.
+          createTimeoutMs: hubDials.tokenTimeoutMs
+        })
+      : undefined;
+  const hubReconciler =
+    hub && hubGrant && hubUserClient
       ? new HubOrgReconciler({
           db: db.db,
-          client: new HubUserClient({
-            grant: hubGrant,
-            issuerUrl: hub.issuerUrl,
-            logger,
-            timeoutMs: hubDials.orgsTimeoutMs
-          }),
+          client: hubUserClient,
           audit,
           logger,
           dials: hubDials
@@ -765,7 +781,18 @@ export async function boot(
     // Cloud only (internal/federation.md): the post-resolution LIVE hub gate —
     // reconcile-as-the-user + suspension/revocation/grant-death verdicts —
     // run by authContext on every authenticated request. undefined on oss.
-    principalGate: seams.principalGate
+    principalGate: seams.principalGate,
+    // Cloud only (PRDCT-2443): POST /workspaces creates the organization at
+    // the hub AS THE CALLER, then forces their reconcile. undefined on oss —
+    // the route creates locally there.
+    workspaceCloud:
+      hubGrant && hubUserClient && hubReconciler
+        ? {
+            createOrg: overrides.hubCreateOrg ?? ((userId, name) => hubUserClient.createOrg(userId, name)),
+            forceReconcile: (userId) => hubReconciler.forceReconcile(userId),
+            hasHubLink: (userId) => hubGrant.hasStoredGrant(userId)
+          }
+        : undefined
   });
 
   // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in
