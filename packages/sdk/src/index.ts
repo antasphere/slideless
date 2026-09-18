@@ -539,6 +539,16 @@ export class PlatformClient {
     return `${this.baseUrl}/api/v1/files/${encodeURIComponent(id)}/content`;
   }
 
+  /**
+   * Downloads a file's bytes with the client's own headers (credential and
+   * active workspace). Raw Response so callers can stream it; a non-2xx
+   * answer throws PlatformApiError like every other method. A browser anchor
+   * on `fileContentUrl` cannot carry `X-Workspace-Id` (PRDCT-2426).
+   */
+  async downloadFileContent(id: string): Promise<Response> {
+    return this.rawDownload(this.fileContentUrl(id));
+  }
+
   // ── Presentations ─────────────────────────────────────────────────────────
 
   presentations(
