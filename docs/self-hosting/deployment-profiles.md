@@ -73,8 +73,9 @@ One consequence to know before you leave creation open: an account is one person
 instance, so once a member also belongs to another workspace, an owner can no longer generate a
 password-reset or change-email link for them (`403 cross_workspace_target`), nor delete their
 account (`409 member_of_other_workspaces`); the owner deactivates the membership instead. On an
-instance with no email delivery, where the owner's reset link is the recovery path, that member
-recovers through their own workspace or through break-glass.
+instance with no email delivery, the owner's reset link is the only way back in for a member who
+forgot their password, and such a member no longer has it: configure an email driver so people can
+reset their own password, or keep creation closed.
 
 Set `MAX_WORKSPACES_PER_USER=0` on an instance that should stay a single team's. Workspaces that
 already exist are unaffected by a lower value; only new creations are refused. The API quota is per
