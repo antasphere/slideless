@@ -1154,3 +1154,15 @@ build`, a running API keeps serving the OLD `index.html`, which imports chunks t
   worth, so one colleague takes at most a tenth of an office's NAT address. `/me.canCreateWorkspace`
   reads both buckets (no spend). Rule: a wall protecting an authenticated act is spent by the
   handler, keyed on who it identified; path mounts are for surfaces whose cost IS the arrival.
+- **The deploy-order refusal lands on the TOOL's callback, not on a hub page.** Verified live by
+  the federation drill's Phase 3b (hub `lane/org-create-for-tools` beside this branch, 2026-09-18):
+  an authorize that requests a scope the hub does not list for the client answers a 302 to
+  Slideless's own callback carrying `error=invalid_scope` and an `error_description` naming the
+  scope — no code, no consent screen, the whole sign-in over. So a Slideless that ships
+  `orgs:create` before the hub lists it does not "lose workspace creation", it locks every user out
+  at the door, and the symptom shows in Slideless's callback logs, not the hub's. The hub first.
+- **The drill's "next /24" is not a free subnet on a busy machine.** `172.30.250.0/24` overlapped
+  a standing `172.30.0.0/16` compose network here, and so would `172.30.251.0/24`: Docker's default
+  pool hands out /16s, so any neighbour inside the same /16 swallows every /24 of it. To run the
+  drill beside other stacks, set `FEDERATION_SUBNET_PREFIX` OUTSIDE the pool (`10.99.250` worked),
+  and read `docker network inspect` for the real masks before picking, not just the prefixes.
