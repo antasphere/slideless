@@ -135,7 +135,11 @@ interface Run {
   body: FakeEl;
   shadowRoots: FakeRoot[];
   fetches: Array<{ url: string; init: Record<string, unknown> }>;
-  listeners: Array<{ target: string; type: string }>;
+  listeners: Array<{ target: string; type: string; fn: (e: unknown) => void }>;
+  /** Events the runtime dispatched on the document (the overlay handshake). */
+  dispatched: Array<{ type: string; detail: unknown }>;
+  /** Fire an event at the document's listeners of that type. */
+  fire: (type: string, detail?: unknown) => void;
 }
 
 /** Execute the injected tag in a fake window; `top` decides the browsing context. */
@@ -153,17 +157,32 @@ function run(
   const shadowRoots: FakeRoot[] = [];
   const fetches: Run['fetches'] = [];
   const listeners: Run['listeners'] = [];
+  const dispatched: Run['dispatched'] = [];
   const root = makeEl('html', shadowRoots);
   const body = makeEl('body', shadowRoots);
+  class FakeCustomEvent {
+    type: string;
+    detail: unknown;
+    constructor(type: string, init?: { detail?: unknown }) {
+      this.type = type;
+      this.detail = init?.detail;
+    }
+  }
   const document = {
     documentElement: root,
     body,
     readyState: 'complete',
     activeElement: null,
     createElement: (t: string) => makeEl(t, shadowRoots),
-    addEventListener: (type: string) => listeners.push({ target: 'document', type })
+    addEventListener: (type: string, fn: (e: unknown) => void) =>
+      listeners.push({ target: 'document', type, fn }),
+    dispatchEvent: (e: FakeCustomEvent) => dispatched.push({ type: e.type, detail: e.detail })
+  };
+  const fire: Run['fire'] = (type, detail) => {
+    for (const l of listeners) if (l.type === type) l.fn(new FakeCustomEvent(type, { detail }));
   };
   const win: Record<string, unknown> = {
+    CustomEvent: FakeCustomEvent,
     document,
     location: { pathname: '/v/SECRET123/', href: 'http://decks.test/v/SECRET123/' },
     URL,
@@ -197,7 +216,7 @@ function run(
   win['self'] = win;
   win['top'] = opts.top ? win : { other: true };
   runInNewContext(src, win);
-  return { win, root, body, shadowRoots, fetches, listeners };
+  return { win, root, body, shadowRoots, fetches, listeners, dispatched, fire };
 }
 
 const CFG = { title: 'Quarterly review', version: 3, unlock: null, downloads: true };
@@ -395,6 +414,63 @@ describe('the runtime, executed', () => {
     expect(r.body.style.props.get('transition')).toBe(
       `background 5s ease 0s, margin-top ${MOTION_DURATION_MS}ms ${MOTION_EASING}, height ${MOTION_DURATION_MS}ms ${MOTION_EASING} !important`
     );
+  });
+
+  // ── The annotation controls: hosted by the bar, wired by two events ──
+
+  const tools = (r: Run) => strip(r).children.find((c) => c.className === 'tools')!;
+  const notesBtn = (r: Run) => tools(r).children.find((c) => c.id === '__sl-badge')!;
+  const pinBtn = (r: Run) => tools(r).children.find((c) => c.id === '__sl-fab-pin')!;
+
+  it('builds the two controls under the overlay ids, before Download and Hide, hidden until the overlay speaks', () => {
+    const r = run(CFG);
+    const order = strip(r).children.map((c) => c.className);
+    expect(order).toEqual(['mark', 'title', 'tools', 'dl', 'ico hide']);
+    expect(notesBtn(r).getAttribute('aria-label')).toBe('Annotations');
+    expect(pinBtn(r).getAttribute('aria-label')).toBe('Add a pin');
+    // The group is display:none until the host carries data-annotations,
+    // which only the overlay's state announcement sets: a link without
+    // annotations shows a bar without them.
+    const css = stylesheet(r);
+    expect(css).toContain('.tools{display:none;');
+    expect(css).toContain(':host([data-annotations]) .tools{display:inline-flex;}');
+    expect(r.body.children[0]!.hasAttribute('data-annotations')).toBe(false);
+    // Mounting asks an overlay that came first for its state, and nothing else.
+    expect(r.dispatched).toEqual([{ type: 'slideless:annotations', detail: { action: 'state' } }]);
+    expect(r.fetches).toHaveLength(1);
+  });
+
+  it('shows the controls, the open count as a tag and the pressed states from the overlay announcement', () => {
+    const r = run(CFG);
+    r.fire('slideless:annotations-state', { count: 3, open: 2, panel: true, mode: 'annotate' });
+    const host = r.body.children[0]!;
+    expect(host.hasAttribute('data-annotations')).toBe(true);
+    expect(notesBtn(r).getAttribute('data-count')).toBe('2');
+    expect(notesBtn(r).getAttribute('aria-label')).toBe('Annotations, 2 open');
+    expect(notesBtn(r).children.find((c) => c.className === 'count')!.textContent).toBe('2');
+    expect(notesBtn(r).getAttribute('aria-pressed')).toBe('true');
+    expect(pinBtn(r).getAttribute('aria-pressed')).toBe('true');
+    expect(pinBtn(r).title).toBe('Done placing pins');
+    // All resolved: no tag, nothing pressed.
+    r.fire('slideless:annotations-state', { count: 3, open: 0, panel: false, mode: 'browse' });
+    expect(notesBtn(r).hasAttribute('data-count')).toBe(false);
+    expect(notesBtn(r).getAttribute('aria-label')).toBe('Annotations');
+    expect(notesBtn(r).getAttribute('aria-pressed')).toBe('false');
+    expect(pinBtn(r).title).toBe('Add a pin');
+    // A malformed announcement changes nothing.
+    r.fire('slideless:annotations-state', 'garbage');
+    expect(host.hasAttribute('data-annotations')).toBe(true);
+    expect(notesBtn(r).hasAttribute('data-count')).toBe(false);
+  });
+
+  it('the ui/tag look on the count, slate tone, and the ghost icon style on all three icon buttons', () => {
+    const css = stylesheet(run(CFG));
+    expect(css).toContain('.ico{min-width:32px;height:32px;padding:0;border-radius:10px;color:var(--muted);');
+    expect(css).toContain('.ico:hover,.ico:focus-visible{background:var(--wash);color:var(--ink);}');
+    expect(css).toContain('.ico[aria-pressed="true"]{background:var(--wash);color:var(--accent-deep);}');
+    expect(css).toContain('--tone:#5c7285;');
+    expect(css).toContain('.count{display:none;min-width:18px;height:18px;padding:0 5px;border-radius:6px;');
+    expect(css).toContain('.notes[data-count] .count{display:inline-flex;}');
   });
 
   it('ships the brand file’s path, byte for byte (verifier round 1, G5)', () => {

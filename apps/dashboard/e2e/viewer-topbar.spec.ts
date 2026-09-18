@@ -465,13 +465,23 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       expect(slideTop).toBe(0);
     });
 
-    await test.step('the annotation badge sits below the bar when both mount', async () => {
+    await test.step('the annotation controls sit IN the bar when both mount, nothing floats over the deck', async () => {
       await recipient.goto(`${origin}/v/${annotator}/`);
       await expect(recipient.locator(`${BAR} .bar`)).toBeVisible();
-      await expect(recipient.locator('#__sl-badge')).toBeVisible();
+      // The bar hosts the two entrances under the overlay's ids (the shadow
+      // root is open, so the locator reaches them); the overlay creates no
+      // floating button of its own.
+      await expect(recipient.locator(`${BAR} #__sl-badge`)).toBeVisible();
+      await expect(recipient.locator(`${BAR} #__sl-fab-pin`)).toBeVisible();
+      await expect(recipient.locator('#__slideless_annotate #__sl-badge')).toHaveCount(0);
       const bar = await recipient.locator(BAR).boundingBox();
-      const badge = await recipient.locator('#__sl-badge').boundingBox();
-      expect(bar && badge && badge.y >= bar.y + bar.height).toBe(true);
+      const badge = await recipient.locator(`${BAR} #__sl-badge`).boundingBox();
+      expect(bar && badge && badge.y >= bar.y && badge.y + badge.height <= bar.y + bar.height).toBe(true);
+      // The bar's button opens the overlay's panel.
+      await recipient.locator(`${BAR} #__sl-badge`).click();
+      await expect(recipient.locator('#__sl-sheet')).toHaveClass(/open/);
+      await recipient.locator('#__sl-close').click();
+      await expect(recipient.locator('#__sl-sheet')).not.toHaveClass(/open/);
     });
 
     await test.step('an iframe embed stays bare', async () => {

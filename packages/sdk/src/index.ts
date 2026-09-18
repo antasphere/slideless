@@ -9,6 +9,7 @@ import type {
   AssetPrecheckResponse,
   AssetUploaded,
   AuditEntry,
+  AuditVia,
   BreakGlassClaimOwnership,
   BreakGlassClaimOwnershipRequest,
   BreakGlassResetTwoFactor,
@@ -124,6 +125,26 @@ export interface ListParams {
 export interface AuditListResponse {
   entries: AuditEntry[];
   nextCursor: string | null;
+  /** How many entries match in all; counted on the first page only, null after it. */
+  total: number | null;
+}
+
+/** Cursor pagination + the audit log's filters (every one optional, combined with AND). */
+export interface AuditListParams extends ListParams {
+  /** Free text, matched case-insensitively against the actor's email and the action. */
+  q?: string;
+  /** Actions or families: an item ending in `.` matches the family (`presentation.`). */
+  action?: string[];
+  /** How the actor authenticated. */
+  actorVia?: AuditVia[];
+  /** One user id, or `system` for the rows nobody signed. */
+  actor?: string;
+  resourceType?: string;
+  resourceId?: string;
+  /** ISO datetime: entries created at or after this instant. */
+  from?: string;
+  /** ISO datetime: entries created at or before this instant. */
+  to?: string;
 }
 
 export interface InvitationAccepted {
@@ -477,8 +498,20 @@ export class PlatformClient {
 
   // ── Audit ─────────────────────────────────────────────────────────────────
 
-  audit(params: ListParams = {}): Promise<AuditListResponse> {
-    return this.request('GET', this.pathWithQuery('/audit', params));
+  audit(params: AuditListParams = {}): Promise<AuditListResponse> {
+    const query = new URLSearchParams();
+    if (params.cursor) query.set('cursor', params.cursor);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.q) query.set('q', params.q);
+    if (params.action?.length) query.set('action', params.action.join(','));
+    if (params.actorVia?.length) query.set('actorVia', params.actorVia.join(','));
+    if (params.actor) query.set('actor', params.actor);
+    if (params.resourceType) query.set('resourceType', params.resourceType);
+    if (params.resourceId) query.set('resourceId', params.resourceId);
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    const qs = query.toString();
+    return this.request('GET', qs ? `/audit?${qs}` : '/audit');
   }
 
   // ── Files ─────────────────────────────────────────────────────────────────

@@ -106,6 +106,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
 
   let deckId = '';
   let secret = '';
+  let bareSecret = '';
   await test.step('seed a two-page deck + annotator link via the API', async () => {
     const reserve = await page.request.post('/api/v1/presentations/uploads');
     expect(reserve.status()).toBe(201);
@@ -127,6 +128,13 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     });
     expect(token.status()).toBe(201);
     secret = (await token.json()).secret;
+    // A second annotator link with the recipient bar OFF: the overlay's
+    // floating fallback, the only place the notes-button position applies.
+    const bare = await page.request.post(`/api/v1/presentations/${deckId}/tokens`, {
+      data: { name: 'e2e-viewer-annotator-bare', canAnnotate: true, showBar: false }
+    });
+    expect(bare.status()).toBe(201);
+    bareSecret = (await bare.json()).secret;
   });
 
   const origin = new URL(page.url()).origin;
@@ -135,7 +143,10 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
   await test.step('the overlay mounts on the entry; nested iframes stay overlay-free', async () => {
     await reviewer.goto(`${origin}/v/${secret}/`);
     await expect(reviewer.locator('#__slideless_annotate')).toHaveCount(1);
+    // The recipient bar (on by default) hosts the annotations button under
+    // the overlay's id; the locator reaches into the bar's open shadow root.
     await expect(reviewer.locator('#__sl-badge')).toBeVisible();
+    await expect(reviewer.locator('#__slideless_topbar #__sl-badge')).toHaveCount(1);
     // The nested iframe shows deck content but never the overlay (sub-frame
     // participation is deliberately deferred).
     await expect(reviewer.frameLocator('#sub').locator('#guide-title')).toBeVisible();
@@ -232,7 +243,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await reviewer.locator('#__sl-close').click();
   });
 
-  await test.step('the floating + toggles annotate mode directly (no sheet detour)', async () => {
+  await test.step('the bar’s pin button toggles annotate mode directly (no sheet detour)', async () => {
     await reviewer.locator('#__sl-fab-pin').click();
     await expect(reviewer.locator('#__sl-layer')).toHaveClass(/on/);
     await reviewer.locator('#__sl-fab-pin').click();
@@ -356,11 +367,23 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
   });
 
   await test.step('settings: the position grid moves the notes button and persists on the link', async () => {
+    // With the bar hosting the controls there is no button to move: the
+    // position section is hidden.
     await reviewer.goto(`${origin}/v/${secret}/`);
     await reviewer.locator('#__sl-badge').click();
     await reviewer.locator('#__sl-gear').click();
     await expect(reviewer.locator('#__sl-smeta')).toContainText('Viewing version 1');
     await expect(reviewer.locator('#__sl-smeta')).toContainText('Link active since');
+    await expect(reviewer.locator('#__sl-grid')).toBeHidden();
+
+    // The bar-less link: the floating fallback at the badge slot, the grid shown.
+    await reviewer.goto(`${origin}/v/${bareSecret}/`);
+    await expect(reviewer.locator('#__slideless_topbar')).toHaveCount(0);
+    await expect(reviewer.locator('#__slideless_annotate #__sl-badge')).toBeVisible();
+    await expect(reviewer.locator('#__slideless_annotate #__sl-fab-pin')).toBeVisible();
+    await reviewer.locator('#__sl-badge').click();
+    await reviewer.locator('#__sl-gear').click();
+    await expect(reviewer.locator('#__sl-grid')).toBeVisible();
 
     const saved = reviewer.waitForResponse(
       (r) => r.url().includes('/badge') && r.request().method() === 'PUT'
@@ -372,7 +395,7 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     expect(moved && moved.x < 100 && moved.y < 100, 'badge moved top-left').toBe(true);
 
     // Persisted on the LINK: a fresh load places it from the server config.
-    await reviewer.goto(`${origin}/v/${secret}/`);
+    await reviewer.goto(`${origin}/v/${bareSecret}/`);
     const reloaded = await reviewer.locator('#__sl-badge').boundingBox();
     expect(reloaded && reloaded.x < 100 && reloaded.y < 100, 'position survived reload').toBe(true);
   });

@@ -93,9 +93,27 @@
  *    instead; the viewport is still what IntersectionObserver and fixed
  *    positioning measure against.
  *  - The overlay follows the bar through ONE custom property on the root,
- *    `--slideless-topbar` (the bar's current height): its top badge slots
- *    add it to their offset, so the badge never sits under the bar and
- *    tracks a collapse live. No JS coupling between the two runtimes.
+ *    `--slideless-topbar` (the bar's current height): its panel and its
+ *    top slots add it to their offset, so nothing of the overlay's sits
+ *    under the bar, and a collapse is tracked live.
+ *  - ANNOTATION CONTROLS (the rebrand round): on an annotating link the
+ *    bar hosts the overlay's two entrances, "Annotations" (the panel, with
+ *    the open count as a tag) and "Add a pin" (the placing mode), as icon
+ *    buttons in its right group, so nothing floats over the deck. The two
+ *    runtimes talk through two DOM custom events on the document and
+ *    nothing else: the overlay announces its state (`slideless:
+ *    annotations-state`, the counts, whether the panel is open and the
+ *    mode) on mount and on every change; the bar sends an action
+ *    (`slideless:annotations`, `panel` | `pin` | `state`, the last one a
+ *    query the overlay answers with its state). The controls stay hidden
+ *    until the first announcement, so a link without annotations shows a
+ *    bar without them, gated by the server's own injection decision. Deck
+ *    JS can fire these events too, and could already click the overlay's
+ *    own buttons in the shared document: no capability is added, no
+ *    request, no header. The bar carries the overlay's historical ids on
+ *    the two buttons (`__sl-badge`, `__sl-fab-pin`) so the browser suite
+ *    finds them where it always did; the overlay creates its floating
+ *    fallback under those ids only when no bar is mounted.
  *  - Event isolation as the overlay does it: pointer, key and wheel events
  *    stop at the host so a click on Download never advances a deck that
  *    navigates on document clicks.
@@ -320,11 +338,30 @@ var css = [
   '.menu .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.menu .size{flex:none;color:var(--muted);font-size:12px;}',
   '.menu .all{margin-top:4px;padding-top:9px;border-top:1px solid var(--hairline);border-radius:0 0 7px 7px;font-weight:500;}',
-  // ui/button ghost, the icon size: the wash under the pointer, in ink.
-  '.hide{width:32px;height:32px;border-radius:10px;color:var(--muted);display:inline-flex;align-items:center;',
-  '  justify-content:center;}',
-  '.hide:hover,.hide:focus-visible{background:var(--wash);color:var(--ink);}',
-  '.hide svg{width:16px;height:16px;}',
+  // ui/button ghost, the icon size: the wash under the pointer, in ink. One
+  // rule for every icon button of the bar (the two annotation controls and
+  // the Hide chevron); a pressed one (the panel open, the placing mode on)
+  // keeps the wash and takes the deep accent, the way an open float-item
+  // does.
+  '.ico{min-width:32px;height:32px;padding:0;border-radius:10px;color:var(--muted);display:inline-flex;',
+  '  align-items:center;justify-content:center;flex:none;}',
+  '.ico:hover,.ico:focus-visible{background:var(--wash);color:var(--ink);}',
+  '.ico[aria-pressed="true"]{background:var(--wash);color:var(--accent-deep);}',
+  '.ico svg{width:16px;height:16px;}',
+  // The annotation controls: a group of two, hidden until the overlay
+  // announces itself (data-annotations on the host), the count tag beside
+  // the icon when there are open notes.
+  '.tools{display:none;align-items:center;gap:2px;flex:none;}',
+  ':host([data-annotations]) .tools{display:inline-flex;}',
+  '.notes[data-count]{gap:6px;padding:0 7px 0 8px;}',
+  // ui/tag, slate tone, at count size: the wash under its own ink, one
+  // faint edge, 6px corners, the mono face.
+  '.count{display:none;min-width:18px;height:18px;padding:0 5px;border-radius:6px;',
+  '  border:1px solid color-mix(in oklab,var(--tone) 24%,transparent);',
+  '  background:color-mix(in oklab,var(--tone) 11%,var(--plate-strong));',
+  '  color:color-mix(in oklab,var(--tone) 62%,var(--ink));',
+  '  font:500 11px/16px ui-monospace,"SF Mono",Menlo,Consolas,monospace;align-items:center;justify-content:center;}',
+  '.notes[data-count] .count{display:inline-flex;}',
   // The handle drops in once the strip has left (the spring, after the
   // fold), and lifts out as it returns. Under the pointer it grows with the
   // same spring instead of jumping to its hover size.
@@ -343,6 +380,8 @@ var css = [
   // app.css :focus-visible: the ember ring, offset.
   'button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}',
   '.handle:focus-visible{outline-offset:-3px;}',
+  // A phone: the title gives way first, the controls keep their size.
+  '@media (max-width:640px){.bar{padding:0 10px;gap:8px;}.dl>button span{display:none;}.dl>button{padding:0 8px;}}',
   '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;animation:none !important;}',
   '  button,.menu a{transition:none !important;}}'
 ].join('\n');
@@ -351,6 +390,9 @@ var ICONS = {
   mark: '<svg viewBox="${ANTASPHERE_MARK_VIEWBOX}" fill="currentColor" aria-hidden="true"><path d="${ANTASPHERE_MARK_PATH}"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>',
+  // The overlay's two entrances, drawn in the bar's own stroke.
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5a2 2 0 0 1-2 2H8l-4 3.5v-14a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.2-6-11a6 6 0 0 1 12 0c0 5.8-6 11-6 11Z"/><path d="M12 7.5v5"/><path d="M9.5 10h5"/></svg>',
   down: '<svg viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 3 6 6 6-6"/></svg>'
 };
 
@@ -408,7 +450,30 @@ dl.appendChild(dlBtn);
 dl.appendChild(menu);
 dl.style.display = 'none';
 
-var hideBtn = el('button', 'hide');
+// The annotation controls: the overlay's ids (see the header note), the
+// bar's look. Shown once the overlay has announced itself.
+var tools = el('span', 'tools');
+var notesBtn = el('button', 'ico notes');
+notesBtn.id = '__sl-badge';
+notesBtn.type = 'button';
+notesBtn.title = 'Annotations';
+notesBtn.setAttribute('aria-label', 'Annotations');
+notesBtn.setAttribute('aria-pressed', 'false');
+notesBtn.innerHTML = ICONS.notes;
+var count = el('span', 'count');
+count.setAttribute('aria-hidden', 'true');
+notesBtn.appendChild(count);
+var pinBtn = el('button', 'ico pin');
+pinBtn.id = '__sl-fab-pin';
+pinBtn.type = 'button';
+pinBtn.title = 'Add a pin';
+pinBtn.setAttribute('aria-label', 'Add a pin');
+pinBtn.setAttribute('aria-pressed', 'false');
+pinBtn.innerHTML = ICONS.pin;
+tools.appendChild(notesBtn);
+tools.appendChild(pinBtn);
+
+var hideBtn = el('button', 'ico hide');
 hideBtn.type = 'button';
 hideBtn.title = 'Hide this bar';
 hideBtn.setAttribute('aria-label', 'Hide this bar');
@@ -422,6 +487,7 @@ handle.innerHTML = ICONS.down;
 
 bar.appendChild(mark);
 bar.appendChild(title);
+bar.appendChild(tools);
 bar.appendChild(dl);
 bar.appendChild(hideBtn);
 shadow.appendChild(style);
@@ -575,6 +641,40 @@ function loadAttachments() {
     .catch(function () { renderMenu([]); });
 }
 
+// ---- The annotation controls -------------------------------------------
+// Two custom events on the document, nothing else (header note): the
+// overlay announces its state, the bar sends an action. A missing
+// CustomEvent (an old engine) leaves the controls hidden, nothing breaks.
+var ANNO_STATE_EVENT = 'slideless:annotations-state';
+var ANNO_ACTION_EVENT = 'slideless:annotations';
+function sendAnnotations(action) {
+  try {
+    doc.dispatchEvent(new CustomEvent(ANNO_ACTION_EVENT, { detail: { action: action } }));
+  } catch (e) {}
+}
+notesBtn.addEventListener('click', function () { sendAnnotations('panel'); });
+pinBtn.addEventListener('click', function () { sendAnnotations('pin'); });
+doc.addEventListener(ANNO_STATE_EVENT, function (e) {
+  var d = e && e.detail;
+  if (!d || typeof d !== 'object') return;
+  host.setAttribute('data-annotations', '');
+  var open = typeof d.open === 'number' && d.open > 0 ? d.open : 0;
+  if (open) {
+    count.textContent = String(open);
+    notesBtn.setAttribute('data-count', String(open));
+    notesBtn.setAttribute('aria-label', 'Annotations, ' + open + ' open');
+  } else {
+    count.textContent = '';
+    notesBtn.removeAttribute('data-count');
+    notesBtn.setAttribute('aria-label', 'Annotations');
+  }
+  notesBtn.setAttribute('aria-pressed', d.panel ? 'true' : 'false');
+  var placing = d.mode === 'annotate';
+  pinBtn.setAttribute('aria-pressed', placing ? 'true' : 'false');
+  pinBtn.title = placing ? 'Done placing pins' : 'Add a pin';
+  pinBtn.setAttribute('aria-label', pinBtn.title);
+});
+
 // ---- Mount ---------------------------------------------------------------
 function mount() {
   if (!doc.body) return;
@@ -582,6 +682,9 @@ function mount() {
   doc.body.appendChild(host);
   applyLayout();
   loadAttachments();
+  // An overlay that mounted first answers with its state; one that mounts
+  // later announces itself unasked.
+  sendAnnotations('state');
   var raf = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame.bind(window) : null;
   if (raf) raf(function () { raf(armMotion); });
 }
