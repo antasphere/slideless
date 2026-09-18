@@ -112,10 +112,12 @@
   --muted: #6e6759;
   --hairline: #e0daca;
 
-  --accent: #c05e45;
+  /* the default look is the beige of the website's home screen (look.svelte.ts
+     `paper`); a person's pick rewrites these four from the recipe box */
+  --accent: #7a6652;
   --accent-ink: #f7f4ec;
-  --accent-soft: rgba(192, 94, 69, 0.13);
-  --field-base: #f6ede3;
+  --accent-soft: rgba(122, 102, 82, 0.14);
+  --field-base: #efeeea;
   /* the tool's deep hue (toolMarks.ts TOOL_INKS.slideless): the mark's ink */
   --accent-deep: #8a4630;
 

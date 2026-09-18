@@ -36,10 +36,11 @@
          Product UI chrome only — never a face end users typeset their decks
          with. -->
     <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://api.fontshare.com/v2/css?f[]=sentient@300,400,500&f[]=synonym@1&display=swap"
-    />
+    <!-- TWO requests on purpose: asked for both families at once, the service
+         answers with Sentient alone and the body silently paints in system-ui
+         (checked 2026-09-18: `document.fonts` never held Synonym). -->
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=sentient@300,400,500&display=swap" />
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=synonym@1&display=swap" />
     <style>
       /* Neutral boot splash: shown until the SPA has resolved instance +
          session (decision 11) — no dashboard chrome, no login flash. The
@@ -51,7 +52,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #f6ede3;
+        background: #efeeea;
       }
       html.dark #splash {
         background: #241a12;
@@ -60,7 +61,7 @@
         width: 28px;
         height: 28px;
         border: 3px solid #e0daca;
-        border-top-color: #c05e45;
+        border-top-color: #7a6652;
         border-radius: 50%;
         animation: splash-spin 0.8s linear infinite;
       }

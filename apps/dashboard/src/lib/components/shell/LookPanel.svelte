@@ -22,7 +22,7 @@
         aria-checked={look.value.theme === key}
         class="tdot"
         class:on={look.value.theme === key}
-        style="background: {THEMES[key].accent}"
+        style="background: {key === 'paper' ? '#D8D2C4' : THEMES[key].accent}"
         title={key}
         aria-label={key}
         onclick={() => look.set({ theme: key })}
@@ -84,8 +84,8 @@
   .tdot {
     appearance: none;
     border: 0;
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
     border-radius: 50%;
     cursor: pointer;
     outline-offset: 2px;

@@ -27,6 +27,10 @@ export const RECIPE = {
 
 /* Every theme names an engine palette and the three UI slots it may write. */
 export const THEMES = {
+  /* the website's home screen: the neutral paper field (PALETTES.paper below),
+     with a warm umber for the few things an accent touches. Slideless's
+     default look; not a console theme. */
+  paper: { accent: '#7A6652', accentInk: '#F7F4EC', accentSoft: 'rgba(122,102,82,0.14)' },
   glacier: { accent: '#47799A', accentInk: '#F7F4EC', accentSoft: 'rgba(71,121,154,0.14)' },
   tide: { accent: '#5C7285', accentInk: '#F7F4EC', accentSoft: 'rgba(92,114,133,0.14)' },
   furnace: { accent: '#C25C2E', accentInk: '#F7F4EC', accentSoft: 'rgba(194,92,46,0.12)' },

@@ -259,7 +259,8 @@
    HSL triplets of the Slideless recipe in tokens.css (tailwind composes
    them as hsl(var(--x) / alpha)): ground #F7F4EC · ground-2 #F1EDE1 ·
    ground-3 #EAE5D6 · hairline #E0DACA · ink #1C1915 · ink-soft #35302A ·
-   muted #6E6759 · accent #C05E45 · accent-ink #F7F4EC · danger #B4552F. The two
+   muted #6E6759 · accent #7A6652 (the default look, paper) · accent-ink
+   #F7F4EC · danger #B4552F. The two
    colliding names are renamed --tpl-accent/--tpl-muted (mirrored in
    tailwind.config.ts) so the brand tokens win. Change a token, change its
    triplet — including the .dark set below (viewer-kit dark constants).
@@ -276,7 +277,7 @@
     --card-foreground: 34 14% 10%;
     --border: 44 26% 84%;
     --input: 44 26% 84%;
-    --primary: 12 49% 51%;
+    --primary: 30 20% 40%;
     --primary-foreground: 44 41% 95%;
     --secondary: 45 32% 88%;
     --secondary-foreground: 33 12% 19%;
@@ -286,7 +287,7 @@
     --button-hover-foreground: 34 14% 10%;
     --destructive: 17 59% 45%;
     --destructive-foreground: 44 41% 95%;
-    --ring: 12 49% 51%;
+    --ring: 30 20% 40%;
     --radius: 7px;
     --sidebar-background: 45 36% 91%;
     --sidebar-foreground: 33 12% 19%;
@@ -295,7 +296,7 @@
     --sidebar-accent: 45 32% 88%;
     --sidebar-accent-foreground: 34 14% 10%;
     --sidebar-border: 44 26% 84%;
-    --sidebar-ring: 12 49% 51%;
+    --sidebar-ring: 30 20% 40%;
   }
 
   /* dark — triplets of the recipe's dark set: ground #1F1B17 · ground-2

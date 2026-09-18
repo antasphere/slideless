@@ -24,7 +24,7 @@ export interface Look {
   grain: number;
 }
 
-export const DEFAULT_LOOK: Look = { theme: 'dawn', field: 0.7, grain: 0.5 };
+export const DEFAULT_LOOK: Look = { theme: 'paper', field: 0.7, grain: 0.5 };
 const KEY = 'slideless.look';
 
 const PAPER = { light: '#F7F4EC', dark: '#1F1B17' };
@@ -65,6 +65,8 @@ function triplet(hex: string): string {
 
 /** The page field of a theme: the paper, with the accent pooled into it. Registered once per theme and mode. */
 export function fieldPalette(theme: ThemeKey, dark: boolean): string {
+  // the beige is not derived: it is the website's own home-screen field
+  if (theme === 'paper') return dark ? 'paper-dark' : 'paper';
   const name = `look-${theme}${dark ? '-dark' : ''}`;
   if (!PALETTES[name]) {
     const accent = THEMES[theme].accent;
