@@ -256,6 +256,8 @@ export const fr: Record<MessageKey, string> = {
     'L’espace de travail n’a pas pu être créé. Essayez un autre nom, ou réessayez plus tard.',
   'workspace.createErrorLinkRequired':
     'Votre mode de connexion ne permet pas de créer un espace de travail. Déconnectez-vous, reconnectez-vous de la manière habituelle, puis réessayez.',
+  'workspace.createErrorFreshSignIn':
+    'La création d’un espace de travail demande une nouvelle connexion. Reconnectez-vous, puis créez-le.',
   'workspace.createErrorSignInAgain': 'Votre connexion a expiré : l’espace de travail n’a pas été créé.',
   'workspace.createErrorRateLimited':
     'Trop d’espaces de travail ont été créés en peu de temps. Patientez un moment puis réessayez.',

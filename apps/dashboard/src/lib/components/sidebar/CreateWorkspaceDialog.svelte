@@ -4,7 +4,8 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import FormField from '$lib/components/ui/FormField.svelte';
   import { api, switchWorkspace } from '$lib/api';
-  import { newIdempotencyKey, workspaceCreateFailure } from '$lib/workspace-create';
+  import { newIdempotencyKey, startFreshSignIn, workspaceCreateFailure } from '$lib/workspace-create';
+  import { authClient } from '$lib/auth-client';
   import { t } from '$lib/i18n';
 
   /**
@@ -28,6 +29,7 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let signInAgain = $state(false);
+  let freshSignIn = $state(false);
   let nameInput = $state<HTMLInputElement | null>(null);
   // One key per OPENING: a double click, or a retry of an answer that never
   // arrived, replays the first creation instead of making a second one. A
@@ -44,14 +46,34 @@
       name = '';
       error = null;
       signInAgain = false;
+      freshSignIn = false;
     }
   });
+
+  /**
+   * The "Sign in again" control. A dead session or grant: a reload meets the
+   * login page, which keeps the way back here. A LIVE session whose grant
+   * predates workspace creation (hub_reauth_required): a reload would come
+   * straight back and fail the same way, so the control starts the sign-in
+   * itself and returns to this page; a reload is the fallback when it cannot.
+   */
+  async function signInAgainNow() {
+    if (freshSignIn) {
+      const started = await startFreshSignIn(
+        (options) => authClient.signIn.oauth2(options),
+        window.location.pathname + window.location.search
+      );
+      if (started) return;
+    }
+    window.location.reload();
+  }
 
   async function submit() {
     const trimmed = name.trim();
     if (!trimmed || loading) return;
     error = null;
     signInAgain = false;
+    freshSignIn = false;
     loading = true;
     try {
       const { workspace } = await api.createWorkspace(trimmed, { idempotencyKey });
@@ -62,6 +84,7 @@
       const failure = workspaceCreateFailure(e);
       error = failure.message;
       signInAgain = failure.signInAgain;
+      freshSignIn = failure.freshSignIn;
       loading = false;
     }
   }
@@ -105,12 +128,7 @@
           <p id="workspace-name-error" role="alert" class="text-sm text-destructive">
             {error}
             {#if signInAgain}
-              <!-- A reload meets the login page, which keeps the way back here. -->
-              <button
-                type="button"
-                class="font-medium underline underline-offset-4"
-                onclick={() => window.location.reload()}
-              >
+              <button type="button" class="font-medium underline underline-offset-4" onclick={signInAgainNow}>
                 {t('workspace.signInAgain')}
               </button>
             {/if}

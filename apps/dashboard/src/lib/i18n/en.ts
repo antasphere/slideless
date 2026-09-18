@@ -247,6 +247,8 @@ export const en = {
   'workspace.createErrorRefused': 'The workspace could not be created. Try another name, or try again later.',
   'workspace.createErrorLinkRequired':
     'The way you signed in does not allow creating a workspace. Sign out, sign in the usual way, then try again.',
+  'workspace.createErrorFreshSignIn':
+    'Creating a workspace needs a new sign-in. Sign in again, then create it.',
   'workspace.createErrorSignInAgain': 'Your sign-in has expired, so the workspace was not created.',
   'workspace.createErrorRateLimited':
     'Too many workspaces were created in a short time. Wait a while and try again.',
