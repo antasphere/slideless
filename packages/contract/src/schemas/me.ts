@@ -98,6 +98,19 @@ export const meResponseSchema = z.object({
    */
   hubManageUrl: z.string().nullable(),
   /**
+   * Whether `POST /workspaces` would be accepted for this caller RIGHT NOW
+   * (PRDCT-2444 / PRDCT-2443) — the one flag the dashboard keys its "new
+   * workspace" entry off, on both editions, never the edition itself. True
+   * only for a SESSION whose user is not guest-only, while the operator's
+   * `MAX_WORKSPACES_PER_USER` dial is not 0; on self-hosted the user must
+   * also own fewer workspaces than that cap, on cloud they must also hold a
+   * live Antasphere link (the organization is created there, as them).
+   * Always false for API keys and OAuth bearers. Advisory: the route
+   * re-judges everything, and on cloud the hub's own cap is only known once
+   * asked.
+   */
+  canCreateWorkspace: z.boolean(),
+  /**
    * First-run welcome still owed (SL-6). CLOUD + SESSION callers ONLY —
    * absent on oss and for every machine credential. TOOL-LOCAL and
    * retry-safe semantics: true iff NO user_onboarding row with a dismissal
