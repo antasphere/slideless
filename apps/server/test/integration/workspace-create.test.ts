@@ -277,7 +277,7 @@ describe('POST /workspaces — self-hosted', () => {
   });
 
   it('caps OWNED workspaces per user: a concurrent burst never passes the cap, then 403 workspace_limit_reached', async () => {
-    // MEMBER owns 1 (created above); the cap is 3. Fire 6 at once.
+    // MEMBER owns 1 (created above); the cap is 3.
     const owned = async () =>
       (
         await app.db.pool.query(
@@ -287,9 +287,18 @@ describe('POST /workspaces — self-hosted', () => {
         )
       ).rows[0].n as number;
     expect(await owned()).toBe(1);
-    const burst = await Promise.all(Array.from({ length: 6 }, (_, i) => create(memberCookie, `Burst ${i}`)));
-    const statuses = burst.map((r) => r.status).sort();
-    expect(statuses).toEqual([201, 201, 403, 403, 403, 403]);
+    // 30-way, on purpose: without the per-user advisory lock every request
+    // counts "1 owned" before any insert commits and they ALL pass (measured:
+    // 10 created, 11 owned). A small burst is bounded by luck — by the pool
+    // and the event loop — and would stay green with the lock removed.
+    const BURST = 30;
+    const burst = await Promise.all(
+      Array.from({ length: BURST }, (_, i) => create(memberCookie, `Burst ${i}`))
+    );
+    const statuses = burst.map((r) => r.status);
+    // EXACTLY the room that was left — not "at most", not "about".
+    expect(statuses.filter((st) => st === 201)).toHaveLength(CAP - 1);
+    expect(statuses.filter((st) => st === 403)).toHaveLength(BURST - (CAP - 1));
     for (const res of burst.filter((r) => r.status === 403)) {
       expect((await readJson(res)).error.code).toBe('workspace_limit_reached');
     }
