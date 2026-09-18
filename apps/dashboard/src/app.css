@@ -157,6 +157,13 @@
     -webkit-backdrop-filter: blur(26px) saturate(1.15);
     border-color: var(--plate-edge) !important;
   }
+  /* A sidebar row under the pointer takes a breath of the accent, never the
+     template's grey: the same wash as the selected row, at half its strength. */
+  [data-sidebar='menu-button']:hover:not([data-active='true']),
+  [data-sidebar='menu-button'][data-state='open']:not([data-active='true']) {
+    background: color-mix(in oklab, var(--accent) 7%, transparent) !important;
+    color: var(--ink) !important;
+  }
   /* the sidebar sits straight on the field */
   [data-sidebar='sidebar']:not([data-mobile='true']) {
     background: transparent;

@@ -6,6 +6,8 @@
   import PhoneTopBar from '$lib/components/shell/PhoneTopBar.svelte';
   import WelcomeBanner from '$lib/components/shared/WelcomeBanner.svelte';
   import { buildNav, phoneTabs } from '$lib/nav';
+  import { fieldPalette, look } from '$lib/look.svelte';
+  import { theme } from '$lib/theme.svelte';
 
   let { data, children } = $props();
 
@@ -13,12 +15,21 @@
   const workspaceName = $derived(
     data.me.workspaces.find((w) => w.id === data.me.activeWorkspaceId)?.name ?? data.instance.name
   );
+
+  // The look a person picked (the recipe box at the foot of the sidebar):
+  // the theme's slots on <html>, its field under the app.
+  $effect(() => {
+    theme.start();
+    look.load();
+    look.apply(theme.dark);
+  });
+  const field = $derived(fieldPalette(look.value.theme, theme.dark));
 </script>
 
 <!-- The page's ground (PRDCT-2439): the Labs paper as a seeded field under a
      film grain, fixed behind the whole signed-in app. The sidebar sits
      straight on it; the content is a translucent plate over it. -->
-<PageField palette="labs-field" strength="soft" />
+<PageField palette={field} opacity={look.value.field} grain={look.value.grain * 2} />
 
 <Sidebar.Provider class="relative z-10 !bg-transparent">
   <AppSidebar

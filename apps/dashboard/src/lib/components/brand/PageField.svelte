@@ -13,9 +13,13 @@
     seed?: number;
     /** How much of the field reaches the reader. */
     strength?: 'full' | 'soft' | 'quiet';
+    /** Overrides for the signed-in shell, where a person sets them (look.svelte.ts):
+        the field's opacity 0..1, and the grain as a factor of the brand's constant. */
+    opacity?: number;
+    grain?: number;
   }
 
-  let { palette = 'labs-field', seed = RECIPE.seed, strength = 'full' }: Props = $props();
+  let { palette = 'labs-field', seed = RECIPE.seed, strength = 'full', opacity, grain = 1 }: Props = $props();
 
   let wrap = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -42,7 +46,7 @@
     /* the film pass: overlay on a light ground, screen on a dark one */
     const onDark = !PALETTES[key].light;
     ctx.globalCompositeOperation = onDark ? 'screen' : 'overlay';
-    ctx.globalAlpha = onDark ? CONSTANTS.grain.alpha * 0.5 : CONSTANTS.grain.alpha;
+    ctx.globalAlpha = Math.min(1, (onDark ? CONSTANTS.grain.alpha * 0.5 : CONSTANTS.grain.alpha) * grain);
     const pattern = ctx.createPattern(noiseTile(512, 0.9), 'repeat');
     if (pattern) {
       pattern.setTransform(new DOMMatrix().scale(CONSTANTS.grain.size * DPR));
@@ -55,6 +59,7 @@
     theme.start();
     void palette;
     void seed;
+    void grain;
     void theme.dark;
     if (!wrap) return;
     const ro = new ResizeObserver(rebuild);
@@ -71,7 +76,7 @@
   bind:this={wrap}
   aria-hidden="true"
 >
-  <canvas bind:this={canvas}></canvas>
+  <canvas bind:this={canvas} style:opacity></canvas>
 </div>
 
 <style>

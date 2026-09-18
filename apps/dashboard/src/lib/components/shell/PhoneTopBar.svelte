@@ -39,7 +39,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    height: 52px;
+    height: 56px;
     padding: 0 16px;
     background: var(--bar);
     backdrop-filter: blur(18px) saturate(1.2);
@@ -51,8 +51,8 @@
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     border-radius: 999px;
     border: 1px solid var(--hairline);
     background: var(--ground);

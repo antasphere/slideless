@@ -78,6 +78,7 @@ export const fr: Record<MessageKey, string> = {
   'nav.toggleSidebar': 'Afficher ou masquer la barre latérale',
   // the shell, desk and phone (PRDCT-2436)
   // decks as cards, the overview (PRDCT-2437, PRDCT-2439)
+  'decks.noOpens': 'Pas encore ouverte',
   'decks.oneOpen': '1 ouverture',
   'decks.opens': '{count} ouvertures',
   'decks.viewAs': 'Afficher les présentations en',
@@ -103,6 +104,43 @@ export const fr: Record<MessageKey, string> = {
   'settings.openAccount': 'Ouvrir mon compte',
   'account.languageTitle': 'Langue',
   'account.languageDescription': 'La langue de ce tableau de bord, gardée dans ce navigateur.',
+  // the look a person picks (PRDCT-2439)
+  'look.theme': 'Couleur du tableau de bord',
+  'look.field': 'Dégradé',
+  'look.grain': 'Grain',
+  'look.reset': 'Revenir au look Slideless',
+  // brands, a preview with made-up data; the overview's lower cards
+  'brands.title': 'Marques',
+  'nav.blurb.brands': 'Le look et la voix que vos présentations peuvent prendre.',
+  'brands.description':
+    'Une marque, c’est tout ce qui rend une présentation vôtre : ses polices, ses couleurs, ce qu’il y a derrière une slide, sa façon de bouger et de parler.',
+  'brands.preview': 'Aperçu',
+  'brands.previewNote':
+    'Une illustration de là où va Slideless. Les trois marques sont des exemples ; rien ici n’est encore appliqué à vos présentations.',
+  'brands.default': 'Par défaut',
+  'brands.makeDefault': 'En faire la marque par défaut',
+  'brands.isDefault': 'La marque par défaut des nouvelles présentations',
+  'brands.colours': 'Couleurs',
+  'brands.titles': 'Titres',
+  'brands.text': 'Texte',
+  'brands.background': 'Fond',
+  'brands.shape': 'Forme',
+  'brands.motion': 'Mouvement',
+  'brands.voice': 'Voix',
+  'brands.newTitle': 'Ajouter une marque',
+  'brands.newBody': 'Depuis un site web, un PDF de votre charte, ou à la main.',
+  'brands.fileTitle': 'Une marque est un petit fichier',
+  'brands.fileBody':
+    'Un agent ou la ligne de commande habillerait n’importe quelle présentation en {brand} avec une seule option.',
+  'overview.brandsTitle': 'Vos présentations, à vos couleurs',
+  'overview.brandsBody':
+    'Choisissez une marque une fois : ses polices, ses couleurs et sa voix habillent chaque présentation que vous poussez.',
+  'overview.brandsCta': 'Voir les marques',
+  'overview.teamCta': 'Inviter quelqu’un',
+  'overview.teamLede':
+    'Une présentation gagne à être relue avant d’être partagée. Faites venir celles et ceux qui doivent la voir d’abord.',
+  'overview.teamYou': 'Vous',
+  'overview.teamSeat': 'Une place libre',
   'nav.workspace': 'Espace de travail',
   'nav.people': 'Personnes',
   'nav.primary': 'Navigation principale',

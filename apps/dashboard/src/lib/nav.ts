@@ -6,6 +6,7 @@ import Folder from '@lucide/svelte/icons/folder';
 import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+import Palette from '@lucide/svelte/icons/palette';
 import type { Component } from 'svelte';
 import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 import { t } from '$lib/i18n';
@@ -65,6 +66,16 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       href: '/decks',
       icon: Presentation,
       pattern: 'slides'
+    },
+    // A PREVIEW: the page is an illustration of an idea, with made-up brands
+    // ($lib/brands-demo.ts). It has no server side at all.
+    {
+      id: 'brands',
+      title: t('brands.title'),
+      blurb: t('nav.blurb.brands'),
+      href: '/brands',
+      icon: Palette,
+      pattern: 'aurora'
     }
   ];
 

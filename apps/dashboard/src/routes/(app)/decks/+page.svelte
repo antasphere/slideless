@@ -137,31 +137,32 @@
     {/if}
   </Card.Root>
 {:else}
-  <div class="mb-5 flex items-center gap-3" class:hidden={view === 'table'}>
+  <!-- one search and one switch for both views, in one row that never moves -->
+  <div class="mb-5 flex items-center gap-3">
     <Input
       type="search"
       bind:value={query}
       placeholder={t('decks.searchPlaceholder')}
       class="h-10 max-w-sm flex-1 md:h-9"
     />
-  </div>
-  <div class="view-toggle" role="group" aria-label={t('decks.viewAs')}>
-    <button
-      type="button"
-      class:on={view === 'cards'}
-      aria-pressed={view === 'cards'}
-      onclick={() => choose('cards')}
-    >
-      <LayoutGrid class="size-4" /><span class="sr-only">{t('decks.viewCards')}</span>
-    </button>
-    <button
-      type="button"
-      class:on={view === 'table'}
-      aria-pressed={view === 'table'}
-      onclick={() => choose('table')}
-    >
-      <Rows3 class="size-4" /><span class="sr-only">{t('decks.viewTable')}</span>
-    </button>
+    <div class="view-toggle ml-auto" role="group" aria-label={t('decks.viewAs')}>
+      <button
+        type="button"
+        class:on={view === 'cards'}
+        aria-pressed={view === 'cards'}
+        onclick={() => choose('cards')}
+      >
+        <LayoutGrid class="size-4" /><span class="sr-only">{t('decks.viewCards')}</span>
+      </button>
+      <button
+        type="button"
+        class:on={view === 'table'}
+        aria-pressed={view === 'table'}
+        onclick={() => choose('table')}
+      >
+        <Rows3 class="size-4" /><span class="sr-only">{t('decks.viewTable')}</span>
+      </button>
+    </div>
   </div>
   {#if view === 'cards'}
     {#if shown.length}
@@ -174,13 +175,7 @@
       <p class="py-10 text-center text-sm text-muted-foreground">{t('decks.noMatch', { query })}</p>
     {/if}
   {:else}
-    <DataTable
-      data={decks}
-      {columns}
-      searchColumns={['title']}
-      searchPlaceholder={t('decks.searchPlaceholder')}
-      onRowClick={(deck) => void goto(`/decks/${deck.id}`)}
-    />
+    <DataTable data={shown} {columns} onRowClick={(deck) => void goto(`/decks/${deck.id}`)} />
   {/if}
   {#if list.nextCursor}
     <div class="flex justify-center py-4">
@@ -212,8 +207,6 @@
   @media (min-width: 768px) {
     .view-toggle {
       display: inline-flex;
-      float: right;
-      margin-top: -56px;
       gap: 2px;
       padding: 3px;
       border: 1px solid var(--hairline);

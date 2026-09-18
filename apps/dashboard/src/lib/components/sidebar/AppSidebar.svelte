@@ -6,6 +6,7 @@
   import { t } from '$lib/i18n';
   import LogoTile from '$lib/components/brand/LogoTile.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
+  import LookPanel from '$lib/components/shell/LookPanel.svelte';
   import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 
   interface Props {
@@ -79,7 +80,7 @@
                    the icon in the accent — never a fill. -->
               <Sidebar.MenuButton
                 isActive={navActive(item, currentPath)}
-                class="transition-[transform,background-color] duration-200 hover:translate-x-0.5 hover:!bg-sidebar-accent/75 hover:!text-sidebar-accent-foreground data-[active=true]:!bg-[var(--accent-soft)] data-[active=true]:!text-foreground"
+                class="transition-[transform,background-color] duration-200 hover:translate-x-0.5 data-[active=true]:!bg-[var(--accent-soft)] data-[active=true]:!text-foreground"
               >
                 {#snippet child({ props }: { props: Record<string, unknown> })}
                   <a href={item.href} {...props}>
@@ -99,6 +100,7 @@
     {/each}
   </Sidebar.Content>
   <Sidebar.Footer>
+    <div class="group-data-[collapsible=icon]:hidden"><LookPanel /></div>
     <NavUser {user} />
   </Sidebar.Footer>
 </Sidebar.Root>

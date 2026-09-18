@@ -25,7 +25,8 @@
     <button
       type="button"
       aria-pressed={lang === current}
-      class="rounded px-2 py-1 text-xs font-medium transition-colors {lang === current
+      class="rounded px-2 py-1 text-xs font-medium transition-colors max-md:px-3.5 max-md:py-2.5 max-md:text-sm {lang ===
+      current
         ? 'bg-muted text-foreground'
         : 'text-muted-foreground hover:text-foreground'}"
       onclick={() => switchTo(lang)}

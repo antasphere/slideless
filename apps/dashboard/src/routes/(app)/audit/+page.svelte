@@ -115,7 +115,19 @@
       </Table.Header>
       <Table.Body>
         {#each entries as entry (entry.id)}
-          <Table.Row class="cursor-pointer" onclick={() => (opened = entry)}>
+          <Table.Row
+            class="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--focus)]"
+            tabindex={0}
+            role="button"
+            aria-label={`${entry.action} · ${entry.actorEmail ?? t('audit.system')}`}
+            onclick={() => (opened = entry)}
+            onkeydown={(e: KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                opened = entry;
+              }
+            }}
+          >
             <Table.Cell class="whitespace-nowrap text-muted-foreground">
               {formatDateTime(entry.createdAt)}
             </Table.Cell>
