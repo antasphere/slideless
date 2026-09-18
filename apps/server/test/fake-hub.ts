@@ -118,6 +118,16 @@ export class FakeHub {
   /** Hold every /orgs answer this long (single-flight/race tests). */
   orgsDelayMs = 0;
   /**
+   * POST /api/v1/orgs behavior (the as-the-user org creation, PRDCT-2443).
+   * `limit` = the hub's per-user cap (403 org_limit_reached, the real hub's
+   * answer); `forbidden` = a hub that does not open creation to this grant;
+   * `commit_then_500` creates the org and THEN answers 500 — the ambiguity
+   * the tool must never resolve by re-posting.
+   */
+  orgCreateMode: 'ok' | 'limit' | 'forbidden' | 'http500' | 'network' | 'commit_then_500' = 'ok';
+  /** Every POST /api/v1/orgs: the presented Authorization header + parsed body. */
+  readonly orgCreateRequests: Array<{ auth: string | null; body: unknown }> = [];
+  /**
    * Token endpoint behavior (both grants). `hang` never answers (the request
    * is parked, nothing consumed); `commit_then_hang` consumes the presented
    * refresh token — rotation committed hub-side — and THEN never answers.
@@ -320,6 +330,9 @@ export class FakeHub {
     if (req.method === 'GET' && url.pathname === '/api/v1/orgs') {
       return this.handleOrgs(req, res);
     }
+    if (req.method === 'POST' && url.pathname === '/api/v1/orgs') {
+      return this.handleOrgCreate(req, res);
+    }
     if (req.method === 'POST' && url.pathname === '/api/v1/auth/oauth2/token') {
       return this.handleToken(req, res);
     }
@@ -358,6 +371,60 @@ export class FakeHub {
       })
     );
     return sendJson(res, 200, { orgs });
+  }
+
+  // ── POST /api/v1/orgs: create an org AS THE BEARER ────────────────────
+  // Mirrors the hub's api/orgs.ts: the bearer's subject becomes the owner —
+  // the body carries a name and nothing that could name another user.
+  private async handleOrgCreate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: unknown = null;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      body = null;
+    }
+    this.orgCreateRequests.push({ auth: req.headers.authorization ?? null, body });
+    if (this.orgCreateMode === 'network') {
+      req.destroy();
+      return;
+    }
+    if (this.orgCreateMode === 'http500') return sendJson(res, 500, { error: { code: 'internal' } });
+    const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? null;
+    const record = bearer ? this.accessTokens.get(bearer) : undefined;
+    if (!record || record.expMs <= Date.now() || !record.aud.includes(this.apiResource)) {
+      return sendJson(res, 401, { error: { code: 'invalid_token', message: 'Unauthorized' } });
+    }
+    if (this.orgCreateMode === 'limit') {
+      return sendJson(res, 403, { error: { code: 'org_limit_reached', message: 'cap' } });
+    }
+    if (this.orgCreateMode === 'forbidden') {
+      return sendJson(res, 403, { error: { code: 'forbidden', message: 'sessions only' } });
+    }
+    const name = (body as { name?: unknown } | null)?.name;
+    if (typeof name !== 'string' || !name.trim()) {
+      return sendJson(res, 400, { error: { code: 'validation_error', message: 'name' } });
+    }
+    const id = randomUUID();
+    this.setUserOrg(record.sub, id, { name: name.trim(), role: 'owner' });
+    if (this.orgCreateMode === 'commit_then_500') {
+      return sendJson(res, 500, { error: { code: 'internal' } });
+    }
+    return sendJson(res, 201, {
+      org: {
+        id,
+        name: name.trim(),
+        role: 'owner',
+        personal: false,
+        status: 'active',
+        isDefault: false,
+        createdAt: new Date().toISOString()
+      }
+    });
+  }
+
+  /** The org ids the hub holds for a subject (what a test asserts creation against). */
+  orgIdsOf(sub: string): string[] {
+    return [...(this.userOrgs.get(sub)?.keys() ?? [])];
   }
 
   // ── POST /api/v1/auth/oauth2/token: both grants ───────────────────────
