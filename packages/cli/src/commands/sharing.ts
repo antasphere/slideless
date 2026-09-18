@@ -6,9 +6,19 @@ import {
   EMBED_PLACEMENT_RE,
   type BadgePositionValue,
   type FormResponse,
+  type FormResponseFile,
+  type ShareToken,
   type ShareTokenCreate
 } from '@slideless/contract';
-import { CliUsageError, printJson, requireApiKey, resolveContext, table, type CliIo } from '../context.js';
+import {
+  CliUsageError,
+  fmtBytes,
+  printJson,
+  requireApiKey,
+  resolveContext,
+  table,
+  type CliIo
+} from '../context.js';
 import { readSecretFromStdin } from '../stdin.js';
 
 /** Env fallback for the viewer password — never forces a secret into argv. */
@@ -58,6 +68,8 @@ function shareOptionsOf(opts: {
   download: boolean;
   /** Commander --no-bar negation: true by default, false when passed (PRDCT-2281). */
   bar: boolean;
+  /** Commander --no-uploads negation: true by default, false when passed (PRDCT-2403). */
+  uploads: boolean;
   /**
    * Tri-state (PRDCT-2328): `--remember` true, `--no-remember` false,
    * neither = derived from the name. A link minted FOR someone (a name
@@ -82,6 +94,7 @@ function shareOptionsOf(opts: {
     canSubmitForms: opts.forms,
     canDownload: opts.download,
     showBar: opts.bar,
+    canUploadFiles: opts.uploads,
     remembersResponses: opts.remember ?? opts.name !== undefined,
     ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
@@ -114,6 +127,10 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     )
     .option('--no-bar', 'hand out a bare deck: no recipient bar (title, version, downloads) over it')
     .option(
+      '--no-uploads',
+      "disallow uploading files into the deck's form file fields through this link (the rest of the form still submits)"
+    )
+    .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
       parseBadgePosition
@@ -137,6 +154,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           forms: boolean;
           download: boolean;
           bar: boolean;
+          uploads: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -175,6 +193,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             // Strict false: a server from before the switch answers without the field.
             `${created.shareToken.showBar === false ? ', no bar' : ''}` +
             `${created.shareToken.canSubmitForms === false ? ', no forms' : ''}` +
+            `${created.shareToken.canUploadFiles === false ? ', no uploads' : ''}` +
             // Strict true: the state is printed so it is never unverifiable (PRDCT-1337's lesson).
             `${created.shareToken.remembersResponses === true ? ', remembers answers' : ''})\n` +
             '  The URL is shown once — copy it now.\n' +
@@ -238,6 +257,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--no-forms', "disallow submitting the deck's embedded forms through these links")
     .option('--no-download', "disallow downloading the version's attachments through these links")
     .option('--no-bar', 'hand out bare decks: no recipient bar over them')
+    .option('--no-uploads', "disallow uploading files into the deck's form file fields through these links")
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -258,6 +278,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           forms: boolean;
           download: boolean;
           bar: boolean;
+          uploads: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -360,6 +381,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
               t.canAnnotate ? 'annotator' : null,
               t.hasPassword ? 'password' : null,
               t.canSubmitForms === false ? 'no forms' : null,
+              t.canUploadFiles === false ? 'no uploads' : null,
               t.remembersResponses === true ? 'remembers answers' : null
             ]
               .filter(Boolean)
@@ -606,6 +628,14 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           `  created ${r.createdAt} · last edited ${r.updatedAt} · revision ${r.revision}\n` +
           `  ${JSON.stringify(r.payload)}\n`
       );
+      // The files the response holds now (PRDCT-2403). Field and file names
+      // are the respondent's raw input; the human sink strips control bytes.
+      const files = filesOf(r);
+      if (files.length > 0) {
+        io.out.write(`\nFiles (${files.length}):\n`);
+        io.out.write(table(files.map((f) => [`  ${f.field}`, f.name, fmtBytes(f.sizeBytes), f.id])));
+        io.out.write(`  Download them: slideless response-files ${id} ${r.id}\n`);
+      }
       io.out.write(
         `\nHistory (${detail.versions.length} revision${detail.versions.length === 1 ? '' : 's'} kept, newest first):\n`
       );
@@ -618,9 +648,59 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             v.source,
             v.placement ? `p:${v.placement}` : '-',
             `v${v.version}`,
+            // The names this revision held: null = a revision from before file fields existed.
+            v.files == null
+              ? '-'
+              : v.files.length === 0
+                ? 'no files'
+                : `files: ${v.files.map((f) => f.name).join('; ')}`,
             JSON.stringify(v.payload)
           ])
         )
+      );
+    });
+
+  program
+    .command('uploads <id> <tokenId>')
+    .description(
+      'Show or switch file uploads on one EXISTING share link (PRDCT-2403): whether its respondents ' +
+        "may upload files into the deck's form file fields. A new link has them on; a link minted " +
+        'before file fields existed has them off until its owner turns them on here.'
+    )
+    .option('--on', 'let respondents on this link upload files into form file fields', false)
+    .option('--off', 'refuse file uploads through this link (the rest of the form still submits)', false)
+    .action(async (id: string, tokenId: string, opts: { on: boolean; off: boolean }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      if (opts.on && opts.off) throw new CliUsageError('Pass either --on or --off, not both.');
+      let token: ShareToken | undefined;
+      if (opts.on || opts.off) {
+        token = await ctx.client.updateShareToken(id, tokenId, { canUploadFiles: opts.on });
+      } else {
+        // No single-token read on the API: find it in the deck's list.
+        let cursor: string | null = null;
+        do {
+          const page = await ctx.client.shareTokens(id, { limit: 100, ...(cursor ? { cursor } : {}) });
+          token = page.shareTokens.find((t) => t.id === tokenId);
+          cursor = token ? null : page.nextCursor;
+        } while (cursor);
+        if (!token) throw new CliUsageError(`No share token ${tokenId} on this deck.`);
+      }
+      if (ctx.json) {
+        return printJson(io, {
+          id: token.id,
+          canUploadFiles: token.canUploadFiles,
+          canSubmitForms: token.canSubmitForms
+        });
+      }
+      io.out.write(
+        (token.canUploadFiles
+          ? `File uploads are ON for link ${token.id} ("${token.name}").\n`
+          : `File uploads are OFF for link ${token.id} ("${token.name}").\n`) +
+          // An upload rides a form submit: the switch is inert while forms are off.
+          (token.canUploadFiles && token.canSubmitForms === false
+            ? '  Forms are off on this link, so no file can be uploaded through it until they are on.\n'
+            : '')
       );
     });
 
@@ -681,22 +761,34 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
 /** One human table row per response; the payload preview stays plain text. */
 function responseRow(r: FormResponse): string[] {
   const preview = JSON.stringify(r.payload);
+  const fileCount = filesOf(r).length;
   return [
     r.createdAt,
     r.formName,
     r.shareTokenName ?? r.shareTokenId ?? '-',
     r.source,
     r.placement ? `p:${r.placement}` : '-',
+    fileCount === 0 ? '-' : `${fileCount} file${fileCount === 1 ? '' : 's'}`,
     preview.length > 60 ? `${preview.slice(0, 57)}...` : preview
   ];
+}
+
+/** The files a response holds; a server from before file fields (PRDCT-2403) answers without the key. */
+function filesOf(r: FormResponse): FormResponseFile[] {
+  return (r as { files?: FormResponseFile[] }).files ?? [];
 }
 
 /**
  * CSV of the listed rows: the attribution columns plus one column per
  * payload field (union across rows, in first-seen order). Repeated-input
  * array values are joined with "; ".
+ *
+ * Then one column per FILE FIELD met in the rows (PRDCT-2403), named
+ * `<field> (files)` and holding that field's file names joined with "; ".
+ * Field names and file names are respondent input like the payload, so both
+ * the header and the cell go through `csvCell` (quoting + formula guard).
  */
-function responsesCsv(rows: FormResponse[]): string {
+export function responsesCsv(rows: FormResponse[]): string {
   const payloadKeys: string[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
@@ -707,7 +799,25 @@ function responsesCsv(rows: FormResponse[]): string {
       }
     }
   }
-  const header = ['formName', 'source', 'placement', 'link', 'createdAt', ...payloadKeys];
+  const fileFields: string[] = [];
+  const seenFields = new Set<string>();
+  for (const r of rows) {
+    for (const f of filesOf(r)) {
+      if (!seenFields.has(f.field)) {
+        seenFields.add(f.field);
+        fileFields.push(f.field);
+      }
+    }
+  }
+  const header = [
+    'formName',
+    'source',
+    'placement',
+    'link',
+    'createdAt',
+    ...payloadKeys,
+    ...fileFields.map((field) => `${field} (files)`)
+  ];
   const lines = [header.map(csvCell).join(',')];
   for (const r of rows) {
     const cells = [
@@ -719,7 +829,13 @@ function responsesCsv(rows: FormResponse[]): string {
       ...payloadKeys.map((key) => {
         const value = r.payload[key];
         return value === undefined ? '' : Array.isArray(value) ? value.join('; ') : value;
-      })
+      }),
+      ...fileFields.map((field) =>
+        filesOf(r)
+          .filter((f) => f.field === field)
+          .map((f) => f.name)
+          .join('; ')
+      )
     ];
     lines.push(cells.map(csvCell).join(','));
   }

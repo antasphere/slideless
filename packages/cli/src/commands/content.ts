@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
@@ -23,6 +22,7 @@ import {
   type CliIo
 } from '../context.js';
 import { detectEntry, readLink, scanDeck, writeLink, LINK_FILENAME, type DeckScan } from '../manifest.js';
+import { readCapped, sha256Hex } from '../download.js';
 import { writeContained } from '../safe-write.js';
 import { startDevServer } from '../devserver.js';
 import { isInteractive, openInBrowser, shouldOpenAfterPush } from '../open.js';
@@ -143,38 +143,6 @@ async function uploadMissing(ctx: CliContext, scan: DeckScan): Promise<number> {
   });
   await Promise.all(workers);
   return queue.length;
-}
-
-/**
- * Read a response body with a hard ceiling, streaming: the manifest DECLARES
- * each blob's size, so anything bigger is a lie and must not be buffered
- * (an unbounded `arrayBuffer()` on a hostile instance is a memory bomb).
- */
-async function readCapped(res: Response, maxBytes: number, label: string): Promise<Buffer> {
-  const tooBig = (): Error =>
-    new Error(`Refusing ${label}: the download exceeds the manifest's declared ${maxBytes} bytes.`);
-  const declared = Number(res.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > maxBytes) throw tooBig();
-  const body = res.body;
-  if (!body) {
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > maxBytes) throw tooBig();
-    return buf;
-  }
-  const reader = body.getReader();
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw tooBig();
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return Buffer.concat(chunks);
 }
 
 export function registerContentCommands(program: Command, io: CliIo): void {
@@ -453,7 +421,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         }
         const res = await ctx.client.downloadPresentationAsset(deckId, entry.sha256);
         const bytes = await readCapped(res, entry.sizeBytes, entry.path);
-        const digest = createHash('sha256').update(bytes).digest('hex');
+        const digest = sha256Hex(bytes);
         if (digest !== entry.sha256) {
           throw new Error(
             `Refusing ${entry.path}: the downloaded bytes hash to ${digest}, but the manifest ` +

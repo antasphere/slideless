@@ -322,13 +322,18 @@ slideless share <id> --no-download                        # viewers of this link
 slideless share <id> --no-bar                             # a bare deck: no recipient bar (title, version,
                                                           # downloads) over it (default: shown; also on
                                                           # share-email; never inside embeds anyway)
+slideless share <id> --no-uploads                         # viewers of this link cannot upload files into
+                                                          # the deck's form file fields; the rest of the
+                                                          # form still submits (default: they can; also
+                                                          # on share-email)
 slideless share <id> --embed                              # also print the website embed snippets
 slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link
 slideless unshare <id>                                    # revoke ALL active links
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed;
                                                           # takes every share flag (--to-version, --annotator,
-                                                          # --no-forms, --no-download, --no-bar, --no-remember,
+                                                          # --no-forms, --no-download, --no-bar, --no-uploads,
+                                                          # --no-remember,
                                                           # --badge-position, --expires, --password,
                                                           # --password-stdin) except --embed and --placement;
                                                           # each link remembers its recipient's answers
@@ -336,7 +341,10 @@ slideless pin <id> <tokenId> --to-version 1               # freeze a recipient o
 slideless pin <id> <tokenId> --latest                     # follow the latest again
 slideless tokens <id> [--all]                             # list links + access stats (opens, last opened,
                                                           # downloads or "no downloads", "no forms",
-                                                          # "remembers answers")
+                                                          # "no uploads", "remembers answers")
+slideless uploads <id> <tokenId> [--on|--off]             # show or switch file uploads on an EXISTING
+                                                          # link (a link minted before file fields
+                                                          # existed has them off)
 slideless views <id> [tokenId] [--all]                    # per-view events of one link: when, referring
                                                           # site, ?p= label, browser family (no IPs, no
                                                           # full URLs — never stored)
@@ -346,7 +354,19 @@ slideless responses <id> [--form name] [--link tokenId] \
                                                           # embedded forms, newest first; --since reads
                                                           # activity (created OR edited)
 slideless response <id> <responseId>                      # one response with its edit history: every
-                                                          # kept revision, newest first
+                                                          # kept revision, newest first; lists the files
+                                                          # it holds (field, name, size, id)
+slideless response-files <id> [--form name] [--link tokenId] \
+                    [--source link|embed] [--placement label] \
+                    [--since ISO] [--out ./dir]           # download every file respondents uploaded into
+                                                          # the deck's form file fields, as
+                                                          # <dir>/<form>/<response>/<field>/<name>
+                                                          # (default dir ./form-files-<deck id head>)
+slideless response-files <id> <responseId> [--out ./dir]  # one response's files, as <dir>/<field>/<name>
+                                                          # (default dir ./response-files-<response id head>)
+slideless response-files <id> [responseId] --zip [path]   # the same files as ONE zip streamed from the
+                                                          # server (default: the server's file name, in
+                                                          # the current directory)
 slideless notify <id> [--on|--off]                        # show or switch the owner mails on this deck
                                                           # (a mail on a new response, another on an edit;
                                                           # on by default; forms stay on when off)
@@ -399,6 +419,57 @@ link and the moment it was written through. `slideless notify <id> --off`
 silences the owner mails (one on a new response, a different one on an edit,
 never carrying the answers, at most one per deck per ten minutes) without
 touching forms. Details: the Forms page under Sharing & review.
+
+**Files uploaded through a form**: a form can carry a file field, and what
+respondents upload is attached to their response. `responses` shows a files
+count per row, `--csv` adds one column per file field met in the exported
+rows, named `<field> (files)` and holding that field's file names joined
+with `; ` (guarded like every other cell), and `--json` carries `files` on
+every response (`id`, `field`, `name`, `contentType`, `sizeBytes`, `sha256`).
+`response` lists the current files and, in the history, the names each
+revision held (`-` on a revision from before file fields existed).
+
+`slideless response-files <id>` brings the bytes to disk. Without a
+`responseId` it takes every file of the deck's responses, narrowed by
+`--form`, `--link`, `--source`, `--placement` and `--since` exactly as
+`responses` reads them; with one
+it takes that response's files (the filters are refused there). Two modes:
+
+- **A folder** (the default, `--out <dir>`): one download per file, laid out
+  as `<dir>/<form>/<response>/<field>/<name>` where `<response>` is when the
+  response was first sent plus the head of its id (`20260914-2000-7f3a9c1e`),
+  or `<dir>/<field>/<name>` for one response. File and field names are the
+  respondent's raw input, so no name is ever used as a path: each segment is
+  reduced to one plain name (separators resolved to the basename, control
+  characters dropped, a leading dot replaced by `_`, so `../../x` is written
+  as `x` and `.env` as `_env`), two files with the same name in one field
+  become `name.ext` and `name (2).ext`, and every write is contained in
+  `<dir>` (symlinks refused, mode forced to 0644). Each download is capped at
+  the size the response declares and its sha256 is verified before the file
+  is kept; a mismatch stops the command with an error and exit code 1. The
+  human output prints the path written for each file, with the name as sent
+  when the two differ.
+- **One zip** (`--zip [path]`): the server builds the archive
+  (`<form>/<response>/<field>/<file>`, or `<field>/<file>` for one response)
+  and the CLI streams it to disk without buffering it. Without a path, the
+  file takes the server's name (`<deck-title>-form-files.zip`), reduced to a
+  plain file name and written in the current directory; a path you type is
+  used verbatim. `--out` and `--zip` cannot be combined.
+
+Nothing to download is not an error: the command says so and exits 0, in both
+modes (the zip routes answer `404 no_files`, which the CLI reads as the same
+empty result). `--json` prints a summary instead of the table: in folder mode
+`{ mode: "folder", path, files: [{ responseId, formName, fileId, field, name,
+sizeBytes, sha256, path }], totalBytes }` (`path` is `null` and `files` empty
+when there was nothing), in zip mode `{ mode: "zip", path, sizeBytes }`.
+
+Uploads are a per-link switch, like forms and downloads: a new link has them
+on, `share --no-uploads` mints one without, and
+`slideless uploads <id> <tokenId> --on` turns them on for a link minted
+before file fields existed (those stay off until their owner says otherwise;
+a link already in circulation never gains a public write capability by
+itself). Without a flag `uploads` prints the current state. An upload rides a
+form submit, so the switch does nothing on a link minted with `--no-forms`.
 
 ## Collaborators
 

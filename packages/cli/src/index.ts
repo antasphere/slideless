@@ -7,6 +7,7 @@ import { registerAuthCommands } from './commands/auth.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
 import { registerSharingCommands } from './commands/sharing.js';
+import { registerResponseFilesCommand } from './commands/response-files.js';
 import { registerFileCommands } from './commands/files.js';
 import { registerCompletionCommand } from './commands/completion.js';
 
@@ -58,8 +59,10 @@ export function buildProgram(io: CliIo): Command {
   // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
   registerContentCommands(program, io);
   // Sharing + collaborators: share, unshare, share-email, pin, tokens, views,
-  // responses, invite, uninvite.
+  // responses, response, uploads, notify, invite, uninvite.
   registerSharingCommands(program, io);
+  // The files respondents uploaded into form file fields: response-files.
+  registerResponseFilesCommand(program, io);
   // Platform substrate (template heritage): instance, export, files *.
   registerFileCommands(program, io);
   // Shell completion — registered LAST so the tree it prints is complete.

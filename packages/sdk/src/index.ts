@@ -158,6 +158,20 @@ export interface FormResponseListParams extends ListParams {
   since?: string;
 }
 
+/** Filters of the whole-deck form-files zip (PRDCT-2403): the listing's own, minus the paging. */
+export interface FormResponseFilesZipParams {
+  /** Only files of this form's responses (the data-slideless-form name). */
+  form?: string;
+  /** Only files of responses that came through this share link (token id). */
+  token?: string;
+  /** Only files of direct-link or embedded submissions. */
+  source?: FormResponseSourceValue;
+  /** Only files of responses whose serving document carried this ?p= label. */
+  placement?: string;
+  /** ISO datetime — only files of responses created or edited at or after this instant. */
+  since?: string;
+}
+
 /**
  * Options for the non-idempotent create calls. Setting `idempotencyKey`
  * (any client-chosen string ≤200 chars, e.g. a UUID) makes a retried create
@@ -770,7 +784,7 @@ export class PlatformClient {
     );
   }
 
-  /** Pin/unpin version, rename, annotate flag, expiry, password (null clears). */
+  /** Pin/unpin version, rename, the per-link switches (annotate, forms, downloads, bar, remembering, file uploads), expiry, password (null clears). */
   updateShareToken(id: string, tokenId: string, patch: ShareTokenUpdate): Promise<ShareToken> {
     return this.request(
       'PATCH',
@@ -928,6 +942,71 @@ export class PlatformClient {
       'GET',
       `/presentations/${encodeURIComponent(id)}/responses/${encodeURIComponent(responseId)}`
     );
+  }
+
+  // The files of form responses (PRDCT-2403): what respondents uploaded into
+  // a form's file fields. `FormResponse.files` lists them (RAW respondent
+  // input: escape `field` and `name`, never join `name` into a filesystem
+  // path); these three calls fetch the bytes. Same return shape as every
+  // streamed download here: the raw Response, PlatformApiError on a non-2xx.
+
+  /** URL of one uploaded file of one response (attachment + nosniff, Range supported). */
+  formResponseFileUrl(id: string, responseId: string, fileId: string): string {
+    return (
+      `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/responses/` +
+      `${encodeURIComponent(responseId)}/files/${encodeURIComponent(fileId)}`
+    );
+  }
+
+  /**
+   * Downloads one file a respondent uploaded. Raw Response so callers can
+   * stream it; verify the bytes against the wire's `sizeBytes` and `sha256`
+   * before keeping them.
+   */
+  async downloadFormResponseFile(id: string, responseId: string, fileId: string): Promise<Response> {
+    return this.rawDownload(this.formResponseFileUrl(id, responseId, fileId));
+  }
+
+  /** URL of one response's files as one zip (`<field>/<file>`). */
+  formResponseFilesZipUrl(id: string, responseId: string): string {
+    return (
+      `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/responses/` +
+      `${encodeURIComponent(responseId)}/files.zip`
+    );
+  }
+
+  /**
+   * Downloads one response's uploaded files as a streamed store-only zip (the
+   * Content-Disposition carries its name). 404 no_files when it holds none.
+   */
+  async downloadFormResponseFilesZip(id: string, responseId: string): Promise<Response> {
+    return this.rawDownload(this.formResponseFilesZipUrl(id, responseId));
+  }
+
+  /** URL of the whole deck's form-files zip, with its filters. */
+  formResponsesFilesZipUrl(id: string, params: FormResponseFilesZipParams = {}): string {
+    const query = new URLSearchParams();
+    if (params.form) query.set('form', params.form);
+    if (params.token) query.set('token', params.token);
+    if (params.source) query.set('source', params.source);
+    if (params.placement) query.set('placement', params.placement);
+    if (params.since) query.set('since', params.since);
+    const qs = query.toString();
+    const base = `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/responses/files.zip`;
+    return qs ? `${base}?${qs}` : base;
+  }
+
+  /**
+   * Downloads every uploaded file of the deck's responses as a streamed
+   * store-only zip (`<form>/<response>/<field>/<file>`), sliceable like the
+   * listing (form, share link, source, placement, time). 404 no_files when
+   * nothing matches.
+   */
+  async downloadFormResponsesFilesZip(
+    id: string,
+    params: FormResponseFilesZipParams = {}
+  ): Promise<Response> {
+    return this.rawDownload(this.formResponsesFilesZipUrl(id, params));
   }
 
   /** Grouped counts per form × link × source × placement, plus the deck total. */
