@@ -48,6 +48,10 @@ export type HubOrgsResult =
  * The answer of one as-the-user org creation (PRDCT-2443):
  *  - 'created': the hub answered 201 with a well-formed org;
  *  - 'limit_reached': the hub's own per-user organization cap refused it;
+ *  - 'reauth_required': the hub answered 403 `insufficient_scope` — THIS
+ *    grant does not carry `orgs:create` (it predates the scope, or a CLI
+ *    connect replaced it). Not a dead grant and not a policy refusal: a
+ *    fresh browser sign-in mints a grant that has it;
  *  - 'invalid': the hub refused the NAME (its validation, not ours);
  *  - 'refused': any other definitive refusal (the hub does not let this
  *    grant create organizations) — `code` is the hub's, for the log only;
@@ -60,6 +64,7 @@ export type HubOrgsResult =
 export type HubCreateOrgResult =
   | { kind: 'created'; org: { id: string; name: string | null; role: WorkspaceRole | null } }
   | { kind: 'limit_reached' }
+  | { kind: 'reauth_required' }
   | { kind: 'invalid' }
   | { kind: 'refused'; status: number; code: string | null }
   | { kind: 'no_link' }
@@ -107,6 +112,9 @@ export function classifyHubOrgCreateAnswer(status: number, body: unknown): HubCr
   if ((status === 403 || status === 409) && code !== null && HUB_ORG_LIMIT_CODES.has(code)) {
     return { kind: 'limit_reached' };
   }
+  // Exactly the hub's scope refusal — never any other 403 (a registry
+  // refusal, `forbidden`, stays 'refused': signing in again would not help).
+  if (status === 403 && code === 'insufficient_scope') return { kind: 'reauth_required' };
   if (status === 400 || status === 422) return { kind: 'invalid' };
   if (status >= 400 && status < 500) return { kind: 'refused', status, code };
   return { kind: 'inconclusive' };

@@ -60,12 +60,15 @@ Who can create one:
 
 `GET /api/v1/me` carries `canCreateWorkspace`, true when the call would be accepted right now. A
 client shows or hides its "new workspace" entry from that one flag.
+On cloud the flag stays true for someone who signed in before workspace creation existed: their
+first attempt answers `401 hub_reauth_required`, they sign in again, and the retry goes through.
 
 | Answer                            | When                                                                                                              |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `201`                             | Created; the caller is its owner                                                                                  |
 | `400 validation_error`            | The name is missing, blank, too long, or carries control characters                                               |
 | `401 unauthenticated`             | No session                                                                                                        |
+| `401 hub_reauth_required`         | Cloud: your sign-in predates workspace creation; sign in again, then retry                                        |
 | `401 hub_grant_expired`           | Cloud: sign in with Antasphere again, then retry                                                                  |
 | `403 session_required`            | The caller is an API key or an OAuth token                                                                        |
 | `403 guest_forbidden`             | The caller is a guest everywhere                                                                                  |

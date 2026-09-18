@@ -313,7 +313,8 @@ export class PlatformClient {
    * `X-Workspace-Id` (`setWorkspace`). Refusals (403 unless noted):
    * `session_required`, `guest_forbidden`, `workspace_creation_disabled`,
    * `workspace_limit_reached`, `hub_link_required`, `hub_unavailable`,
-   * `hub_refused`, 401 `hub_grant_expired`, 400 `validation_error`.
+   * `hub_refused`, 401 `hub_grant_expired`, 401 `hub_reauth_required` (both
+   * healed by signing in again), 400 `validation_error`, 429 `rate_limited`.
    */
   createWorkspace(name: string, opts: IdempotentRequestOptions = {}): Promise<WorkspaceCreated> {
     return this.request('POST', '/workspaces', { name }, idempotencyHeader(opts));

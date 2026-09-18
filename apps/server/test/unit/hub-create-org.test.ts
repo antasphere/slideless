@@ -63,6 +63,18 @@ describe('classifyHubOrgCreateAnswer', () => {
     }
   });
 
+  it('403 insufficient_scope — exactly that — is reauth_required; no other 403 is', () => {
+    expect(classifyHubOrgCreateAnswer(403, { error: { code: 'insufficient_scope' } })).toEqual({
+      kind: 'reauth_required'
+    });
+    // The same code on another status, and the hub's OTHER 403s, are not a
+    // reason to send someone through a sign-in that would change nothing.
+    expect(classifyHubOrgCreateAnswer(401, { error: { code: 'insufficient_scope' } }).kind).toBe('refused');
+    expect(classifyHubOrgCreateAnswer(403, { error: { code: 'forbidden' } }).kind).toBe('refused');
+    expect(classifyHubOrgCreateAnswer(403, { error: { code: 'endpoint_not_allowed' } }).kind).toBe('refused');
+    expect(classifyHubOrgCreateAnswer(403, null).kind).toBe('refused');
+  });
+
   it('400/422 is invalid; any other 4xx is a definitive refusal; 5xx is inconclusive', () => {
     expect(classifyHubOrgCreateAnswer(400, { error: { code: 'validation_error' } })).toEqual({
       kind: 'invalid'
@@ -148,6 +160,7 @@ describe('HubUserClient.createOrg', () => {
     const cases: Array<[() => Promise<Response>, string]> = [
       [async () => answer(403, { error: { code: 'org_limit_reached' } }), 'limit_reached'],
       [async () => answer(403, { error: { code: 'forbidden' } }), 'refused'],
+      [async () => answer(403, { error: { code: 'insufficient_scope' } }), 'reauth_required'],
       [async () => answer(500, { error: { code: 'internal' } }), 'inconclusive'],
       [
         async () => {

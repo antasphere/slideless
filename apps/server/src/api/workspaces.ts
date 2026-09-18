@@ -312,6 +312,12 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
             ),
             401
           );
+        case 'reauth_required':
+          // The grant is alive but predates `orgs:create` (or a CLI connect
+          // replaced it). Same status and same cure as hub_grant_expired — a
+          // browser sign-in — under its own code, so it is never mistaken
+          // for a refusal that signing in again would not lift.
+          return c.json(err('hub_reauth_required', 'Sign in again to create a workspace, then retry'), 401);
         case 'refused':
           return c.json(
             err('hub_refused', 'Antasphere did not accept the creation of this organization'),

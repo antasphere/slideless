@@ -105,7 +105,10 @@ export const meResponseSchema = z.object({
    * `MAX_WORKSPACES_PER_USER` dial is not 0; on self-hosted the user must
    * also own fewer workspaces than that cap, on cloud they must also hold a
    * live Antasphere link (the organization is created there, as them).
-   * Always false for API keys and OAuth bearers. Advisory: the route
+   * Always false for API keys and OAuth bearers. STAYS TRUE on cloud for a
+   * person whose stored sign-in predates workspace creation (the route then
+   * answers 401 `hub_reauth_required`): the creation is one sign-in away,
+   * and false would hide the entry from them for good. Advisory: the route
    * re-judges everything, and on cloud the hub's own cap is only known once
    * asked.
    */

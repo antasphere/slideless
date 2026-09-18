@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
-import { FakeHub, type HubUserFixture } from '../fake-hub.js';
+import { FakeHub, LEGACY_GRANT_SCOPE, type HubUserFixture } from '../fake-hub.js';
 import type { HubCreateOrgResult } from '../../src/identity/hub-user-client.js';
 import * as sso from './sso-helpers.js';
 
@@ -150,6 +150,71 @@ describe('cloud: the real client against the hub', () => {
     expect(audit.rows).toEqual([
       { workspace_id: workspace.id, action: 'workspace.create', actor_via: 'session' }
     ]);
+  });
+
+  it('the grant that created it CARRIED orgs:create — because the sign-in asked for it', async () => {
+    const { scope } = await sso.ssoInitiate(app);
+    expect(scope?.split(' ')).toContain('orgs:create');
+    expect(scope?.split(' ')).not.toContain('account:write');
+  });
+
+  it.each([
+    ['a grant from before the scope existed (account:read only)', LEGACY_GRANT_SCOPE],
+    ['a grant with account:write but NOT orgs:create', `${LEGACY_GRANT_SCOPE} account:write`]
+  ])('%s answers 401 hub_reauth_required; /me stays true; a fresh sign-in heals it', async (label, scope) => {
+    const sub = `hub-old-${scope.length}`;
+    const old: HubUserFixture = {
+      ...ada,
+      sub,
+      email: `${sub}@wscloud.test`,
+      name: 'Old Grant',
+      overrides: { scope }
+    };
+    const oldCookie = await sso.ssoLogin(app, hub, old);
+    // The entry is OFFERED: the creation is one sign-in away, and false
+    // would hide it from every person who signed in before this shipped.
+    expect((await me(app, oldCookie)).canCreateWorkspace).toBe(true);
+
+    const refreshes = hub.refreshCount();
+    const before = await app.db.pool.query(`SELECT count(*)::int AS n FROM workspaces`);
+    const res = await create(app, oldCookie, 'Too early');
+    expect(res.status).toBe(401);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('hub_reauth_required'); // NOT hub_refused, NOT hub_grant_expired
+    expect(body.error.message).not.toMatch(/organi[sz]ation|hub|antasphere/i);
+    // One POST, no refresh (a refreshed token carries the same scopes), nothing created anywhere.
+    expect(hub.orgCreateRequests).toHaveLength(1);
+    expect(hub.refreshCount()).toBe(refreshes);
+    expect(hub.orgIdsOf(sub)).toEqual([ORG_HOME]);
+    const after = await app.db.pool.query(`SELECT count(*)::int AS n FROM workspaces`);
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+    // The grant is NOT dead: the rest of the product keeps working on it.
+    expect((await app.app.request('/api/v1/presentations', { headers: { cookie: oldCookie } })).status).toBe(
+      200
+    );
+
+    // The cure: sign in again — the fresh grant carries what the tool now asks for.
+    const fresh = await sso.ssoLogin(app, hub, { ...old, overrides: undefined });
+    const healed = await create(app, fresh, 'Now it works');
+    expect(healed.status).toBe(201);
+  });
+
+  it('a CLI connect REPLACES the stored grant with the hub’s own (no orgs:create): reauth, then healed', async () => {
+    const kit: HubUserFixture = { ...ada, sub: 'hub-kit', email: 'kit@wscloud.test', name: 'Kit CLI' };
+    const kitCookie = await sso.ssoLogin(app, hub, kit);
+    const { token, hubRefreshToken } = await hub.signConnectToken(kit, 'http://localhost:3000/mcp');
+    const connect = await app.app.request('/api/v1/sso/cli-connect', sso.json({ token, hubRefreshToken }));
+    expect(connect.status).toBeLessThan(300);
+    await app.db.pool.query(
+      `UPDATE account SET access_token_expires_at = now() - interval '1 hour'
+        WHERE provider_id = 'antasphere' AND user_id = (SELECT id FROM "user" WHERE email = $1)`,
+      [kit.email]
+    );
+    const res = await create(app, kitCookie, 'After the CLI');
+    expect(res.status).toBe(401);
+    expect((await readJson(res)).error.code).toBe('hub_reauth_required');
+    const again = await sso.ssoLogin(app, hub, kit);
+    expect((await create(app, again, 'After the browser')).status).toBe(201);
   });
 
   it('the hub cap answers 403 workspace_limit_reached and projects nothing', async () => {
@@ -335,6 +400,7 @@ describe('cloud: the hub call faked at the function boundary', () => {
 
   it.each([
     [{ kind: 'limit_reached' }, 403, 'workspace_limit_reached'],
+    [{ kind: 'reauth_required' }, 401, 'hub_reauth_required'],
     [{ kind: 'refused', status: 403, code: 'forbidden' }, 403, 'hub_refused'],
     [{ kind: 'refused', status: 409, code: 'whatever' }, 403, 'hub_refused'],
     [{ kind: 'invalid' }, 400, 'validation_error'],

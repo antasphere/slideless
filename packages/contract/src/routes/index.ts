@@ -214,7 +214,10 @@ export const workspaceCreateRoute = createRoute({
   responses: {
     201: jsonBody(workspaceCreatedSchema, 'The created workspace (its LOCAL id)'),
     400: errorResponses[400],
-    401: jsonBody(apiErrorSchema, 'Not authenticated, or the Antasphere grant expired (hub_grant_expired)'),
+    401: jsonBody(
+      apiErrorSchema,
+      'Not authenticated; hub_grant_expired or hub_reauth_required on cloud — both healed by signing in again'
+    ),
     403: jsonBody(
       apiErrorSchema,
       'session_required, guest_forbidden, workspace_creation_disabled, workspace_limit_reached, hub_link_required, hub_unavailable, hub_refused'

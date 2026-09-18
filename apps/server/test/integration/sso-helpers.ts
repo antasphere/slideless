@@ -44,7 +44,9 @@ export async function seedLocalWorkspace(app: TestApp, name: string, ownerEmail:
  * cookie the callback must present (better-auth's double-submit check —
  * a browser carries it automatically).
  */
-export async function ssoInitiate(app: TestApp): Promise<{ state: string; stateCookie: string }> {
+export async function ssoInitiate(
+  app: TestApp
+): Promise<{ state: string; stateCookie: string; scope: string | null }> {
   const init = json({ providerId: 'antasphere', callbackURL: '/' });
   const signIn = await app.app.request('/api/v1/auth/sign-in/oauth2', {
     ...init,
@@ -54,13 +56,16 @@ export async function ssoInitiate(app: TestApp): Promise<{ state: string; stateC
   const { url } = await readJson(signIn);
   const state = new URL(url).searchParams.get('state')!;
   expect(state).toBeTruthy();
-  return { state, stateCookie: extractCookie(signIn) };
+  // What the tool REALLY asked the hub for: the fake hub grants exactly this
+  // (FakeHub.mintCode), so a scope the tool stops requesting is a scope its
+  // grants stop carrying — in the suites as at the real hub.
+  return { state, stateCookie: extractCookie(signIn), scope: new URL(url).searchParams.get('scope') };
 }
 
 /** Initiate the SSO dance and drive the callback with a hub-minted code. */
 export async function ssoDance(app: TestApp, hub: FakeHub, fixture: HubUserFixture): Promise<Response> {
-  const { state, stateCookie } = await ssoInitiate(app);
-  const code = hub.mintCode(fixture);
+  const { state, stateCookie, scope } = await ssoInitiate(app);
+  const code = hub.mintCode(fixture, scope);
   return app.app.request(
     `/api/v1/auth/oauth2/callback/antasphere?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
     { headers: { cookie: stateCookie } }
