@@ -9,6 +9,7 @@
   import DeckSectionHeading from './DeckSectionHeading.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { formatBytes, formatDateTime } from '$lib/format';
   import { t } from '$lib/i18n';
@@ -103,13 +104,13 @@
     {#if list.loading}
       <TableSkeleton columns={5} rows={2} showSearch={false} />
     {:else if list.error && !list.items.length}
-      <p class="text-sm text-destructive">{t('versions.loadFailed', { error: list.error })}</p>
+      <p class="text-sm text-destructive" in:appear>{t('versions.loadFailed', { error: list.error })}</p>
     {:else if !list.items.length}
       <p class="text-sm text-muted-foreground">{t('versions.empty')}</p>
     {:else}
       <DataTable data={list.items} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
       {#if list.nextCursor}
-        <div class="flex justify-center py-2">
+        <div class="flex justify-center py-2" transition:reveal>
           <Button
             variant="outline"
             size="sm"

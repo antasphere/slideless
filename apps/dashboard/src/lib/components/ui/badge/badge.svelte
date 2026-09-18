@@ -1,24 +1,22 @@
 <script lang="ts" module>
   import { type VariantProps, tv } from 'tailwind-variants';
+  /* A badge is a Tag that holds a snippet instead of a label: the same 24px
+     label on paper, a wash of its tone under its own ink and one faint edge
+     (ui/tag/tag.svelte). A state (latest, old, accepted, destructive) takes
+     the tag's dot; the version variants keep the mono face. */
   export const badgeVariants = tv({
-    // Status pills, the brand way: soft washes with a 7px dot in the status
-    // color, never a saturated fill; hierarchy from the wash, not weight.
-    base: 'focus:ring-ring inline-flex select-none items-center rounded-md border text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2',
+    base: 'badge',
     variants: {
       variant: {
-        default:
-          'border-transparent bg-[var(--accent-soft)] text-foreground before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--accent)] before:content-[""]',
-        secondary: 'border-transparent bg-[var(--ground-3)] text-ink-soft',
-        destructive:
-          'border-transparent bg-[var(--danger-soft)] text-[var(--danger)] before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--danger)] before:content-[""]',
-        outline: 'text-foreground',
-        version: 'border-transparent bg-[var(--accent-soft)] text-foreground font-mono',
-        old: 'border-transparent bg-[var(--warn-soft)] text-[var(--warn)] before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--warn)] before:content-[""] font-mono',
-        latest:
-          'border-transparent bg-[var(--ok-soft)] text-[var(--ok)] before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--ok)] before:content-[""] font-mono',
-        accepted:
-          'border-transparent bg-[var(--accent-soft)] text-foreground before:mr-1.5 before:size-[7px] before:shrink-0 before:rounded-full before:bg-[var(--accent)] before:content-[""] font-mono',
-        inactive: 'border-transparent bg-[var(--ground-3)] text-brand-muted font-mono'
+        default: 'badge--accent',
+        secondary: 'badge--neutral',
+        destructive: 'badge--danger badge--dot',
+        outline: 'badge--neutral',
+        version: 'badge--slate badge--mono',
+        old: 'badge--amber badge--dot badge--mono',
+        latest: 'badge--green badge--dot badge--mono',
+        accepted: 'badge--green badge--dot badge--mono',
+        inactive: 'badge--neutral badge--mono'
       }
     },
     defaultVariants: {
@@ -39,7 +37,7 @@
     href,
     class: className,
     variant = 'default',
-    padding = 'px-2.5 py-0.5',
+    padding = 'px-2',
     children,
     ...restProps
   }: WithElementRef<HTMLAnchorAttributes> & {
@@ -57,3 +55,66 @@
 >
   {@render children?.()}
 </svelte:element>
+
+<style>
+  .badge {
+    --tone: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    height: 24px;
+    border: 1px solid color-mix(in oklab, var(--tone) 24%, transparent);
+    border-radius: 7px;
+    background: color-mix(in oklab, var(--tone) 11%, var(--plate-strong));
+    color: color-mix(in oklab, var(--tone) 62%, var(--ink));
+    font-family: var(--ui);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: nowrap;
+    vertical-align: middle;
+    user-select: none;
+  }
+  a.badge:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  .badge--accent {
+    --tone: var(--accent);
+  }
+  .badge--green {
+    --tone: #2e8a74;
+  }
+  .badge--amber {
+    --tone: #c7822f;
+  }
+  .badge--slate {
+    --tone: #5c7285;
+  }
+  .badge--danger {
+    --tone: #b4552f;
+  }
+  .badge--neutral {
+    border-color: var(--hairline);
+    background: var(--ground-2);
+    color: var(--ink-soft);
+  }
+  .badge--mono {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 400;
+  }
+  /* a state rather than a kind: the tag's dot */
+  .badge--dot::before {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin: 0 2px 0 1px;
+    border-radius: 50%;
+    background: var(--tone);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--tone) 18%, transparent);
+  }
+</style>

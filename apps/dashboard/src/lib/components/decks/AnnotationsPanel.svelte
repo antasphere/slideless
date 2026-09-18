@@ -6,6 +6,7 @@
   import * as Select from '$lib/components/ui/select/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
@@ -225,7 +226,7 @@
     {#if list.loading}
       <TableSkeleton columns={3} rows={2} showSearch={false} />
     {:else if list.error && !list.items.length}
-      <p class="text-sm text-destructive">{t('annotations.loadFailed', { error: list.error })}</p>
+      <p class="text-sm text-destructive" in:appear>{t('annotations.loadFailed', { error: list.error })}</p>
     {:else if !list.items.length}
       <p class="text-sm text-muted-foreground">
         {hasFilters ? t('annotations.emptyFiltered') : t('annotations.empty')}
@@ -243,11 +244,15 @@
                 <span>{t('annotations.viaShareLink')}</span>
               {/if}
               <span>{t('annotations.onVersion', { n: annotation.version })}</span>
-              <Badge variant={annotation.status === 'resolved' ? 'outline' : 'secondary'}>
-                {annotation.status === 'resolved'
-                  ? t('annotations.statusResolved')
-                  : t('annotations.statusOpen')}
-              </Badge>
+              {#key annotation.status}
+                <span class="inline-flex" in:appear>
+                  <Badge variant={annotation.status === 'resolved' ? 'outline' : 'secondary'}>
+                    {annotation.status === 'resolved'
+                      ? t('annotations.statusResolved')
+                      : t('annotations.statusOpen')}
+                  </Badge>
+                </span>
+              {/key}
               <span>{formatTimeAgo(annotation.createdAt)}</span>
             </div>
             <!-- SECURITY: the note body is REVIEWER-CONTROLLED raw text.
@@ -279,23 +284,27 @@
             {/if}
             <div class="flex gap-2 pt-1">
               {#if annotation.status === 'open'}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={mutatingId === annotation.id}
-                  onclick={() => void setStatus(annotation, 'resolved')}
-                >
-                  {t('annotations.actionResolve')}
-                </Button>
+                <span class="inline-flex" in:appear>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={mutatingId === annotation.id}
+                    onclick={() => void setStatus(annotation, 'resolved')}
+                  >
+                    {t('annotations.actionResolve')}
+                  </Button>
+                </span>
               {:else}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={mutatingId === annotation.id}
-                  onclick={() => void setStatus(annotation, 'open')}
-                >
-                  {t('annotations.actionReopen')}
-                </Button>
+                <span class="inline-flex" in:appear>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={mutatingId === annotation.id}
+                    onclick={() => void setStatus(annotation, 'open')}
+                  >
+                    {t('annotations.actionReopen')}
+                  </Button>
+                </span>
               {/if}
               <Button
                 variant="ghost"
@@ -313,7 +322,7 @@
         {/each}
       </ul>
       {#if list.nextCursor}
-        <div class="flex justify-center py-2">
+        <div class="flex justify-center py-2" transition:reveal>
           <Button
             variant="outline"
             size="sm"

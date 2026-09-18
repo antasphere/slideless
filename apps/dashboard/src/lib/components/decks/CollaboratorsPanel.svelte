@@ -27,6 +27,7 @@
   import { toast } from 'svelte-sonner';
   import { roleTag } from '$lib/tags';
   import { t } from '$lib/i18n';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import type { Collaborator, MeResponse, Presentation } from '@slideless/contract';
 
   interface Props {
@@ -288,12 +289,14 @@
         <DataTable data={rows} {columns} showViewOptions={false} showPagination={false} pageSize={200} />
       {/if}
       {#if list.error && !list.items.length}
-        <p class="pt-3 text-sm text-destructive">{t('collaborators.loadFailed', { error: list.error })}</p>
+        <p class="pt-3 text-sm text-destructive" in:appear>
+          {t('collaborators.loadFailed', { error: list.error })}
+        </p>
       {:else if !list.items.length}
         <p class="pt-3 text-sm text-muted-foreground">{t('collaborators.empty')}</p>
       {/if}
       {#if list.nextCursor}
-        <div class="flex justify-center py-2">
+        <div class="flex justify-center py-2" transition:reveal>
           <Button
             variant="outline"
             size="sm"

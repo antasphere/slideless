@@ -157,7 +157,8 @@
   }
   .code {
     margin: 0;
-    max-height: 190px;
+    /* a caller with a short list that must stay whole lifts the cap */
+    max-height: var(--code-max-h, 190px);
     overflow: auto;
     padding: 11px 12px 12px;
     font-family: var(--mono);

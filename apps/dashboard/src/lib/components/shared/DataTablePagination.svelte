@@ -6,6 +6,7 @@
   import ChevronsLeft from '@lucide/svelte/icons/chevrons-left';
   import ChevronsRight from '@lucide/svelte/icons/chevrons-right';
   import { t } from '$lib/i18n';
+  import { appear } from '$lib/components/ui/reveal/index.js';
 
   interface Props {
     pageIndex: number;
@@ -55,9 +56,11 @@
 <div class="flex flex-wrap items-center justify-between gap-y-2 px-2 py-4">
   <div class="flex-1 text-sm text-muted-foreground">
     {#if selectedRows != null && selectedRows > 0}
-      {t('table.rowsSelected', { selected: selectedRows, total: totalRows })}
+      <span class="inline-block" in:appear>
+        {t('table.rowsSelected', { selected: selectedRows, total: totalRows })}
+      </span>
     {:else}
-      {t('table.rowCount', { total: totalRows })}
+      <span class="inline-block" in:appear>{t('table.rowCount', { total: totalRows })}</span>
     {/if}
   </div>
   <div class="flex items-center space-x-6 lg:space-x-8">

@@ -8,6 +8,7 @@
   import Pencil from '@lucide/svelte/icons/pencil';
   import UserRound from '@lucide/svelte/icons/user-round';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import { safeHttpUrl } from '$lib/utils.js';
   import { t } from '$lib/i18n';
 
@@ -203,11 +204,7 @@
         </Card.Description>
       </Card.Header>
       <Card.Content class="space-y-4">
-        {#if error}
-          <div class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        {/if}
+        <FormError message={error} class="notice notice--danger" />
 
         {#if scopeLines.length > 0}
           <div>

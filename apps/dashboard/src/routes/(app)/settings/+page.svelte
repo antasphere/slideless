@@ -93,7 +93,11 @@
       </div>
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground">{t('settings.instanceId')}</span>
-        <code class="text-xs">{data.instance.instanceId ?? '—'}</code>
+        {#if data.instance.instanceId}
+          <Tag label={data.instance.instanceId} mono />
+        {:else}
+          <span class="text-muted-foreground">—</span>
+        {/if}
       </div>
       <div class="flex items-center justify-between gap-4">
         <span class="text-muted-foreground">{t('settings.signInMethods')}</span>

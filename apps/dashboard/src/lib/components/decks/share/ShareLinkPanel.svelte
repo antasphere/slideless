@@ -25,9 +25,10 @@
      the panel says so instead of building one. */
   import * as Sheet from '$lib/components/ui/sheet/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear } from '$lib/components/ui/reveal/index.js';
   import { Tag } from '$lib/components/ui/tag/index.js';
   import ShareLinkVersionCell from './ShareLinkVersionCell.svelte';
-  import Copy from '@lucide/svelte/icons/copy';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Check from '@lucide/svelte/icons/check';
   import Minus from '@lucide/svelte/icons/minus';
@@ -35,7 +36,6 @@
   import LockOpen from '@lucide/svelte/icons/lock-open';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte';
   import { api, errorMessage } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { tokenStatus } from '$lib/decks';
   import { linkUrl } from '$lib/decks/link-urls.svelte';
   import { formatDate, formatDateTime, formatTimeAgo } from '$lib/format';
@@ -205,22 +205,19 @@
       <div class="body" data-panel-scroll>
         <!-- the URL, only when this page has it -->
         {#if url}
-          <div class="url" data-testid="panel-url">
-            <code>{url}</code>
+          <div class="url-row" data-testid="panel-url">
+            <CodeBlock
+              field
+              code={url}
+              ariaLabel={t('tokens.urlAria')}
+              copyLabel={t('tokens.actionCopy')}
+              copiedMessage={t('tokens.urlCopied')}
+              class="flex-1"
+            />
             <Button
               variant="ghost"
               size="icon"
-              class="h-8 w-8 shrink-0"
-              title={t('tokens.actionCopy')}
-              aria-label={t('tokens.actionCopy')}
-              onclick={() => void copyText(url, t('tokens.urlCopied'))}
-            >
-              <Copy class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-8 w-8 shrink-0"
+              class="h-9 w-9 shrink-0"
               href={url}
               target="_blank"
               rel="noopener noreferrer"
@@ -231,7 +228,7 @@
             </Button>
           </div>
         {:else}
-          <p class="url url--none" data-testid="panel-url-unavailable">{t('tokens.urlUnavailable')}</p>
+          <p class="url--none" data-testid="panel-url-unavailable">{t('tokens.urlUnavailable')}</p>
         {/if}
 
         <!-- the figures -->
@@ -311,7 +308,9 @@
         {#if viewsLoading}
           <p class="quiet">{t('common.loading')}</p>
         {:else if viewsError}
-          <p class="text-sm text-destructive">{t('tokens.viewsLoadFailed', { error: viewsError })}</p>
+          <p class="text-sm text-destructive" in:appear>
+            {t('tokens.viewsLoadFailed', { error: viewsError })}
+          </p>
         {:else if !views.length}
           <p class="quiet">{t('tokens.viewsEmpty')}</p>
         {:else}
@@ -409,33 +408,17 @@
     color: var(--muted);
   }
 
-  /* the URL in a contained box: the mono face, cut rather than wrapped */
-  .url {
+  /* the URL as the one-line code block, the way out beside it */
+  .url-row {
     display: flex;
     align-items: center;
-    gap: 2px;
-    min-height: 44px;
-    padding: 5px 6px 5px 12px;
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    background: var(--plate-strong);
-  }
-  .url code {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--ink-soft);
-    user-select: all;
+    gap: 4px;
   }
   .url--none {
     display: block;
     padding: 10px 12px;
-    border-style: dashed;
-    background: transparent;
+    border: 1px dashed var(--hairline);
+    border-radius: 10px;
     font-size: 12.5px;
     line-height: 1.45;
     color: var(--muted);

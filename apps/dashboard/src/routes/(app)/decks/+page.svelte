@@ -8,6 +8,9 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import PushInstructions from '$lib/components/decks/PushInstructions.svelte';
   import DeckCard from '$lib/components/decks/DeckCard.svelte';
+  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Rows3 from '@lucide/svelte/icons/rows-3';
@@ -66,6 +69,15 @@
     query.trim() ? decks.filter((d) => d.title.toLowerCase().includes(query.trim().toLowerCase())) : decks
   );
 
+  // The grid's cards settle in one after the other when the grid ARRIVES (the
+  // page loads, the view switches). The mark is lifted once that is over, so
+  // a card a search brings back, or a further page, just appears.
+  function entering(node: HTMLElement) {
+    node.dataset.entering = '';
+    const timer = setTimeout(() => delete node.dataset.entering, 700);
+    return { destroy: () => clearTimeout(timer) };
+  }
+
   // "New deck" is instructions, not an upload form — decks arrive via push.
   let showPushDialog = $state(false);
 
@@ -117,13 +129,14 @@
   addLabel={t('decks.newDeck')}
 />
 
-{#if list.error && decks.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && decks.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={5} />
 {:else if list.error && !decks.length}
-  <p class="text-sm text-destructive">{t('decks.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('decks.loadFailed', { error: list.error })}</p>
 {:else if !decks.length}
   <Card.Root class="mx-auto max-w-xl">
     <Card.Header>
@@ -165,20 +178,24 @@
     </div>
   </div>
   {#if view === 'cards'}
-    {#if shown.length}
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {#each shown as deck (deck.id)}
-          <DeckCard {deck} />
-        {/each}
-      </div>
-    {:else}
-      <p class="py-10 text-center text-sm text-muted-foreground">{t('decks.noMatch', { query })}</p>
-    {/if}
+    <div in:appear>
+      {#if shown.length}
+        <div class="deck-grid grid gap-4 sm:grid-cols-2 xl:grid-cols-3" use:entering>
+          {#each shown as deck (deck.id)}
+            <DeckCard {deck} />
+          {/each}
+        </div>
+      {:else}
+        <p class="py-10 text-center text-sm text-muted-foreground">{t('decks.noMatch', { query })}</p>
+      {/if}
+    </div>
   {:else}
-    <DataTable data={shown} {columns} onRowClick={(deck) => void goto(`/decks/${deck.id}`)} />
+    <div in:appear>
+      <DataTable data={shown} {columns} onRowClick={(deck) => void goto(`/decks/${deck.id}`)} />
+    </div>
   {/if}
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -186,19 +203,55 @@
   {/if}
 {/if}
 
+{#snippet pushAside()}
+  <Dialog.Illustration eyebrow={t('decks.pushAsideEyebrow')} caption={t('decks.pushAsideCaption')}>
+    <DialogDrawing kind="push" />
+  </Dialog.Illustration>
+{/snippet}
+
 <Dialog.Root bind:open={showPushDialog}>
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content size="lg" aside={pushAside} framed>
     <Dialog.Header>
       <Dialog.Title>{t('decks.pushTitle')}</Dialog.Title>
     </Dialog.Header>
-    <PushInstructions />
-    <div class="flex justify-end pt-2">
+    <Dialog.Body>
+      <PushInstructions />
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button onclick={() => (showPushDialog = false)}>{t('common.done')}</Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 
 <style>
+  /* the cards settle in one after the other, once, when the grid arrives; a
+     search or a further page never replays it (see `entering`) */
+  @media (prefers-reduced-motion: no-preference) {
+    .deck-grid:global([data-entering]) > :global(*) {
+      animation: deck-cell-in calc(var(--motion-duration) * 1.4) var(--motion-ease) backwards;
+    }
+    .deck-grid:global([data-entering]) > :global(:nth-child(2)) {
+      animation-delay: 35ms;
+    }
+    .deck-grid:global([data-entering]) > :global(:nth-child(3)) {
+      animation-delay: 70ms;
+    }
+    .deck-grid:global([data-entering]) > :global(:nth-child(4)) {
+      animation-delay: 105ms;
+    }
+    .deck-grid:global([data-entering]) > :global(:nth-child(5)) {
+      animation-delay: 140ms;
+    }
+    .deck-grid:global([data-entering]) > :global(:nth-child(n + 6)) {
+      animation-delay: 175ms;
+    }
+  }
+  @keyframes deck-cell-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
   /* the cards-or-table switch is a desk control: it floats at the right of
      the search row, and a phone never sees it */
   .view-toggle {

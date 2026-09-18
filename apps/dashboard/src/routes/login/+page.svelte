@@ -280,13 +280,11 @@
         <Card.Description>{t('login.subtitle')}</Card.Description>
       </Card.Header>
       <Card.Content class="space-y-4">
-        {#if signedOutNotice && !totpRequired}
-          <!-- Quiet post-logout notice (?signed_out=1) — informational, never
+        <!-- Quiet post-logout notice (?signed_out=1) — informational, never
              an error, and the lattice never auto-reconnects from here. -->
-          <p class="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-            {t('login.signedOutNotice')}
-          </p>
-        {/if}
+        <Reveal open={signedOutNotice && !totpRequired}>
+          <p class="notice">{t('login.signedOutNotice')}</p>
+        </Reveal>
         {#if totpRequired}
           <form
             in:appear
@@ -342,11 +340,11 @@
           </form>
         {:else}
           {#if hasPassword && hasOtp}
-            <div class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+            <div class="grid grid-cols-2 gap-[2px] rounded-[10px] border bg-[var(--ground-2)] p-[3px]">
               <button
                 type="button"
-                class="rounded-md px-3 py-1.5 text-sm transition-colors {mode === 'password'
-                  ? 'bg-background shadow-sm'
+                class="rounded-[7px] px-3 py-1.5 text-sm transition-colors {mode === 'password'
+                  ? 'bg-[var(--ground)] shadow-sm'
                   : 'text-muted-foreground'}"
                 onclick={() => {
                   mode = 'password';
@@ -357,8 +355,8 @@
               </button>
               <button
                 type="button"
-                class="rounded-md px-3 py-1.5 text-sm transition-colors {mode === 'otp'
-                  ? 'bg-background shadow-sm'
+                class="rounded-[7px] px-3 py-1.5 text-sm transition-colors {mode === 'otp'
+                  ? 'bg-[var(--ground)] shadow-sm'
                   : 'text-muted-foreground'}"
                 onclick={() => {
                   mode = 'otp';

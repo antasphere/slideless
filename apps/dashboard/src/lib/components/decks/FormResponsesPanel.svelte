@@ -10,6 +10,8 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import Download from '@lucide/svelte/icons/download';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -340,7 +342,7 @@
   </Card.Header>
   <Card.Content data-testid="form-responses-panel">
     {#if notify !== null}
-      <div class="mb-4 flex items-start gap-2" data-testid="form-responses-notify">
+      <div class="mb-4 flex items-start gap-2" data-testid="form-responses-notify" in:appear>
         <Checkbox
           id="responses-notify"
           checked={notify}
@@ -358,14 +360,15 @@
     {:else if noAccess}
       <p class="text-sm text-muted-foreground">{t('formResponses.noAccess')}</p>
     {:else if list.error && !list.items.length}
-      <p class="text-sm text-destructive">{t('formResponses.loadFailed', { error: list.error })}</p>
+      <p class="text-sm text-destructive" in:appear>
+        {t('formResponses.loadFailed', { error: list.error })}
+      </p>
     {:else}
       <div class="space-y-4">
-        {#if summaryError}
-          <p class="text-sm text-destructive">
-            {t('formResponses.summaryLoadFailed', { error: summaryError })}
-          </p>
-        {:else if summary && summary.buckets.length}
+        <FormError
+          message={summaryError ? t('formResponses.summaryLoadFailed', { error: summaryError }) : null}
+        />
+        {#if !summaryError && summary && summary.buckets.length}
           <div class="sheet overflow-x-auto">
             <Table.Root>
               <Table.Header>
@@ -534,7 +537,7 @@
             {/each}
           </ul>
           {#if list.nextCursor}
-            <div class="flex justify-center py-2">
+            <div class="flex justify-center py-2" transition:reveal>
               <Button
                 variant="outline"
                 size="sm"
@@ -552,80 +555,86 @@
 </Card.Root>
 
 <Dialog.Root bind:open={showHistory}>
-  <Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-xl" data-testid="response-history">
+  <Dialog.Content size="lg" framed data-testid="response-history">
     <Dialog.Header>
       <Dialog.Title>{t('formResponses.historyTitle')}</Dialog.Title>
       <Dialog.Description>{t('formResponses.historyDescription')}</Dialog.Description>
     </Dialog.Header>
-    {#if historyLoading || !history}
-      <TableSkeleton rows={3} />
-    {:else}
-      <ol class="space-y-3">
-        {#each history.versions as revision (revision.revision)}
-          <li class="space-y-2 rounded-[10px] border border-[var(--hairline)] p-3">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <!-- SECURITY: shareTokenName is owner text and placement is
+    <Dialog.Body>
+      {#if historyLoading || !history}
+        <TableSkeleton rows={3} />
+      {:else}
+        <ol class="space-y-3" in:appear>
+          {#each history.versions as revision (revision.revision)}
+            <li class="space-y-2 rounded-[10px] border border-[var(--hairline)] p-3">
+              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <!-- SECURITY: shareTokenName is owner text and placement is
                    visitor-influenced — {…} interpolation escapes. NEVER {@html}. -->
-              <span class="font-medium text-foreground">
-                {t('formResponses.historyRevision', { n: revision.revision })}
-              </span>
-              <span>{formatTimeAgo(revision.createdAt)}</span>
-              {#if revision.shareTokenName !== null}
-                <span>· {revision.shareTokenName}</span>
-              {:else if revision.shareTokenId === null}
-                <span>· {t('formResponses.linkGone')}</span>
-              {/if}
-              <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
-              {#if revision.placement !== null}
-                <span>· {revision.placement}</span>
-              {/if}
-              <span>{t('formResponses.onVersion', { n: revision.version })}</span>
-            </div>
-            <dl class="space-y-1">
-              {#each versionEntries(revision.payload) as [key, value] (key)}
-                <!-- SECURITY: RAW anonymous-respondent input at every revision.
-                     {…} escapes it; NEVER {@html}, never an attribute. -->
-                <div class="flex gap-2 text-sm">
-                  <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
-                  <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
-                </div>
-              {/each}
-            </dl>
-            {#if revision.files?.length}
-              <!-- A revision keeps the NAMES it held, never a handle on the
-                   bytes: text only, no link. RAW respondent input — {…} only. -->
-              <div
-                class="rounded-[8px] border border-dashed border-[var(--hairline)] px-3 py-2 text-xs"
-                data-testid="revision-files"
-              >
-                <div class="mb-1 inline-flex items-center gap-1 font-medium">
-                  <Paperclip class="h-3 w-3" />
-                  {t('formResponses.filesTitle', { n: revision.files.length })}
-                </div>
-                <dl class="space-y-1">
-                  {#each groupFilesByField(revision.files) as group (group.field)}
-                    <div class="flex gap-2">
-                      <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
-                      <dd class="min-w-0 flex-1">
-                        <ul class="space-y-0.5">
-                          {#each group.files as file (file.id)}
-                            <li class="flex items-baseline justify-between gap-3">
-                              <span class="min-w-0 truncate font-mono">{file.name}</span>
-                              <span class="shrink-0 text-muted-foreground">{formatBytes(file.sizeBytes)}</span
-                              >
-                            </li>
-                          {/each}
-                        </ul>
-                      </dd>
-                    </div>
-                  {/each}
-                </dl>
+                <span class="font-medium text-foreground">
+                  {t('formResponses.historyRevision', { n: revision.revision })}
+                </span>
+                <span>{formatTimeAgo(revision.createdAt)}</span>
+                {#if revision.shareTokenName !== null}
+                  <span>· {revision.shareTokenName}</span>
+                {:else if revision.shareTokenId === null}
+                  <span>· {t('formResponses.linkGone')}</span>
+                {/if}
+                <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
+                {#if revision.placement !== null}
+                  <span>· {revision.placement}</span>
+                {/if}
+                <span>{t('formResponses.onVersion', { n: revision.version })}</span>
               </div>
-            {/if}
-          </li>
-        {/each}
-      </ol>
-    {/if}
+              <dl class="space-y-1">
+                {#each versionEntries(revision.payload) as [key, value] (key)}
+                  <!-- SECURITY: RAW anonymous-respondent input at every revision.
+                     {…} escapes it; NEVER {@html}, never an attribute. -->
+                  <div class="flex gap-2 text-sm">
+                    <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
+                    <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
+                  </div>
+                {/each}
+              </dl>
+              {#if revision.files?.length}
+                <!-- A revision keeps the NAMES it held, never a handle on the
+                   bytes: text only, no link. RAW respondent input — {…} only. -->
+                <div
+                  class="rounded-[8px] border border-dashed border-[var(--hairline)] px-3 py-2 text-xs"
+                  data-testid="revision-files"
+                >
+                  <div class="mb-1 inline-flex items-center gap-1 font-medium">
+                    <Paperclip class="h-3 w-3" />
+                    {t('formResponses.filesTitle', { n: revision.files.length })}
+                  </div>
+                  <dl class="space-y-1">
+                    {#each groupFilesByField(revision.files) as group (group.field)}
+                      <div class="flex gap-2">
+                        <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
+                        <dd class="min-w-0 flex-1">
+                          <ul class="space-y-0.5">
+                            {#each group.files as file (file.id)}
+                              <li class="flex items-baseline justify-between gap-3">
+                                <span class="min-w-0 truncate font-mono">{file.name}</span>
+                                <span class="shrink-0 text-muted-foreground"
+                                  >{formatBytes(file.sizeBytes)}</span
+                                >
+                              </li>
+                            {/each}
+                          </ul>
+                        </dd>
+                      </div>
+                    {/each}
+                  </dl>
+                </div>
+              {/if}
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
+      <Button onclick={() => (showHistory = false)}>{t('common.done')}</Button>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 

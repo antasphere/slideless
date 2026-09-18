@@ -485,9 +485,12 @@ export const fr: Record<MessageKey, string> = {
   'apiKeys.createDescription': 'Le secret n’est affiché qu’une seule fois, juste après la création.',
   'apiKeys.nameLabel': 'Nom',
   'apiKeys.scopesLegend': 'Portées',
-  'apiKeys.scopeReadDesc': '— lecture des ressources',
-  'apiKeys.scopeWriteDesc': '— création, modification, suppression',
-  'apiKeys.scopeExportDesc': '— téléchargement de l’export complet de l’espace de travail',
+  'apiKeys.scopeReadDesc': 'Lecture des ressources.',
+  'apiKeys.scopeWriteDesc': 'Création, modification et suppression des ressources.',
+  'apiKeys.scopeExportDesc': 'Téléchargement de l’export complet de l’espace de travail.',
+  'apiKeys.asideEyebrow': 'Clé API',
+  'apiKeys.asideCaption': 'Une clé, et seulement les portées qu’il lui faut.',
+  'apiKeys.secretAsideCaption': 'Affichée une seule fois. Rangez-la là où vos scripts la trouveront.',
   'apiKeys.expiryLabel': 'Expiration',
   'apiKeys.secretTitle': 'Copiez votre clé API',
   'apiKeys.secretDescription': 'Utilisez-la comme jeton Bearer sur /api/v1.',
@@ -584,6 +587,9 @@ export const fr: Record<MessageKey, string> = {
   'invitations.revokedToast': 'Invitation de {email} révoquée',
   'invitations.createTitle': 'Inviter un membre',
   'invitations.createDescription': 'L’acceptation passe par un lien, fourni à l’étape suivante.',
+  'invitations.asideEyebrow': 'Espace de travail',
+  'invitations.asideCaption': 'Un lien, pour la seule personne qui s’en servira pour entrer.',
+  'invitations.linkAsideCaption': 'Le lien est prêt. À elle de l’ouvrir.',
   'invitations.emailLabel': 'E-mail',
   'invitations.emailPlaceholder': 'collegue@exemple.com',
   'invitations.roleLabel': 'Rôle',
@@ -596,7 +602,7 @@ export const fr: Record<MessageKey, string> = {
   'invitations.linkCopied': 'Lien d’invitation copié dans le presse-papiers',
   'invitations.badgeEmailSent': 'E-mail envoyé',
   'invitations.badgeNoEmail': 'Aucun e-mail configuré',
-  'invitations.sendYourself': '— envoyez le lien vous-même.',
+  'invitations.sendYourself': 'Envoyez le lien vous-même.',
   'invitations.revokeConfirmTitle': 'Révoquer l’invitation ?',
   'invitations.revokeConfirmDescription': 'Le lien envoyé à {email} cessera immédiatement de fonctionner.',
 
@@ -642,6 +648,9 @@ export const fr: Record<MessageKey, string> = {
   'decks.emptyBody':
     'Les decks sont poussés depuis un dossier par la CLI slideless ou un agent — il n’y a pas de formulaire d’upload, c’est voulu.',
   'decks.pushTitle': 'Pousser un deck',
+  'decks.pushAsideEyebrow': 'Nouveau deck',
+  'decks.pushAsideCaption':
+    'Un deck se pousse, il ne se téléverse pas. Chaque envoi devient une nouvelle version.',
   'decks.pushDescription':
     'Connectez la CLI à cette instance une fois, puis poussez n’importe quel dossier contenant un index.html.',
   'decks.pushConnect':

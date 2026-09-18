@@ -22,6 +22,7 @@
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
+  import { appear } from '$lib/components/ui/reveal/index.js';
   import { deckMasterPath } from '@slideless/contract';
   import type {
     MeResponse,
@@ -151,7 +152,7 @@
     </Card.Content>
   </Card.Root>
 {:else if deckError || !deck}
-  <p class="text-sm text-destructive">{t('deck.loadFailed', { error: deckError ?? '' })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('deck.loadFailed', { error: deckError ?? '' })}</p>
 {:else}
   <div class="space-y-6">
     <div>
@@ -232,7 +233,9 @@
                owner/admin only (never a dev collaborator) — see ADR 012. -->
           <p class="text-sm text-muted-foreground">{t('deck.previewOwnerOnly')}</p>
         {:else if preview.error}
-          <p class="text-sm text-destructive">{t('deck.previewFailed', { error: preview.error })}</p>
+          <p class="text-sm text-destructive" in:appear>
+            {t('deck.previewFailed', { error: preview.error })}
+          </p>
         {:else if !preview.url}
           <div
             class="flex h-[320px] w-full items-center justify-center rounded-[8px] border border-dashed border-[var(--hairline)] md:h-[480px]"

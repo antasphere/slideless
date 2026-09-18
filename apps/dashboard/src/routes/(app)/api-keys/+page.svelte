@@ -17,11 +17,13 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { formatDate, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -210,13 +212,14 @@
   addLabel={t('apiKeys.create')}
 />
 
-{#if list.error && keys.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && keys.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={8} />
 {:else if list.error && !keys.length}
-  <p class="text-sm text-destructive">{t('apiKeys.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('apiKeys.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={keys}
@@ -225,7 +228,7 @@
     searchPlaceholder={t('apiKeys.searchPlaceholder')}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -233,8 +236,40 @@
   {/if}
 {/if}
 
+{#snippet keyAside()}
+  <Dialog.Illustration eyebrow={t('apiKeys.asideEyebrow')} caption={t('apiKeys.asideCaption')}>
+    <DialogDrawing kind="key" />
+  </Dialog.Illustration>
+{/snippet}
+
+{#snippet secretAside()}
+  <Dialog.Illustration eyebrow={t('apiKeys.asideEyebrow')} caption={t('apiKeys.secretAsideCaption')}>
+    <DialogDrawing kind="key" />
+  </Dialog.Illustration>
+{/snippet}
+
+<!-- One scope: its switch, its name as the tag the table shows, and under it
+     what a key holding it may do. -->
+{#snippet scopeOption(id: string, scope: Scope, hint: string, checked: boolean, set: (v: boolean) => void)}
+  <div class="scope">
+    <Checkbox
+      {id}
+      {checked}
+      onCheckedChange={(v) => set(v === true)}
+      aria-describedby="{id}-hint"
+      class="mt-0.5"
+    />
+    <div class="min-w-0 space-y-1">
+      <Label for={id} class="block leading-none"><Tag {...scopeTag(scope)} /></Label>
+      <p id="{id}-hint" class="hint">{hint}</p>
+    </div>
+  </div>
+{/snippet}
+
 <FormDialog
   bind:open={showCreateDialog}
+  size="lg"
+  aside={keyAside}
   title={t('apiKeys.createTitle')}
   description={t('apiKeys.createDescription')}
   onClose={() => (showCreateDialog = false)}
@@ -246,25 +281,30 @@
     <Label for="key-name">{t('apiKeys.nameLabel')}</Label>
     <Input id="key-name" bind:value={keyName} placeholder="ci-deploy" required />
   </div>
-  <fieldset class="space-y-3">
-    <legend class="text-sm font-medium">{t('apiKeys.scopesLegend')}</legend>
-    <div class="flex items-center gap-2">
-      <Checkbox id="scope-read" bind:checked={scopeRead} />
-      <Label for="scope-read" class="font-normal">
-        presentations:read <span class="text-muted-foreground">{t('apiKeys.scopeReadDesc')}</span>
-      </Label>
-    </div>
-    <div class="flex items-center gap-2">
-      <Checkbox id="scope-write" bind:checked={scopeWrite} />
-      <Label for="scope-write" class="font-normal">
-        presentations:write <span class="text-muted-foreground">{t('apiKeys.scopeWriteDesc')}</span>
-      </Label>
-    </div>
-    <div class="flex items-center gap-2">
-      <Checkbox id="scope-export" bind:checked={scopeExport} />
-      <Label for="scope-export" class="font-normal">
-        data:export <span class="text-muted-foreground">{t('apiKeys.scopeExportDesc')}</span>
-      </Label>
+  <fieldset class="space-y-2">
+    <legend class="eyebrow pb-2">{t('apiKeys.scopesLegend')}</legend>
+    <div class="scopes">
+      {@render scopeOption(
+        'scope-read',
+        'presentations:read',
+        t('apiKeys.scopeReadDesc'),
+        scopeRead,
+        (v) => (scopeRead = v)
+      )}
+      {@render scopeOption(
+        'scope-write',
+        'presentations:write',
+        t('apiKeys.scopeWriteDesc'),
+        scopeWrite,
+        (v) => (scopeWrite = v)
+      )}
+      {@render scopeOption(
+        'scope-export',
+        'data:export',
+        t('apiKeys.scopeExportDesc'),
+        scopeExport,
+        (v) => (scopeExport = v)
+      )}
     </div>
   </fieldset>
   <div class="space-y-2">
@@ -294,34 +334,27 @@
     if (!isOpen) mintedKey = null;
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content size="lg" aside={secretAside} framed>
     <Dialog.Header>
       <Dialog.Title>{t('apiKeys.secretTitle')}</Dialog.Title>
       <Dialog.Description>{t('apiKeys.secretDescription')}</Dialog.Description>
     </Dialog.Header>
-    {#if mintedKey}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input readonly value={mintedKey} class="font-mono text-xs" aria-label={t('apiKeys.secretAria')} />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('apiKeys.copyAria')}
-            onclick={() => void copyText(mintedKey!, t('apiKeys.copiedToast'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
-        <p
-          class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
-        >
-          <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+    <Dialog.Body class="space-y-3">
+      {#if mintedKey}
+        <CodeBlock
+          field
+          code={mintedKey}
+          ariaLabel={t('apiKeys.secretAria')}
+          copyLabel={t('apiKeys.copyAria')}
+          copiedMessage={t('apiKeys.copiedToast')}
+        />
+        <p class="notice notice--danger">
+          <TriangleAlert class="size-4" />
           <span>{t('apiKeys.secretWarning')}</span>
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showSecretDialog = false;
@@ -330,7 +363,7 @@
       >
         {t('apiKeys.savedIt')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 
@@ -346,3 +379,27 @@
   onConfirm={() => void submitRevoke()}
   loading={revokeLoading}
 />
+
+<style>
+  .hint {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  /* the scopes, as one ruled list: a hairline between two of them */
+  .scopes {
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 38%, transparent);
+  }
+  .scope {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px;
+  }
+  .scope + .scope {
+    border-top: 1px solid color-mix(in oklab, var(--hairline) 75%, transparent);
+  }
+</style>

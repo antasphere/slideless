@@ -1,6 +1,9 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { Reveal, appear } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import { api, errorMessage } from '$lib/api';
   import { t } from '$lib/i18n';
   import type { Presentation } from '@slideless/contract';
@@ -71,18 +74,23 @@
               {agentDocOpen ? t('deck.agentDocHide') : t('deck.agentDocShow')}
             </Button>
           </div>
-          {#if agentDocError}
-            <p class="text-sm text-destructive">
-              {t('deck.agentDocLoadFailed', { error: agentDocError })}
-            </p>
-          {:else if agentDocOpen}
+          <FormError
+            message={agentDocError ? t('deck.agentDocLoadFailed', { error: agentDocError }) : null}
+          />
+          <Reveal open={agentDocOpen && !agentDocError}>
             {#if agentDocLoading}
               <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
             {:else if agentDoc !== null}
-              <pre
-                class="max-h-96 overflow-auto rounded-[10px] border border-[var(--hairline)] bg-[var(--plate-strong)] p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">{agentDoc}</pre>
+              <!-- the briefing is user-authored: CodeBlock renders it as text -->
+              <div in:appear>
+                <CodeBlock
+                  code={agentDoc}
+                  ariaLabel={t('deck.agentDocHeading')}
+                  class="[--code-max-h:24rem]"
+                />
+              </div>
             {/if}
-          {/if}
+          </Reveal>
         </div>
       {/if}
     </Card.Content>

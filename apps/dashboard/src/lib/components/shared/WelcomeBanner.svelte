@@ -2,6 +2,7 @@
   import { X } from '@lucide/svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { reveal } from '$lib/components/ui/reveal/index.js';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
 
@@ -35,26 +36,29 @@
 </script>
 
 {#if !dismissed}
-  <Card.Root class="relative mb-6 border-primary/20 bg-primary/5">
-    <Card.Header class="pr-12">
-      <Card.Title class="text-lg">{t('welcome.title', { name: instanceName })}</Card.Title>
-      <Card.Description>{t('welcome.body')}</Card.Description>
-    </Card.Header>
-    <Card.Content class="flex items-center gap-3 pt-0">
-      <Button variant="outline" size="sm" href={DOCS_URL} target="_blank" rel="noreferrer">
-        {t('welcome.docs')}
-      </Button>
-      <Button variant="ghost" size="sm" onclick={() => void dismiss()}>
-        {t('welcome.dismiss')}
-      </Button>
-    </Card.Content>
-    <button
-      type="button"
-      class="absolute right-4 top-4 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-      aria-label={t('welcome.dismiss')}
-      onclick={() => void dismiss()}
-    >
-      <X class="h-4 w-4" />
-    </button>
-  </Card.Root>
+  <!-- the wrapper folds shut on dismissal, so the page under it slides up -->
+  <div class="mb-6" transition:reveal>
+    <Card.Root class="relative border-primary/20 bg-primary/5">
+      <Card.Header class="pr-12">
+        <Card.Title class="text-lg">{t('welcome.title', { name: instanceName })}</Card.Title>
+        <Card.Description>{t('welcome.body')}</Card.Description>
+      </Card.Header>
+      <Card.Content class="flex items-center gap-3 pt-0">
+        <Button variant="outline" size="sm" href={DOCS_URL} target="_blank" rel="noreferrer">
+          {t('welcome.docs')}
+        </Button>
+        <Button variant="ghost" size="sm" onclick={() => void dismiss()}>
+          {t('welcome.dismiss')}
+        </Button>
+      </Card.Content>
+      <button
+        type="button"
+        class="absolute right-4 top-4 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+        aria-label={t('welcome.dismiss')}
+        onclick={() => void dismiss()}
+      >
+        <X class="h-4 w-4" />
+      </button>
+    </Card.Root>
+  </div>
 {/if}

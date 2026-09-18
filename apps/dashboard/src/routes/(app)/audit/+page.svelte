@@ -9,6 +9,9 @@
   import { api } from '$lib/api';
   import { formatDate, formatDateTime, formatTimeAgo } from '$lib/format';
   import * as Sheet from '$lib/components/ui/sheet/index.js';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Mail from '@lucide/svelte/icons/mail';
@@ -70,7 +73,7 @@
 {#if list.loading}
   <TableSkeleton columns={6} showSearch={false} />
 {:else if list.error && entries.length === 0}
-  <p class="text-sm text-destructive">{list.error}</p>
+  <p class="text-sm text-destructive" in:appear>{list.error}</p>
 {:else if phone.current}
   {#each days as group (group.day)}
     <h2 class="eyebrow mb-2 mt-6 first:mt-0">{group.day}</h2>
@@ -163,12 +166,10 @@
 {/if}
 
 {#if !list.loading && entries.length}
-  {#if list.error}
-    <p class="mt-3 text-sm text-destructive">{list.error}</p>
-  {/if}
+  <FormError message={list.error} class="mt-3" />
 
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -205,9 +206,14 @@
         {/if}
       </dl>
       {#if opened.metadata}
-        <!-- SECURITY: metadata may carry user-authored strings; text interpolation only. -->
-        <p class="eyebrow mb-2 mt-5">{t('audit.colDetails')}</p>
-        <pre class="meta">{pretty(opened.metadata)}</pre>
+        <!-- SECURITY: metadata may carry user-authored strings; text interpolation only
+             (CodeBlock renders its code as text, never {@html}). -->
+        <CodeBlock
+          code={pretty(opened.metadata)}
+          label={t('audit.colDetails')}
+          ariaLabel={t('audit.colDetails')}
+          class="mt-5 [--code-max-h:40dvh]"
+        />
       {/if}
     {/if}
   </Sheet.Content>
@@ -252,17 +258,5 @@
   }
   .facts dt {
     color: var(--muted);
-  }
-  .meta {
-    max-height: 40dvh;
-    overflow: auto;
-    padding: 12px;
-    border: 1px solid var(--hairline);
-    border-radius: var(--r);
-    background: var(--ground-2);
-    font-size: 12px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 </style>

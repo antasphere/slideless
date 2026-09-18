@@ -55,7 +55,7 @@
 
 <div
   bind:this={box}
-  class={['relative shrink-0 overflow-hidden rounded-md border bg-muted/40', className]
+  class={['relative shrink-0 overflow-hidden rounded-[10px] border bg-[var(--ground-2)]', className]
     .filter(Boolean)
     .join(' ')}
   style="width: {width}px; height: {height}px"

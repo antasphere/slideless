@@ -197,6 +197,38 @@
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-sm);
   }
+  /* A quiet note set into a page or a dialog: a wash of the second ground
+     under one hairline, the code block's 10px corners. `--warn` and
+     `--danger` take the status washes; an icon first, the words after. */
+  .notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 62%, transparent);
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+  .notice > svg {
+    flex: none;
+    margin-top: 2px;
+    color: currentColor;
+  }
+  .notice--warn {
+    border-color: color-mix(in oklab, var(--warn) 30%, transparent);
+    background: var(--warn-soft);
+    color: color-mix(in oklab, var(--warn) 55%, var(--ink));
+  }
+  .notice--danger {
+    border-color: color-mix(in oklab, var(--danger) 30%, transparent);
+    background: var(--danger-soft);
+    color: color-mix(in oklab, var(--danger) 45%, var(--ink));
+  }
   .tile {
     transition:
       transform var(--motion-duration) var(--motion-ease),

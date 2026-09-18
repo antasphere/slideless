@@ -9,6 +9,8 @@
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
+  import FormError from '$lib/components/shared/FormError.svelte';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, PlatformApiError, errorMessage } from '$lib/api';
@@ -142,13 +144,14 @@
 
 <input type="file" class="hidden" bind:this={fileInput} onchange={() => void onFileChosen()} />
 
-{#if list.error && files.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && files.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={5} />
 {:else if list.error && !files.length}
-  <p class="text-sm text-destructive">{t('files.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('files.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={files}
@@ -157,7 +160,7 @@
     searchPlaceholder={t('files.searchPlaceholder')}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>

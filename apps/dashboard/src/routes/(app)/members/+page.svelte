@@ -15,11 +15,12 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import Copy from '@lucide/svelte/icons/copy';
+  import { CodeBlock } from '$lib/components/ui/code-block/index.js';
+  import { appear, reveal } from '$lib/components/ui/reveal/index.js';
+  import FormError from '$lib/components/shared/FormError.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { copyText } from '$lib/clipboard';
   import { formatTimeAgo, formatDate, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -326,8 +327,8 @@
 />
 
 {#if hubManaged}
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
-    <p class="text-sm text-muted-foreground">{t('members.hubManagedNotice')}</p>
+  <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>
+    <p class="min-w-0 text-sm">{t('members.hubManagedNotice')}</p>
     {#if me.hubManageUrl}
       <Button variant="outline" size="sm" href={me.hubManageUrl} target="_blank" rel="noopener noreferrer">
         {t('members.hubManagedCta')}
@@ -337,13 +338,14 @@
   </div>
 {/if}
 
-{#if list.error && members.length}
-  <p class="text-sm text-destructive">{t('common.refreshFailedCached', { error: list.error })}</p>
-{/if}
+<FormError
+  message={list.error && members.length ? t('common.refreshFailedCached', { error: list.error }) : null}
+  class="pb-3"
+/>
 {#if list.loading}
   <TableSkeleton columns={6} />
 {:else if list.error && !members.length}
-  <p class="text-sm text-destructive">{t('members.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('members.loadFailed', { error: list.error })}</p>
 {:else}
   <DataTable
     data={members}
@@ -352,7 +354,7 @@
     searchPlaceholder={t('members.searchPlaceholder')}
   />
   {#if list.nextCursor}
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-4" transition:reveal>
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -405,38 +407,28 @@
     }
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content framed>
     <Dialog.Header>
       <Dialog.Title>{t('members.resetDialogTitle')}</Dialog.Title>
       <Dialog.Description>
         {t('members.resetDialogDescription', { email: resetTarget?.email ?? '' })}
       </Dialog.Description>
     </Dialog.Header>
-    {#if resetLink}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input
-            readonly
-            value={resetLink.resetUrl}
-            class="font-mono text-xs"
-            aria-label={t('members.resetLinkAria')}
-          />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('members.copyResetAria')}
-            onclick={() => void copyText(resetLink!.resetUrl, t('members.resetCopied'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog.Body class="space-y-3">
+      {#if resetLink}
+        <CodeBlock
+          field
+          code={resetLink.resetUrl}
+          ariaLabel={t('members.resetLinkAria')}
+          copyLabel={t('members.copyResetAria')}
+          copiedMessage={t('members.resetCopied')}
+        />
         <p class="text-xs text-muted-foreground">
           {t('common.expires', { date: formatDateTime(resetLink.expiresAt) })}
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showResetDialog = false;
@@ -446,7 +438,7 @@
       >
         {t('common.done')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 
@@ -486,7 +478,7 @@
     }
   }}
 >
-  <Dialog.Content class="sm:max-w-lg">
+  <Dialog.Content framed>
     <Dialog.Header>
       <Dialog.Title>{t('members.emailLinkTitle')}</Dialog.Title>
       <Dialog.Description>
@@ -495,31 +487,21 @@
         {t('members.emailLinkShareOnly', { email: emailLinkTargetEmail })}
       </Dialog.Description>
     </Dialog.Header>
-    {#if emailLink}
-      <div class="space-y-3">
-        <div class="flex items-center gap-2">
-          <Input
-            readonly
-            value={emailLink.verifyUrl}
-            class="font-mono text-xs"
-            aria-label={t('members.emailLinkAria')}
-          />
-          <Button
-            size="icon"
-            variant="outline"
-            class="shrink-0"
-            aria-label={t('members.copyEmailLinkAria')}
-            onclick={() => void copyText(emailLink!.verifyUrl, t('members.emailLinkCopied'))}
-          >
-            <Copy class="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog.Body class="space-y-3">
+      {#if emailLink}
+        <CodeBlock
+          field
+          code={emailLink.verifyUrl}
+          ariaLabel={t('members.emailLinkAria')}
+          copyLabel={t('members.copyEmailLinkAria')}
+          copiedMessage={t('members.emailLinkCopied')}
+        />
         <p class="text-xs text-muted-foreground">
           {t('common.expires', { date: formatDateTime(emailLink.expiresAt) })}
         </p>
-      </div>
-    {/if}
-    <div class="flex justify-end pt-2">
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
       <Button
         onclick={() => {
           showEmailLinkDialog = false;
@@ -529,7 +511,7 @@
       >
         {t('common.done')}
       </Button>
-    </div>
+    </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 

@@ -10,6 +10,7 @@
   import * as Select from '$lib/components/ui/select/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import { Reveal, appear, reveal } from '$lib/components/ui/reveal/index.js';
   import CapabilityCell from './CapabilityCell.svelte';
   import ShareLinkNameCell from './ShareLinkNameCell.svelte';
   import ShareLinkPanel, { type LinkAction } from './ShareLinkPanel.svelte';
@@ -357,7 +358,7 @@
 {#if list.loading}
   <TableSkeleton columns={10} rows={2} />
 {:else if list.error && !tokens.length}
-  <p class="text-sm text-destructive">{t('tokens.loadFailed', { error: list.error })}</p>
+  <p class="text-sm text-destructive" in:appear>{t('tokens.loadFailed', { error: list.error })}</p>
 {:else if !tokens.length}
   <p class="text-sm text-muted-foreground">{t('tokens.empty')}</p>
 {:else}
@@ -402,7 +403,7 @@
     </DataTable>
   </div>
   {#if list.nextCursor}
-    <div class="flex justify-center py-2">
+    <div class="flex justify-center py-2" transition:reveal>
       <Button variant="outline" size="sm" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
         {list.loadingMore ? t('common.loading') : t('common.loadMore')}
       </Button>
@@ -447,7 +448,7 @@
       </Select.Content>
     </Select.Root>
   </div>
-  {#if editVersionMode === 'pinned'}
+  <Reveal open={editVersionMode === 'pinned'}>
     <div class="space-y-2">
       <Label for="edit-pinned-version">{t('tokens.colVersion')}</Label>
       <Select.Root
@@ -467,7 +468,7 @@
         </Select.Content>
       </Select.Root>
     </div>
-  {/if}
+  </Reveal>
 </FormDialog>
 
 <ConfirmDialog
