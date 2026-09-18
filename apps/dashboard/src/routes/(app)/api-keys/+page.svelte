@@ -137,7 +137,7 @@
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colKeyId') }),
       cell: ({ row }) => renderComponent(Tag, { label: row.original.keyId, mono: true, icon: KeyRoundIcon }),
-      meta: { title: t('apiKeys.colKeyId'), width: '150px' }
+      meta: { title: t('apiKeys.colKeyId'), width: '130px' }
     },
     {
       accessorKey: 'scopes',
@@ -145,14 +145,14 @@
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colScopes') }),
       cell: ({ row }) =>
         renderComponent(TagList, { tags: (row.getValue('scopes') as string[]).map(scopeTag) }),
-      meta: { title: t('apiKeys.colScopes'), width: '260px' }
+      meta: { title: t('apiKeys.colScopes'), width: '200px' }
     },
     {
       accessorKey: 'createdAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colCreated') }),
       cell: ({ row }) => formatDate(row.getValue('createdAt') as string),
-      meta: { title: t('apiKeys.colCreated'), width: '120px' }
+      meta: { title: t('apiKeys.colCreated'), width: '112px' }
     },
     {
       accessorKey: 'expiresAt',
@@ -162,14 +162,14 @@
         const expiresAt = row.getValue('expiresAt') as string | null;
         return expiresAt ? formatDate(expiresAt) : '—';
       },
-      meta: { title: t('apiKeys.colExpires'), width: '120px' }
+      meta: { title: t('apiKeys.colExpires'), width: '100px' }
     },
     {
       accessorKey: 'lastUsedAt',
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('apiKeys.colLastUsed') }),
       cell: ({ row }) => formatTimeAgo(row.getValue('lastUsedAt') as string | null),
-      meta: { title: t('apiKeys.colLastUsed'), width: '130px' }
+      meta: { title: t('apiKeys.colLastUsed'), width: '108px' }
     },
     {
       accessorKey: 'revokedAt',
@@ -184,7 +184,7 @@
               ? stateTag(t('apiKeys.statusRevoked'), 'bad')
               : stateTag(t('apiKeys.statusActive'), 'ok')
         ),
-      meta: { title: t('apiKeys.colStatus'), width: '110px' }
+      meta: { title: t('apiKeys.colStatus'), width: '116px' }
     },
     {
       id: 'actions',
