@@ -3,6 +3,17 @@ name: Release
 on:
   push:
     branches: [prod]
+    # A promotion that touches nothing but the public docs and the self-hosting
+    # distribution files is not a product release: no image to build, no fleet
+    # to roll. Those paths have their own publishers (docs-notify.yml,
+    # hostinger-pages.yml). Any product file in the same push still releases —
+    # paths-ignore only skips when EVERY changed file matches.
+    paths-ignore:
+      - 'docs/**'
+      - 'deploy/**'
+      - '.github/workflows/hostinger-pages.yml'
+      - '.github/workflows/docs-notify.yml'
+      - '.github/workflows/docs-notify-release.yml'
     tags: ['v*']
 
 env:

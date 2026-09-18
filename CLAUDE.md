@@ -217,6 +217,13 @@ probe's last fact is that the live instance serves the version the push carried.
 rollback is `gh workflow run deploy.yml -R antasphere/infra -f sha=<older sha> -f version=<its version>`.
 The setup and the break-glass live in the infra repo (`docs/slideless-deploy.html`, README).
 
+**A docs-only promotion is not a release.** When everything `dev` carries beyond `prod` sits
+under `docs/`, `deploy/` or the docs/pages publisher workflows, push `prod` WITHOUT `pnpm
+release`: `release.yml` ignores those paths, so no image is built and nothing rolls on GCP,
+while `docs-notify.yml` (the docs site) and `hostinger-pages.yml` (the self-hosting template
+on `deploy.slideless.antasphere.com`) still publish. One product file in the same push makes
+it a release again, and then the version must have moved.
+
 ## Commands
 
 ```bash
