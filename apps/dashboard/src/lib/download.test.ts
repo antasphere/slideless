@@ -136,6 +136,28 @@ describe('safeFilename', () => {
     expect(safeFilename('..')).toBe('');
     expect(safeFilename('   ')).toBe('');
   });
+
+  it('strips the Unicode bidirectional controls, so a name cannot DISPLAY another extension', () => {
+    // RLO + "txt.exe" displays as "exe.txt": a respondent's or a deck author's
+    // name must not be able to dress an executable as a text file.
+    const rlo = String.fromCharCode(0x202e);
+    expect(safeFilename(`report${rlo}txt.exe`)).toBe('reporttxt.exe');
+    expect(filenameFromContentDisposition("attachment; filename*=UTF-8''%E2%80%AEtxt.exe")).toBe('txt.exe');
+    // Every control of the family: embeddings and overrides (U+202A to U+202E),
+    // isolates (U+2066 to U+2069), the marks (U+200E, U+200F, U+061C).
+    const bidi = [
+      0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200e, 0x200f, 0x061c
+    ];
+    for (const code of bidi) {
+      const name = safeFilename(`a${String.fromCharCode(code)}b.txt`);
+      expect(name, `U+${code.toString(16).toUpperCase()} survived`).toBe('ab.txt');
+    }
+    // A name made of nothing else is no name at all.
+    expect(safeFilename(bidi.map((c) => String.fromCharCode(c)).join(''))).toBe('');
+    // Ordinary right-to-left TEXT is a legitimate name and is untouched.
+    const arabic = String.fromCharCode(0x062a, 0x0642, 0x0631, 0x064a, 0x0631);
+    expect(safeFilename(`${arabic}.pdf`)).toBe(`${arabic}.pdf`);
+  });
 });
 
 describe('saveBlob', () => {

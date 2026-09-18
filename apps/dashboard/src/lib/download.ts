@@ -58,13 +58,18 @@ export function filenameFromContentDisposition(header: string | null | undefined
 
 /**
  * A name fit for the `download` attribute: one path segment, no control
- * characters. Names reach here from respondents and deck authors, so a
+ * characters, no bidirectional controls. Names reach here from respondents and deck authors, so a
  * separator becomes `_` rather than a folder, and a dot-only name is refused.
  */
 export function safeFilename(name: string): string {
   const cleaned = name
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
+    // The Unicode bidirectional controls: embeddings and overrides (U+202A to
+    // U+202E), isolates (U+2066 to U+2069), the marks (U+200E, U+200F,
+    // U+061C). Invisible, and an override makes `<RLO>txt.exe` DISPLAY as
+    // `exe.txt` in a save dialog. Right-to-left text itself is untouched.
+    .replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g, '')
     .replace(/[/\\]/g, '_')
     .trim();
   return /^\.*$/.test(cleaned) ? '' : cleaned;
