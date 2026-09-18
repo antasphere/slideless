@@ -31,7 +31,7 @@
   class="relative shrink-0 overflow-hidden rounded-md border border-hairline shadow-sm"
   style="width: {size}px; height: {size}px"
 >
-  <FieldCanvas palette="studio-field" shape={RECIPE.shape} {seed} linework={false} />
+  <FieldCanvas palette="dawn" shape={RECIPE.shape} {seed} linework={false} />
   <span
     class="absolute inset-0 flex items-center justify-center font-display text-sm font-normal text-ink"
     style="text-shadow: 0 1px 2px rgb(255 255 255 / 0.4)"

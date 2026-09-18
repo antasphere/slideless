@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
+  import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
@@ -232,11 +234,31 @@
       passwordLoading = false;
     }
   }
+
+  // Settings is one section with two tabs (PRDCT-2441): the instance, and the
+  // person's own account, so nobody has to find it under their name.
+  const settingsTabs = [
+    { href: '/settings', label: t('settings.tabInstance') },
+    { href: '/account', label: t('settings.tabAccount') }
+  ];
 </script>
 
 <PageHeader title={t('account.title')} description={t('account.description')} />
+<SectionTabs label={t('nav.settings')} tabs={settingsTabs} />
 
 <div class="grid gap-6 lg:grid-cols-2">
+  <!-- The language is the person's, not the instance's: it is kept in this
+       browser (ADR 007), and this is where a person looks for it (PRDCT-2441). -->
+  <Card.Root class="lg:col-span-2">
+    <Card.Content class="flex flex-wrap items-center justify-between gap-4">
+      <div class="min-w-0">
+        <p class="font-display text-base">{t('account.languageTitle')}</p>
+        <p class="text-sm text-muted-foreground">{t('account.languageDescription')}</p>
+      </div>
+      <LanguageSwitcher />
+    </Card.Content>
+  </Card.Root>
+
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-base">{t('account.profileTitle')}</Card.Title>

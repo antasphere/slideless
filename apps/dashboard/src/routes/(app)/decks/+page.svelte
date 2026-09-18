@@ -7,6 +7,11 @@
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import PushInstructions from '$lib/components/decks/PushInstructions.svelte';
+  import DeckCard from '$lib/components/decks/DeckCard.svelte';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import Rows3 from '@lucide/svelte/icons/rows-3';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -33,6 +38,33 @@
   });
 
   const decks = $derived(list.items);
+
+  // Cards are how a deck is shown (PRDCT-2437); the table stays as a desk
+  // option for whoever sorts by column, and a phone never gets it.
+  const VIEW_KEY = 'slideless.decks.view';
+  const phone = new IsMobile();
+  let chosen = $state<'cards' | 'table'>('cards');
+  $effect(() => {
+    try {
+      if (localStorage.getItem(VIEW_KEY) === 'table') chosen = 'table';
+    } catch {
+      /* privacy modes: cards */
+    }
+  });
+  function choose(view: 'cards' | 'table') {
+    chosen = view;
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      /* not persisted, still applied */
+    }
+  }
+  const view = $derived(phone.current ? 'cards' : chosen);
+
+  let query = $state('');
+  const shown = $derived(
+    query.trim() ? decks.filter((d) => d.title.toLowerCase().includes(query.trim().toLowerCase())) : decks
+  );
 
   // "New deck" is instructions, not an upload form — decks arrive via push.
   let showPushDialog = $state(false);
@@ -105,13 +137,51 @@
     {/if}
   </Card.Root>
 {:else}
-  <DataTable
-    data={decks}
-    {columns}
-    searchColumns={['title']}
-    searchPlaceholder={t('decks.searchPlaceholder')}
-    onRowClick={(deck) => void goto(`/decks/${deck.id}`)}
-  />
+  <div class="mb-5 flex items-center gap-3" class:hidden={view === 'table'}>
+    <Input
+      type="search"
+      bind:value={query}
+      placeholder={t('decks.searchPlaceholder')}
+      class="h-10 max-w-sm flex-1 md:h-9"
+    />
+  </div>
+  <div class="view-toggle" role="group" aria-label={t('decks.viewAs')}>
+    <button
+      type="button"
+      class:on={view === 'cards'}
+      aria-pressed={view === 'cards'}
+      onclick={() => choose('cards')}
+    >
+      <LayoutGrid class="size-4" /><span class="sr-only">{t('decks.viewCards')}</span>
+    </button>
+    <button
+      type="button"
+      class:on={view === 'table'}
+      aria-pressed={view === 'table'}
+      onclick={() => choose('table')}
+    >
+      <Rows3 class="size-4" /><span class="sr-only">{t('decks.viewTable')}</span>
+    </button>
+  </div>
+  {#if view === 'cards'}
+    {#if shown.length}
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {#each shown as deck (deck.id)}
+          <DeckCard {deck} />
+        {/each}
+      </div>
+    {:else}
+      <p class="py-10 text-center text-sm text-muted-foreground">{t('decks.noMatch', { query })}</p>
+    {/if}
+  {:else}
+    <DataTable
+      data={decks}
+      {columns}
+      searchColumns={['title']}
+      searchPlaceholder={t('decks.searchPlaceholder')}
+      onRowClick={(deck) => void goto(`/decks/${deck.id}`)}
+    />
+  {/if}
   {#if list.nextCursor}
     <div class="flex justify-center py-4">
       <Button variant="outline" onclick={() => void list.loadMore()} disabled={list.loadingMore}>
@@ -132,3 +202,37 @@
     </div>
   </Dialog.Content>
 </Dialog.Root>
+
+<style>
+  /* the cards-or-table switch is a desk control: it floats at the right of
+     the search row, and a phone never sees it */
+  .view-toggle {
+    display: none;
+  }
+  @media (min-width: 768px) {
+    .view-toggle {
+      display: inline-flex;
+      float: right;
+      margin-top: -56px;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-btn);
+      background: var(--ground-2);
+    }
+  }
+  .view-toggle button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 28px;
+    border-radius: calc(var(--r-btn) - 3px);
+    color: var(--muted);
+  }
+  .view-toggle button.on {
+    background: var(--ground);
+    color: var(--ink);
+    box-shadow: var(--shadow-sm);
+  }
+</style>

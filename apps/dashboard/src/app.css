@@ -62,9 +62,9 @@
     font-family: var(--second);
     font-weight: 300;
     font-size: 11px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--ink-soft);
+    color: var(--muted);
   }
   .section-head {
     display: flex;
@@ -146,82 +146,167 @@
 }
 
 /* ---------------------------------------------------------------------
+   The signed-in shell on the page field (PRDCT-2439, PRDCT-2436). The field
+   is the paper; everything a person reads sits on a translucent plate over
+   it, so the field's weather shows at the edges and between the cards.
+   --------------------------------------------------------------------- */
+@layer components {
+  /* the content panel beside the sidebar (the whole screen on a phone) */
+  .app-plate {
+    background: var(--plate) !important;
+    backdrop-filter: blur(26px) saturate(1.15);
+    -webkit-backdrop-filter: blur(26px) saturate(1.15);
+    border-color: var(--plate-edge) !important;
+  }
+  /* the sidebar sits straight on the field */
+  [data-sidebar='sidebar']:not([data-mobile='true']) {
+    background: transparent;
+  }
+  .app-main {
+    padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px);
+  }
+  @media (min-width: 768px) {
+    .app-main {
+      padding-bottom: 48px;
+    }
+  }
+
+  /* A card: paper a shade more opaque than the plate under it, one hairline,
+     the smallest shadow. `tile` is the pressable form: it lifts under the
+     pointer and acknowledges the hand. */
+  .sheet {
+    background: var(--plate-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  .tile {
+    transition:
+      transform var(--motion-duration) var(--motion-ease),
+      box-shadow var(--motion-duration) var(--motion-ease),
+      border-color var(--motion-duration) var(--motion-ease);
+  }
+  @media (hover: hover) {
+    .tile:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: color-mix(in oklab, var(--accent) 38%, var(--hairline));
+    }
+  }
+  .tile:active {
+    transform: scale(0.985);
+  }
+  .tile:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+  }
+  /* the drawing inside a card: the nested-radius rule of the brand console */
+  .plate-window {
+    position: relative;
+    overflow: hidden;
+    border-radius: calc(var(--r-lg) - 4px);
+  }
+  /* text set straight on a field keeps its contrast with a paper halo, the
+     way the presentations do; the ink is the field's, not the theme's */
+  .on-field {
+    color: #1c1915;
+    text-shadow:
+      0 0 22px rgb(247 246 244 / 0.95),
+      0 0 8px rgb(247 246 244 / 0.9);
+  }
+  :root.dark .on-field {
+    color: #f7f4ec;
+    text-shadow:
+      0 0 22px rgb(20 16 12 / 0.9),
+      0 0 8px rgb(20 16 12 / 0.85);
+  }
+  /* a figure is always set in the display serif, as in the presentations */
+  .figure {
+    font-family: var(--display);
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+}
+
+/* ---------------------------------------------------------------------
    The template's shadcn variables, mapped onto the brand (the Exos trick).
-   HSL triplets of the tokens above (tailwind composes them as
-   hsl(var(--x) / alpha)): ground #F7F6F4 · ground-2 #F0EFEC · ground-3
-   #E8E7E3 · hairline #DCDBD6 · ink #1A1918 · ink-soft #333230 · muted
-   #6C6B66 · accent #47799A · accent-ink #F7F4EC · danger #B4552F. The two
+   HSL triplets of the Slideless recipe in tokens.css (tailwind composes
+   them as hsl(var(--x) / alpha)): ground #F7F4EC · ground-2 #F1EDE1 ·
+   ground-3 #EAE5D6 · hairline #E0DACA · ink #1C1915 · ink-soft #35302A ·
+   muted #6E6759 · accent #C05E45 · accent-ink #F7F4EC · danger #B4552F. The two
    colliding names are renamed --tpl-accent/--tpl-muted (mirrored in
    tailwind.config.ts) so the brand tokens win. Change a token, change its
    triplet — including the .dark set below (viewer-kit dark constants).
    --------------------------------------------------------------------- */
 @layer base {
   :root {
-    --background: 40 16% 96%;
-    --foreground: 30 4% 10%;
-    --tpl-muted: 48 10% 90%;
-    --muted-foreground: 50 3% 41%;
-    --popover: 40 16% 96%;
-    --popover-foreground: 30 4% 10%;
-    --card: 40 16% 96%;
-    --card-foreground: 30 4% 10%;
-    --border: 50 8% 85%;
-    --input: 50 8% 85%;
-    --primary: 204 37% 44%;
+    --background: 44 41% 95%;
+    --foreground: 34 14% 10%;
+    --tpl-muted: 45 32% 88%;
+    --muted-foreground: 40 11% 39%;
+    --popover: 44 41% 95%;
+    --popover-foreground: 34 14% 10%;
+    --card: 44 41% 95%;
+    --card-foreground: 34 14% 10%;
+    --border: 44 26% 84%;
+    --input: 44 26% 84%;
+    --primary: 12 49% 51%;
     --primary-foreground: 44 41% 95%;
-    --secondary: 48 10% 90%;
-    --secondary-foreground: 40 3% 19%;
-    --tpl-accent: 48 10% 90%;
-    --accent-foreground: 30 4% 10%;
-    --button-hover: 48 10% 90%;
-    --button-hover-foreground: 30 4% 10%;
+    --secondary: 45 32% 88%;
+    --secondary-foreground: 33 12% 19%;
+    --tpl-accent: 45 32% 88%;
+    --accent-foreground: 34 14% 10%;
+    --button-hover: 45 32% 88%;
+    --button-hover-foreground: 34 14% 10%;
     --destructive: 17 59% 45%;
     --destructive-foreground: 44 41% 95%;
-    --ring: 204 37% 44%;
+    --ring: 12 49% 51%;
     --radius: 7px;
-    --sidebar-background: 45 12% 93%;
-    --sidebar-foreground: 40 3% 19%;
-    --sidebar-primary: 30 4% 10%;
-    --sidebar-primary-foreground: 40 16% 96%;
-    --sidebar-accent: 48 10% 90%;
-    --sidebar-accent-foreground: 30 4% 10%;
-    --sidebar-border: 50 8% 85%;
-    --sidebar-ring: 204 37% 44%;
+    --sidebar-background: 45 36% 91%;
+    --sidebar-foreground: 33 12% 19%;
+    --sidebar-primary: 34 14% 10%;
+    --sidebar-primary-foreground: 44 41% 95%;
+    --sidebar-accent: 45 32% 88%;
+    --sidebar-accent-foreground: 34 14% 10%;
+    --sidebar-border: 44 26% 84%;
+    --sidebar-ring: 12 49% 51%;
   }
 
-  /* dark — triplets of the viewer-kit dark constants: ground #1C1B19 ·
-     ground-2 #141311 · ground-3 #272623 · hairline #33322E · ink #F0EEE9 ·
-     ink-soft #D8D5CE · muted #9C9991 · danger #E07A56; slots unchanged. */
+  /* dark — triplets of the recipe's dark set: ground #1F1B17 · ground-2
+     #171310 · ground-3 #28231E · hairline #3E362E · ink #F3EEE6 · ink-soft
+     #DCD4C8 · muted #ACA196 · accent #DB7D5F · accent-ink #2A1D15. */
   .dark {
-    --background: 40 6% 10%;
-    --foreground: 43 19% 93%;
-    --tpl-muted: 45 5% 15%;
-    --muted-foreground: 44 5% 59%;
-    --popover: 45 5% 15%;
-    --popover-foreground: 43 19% 93%;
-    --card: 40 6% 10%;
-    --card-foreground: 43 19% 93%;
-    --border: 48 5% 19%;
-    --input: 48 5% 19%;
-    --primary: 204 37% 44%;
-    --primary-foreground: 44 41% 95%;
-    --secondary: 45 5% 15%;
-    --secondary-foreground: 42 11% 83%;
-    --tpl-accent: 45 5% 15%;
-    --accent-foreground: 43 19% 93%;
-    --button-hover: 45 5% 15%;
-    --button-hover-foreground: 43 19% 93%;
+    --background: 30 15% 11%;
+    --foreground: 37 35% 93%;
+    --tpl-muted: 30 14% 14%;
+    --muted-foreground: 30 12% 63%;
+    --popover: 30 14% 14%;
+    --popover-foreground: 37 35% 93%;
+    --card: 30 15% 11%;
+    --card-foreground: 37 35% 93%;
+    --border: 30 15% 21%;
+    --input: 30 15% 21%;
+    --primary: 15 63% 62%;
+    --primary-foreground: 23 33% 12%;
+    --secondary: 30 14% 14%;
+    --secondary-foreground: 36 22% 82%;
+    --tpl-accent: 30 14% 14%;
+    --accent-foreground: 37 35% 93%;
+    --button-hover: 30 14% 14%;
+    --button-hover-foreground: 37 35% 93%;
     --destructive: 16 69% 61%;
-    --destructive-foreground: 40 8% 7%;
-    --ring: 204 37% 44%;
-    --sidebar-background: 40 8% 7%;
-    --sidebar-foreground: 42 11% 83%;
-    --sidebar-primary: 43 19% 93%;
-    --sidebar-primary-foreground: 40 6% 10%;
-    --sidebar-accent: 45 5% 15%;
-    --sidebar-accent-foreground: 43 19% 93%;
-    --sidebar-border: 48 5% 19%;
-    --sidebar-ring: 204 37% 44%;
+    --destructive-foreground: 26 18% 8%;
+    --ring: 15 63% 62%;
+    --sidebar-background: 26 18% 8%;
+    --sidebar-foreground: 36 22% 82%;
+    --sidebar-primary: 37 35% 93%;
+    --sidebar-primary-foreground: 30 15% 11%;
+    --sidebar-accent: 30 14% 14%;
+    --sidebar-accent-foreground: 37 35% 93%;
+    --sidebar-border: 30 15% 21%;
+    --sidebar-ring: 15 63% 62%;
   }
 }
 

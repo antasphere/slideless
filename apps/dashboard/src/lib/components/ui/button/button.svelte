@@ -10,7 +10,11 @@
         // Filled controls carry the brand material: grain + falling light
         // over the accent; hover moves only the fill (brightness).
         default: 'material bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-[0.94]',
-        destructive: 'material bg-[var(--danger)] text-[var(--accent-ink)] hover:brightness-[0.94]',
+        // The accent is a clay (dawn) and danger IS the ember: two filled
+        // clays side by side read as one button. Danger is therefore a wash
+        // at rest and only fills under the hand.
+        destructive:
+          'bg-[var(--danger-soft)] text-[var(--danger)] border border-[color-mix(in_oklab,var(--danger)_35%,transparent)] hover:bg-[var(--danger)] hover:text-[var(--accent-ink)]',
         outline:
           'bg-transparent border border-border hover:bg-[var(--ground-3)] hover:text-foreground shadow-sm',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-[var(--ground-3)]',

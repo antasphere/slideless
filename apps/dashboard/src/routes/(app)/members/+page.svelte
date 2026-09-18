@@ -3,6 +3,7 @@
   import { type ColumnDef } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
   import DataTable from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
@@ -309,9 +310,20 @@
         ]
       : [])
   ]);
+
+  // People is one section with two tabs (PRDCT-2436). Invitations are local
+  // membership management: absent for a plain member, and on a hub-origin
+  // workspace, whose membership is managed at the hub (P7).
+  const peopleTabs = $derived([
+    { href: '/members', label: t('members.title') },
+    ...((data.me.role === 'owner' || data.me.role === 'admin') && !data.me.workspace.hubOrigin
+      ? [{ href: '/invitations', label: t('invitations.title') }]
+      : [])
+  ]);
 </script>
 
 <PageHeader title={t('members.title')} description={t('members.description')} />
+<SectionTabs label={t('nav.people')} tabs={peopleTabs} />
 
 {#if hubManaged}
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">

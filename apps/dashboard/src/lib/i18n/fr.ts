@@ -76,6 +76,43 @@ export const fr: Record<MessageKey, string> = {
   'nav.myAccount': 'Mon compte',
   'nav.signOut': 'Se déconnecter',
   'nav.toggleSidebar': 'Afficher ou masquer la barre latérale',
+  // the shell, desk and phone (PRDCT-2436)
+  // decks as cards, the overview (PRDCT-2437, PRDCT-2439)
+  'decks.oneOpen': '1 ouverture',
+  'decks.opens': '{count} ouvertures',
+  'decks.viewAs': 'Afficher les présentations en',
+  'decks.viewCards': 'Cartes',
+  'decks.viewTable': 'Tableau',
+  'decks.noMatch': 'Aucune présentation ne correspond à « {query} ».',
+  'overview.greetingMorning': 'Bonjour, {name}',
+  'overview.greetingAfternoon': 'Bon après-midi, {name}',
+  'overview.greetingEvening': 'Bonsoir, {name}',
+  'overview.lede': '{decks} présentations dans {workspace}, ouvertes {opens} fois.',
+  'overview.ledeEmpty': 'Rien de partagé pour l’instant. Votre première présentation est à un push d’ici.',
+  'overview.opensCard': 'Ouvertures',
+  'overview.opensHint': 'Chaque fois qu’un lien partagé a été ouvert',
+  'overview.recentDecks': 'Mises à jour récemment',
+  'overview.allDecks': 'Toutes les présentations',
+  'overview.mostOpened': 'Les plus ouvertes',
+  'overview.aboutInstance': 'Cette instance',
+  'audit.colIp': 'Adresse',
+  'audit.colDetails': 'Détails',
+  // settings with tabs (PRDCT-2441)
+  'settings.tabInstance': 'Instance',
+  'settings.tabAccount': 'Mon compte',
+  'settings.openAccount': 'Ouvrir mon compte',
+  'account.languageTitle': 'Langue',
+  'account.languageDescription': 'La langue de ce tableau de bord, gardée dans ce navigateur.',
+  'nav.workspace': 'Espace de travail',
+  'nav.people': 'Personnes',
+  'nav.primary': 'Navigation principale',
+  'nav.blurb.decks': 'Vos présentations, leurs versions et leurs liens.',
+  'nav.blurb.people': 'Qui peut ouvrir cet espace, et les invitations en cours.',
+  'nav.blurb.apiKeys': 'Des clés pour la ligne de commande et pour les agents.',
+  'nav.blurb.files': 'Tous les fichiers que portent vos présentations.',
+  'nav.blurb.auditLog': 'Ce qui s’est passé, qui l’a fait, et quand.',
+  'nav.blurb.settings': 'Cette instance, votre compte et votre langue.',
+  'workspace.description': 'Les personnes, les clés et les fichiers derrière vos présentations.',
 
   // ── Login ────────────────────────────────────────────────────────────
   'login.subtitle': 'Connectez-vous à votre espace de travail',
@@ -473,7 +510,8 @@ export const fr: Record<MessageKey, string> = {
 
   // ── Decks (list) ─────────────────────────────────────────────────────
   'decks.title': 'Decks',
-  'decks.description': 'Vos decks — poussés en versions immuables par la CLI slideless ou un agent.',
+  'decks.description':
+    'Vos présentations. Chaque push depuis la ligne de commande ou un agent est une nouvelle version.',
   'decks.newDeck': 'Nouveau deck',
   'decks.colTitle': 'Titre',
   'decks.colKind': 'Type',

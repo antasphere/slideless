@@ -15,7 +15,7 @@
 
 <!-- The page-title tier of the brand's type register: Sentient at the title
      size, the hairline underneath doing the separating (no Separator). -->
-<div class="page-head mb-10 items-end justify-between gap-4">
+<div class="page-head mb-6 flex-wrap items-end justify-between gap-x-4 gap-y-3 md:mb-10">
   <div class="min-w-0 space-y-1">
     <h1>{title}</h1>
     {#if description}
@@ -23,7 +23,7 @@
     {/if}
   </div>
   {#if onAdd}
-    <Button onclick={onAdd} size="sm" class="shrink-0">
+    <Button onclick={onAdd} size="sm" class="h-10 shrink-0 px-4 text-sm md:h-8 md:px-3 md:text-xs">
       <Plus class="mr-1 h-4 w-4" />
       {addLabel}
     </Button>

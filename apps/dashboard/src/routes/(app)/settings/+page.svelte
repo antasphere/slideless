@@ -1,5 +1,6 @@
 <script lang="ts">
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import SectionTabs from '$lib/components/shared/SectionTabs.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -54,9 +55,17 @@
       exporting = false;
     }
   }
+
+  // Settings is one section with two tabs (PRDCT-2441): the instance, and the
+  // person's own account, so nobody has to find it under their name.
+  const settingsTabs = [
+    { href: '/settings', label: t('settings.tabInstance') },
+    { href: '/account', label: t('settings.tabAccount') }
+  ];
 </script>
 
 <PageHeader title={t('settings.title')} description={t('settings.description')} />
+<SectionTabs label={t('nav.settings')} tabs={settingsTabs} />
 
 <div class="grid gap-6 lg:grid-cols-2">
   <Card.Root>
@@ -121,7 +130,8 @@
         <span class="text-muted-foreground">{t('settings.workspace')}</span>
         <span>{data.me.workspace.name}</span>
       </div>
-      <div class="pt-4">
+      <div class="flex flex-wrap gap-2 pt-4">
+        <Button href="/account">{t('settings.openAccount')}</Button>
         <Button variant="outline" onclick={() => void handleSignOut()} disabled={signingOut}>
           <LogOut class="mr-2 h-4 w-4" />
           {signingOut ? t('settings.signingOut') : t('settings.signOut')}

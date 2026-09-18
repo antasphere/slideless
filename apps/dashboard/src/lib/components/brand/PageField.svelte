@@ -2,19 +2,20 @@
   /* The page's ground: a seeded field with the film grain, fixed to the
 	   viewport and painted behind everything, so the field IS the paper and
 	   every plate floats on it. Rendered once per viewport size, no
-	   linework — the gate pages (login, consent, error) sit on it. Ported
-	   from the website's PageField.astro. */
+	   linework — the gate pages (login, consent, error) and the signed-in
+	   shell sit on it. Ported from the website's PageField.astro. */
   import { buildBlobs, DPR, noiseTile, renderLow } from '$lib/engine/engine.js';
   import { CONSTANTS, PALETTES, RECIPE } from '$lib/brand/recipe.js';
+  import { paletteFor, theme } from '$lib/theme.svelte';
 
   interface Props {
     palette?: string;
     seed?: number;
     /** How much of the field reaches the reader. */
-    strength?: 'full' | 'quiet';
+    strength?: 'full' | 'soft' | 'quiet';
   }
 
-  let { palette = 'studio-field', seed = RECIPE.seed, strength = 'full' }: Props = $props();
+  let { palette = 'labs-field', seed = RECIPE.seed, strength = 'full' }: Props = $props();
 
   let wrap = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -23,7 +24,9 @@
     if (!wrap || !canvas) return;
     const rect = wrap.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return;
-    const key = PALETTES[palette] ? palette : RECIPE.theme;
+    const named = PALETTES[palette] ? palette : RECIPE.theme;
+    /* the dark set paints the palette's night twin when it has one */
+    const key = paletteFor(named, theme.dark, PALETTES);
     const W = Math.round(rect.width * DPR);
     const H = Math.round(rect.height * DPR);
     canvas.width = W;
@@ -49,8 +52,10 @@
   }
 
   $effect(() => {
+    theme.start();
     void palette;
     void seed;
+    void theme.dark;
     if (!wrap) return;
     const ro = new ResizeObserver(rebuild);
     ro.observe(wrap);
@@ -59,7 +64,13 @@
   });
 </script>
 
-<div class="page-field" class:quiet={strength === 'quiet'} bind:this={wrap} aria-hidden="true">
+<div
+  class="page-field"
+  class:soft={strength === 'soft'}
+  class:quiet={strength === 'quiet'}
+  bind:this={wrap}
+  aria-hidden="true"
+>
   <canvas bind:this={canvas}></canvas>
 </div>
 
@@ -75,6 +86,10 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+  /* under an app a person reads all day: the weather, one notch down */
+  .soft canvas {
+    opacity: 0.72;
   }
   .quiet canvas {
     opacity: 0.5;

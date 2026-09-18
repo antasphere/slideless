@@ -6,7 +6,16 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
-  import { formatDateTime } from '$lib/format';
+  import { formatDate, formatDateTime, formatTimeAgo } from '$lib/format';
+  import * as Sheet from '$lib/components/ui/sheet/index.js';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte';
+  import KeyRound from '@lucide/svelte/icons/key-round';
+  import Mail from '@lucide/svelte/icons/mail';
+  import Users from '@lucide/svelte/icons/users';
+  import Presentation from '@lucide/svelte/icons/presentation';
+  import Folder from '@lucide/svelte/icons/folder';
+  import Activity from '@lucide/svelte/icons/activity';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { t } from '$lib/i18n';
   import type { AuditEntry } from '@slideless/contract';
 
@@ -30,6 +39,36 @@
     oauth: 'default',
     system: 'outline'
   };
+
+  // On a phone (PRDCT-2440) a line says three things: what happened, who did
+  // it, roughly when. How it arrived, what it touched and the request that
+  // carried it are one tap away, in the same detail a desk row opens.
+  const phone = new IsMobile();
+  let opened = $state<AuditEntry | null>(null);
+
+  function glyph(entry: AuditEntry) {
+    const kind = `${entry.resourceType} ${entry.action}`;
+    if (/key/.test(kind)) return KeyRound;
+    if (/invit/.test(kind)) return Mail;
+    if (/member|user|collab/.test(kind)) return Users;
+    if (/present|deck|share|version/.test(kind)) return Presentation;
+    if (/file|blob/.test(kind)) return Folder;
+    return Activity;
+  }
+
+  // Phone lines are grouped under their day, so the time beside each stays short.
+  const days = $derived.by(() => {
+    const groups: { day: string; entries: AuditEntry[] }[] = [];
+    for (const entry of entries) {
+      const day = formatDate(entry.createdAt);
+      const last = groups[groups.length - 1];
+      if (last?.day === day) last.entries.push(entry);
+      else groups.push({ day, entries: [entry] });
+    }
+    return groups;
+  });
+
+  const pretty = (value: unknown) => JSON.stringify(value, null, 2);
 </script>
 
 <PageHeader title={t('audit.title')} description={t('audit.description')} />
@@ -38,8 +77,32 @@
   <TableSkeleton columns={6} showSearch={false} />
 {:else if list.error && entries.length === 0}
   <p class="text-sm text-destructive">{list.error}</p>
+{:else if phone.current}
+  {#each days as group (group.day)}
+    <h2 class="overline mb-2 mt-6 first:mt-0">{group.day}</h2>
+    <ul class="sheet divide-y divide-[var(--hairline)] overflow-hidden">
+      {#each group.entries as entry (entry.id)}
+        {@const Glyph = glyph(entry)}
+        <li>
+          <button type="button" class="line" onclick={() => (opened = entry)}>
+            <span class="well"><Glyph class="size-4" strokeWidth={1.6} /></span>
+            <span class="min-w-0 flex-1 text-left">
+              <code class="block truncate text-[13px] text-foreground">{entry.action}</code>
+              <span class="block truncate text-[13px] text-muted-foreground">
+                {entry.actorEmail ?? t('audit.system')}
+              </span>
+            </span>
+            <span class="shrink-0 text-xs text-muted-foreground">{formatTimeAgo(entry.createdAt)}</span>
+            <ChevronRight class="size-4 shrink-0 text-muted-foreground/60" />
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <p class="py-16 text-center text-sm text-muted-foreground">{t('audit.empty')}</p>
+  {/each}
 {:else}
-  <div class="rounded-md border">
+  <div class="sheet overflow-hidden">
     <Table.Root>
       <Table.Header>
         <Table.Row>
@@ -53,7 +116,7 @@
       </Table.Header>
       <Table.Body>
         {#each entries as entry (entry.id)}
-          <Table.Row>
+          <Table.Row class="cursor-pointer" onclick={() => (opened = entry)}>
             <Table.Cell class="whitespace-nowrap text-muted-foreground">
               {formatDateTime(entry.createdAt)}
             </Table.Cell>
@@ -85,7 +148,9 @@
       </Table.Body>
     </Table.Root>
   </div>
+{/if}
 
+{#if !list.loading && entries.length}
   {#if list.error}
     <p class="mt-3 text-sm text-destructive">{list.error}</p>
   {/if}
@@ -98,3 +163,88 @@
     </div>
   {/if}
 {/if}
+
+<Sheet.Root open={opened !== null} onOpenChange={(open) => !open && (opened = null)}>
+  <Sheet.Content
+    side={phone.current ? 'bottom' : 'right'}
+    class="max-h-[88dvh] overflow-y-auto max-md:rounded-t-2xl md:max-h-none md:max-w-md"
+  >
+    {#if opened}
+      <Sheet.Header>
+        <Sheet.Title class="font-display text-xl font-normal">
+          <code class="text-[15px]">{opened.action}</code>
+        </Sheet.Title>
+        <Sheet.Description>{formatDateTime(opened.createdAt)}</Sheet.Description>
+      </Sheet.Header>
+      <dl class="facts">
+        <dt>{t('audit.colActor')}</dt>
+        <dd>{opened.actorEmail ?? t('audit.system')}</dd>
+        <dt>{t('audit.colVia')}</dt>
+        <dd><Badge variant={viaVariant[opened.actorVia]}>{opened.actorVia}</Badge></dd>
+        <dt>{t('audit.colResource')}</dt>
+        <dd class="break-all">{opened.resourceType}{opened.resourceId ? ` · ${opened.resourceId}` : ''}</dd>
+        {#if opened.requestId}
+          <dt>{t('audit.colRequest')}</dt>
+          <dd class="break-all"><code class="text-xs">{opened.requestId}</code></dd>
+        {/if}
+        {#if opened.ip}
+          <dt>{t('audit.colIp')}</dt>
+          <dd><code class="text-xs">{opened.ip}</code></dd>
+        {/if}
+      </dl>
+      {#if opened.metadata}
+        <!-- SECURITY: metadata may carry user-authored strings; text interpolation only. -->
+        <p class="overline mb-2 mt-5">{t('audit.colDetails')}</p>
+        <pre class="meta">{pretty(opened.metadata)}</pre>
+      {/if}
+    {/if}
+  </Sheet.Content>
+</Sheet.Root>
+
+<style>
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 60px;
+    padding: 10px 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .line:active {
+    background: var(--ground-3);
+  }
+  .well {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px 18px;
+    margin-top: 18px;
+    font-size: 14px;
+  }
+  .facts dt {
+    color: var(--muted);
+  }
+  .meta {
+    max-height: 40dvh;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r);
+    background: var(--ground-2);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>

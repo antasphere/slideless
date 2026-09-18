@@ -1,7 +1,12 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card/index.js';
-  import { Badge } from '$lib/components/ui/badge/index.js';
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  import FieldCanvas from '$lib/components/brand/FieldCanvas.svelte';
+  import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
+  import DeckCard from '$lib/components/decks/DeckCard.svelte';
+  import ArrowRight from '@lucide/svelte/icons/arrow-right';
+  import { PALETTES, RECIPE } from '$lib/brand/recipe.js';
+  import { seedOf } from '$lib/brand/seed';
+  import { paletteFor, theme } from '$lib/theme.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
@@ -23,6 +28,27 @@
   const overviewDescription = $derived(
     data.instance.edition === 'cloud' ? t('overview.descriptionCloud') : t('overview.description')
   );
+
+  const workspaceName = $derived(
+    data.me.workspaces.find((w) => w.id === data.me.activeWorkspaceId)?.name ?? data.instance.name
+  );
+  const firstName = $derived(
+    (data.me.user.name || data.me.user.email.split('@')[0] || '').split(' ')[0] ?? ''
+  );
+  const hour = new Date().getHours();
+  const greeting = $derived(
+    t(
+      hour < 12
+        ? 'overview.greetingMorning'
+        : hour < 18
+          ? 'overview.greetingAfternoon'
+          : 'overview.greetingEvening',
+      { name: firstName }
+    )
+  );
+
+  $effect(() => theme.start());
+  const heroPalette = $derived(paletteFor('dawn', theme.dark, PALETTES));
 
   const decksList = createPagedList<Presentation>(
     async (p) => {
@@ -71,64 +97,121 @@
       ? null
       : `${decksList.items.length}${decksList.nextCursor ? '+' : ''}`
   );
+
+  // Opens are counted per deck today (PRDCT-2438 will bring the workspace's
+  // own figures); the sum of the loaded page is honest with the same "+".
+  const openCount = $derived(
+    decksList.loading || (decksList.error && !decksList.items.length)
+      ? null
+      : `${decksList.items.reduce((n, d) => n + d.totalViews, 0)}${decksList.nextCursor ? '+' : ''}`
+  );
+  const recentDecks = $derived(
+    [...decksList.items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3)
+  );
+
+  const stats = $derived([
+    {
+      id: 'decks',
+      label: t('overview.decksCard'),
+      value: deckCount,
+      href: '/decks',
+      hint: t('overview.browseDecks'),
+      pattern: 'slides'
+    },
+    {
+      id: 'opens',
+      label: t('overview.opensCard'),
+      value: openCount,
+      href: '/decks',
+      hint: t('overview.opensHint'),
+      pattern: 'sonar'
+    },
+    ...(isGuest
+      ? []
+      : [
+          {
+            id: 'members',
+            label: t('overview.activeMembers'),
+            value: memberCount,
+            href: '/members',
+            hint: t('overview.manageMembers'),
+            pattern: 'blooms'
+          },
+          {
+            id: 'files',
+            label: t('overview.filesCard'),
+            value: fileCount,
+            href: '/files',
+            hint: t('overview.browseFiles'),
+            pattern: 'panes'
+          }
+        ])
+  ]);
+  let played = $state<string | null>(null);
 </script>
 
-<PageHeader title={t('overview.title')} description={overviewDescription} />
+<svelte:head><title>{t('overview.title')} · {data.instance.name}</title></svelte:head>
 
-<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-  <Card.Root>
-    <Card.Header>
-      <Card.Description class="overline">{t('overview.instanceCard')}</Card.Description>
-      <Card.Title class="font-display text-2xl font-normal">{data.instance.name}</Card.Title>
-    </Card.Header>
-    <Card.Content class="flex flex-wrap gap-2">
-      <Badge variant="secondary">v{data.instance.version}</Badge>
-      <Badge variant="outline">{data.instance.edition}</Badge>
-      <Badge variant="outline">API {data.instance.apiVersion}</Badge>
-    </Card.Content>
-  </Card.Root>
+<!-- The opening: the workspace on its own field, the sphere of the brand's
+     presentations turning slowly behind the greeting. Decoration only; the
+     field never moves for a reader who asked for no motion. -->
+<section class="hero plate-window">
+  <div class="hero-field">
+    <FieldCanvas palette={heroPalette} shape="latitudes" seed={RECIPE.seed} animate />
+  </div>
+  <div class="hero-text on-field">
+    <p class="overline !text-current opacity-70">{workspaceName}</p>
+    <h1 class="hero-title">{greeting}</h1>
+    <p class="hero-lede">
+      {#if deckCount === null}
+        {overviewDescription}
+      {:else if decksList.items.length}
+        {t('overview.lede', { decks: deckCount, workspace: workspaceName, opens: openCount ?? '0' })}
+      {:else}
+        {t('overview.ledeEmpty')}
+      {/if}
+    </p>
+  </div>
+</section>
 
-  <Card.Root>
-    <Card.Header>
-      <Card.Description class="overline">{t('overview.decksCard')}</Card.Description>
-      <Card.Title class="font-display text-[28px] font-normal tabular-nums">{deckCount ?? '—'}</Card.Title>
-    </Card.Header>
-    <Card.Content>
-      <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/decks">
-        {t('overview.browseDecks')}
-      </a>
-    </Card.Content>
-  </Card.Root>
-
-  {#if !isGuest}
-    <Card.Root>
-      <Card.Header>
-        <Card.Description class="overline">{t('overview.activeMembers')}</Card.Description>
-        <Card.Title class="font-display text-[28px] font-normal tabular-nums">{memberCount ?? '—'}</Card.Title
-        >
-      </Card.Header>
-      <Card.Content>
-        <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/members">
-          {t('overview.manageMembers')}
-        </a>
-      </Card.Content>
-    </Card.Root>
-
-    <Card.Root>
-      <Card.Header>
-        <Card.Description class="overline">{t('overview.filesCard')}</Card.Description>
-        <Card.Title class="font-display text-[28px] font-normal tabular-nums">{fileCount ?? '—'}</Card.Title>
-      </Card.Header>
-      <Card.Content>
-        <a class="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/files">
-          {t('overview.browseFiles')}
-        </a>
-      </Card.Content>
-    </Card.Root>
-  {/if}
+<div class="mt-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+  {#each stats as stat (stat.id)}
+    <a
+      href={stat.href}
+      class="sheet tile stat"
+      onpointerenter={() => (played = stat.id)}
+      onpointerleave={() => (played = null)}
+      onfocus={() => (played = stat.id)}
+      onblur={() => (played = null)}
+    >
+      <div class="stat-plate plate-window">
+        <PatternCanvas pattern={stat.pattern} seed={seedOf('stat:' + stat.id)} active={played === stat.id} />
+      </div>
+      <p class="overline">{stat.label}</p>
+      <p class="figure stat-figure">{stat.value ?? '—'}</p>
+      <p class="stat-hint">{stat.hint}</p>
+    </a>
+  {/each}
 </div>
 
-<div class="mt-8 grid gap-4 md:grid-cols-2">
+{#if recentDecks.length}
+  <div class="section-head mt-10 !mb-5 items-center justify-between">
+    <h2>{t('overview.recentDecks')}</h2>
+    <a
+      href="/decks"
+      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
+      {t('overview.allDecks')}<ArrowRight class="size-3.5" />
+    </a>
+  </div>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {#each recentDecks as deck (deck.id)}
+      <DeckCard {deck} compact />
+    {/each}
+  </div>
+{/if}
+
+<div class="mt-10 grid gap-4 md:grid-cols-2">
   <Card.Root>
     <Card.Header>
       <Card.Title class="font-display text-base font-normal">{t('overview.apiAccessTitle')}</Card.Title>
@@ -166,3 +249,83 @@
     </Card.Content>
   </Card.Root>
 </div>
+
+<!-- what runs this workspace, for whoever needs it: one quiet line -->
+<p class="mt-8 text-center text-xs text-muted-foreground">
+  {t('overview.aboutInstance')} · {data.instance.name} · v{data.instance.version} · {data.instance.edition} · API
+  {data.instance.apiVersion}
+</p>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: 210px;
+    display: flex;
+    align-items: flex-end;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  /* the field is wider than the band, so the sphere it centres sits to the
+     right of the greeting (above it on a phone) and never under the words */
+  .hero-field {
+    position: absolute;
+    inset: -38% -34% 0 0;
+  }
+  .hero-text {
+    position: relative;
+    padding: 24px 22px;
+    max-width: 640px;
+  }
+  .hero-title {
+    font-family: var(--display);
+    font-weight: 300;
+    font-size: clamp(28px, 5.4vw, 42px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin-top: 8px;
+  }
+  .hero-lede {
+    margin-top: 10px;
+    font-size: 15px;
+    line-height: 1.45;
+    opacity: 0.82;
+  }
+  @media (min-width: 768px) {
+    .hero {
+      min-height: 250px;
+    }
+    .hero-field {
+      inset: 0 -52% 0 0;
+    }
+    .hero-text {
+      padding: 32px 34px;
+    }
+  }
+
+  .stat {
+    position: relative;
+    display: block;
+    padding: 16px 16px 14px;
+    overflow: hidden;
+  }
+  .stat-plate {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 54px;
+    height: 54px;
+    border-radius: 999px;
+    opacity: 0.9;
+  }
+  .stat-figure {
+    font-size: clamp(34px, 7vw, 44px);
+    margin-top: 14px;
+  }
+  .stat-hint {
+    margin-top: 10px;
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--muted);
+  }
+</style>
