@@ -187,7 +187,7 @@
       <!-- The deck's banner (PRDCT-2439): the field its card carries on the
            decks page, so a deck keeps one face from the list to its page.
            Still: a ground, one drawing of the deck's kind, the title. -->
-      <div class="banner plate-window">
+      <div class="banner plate-window" data-page-head>
         <div class="absolute inset-0">
           <FieldCanvas palette={bannerPalette} shape={RECIPE.shape} seed={seedOf(deck.id)} linework={false} />
         </div>
