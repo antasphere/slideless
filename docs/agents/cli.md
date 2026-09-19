@@ -374,11 +374,16 @@ folder gets a `.slideless.json` link file naming the reference's id, the
 instance and the type and version that were pulled. That link file is also the
 replace rule: a second pull of the same type empties the folder and writes it
 again, while a folder that is not empty and carries no such link file is refused
-with `is not empty and is not a folder a previous pull wrote; pull into another
-folder (--into)`. The download is the same safe path as `slideless pull`: every
-manifest path is re-validated locally, each blob is capped at the size the
-manifest declares and must hash to the sha256 it claims before anything is
-written, and no write follows a symlink.
+with `is not empty and is not a folder a previous pull wrote. Delete it to pull
+there, or pull into another folder (--into).` The download is the same safe
+path as `slideless pull`: every manifest path is re-validated locally, each blob
+is capped at the size the manifest declares and must hash to the sha256 it
+claims before anything is written, and no write follows a symlink. A pull that
+fails part way (a blob that does not hash, a dropped connection) removes what it
+had written, so the next pull of that type starts clean. Pushing a new version
+of the reference from its pulled folder (`slideless brand push .slideless/brand`,
+as its owner) keeps the link file's type and moves its version to the one just
+pushed, so the deck beside it keeps recording the brand.
 
 **new** scaffolds a folder to fill in: an `AGENT.md` carrying the frontmatter of
 the type with every field it has, an `index.html` with one page per layout for a
@@ -442,12 +447,16 @@ an ordinary deck.
 `slideless push --brand <ref>` and `--template <ref>` record one each, and
 `<ref>@n` pins the version instead of the reference's latest; both take the same
 `<ref>` forms as everywhere else and are resolved before any upload, so a wrong
-name costs nothing. With neither flag, a push reads the link files of
-`.slideless/brand/` and `.slideless/template/` beside the deck and records what
-was pulled there, which makes the ordinary sequence, pull then author then push,
-record itself. A reference pulled from another instance is not recorded, and the
-push says so on stderr: `Note: the brand in .slideless/brand/ was pulled from
-<url>, not <url>; it is not recorded on this deck.` What is recorded is merged
+name costs nothing. The value is tried whole first, so a reference whose title
+ends in `@2` is named as written; only when nothing matches the whole value is
+the trailing `@n` read as a version. With neither flag, a push reads the link
+files of `.slideless/brand/` and `.slideless/template/` beside the deck and
+records what was pulled there, which makes the ordinary sequence, pull then
+author then push, record itself. A reference pulled from another instance is not
+recorded, and the push says so on stderr: `Note: the brand in .slideless/brand/
+was pulled from <url>, not <url>; it is not recorded on this deck.` A folder
+whose link names the other type (a template moved under `.slideless/brand/`) is
+not recorded either, with the same kind of note. What is recorded is merged
 into `metadata.references`, one entry per type, every other entry and every other
 metadata key kept. The push prints the result as a `references:` line, `brand
 <id>@<n>, template <id>@<n>`, and `slideless get <id>` shows the same entries as
