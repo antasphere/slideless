@@ -51,21 +51,21 @@
       const { presentations, nextCursor } = await api.presentations(p);
       return { items: presentations, nextCursor };
     },
-    { limit: 100 }
+    { limit: 100, remember: 'overview.decksList' }
   );
   const membersList = createPagedList<Member>(
     async (p) => {
       const { members, nextCursor } = await api.members(p);
       return { items: members, nextCursor };
     },
-    { limit: 100 }
+    { limit: 100, remember: 'overview.membersList' }
   );
   const filesList = createPagedList<FileInfo>(
     async (p) => {
       const { files, nextCursor } = await api.files(p);
       return { items: files, nextCursor };
     },
-    { limit: 100 }
+    { limit: 100, remember: 'overview.filesList' }
   );
 
   // The workspace's default brand (PRDCT-2421), one call; undefined while

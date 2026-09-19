@@ -21,10 +21,13 @@
   import { t } from '$lib/i18n';
   import type { FileInfo } from '@slideless/contract';
 
-  const list = createPagedList<FileInfo>(async (p) => {
-    const { files, nextCursor } = await api.files(p);
-    return { items: files, nextCursor };
-  });
+  const list = createPagedList<FileInfo>(
+    async (p) => {
+      const { files, nextCursor } = await api.files(p);
+      return { items: files, nextCursor };
+    },
+    { remember: 'files' }
+  );
 
   $effect(() => {
     void list.load();

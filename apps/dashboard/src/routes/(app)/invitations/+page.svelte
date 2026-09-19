@@ -37,10 +37,13 @@
   // out. The list stays a real read.
   const hubManaged = $derived(data.me.workspace.hubOrigin);
 
-  const list = createPagedList<InvitationInfo>(async (p) => {
-    const { invitations, nextCursor } = await api.invitations(p);
-    return { items: invitations, nextCursor };
-  });
+  const list = createPagedList<InvitationInfo>(
+    async (p) => {
+      const { invitations, nextCursor } = await api.invitations(p);
+      return { items: invitations, nextCursor };
+    },
+    { remember: 'invitations' }
+  );
 
   $effect(() => {
     void list.load();

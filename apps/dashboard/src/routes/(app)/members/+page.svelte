@@ -11,6 +11,7 @@
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
+  import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
@@ -18,13 +19,21 @@
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import FormError from '$lib/components/shared/FormError.svelte';
+  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
+  import Plus from '@lucide/svelte/icons/plus';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { formatTimeAgo, formatDate, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { Member, MemberChangeEmailLink, MemberResetLink, WorkspaceRole } from '@slideless/contract';
+  import type {
+    InvitationCreated,
+    Member,
+    MemberChangeEmailLink,
+    MemberResetLink,
+    WorkspaceRole
+  } from '@slideless/contract';
 
   let { data } = $props();
 
@@ -48,10 +57,13 @@
   // truthful error toast rather than a hidden affordance.
   const canMintCredentials = $derived(me.role === 'owner' && hasPasswordLogin);
 
-  const list = createPagedList<Member>(async (p) => {
-    const { members, nextCursor } = await api.members(p);
-    return { items: members, nextCursor };
-  });
+  const list = createPagedList<Member>(
+    async (p) => {
+      const { members, nextCursor } = await api.members(p);
+      return { items: members, nextCursor };
+    },
+    { remember: 'members' }
+  );
 
   $effect(() => {
     void list.load();
@@ -60,6 +72,39 @@
   const members = $derived(list.items);
   // the toolbar's quiet line: how many members, once they are all here
   const memberCount = $derived(list.nextCursor ? undefined : rowCount('members.countOne', 'members.count'));
+
+  // ── Invite dialog (PRDCT-2436 follow-up) ───────────────────────────────
+  // Inviting is the roster's own act, so it sits on the Members tab too,
+  // not only on Invitations: same API call, same link dialog, and the same
+  // admin/owner + non-hub-managed condition the Invitations tab carries.
+  const canInvite = $derived(isAdmin && !hubManaged);
+
+  let showCreateDialog = $state(false);
+  let createLoading = $state(false);
+  let inviteEmail = $state('');
+  let inviteRole = $state<WorkspaceRole>('member');
+  let created = $state<InvitationCreated | null>(null);
+  let showLinkDialog = $state(false);
+
+  function openCreateDialog() {
+    inviteEmail = '';
+    inviteRole = 'member';
+    showCreateDialog = true;
+  }
+
+  async function submitCreate() {
+    createLoading = true;
+    try {
+      const result = await api.createInvitation({ email: inviteEmail, role: inviteRole });
+      showCreateDialog = false;
+      created = result;
+      showLinkDialog = true;
+    } catch (e) {
+      toast.error(errorMessage(e, t('invitations.createFailed')));
+    } finally {
+      createLoading = false;
+    }
+  }
 
   // ── Change role dialog ─────────────────────────────────────────────────
   let showRoleDialog = $state(false);
@@ -328,6 +373,13 @@
   drawing="graph"
 />
 
+{#snippet inviteAction()}
+  <Button onclick={openCreateDialog} size="sm" class="h-8 gap-1.5">
+    <Plus class="h-4 w-4" />
+    {t('invitations.invite')}
+  </Button>
+{/snippet}
+
 {#if hubManaged}
   <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>
     <p class="min-w-0 text-sm">{t('members.hubManagedNotice')}</p>
@@ -355,6 +407,7 @@
     searchColumns={['email', 'name']}
     searchPlaceholder={t('members.searchPlaceholder')}
     count={memberCount}
+    actions={canInvite ? inviteAction : undefined}
   />
   {#if list.nextCursor}
     <div class="flex justify-center py-4" transition:reveal>
@@ -546,3 +599,108 @@
   onConfirm={() => void submitActiveToggle()}
   loading={activeLoading}
 />
+
+{#snippet inviteAside()}
+  <Dialog.Illustration eyebrow={t('invitations.asideEyebrow')} caption={t('invitations.asideCaption')}>
+    <DialogDrawing kind="member" />
+  </Dialog.Illustration>
+{/snippet}
+
+{#snippet linkAside()}
+  <Dialog.Illustration eyebrow={t('invitations.asideEyebrow')} caption={t('invitations.linkAsideCaption')}>
+    <DialogDrawing kind="membered" />
+  </Dialog.Illustration>
+{/snippet}
+
+<FormDialog
+  bind:open={showCreateDialog}
+  size="lg"
+  aside={inviteAside}
+  title={t('invitations.createTitle')}
+  description={t('invitations.createDescription')}
+  onClose={() => (showCreateDialog = false)}
+  onSubmit={() => void submitCreate()}
+  loading={createLoading}
+  submitLabel={t('invitations.createSubmit')}
+>
+  <div class="space-y-2">
+    <Label for="invite-email">{t('invitations.emailLabel')}</Label>
+    <Input
+      id="invite-email"
+      type="email"
+      bind:value={inviteEmail}
+      placeholder={t('invitations.emailPlaceholder')}
+      required
+    />
+  </div>
+  <div class="space-y-2">
+    <Label for="invite-role">{t('invitations.roleLabel')}</Label>
+    <Select.Root
+      type="single"
+      value={inviteRole}
+      onValueChange={(v) => {
+        if (v) inviteRole = v as WorkspaceRole;
+      }}
+    >
+      <Select.Trigger id="invite-role" class="w-full">
+        {inviteRole}
+      </Select.Trigger>
+      <Select.Content>
+        {#each roleOptions as role (role)}
+          <Select.Item value={role} label={role} />
+        {/each}
+      </Select.Content>
+    </Select.Root>
+  </div>
+</FormDialog>
+
+<Dialog.Root
+  bind:open={showLinkDialog}
+  onOpenChange={(isOpen) => {
+    if (!isOpen) created = null;
+  }}
+>
+  <Dialog.Content size="lg" aside={linkAside} framed>
+    <Dialog.Header>
+      <Dialog.Title>{t('invitations.linkTitle')}</Dialog.Title>
+      <Dialog.Description>
+        {t('invitations.linkShare', { email: created?.invitation.email ?? '' })}
+        {#if created?.emailSent}
+          {t('invitations.linkEmailAlsoSent')}
+        {/if}
+      </Dialog.Description>
+    </Dialog.Header>
+    <Dialog.Body class="space-y-3">
+      {#if created}
+        <CodeBlock
+          field
+          code={created.acceptUrl}
+          ariaLabel={t('invitations.linkAria')}
+          copyLabel={t('invitations.copyLinkAria')}
+          copiedMessage={t('invitations.linkCopied')}
+        />
+        <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          {#if created.emailSent}
+            <Badge variant="secondary">{t('invitations.badgeEmailSent')}</Badge>
+          {:else}
+            <Badge variant="outline">{t('invitations.badgeNoEmail')}</Badge>
+            <span>{t('invitations.sendYourself')}</span>
+          {/if}
+        </div>
+        <p class="text-xs text-muted-foreground">
+          {t('common.expires', { date: formatDateTime(created.invitation.expiresAt) })}
+        </p>
+      {/if}
+    </Dialog.Body>
+    <Dialog.Footer>
+      <Button
+        onclick={() => {
+          showLinkDialog = false;
+          created = null;
+        }}
+      >
+        {t('common.done')}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

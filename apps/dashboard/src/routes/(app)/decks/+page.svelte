@@ -32,10 +32,13 @@
   // to the decks they were invited to, never creates new ones here.
   const isGuest = $derived(data.me.origin === 'guest');
 
-  const list = createPagedList<Presentation>(async (p) => {
-    const { presentations, nextCursor } = await api.presentations(p);
-    return { items: presentations, nextCursor };
-  });
+  const list = createPagedList<Presentation>(
+    async (p) => {
+      const { presentations, nextCursor } = await api.presentations(p);
+      return { items: presentations, nextCursor };
+    },
+    { remember: 'decks' }
+  );
 
   $effect(() => {
     void list.load();

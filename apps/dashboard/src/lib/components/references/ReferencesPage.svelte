@@ -48,10 +48,15 @@
   // sections are not in a guest's navigation, and the add button never shows.
   const isGuest = $derived(me.origin === 'guest');
 
-  const list = createPagedList<Presentation>(async (p) => {
-    const { presentations, nextCursor } = await api.presentations({ ...p, type });
-    return { items: presentations, nextCursor };
-  });
+  // the page is made anew for each type (brands, templates are two routes)
+  // svelte-ignore state_referenced_locally
+  const list = createPagedList<Presentation>(
+    async (p) => {
+      const { presentations, nextCursor } = await api.presentations({ ...p, type });
+      return { items: presentations, nextCursor };
+    },
+    { remember: `references.${type}` }
+  );
   $effect(() => {
     void list.load();
   });

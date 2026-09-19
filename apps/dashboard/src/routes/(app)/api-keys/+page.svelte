@@ -30,10 +30,13 @@
   import { t } from '$lib/i18n';
   import type { ApiKeyInfo, Scope } from '@slideless/contract';
 
-  const list = createPagedList<ApiKeyInfo>(async (p) => {
-    const { apiKeys, nextCursor } = await api.apiKeys(p);
-    return { items: apiKeys, nextCursor };
-  });
+  const list = createPagedList<ApiKeyInfo>(
+    async (p) => {
+      const { apiKeys, nextCursor } = await api.apiKeys(p);
+      return { items: apiKeys, nextCursor };
+    },
+    { remember: 'api-keys' }
+  );
 
   $effect(() => {
     void list.load();
