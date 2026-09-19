@@ -1,23 +1,11 @@
-import { Command, CommanderError } from 'commander';
-import { CliAuthError } from '@antasphere/cli-core';
-import { PlatformApiError } from '@slideless/sdk';
-import {
-  CliUsageError,
-  readSecretFromStdin,
-  setStdinApiKey,
-  ttySafeIo,
-  type CliIo
-} from '@antasphere/chassis-cli';
-import { explainWorkspaceRefusal, workspaceNotFoundHint } from './cli.js';
-import { registerAuthCommands } from './commands/auth.js';
-import { registerWorkspaceCommands } from './commands/workspaces.js';
+import type { Command } from 'commander';
+import type { CliIo } from '@antasphere/chassis-cli';
+import { cli } from './cli.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
 import { registerReferenceCommands } from './commands/references.js';
 import { registerSharingCommands } from './commands/sharing.js';
 import { registerResponseFilesCommand } from './commands/response-files.js';
-import { registerFileCommands } from './commands/files.js';
-import { registerCompletionCommand } from './commands/completion.js';
 
 export type { CliIo } from '@antasphere/chassis-cli';
 export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
@@ -44,32 +32,11 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
 const VERSION = '0.4.1';
 
 /**
- * The command tree, built once per run. Exported for the docs-coverage test
- * (test/docs-coverage.test.ts), which walks it to prove every command and
- * every flag appears in docs/agents/cli.md — the reference an agent reads.
+ * The Slideless command groups, handed to the chassis program, which places
+ * them after the auth and workspace groups and before instance/export/files
+ * and the completion command (`@antasphere/chassis-cli` program.ts).
  */
-export function buildProgram(io: CliIo): Command {
-  const program = new Command();
-  program
-    .name('slideless')
-    .description('Command-line client for a Slideless instance (push, share, pull, preview)')
-    .version(VERSION)
-    .option('--api-url <url>', 'instance base URL (or SLIDELESS_URL / profile baseUrl)')
-    .option('--url <url>', 'alias of --api-url')
-    .option('--api-key <key>', 'API key (or SLIDELESS_API_KEY / profile apiKey)')
-    .option('--api-key-stdin', 'read the API key from the first line of stdin (keeps it out of argv)', false)
-    .option('--profile <name>', 'use this saved profile instead of the active one')
-    .option(
-      '--workspace <id-or-name>',
-      "run in this workspace (or SLIDELESS_WORKSPACE / profile activeWorkspaceId; default: the server's)"
-    )
-    .option('--json', 'machine-readable JSON output', false);
-
-  // Identity + profiles: auth login-request/login-complete, login, logout,
-  // whoami, verify, use, profiles, config show/clear.
-  registerAuthCommands(program, io);
-  // Which workspace the commands run in: workspaces, workspace use.
-  registerWorkspaceCommands(program, io);
+function registerTool(program: Command, io: CliIo): void {
   // Deck management: list, get, versions, delete.
   registerDeckCommands(program, io);
   // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
@@ -82,12 +49,15 @@ export function buildProgram(io: CliIo): Command {
   registerSharingCommands(program, io);
   // The files respondents uploaded into form file fields: response-files.
   registerResponseFilesCommand(program, io);
-  // Platform substrate (template heritage): instance, export, files *.
-  registerFileCommands(program, io);
-  // Shell completion — registered LAST so the tree it prints is complete.
-  registerCompletionCommand(program, io);
+}
 
-  return program;
+/**
+ * The command tree, built once per run. Exported for the docs-coverage test
+ * (test/docs-coverage.test.ts), which walks it to prove every command and
+ * every flag appears in docs/agents/cli.md — the reference an agent reads.
+ */
+export function buildProgram(io: CliIo): Command {
+  return cli.buildProgram(io, registerTool, VERSION);
 }
 
 /**
@@ -95,65 +65,5 @@ export function buildProgram(io: CliIo): Command {
  * this with real process streams; tests call it in-process.
  */
 export async function run(argv: string[], rawIo: CliIo): Promise<number> {
-  // Every human sink is wrapped ONCE, here: deck titles, annotation bodies,
-  // stored filenames and server error messages are all somebody else's text
-  // heading for a terminal (context.ts `sanitizeForTty`). `--json` keeps the
-  // raw sink through `printJson`.
-  const io = ttySafeIo(rawIo);
-
-  // `--api-key-stdin` is resolved BEFORE commander parses: `resolveContext`
-  // is synchronous, so the key must already be parked against this io by
-  // the time a command asks for it. Reading stdin is the whole point — an
-  // argv-borne secret is visible in `ps` and lands in the shell history.
-  if (argv.includes('--api-key-stdin')) {
-    try {
-      setStdinApiKey(io, await readSecretFromStdin(io, 'API key'));
-    } catch (e) {
-      io.err.write(`Error: ${e instanceof Error ? e.message : String(e)}\n`);
-      return 1;
-    }
-  }
-
-  const program = buildProgram(io);
-  program.exitOverride();
-  program.configureOutput({
-    writeOut: (s) => io.out.write(s),
-    writeErr: (s) => io.err.write(s)
-  });
-  try {
-    await program.parseAsync(argv, { from: 'user' });
-    return 0;
-  } catch (e) {
-    if (e instanceof CommanderError) {
-      // --help / --version and usage errors already wrote their output.
-      return e.exitCode;
-    }
-    if (e instanceof PlatformApiError || e instanceof CliAuthError) {
-      // A refusal the workspace SELECTION caused reads as a bad key (401) or
-      // a forbidden one (403) on the wire; say what it really was.
-      const explained = await explainWorkspaceRefusal(io, e);
-      if (explained) {
-        io.err.write(`Error: ${explained}\n`);
-        return 1;
-      }
-      const hint =
-        e.status === 403
-          ? ' (this API key is not allowed to do that)'
-          : e.code === 'version_conflict'
-            ? ' (someone pushed in between — rerun to retry)'
-            : e.status === 401
-              ? ' (check the key: `slideless verify`)'
-              : e.status === 404
-                ? workspaceNotFoundHint(io)
-                : '';
-      io.err.write(`Error: ${e.message}${hint}\n`);
-      return 1;
-    }
-    if (e instanceof CliUsageError) {
-      io.err.write(`Error: ${e.message}\n`);
-      return 1;
-    }
-    io.err.write(`Error: ${e instanceof Error ? e.message : String(e)}\n`);
-    return 1;
-  }
+  return cli.run(argv, rawIo, registerTool, VERSION);
 }

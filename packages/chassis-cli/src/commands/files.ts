@@ -5,9 +5,15 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Command } from 'commander';
-import { DEFAULT_DOWNLOAD_TIMEOUT_MS, PlatformApiError, type ListParams } from '@slideless/sdk';
-import { CliUsageError, fmtBytes, printJson, writeContained, type CliIo } from '@antasphere/chassis-cli';
-import { requireApiKey, resolveContext } from '../cli.js';
+import {
+  DEFAULT_DOWNLOAD_TIMEOUT_MS,
+  PlatformApiError,
+  type ChassisClient,
+  type ListParams
+} from '@antasphere/chassis-sdk';
+import { CliUsageError, fmtBytes, printJson, type CliIo } from '../context.js';
+import type { CliKit } from '../kit.js';
+import { writeContained } from '../safe-write.js';
 
 /**
  * The platform substrate commands inherited from the template: instance
@@ -35,7 +41,13 @@ export function safeDownloadName(originalName: string): string {
   return name;
 }
 
-export function registerFileCommands(program: Command, io: CliIo): void {
+export function registerFileCommands<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
+  program: Command,
+  io: CliIo
+): void {
+  const { requireApiKey, resolveContext } = kit;
+
   program
     .command('instance')
     .description('Show instance discovery (public: name, version, auth methods)')

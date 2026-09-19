@@ -1,13 +1,8 @@
 import type { Command } from 'commander';
-import { CliUsageError, findWorkspace, matchWorkspace, printJson, type CliIo } from '@antasphere/chassis-cli';
-import {
-  describeSelection,
-  loadConfig,
-  requireApiKey,
-  resolveContext,
-  saveConfig,
-  workspaceSource
-} from '../cli.js';
+import type { ChassisClient } from '@antasphere/chassis-sdk';
+import { CliUsageError, printJson, type CliIo } from '../context.js';
+import type { CliKit } from '../kit.js';
+import { findWorkspace, matchWorkspace } from '../workspace.js';
 
 /**
  * Which workspace the commands run in (PRDCT-2419): `workspaces` lists the
@@ -22,7 +17,14 @@ import {
 
 const stripSlashes = (url: string): string => url.replace(/\/+$/, '');
 
-export function registerWorkspaceCommands(program: Command, io: CliIo): void {
+export function registerWorkspaceCommands<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
+  program: Command,
+  io: CliIo
+): void {
+  const { identity, loadConfig, requireApiKey, resolveContext, saveConfig, workspaceSource } = kit;
+  const { describeSelection } = kit.workspace;
+
   program
     .command('workspaces')
     .description('List your workspaces (the one the commands run in marked *)')
@@ -41,7 +43,9 @@ export function registerWorkspaceCommands(program: Command, io: CliIo): void {
         io.err.write(
           `Warning: "${selection.value}" (selected by ${describeSelection(selection)}) names none of these ` +
             'workspaces, so commands that use it are refused.' +
-            (selection.source === 'profile' ? ' Drop it with `slideless workspace use --clear`.' : '') +
+            (selection.source === 'profile'
+              ? ` Drop it with \`${identity.bin} workspace use --clear\`.`
+              : '') +
             '\n'
         );
       }
@@ -85,8 +89,8 @@ export function registerWorkspaceCommands(program: Command, io: CliIo): void {
       const profileName = ctx.profileName;
       if (profileName === undefined || !ctx.config.profiles[profileName]) {
         throw new CliUsageError(
-          'No profile to save the selection on. Sign in first (`slideless login`), or select per ' +
-            'command with --workspace / SLIDELESS_WORKSPACE.'
+          `No profile to save the selection on. Sign in first (\`${identity.bin} login\`), or select per ` +
+            `command with --workspace / ${identity.envPrefix}_WORKSPACE.`
         );
       }
 
@@ -108,7 +112,7 @@ export function registerWorkspaceCommands(program: Command, io: CliIo): void {
       if (profileUrl === undefined || stripSlashes(profileUrl) !== ctx.baseUrl) {
         throw new CliUsageError(
           `Profile "${profileName}" points at ${profileUrl ?? '(no instance)'}, and this command ran against ` +
-            `${ctx.baseUrl}. A workspace belongs to one instance: drop --api-url / SLIDELESS_URL, or pick the ` +
+            `${ctx.baseUrl}. A workspace belongs to one instance: drop --api-url / ${identity.envPrefix}_URL, or pick the ` +
             'profile of that instance with --profile.'
         );
       }

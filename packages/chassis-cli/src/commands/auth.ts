@@ -1,27 +1,10 @@
 import type { Command } from 'commander';
 import { CliAuthClient, CliAuthError } from '@antasphere/cli-core';
-import { PlatformClient } from '@slideless/sdk';
-import {
-  CliUsageError,
-  printJson,
-  readSecretFromStdin,
-  redactKey,
-  stdinApiKey,
-  table,
-  type CliConfig,
-  type CliIo
-} from '@antasphere/chassis-cli';
-import {
-  clearConfig,
-  configPath,
-  describeSource,
-  loadConfig,
-  removeConnectKey,
-  requireApiKey,
-  resolveContext,
-  saveConfig,
-  workspaceSource
-} from '../cli.js';
+import type { ChassisClient } from '@antasphere/chassis-sdk';
+import { redactKey, type CliConfig } from '../config.js';
+import { CliUsageError, printJson, stdinApiKey, table, type CliIo } from '../context.js';
+import type { CliKit } from '../kit.js';
+import { readSecretFromStdin } from '../stdin.js';
 
 /**
  * Identity + profile commands: the OTP sign-in pair (login-request /
@@ -39,24 +22,33 @@ interface AuthGlobals {
 }
 
 /** URL for the pre-auth commands: flags → env only (no profile requirement). */
-function resolveAuthUrl(cmd: Command, io: CliIo): string {
+function resolveAuthUrl<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
+  cmd: Command,
+  io: CliIo
+): string {
+  const { identity, loadConfig } = kit;
   const opts = cmd.optsWithGlobals() as AuthGlobals;
   const config = loadConfig(io.env);
   const profileName = opts.profile ?? config.activeProfile;
   const profile = profileName ? config.profiles[profileName] : undefined;
-  const raw = opts.apiUrl ?? opts.url ?? io.env.SLIDELESS_URL ?? profile?.baseUrl;
+  const raw = opts.apiUrl ?? opts.url ?? io.env[`${identity.envPrefix}_URL`] ?? profile?.baseUrl;
   if (!raw) {
-    throw new CliUsageError('No instance to talk to — pass --api-url <url> (or set SLIDELESS_URL).');
+    throw new CliUsageError(
+      `No instance to talk to — pass --api-url <url> (or set ${identity.envPrefix}_URL).`
+    );
   }
   return raw.replace(/\/+$/, '');
 }
 
-function saveProfileKey(
+function saveProfileKey<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
   io: CliIo,
   profileName: string,
   baseUrl: string,
   apiKey: string
 ): { config: CliConfig; path: string } {
+  const { loadConfig, saveConfig } = kit;
   const config = loadConfig(io.env);
   const previous = config.profiles[profileName];
   config.profiles[profileName] = { ...previous, apiKey, baseUrl };
@@ -80,11 +72,16 @@ function saveProfileKey(
  * classic flow then reports its own, real error. Self-host instances are
  * untouched beyond the probe.
  */
-async function refuseOtpLoginOnCloud(baseUrl: string, io: CliIo): Promise<void> {
+async function refuseOtpLoginOnCloud<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
+  baseUrl: string,
+  io: CliIo
+): Promise<void> {
+  const { identity, createClient } = kit;
   let cloud = false;
   try {
     const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
-    const info = await new PlatformClient({ baseUrl, fetch: fetchImpl }).instance();
+    const info = await createClient({ baseUrl, fetch: fetchImpl }).instance();
     cloud = info.auth.methods.includes('antasphere') || info.edition === 'cloud';
   } catch {
     return; // discovery is advisory — never block the classic flow on it
@@ -92,14 +89,19 @@ async function refuseOtpLoginOnCloud(baseUrl: string, io: CliIo): Promise<void> 
   if (cloud) {
     throw new CliUsageError(
       `${baseUrl} is an Antasphere-cloud instance — it signs in at the hub, not with its own ` +
-        'email codes. Run `antasphere login` once; `slideless` then connects automatically ' +
-        '(or pass --api-key <slk_…> / set SLIDELESS_API_KEY).'
+        `email codes. Run \`antasphere login\` once; \`${identity.bin}\` then connects automatically ` +
+        `(or pass --api-key <${identity.keyPrefix}_…> / set ${identity.envPrefix}_API_KEY).`
     );
   }
 }
 
 /** Logout's last step on the hub-connect path: the saved selection goes with the identity. */
-function forgetWorkspaceSelection(io: CliIo, profileName: string): void {
+function forgetWorkspaceSelection<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
+  io: CliIo,
+  profileName: string
+): void {
+  const { loadConfig, saveConfig } = kit;
   const config = loadConfig(io.env);
   const profile = config.profiles[profileName];
   if (!profile || profile.activeWorkspaceId === undefined) return;
@@ -107,7 +109,25 @@ function forgetWorkspaceSelection(io: CliIo, profileName: string): void {
   saveConfig(io.env, config);
 }
 
-export function registerAuthCommands(program: Command, io: CliIo): void {
+export function registerAuthCommands<TClient extends ChassisClient<string>>(
+  kit: CliKit<TClient>,
+  program: Command,
+  io: CliIo
+): void {
+  const {
+    identity,
+    createClient,
+    clearConfig,
+    configPath,
+    loadConfig,
+    removeConnectKey,
+    requireApiKey,
+    resolveContext,
+    saveConfig,
+    workspaceSource
+  } = kit;
+  const { describeSource } = kit.workspace;
+
   const auth = program.command('auth').description('Sign in over email OTP (mints an API key)');
 
   auth
@@ -115,8 +135,8 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
     .description('Email a 6-digit sign-in code (existing accounts only — sign-up stays closed)')
     .requiredOption('--email <email>', 'account email on the instance')
     .action(async (opts: { email: string }, cmd: Command) => {
-      const baseUrl = resolveAuthUrl(cmd, io);
-      await refuseOtpLoginOnCloud(baseUrl, io);
+      const baseUrl = resolveAuthUrl(kit, cmd, io);
+      await refuseOtpLoginOnCloud(kit, baseUrl, io);
       // The OTP pair rides cli-core's instance auth client — the same
       // plumbing every Antasphere tool CLI signs in with.
       const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
@@ -125,7 +145,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       if (json) return printJson(io, { ...result, email: opts.email, baseUrl });
       io.out.write(
         `If ${opts.email} has an account on ${baseUrl}, a sign-in code is on its way.\n` +
-          `Complete with: slideless auth login-complete --email ${opts.email} --code <code>\n`
+          `Complete with: ${identity.bin} auth login-complete --email ${opts.email} --code <code>\n`
       );
     });
 
@@ -144,8 +164,8 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
         cmd: Command
       ) => {
         const globals = cmd.optsWithGlobals() as AuthGlobals;
-        const baseUrl = resolveAuthUrl(cmd, io);
-        await refuseOtpLoginOnCloud(baseUrl, io);
+        const baseUrl = resolveAuthUrl(kit, cmd, io);
+        await refuseOtpLoginOnCloud(kit, baseUrl, io);
         const client = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
         const result = await client.complete({
           email: opts.email,
@@ -154,7 +174,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
           ...(opts.expiresInDays ? { expiresInDays: opts.expiresInDays } : {})
         });
         const profileName = globals.profile ?? DEFAULT_PROFILE;
-        const { path } = saveProfileKey(io, profileName, baseUrl, result.key);
+        const { path } = saveProfileKey(kit, io, profileName, baseUrl, result.key);
         if (globals.json) {
           // The full key is deliberately NOT echoed — it is already stored.
           return printJson(io, {
@@ -175,24 +195,28 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
 
   program
     .command('login')
-    .description('Save an existing slk_ API key as a profile (pass --api-key or pipe it on stdin)')
+    .description(
+      `Save an existing ${identity.keyPrefix}_ API key as a profile (pass --api-key or pipe it on stdin)`
+    )
     .action(async (_opts, cmd: Command) => {
       const globals = cmd.optsWithGlobals() as AuthGlobals & { apiKey?: string };
-      const baseUrl = resolveAuthUrl(cmd, io);
+      const baseUrl = resolveAuthUrl(kit, cmd, io);
       // `--api-key-stdin` may already have spent stdin (index.ts); reuse
       // that read rather than blocking on an exhausted stream.
-      let key = globals.apiKey ?? stdinApiKey(io) ?? io.env.SLIDELESS_API_KEY;
+      let key = globals.apiKey ?? stdinApiKey(io) ?? io.env[`${identity.envPrefix}_API_KEY`];
       if (!key) {
         key = await readSecretFromStdin(io, 'API key').catch(() => '');
       }
-      if (!key || !key.startsWith('slk_')) {
-        throw new CliUsageError('No API key provided — pass --api-key slk_… or pipe the key on stdin.');
+      if (!key || !key.startsWith(`${identity.keyPrefix}_`)) {
+        throw new CliUsageError(
+          `No API key provided — pass --api-key ${identity.keyPrefix}_… or pipe the key on stdin.`
+        );
       }
       const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
-      const client = new PlatformClient({ baseUrl, apiKey: key, fetch: fetchImpl });
+      const client = createClient({ baseUrl, apiKey: key, fetch: fetchImpl });
       const me = await client.me(); // verify before storing
       const profileName = globals.profile ?? DEFAULT_PROFILE;
-      const { path } = saveProfileKey(io, profileName, baseUrl, key);
+      const { path } = saveProfileKey(kit, io, profileName, baseUrl, key);
       if (globals.json) {
         return printJson(io, { profile: profileName, baseUrl, user: me.user, configPath: path });
       }
@@ -262,7 +286,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
           }
           removeConnectKey(io.env, profileName, slot);
         }
-        forgetWorkspaceSelection(io, profileName);
+        forgetWorkspaceSelection(kit, io, profileName);
         if (globals.json) {
           return printJson(io, {
             profile: profileName,
@@ -331,7 +355,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       const globals = cmd.optsWithGlobals() as AuthGlobals;
       const config = loadConfig(io.env);
       if (!config.profiles[name]) {
-        throw new CliUsageError(`Unknown profile "${name}" — run \`slideless profiles\`.`);
+        throw new CliUsageError(`Unknown profile "${name}" — run \`${identity.bin} profiles\`.`);
       }
       config.activeProfile = name;
       saveConfig(io.env, config);
@@ -368,7 +392,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       }
       if (names.length === 0) {
         io.out.write(
-          'No profiles. Sign in with `slideless auth login-request --api-url <url> --email <you>`.\n'
+          `No profiles. Sign in with \`${identity.bin} auth login-request --api-url <url> --email <you>\`.\n`
         );
         return;
       }

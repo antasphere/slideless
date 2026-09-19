@@ -19,7 +19,11 @@ export const cli = defineCli({
     envPrefix: 'SLIDELESS',
     keyPrefix: 'slk'
   },
-  createClient: (options) => new PlatformClient(options)
+  description: 'Command-line client for a Slideless instance (push, share, pull, preview)',
+  createClient: (options) => new PlatformClient(options),
+  // The deck hint: a push that lost the race for the next version number.
+  errorHint: (e) =>
+    e.code === 'version_conflict' ? ' (someone pushed in between — rerun to retry)' : undefined
 });
 
 /** The context every command resolves: the chassis's, over the Slideless client. */
@@ -29,13 +33,9 @@ export const configPath = cli.configPath;
 export const loadConfig = cli.loadConfig;
 export const saveConfig = cli.saveConfig;
 export const clearConfig = cli.clearConfig;
-export const removeConnectKey = cli.removeConnectKey;
 
 export const resolveContext = cli.resolveContext;
 export const requireApiKey = cli.requireApiKey;
-export const workspaceSource = cli.workspaceSource;
-export const explainWorkspaceRefusal = cli.explainWorkspaceRefusal;
-export const workspaceNotFoundHint = cli.workspaceNotFoundHint;
 
 export const pickWorkspaceSelection = cli.workspace.pickWorkspaceSelection;
 export const describeSelection = cli.workspace.describeSelection;
