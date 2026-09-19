@@ -7,6 +7,7 @@ import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import Palette from '@lucide/svelte/icons/palette';
+import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 import type { Component } from 'svelte';
 import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 import { t } from '$lib/i18n';
@@ -67,16 +68,29 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       icon: Presentation,
       pattern: 'slides'
     },
-    // A PREVIEW: the page is an illustration of an idea, with made-up brands
-    // ($lib/brands-demo.ts). It has no server side at all.
-    {
-      id: 'brands',
-      title: t('brands.title'),
-      blurb: t('nav.blurb.brands'),
-      href: '/brands',
-      icon: Palette,
-      pattern: 'aurora'
-    }
+    // The references (PRDCT-2421): the decks the workspace keeps to make
+    // other decks from. A guest reads no workspace reference (a guest invited
+    // on one reads it at /decks/{id}), so the two sections are not offered.
+    ...(isGuest
+      ? []
+      : [
+          {
+            id: 'brands',
+            title: t('nav.brands'),
+            blurb: t('nav.blurb.brands'),
+            href: '/brands',
+            icon: Palette,
+            pattern: 'aurora'
+          },
+          {
+            id: 'templates',
+            title: t('nav.templates'),
+            blurb: t('nav.blurb.templates'),
+            href: '/templates',
+            icon: LayoutTemplate,
+            pattern: 'crosses'
+          }
+        ])
   ];
 
   const workspace: NavItem[] = [];
@@ -140,12 +154,28 @@ export function isActive(item: Pick<NavItem, 'href' | 'also'>, path: string): bo
   return [item.href, ...(item.also ?? [])].some((p) => path === p || path.startsWith(p + '/'));
 }
 
-/** The phone tab bar: the two everyday sections, the workspace behind one entry, the settings. */
+/** The everyday sections a phone keeps as tabs; the references fold behind the workspace entry. */
+const PHONE_TABS = new Set(['overview', 'decks']);
+
+/** The sections the phone's workspace entry opens: the references, then the administration. */
+export function behindWorkspace(nav: NavModel): NavItem[] {
+  return [
+    ...nav.primary.filter((i) => !PHONE_TABS.has(i.id)),
+    ...nav.workspace,
+    ...nav.system.filter((i) => i.id !== 'settings')
+  ];
+}
+
+/**
+ * The phone tab bar: the two everyday sections, the workspace behind one
+ * entry (the references included: six thumb tabs do not fit the bar), the
+ * settings.
+ */
 export function phoneTabs(nav: NavModel): NavItem[] {
   const settings = nav.system.find((i) => i.id === 'settings');
-  const behind = [...nav.workspace, ...nav.system.filter((i) => i.id !== 'settings')];
+  const behind = behindWorkspace(nav);
   return [
-    ...nav.primary,
+    ...nav.primary.filter((i) => PHONE_TABS.has(i.id)),
     {
       id: 'workspace',
       title: t('nav.workspace'),

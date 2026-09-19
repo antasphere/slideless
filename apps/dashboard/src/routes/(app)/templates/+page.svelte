@@ -4,4 +4,4 @@
   let { data } = $props();
 </script>
 
-<ReferencesPage type="brand" me={data.me} instanceName={data.instance.name} />
+<ReferencesPage type="template" me={data.me} instanceName={data.instance.name} />
