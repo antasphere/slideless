@@ -46,7 +46,8 @@ import {
   attachmentsOf,
   isTraversalSafeAssetPath,
   PREVIEW_SHARE_TOKEN_NAME,
-  type ManifestEntry
+  type ManifestEntry,
+  type Reference
 } from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '@slideless/db';
 import type { Env } from '../env.js';
@@ -60,6 +61,7 @@ import { encodeContentDisposition } from '../files/http.js';
 import { serveBlob } from '../files/serve.js';
 import type { StorageDriver } from '../storage/driver.js';
 import { manifestHasForms } from '../forms/detect.js';
+import { readReference } from '../presentations/reference-frontmatter.js';
 import { attachmentsZipFilename, serveAttachmentsZip, serveZip } from '../presentations/attachments.js';
 import { responseZipFolder, uniqueZipPath, zipSegment, type FormUploadService } from '../forms/uploads.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
@@ -102,6 +104,10 @@ const presentationToWire = (p: PresentationRow) => ({
   // tokens excluded at the viewer, so owner previews never count).
   totalViews: p.totalViews,
   notifyOnResponse: p.notifyOnResponse,
+  // The mirror written at push (ADR 025) — already `{ type, …frontmatter }`.
+  reference: (p.reference as Reference | null) ?? null,
+  audience: p.audience,
+  defaultReference: p.isDefaultReference,
   createdAt: p.createdAt.toISOString(),
   updatedAt: p.updatedAt.toISOString()
 });
@@ -114,6 +120,8 @@ const versionToWire = (v: Omit<PresentationVersionRow, 'manifest'>) => ({
   fileCount: v.fileCount,
   hasAgentDoc: v.hasAgentDoc,
   hasDownloads: v.hasDownloads,
+  reference: (v.reference as Reference | null) ?? null,
+  referenceWarning: v.referenceWarning,
   createdBy: v.createdBy,
   createdByRole: v.createdByRole,
   createdAt: v.createdAt.toISOString()
@@ -295,7 +303,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       manifest: body.manifest as ManifestEntry[],
       // PRDCT-1333: scanned HERE, before the commit transaction, so blob
       // reads never happen while the session/deck rows are locked.
-      hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[])
+      hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[]),
+      // ADR 025: the AGENT.md frontmatter, read here for the same reason —
+      // and it never refuses the push (an unusable one is a warning).
+      reference: await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[])
     });
     if (!result.ok) {
       const f = result.failure;
@@ -326,7 +337,11 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       action: 'presentation.create',
       resourceType: 'presentation',
       resourceId: result.presentation.id,
-      metadata: { title: result.presentation.title, fileCount: result.version.fileCount }
+      metadata: {
+        title: result.presentation.title,
+        fileCount: result.version.fileCount,
+        referenceType: result.version.referenceType
+      }
     });
     registry.events.emit('presentation.created', {
       workspaceId: principal.workspaceId,
@@ -351,7 +366,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       entryPath: body.entryPath,
       manifest: body.manifest as ManifestEntry[],
       title: body.title,
-      hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[])
+      hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[]),
+      // ADR 025: the AGENT.md frontmatter, read here for the same reason —
+      // and it never refuses the push (an unusable one is a warning).
+      reference: await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[])
     });
     if (!result.ok) {
       const f = result.failure;
@@ -392,7 +410,11 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       action: 'presentation.version_commit',
       resourceType: 'presentation',
       resourceId: result.presentation.id,
-      metadata: { version: result.version.version, fileCount: result.version.fileCount }
+      metadata: {
+        version: result.version.version,
+        fileCount: result.version.fileCount,
+        referenceType: result.version.referenceType
+      }
     });
     registry.events.emit('presentation.version_committed', {
       workspaceId: principal.workspaceId,
@@ -414,12 +436,15 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
 
   api.openapi(presentationsListRoute, async (c) => {
     const principal = c.get('principal')!;
-    const { cursor, limit } = c.req.valid('query');
+    const { cursor, limit, type, default: defaultOnly } = c.req.valid('query');
     // Scoped in the service (ADR 013): admins/owners see the whole
-    // workspace; members see owned decks + active collaborations only.
+    // workspace; members see owned decks + active collaborations, plus —
+    // under `type` — the workspace's published references (ADR 025).
     const { presentations, nextCursor } = await service.list(principal, {
       ...(cursor !== undefined ? { cursor } : {}),
-      limit
+      limit,
+      ...(type !== undefined ? { type } : {}),
+      ...(defaultOnly === 'true' ? { defaultOnly: true } : {})
     });
     return c.json({ presentations: presentations.map(presentationToWire), nextCursor }, 200);
   });
@@ -439,25 +464,83 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
     const deck = await service.get(principal.workspaceId, id);
-    // Writers only, and 404 — not 403 — on a failed check: today canWrite
-    // coincides with canRead (ADR 013), so a principal refused here could
-    // not read the deck either, and its existence must not be probeable.
-    if (!deck || !(await service.canWrite(principal, deck))) {
+    // THE TIERED RULE (AUTH-5, PRDCT-1393 — and ADR 025, which is the first
+    // time a principal can READ a deck without writing it). A caller who
+    // cannot read the deck gets the 404 a missing deck answers; a 403
+    // appears only AFTER a passed read check, where it confirms nothing the
+    // caller does not already legitimately see.
+    if (!deck || !(await service.canRead(principal, deck))) {
       return c.json(err('not_found', 'Presentation not found'), 404);
     }
-    const updated = await service.update(principal.workspaceId, id, {
+    // Who may change what: the plain properties are the deck WRITERS'; the
+    // audience is whoever ADMINISTERS the deck (its owner, a workspace
+    // admin/owner — never a dev collaborator); the workspace default is a
+    // WORKSPACE decision, admin/owner only, the deck's own owner included.
+    const touchesPlain =
+      body.title !== undefined || body.metadata !== undefined || body.notifyOnResponse !== undefined;
+    if (touchesPlain && !(await service.canWrite(principal, deck))) {
+      return c.json(err('forbidden', 'You can read this deck but not change it'), 403);
+    }
+    if (body.audience !== undefined && !canAdministerDeck(principal, deck)) {
+      return c.json(
+        err('forbidden', 'Only the deck owner or a workspace admin can change who reads a reference'),
+        403
+      );
+    }
+    if (body.defaultReference !== undefined && principal.role !== 'owner' && principal.role !== 'admin') {
+      return c.json(
+        err('forbidden', "Only a workspace admin can set or clear the workspace's default reference"),
+        403
+      );
+    }
+    const result = await service.update(principal.workspaceId, id, {
       title: body.title,
       metadata: body.metadata,
-      notifyOnResponse: body.notifyOnResponse
+      notifyOnResponse: body.notifyOnResponse,
+      audience: body.audience,
+      defaultReference: body.defaultReference
     });
-    if (!updated) return c.json(err('not_found', 'Presentation not found'), 404);
+    if (!result.ok) {
+      switch (result.failure.code) {
+        case 'not_found':
+          return c.json(err('not_found', 'Presentation not found'), 404);
+        case 'not_a_reference':
+          return c.json(
+            err(
+              'not_a_reference',
+              'audience and defaultReference apply to a reference: a deck whose AGENT.md frontmatter names a type'
+            ),
+            422
+          );
+        case 'audience_private':
+          return c.json(
+            err(
+              'audience_private',
+              'A default reference must be readable by the workspace: set audience to workspace first'
+            ),
+            409
+          );
+        case 'default_reference':
+          return c.json(
+            err(
+              'default_reference',
+              "This is the workspace's default reference: clear the default before making it private"
+            ),
+            409
+          );
+      }
+    }
     c.set('audit', {
       action: 'presentation.update',
       resourceType: 'presentation',
       resourceId: deck.id,
-      metadata: { fields: Object.keys(body) }
+      metadata: {
+        fields: Object.keys(body),
+        ...(body.audience !== undefined ? { audience: body.audience } : {}),
+        ...(body.defaultReference !== undefined ? { defaultReference: body.defaultReference } : {})
+      }
     });
-    return c.json(presentationToWire(updated), 200);
+    return c.json(presentationToWire(result.presentation), 200);
   });
 
   api.openapi(presentationDeleteRoute, async (c) => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { opaqueJsonChecks, plainText } from './common.js';
+import { cursorPageQuerySchema, opaqueJsonChecks, plainText } from './common.js';
 
 /**
  * Presentation domain wire schemas (ADR 011). A deck is a set of static
@@ -154,6 +154,51 @@ export function attachmentPathOf(name: string): string {
   return `${DOWNLOADS_PREFIX}${name}`;
 }
 
+// ── References (ADR 025) ─────────────────────────────────────────────────────
+
+/**
+ * A REFERENCE is a deck the workspace keeps to make other decks from. The
+ * underlying noun is `reference`; the types are surface names only, read
+ * from the `type:` line of the AGENT.md frontmatter at push (matched
+ * case-insensitively, stored lowercase). A future type is one more value
+ * here — no migration, the column is free text.
+ */
+export const REFERENCE_TYPES = ['brand', 'template'] as const;
+export const referenceTypeSchema = z.enum(REFERENCE_TYPES);
+export type ReferenceType = z.infer<typeof referenceTypeSchema>;
+
+/**
+ * Serialized cap on the mirrored frontmatter, in JSON.stringify characters
+ * (the metadata cap is the precedent). A frontmatter over it leaves the
+ * deck an ordinary deck with a warning — it never refuses the push.
+ */
+export const REFERENCE_MAX_LENGTH = 16 * 1024;
+
+/**
+ * The frontmatter as the server mirrored it at push: `type` is the known
+ * type in lowercase, every other field is the author's, verbatim and
+ * opaque to the server.
+ */
+export const referenceSchema = z.object({ type: referenceTypeSchema }).catchall(z.unknown());
+export type Reference = z.infer<typeof referenceSchema>;
+
+/**
+ * Who reads a reference (a column, never a frontmatter field): `private`
+ * follows the deck read rule of ADR 013 unchanged; `workspace` opens the
+ * reference and its files to every NON-GUEST member of the workspace.
+ * Meaningful on a reference only — an ordinary deck is always `private`.
+ */
+export const audienceSchema = z.enum(['private', 'workspace']);
+export type Audience = z.infer<typeof audienceSchema>;
+
+/** Provenance a deck made from references records in `metadata.references`. */
+export const referenceProvenanceSchema = z.object({
+  type: referenceTypeSchema,
+  id: z.string(),
+  version: z.number().int().min(1)
+});
+export type ReferenceProvenance = z.infer<typeof referenceProvenanceSchema>;
+
 export const presentationSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -192,10 +237,39 @@ export const presentationSchema = z.object({
    * collecting hundreds of answers who does not want a mail per batch.
    */
   notifyOnResponse: z.boolean(),
+  /**
+   * The AGENT.md frontmatter of the current version when it names a known
+   * reference type, mirrored at push; null on an ordinary deck. Existing
+   * decks are classified at their next push (no backfill).
+   */
+  reference: referenceSchema.nullable(),
+  /** Who reads this reference (see audienceSchema); `private` on every ordinary deck. */
+  audience: audienceSchema,
+  /** Whether this is the workspace's default reference of its type (one per type). */
+  defaultReference: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
 export type Presentation = z.infer<typeof presentationSchema>;
+
+/**
+ * The list's query: the shared cursor page plus `type`. Absent lists
+ * ORDINARY decks only (references leave the default listing); `brand` or
+ * `template` lists the references of that type; `reference` lists every
+ * reference. Kept here, not on the shared `cursorPageQuerySchema`.
+ */
+export const presentationsListTypeSchema = z.enum([...REFERENCE_TYPES, 'reference']);
+export type PresentationsListType = z.infer<typeof presentationsListTypeSchema>;
+export const presentationsListQuerySchema = cursorPageQuerySchema.extend({
+  type: presentationsListTypeSchema.optional(),
+  /**
+   * `default=true` keeps only the default references (at most one per
+   * type): with `type=brand` it answers "which deck is the house brand"
+   * in one call. Without `type` it implies `type=reference`.
+   */
+  default: z.enum(['true']).optional()
+});
+export type PresentationsListQuery = z.infer<typeof presentationsListQuerySchema>;
 
 export const presentationsListSchema = z.object({
   presentations: z.array(presentationSchema),
@@ -269,6 +343,14 @@ export const presentationVersionSchema = z.object({
   hasAgentDoc: z.boolean(),
   /** Whether this version's manifest carries attachments (entries under `downloads/`). */
   hasDownloads: z.boolean(),
+  /** This version's AGENT.md frontmatter when it names a known reference type; null otherwise. */
+  reference: referenceSchema.nullable(),
+  /**
+   * One sentence naming what made this version's frontmatter unusable
+   * (malformed, oversized, an unknown type), or null. The push succeeded
+   * either way: the classification never refuses a commit.
+   */
+  referenceWarning: z.string().nullable(),
   /** Null once the author's account was deleted. */
   createdBy: z.string().nullable(),
   createdByRole: versionAuthorRoleSchema,
@@ -410,10 +492,28 @@ export const presentationUpdateSchema = z
     title: plainText(1, 300).optional(),
     metadata: presentationMetadataSchema.optional(),
     /** The owner-notification switch for form responses (PRDCT-2330). */
-    notifyOnResponse: z.boolean().optional()
+    notifyOnResponse: z.boolean().optional(),
+    /**
+     * Who reads this reference. Deck administrators only (its owner, a
+     * workspace admin/owner); 422 `not_a_reference` on an ordinary deck;
+     * 409 `default_reference` when switching the default back to private.
+     */
+    audience: audienceSchema.optional(),
+    /**
+     * Make this the workspace's default reference of its type, or clear it.
+     * Workspace admins/owners only; requires `audience: workspace`
+     * (409 `audience_private`). Setting one clears the previous default of
+     * that type in the same transaction.
+     */
+    defaultReference: z.boolean().optional()
   })
   .refine(
-    (v) => v.title !== undefined || v.metadata !== undefined || v.notifyOnResponse !== undefined,
+    (v) =>
+      v.title !== undefined ||
+      v.metadata !== undefined ||
+      v.notifyOnResponse !== undefined ||
+      v.audience !== undefined ||
+      v.defaultReference !== undefined,
     'at least one field required'
   );
 export type PresentationUpdate = z.infer<typeof presentationUpdateSchema>;

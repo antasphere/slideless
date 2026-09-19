@@ -50,6 +50,7 @@ import {
   assetUploadFormSchema,
   assetUploadedSchema,
   presentationSchema,
+  presentationsListQuerySchema,
   presentationsListSchema,
   presentationUpdateSchema,
   presentationVersionDetailSchema,
@@ -739,8 +740,9 @@ export const presentationsListRoute = createRoute({
   method: 'get',
   path: '/presentations',
   tags: ['presentations'],
-  summary: 'List presentations in the workspace (cursor-paginated, newest first)',
-  request: { query: cursorPageQuerySchema },
+  summary:
+    'List presentations in the workspace (cursor-paginated, newest first); `type` lists references instead of ordinary decks',
+  request: { query: presentationsListQuerySchema },
   responses: {
     200: jsonBody(presentationsListSchema, 'Presentations, newest first'),
     401: errorResponses[401]
@@ -764,7 +766,8 @@ export const presentationUpdateRoute = createRoute({
   method: 'patch',
   path: '/presentations/{id}',
   tags: ['presentations'],
-  summary: 'Update mutable deck properties (title, metadata — metadata is a full replace)',
+  summary:
+    'Update mutable deck properties (title, metadata — metadata is a full replace; audience and defaultReference on a reference)',
   request: {
     params: uuidParams,
     body: jsonRequestBody(presentationUpdateSchema, 'Fields to change (at least one)')
@@ -773,7 +776,13 @@ export const presentationUpdateRoute = createRoute({
     200: jsonBody(presentationSchema, 'Updated presentation'),
     400: errorResponses[400],
     401: errorResponses[401],
-    404: errorResponses[404]
+    403: jsonBody(apiErrorSchema, 'The caller reads this deck but may not change this property'),
+    404: errorResponses[404],
+    409: jsonBody(
+      apiErrorSchema,
+      'audience_private or default_reference: the audience and the default disagree'
+    ),
+    422: jsonBody(apiErrorSchema, 'not_a_reference: audience and defaultReference apply to references only')
   }
 });
 

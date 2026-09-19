@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, exists, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   collaborators,
   files,
@@ -16,7 +16,15 @@ import {
   type UploadSessionRow,
   type VersionAuthorRole
 } from '@slideless/db';
-import { AGENT_DOC_PATH, isAttachmentPath, type ManifestEntry, type Principal } from '@slideless/contract';
+import {
+  AGENT_DOC_PATH,
+  isAttachmentPath,
+  type Audience,
+  type ManifestEntry,
+  type PresentationsListType,
+  type Principal,
+  type Reference
+} from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 
 /** A version list row: the summary columns plus its per-version counts (PRDCT-2308). */
@@ -24,6 +32,9 @@ export type VersionSummaryRow = Omit<PresentationVersionRow, 'manifest'> & {
   viewCount: number;
   downloadCount: number;
 };
+
+/** Two-int advisory lock namespace serializing default-reference sets per (workspace, type) — ADR 025. 7432001-6 are taken (see forms/uploads.ts, api/workspaces.ts). */
+const DEFAULT_REFERENCE_LOCK = 7432007;
 
 /** Upload sessions reserve the future deck id for ~1 h (ADR 011). */
 export const UPLOAD_SESSION_TTL_MS = 60 * 60 * 1000;
@@ -50,6 +61,26 @@ export interface CommitSuccess {
 }
 export type SessionCommitResult = CommitSuccess | { ok: false; failure: SessionCommitFailure };
 export type VersionCommitResult = CommitSuccess | { ok: false; failure: VersionCommitFailure };
+
+/**
+ * What the handler read from the bundle's AGENT.md frontmatter BEFORE the
+ * commit transaction (presentations/reference-frontmatter.ts — PRDCT-1333:
+ * no blob read with row locks held). `reference` null = an ordinary deck;
+ * `warning` names what was unusable. Neither ever refuses a commit.
+ */
+export interface CommitReference {
+  reference: Reference | null;
+  warning: string | null;
+}
+
+/** PATCH failures (ADR 025): the handler maps each to 404 / 422 / 409. */
+export type UpdateFailure =
+  | { code: 'not_found' }
+  | { code: 'not_a_reference' }
+  | { code: 'audience_private' }
+  | { code: 'default_reference' };
+export type UpdateResult =
+  { ok: true; presentation: PresentationRow } | { ok: false; failure: UpdateFailure };
 
 /** Duplicate failures (PRDCT-2279): the handler maps each to 404 / 400. */
 export type DuplicateFailure =
@@ -236,6 +267,8 @@ export class PresentationService {
      * blob reads never happen with row locks held). PRDCT-1333.
      */
     hasForms: boolean;
+    /** The AGENT.md frontmatter, read by the caller before the transaction (ADR 025). */
+    reference: CommitReference;
   }): Promise<SessionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -282,7 +315,11 @@ export class PresentationService {
           entryPath: opts.entryPath,
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
-          hasDownloads: stamped.hasDownloads
+          hasDownloads: stamped.hasDownloads,
+          // A new reference is born PRIVATE and never the default (the
+          // column defaults): publishing is an act, not a file (ADR 025).
+          referenceType: opts.reference.reference?.type ?? null,
+          reference: opts.reference.reference
         })
         .returning();
       const [version] = await tx
@@ -298,6 +335,9 @@ export class PresentationService {
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
           hasDownloads: stamped.hasDownloads,
+          referenceType: opts.reference.reference?.type ?? null,
+          reference: opts.reference.reference,
+          referenceWarning: opts.reference.warning,
           createdBy: opts.principal.userId,
           createdByRole: 'owner'
         })
@@ -329,6 +369,8 @@ export class PresentationService {
     title?: string | undefined;
     /** See commitUploadSession — PRDCT-1333. */
     hasForms: boolean;
+    /** See commitUploadSession — ADR 025. */
+    reference: CommitReference;
   }): Promise<VersionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -352,8 +394,9 @@ export class PresentationService {
       // collaborator commits as 'dev' (checked inside the transaction so a
       // concurrent revoke serializes against the commit). Anyone else gets
       // the SAME not_found a missing deck answers (AUTH-5, PRDCT-1393): a
-      // refused principal cannot read the deck either (canWrite coincides
-      // with canRead), so a push probe must not confirm the deck exists.
+      // push probe must not confirm the deck exists. Since ADR 025 a member
+      // may READ a workspace reference without writing it; they get this
+      // uniform not_found too — safe, and it tells them nothing new.
       let authorRole: VersionAuthorRole;
       if (canAdministerDeck(opts.principal, deck)) {
         authorRole = 'owner';
@@ -375,6 +418,33 @@ export class PresentationService {
       if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
       const stamped = this.stampManifest(opts.manifest, sizeBySha);
 
+      // The mirror moves with the version (ADR 025). The deck row is locked
+      // FOR UPDATE above, so the audience/default reset below cannot race a
+      // PATCH. FAIL-CLOSED on a reference that stops being one: the audience
+      // returns to private and the default is dropped IN THIS COMMIT — left
+      // on `workspace`, a frontmatter pushed back months later would reopen
+      // the deck to the whole workspace without anyone choosing it. A type
+      // change keeps the audience (still a reference) but drops the default:
+      // the workspace may already hold a default of the new type.
+      const newType = opts.reference.reference?.type ?? null;
+      const stoppedBeingReference = deck.referenceType !== null && newType === null;
+      const typeChanged = deck.referenceType !== null && newType !== null && newType !== deck.referenceType;
+      const mirrorNotes: string[] = [];
+      if (stoppedBeingReference) {
+        mirrorNotes.push(
+          `This deck was a ${deck.referenceType} reference and this version carries no usable frontmatter: ` +
+            'it is an ordinary deck again' +
+            (deck.audience === 'workspace' ? ', its audience went back to private' : '') +
+            (deck.isDefaultReference ? `, and it is no longer the default ${deck.referenceType}` : '') +
+            '.'
+        );
+      } else if (typeChanged && deck.isDefaultReference) {
+        mirrorNotes.push(
+          `The reference type changed from ${deck.referenceType} to ${newType}: the deck is no longer the default ${deck.referenceType}.`
+        );
+      }
+      const referenceWarning = [opts.reference.warning, ...mirrorNotes].filter(Boolean).join(' ') || null;
+
       const newVersion = deck.currentVersion + 1;
       const [version] = await tx
         .insert(presentationVersions)
@@ -389,6 +459,9 @@ export class PresentationService {
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
           hasDownloads: stamped.hasDownloads,
+          referenceType: newType,
+          reference: opts.reference.reference,
+          referenceWarning,
           createdBy: opts.principal.userId,
           // 'owner' for the deck owner / workspace admins, 'dev' for an
           // active per-deck collaborator (resolved above, in-transaction).
@@ -403,6 +476,10 @@ export class PresentationService {
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: opts.hasForms,
           hasDownloads: stamped.hasDownloads,
+          referenceType: newType,
+          reference: opts.reference.reference,
+          ...(stoppedBeingReference ? { audience: 'private' as const, isDefaultReference: false } : {}),
+          ...(typeChanged ? { isDefaultReference: false } : {}),
           updatedAt: new Date(),
           ...(opts.title !== undefined ? { title: opts.title } : {})
         })
@@ -497,6 +574,11 @@ export class PresentationService {
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: sourceVersion.hasForms,
           hasDownloads: stamped.hasDownloads,
+          // A duplicate of a reference is a reference (ADR 025): the copied
+          // VERSION's mirror, the same bytes. Private and never the default
+          // (the column defaults) — the copy is the caller's own deck.
+          referenceType: sourceVersion.referenceType,
+          reference: sourceVersion.reference,
           remixedFrom: source.id
         })
         .returning();
@@ -513,6 +595,8 @@ export class PresentationService {
           hasAgentDoc: stamped.hasAgentDoc,
           hasForms: sourceVersion.hasForms,
           hasDownloads: stamped.hasDownloads,
+          referenceType: sourceVersion.referenceType,
+          reference: sourceVersion.reference,
           createdBy: opts.principal.userId,
           // The copy is the caller's own deck: they own it, so they commit
           // its first version as 'owner' whatever their role on the source.
@@ -530,9 +614,19 @@ export class PresentationService {
 
   async list(
     principal: Principal,
-    opts: { cursor?: string; limit: number }
+    opts: { cursor?: string; limit: number; type?: PresentationsListType; defaultOnly?: boolean }
   ): Promise<{ presentations: PresentationRow[]; nextCursor: string | null }> {
     const cursorId = cursorRowId(opts.cursor);
+    // The `type` scope (ADR 025): absent = ORDINARY decks only (references
+    // leave the default listing); a type = the references of that type;
+    // `reference` = every reference. `defaultOnly` implies references.
+    const type = opts.type ?? (opts.defaultOnly ? 'reference' : undefined);
+    const typeScope =
+      type === undefined
+        ? isNull(presentations.referenceType)
+        : type === 'reference'
+          ? isNotNull(presentations.referenceType)
+          : eq(presentations.referenceType, type);
     // Visibility scope (ADR 013): admins/owners get the operator view; a
     // plain member's page is ownership OR an ACTIVE collaborator grant —
     // revoked/expired grants drop the deck from the listing immediately.
@@ -553,7 +647,14 @@ export class PresentationService {
                     eq(collaborators.status, 'active')
                   )
                 )
-            )
+            ),
+            // The ADR 013 amendment, in the list's WHERE: a reference whose
+            // audience is `workspace` is every NON-GUEST member's to read.
+            // The same three clauses as canReadDeck and blobReadScope — a
+            // guest membership exists for principal resolution only (D2).
+            ...(principal.origin !== 'guest'
+              ? [and(isNotNull(presentations.referenceType), eq(presentations.audience, 'workspace'))]
+              : [])
           )!
         ];
     const rows = await this.db
@@ -563,6 +664,8 @@ export class PresentationService {
         and(
           eq(presentations.workspaceId, principal.workspaceId),
           isNull(presentations.deletedAt),
+          typeScope,
+          ...(opts.defaultOnly ? [eq(presentations.isDefaultReference, true)] : []),
           ...visibility,
           ...(cursorId
             ? [
@@ -602,8 +705,20 @@ export class PresentationService {
   /**
    * Update mutable deck properties (PATCH /presentations/{id}). `metadata`
    * replaces the stored object wholesale — merge is a client concern (the
-   * caller read the deck to know what to send). Null when the deck is gone
-   * (the handler's 404; write authorization is the handler's canWriteDeck).
+   * caller read the deck to know what to send). WHO may change which field
+   * is the handler's (the tiered rule); WHAT a change means is here.
+   *
+   * `audience` and `defaultReference` (ADR 025) apply to a reference only
+   * (`not_a_reference`). The two must agree: a default reference is a
+   * workspace reference, so setting the default on a private one refuses
+   * `audience_private` and switching a default back to private refuses
+   * `default_reference` — both sent together are judged on the END state.
+   * The deck row is locked FOR UPDATE so the checks cannot race a commit
+   * that reclassifies the deck. Setting a default clears the previous one of
+   * that type in the SAME transaction, serialized per (workspace, type) by
+   * a transaction-scoped advisory lock; the partial unique index
+   * `presentations_default_reference_uniq` is the backstop should two sets
+   * ever interleave anyway.
    */
   async update(
     workspaceId: string,
@@ -613,25 +728,93 @@ export class PresentationService {
       metadata?: Record<string, unknown> | undefined;
       /** The owner-notification switch for form responses (PRDCT-2330). */
       notifyOnResponse?: boolean | undefined;
+      audience?: Audience | undefined;
+      defaultReference?: boolean | undefined;
     }
-  ): Promise<PresentationRow | null> {
+  ): Promise<UpdateResult> {
+    return this.db.transaction(async (tx): Promise<UpdateResult> => {
+      const [deck] = await tx
+        .select()
+        .from(presentations)
+        .where(
+          and(
+            eq(presentations.id, id),
+            eq(presentations.workspaceId, workspaceId),
+            isNull(presentations.deletedAt)
+          )
+        )
+        .for('update')
+        .limit(1);
+      if (!deck) return { ok: false, failure: { code: 'not_found' } };
+
+      const touchesReference = patch.audience !== undefined || patch.defaultReference !== undefined;
+      if (touchesReference && deck.referenceType === null) {
+        return { ok: false, failure: { code: 'not_a_reference' } };
+      }
+      const nextAudience = patch.audience ?? deck.audience;
+      const nextDefault = patch.defaultReference ?? deck.isDefaultReference;
+      if (touchesReference && nextDefault && nextAudience !== 'workspace') {
+        // Which refusal: the caller asked for the default on a private
+        // reference, or asked to privatize the standing default.
+        return {
+          ok: false,
+          failure: { code: patch.defaultReference === true ? 'audience_private' : 'default_reference' }
+        };
+      }
+      if (nextDefault && !deck.isDefaultReference) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(${DEFAULT_REFERENCE_LOCK}, hashtext(${`${workspaceId}:${deck.referenceType}`}))`
+        );
+        await tx
+          .update(presentations)
+          .set({ isDefaultReference: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(presentations.workspaceId, workspaceId),
+              eq(presentations.referenceType, deck.referenceType!),
+              eq(presentations.isDefaultReference, true),
+              ne(presentations.id, deck.id)
+            )
+          );
+      }
+
+      const [row] = await tx
+        .update(presentations)
+        .set({
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
+          ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
+          ...(patch.notifyOnResponse !== undefined ? { notifyOnResponse: patch.notifyOnResponse } : {}),
+          ...(patch.audience !== undefined ? { audience: patch.audience } : {}),
+          ...(patch.defaultReference !== undefined ? { isDefaultReference: patch.defaultReference } : {}),
+          updatedAt: new Date()
+        })
+        .where(eq(presentations.id, deck.id))
+        .returning();
+      return { ok: true, presentation: row! };
+    });
+  }
+
+  /**
+   * The workspace's default reference of a type, or null — also null when
+   * the caller may not read it (a guest), so the answer never confirms a
+   * default exists to someone outside the audience. A default is always a
+   * workspace reference, so every non-guest member reads it.
+   */
+  async getDefaultReference(principal: Principal, type: string): Promise<PresentationRow | null> {
     const [row] = await this.db
-      .update(presentations)
-      .set({
-        ...(patch.title !== undefined ? { title: patch.title } : {}),
-        ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
-        ...(patch.notifyOnResponse !== undefined ? { notifyOnResponse: patch.notifyOnResponse } : {}),
-        updatedAt: new Date()
-      })
+      .select()
+      .from(presentations)
       .where(
         and(
-          eq(presentations.id, id),
-          eq(presentations.workspaceId, workspaceId),
+          eq(presentations.workspaceId, principal.workspaceId),
+          eq(presentations.referenceType, type),
+          eq(presentations.isDefaultReference, true),
           isNull(presentations.deletedAt)
         )
       )
-      .returning();
-    return row ?? null;
+      .limit(1);
+    if (!row || !(await canReadDeck(this.db, principal, row))) return null;
+    return row;
   }
 
   /**
@@ -681,6 +864,9 @@ export class PresentationService {
         hasAgentDoc: presentationVersions.hasAgentDoc,
         hasForms: presentationVersions.hasForms,
         hasDownloads: presentationVersions.hasDownloads,
+        referenceType: presentationVersions.referenceType,
+        reference: presentationVersions.reference,
+        referenceWarning: presentationVersions.referenceWarning,
         createdBy: presentationVersions.createdBy,
         createdByRole: presentationVersions.createdByRole,
         createdAt: presentationVersions.createdAt
@@ -816,11 +1002,16 @@ export class PresentationService {
 
   // ── Delete ─────────────────────────────────────────────────────────────────
 
-  /** Soft delete; versions and (Phase 4) share tokens stop resolving. */
+  /**
+   * Soft delete; versions and (Phase 4) share tokens stop resolving. A
+   * default reference may be deleted, and the delete drops the default
+   * (ADR 025): the flag is cleared on the row itself, beside the partial
+   * unique index that already ignores deleted rows.
+   */
   async softDelete(deck: PresentationRow): Promise<PresentationRow> {
     const [row] = await this.db
       .update(presentations)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .set({ deletedAt: new Date(), isDefaultReference: false, updatedAt: new Date() })
       .where(and(eq(presentations.id, deck.id), isNull(presentations.deletedAt)))
       .returning();
     return row ?? deck;
@@ -927,9 +1118,9 @@ export async function canWriteDeck(
  * deck), so workspace membership alone must never be a handle to read every
  * deck — and revoking a grant must cut content access off immediately.
  *
- * Today this coincides with canWriteDeck; it is a SEPARATE policy on purpose
- * (a future read-only collaborator role widens reads without widening
- * writes). Handlers answer 404 — never 403 — when this returns false: a deck
+ * A SEPARATE policy from canWriteDeck on purpose, and since ADR 025 the two
+ * DIVERGE: a workspace reference widens reads without widening writes (a
+ * future read-only collaborator role would do the same). Handlers answer 404 — never 403 — when this returns false: a deck
  * a principal cannot read must not reveal its existence (the codebase's
  * standing not-found posture).
  */
@@ -939,7 +1130,25 @@ export async function canReadDeck(
   deck: PresentationRow
 ): Promise<boolean> {
   if (canAdministerDeck(principal, deck)) return true;
+  if (isWorkspaceReference(deck) && principal.origin !== 'guest') return true;
   return isActiveDevCollaborator(conn, deck.id, principal.userId);
+}
+
+/**
+ * The ADR 013 amendment (ADR 025): a REFERENCE whose audience is `workspace`
+ * is readable by every non-guest member of its workspace — the explicit
+ * visibility field ADR 013's "Revisit when" asked for. Three clauses, and
+ * each one is load-bearing: the TYPE (an ordinary deck can never be opened
+ * this way, whatever its audience column says), the AUDIENCE (a private
+ * reference keeps the ADR 013 rule untouched), and — at the call sites —
+ * the GUEST refusal (a guest membership exists for principal resolution
+ * only, D2). Same workspace and not deleted are the caller's: every deck
+ * reaches here through `get(workspaceId, id)`. READ ONLY: canWriteDeck and
+ * canAdministerDeck do not know this branch. `blobReadScope` and `list()`
+ * carry the same three clauses in SQL — change one, change all three.
+ */
+export function isWorkspaceReference(deck: Pick<PresentationRow, 'referenceType' | 'audience'>): boolean {
+  return deck.referenceType !== null && deck.audience === 'workspace';
 }
 
 /**
@@ -971,6 +1180,15 @@ export async function canReadDeck(
 export function blobReadScope(principal: Principal): SQL | undefined {
   if (principal.role === 'owner' || principal.role === 'admin') return undefined;
   const userId = principal.userId;
+  // The ADR 013 amendment, in SQL (see isWorkspaceReference): the bytes of a
+  // workspace reference follow the reference's rule, so a non-guest member
+  // may read them — and BIND them (the wanted consequence: the house logo
+  // goes into a member's own deck without a re-upload, and precheckMissing
+  // answers "present" for it). Omitted entirely for a guest.
+  const workspaceReference =
+    principal.origin !== 'guest'
+      ? sql`OR (p.reference_type IS NOT NULL AND p.audience = 'workspace')`
+      : sql``;
   return sql`(
     EXISTS (
       SELECT 1 FROM file_uploaders fu
@@ -990,6 +1208,7 @@ export function blobReadScope(principal: Principal): SQL | undefined {
               AND c.user_id = ${userId}
               AND c.status = 'active'
           )
+          ${workspaceReference}
         )
         AND pv.manifest @> jsonb_build_array(jsonb_build_object('sha256', ${files.sha256}))
     )
