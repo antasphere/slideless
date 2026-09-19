@@ -3,9 +3,9 @@ import { finished } from 'node:stream/promises';
 import type { Context } from 'hono';
 import { ZipFile } from 'yazl';
 import type { Attachment } from '@slideless/contract';
-import type { Logger } from '../logger.js';
-import { encodeContentDisposition } from '../files/http.js';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
+import { encodeContentDisposition } from '@antasphere/chassis-server/files';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * The attachments zip (PRDCT-2278): every `downloads/` entry of one version,

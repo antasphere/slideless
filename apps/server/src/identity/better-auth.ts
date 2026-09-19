@@ -24,7 +24,7 @@ import {
 } from '@antasphere/chassis-db';
 import type { Env } from '../env.js';
 import { HUB_SSO_PROVIDER_ID, HubSsoLoginError, type HubSsoService } from './hub-sso.js';
-import { parseSuperadminEmails } from '../accounts/superadmin.js';
+import { parseSuperadminEmails } from '@antasphere/chassis-server/accounts';
 
 /**
  * The only file that touches better-auth's constructor. Everything else goes

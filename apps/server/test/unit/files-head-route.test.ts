@@ -4,9 +4,9 @@ import { Readable } from 'node:stream';
 import { pino } from 'pino';
 import type { Principal } from '@antasphere/chassis-contract';
 import { registerFileRoutes } from '../../src/api/files.js';
-import type { FileService } from '../../src/files/service.js';
-import type { PlatformRegistry } from '../../src/platform/registry.js';
-import type { StorageDriver } from '../../src/storage/driver.js';
+import type { FileService } from '@antasphere/chassis-server/files';
+import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
+import type { StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * PLT-39, the half that actually matters: the REGISTERED ROUTE must answer a

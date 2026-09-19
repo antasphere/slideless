@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Writable } from 'node:stream';
 import { pino } from 'pino';
-import { REDACT_PATHS } from '../../src/logger.js';
+import { REDACT_PATHS } from '@antasphere/chassis-server/logger';
 import { buildCsp, inlineScriptHashes } from '../../src/middleware/security-headers.js';
 
 describe('pino redaction (secrets never reach the stream)', () => {

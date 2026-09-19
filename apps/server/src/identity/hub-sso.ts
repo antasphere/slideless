@@ -3,7 +3,7 @@ import type { JWTPayload } from 'jose';
 import { and, eq, ne } from 'drizzle-orm';
 import type { GenericOAuthConfig } from 'better-auth/plugins';
 import { account, user as userTable, userOnboarding, type Db } from '@antasphere/chassis-db';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import { HubJwtVerifier } from './hub-jwt.js';
 import type { ReconcilePassOutcome } from './hub-reconcile.js';
 import type { LoginAccessToken } from './hub-user-client.js';

@@ -16,9 +16,9 @@ import {
   type Db
 } from '@antasphere/chassis-db';
 import type { Env } from '../env.js';
-import type { Logger } from '../logger.js';
-import type { AuditService } from '../audit/service.js';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
+import type { AuditService } from '@antasphere/chassis-server/audit';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
 import { rateLimit, type ClientIpFn, type RateLimiters } from '../middleware/rate-limit.js';
 

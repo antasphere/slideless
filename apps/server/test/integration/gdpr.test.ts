@@ -10,8 +10,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { apiKeys, auditLog, files, workspaceMembers } from '@antasphere/chassis-db';
 import { run } from '@antasphere/slideless';
 import type { CliIo } from '@antasphere/slideless';
-import { AccountDeletionService, LastOwnerError } from '../../src/accounts/deletion.js';
-import { AuditService } from '../../src/audit/service.js';
+import { AccountDeletionService, LastOwnerError } from '@antasphere/chassis-server/accounts';
+import { AuditService } from '@antasphere/chassis-server/audit';
 import {
   createDatabase,
   createTestApp,

@@ -5,7 +5,7 @@ import AdmZip from 'adm-zip';
 import { pino } from 'pino';
 import type { Attachment } from '@slideless/contract';
 import { attachmentsZipFilename, serveAttachmentsZip } from '../../src/presentations/attachments.js';
-import type { StorageDriver } from '../../src/storage/driver.js';
+import type { StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * The attachments zip (PRDCT-2278) at the unit level: the archive a

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { text } from 'node:stream/consumers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { LocalStorageDriver } from '../../src/storage/local.js';
+import { LocalStorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * The local driver must fail a missing blob at the getStream() await — never

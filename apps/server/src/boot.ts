@@ -7,20 +7,20 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APIError } from 'better-auth/api';
-import { AccountDeletionService, LastOwnerError } from './accounts/deletion.js';
-import { ErasureLog } from './accounts/erasure-log.js';
+import { AccountDeletionService, LastOwnerError } from '@antasphere/chassis-server/accounts';
+import { ErasureLog } from '@antasphere/chassis-server/accounts';
 import { createApiApp } from './api/index.js';
-import { buildPepperRegistry } from './apikeys/peppers.js';
+import { buildPepperRegistry } from '@antasphere/chassis-server/apikeys';
 import { ApiKeyService } from './apikeys/service.js';
 import { createApp } from './app.js';
-import { AuditService } from './audit/service.js';
-import { createEmailDriver, type EmailDriver } from './email/driver.js';
+import { AuditService } from '@antasphere/chassis-server/audit';
+import { createEmailDriver, type EmailDriver } from '@antasphere/chassis-server/email';
 import {
   buildChangeEmailConfirmEmail,
   buildOtpEmail,
   buildPasswordResetEmail,
   buildVerifyEmailEmail
-} from './email/templates.js';
+} from '@antasphere/chassis-server/email';
 import { hubConfig, parseEnv, type Env } from './env.js';
 import { createAuth, mcpResourceUrl, type AccountEvent, type Auth } from './identity/better-auth.js';
 import { HubSsoService } from './identity/hub-sso.js';
@@ -39,22 +39,27 @@ import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
 import { wellKnownRoutes } from './routes/wellknown.js';
 import { instanceSettings, user as userTable, workspaceMembers, workspaces } from '@antasphere/chassis-db';
-import { FileService } from './files/service.js';
+import { FileService } from '@antasphere/chassis-server/files';
 import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
-import { createLogger, type Logger } from './logger.js';
-import { createStorageDriver } from './storage/factory.js';
+import { createLogger, type Logger } from '@antasphere/chassis-server/logger';
+import { createStorageDriver } from '@antasphere/chassis-server/storage';
 import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-limit.js';
 import { hstsValue } from './middleware/security-headers.js';
 import { createMetrics } from './observability/metrics.js';
-import { createOtel, type Otel } from './observability/otel.js';
+import { createOtel, type Otel } from '@antasphere/chassis-server/observability';
 import { bindEditionSeams } from './platform/edition.js';
-import { AllowAllEntitlements } from './platform/entitlements.js';
-import { EventBus } from './platform/events.js';
+import { AllowAllEntitlements } from '@antasphere/chassis-server/platform';
+import { EventBus } from '@antasphere/chassis-server/platform';
 import { LocalIdentityProvider } from './platform/local-identity.js';
-import { createRegistry, type PlatformRegistry } from './platform/registry.js';
-import { NoopUsageSink } from './platform/usage.js';
-import { WorkspaceService } from './platform/workspaces.js';
-import { clearGeneratedSetupToken, resolveAuthSecret, resolveSetupToken } from './secret.js';
+import { createRegistry } from '@antasphere/chassis-server/platform';
+import type { DeckEvents, DeckRegistry } from './platform/deck-events.js';
+import { NoopUsageSink } from '@antasphere/chassis-server/platform';
+import { WorkspaceService } from '@antasphere/chassis-server/platform';
+import {
+  clearGeneratedSetupToken,
+  resolveAuthSecret,
+  resolveSetupToken
+} from '@antasphere/chassis-server/util';
 import { ShareTokenService } from './sharing/service.js';
 import { FormResponseService } from './forms/service.js';
 import { FormResponseNotifier } from './forms/notify.js';
@@ -64,7 +69,7 @@ import { ShareTokenDownloadService } from './sharing/download-events.js';
 import { PresentationService } from './presentations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { viewerRoutes } from './viewer/routes.js';
-import { createRuntimeState, type RuntimeState } from './state.js';
+import { createRuntimeState, type RuntimeState } from '@antasphere/chassis-server/util';
 import type { UsageSink } from '@antasphere/chassis-contract';
 
 /** Test seams only — production boot never passes overrides. */
@@ -107,7 +112,7 @@ export interface BootResult {
   auth: Auth;
   /** Test seam: `drain()` awaits in-flight owner mails (PRDCT-2330). */
   formsNotifier: FormResponseNotifier;
-  registry: PlatformRegistry;
+  registry: DeckRegistry;
   jobs: Jobs;
   email: EmailDriver;
   otel: Otel;
@@ -363,7 +368,7 @@ export async function boot(
   // covering EVERY account entrance by construction (setup, invitation
   // accept, collaborator claim, future SSO JIT) — never from individual
   // call sites.
-  const events = new EventBus(logger);
+  const events = new EventBus<DeckEvents>(logger);
 
   // The cloud edition's hub SSO binding (internal/federation.md): constructed
   // iff EDITION=cloud — hubConfig() is the single switch, so an oss boot
@@ -822,7 +827,7 @@ export async function boot(
   });
 
   // Observability: tracing (exporterless = zero phone-home) + Prometheus.
-  const otel = await createOtel(env, logger);
+  const otel = await createOtel(env, logger, { serviceName: 'slideless' });
   const metrics = createMetrics(db.db, jobs.boss);
   // Cloud only: the reconcile-pass and grant-refresh counters join the app
   // registry so a degraded hub (or dying grants) is visible on /metrics.

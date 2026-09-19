@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { pino } from 'pino';
 import { createApp, postgresErrorCode } from '../../src/app.js';
-import { createRuntimeState } from '../../src/state.js';
+import { createRuntimeState } from '@antasphere/chassis-server/util';
 
 /**
  * SL-B4 / SL-B5: a NUL byte reaching Postgres (SQLSTATE 22021) and a

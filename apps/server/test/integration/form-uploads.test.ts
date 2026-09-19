@@ -576,7 +576,7 @@ describe('the claim binds an upload to its link, its form, its field, once', () 
     expect(
       await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, cv.id))
     ).toHaveLength(0);
-    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const { createStorageDriver } = await import('@antasphere/chassis-server/storage');
     expect(await createStorageDriver(app.env).exists(cvRow!.storageKey)).toBe(false);
 
     const cleared = await putMe(
@@ -711,7 +711,7 @@ describe('edits, removals and the bytes behind them', () => {
       await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, f.id))
     ).toHaveLength(0);
     expect(row!.storageKey).toMatch(new RegExp(`^forms/[0-9a-f-]+/${deckId}/${f.id}$`));
-    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const { createStorageDriver } = await import('@antasphere/chassis-server/storage');
     expect(await createStorageDriver(app.env).exists(row!.storageKey)).toBe(false);
   });
 
@@ -732,7 +732,7 @@ describe('edits, removals and the bytes behind them', () => {
       .where(eq(formResponseFiles.id, held.id));
 
     const { FormUploadService, formUploadCaps } = await import('../../src/forms/uploads.js');
-    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const { createStorageDriver } = await import('@antasphere/chassis-server/storage');
     const service = new FormUploadService(
       app.db.db,
       createStorageDriver(app.env),
@@ -763,7 +763,7 @@ describe('a deleted deck', () => {
     expect(del.status).toBeLessThan(300);
 
     const { FormUploadService, formUploadCaps } = await import('../../src/forms/uploads.js');
-    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const { createStorageDriver } = await import('@antasphere/chassis-server/storage');
     const storage = createStorageDriver(app.env);
     const service = new FormUploadService(
       app.db.db,
@@ -855,7 +855,7 @@ describe("the deck's upload total", () => {
     const link = await createToken({ name: 'race' }, deck);
     const { FormUploadService, FormUploadsFullError, formUploadCaps } =
       await import('../../src/forms/uploads.js');
-    const { createStorageDriver } = await import('../../src/storage/factory.js');
+    const { createStorageDriver } = await import('@antasphere/chassis-server/storage');
     const { Readable } = await import('node:stream');
     const real = createStorageDriver(app.env);
     const N = 6;

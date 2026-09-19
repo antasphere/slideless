@@ -1,5 +1,5 @@
 import { workspaceRoles, type WorkspaceRole } from '@antasphere/chassis-db';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { GrantAccess, HubGrantService } from './hub-grant.js';
 
 /**

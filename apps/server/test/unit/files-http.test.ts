@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { contentDispositionFor, parseRangeHeader } from '../../src/files/http.js';
-import { blobKey } from '../../src/storage/driver.js';
+import { contentDispositionFor, parseRangeHeader } from '@antasphere/chassis-server/files';
+import { blobKey } from '@antasphere/chassis-server/storage';
 
 describe('parseRangeHeader', () => {
   const SIZE = 100;

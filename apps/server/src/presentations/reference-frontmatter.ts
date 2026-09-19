@@ -8,7 +8,7 @@ import {
   type ReferenceType
 } from '@slideless/contract';
 import { parse as parseYaml } from 'yaml';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * PUSH-TIME REFERENCE DETECTION (ADR 025).

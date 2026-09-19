@@ -7,9 +7,9 @@ import type { Auth } from '../identity/better-auth.js';
 import { resolveMembership } from '../identity/resolve-membership.js';
 import type { HubSsoService } from '../identity/hub-sso.js';
 import type { ApiKeyService } from '../apikeys/service.js';
-import type { AuditService } from '../audit/service.js';
-import type { EmailDriver } from '../email/driver.js';
-import type { Logger } from '../logger.js';
+import type { AuditService } from '@antasphere/chassis-server/audit';
+import type { EmailDriver } from '@antasphere/chassis-server/email';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 

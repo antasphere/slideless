@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { envSchema, hubConfig, shannonEntropyBits, weakSecretReason } from '../../src/env.js';
+import { shannonEntropyBits, weakSecretReason } from '@antasphere/chassis-server/env';
+import { envSchema, hubConfig } from '../../src/env.js';
 
 const minimal = { DATABASE_URL: 'postgres://u:p@localhost:5432/db' };
 

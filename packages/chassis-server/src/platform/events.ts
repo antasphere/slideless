@@ -22,31 +22,37 @@ export type PlatformEvents = {
   'invitation.created': { workspaceId: string; invitationId: string };
   'invitation.accepted': { workspaceId: string; invitationId: string; userId: string };
   'file.uploaded': { workspaceId: string; fileId: string; sizeBytes: number };
-  'presentation.created': { workspaceId: string; presentationId: string };
-  'presentation.version_committed': { workspaceId: string; presentationId: string; version: number };
   /** workspaceId is null on the cloud edition — setup creates no workspace there. */
   /** A person created ANOTHER workspace from inside the product (POST /workspaces). */
   'workspace.created': { workspaceId: string; ownerUserId: string };
   'setup.completed': { workspaceId: string | null; instanceId: string };
 };
 
-type Handler<E extends keyof PlatformEvents> = (payload: PlatformEvents[E]) => void | Promise<void>;
+/**
+ * The events a bus carries: the chassis ones plus the tool's own (`TExtra`, a
+ * map of event name to payload, declared by the tool that instantiates the bus).
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export type EventMap<TExtra = {}> = PlatformEvents & TExtra;
 
-export class EventBus {
-  private handlers = new Map<keyof PlatformEvents, Set<Handler<never>>>();
+type Handler<M, E extends keyof M> = (payload: M[E]) => void | Promise<void>;
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export class EventBus<TExtra = {}> {
+  private handlers = new Map<keyof EventMap<TExtra>, Set<Handler<EventMap<TExtra>, never>>>();
 
   constructor(private readonly logger: Logger) {}
 
-  on<E extends keyof PlatformEvents>(event: E, handler: Handler<E>): () => void {
+  on<E extends keyof EventMap<TExtra>>(event: E, handler: Handler<EventMap<TExtra>, E>): () => void {
     const set = this.handlers.get(event) ?? new Set();
-    set.add(handler as Handler<never>);
+    set.add(handler as Handler<EventMap<TExtra>, never>);
     this.handlers.set(event, set);
-    return () => set.delete(handler as Handler<never>);
+    return () => set.delete(handler as Handler<EventMap<TExtra>, never>);
   }
 
-  emit<E extends keyof PlatformEvents>(event: E, payload: PlatformEvents[E]): void {
+  emit<E extends keyof EventMap<TExtra>>(event: E, payload: EventMap<TExtra>[E]): void {
     for (const handler of this.handlers.get(event) ?? []) {
-      Promise.resolve((handler as Handler<E>)(payload)).catch((err) => {
+      Promise.resolve((handler as Handler<EventMap<TExtra>, E>)(payload)).catch((err) => {
         this.logger.error({ err, event }, 'event handler failed');
       });
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { healthRoutes } from '../../src/routes/health.js';
-import { createRuntimeState } from '../../src/state.js';
+import { createRuntimeState } from '@antasphere/chassis-server/util';
 
 /**
  * OPS-4: /readyz must be a LIVE claim about the backing store, not a memory

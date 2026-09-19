@@ -2,8 +2,8 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { EMBED_PLACEMENT_RE } from '@slideless/contract';
 import type { Db } from '@antasphere/chassis-db';
 import { shareTokenViews, type ShareTokenViewRow } from '@slideless/db';
-import type { Logger } from '../logger.js';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 
 /**
  * Per-view share-link analytics (PRDCT-1313): one event row per COUNTED

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { classifyHubOrgCreateAnswer, HubUserClient } from '../../src/identity/hub-user-client.js';
 import type { GrantAccess, HubGrantService } from '../../src/identity/hub-grant.js';
-import type { Logger } from '../../src/logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**
  * The ONE hub call behind POST /workspaces on cloud (PRDCT-2443):

@@ -8,7 +8,7 @@ import {
   escapeLike,
   parseActionList,
   parseViaList
-} from '../../src/audit/filters.js';
+} from '@antasphere/chassis-server/audit';
 
 /**
  * The audit list's filters: what the contract admits, how the free-text

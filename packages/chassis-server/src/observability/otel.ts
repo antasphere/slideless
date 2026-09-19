@@ -22,10 +22,11 @@ export interface Otel {
 
 export async function createOtel(
   env: Pick<Env, 'OTEL_EXPORTER_OTLP_ENDPOINT' | 'APP_VERSION' | 'EDITION'>,
-  logger: Logger
+  logger: Logger,
+  options: { serviceName: string }
 ): Promise<Otel> {
   const resource = resourceFromAttributes({
-    'service.name': 'slideless',
+    'service.name': options.serviceName,
     'service.version': env.APP_VERSION,
     'deployment.environment.name': env.EDITION
   });
@@ -41,7 +42,7 @@ export async function createOtel(
 
   const provider = new NodeTracerProvider({ resource, spanProcessors });
   provider.register();
-  const tracer = trace.getTracer('slideless');
+  const tracer = trace.getTracer(options.serviceName);
 
   const middleware: MiddlewareHandler = async (c, next) => {
     // Start with a low-cardinality name (the matched route pattern isn't known

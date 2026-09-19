@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { RuntimeState } from '../state.js';
+import type { RuntimeState } from '@antasphere/chassis-server/util';
 
 /**
  * /healthz — liveness. No dependencies: answers 200 whenever the event loop

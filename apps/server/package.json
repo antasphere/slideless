@@ -21,6 +21,7 @@
   "dependencies": {
     "@antasphere/chassis-contract": "workspace:*",
     "@antasphere/chassis-db": "workspace:*",
+    "@antasphere/chassis-server": "workspace:*",
     "@aws-sdk/client-s3": "^3.1079.0",
     "@aws-sdk/lib-storage": "^3.1079.0",
     "@better-auth/oauth-provider": "1.6.22",

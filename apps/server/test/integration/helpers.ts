@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
 import { boot, type BootOverrides, type BootResult } from '../../src/boot.js';
-import type { EmailDriver, EmailMessage } from '../../src/email/driver.js';
+import type { EmailDriver, EmailMessage } from '@antasphere/chassis-server/email';
 
 /**
  * Delivering driver that records instead of sending. Exists because

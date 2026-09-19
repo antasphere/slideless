@@ -1,5 +1,5 @@
 import type { ManifestEntry } from '@slideless/contract';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * COMMIT-TIME FORM DETECTION (ADR 022 + PRDCT-1333, audit §3).

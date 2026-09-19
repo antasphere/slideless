@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import type { Db, DbConn } from '@antasphere/chassis-db';
 import { collaborators, type CollaboratorRow } from '@slideless/db';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 
 /**
  * Per-deck dev grants (Phase 5). The invitations pattern applied to decks:

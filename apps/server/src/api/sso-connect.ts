@@ -6,8 +6,8 @@ import type { Auth } from '../identity/better-auth.js';
 import { HubSsoLoginError, type HubConnectAssertion, type HubSsoService } from '../identity/hub-sso.js';
 import type { HubGrantService } from '../identity/hub-grant.js';
 import type { ApiKeyService } from '../apikeys/service.js';
-import type { AuditService } from '../audit/service.js';
-import type { Logger } from '../logger.js';
+import type { AuditService } from '@antasphere/chassis-server/audit';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import { CLI_KEY_SCOPES } from './cli-auth.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });

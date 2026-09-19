@@ -2,7 +2,7 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import { ssoLogoutRoute } from '@antasphere/chassis-contract/routes';
 import type { Auth } from '../identity/better-auth.js';
 import { hintCookieClearHeader, type HubLogoutService } from '../identity/hub-logout.js';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 

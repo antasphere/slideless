@@ -13,13 +13,13 @@ import {
   isValidMediaType
 } from '@slideless/contract';
 import type { FormResponseRow } from '@slideless/db';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
 import type { PresentationService } from '../presentations/service.js';
 import { buildViewerUrl, type ShareTokenService } from '../sharing/service.js';
 import { viewPlacement } from '../sharing/view-events.js';
-import type { EmailDriver } from '../email/driver.js';
-import { buildResponseLinkEmail } from '../email/templates.js';
+import type { EmailDriver } from '@antasphere/chassis-server/email';
+import { buildResponseLinkEmail } from '../email/deck-templates.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
 import {
   formResponseToRespondentWire,
@@ -35,7 +35,7 @@ import {
   sanitizeUploadName,
   type FormUploadService
 } from '../forms/uploads.js';
-import { FileTooLargeError } from '../files/spool.js';
+import { FileTooLargeError } from '@antasphere/chassis-server/files';
 import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 /**

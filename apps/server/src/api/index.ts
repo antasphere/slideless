@@ -18,15 +18,16 @@ import {
   type Db
 } from '@antasphere/chassis-db';
 import { hubConfig, type Env } from '../env.js';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Auth } from '../identity/better-auth.js';
-import type { PlatformRegistry } from '../platform/registry.js';
+import type { DeckRegistry } from '../platform/deck-events.js';
 import type { ApiKeyService } from '../apikeys/service.js';
-import type { EmailDriver } from '../email/driver.js';
+import type { EmailDriver } from '@antasphere/chassis-server/email';
 import { isApiKeyToken } from '../apikeys/service.js';
-import { auditMiddleware, type AuditService } from '../audit/service.js';
-import { constantTimeEquals } from '../constant-time.js';
-import { isSecureSetupOrigin } from '../setup-transport.js';
+import { auditMiddleware, type AuditService } from '@antasphere/chassis-server/audit';
+import { isDeckAuditExempt } from '../audit/deck-exempt.js';
+import { constantTimeEquals } from '@antasphere/chassis-server/util';
+import { isSecureSetupOrigin } from '@antasphere/chassis-server/util';
 import { authBodyGuard } from '../middleware/auth-body.js';
 import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
 import { idempotency } from '../middleware/idempotency.js';
@@ -76,9 +77,9 @@ import type { FormUploadService } from '../forms/uploads.js';
 import { registerViewerAttachmentRoutes } from '../viewer/attachments-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
 import type { ShareTokenService } from '../sharing/service.js';
-import type { AccountDeletionService } from '../accounts/deletion.js';
-import type { FileService } from '../files/service.js';
-import type { StorageDriver } from '../storage/driver.js';
+import type { AccountDeletionService } from '@antasphere/chassis-server/accounts';
+import type { FileService } from '@antasphere/chassis-server/files';
+import type { StorageDriver } from '@antasphere/chassis-server/storage';
 
 /** Inline error body matching the wire shape; keeps openapi handlers typed. */
 const err = (code: string, message: string) => ({ error: { code, message } });
@@ -202,7 +203,7 @@ export interface ApiDeps {
   db: Db;
   env: Env;
   auth: Auth;
-  registry: PlatformRegistry;
+  registry: DeckRegistry;
   logger: Logger;
   apiKeys: ApiKeyService;
   audit: AuditService;
@@ -563,7 +564,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // never reaches the audit layer, so a retry cannot land a second audit row).
   api.use('*', idempotency({ db, authSecret: deps.authSecret }));
 
-  api.use('*', auditMiddleware(audit, clientIp));
+  api.use('*', auditMiddleware(audit, clientIp, { exempt: isDeckAuditExempt }));
 
   // ── GET /instance — unauthenticated discovery ────────────────────────────
   api.openapi(instanceRoute, async (c) => {

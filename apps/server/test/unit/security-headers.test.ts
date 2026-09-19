@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { buildCsp, hstsValue, securityHeaders } from '../../src/middleware/security-headers.js';
-import { createRuntimeState } from '../../src/state.js';
+import { createRuntimeState } from '@antasphere/chassis-server/util';
 
 /**
  * Two properties, and on this repo the first one is the one with scar tissue.

@@ -2,10 +2,10 @@ import { eq } from 'drizzle-orm';
 import { user, type Db } from '@antasphere/chassis-db';
 import { presentations, type FormResponseRow } from '@slideless/db';
 import { deckMasterUrl } from '@slideless/contract';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
-import type { EmailDriver } from '../email/driver.js';
-import { buildFormResponseEditedEmail, buildFormResponseEmail } from '../email/templates.js';
+import type { EmailDriver } from '@antasphere/chassis-server/email';
+import { buildFormResponseEditedEmail, buildFormResponseEmail } from '../email/deck-templates.js';
 import type { FormResponseService } from './service.js';
 
 /**

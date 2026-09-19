@@ -1,9 +1,9 @@
 import { Readable } from 'node:stream';
 import type { Context } from 'hono';
 import { isValidMediaType } from '@slideless/contract';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
-import type { Logger } from '../logger.js';
-import { contentDispositionFor, parseRangeHeader } from './http.js';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
+import type { Logger } from '@antasphere/chassis-server/logger';
+import { contentDispositionFor, parseRangeHeader } from '@antasphere/chassis-server/files';
 
 export interface ServeBlobOptions {
   storage: StorageDriver;

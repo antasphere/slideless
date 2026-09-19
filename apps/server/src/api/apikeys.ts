@@ -4,7 +4,7 @@ import { apiKeyCreateRoute, apiKeyRevokeRoute, apiKeysListRoute } from '@slidele
 import { apiKeys, workspaceMembers, type ApiKey, type Db } from '@antasphere/chassis-db';
 import { sql } from 'drizzle-orm';
 import type { ApiKeyService } from '../apikeys/service.js';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 import { requireAuth } from '../middleware/auth-context.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });

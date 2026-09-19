@@ -8,14 +8,14 @@ import {
   collaboratorsListRoute
 } from '@slideless/contract/routes';
 import { user as userTable, workspaceMembers, type Db } from '@antasphere/chassis-db';
-import { isDuplicateAccountError } from '../accounts/signup-duplicate.js';
+import { isDuplicateAccountError } from '@antasphere/chassis-server/accounts';
 import type { Env } from '../env.js';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Auth } from '../identity/better-auth.js';
-import type { EmailDriver } from '../email/driver.js';
-import type { PlatformRegistry } from '../platform/registry.js';
-import type { AuditService } from '../audit/service.js';
-import { buildCollaboratorInviteEmail } from '../email/templates.js';
+import type { EmailDriver } from '@antasphere/chassis-server/email';
+import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
+import type { AuditService } from '@antasphere/chassis-server/audit';
+import { buildCollaboratorInviteEmail } from '../email/deck-templates.js';
 import type { HubSsoService } from '../identity/hub-sso.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import {
