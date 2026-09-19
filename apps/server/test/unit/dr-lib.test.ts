@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { INSECURE_SETUP_ORIGINS, SECURE_SETUP_ORIGINS } from '../fixtures/setup-origins.js';
+import { INSECURE_SETUP_ORIGINS, SECURE_SETUP_ORIGINS } from '@antasphere/chassis-server/testing';
 
 /**
  * The DR path is shell, so it gets tested as shell. `scripts/lib/dr-lib.sh`

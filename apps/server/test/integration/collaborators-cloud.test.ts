@@ -11,7 +11,7 @@ import {
   startPostgres,
   type TestApp
 } from './helpers.js';
-import { FakeHub, type HubUserFixture } from '../fake-hub.js';
+import { FakeHub, type HubUserFixture } from '@antasphere/chassis-server/testing';
 import * as sso from './sso-helpers.js';
 
 /**

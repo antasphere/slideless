@@ -22,6 +22,10 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "@slideless/server#test:integration": {
+      "dependsOn": ["^build", "@antasphere/chassis-server#test:integration"],
+      "cache": false
+    },
     "test:e2e": {
       "cache": false,
       "passThroughEnv": ["PW_SMOKE_PORT", "PW_SMOKE_PG_PASSWORD"]

@@ -410,6 +410,9 @@ importers:
       '@testcontainers/postgresql':
         specifier: ^11.0.0
         version: 11.14.0
+      '@types/adm-zip':
+        specifier: ^0.5.8
+        version: 0.5.8
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.0
@@ -422,6 +425,9 @@ importers:
       '@types/yazl':
         specifier: ^3.3.1
         version: 3.3.1
+      adm-zip:
+        specifier: ^0.5.18
+        version: 0.5.18
       better-call:
         specifier: 1.1.8
         version: 1.1.8(zod@4.4.3)
