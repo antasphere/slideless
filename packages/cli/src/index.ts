@@ -1,7 +1,14 @@
 import { Command, CommanderError } from 'commander';
 import { CliAuthError } from '@antasphere/cli-core';
 import { PlatformApiError } from '@slideless/sdk';
-import { CliUsageError, explainWorkspaceRefusal, setStdinApiKey, ttySafeIo, type CliIo } from './context.js';
+import {
+  CliUsageError,
+  explainWorkspaceRefusal,
+  setStdinApiKey,
+  ttySafeIo,
+  workspaceNotFoundHint,
+  type CliIo
+} from './context.js';
 import { readSecretFromStdin } from './stdin.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { registerWorkspaceCommands } from './commands/workspaces.js';
@@ -133,7 +140,9 @@ export async function run(argv: string[], rawIo: CliIo): Promise<number> {
             ? ' (someone pushed in between — rerun to retry)'
             : e.status === 401
               ? ' (check the key: `slideless verify`)'
-              : '';
+              : e.status === 404
+                ? workspaceNotFoundHint(io)
+                : '';
       io.err.write(`Error: ${e.message}${hint}\n`);
       return 1;
     }

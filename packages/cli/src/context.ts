@@ -14,6 +14,7 @@ import {
 } from '@antasphere/cli-core';
 import { loadConfig, type CliConfig, type CliProfile } from './config.js';
 import {
+  describeSelection,
   explainRefusal,
   isWorkspaceId,
   matchWorkspace,
@@ -315,6 +316,18 @@ export async function explainWorkspaceRefusal(io: CliIo, e: unknown): Promise<st
   } catch {
     return null;
   }
+}
+
+/**
+ * The hint for a 404 under a selection: a deck id (a linked folder's, a
+ * pasted one) lives in ONE workspace, and the same id asked of another is
+ * "not found" — true, and useless without the workspace that was asked.
+ */
+export function workspaceNotFoundHint(io: CliIo): string {
+  const ctx = appliedContexts.get(io);
+  if (!ctx?.workspaceSelection || ctx.workspaceId === undefined) return '';
+  const { workspaceSelection: selection } = ctx;
+  return ` (looked in the workspace "${selection.value}", selected by ${describeSelection(selection)})`;
 }
 
 async function connectForKey(ctx: CliContext): Promise<string> {

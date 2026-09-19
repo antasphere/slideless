@@ -258,6 +258,28 @@ describe('a selection that names nothing usable', () => {
   });
 });
 
+describe('a deck id asked of another workspace', () => {
+  const missing: Route = {
+    method: 'GET',
+    path: /^\/api\/v1\/presentations\/[^/]+$/,
+    reply: () => refuse(404, 'not_found', 'Presentation not found')
+  };
+
+  it('the 404 names the workspace that was asked, and what selected it', async () => {
+    const h = routedHarness([missing], await profileEnv(NORD));
+    expect(await run(['get', DECK.id], h.io)).toBe(1);
+    expect(h.err()).toBe(
+      `Error: Presentation not found (looked in the workspace "${NORD}", selected by profile "work")\n`
+    );
+  });
+
+  it('with nothing selected the 404 is the plain one', async () => {
+    const h = routedHarness([missing], await profileEnv());
+    expect(await run(['get', DECK.id], h.io)).toBe(1);
+    expect(h.err()).toBe('Error: Presentation not found\n');
+  });
+});
+
 describe('whoami shows the workspace the command ran in, and what chose it', () => {
   it.each([
     ['the flag', ['--workspace', NORD], {}, undefined, 'the --workspace flag', 'flag', 'Atelier Nord'],

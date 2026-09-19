@@ -78,6 +78,9 @@ to the instance its profile names, and `slideless logout` removes it.
 `slideless whoami` shows the workspace the command ran in and what chose it.
 A key pinned to one workspace only ever acts there: selecting another one is
 refused, and the error names the pin.
+A deck lives in one workspace: a deck id (a linked folder's, a pasted one)
+asked of another workspace answers "not found", and the error names the
+workspace that was asked and what selected it.
 
 **Keeping secrets out of `argv`**: a value passed as `--api-key slk_…` or
 `--password …` is visible to every process on the machine (`ps`) and lands in
