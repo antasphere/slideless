@@ -3,7 +3,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { Readable } from 'node:stream';
 import { pino } from 'pino';
 import type { Principal } from '@antasphere/chassis-contract';
-import { registerFileRoutes } from '../../src/api/files.js';
+import { registerFileRoutes } from '@antasphere/chassis-server/api';
 import type { FileService } from '@antasphere/chassis-server/files';
 import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';

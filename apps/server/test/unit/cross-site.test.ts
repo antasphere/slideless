@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { crossSiteGuard } from '../../src/middleware/cross-site.js';
+import { crossSiteGuard } from '@antasphere/chassis-server/middleware';
 
 /**
  * BROW-2: nothing under /api/v1 checked Origin or Sec-Fetch metadata, so every

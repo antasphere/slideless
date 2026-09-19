@@ -48,11 +48,17 @@ describe('Hono HEAD handling (pinned)', () => {
 
 describe('no dead HEAD registrations under /api/v1', () => {
   it('has none', () => {
-    const apiDir = join(import.meta.dirname, '../../src/api');
+    // The routers live in two places since the chassis extraction: the deck
+    // ones here, the generic ones in the chassis package. Both are audited.
+    const apiDirs = [
+      join(import.meta.dirname, '../../src/api'),
+      join(import.meta.dirname, '../../../../packages/chassis-server/src/api')
+    ];
     const offenders: string[] = [];
-    for (const file of readdirSync(apiDir)) {
+    const files = apiDirs.flatMap((dir) => readdirSync(dir).map((file) => join(dir, file)));
+    for (const file of files) {
       if (!file.endsWith('.ts')) continue;
-      const source = readFileSync(join(apiDir, file), 'utf8');
+      const source = readFileSync(file, 'utf8');
       const code = source
         .split('\n')
         .filter((line) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Context } from 'hono';
-import { makeClientIp } from '../../src/middleware/rate-limit.js';
+import { makeClientIp } from '@antasphere/chassis-server/middleware';
 
 /**
  * makeClientIp reads the RIGHTMOST x-forwarded-for hop (the one the trusted

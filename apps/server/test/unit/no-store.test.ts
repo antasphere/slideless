@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import type { Principal } from '@antasphere/chassis-contract';
-import { noStoreAuthenticated } from '../../src/middleware/no-store.js';
+import { noStoreAuthenticated } from '@antasphere/chassis-server/middleware';
 
 /**
  * DASH-5: authenticated JSON went out with no Cache-Control at all, leaving

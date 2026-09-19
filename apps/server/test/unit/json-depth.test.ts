@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { exceedsJsonDepth, jsonDepthLimit, MAX_JSON_DEPTH } from '../../src/middleware/json-depth.js';
+import { exceedsJsonDepth, jsonDepthLimit, MAX_JSON_DEPTH } from '@antasphere/chassis-server/middleware';
 
 const nest = (depth: number) => '['.repeat(depth) + '1' + ']'.repeat(depth);
 

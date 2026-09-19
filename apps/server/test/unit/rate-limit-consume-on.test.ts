@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
-import { emailKeyOf, rateLimit } from '../../src/middleware/rate-limit.js';
+import { emailKeyOf, rateLimit } from '@antasphere/chassis-server/middleware';
 
 /**
  * AF-4: the login wall consumed its buckets on ARRIVAL, before any credential

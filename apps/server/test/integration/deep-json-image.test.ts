@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAX_JSON_DEPTH } from '../../src/middleware/json-depth.js';
+import { MAX_JSON_DEPTH } from '@antasphere/chassis-server/middleware';
 
 /**
  * SL-B5, asserted where it actually bites: INSIDE THE SHIPPED IMAGE.

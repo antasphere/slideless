@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ApiToolError, jsonText, wrapToolErrors } from '../../src/mcp/errors.js';
-import { isPublicOauthPath } from '../../src/middleware/oauth-public.js';
+import { ApiToolError, jsonText, wrapToolErrors } from '@antasphere/chassis-server/mcp';
+import { isPublicOauthPath } from '@antasphere/chassis-server/middleware';
 
 describe('mcp error → hint mapping', () => {
   it('attaches an actionable hint for known API codes', () => {

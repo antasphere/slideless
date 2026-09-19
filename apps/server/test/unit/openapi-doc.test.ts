@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { registerOpenApiDoc } from '../../src/api/openapi-doc.js';
+import { registerOpenApiDoc } from '@antasphere/chassis-server/api';
 
 /**
  * PLT-3: `api.doc()` runs the whole synchronous OpenAPI generator inside the
@@ -65,13 +65,19 @@ describe('registerOpenApiDoc', () => {
  */
 describe('the API app does not register a per-request document generator', () => {
   it('never calls api.doc() — registerOpenApiDoc is the only registration', () => {
-    const apiDir = join(import.meta.dirname, '../../src/api');
+    // The routers live in two places since the chassis extraction: the deck
+    // ones here, the generic ones in the chassis package. Both are audited.
+    const apiDirs = [
+      join(import.meta.dirname, '../../src/api'),
+      join(import.meta.dirname, '../../../../packages/chassis-server/src/api')
+    ];
     const offenders: string[] = [];
     let registrations = 0;
-    for (const file of readdirSync(apiDir)) {
+    const files = apiDirs.flatMap((dir) => readdirSync(dir).map((file) => join(dir, file)));
+    for (const file of files) {
       // Skip the helper's own definition — we are auditing its CALLERS.
-      if (!file.endsWith('.ts') || file === 'openapi-doc.ts') continue;
-      const code = readFileSync(join(apiDir, file), 'utf8')
+      if (!file.endsWith('.ts') || file.endsWith('/openapi-doc.ts')) continue;
+      const code = readFileSync(file, 'utf8')
         .split('\n')
         .filter((line) => {
           const t = line.trim();

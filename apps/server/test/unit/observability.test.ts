@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Writable } from 'node:stream';
 import { pino } from 'pino';
 import { REDACT_PATHS } from '@antasphere/chassis-server/logger';
-import { buildCsp, inlineScriptHashes } from '../../src/middleware/security-headers.js';
+import { buildCsp, inlineScriptHashes } from '@antasphere/chassis-server/middleware';
 
 describe('pino redaction (secrets never reach the stream)', () => {
   it('censors passwords, tokens, auth headers, and connection strings', () => {
