@@ -1174,3 +1174,15 @@ module …/_app/immutable/entry/start.*.js`): the proxy handed the PAGE to the A
   pool hands out /16s, so any neighbour inside the same /16 swallows every /24 of it. To run the
   drill beside other stacks, set `FEDERATION_SUBNET_PREFIX` OUTSIDE the pool (`10.99.250` worked),
   and read `docker network inspect` for the real masks before picking, not just the prefixes.
+- **The hub and Slideless dashboards are near-twins, and a look pass on one is not a look pass on
+  both.** A sweep of the two shells on 2026-09-19 (after the settings/band/gate passes) found drift
+  in both directions: Slideless had moved the `.float` backdrop blur onto a `::before`
+  pseudo-element — a backdrop filter makes its element the containing block of every fixed
+  descendant, so a `DropdownMenu.SubContent` inside it opens as a sliver — while the hub still
+  carried the broken shape; and the hub had a French typography test (the space before `? ! : ;`
+  and inside guillemets must be U+00A0, or the punctuation wraps onto its own line) that Slideless
+  lacked, with 32 real violations behind it. Both are now fixed in both repos. When a change lands
+  in the shared shell layer (`app.css`, `lib/components/{shared,shell,brand,settings,sidebar}`,
+  `lib/i18n`, `theme.svelte.ts`, `nav.ts`), diff the same file in the other repo before closing the
+  task: the vocabulary differs (organization vs workspace, `@antasphere/contract` vs
+  `@slideless/contract`) but the mechanism should not.
