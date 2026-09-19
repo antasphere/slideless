@@ -115,12 +115,20 @@ export async function callApi(ctx: McpToolContext, path: string, init: RequestIn
   return body;
 }
 
-/** Append cursor/limit list params to a path. */
+/**
+ * Append cursor/limit list params to a path, after the route's own filters
+ * (`extra`, e.g. the presentations list's `type`); an undefined filter is
+ * left out.
+ */
 export function pageQuery(
   base: string,
-  params: { cursor?: string | undefined; limit?: number | undefined }
+  params: { cursor?: string | undefined; limit?: number | undefined },
+  extra: Record<string, string | undefined> = {}
 ): string {
   const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(extra)) {
+    if (value !== undefined) query.set(key, value);
+  }
   if (params.cursor) query.set('cursor', params.cursor);
   if (params.limit !== undefined) query.set('limit', String(params.limit));
   const qs = query.toString();

@@ -29,6 +29,9 @@ import {
  *  - scope UX: a read-only key gets the actionable "Missing scope" denial
  *  - sharing/collaborators/annotations flows incl. anonymous viewer access
  *    with the sandbox headers, send-rotation, revoke-all, and delete.
+ *  - references (ADR 025): the two read tools list by type, answer the
+ *    workspace default or a plain "none set", and follow the audience (a
+ *    member's key sees a reference only once it is published).
  */
 
 const OWNER = { email: 'owner@mcp.test', name: 'MCP Owner', password: 'mcp-owner-password-1' };
@@ -42,6 +45,8 @@ const EXPECTED_TOOLS = [
   'slideless_get_version',
   'slideless_download_version',
   'slideless_get_agent_doc',
+  'slideless_list_references',
+  'slideless_get_default_reference',
   'slideless_update_presentation',
   'slideless_delete_presentation',
   'slideless_upload_html_presentation',
@@ -229,6 +234,8 @@ describe('discovery + auth gate', () => {
       'slideless_get_version',
       'slideless_download_version',
       'slideless_get_agent_doc',
+      'slideless_list_references',
+      'slideless_get_default_reference',
       'slideless_list_share_tokens',
       'slideless_list_token_views',
       'slideless_list_collaborators',
@@ -1022,5 +1029,176 @@ describe('remembering links, revision history and the owner-mail switch through 
     expect(on.data.notifyOnResponse).toBe(true);
     const nothing = await callTool(ownerKey, 'slideless_update_presentation', { presentationId: deckId });
     expect(nothing.isError).toBe(true);
+  });
+});
+
+describe('references through the tools (ADR 025)', () => {
+  const BRAND_DOC = '---\ntype: Brand\ntitle: House brand\n---\nUse the navy palette and the serif titles.';
+  const TEMPLATE_DOC = '---\ntype: template\ntitle: Quarterly review\n---\nStart from slide 2.';
+  let brandId: string;
+  let templateId: string;
+  let ordinaryId: string;
+
+  const pushDeck = async (title: string, agentDoc?: string): Promise<string> => {
+    const result = await callTool(ownerKey, 'slideless_upload_presentation_files', {
+      title,
+      files: [
+        { path: 'index.html', contentText: `<!doctype html><title>${title}</title><h1>${title}</h1>` },
+        ...(agentDoc ? [{ path: 'AGENT.md', contentText: agentDoc }] : [])
+      ]
+    });
+    expect(result.isError, result.text).toBe(false);
+    return result.data.presentation.id as string;
+  };
+
+  const patchDeck = async (id: string, body: Record<string, unknown>) => {
+    const res = await app.app.request(`/api/v1/presentations/${id}`, {
+      ...json(body, { cookie: ownerCookie }),
+      method: 'PATCH'
+    });
+    expect(res.status, JSON.stringify(body)).toBe(200);
+    return readJson(res);
+  };
+
+  const idsOf = (result: { data: { presentations: Array<{ id: string }> } }) =>
+    result.data.presentations.map((p) => p.id);
+
+  beforeAll(async () => {
+    brandId = await pushDeck('House brand', BRAND_DOC);
+    templateId = await pushDeck('Quarterly review', TEMPLATE_DOC);
+    ordinaryId = await pushDeck('Ordinary with a briefing', 'No frontmatter here, just a briefing.');
+  });
+
+  it('slideless_list_references lists every reference by default, in the list shape with the three reference fields', async () => {
+    const all = await callTool(ownerKey, 'slideless_list_references');
+    expect(all.isError, all.text).toBe(false);
+    expect(idsOf(all)).toEqual(expect.arrayContaining([brandId, templateId]));
+    expect(idsOf(all)).not.toContain(ordinaryId);
+    expect(all.data.nextCursor).toBeNull();
+
+    const brand = all.data.presentations.find((p: { id: string }) => p.id === brandId);
+    // The type is lowercased at push; the other frontmatter keys ride along.
+    expect(brand.reference).toMatchObject({ type: 'brand', title: 'House brand' });
+    expect(brand.audience).toBe('private');
+    expect(brand.defaultReference).toBe(false);
+    expect(brand.hasAgentDoc).toBe(true);
+
+    // `reference` spelled out is the same listing as the omitted default.
+    const spelled = await callTool(ownerKey, 'slideless_list_references', { type: 'reference' });
+    expect(idsOf(spelled)).toEqual(idsOf(all));
+  });
+
+  it('type narrows to one kind, and the ordinary listing no longer carries references', async () => {
+    const brands = await callTool(ownerKey, 'slideless_list_references', { type: 'brand' });
+    expect(idsOf(brands)).toContain(brandId);
+    expect(idsOf(brands)).not.toContain(templateId);
+
+    const templates = await callTool(ownerKey, 'slideless_list_references', { type: 'template' });
+    expect(idsOf(templates)).toContain(templateId);
+    expect(idsOf(templates)).not.toContain(brandId);
+
+    const ordinary = await callTool(ownerKey, 'slideless_list_presentations', { limit: 100 });
+    expect(idsOf(ordinary)).toContain(ordinaryId);
+    expect(idsOf(ordinary)).not.toContain(brandId);
+    expect(idsOf(ordinary)).not.toContain(templateId);
+    // The list shape carries the three fields on an ordinary deck too.
+    const plain = ordinary.data.presentations.find((p: { id: string }) => p.id === ordinaryId);
+    expect(plain).toMatchObject({ reference: null, audience: 'private', defaultReference: false });
+  });
+
+  it('pages with cursor and limit like the presentations list', async () => {
+    const first = await callTool(ownerKey, 'slideless_list_references', { limit: 1 });
+    expect(first.data.presentations).toHaveLength(1);
+    expect(first.data.nextCursor).toBeTruthy();
+    const second = await callTool(ownerKey, 'slideless_list_references', {
+      limit: 1,
+      cursor: first.data.nextCursor
+    });
+    expect(second.data.presentations).toHaveLength(1);
+    expect(second.data.presentations[0].id).not.toBe(first.data.presentations[0].id);
+  });
+
+  it('an unknown type is refused before any read', async () => {
+    const res = await mcpPost(ownerKey, 'tools/call', {
+      name: 'slideless_list_references',
+      arguments: { type: 'theme' }
+    });
+    const body = await readJson(res);
+    const refused = body.error !== undefined || body.result?.isError === true;
+    expect(refused, JSON.stringify(body)).toBe(true);
+
+    const missing = await mcpPost(ownerKey, 'tools/call', {
+      name: 'slideless_get_default_reference',
+      arguments: {}
+    });
+    const missingBody = await readJson(missing);
+    expect(missingBody.error !== undefined || missingBody.result?.isError === true).toBe(true);
+    // `reference` is a list filter, never a default's type.
+    const wide = await mcpPost(ownerKey, 'tools/call', {
+      name: 'slideless_get_default_reference',
+      arguments: { type: 'reference' }
+    });
+    const wideBody = await readJson(wide);
+    expect(wideBody.error !== undefined || wideBody.result?.isError === true).toBe(true);
+  });
+
+  it('slideless_get_default_reference says plainly when no default is set', async () => {
+    const none = await callTool(ownerKey, 'slideless_get_default_reference', { type: 'brand' });
+    expect(none.isError, none.text).toBe(false);
+    expect(none.data.type).toBe('brand');
+    expect(none.data.presentation).toBeNull();
+    expect(none.data.note).toContain('No default brand is set in this workspace');
+  });
+
+  it("a private reference stays out of a member's tools; published, the member reads it and its AGENT.md", async () => {
+    const before = await callTool(memberKey, 'slideless_list_references');
+    expect(before.isError, before.text).toBe(false);
+    expect(idsOf(before)).not.toContain(brandId);
+
+    const published = await patchDeck(brandId, { audience: 'workspace' });
+    expect(published.audience).toBe('workspace');
+
+    const after = await callTool(memberKey, 'slideless_list_references', { type: 'brand' });
+    expect(idsOf(after)).toContain(brandId);
+    // The template was never published: still the owner's alone.
+    const memberTemplates = await callTool(memberKey, 'slideless_list_references', { type: 'template' });
+    expect(idsOf(memberTemplates)).not.toContain(templateId);
+
+    const doc = await callTool(memberKey, 'slideless_get_agent_doc', { presentationId: brandId });
+    expect(doc.isError, doc.text).toBe(false);
+    expect(doc.data.content).toContain('Use the navy palette');
+  });
+
+  it('slideless_get_default_reference returns the default once set, for the owner, a member and a read-only key', async () => {
+    const set = await patchDeck(brandId, { defaultReference: true });
+    expect(set.defaultReference).toBe(true);
+
+    for (const key of [ownerKey, memberKey, readOnlyKey]) {
+      const found = await callTool(key, 'slideless_get_default_reference', { type: 'brand' });
+      expect(found.isError, found.text).toBe(false);
+      expect(found.data.type).toBe('brand');
+      expect(found.data.presentation.id).toBe(brandId);
+      expect(found.data.presentation.reference).toMatchObject({ type: 'brand', title: 'House brand' });
+      expect(found.data.presentation.audience).toBe('workspace');
+      expect(found.data.presentation.defaultReference).toBe(true);
+      expect(found.data.note).toBeUndefined();
+    }
+
+    // One default per type: the template side is still empty.
+    const template = await callTool(memberKey, 'slideless_get_default_reference', { type: 'template' });
+    expect(template.data.presentation).toBeNull();
+    expect(template.data.note).toContain('No default template is set in this workspace');
+
+    const listed = await callTool(ownerKey, 'slideless_list_references', { type: 'brand' });
+    const row = listed.data.presentations.find((p: { id: string }) => p.id === brandId);
+    expect(row.defaultReference).toBe(true);
+  });
+
+  it('both tools describe themselves as reads that apply nothing', async () => {
+    const result = await rpc(ownerKey, 'tools/list');
+    const tools = result.tools as Array<{ name: string; description: string }>;
+    const described = tools.find((t) => t.name === 'slideless_get_default_reference')!.description;
+    expect(described).toContain('slideless_get_agent_doc');
+    expect(described).toContain('Nothing is applied automatically');
   });
 });

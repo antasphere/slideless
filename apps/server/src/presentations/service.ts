@@ -80,7 +80,13 @@ export type UpdateFailure =
   | { code: 'audience_private' }
   | { code: 'default_reference' };
 export type UpdateResult =
-  { ok: true; presentation: PresentationRow } | { ok: false; failure: UpdateFailure };
+  | {
+      ok: true;
+      presentation: PresentationRow;
+      /** The decks that lost the default to this set (normally zero or one) — for the audit row. */
+      displacedDefaultIds: string[];
+    }
+  | { ok: false; failure: UpdateFailure };
 
 /** Duplicate failures (PRDCT-2279): the handler maps each to 404 / 400. */
 export type DuplicateFailure =
@@ -761,11 +767,12 @@ export class PresentationService {
           failure: { code: patch.defaultReference === true ? 'audience_private' : 'default_reference' }
         };
       }
+      let displacedDefaultIds: string[] = [];
       if (nextDefault && !deck.isDefaultReference) {
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(${DEFAULT_REFERENCE_LOCK}, hashtext(${`${workspaceId}:${deck.referenceType}`}))`
         );
-        await tx
+        const displaced = await tx
           .update(presentations)
           .set({ isDefaultReference: false, updatedAt: new Date() })
           .where(
@@ -775,7 +782,9 @@ export class PresentationService {
               eq(presentations.isDefaultReference, true),
               ne(presentations.id, deck.id)
             )
-          );
+          )
+          .returning({ id: presentations.id });
+        displacedDefaultIds = displaced.map((r) => r.id);
       }
 
       const [row] = await tx
@@ -790,31 +799,8 @@ export class PresentationService {
         })
         .where(eq(presentations.id, deck.id))
         .returning();
-      return { ok: true, presentation: row! };
+      return { ok: true, presentation: row!, displacedDefaultIds };
     });
-  }
-
-  /**
-   * The workspace's default reference of a type, or null — also null when
-   * the caller may not read it (a guest), so the answer never confirms a
-   * default exists to someone outside the audience. A default is always a
-   * workspace reference, so every non-guest member reads it.
-   */
-  async getDefaultReference(principal: Principal, type: string): Promise<PresentationRow | null> {
-    const [row] = await this.db
-      .select()
-      .from(presentations)
-      .where(
-        and(
-          eq(presentations.workspaceId, principal.workspaceId),
-          eq(presentations.referenceType, type),
-          eq(presentations.isDefaultReference, true),
-          isNull(presentations.deletedAt)
-        )
-      )
-      .limit(1);
-    if (!row || !(await canReadDeck(this.db, principal, row))) return null;
-    return row;
   }
 
   /**

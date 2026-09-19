@@ -537,7 +537,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       metadata: {
         fields: Object.keys(body),
         ...(body.audience !== undefined ? { audience: body.audience } : {}),
-        ...(body.defaultReference !== undefined ? { defaultReference: body.defaultReference } : {})
+        ...(body.defaultReference !== undefined ? { defaultReference: body.defaultReference } : {}),
+        ...(result.displacedDefaultIds.length > 0 ? { displacedDefaultIds: result.displacedDefaultIds } : {})
       }
     });
     return c.json(presentationToWire(result.presentation), 200);

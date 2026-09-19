@@ -45,10 +45,12 @@ import type {
   OnboardingDismissed,
   Presentation,
   PresentationDuplicate,
+  PresentationsListType,
   PresentationUpdate,
   PresentationVersionSummary,
   PresentationVersionDetail,
   PreviewTokenCreate,
+  ReferenceType,
   SetupRequest,
   SetupResponse,
   ShareToken,
@@ -121,6 +123,27 @@ export interface ListParams {
   cursor?: string;
   /** Page size (server default 50, max 100). */
   limit?: number;
+}
+
+/** Cursor pagination + the presentations list's reference filters. */
+export interface PresentationListParams extends ListParams {
+  /**
+   * Absent lists ORDINARY decks only (references leave the default listing);
+   * `brand` or `template` lists the references of that type; `reference`
+   * lists every reference.
+   */
+  type?: PresentationsListType;
+  /**
+   * `true` keeps only the workspace's default references (at most one per
+   * type). Without `type` the server reads it as `type=reference`.
+   */
+  default?: boolean;
+}
+
+/** Params of {@link PlatformClient.references}: the list's page plus a reference type. */
+export interface ReferenceListParams extends ListParams {
+  /** `brand`, `template`, or `reference` for every type (the default). */
+  type?: PresentationsListType;
 }
 
 export interface AuditListResponse {
@@ -585,10 +608,42 @@ export class PlatformClient {
 
   // ── Presentations ─────────────────────────────────────────────────────────
 
+  /**
+   * Without `type` this lists ORDINARY decks only; `type` lists references
+   * instead (`brand`, `template`, or `reference` for all of them), and
+   * `default: true` keeps only the workspace's default references.
+   */
   presentations(
-    params: ListParams = {}
+    params: PresentationListParams = {}
   ): Promise<{ presentations: Presentation[]; nextCursor: string | null }> {
-    return this.request('GET', this.pathWithQuery('/presentations', params));
+    const query = new URLSearchParams();
+    if (params.cursor) query.set('cursor', params.cursor);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.type) query.set('type', params.type);
+    if (params.default) query.set('default', 'true');
+    const qs = query.toString();
+    return this.request('GET', qs ? `/presentations?${qs}` : '/presentations');
+  }
+
+  /**
+   * The references this credential can read: its own, plus the ones
+   * published to the workspace. `type` defaults to `reference` (every type).
+   */
+  references(
+    params: ReferenceListParams = {}
+  ): Promise<{ presentations: Presentation[]; nextCursor: string | null }> {
+    const { type = 'reference', ...page } = params;
+    return this.presentations({ ...page, type });
+  }
+
+  /**
+   * The workspace's default reference of a type, or null when none is set
+   * (or this credential may not read it). Nothing is applied by the server:
+   * read the reference's briefing with {@link agentDoc} and follow it.
+   */
+  async defaultReference(type: ReferenceType): Promise<Presentation | null> {
+    const { presentations } = await this.presentations({ type, default: true, limit: 1 });
+    return presentations[0] ?? null;
   }
 
   presentation(id: string): Promise<Presentation> {
@@ -597,7 +652,13 @@ export class PlatformClient {
 
   /**
    * Update mutable deck properties. `metadata` replaces the stored object
-   * wholesale — read-modify-write to merge.
+   * wholesale — read-modify-write to merge. On a reference, `audience`
+   * (`private` | `workspace`) sets who reads it and `defaultReference` makes
+   * it the workspace's default of its type: 422 `not_a_reference` on an
+   * ordinary deck, 409 `audience_private` when the default is asked of a
+   * private reference, 409 `default_reference` when the standing default is
+   * made private, 403 `forbidden` when the caller reads the deck but may not
+   * change that property.
    */
   updatePresentation(id: string, patch: PresentationUpdate): Promise<Presentation> {
     return this.request('PATCH', `/presentations/${encodeURIComponent(id)}`, patch);

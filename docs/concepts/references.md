@@ -212,6 +212,8 @@ a field of the frontmatter, so nobody changes it by editing a file.
   admins and owners, and the collaborators invited on it ([Workspaces](workspaces.md)).
 - `workspace` opens the reference to every member of the workspace. They read the deck, its versions
   and its files. Nobody gains the right to push to it or to change it.
+  Every version opens, the ones pushed before the switch included. Look at the history before you
+  publish a deck that started as something else.
 
 Guests do not read a workspace reference through the audience. A guest is someone whose only access
 is a collaborator invitation on one deck, and that invitation stays the way to show an outsider a
