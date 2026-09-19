@@ -246,6 +246,31 @@ describe('prune-runtime-deps: deny-list + orphan pass', () => {
     expect(res.stderr).toMatch(/declared dependency no longer resolves: ioredis/);
   });
 
+  it('follows the declaration into a shipped workspace package: its declared dependencies must resolve too', () => {
+    // the app declares the chassis package, which declares the lazy driver
+    const chassis = 'chassis@file+packages+chassis';
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'app', dependencies: { hono: '1', chassis: 'workspace:*' } })
+    );
+    pkg(chassis, 'chassis', { dependencies: { ioredis: '5' } });
+    top('chassis', chassis);
+    pkg('ioredis@5.0.0', 'ioredis');
+    link(chassis, 'ioredis', 'ioredis@5.0.0');
+
+    const ok = run();
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout).toMatch(
+      /all 3 declared dependencies resolve \(the deployed package \+ 1 workspace package/
+    );
+
+    rmSync(join(store, chassis, 'node_modules', 'ioredis'));
+    rmSync(join(store, 'ioredis@5.0.0'), { recursive: true });
+    const res = run();
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/declared dependency of chassis no longer resolves: ioredis/);
+  });
+
   it('still fails the build when --boot-check cannot load the runtime graph', () => {
     writeFileSync(join(root, 'dist', 'index.js'), "import 'vite';\n");
     writeFileSync(

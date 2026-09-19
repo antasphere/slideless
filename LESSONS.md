@@ -1186,3 +1186,28 @@ module …/_app/immutable/entry/start.*.js`): the proxy handed the PAGE to the A
   `lib/i18n`, `theme.svelte.ts`, `nav.ts`), diff the same file in the other repo before closing the
   task: the vocabulary differs (organization vs workspace, `@antasphere/contract` vs
   `@slideless/contract`) but the mechanism should not.
+
+## The chassis boundary (PRDCT-2529, 2026-09-19)
+
+- **`db:generate` reads the chassis schema through its BUILT package, so `chassis-db` is built
+  first.** `packages/db/src/schema.ts` imports `@antasphere/chassis-db/schema`, whose `exports`
+  answer `dist`; drizzle-kit loads the schema files itself, outside turbo, so nothing builds the
+  dependency for it. On a fresh clone, or after `dist` is cleaned, `pnpm --filter @slideless/db
+db:generate` dies with `MODULE_NOT_FOUND … packages/db/node_modules/@antasphere/chassis-db`,
+  which reads like a broken install and is not one. The same mechanism has a quiet form: with a
+  STALE `dist`, drizzle-kit sees the chassis tables as they were at the last build, and says so
+  with no error. The command, verified both ways on 2026-09-19 (it ends on `No schema changes, nothing to
+migrate` on an unchanged schema):
+  `pnpm --filter @antasphere/chassis-db build && pnpm --filter @slideless/db db:generate`.
+- **The dev server runs the chassis from `dist`: a chassis source edit reaches it only through a
+  rebuild.** `pnpm --filter @slideless/server dev` is `tsx watch src/index.ts`, and every
+  `@antasphere/chassis-*` specifier resolves to the package's `dist` (that is what lets ONE copy
+  ship in the image). Verified with a `tsx watch` probe importing `@antasphere/chassis-server/util`:
+  touching `packages/chassis-server/src/**` restarts nothing; `pnpm --filter
+@antasphere/chassis-server build` rewrites `dist` and `tsx watch` restarts by itself, no manual
+  restart needed. After an edit that may span the three packages, `pnpm turbo build
+--filter=@antasphere/chassis-server` builds chassis-db, chassis-contract and chassis-server in
+  order. The symptom of forgetting is the most confusing one there is: the edit is on disk, the
+  server restarts on the next app-side save, and the old behaviour is still there. (The chassis
+  package's OWN tests alias these names to `src`, so they never show the staleness; the app's
+  integration run goes through turbo, which builds first.)

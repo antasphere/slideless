@@ -13,7 +13,7 @@ deploys) + `dev` (day-to-day work).
   it publishes to npm as **`@antasphere/slideless`** (binary still `slideless`, released via
   `.github/workflows/publish-cli.yml` on `cli-v*` tags — internal/cli-release.md). Env var prefix
   `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
-- API key prefix `slk` (`apps/server/src/apikeys/service.ts`).
+- API key prefix `slk` (`packages/chassis-server/src/apikeys/service.ts`).
 - Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
 - License: fair-code under the Sustainable Use License 1.0, licensor Antasphere (`LICENSE`; every
   `package.json` says `SEE LICENSE IN LICENSE`, the CLI included). Say fair-code or source-available,
@@ -22,21 +22,25 @@ deploys) + `dev` (day-to-day work).
 
 ## Layout
 
-| Path                                | What                                                                                                    |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `apps/server`                       | The single deployable: Hono API, identity, MCP, jobs, storage                                           |
-| `apps/dashboard`                    | SvelteKit SPA, built into and served by the server image                                                |
-| `packages/db`                       | drizzle schema + migrations, incl. generated `auth-schema.ts`                                           |
-| `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard                                          |
-| `packages/sdk`                      | Typed client over the contract (hand-written today)                                                     |
-| `packages/cli`                      | Typed CLI over the SDK; the `slideless` binary (docs/agents/cli.md)                                     |
-| `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                                                                |
-| `docs/`                             | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract |
-| `internal/`                         | Engineering docs + ADRs (`internal/decisions/`), never published                                        |
+| Path                                | What                                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `apps/server`                       | The single deployable: Hono API, identity, MCP, jobs, storage                                              |
+| `apps/server/src/tool.ts`           | The Slideless tool definition: the deck domain plugged into the chassis' named slots                       |
+| `apps/dashboard`                    | SvelteKit SPA, built into and served by the server image                                                   |
+| `packages/chassis-db`               | The generic tables, the generated `auth-schema.ts`, the migration runner                                   |
+| `packages/chassis-contract`         | The generic zod schemas + route contracts                                                                  |
+| `packages/chassis-server`           | The generic server: identity, federation, middleware, routers, jobs, MCP kit; entry `createPlatform(tool)` |
+| `packages/db`                       | drizzle schema (the deck tables) + migrations (the one history, chassis tables included)                   |
+| `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard                                             |
+| `packages/sdk`                      | Typed client over the contract (hand-written today)                                                        |
+| `packages/cli`                      | Typed CLI over the SDK; the `slideless` binary (docs/agents/cli.md)                                        |
+| `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                                                                   |
+| `docs/`                             | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract    |
+| `internal/`                         | Engineering docs + ADRs (`internal/decisions/`), never published                                           |
 
 ## Invariants — never regress these
 
-- **Fail-closed scope allowlist** (`apps/server/src/middleware/scopes.ts`): machine principals (API
+- **Fail-closed scope allowlist** (`packages/chassis-server/src/middleware/scopes.ts`, the deck rules in `apps/server/src/middleware/scopes.ts`): machine principals (API
   keys, OAuth tokens) reach ONLY allowlisted routes; anything unlisted 403s. New endpoints stay
   unreachable to machines until consciously opened.
 - **Closed sign-up needs three switches**: the `/sign-up` hook, `disableSignUp` on the emailOTP
@@ -48,7 +52,7 @@ deploys) + `dev` (day-to-day work).
 - **Migrations run under a session-scoped `pg_advisory_lock` on a dedicated client** — multi-replica
   safe. Never switch to a transaction-scoped lock.
 - **Auth schema drift guard**: any Better Auth config change that alters the schema must regenerate
-  `packages/db/src/auth-schema.ts` + the snapshot via the pinned CLI, plus an additive drizzle
+  `packages/chassis-db/src/auth-schema.ts` + the snapshot via the pinned CLI, plus an additive drizzle
   migration. CI's `drift:check` gates it.
 - **A deck bundle is untrusted input on the CLIENT side too (PRDCT-1353)**: manifest paths are
   the names `slideless pull` writes onto a developer's disk, so `assetPathSchema`
@@ -63,7 +67,7 @@ deploys) + `dev` (day-to-day work).
   `Host` allowlist (the DNS-rebinding guard). Every non-`--json` sink goes through
   `sanitizeForTty` — `--json` stays byte-exact and must never be routed through it.
 - **A tombstone the boot cannot replay closes the service (PRDCT-1809)**: the erasure replay in
-  `boot.ts` runs under `withAllLastOwnerGuards` (nothing touched on a refusal — Better Auth's
+  `packages/chassis-server/src/boot.ts` runs under `withAllLastOwnerGuards` (nothing touched on a refusal — Better Auth's
   cascade drops account rows before the user row, so an unguarded refusal half-erases), and a
   refused tombstone sets `state.closed`, which answers 503 `service_closed` on every route but
   `/healthz`, `/readyz`, `/metrics`, plus a `user.erasure_replay_refused` audit row. Never
@@ -119,7 +123,7 @@ deploys) + `dev` (day-to-day work).
   claim endpoint answers `sso_required` instead of minting local-password accounts).
 - **Cloud closes the local password-reset surface (P8, ADR 017)**: on `EDITION=cloud`, every
   reset-shaped route — `/request-password-reset`, `/reset-password` (POST + tokened GET), the
-  emailOTP reset trio — answers 403 (before-hook in `identity/better-auth.ts`;
+  emailOTP reset trio — answers 403 (before-hook in `packages/chassis-server/src/identity/better-auth.ts`;
   `sendResetPassword` never wired there), and the admin `/members/{id}/reset-link` mint refuses
   `password_reset_disabled`. A hub-JIT user must never be able to SET a local password and
   sidestep SSO. `/sign-in/email` stays WIRED on both editions (the break-glass operator door,
@@ -138,17 +142,17 @@ deploys) + `dev` (day-to-day work).
   named-key revoke. `/sso/cli-connect` (the sanctioned cloud CLI mint) and `/sign-in/email`
   are untouched; oss keeps OTP login + CLI mint unchanged. **The Google social provider is the
   third non-SSO session entrance and is closed the same way**: `socialProviders.google` is
-  registered only when NOT cloud (`!hubSso` in `identity/better-auth.ts`), so a cloud instance
+  registered only when NOT cloud (`!hubSso` in `packages/chassis-server/src/identity/better-auth.ts`), so a cloud instance
   with `GOOGLE_CLIENT_ID`/`SECRET` set still leaves `/sign-in/social` unregistered (404
   `PROVIDER_NOT_FOUND`) — by construction, not by leaving the env unset. Rule: no non-SSO
   session entrance on cloud except the break-glass `/sign-in/email`; oss keeps Google social
   when configured.
 - **No route ever hands a caller a PROVIDER GRANT, on either edition (PRDCT-1354, AUTH-3/AUTH-7)**:
   Better Auth's own `/get-access-token` and `/refresh-token` answer 403 `provider_grant_forbidden`
-  from the same before-hook (`isProviderGrantPath` in `identity/better-auth.ts` — re-verify the
+  from the same before-hook (`isProviderGrantPath` in `packages/chassis-server/src/identity/better-auth.ts` — re-verify the
   enumeration on ANY Better Auth bump). Both returned the caller's stored grant in PLAINTEXT, which
   makes `encryptOAuthTokens: true` pointless, and the `/auth/*` mount is registered BEFORE
-  `authContext` (`api/index.ts`), so neither saw the scope allowlist, the per-principal quota, the
+  `authContext` (`packages/chassis-server/src/api/create-api.ts`), so neither saw the scope allowlist, the per-principal quota, the
   idempotency claim, or the audit log. On cloud that grant IS the hub grant (ADR 019), and
   `/refresh-token` rotated it OUTSIDE the `pg_advisory_lock(7432004, hashtext(userId))`
   single-flight, which the hub's RFC 9700 reuse detection turns into a grant-family-killing event
@@ -160,7 +164,7 @@ deploys) + `dev` (day-to-day work).
   AUTH-1/2/8)**: `POST /members/{id}/reset-link` and `/members/{id}/change-email-link` both mint
   a SIGN-IN-EQUIVALENT bearer for a target (LESSONS.md M6), and a `user` row is instance-GLOBAL —
   so the mint's blast radius is every workspace the target belongs to. Both are `requireRole('owner')`,
-  both run `mintRefusal` (`api/members.ts`), and both refuse an `origin='guest'` target
+  both run `mintRefusal` (`packages/chassis-server/src/api/members.ts`), and both refuse an `origin='guest'` target
   (`guest_target` — a per-deck outsider's account is not the host tenant's to recover, D2) and any
   target holding a membership in ANOTHER workspace (`cross_workspace_target`). Both also carry the
   cloud closure (`password_reset_disabled` / `email_change_disabled`) and both are idempotency
@@ -187,11 +191,11 @@ deploys) + `dev` (day-to-day work).
   a browser SSO re-login heals), stale-beyond-15-min + failing hub → 403 `hub_unavailable`,
   swept membership → 401 `membership_revoked`, `hub_status='suspended'` → 403
   `account_suspended` (GET /me exempt — visible-but-blocked). **Orphan-purge HARD CONSTRAINT**
-  (`jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
+  (`packages/chassis-server/src/jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
   membership row — whole-user delete or nothing, else the reconciler's fail-open `no_link`
   branch becomes reachable for hub-origin principals.
 - **Cloud sign-in requests `orgs:create`, and THE HUB DEPLOYS FIRST (PRDCT-2443)**: the scope list
-  is stated once (`HUB_SSO_SCOPES`, `identity/hub-sso.ts`): `openid profile email offline_access
+  is stated once (`HUB_SSO_SCOPES`, `packages/chassis-server/src/identity/hub-sso.ts`): `openid profile email offline_access
 account:read orgs:create`. The hub's authorize endpoint refuses an unknown requested scope with
   `invalid_scope`, which fails the WHOLE sign-in for every user, so a scope is added here only
   AFTER the hub lists it for the tool client. `orgs:create` is the hub's dedicated scope for
@@ -203,7 +207,7 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
   change-email-link — answers 403 `hub_managed` + `details.manageUrl`
-  (`middleware/hub-managed.ts`, keyed on `principal.accountRef`, method-keyed non-GET). READS stay
+  (`packages/chassis-server/src/middleware/hub-managed.ts`, keyed on `principal.accountRef`, method-keyed non-GET). READS stay
   (`GET /members`, invitation list/lookup); the per-deck collaborator surface stays the sanctioned
   local path; cloud-LOCAL workspaces (operator's, deck-guest hosts) and oss are untouched. The
   dashboard adapts off `/me`'s `workspace.hubOrigin`/`origin`/`hubManageUrl`, never

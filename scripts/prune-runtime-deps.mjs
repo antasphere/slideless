@@ -22,10 +22,11 @@
  *                anything else fails
  *   3. absence — no deny-listed package may survive anywhere (a pnpm store
  *                layout change or a vendored nested copy fails the build)
- *   4. deps    — every `dependencies` entry of the deployed package must
- *                resolve to a real directory (guards the lazily imported
- *                drivers a graph load never touches: ioredis, nodemailer,
- *                resend, the OTLP exporter)
+ *   4. deps    — every `dependencies` entry of the deployed package, and of
+ *                every workspace package it ships (the chassis packages
+ *                declare what they import), must resolve to a real directory
+ *                (guards the lazily imported drivers a graph load never
+ *                touches: ioredis, nodemailer, resend, the OTLP exporter)
  *   5. load    — `node dist/index.js --boot-check` makes Node resolve and
  *                initialize the FULL static runtime import graph, then exit
  *                before any env/DB/listener work; ERR_MODULE_NOT_FOUND here
@@ -283,19 +284,39 @@ sweep(nodeModules, 'nm');
 console.log(`sweep: removed ${unlinkedDangling} dangling symlink(s) (prune, orphan pass, self-hoist)`);
 
 // ── 4. every declared prod dependency must still resolve ───────────────────
+// The deployed package's own `dependencies`, then — transitively — those of
+// every WORKSPACE package it ships (`pnpm deploy --legacy` injects them as
+// `.pnpm/<name>@file+…` store entries). The lazily imported drivers are
+// declared by the chassis package that imports them, not by the app, so the
+// guard follows the declaration to where it lives.
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-const deps = Object.keys(pkg.dependencies ?? {});
+let depCount = 0;
 let depFailures = 0;
-for (const dep of deps) {
-  try {
-    const real = realpathSync(join(nodeModules, dep));
-    if (!existsSync(join(real, 'package.json'))) throw new Error('missing package.json');
-  } catch {
-    errors.push(`declared dependency no longer resolves: ${dep}`);
-    depFailures++;
+const depQueue = [{ owner: null, manifest: pkg, nm: nodeModules }];
+const seenWorkspace = new Set();
+while (depQueue.length > 0) {
+  const { owner, manifest, nm } = depQueue.shift();
+  for (const dep of Object.keys(manifest.dependencies ?? {})) {
+    depCount++;
+    try {
+      const real = realpathSync(join(nm, dep));
+      const depManifest = JSON.parse(readFileSync(join(real, 'package.json'), 'utf8'));
+      const entry = storeDirOf(real);
+      if (entry && entry.includes('@file+') && !seenWorkspace.has(entry)) {
+        seenWorkspace.add(entry);
+        depQueue.push({ owner: dep, manifest: depManifest, nm: join(storeReal, entry, 'node_modules') });
+      }
+    } catch {
+      errors.push(`declared dependency${owner ? ` of ${owner}` : ''} no longer resolves: ${dep}`);
+      depFailures++;
+    }
   }
 }
-if (depFailures === 0) console.log(`deps: all ${deps.length} declared dependencies resolve`);
+if (depFailures === 0) {
+  console.log(
+    `deps: all ${depCount} declared dependencies resolve (the deployed package + ${seenWorkspace.size} workspace package(s))`
+  );
+}
 
 if (errors.length > 0) {
   console.error('\nprune-runtime-deps FAILED:');
