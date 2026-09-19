@@ -1165,15 +1165,17 @@ describe("mail driver 'none'", () => {
       body: JSON.stringify({ payload: { name: 'quiet' } })
     });
     expect(created.status).toBe(201);
-    await app2.formsNotifier.drain();
+    await app2.tool.formsNotifier.drain();
     const [row] = await app2.db.db
       .select()
       .from(formResponses)
       .where(eq(formResponses.id, (await readJson(created)).response.id))
       .limit(1);
     expect(row).toBeDefined();
-    expect(await app2.formsNotifier.notify({ kind: 'new', row: row!, shareTokenName: 'x' })).toBe(false);
-    expect(await app2.formsNotifier.notify({ kind: 'edited', row: row!, shareTokenName: 'x' })).toBe(false);
+    expect(await app2.tool.formsNotifier.notify({ kind: 'new', row: row!, shareTokenName: 'x' })).toBe(false);
+    expect(await app2.tool.formsNotifier.notify({ kind: 'edited', row: row!, shareTokenName: 'x' })).toBe(
+      false
+    );
   });
 
   it('hides the opt-in (emailAvailable:false), 400s the email leg, and never auto-mails', async () => {
@@ -2120,7 +2122,7 @@ describe('owner mails (PRDCT-2330)', () => {
     return (await readJson(res)).secret;
   }
   const drained = async () => {
-    await mailApp.formsNotifier.drain();
+    await mailApp.tool.formsNotifier.drain();
     return mailBox.sent;
   };
 
@@ -2129,7 +2131,7 @@ describe('owner mails (PRDCT-2330)', () => {
     mailApp = await createTestApp(
       await createDatabase(container, 'forms_mail'),
       { PUBLIC_BASE_URL: 'https://decks.example.test' },
-      { email: mailBox, formsMailCooldownMs: COOLDOWN_MS }
+      { email: mailBox, tool: { formsMailCooldownMs: COOLDOWN_MS } }
     );
     await mailApp.app.request(
       '/api/v1/setup',
