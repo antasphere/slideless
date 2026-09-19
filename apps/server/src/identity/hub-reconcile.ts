@@ -1,6 +1,6 @@
 import { Counter } from 'prom-client';
 import { and, eq, inArray, isNotNull, ne, notInArray } from 'drizzle-orm';
-import { workspaceMembers, workspaces, type Db } from '@slideless/db';
+import { workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 import type { AuditService } from '../audit/service.js';
 import type { Logger } from '../logger.js';
 import { projectOrgMembership } from './hub-projection.js';

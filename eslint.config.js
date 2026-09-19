@@ -54,7 +54,12 @@ export default tseslint.config(
   },
   {
     // Dependency direction: nothing imports the server.
-    files: ['packages/sdk/**/*.ts', 'packages/contract/**/*.ts', 'packages/db/**/*.ts'],
+    files: [
+      'packages/sdk/**/*.ts',
+      'packages/contract/**/*.ts',
+      'packages/db/**/*.ts',
+      'packages/chassis-db/**/*.ts'
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -83,12 +88,38 @@ export default tseslint.config(
           patterns: [
             { group: ['@slideless/server', '@slideless/server/*'], message: 'Nothing imports the server.' },
             {
-              group: ['@slideless/db', '@slideless/db/*'],
+              group: [
+                '@slideless/db',
+                '@slideless/db/*',
+                '@antasphere/chassis-db',
+                '@antasphere/chassis-db/*'
+              ],
               message: 'Clients never touch the database layer.'
             },
             {
               group: ['@slideless/contract/routes', '@slideless/contract/routes/*'],
               message: 'The routes entry pulls Hono — clients import the contract root only.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    // The chassis never names the tool: a `packages/chassis-*` package is the
+    // generic half, consumed BY the tool's packages and never the reverse.
+    // (This block replaces the "nothing imports the server" rule above for
+    // these files — `@slideless/*` covers the server too.)
+    files: ['packages/chassis-*/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@slideless/*'],
+              message:
+                'The chassis never names the tool: packages/chassis-* may not import @slideless/* (the tool depends on the chassis, never the reverse).'
             }
           ]
         }

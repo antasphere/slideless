@@ -1,5 +1,6 @@
-import { createDb, type DbHandle } from '@slideless/db';
-import { migrationStatus, runMigrations } from '@slideless/db/migrate';
+import type { DbHandle } from '@antasphere/chassis-db';
+import { createDb } from '@slideless/db';
+import { migrationStatus, runMigrations } from '@antasphere/chassis-db/migrate';
 import { and, count, eq, isNull } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { existsSync } from 'node:fs';
@@ -37,7 +38,7 @@ import type { OnWorkspaceMiss } from './identity/resolve-membership.js';
 import { isApiKeyToken } from './apikeys/service.js';
 import { mcpRoutes } from './mcp/http.js';
 import { wellKnownRoutes } from './routes/wellknown.js';
-import { instanceSettings, user as userTable, workspaceMembers, workspaces } from '@slideless/db';
+import { instanceSettings, user as userTable, workspaceMembers, workspaces } from '@antasphere/chassis-db';
 import { FileService } from './files/service.js';
 import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
 import { createLogger, type Logger } from './logger.js';

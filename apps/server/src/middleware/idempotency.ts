@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import type { MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { and, eq } from 'drizzle-orm';
-import { idempotencyKeys, type Db } from '@slideless/db';
+import { idempotencyKeys, type Db } from '@antasphere/chassis-db';
 import { apiError } from '../api/errors.js';
 
 /**

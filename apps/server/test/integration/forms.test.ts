@@ -2,8 +2,8 @@ import { createHash, createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
+import { auditLog } from '@antasphere/chassis-db';
 import {
-  auditLog,
   formResponseVersions,
   formResponses,
   presentations,

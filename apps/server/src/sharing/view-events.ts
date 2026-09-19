@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { EMBED_PLACEMENT_RE } from '@slideless/contract';
-import { shareTokenViews, type Db, type ShareTokenViewRow } from '@slideless/db';
+import type { Db } from '@antasphere/chassis-db';
+import { shareTokenViews, type ShareTokenViewRow } from '@slideless/db';
 import type { Logger } from '../logger.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 

@@ -1,4 +1,4 @@
-import { workspaceMembers, workspaces, type DbConn } from '@slideless/db';
+import { workspaceMembers, workspaces, type DbConn } from '@antasphere/chassis-db';
 
 /**
  * Workspace lifecycle — the template's one creation path (ADR 014). Setup

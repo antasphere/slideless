@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { UsageEvent } from '@slideless/contract';
 import { desc } from 'drizzle-orm';
-import { auditLog } from '@slideless/db';
+import { auditLog } from '@antasphere/chassis-db';
 import {
   createDatabase,
   createTestApp,

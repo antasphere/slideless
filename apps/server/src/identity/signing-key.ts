@@ -1,7 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { exportJWK, generateKeyPair } from 'jose';
 import { generateRandomString, symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
-import { jwks, type Db } from '@slideless/db';
+import { jwks, type Db } from '@antasphere/chassis-db';
 
 /**
  * OAuth signing-key durability across AUTH_SECRET rotation (ADR 023).

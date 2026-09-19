@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq } from 'drizzle-orm';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { workspaceMembers } from '@slideless/db';
+import { workspaceMembers } from '@antasphere/chassis-db';
 import { OauthJwtVerifier } from '../../src/identity/oauth-jwt.js';
 import type { Auth } from '../../src/identity/better-auth.js';
 import {

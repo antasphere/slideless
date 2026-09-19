@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { apiKeys, files, invitations, user as userTable, workspaceMembers } from '@slideless/db';
+import { apiKeys, files, invitations, user as userTable, workspaceMembers } from '@antasphere/chassis-db';
 import {
   createDatabase,
   createTestApp,

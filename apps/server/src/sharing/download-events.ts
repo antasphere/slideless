@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
-import { shareTokenDownloads, shareTokens, type Db } from '@slideless/db';
+import type { Db } from '@antasphere/chassis-db';
+import { shareTokenDownloads, shareTokens } from '@slideless/db';
 import type { Logger } from '../logger.js';
 
 /**

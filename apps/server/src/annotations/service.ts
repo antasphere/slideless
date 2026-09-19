@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, exists, isNull, or, sql } from 'drizzle-orm';
-import { annotations, collaborators, presentations, type AnnotationRow, type Db } from '@slideless/db';
+import type { Db } from '@antasphere/chassis-db';
+import { annotations, collaborators, presentations, type AnnotationRow } from '@slideless/db';
 import type { Principal } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 

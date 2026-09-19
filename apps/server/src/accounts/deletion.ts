@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { and, eq, isNull, ne } from 'drizzle-orm';
-import { user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
+import { user as userTable, workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 import type { AuditService } from '../audit/service.js';
 import type { Logger } from '../logger.js';
 import type { ErasureLog } from './erasure-log.js';
@@ -128,7 +128,7 @@ export class AccountDeletionService {
     private readonly db: Db,
     private readonly audit: AuditService,
     private readonly logger: Logger,
-    /** Dedicated advisory-lock connections (mirrors packages/db migrate.ts). */
+    /** Dedicated advisory-lock connections (mirrors packages/chassis-db migrate.ts). */
     private readonly connectionString: string,
     /** The append-only erasure tombstone (OPS-3): every completed erasure lands a line. */
     private readonly erasureLog?: ErasureLog

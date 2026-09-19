@@ -15,7 +15,7 @@ import {
   workspaceMembers,
   workspaces,
   type Db
-} from '@slideless/db';
+} from '@antasphere/chassis-db';
 import { hubConfig, type Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/better-auth.js';

@@ -4,7 +4,7 @@ import { serve, type ServerType } from '@hono/node-server';
 import { createServer } from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { workspaceMembers } from '@slideless/db';
+import { workspaceMembers } from '@antasphere/chassis-db';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';

@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, desc, eq } from 'drizzle-orm';
 import { apiKeyCreateRoute, apiKeyRevokeRoute, apiKeysListRoute } from '@slideless/contract/routes';
-import { apiKeys, workspaceMembers, type ApiKey, type Db } from '@slideless/db';
+import { apiKeys, workspaceMembers, type ApiKey, type Db } from '@antasphere/chassis-db';
 import { sql } from 'drizzle-orm';
 import type { ApiKeyService } from '../apikeys/service.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';

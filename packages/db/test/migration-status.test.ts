@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { compareMigrations, migrationHash, onDiskMigrationHashes } from '../src/migrate.js';
+import { compareMigrations, migrationHash, onDiskMigrationHashes } from '@antasphere/chassis-db/migrate';
 
 /**
  * OPS-6 (PRDCT-1357): migration status is hash-based. A count-based status

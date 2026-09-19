@@ -1,5 +1,5 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
+import { user as userTable, workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 
 /**
  * The ONE membership-selection rule of the user-scoped credential model

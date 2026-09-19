@@ -5,6 +5,7 @@ WORKDIR /repo
 
 # Install with a full workspace context so pnpm can resolve workspace: deps.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.json ./
+COPY packages/chassis-db/package.json packages/chassis-db/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/contract/package.json packages/contract/package.json
 COPY packages/sdk/package.json packages/sdk/package.json
@@ -23,7 +24,8 @@ COPY apps ./apps
 # @slideless/sdk is built BEFORE the dashboard: the dashboard imports it and its
 # package `exports` resolve to `dist` (so the built CLI runs standalone), and
 # `.dockerignore` strips any host-built `dist` from the context.
-RUN pnpm --filter @slideless/db build \
+RUN pnpm --filter @antasphere/chassis-db build \
+ && pnpm --filter @slideless/db build \
  && pnpm --filter @slideless/contract build \
  && pnpm --filter @slideless/sdk build \
  && pnpm --filter @slideless/dashboard build \

@@ -44,7 +44,7 @@ committed snapshot. Any Better Auth config change that alters the schema
 
 1. Update `apps/server/scripts/auth-schema-config.ts`.
 2. Regenerate with the pinned CLI and update **both**
-   `packages/db/src/auth-schema.ts` and
+   `packages/chassis-db/src/auth-schema.ts` and
    `apps/server/scripts/auth-schema.snapshot.ts` (the CLI silently writes
    nothing when the output file exists — give it a fresh path).
 3. Add the corresponding **additive** drizzle migration in

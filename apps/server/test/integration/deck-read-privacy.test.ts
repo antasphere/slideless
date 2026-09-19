@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
-import { user as userTable } from '@slideless/db';
+import { user as userTable } from '@antasphere/chassis-db';
 import {
   createDatabase,
   createTestApp,

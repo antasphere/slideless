@@ -1,4 +1,4 @@
-import { type Db } from '@slideless/db';
+import { type Db } from '@antasphere/chassis-db';
 import {
   ACTIVE_WORKSPACE_HEADER,
   type IdentityProvider,

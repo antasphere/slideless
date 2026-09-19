@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { auditLog, files, presentations, presentationVersions } from '@slideless/db';
+import { auditLog, files } from '@antasphere/chassis-db';
+import { presentations, presentationVersions } from '@slideless/db';
 import {
   createDatabase,
   createTestApp,

@@ -21,7 +21,7 @@ import {
   verification,
   workspaceMembers,
   type Db
-} from '@slideless/db';
+} from '@antasphere/chassis-db';
 import type { Env } from '../env.js';
 import { HUB_SSO_PROVIDER_ID, HubSsoLoginError, type HubSsoService } from './hub-sso.js';
 import { parseSuperadminEmails } from '../accounts/superadmin.js';

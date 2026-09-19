@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import type { Db } from '@antasphere/chassis-db';
 import {
   presentations,
   shareTokens,
   type BadgePosition,
-  type Db,
   type ShareTokenPurpose,
   type ShareTokenRow
 } from '@slideless/db';

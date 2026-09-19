@@ -132,6 +132,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@antasphere/chassis-db':
+        specifier: workspace:*
+        version: link:../../packages/chassis-db
       '@aws-sdk/client-s3':
         specifier: ^3.1079.0
         version: 3.1079.0
@@ -266,6 +269,25 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
+  packages/chassis-db:
+    dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
+      drizzle-orm:
+        specifier: ^0.45.1
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0)
+      pg:
+        specifier: ^8.16.0
+        version: 8.22.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.15.0
+        version: 8.20.0
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
+
   packages/cli:
     devDependencies:
       '@antasphere/cli-core':
@@ -305,6 +327,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@antasphere/chassis-db':
+        specifier: workspace:*
+        version: link:../chassis-db
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
