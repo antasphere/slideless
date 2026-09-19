@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ssoAuthorizationUrlParams } from '../../src/identity/hub-sso.js';
+import { ssoAuthorizationUrlParams } from '@antasphere/chassis-server/identity';
 
 /**
  * The SL-1 authorize-params whitelist: the ONLY thing the caller-controlled

@@ -4,7 +4,7 @@ import { attachmentsOf, type ManifestEntry } from '@slideless/contract';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import { resolveTokenSession } from './token-session.js';
 
 /**

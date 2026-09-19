@@ -8,7 +8,7 @@ import type { Logger } from '@antasphere/chassis-server/logger';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import { annotationToReviewerWire, type AnnotationService } from '../annotations/service.js';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import { resolveTokenSession, type TokenSessionView } from './token-session.js';
 
 /**

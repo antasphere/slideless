@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { classifyHubOrgCreateAnswer, HubUserClient } from '../../src/identity/hub-user-client.js';
-import type { GrantAccess, HubGrantService } from '../../src/identity/hub-grant.js';
+import { classifyHubOrgCreateAnswer, HubUserClient } from '@antasphere/chassis-server/identity';
+import type { GrantAccess, HubGrantService } from '@antasphere/chassis-server/identity';
 import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**

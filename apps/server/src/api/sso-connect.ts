@@ -2,10 +2,14 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { ssoCliConnectRoute } from '@slideless/contract/routes';
 import { apiKeys as apiKeysTable, ssoConnectJtis, workspaceMembers, type Db } from '@antasphere/chassis-db';
-import type { Auth } from '../identity/better-auth.js';
-import { HubSsoLoginError, type HubConnectAssertion, type HubSsoService } from '../identity/hub-sso.js';
-import type { HubGrantService } from '../identity/hub-grant.js';
-import type { ApiKeyService } from '../apikeys/service.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
+import {
+  HubSsoLoginError,
+  type HubConnectAssertion,
+  type HubSsoService
+} from '@antasphere/chassis-server/identity';
+import type { HubGrantService } from '@antasphere/chassis-server/identity';
+import type { ApiKeyService } from '@antasphere/chassis-server/apikeys';
 import type { AuditService } from '@antasphere/chassis-server/audit';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import { CLI_KEY_SCOPES } from './cli-auth.js';

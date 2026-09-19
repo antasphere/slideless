@@ -9,9 +9,9 @@ import {
   formNameSchema,
   formResponsePayloadSchema,
   formResponseSourceSchema,
-  formSubmitFilesSchema,
-  isValidMediaType
+  formSubmitFilesSchema
 } from '@slideless/contract';
+import { isValidMediaType } from '@antasphere/chassis-contract';
 import type { FormResponseRow } from '@slideless/db';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
@@ -20,7 +20,7 @@ import { buildViewerUrl, type ShareTokenService } from '../sharing/service.js';
 import { viewPlacement } from '../sharing/view-events.js';
 import type { EmailDriver } from '@antasphere/chassis-server/email';
 import { buildResponseLinkEmail } from '../email/deck-templates.js';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import {
   formResponseToRespondentWire,
   FORM_RESPONSES_MAX_PER_DECK,

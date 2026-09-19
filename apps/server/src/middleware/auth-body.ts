@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { hasNulDeep } from '@antasphere/chassis-contract';
-import { apiError } from '../api/errors.js';
+import { apiError } from '@antasphere/chassis-server/util';
 
 /** Matches better-call's / Hono's JSON content-type test (the json-depth regex). */
 const JSON_CONTENT_TYPE = /^application\/([a-z0-9.+-]*\+)?json/i;

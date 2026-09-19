@@ -8,7 +8,7 @@ import {
   DEFAULT_GRANT_DIALS,
   HubGrantService,
   LOCK_WATCHDOG_HEADROOM_MS
-} from '../../src/identity/hub-grant.js';
+} from '@antasphere/chassis-server/identity';
 
 /**
  * The per-user hub grant (identity/hub-grant.ts) against the FakeHub's

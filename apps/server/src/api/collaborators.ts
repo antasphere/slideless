@@ -11,12 +11,12 @@ import { user as userTable, workspaceMembers, type Db } from '@antasphere/chassi
 import { isDuplicateAccountError } from '@antasphere/chassis-server/accounts';
 import type { Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
-import type { Auth } from '../identity/better-auth.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
 import type { EmailDriver } from '@antasphere/chassis-server/email';
 import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
 import type { AuditService } from '@antasphere/chassis-server/audit';
 import { buildCollaboratorInviteEmail } from '../email/deck-templates.js';
-import type { HubSsoService } from '../identity/hub-sso.js';
+import type { HubSsoService } from '@antasphere/chassis-server/identity';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
 import {
   CollaboratorError,

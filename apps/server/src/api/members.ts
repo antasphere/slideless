@@ -10,14 +10,14 @@ import {
   membersListRoute
 } from '@antasphere/chassis-contract/routes';
 import { workspaceMembers, user as userTable, type Db } from '@antasphere/chassis-db';
-import type { Auth } from '../identity/better-auth.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
 import {
   isLastOwnerDbError,
   LastOwnerError,
   type AccountDeletionService
 } from '@antasphere/chassis-server/accounts';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
-import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest, requireRole } from '@antasphere/chassis-server/middleware';
 import { hubManagedMembershipGate } from '../middleware/hub-managed.js';
 
 export interface MemberRouteDeps {

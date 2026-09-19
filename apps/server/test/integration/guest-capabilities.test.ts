@@ -4,8 +4,8 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq } from 'drizzle-orm';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { workspaceMembers } from '@antasphere/chassis-db';
-import { OauthJwtVerifier } from '../../src/identity/oauth-jwt.js';
-import type { Auth } from '../../src/identity/better-auth.js';
+import { OauthJwtVerifier } from '@antasphere/chassis-server/identity';
+import type { Auth } from '@antasphere/chassis-server/identity';
 import {
   createDatabase,
   createTestApp,

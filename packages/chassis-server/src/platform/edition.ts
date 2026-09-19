@@ -12,7 +12,7 @@ import { HubLiveGate } from '../identity/hub-live-gate.js';
 import type { HubOrgReconciler } from '../identity/hub-reconcile.js';
 import type { PrincipalGate } from '../middleware/auth-context.js';
 import type { HubConfig } from '../env.js';
-import type { Logger } from '@antasphere/chassis-server/logger';
+import type { Logger } from '../logger.js';
 
 /**
  * The edition split (internal/federation.md): one codebase, one Docker image,

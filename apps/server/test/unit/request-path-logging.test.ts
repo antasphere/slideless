@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { pino } from 'pino';
-import { requestId } from '../../src/middleware/request-id.js';
+import { requestId } from '@antasphere/chassis-server/middleware';
 
 /**
  * PRIV-1, and on THIS repo it is not hypothetical — it is the active

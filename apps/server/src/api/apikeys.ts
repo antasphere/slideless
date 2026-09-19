@@ -3,9 +3,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { apiKeyCreateRoute, apiKeyRevokeRoute, apiKeysListRoute } from '@slideless/contract/routes';
 import { apiKeys, workspaceMembers, type ApiKey, type Db } from '@antasphere/chassis-db';
 import { sql } from 'drizzle-orm';
-import type { ApiKeyService } from '../apikeys/service.js';
+import type { ApiKeyService } from '@antasphere/chassis-server/apikeys';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
-import { requireAuth } from '../middleware/auth-context.js';
+import { requireAuth } from '@antasphere/chassis-server/middleware';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { signInOriginRefused, trustedOriginsFor } from '../../src/identity/better-auth.js';
+import { signInOriginRefused, trustedOriginsFor } from '@antasphere/chassis-server/identity';
 
 /**
  * PRDCT-1352, the auth-layer second locks. The host gate keeps the auth
@@ -14,7 +14,7 @@ const VIEWER = 'https://decks.example.net';
 
 describe('trustedOriginsFor', () => {
   it('trusts the public origin and the serving origin', () => {
-    const fn = trustedOriginsFor(APP, null);
+    const fn = trustedOriginsFor(APP, []);
     expect(fn(new Request('http://localhost:5173/api/v1/auth/get-session'))).toEqual([
       APP,
       'http://localhost:5173'
@@ -23,7 +23,7 @@ describe('trustedOriginsFor', () => {
   });
 
   it('never returns the viewer origin, even when it is the serving origin', () => {
-    const fn = trustedOriginsFor(APP, VIEWER);
+    const fn = trustedOriginsFor(APP, [VIEWER]);
     expect(fn(new Request(`${VIEWER}/api/v1/auth/sign-in/email`))).toEqual([APP]);
     // Served on the app origin, the serving origin is appended (a duplicate, harmless).
     expect(fn(new Request(`${APP}/api/v1/auth/sign-in/email`))).toEqual([APP, APP]);
@@ -31,7 +31,7 @@ describe('trustedOriginsFor', () => {
 
   it('would not even trust the viewer origin if it were the configured public origin', () => {
     // parseEnv refuses this shape; the filter is origin-blind on purpose.
-    expect(trustedOriginsFor(VIEWER, VIEWER)()).toEqual([]);
+    expect(trustedOriginsFor(VIEWER, [VIEWER])()).toEqual([]);
   });
 });
 
@@ -43,7 +43,7 @@ describe('signInOriginRefused', () => {
       signInOriginRefused({
         origin: 'http://localhost:5173',
         servingOrigin: 'http://localhost:5173',
-        viewerOrigin: VIEWER,
+        untrustedOrigins: [VIEWER],
         isTrustedOrigin: trustedApp
       })
     ).toBe(false);
@@ -51,7 +51,7 @@ describe('signInOriginRefused', () => {
       signInOriginRefused({
         origin: APP,
         servingOrigin: null,
-        viewerOrigin: VIEWER,
+        untrustedOrigins: [VIEWER],
         isTrustedOrigin: trustedApp
       })
     ).toBe(false);
@@ -62,7 +62,7 @@ describe('signInOriginRefused', () => {
       signInOriginRefused({
         origin: 'https://evil.example',
         servingOrigin: APP,
-        viewerOrigin: VIEWER,
+        untrustedOrigins: [VIEWER],
         isTrustedOrigin: trustedApp
       })
     ).toBe(true);
@@ -73,7 +73,7 @@ describe('signInOriginRefused', () => {
       signInOriginRefused({
         origin: VIEWER,
         servingOrigin: VIEWER,
-        viewerOrigin: VIEWER,
+        untrustedOrigins: [VIEWER],
         isTrustedOrigin: () => true
       })
     ).toBe(true);
@@ -84,7 +84,7 @@ describe('signInOriginRefused', () => {
       signInOriginRefused({
         origin: VIEWER,
         servingOrigin: VIEWER,
-        viewerOrigin: null,
+        untrustedOrigins: [],
         isTrustedOrigin: trustedApp
       })
     ).toBe(false);

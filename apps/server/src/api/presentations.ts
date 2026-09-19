@@ -58,7 +58,7 @@ import { buildShareEmail } from '../email/deck-templates.js';
 import type { FileService } from '@antasphere/chassis-server/files';
 import { FileTooLargeError } from '@antasphere/chassis-server/files';
 import { encodeContentDisposition } from '@antasphere/chassis-server/files';
-import { serveBlob } from '../files/serve.js';
+import { serveBlob } from '@antasphere/chassis-server/files';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';
 import { manifestHasForms } from '../forms/detect.js';
 import { readReference } from '../presentations/reference-frontmatter.js';
@@ -75,7 +75,7 @@ import { hashViewerPassword } from '../sharing/password.js';
 import { shareTokenViewToWire, type ShareTokenViewService } from '../sharing/view-events.js';
 import { annotationToWire, type AnnotationService } from '../annotations/service.js';
 import { formResponseToWire, formResponseVersionToWire, type FormResponseService } from '../forms/service.js';
-import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest } from '@antasphere/chassis-server/middleware';
 
 /**
  * Presentation domain routes (ADR 011). Phase 3: the upload + versioning

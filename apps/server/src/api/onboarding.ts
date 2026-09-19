@@ -2,7 +2,7 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { onboardingDismissRoute } from '@antasphere/chassis-contract/routes';
 import { userOnboarding, type Db } from '@antasphere/chassis-db';
-import type { Auth } from '../identity/better-auth.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 

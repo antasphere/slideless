@@ -17,10 +17,10 @@ import type { Logger } from '@antasphere/chassis-server/logger';
 import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
 import type { FileService } from '@antasphere/chassis-server/files';
 import { FileTooLargeError } from '@antasphere/chassis-server/files';
-import { serveBlob } from '../files/serve.js';
+import { serveBlob } from '@antasphere/chassis-server/files';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';
 import { isUuid } from '@antasphere/chassis-server/util';
-import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
+import { requireAuth, requireNonGuest } from '@antasphere/chassis-server/middleware';
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 

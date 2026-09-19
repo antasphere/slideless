@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { RuntimeState } from '@antasphere/chassis-server/util';
-import { requestId } from './middleware/request-id.js';
+import { requestId } from '@antasphere/chassis-server/middleware';
 import { hostGate } from './middleware/host-gate.js';
 import { buildCsp, inlineScriptHashes, securityHeaders } from './middleware/security-headers.js';
 import { healthRoutes } from './routes/health.js';

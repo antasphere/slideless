@@ -13,7 +13,7 @@ import {
 import type { PresentationRow, PresentationVersionRow, ShareTokenRow } from '@slideless/db';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { FileService } from '@antasphere/chassis-server/files';
-import { serveBlob } from '../files/serve.js';
+import { serveBlob } from '@antasphere/chassis-server/files';
 import { encodeContentDisposition } from '@antasphere/chassis-server/files';
 import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 import { attachmentsZipFilename, serveAttachmentsZip } from '../presentations/attachments.js';
@@ -27,7 +27,7 @@ import {
   type ShareTokenViewService
 } from '../sharing/view-events.js';
 import { verifyViewerPassword } from '../sharing/password.js';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import { embedRoutes } from './embed.js';
 import { docNavigation, entryInjectionFor, frameNavigation, type InjectionPlan } from './inject.js';
 import { injectIntoStream } from './inject-stream.js';

@@ -3,7 +3,8 @@ import {
   oauthProviderAuthServerMetadata,
   oauthProviderOpenIdConfigMetadata
 } from '@better-auth/oauth-provider';
-import { mcpResourceUrl, OAUTH_SCOPES, type Auth } from '../identity/better-auth.js';
+import { mcpResourceUrl, type Auth } from '@antasphere/chassis-server/identity';
+import { OAUTH_SCOPES } from '../middleware/scopes.js';
 
 /**
  * Root-level OAuth discovery surface.
