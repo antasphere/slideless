@@ -89,6 +89,9 @@ for port in "$HUB_PORT" "$SL_PORT" "$HOP_PORT"; do
 done
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/federation-drill.XXXXXX")"
+# The claim credential Slideless's POST /setup requires (PRDCT-1347); the drill
+# overlay hands it to the app container.
+export FEDERATION_DRILL_SETUP_TOKEN="$(openssl rand -hex 16)"
 HUB_JAR="$SCRATCH/hub.cookies"
 SL_JAR="$SCRATCH/sl.cookies"
 
@@ -178,8 +181,10 @@ hub_setup=$("${CURL[@]}" -X POST "$HUB/api/v1/setup" -H 'content-type: applicati
 HUB_USER_ID=$(echo "$hub_setup" | jq -r '.ownerUserId // empty')
 [ -n "$HUB_USER_ID" ] || fail "hub setup did not answer an ownerUserId: $hub_setup"
 sl_setup=$("${CURL[@]}" -X POST "$SL/api/v1/setup" -H 'content-type: application/json' \
-  -d "{\"instanceName\":\"Drill Slideless\",\"owner\":{\"email\":\"sl-operator@drill.test\",\"name\":\"SL Operator\",\"password\":\"$OWNER_PASSWORD\"}}")
-echo "$sl_setup" | jq -e '.workspaceId == null' >/dev/null || fail "Slideless cloud setup should mint no workspace: $sl_setup"
+  -d "{\"instanceName\":\"Drill Slideless\",\"setupToken\":\"$FEDERATION_DRILL_SETUP_TOKEN\",\"owner\":{\"email\":\"sl-operator@drill.test\",\"name\":\"SL Operator\",\"password\":\"$OWNER_PASSWORD\"}}")
+# ownerUserId first: a refusal body has no workspaceId either, so the null check
+# alone passed on a 403 and the instance was never claimed.
+echo "$sl_setup" | jq -e '(.ownerUserId // "") != "" and .workspaceId == null' >/dev/null || fail "Slideless cloud setup should mint no workspace: $sl_setup"
 seeded=$(applogs hub | grep -c 'tool registry: client seeded' || true)
 [ "$seeded" -ge 2 ] || fail "expected the hub to seed 2 registry clients, saw $seeded log lines"
 pass "hub setup (owner $HUB_USER_ID), Slideless cloud setup (no workspace), two registry clients seeded"
