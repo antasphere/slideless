@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import { serveBlob } from '../../src/files/serve.js';
-import type { StorageDriver } from '../../src/storage/driver.js';
-import type { Logger } from '../../src/logger.js';
+import type { StorageDriver } from '@antasphere/chassis-server/storage';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**
  * PLT-5 backstop: versions are immutable, so a manifest `contentType`

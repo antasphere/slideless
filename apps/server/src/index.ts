@@ -24,8 +24,8 @@ if (process.argv[2] === 'rotate-signing-key') {
     await Promise.all([
       import('./env.js'),
       import('@slideless/db'),
-      import('./secret.js'),
-      import('./logger.js'),
+      import('@antasphere/chassis-server/util'),
+      import('@antasphere/chassis-server/logger'),
       import('./identity/signing-key.js')
     ]);
   const env = parseEnv(process.env);

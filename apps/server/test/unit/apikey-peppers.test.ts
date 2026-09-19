@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPepperRegistry, parseApiKeyPeppers } from '../../src/apikeys/peppers.js';
+import { buildPepperRegistry, parseApiKeyPeppers } from '@antasphere/chassis-server/apikeys';
 import { envSchema } from '../../src/env.js';
 
 const AUTH_SECRET = 'unit-auth-secret-0123456789abcdef0123456789abcdef';

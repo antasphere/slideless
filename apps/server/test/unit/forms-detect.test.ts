@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import type { ManifestEntry } from '@slideless/contract';
 import { entryKind, manifestHasForms } from '../../src/forms/detect.js';
-import type { StorageDriver } from '../../src/storage/driver.js';
+import type { StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * PRDCT-1810: THE RULE of commit-time form detection, over an in-memory

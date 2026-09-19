@@ -8,7 +8,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import type { EntitlementService, Principal } from '@antasphere/chassis-contract';
 import type { Env } from '../env.js';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**
  * Auth-surface rate limits (ours, not Better Auth's built-in): login, OTP

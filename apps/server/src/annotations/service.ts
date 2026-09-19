@@ -2,7 +2,7 @@ import { and, asc, desc, eq, exists, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from '@antasphere/chassis-db';
 import { annotations, collaborators, presentations, type AnnotationRow } from '@slideless/db';
 import type { Principal } from '@antasphere/chassis-contract';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 
 /**
  * Reviewer annotations (Phase 5). Rows anchor to (presentation, version)

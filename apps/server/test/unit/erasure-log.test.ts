@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { emailHash, ErasureLog } from '../../src/accounts/erasure-log.js';
+import { emailHash, ErasureLog } from '@antasphere/chassis-server/accounts';
 
 /**
  * PRDCT-1811: the tombstone's email fingerprint is KEYED. `erasures.jsonl`

@@ -9,7 +9,7 @@ import {
   type TestApp
 } from './helpers.js';
 import { FakeHub, type HubUserFixture } from '../fake-hub.js';
-import { InvitationService } from '../../src/invitations/service.js';
+import { InvitationService } from '@antasphere/chassis-server/invitations';
 import * as sso from './sso-helpers.js';
 
 /**

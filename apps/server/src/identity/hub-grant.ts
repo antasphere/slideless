@@ -3,7 +3,7 @@ import { Counter } from 'prom-client';
 import { and, eq } from 'drizzle-orm';
 import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import { account, hubGrantPresentations, type Db } from '@antasphere/chassis-db';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 
 /**

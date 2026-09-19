@@ -11,11 +11,11 @@ import {
   type ManifestEntry
 } from '@slideless/contract';
 import type { PresentationRow, PresentationVersionRow, ShareTokenRow } from '@slideless/db';
-import type { Logger } from '../logger.js';
-import type { FileService } from '../files/service.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
+import type { FileService } from '@antasphere/chassis-server/files';
 import { serveBlob } from '../files/serve.js';
-import { encodeContentDisposition } from '../files/http.js';
-import { blobKey, type StorageDriver } from '../storage/driver.js';
+import { encodeContentDisposition } from '@antasphere/chassis-server/files';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 import { attachmentsZipFilename, serveAttachmentsZip } from '../presentations/attachments.js';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenDownloadService } from '../sharing/download-events.js';

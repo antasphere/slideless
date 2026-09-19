@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env.js';
-import type { RuntimeState } from '../state.js';
+import type { RuntimeState } from '@antasphere/chassis-server/util';
 
 /**
  * Baseline headers on every response (brief §2.6). The CSP applies to HTML

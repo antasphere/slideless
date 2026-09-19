@@ -3,7 +3,7 @@ import { count, eq, lt, desc } from 'drizzle-orm';
 import { auditListRoute } from '@antasphere/chassis-contract/routes';
 import { auditLog, user as userTable, type Db } from '@antasphere/chassis-db';
 import { requireRole } from '../middleware/auth-context.js';
-import { auditFilterConditions, auditWhere, cursorId } from '../audit/filters.js';
+import { auditFilterConditions, auditWhere, cursorId } from '@antasphere/chassis-server/audit';
 
 export function registerAuditRoutes(api: OpenAPIHono, db: Db): void {
   api.use('/audit', requireRole('admin'));

@@ -73,10 +73,15 @@ export class AuditService {
   }
 }
 
+export interface AuditMiddlewareOptions {
+  /** Extra paths the TOOL exempts from the generic audit row, beside the chassis ones. */
+  exempt?: (path: string) => boolean;
+}
+
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** Paths whose mutations are not audited here (they audit themselves or are credential machinery). */
-function isAuditExempt(path: string): boolean {
+function isAuditExempt(path: string, extraExempt: (path: string) => boolean): boolean {
   return (
     path.startsWith('/api/v1/auth/') ||
     path === '/api/v1/setup' ||
@@ -86,13 +91,9 @@ function isAuditExempt(path: string): boolean {
     // person happened to be in — and a workspace never learns what its
     // members do elsewhere.
     path === '/api/v1/workspaces' ||
-    // Share-token viewer surface (annotations/forms/badge): the SECRET rides
-    // the path, and these writes are documented as unaudited — token
-    // recipients are not principals. Without this exemption a visitor who
-    // ALSO holds a session cookie lands a fallback row whose action embeds
-    // the live share secret (PRIV-1). Owner-side moderation lives under
-    // /presentations/ and stays audited.
-    path.startsWith('/api/v1/viewer/') ||
+    // The tool's own exemptions (AuditMiddlewareOptions.exempt), evaluated
+    // at the place they have always had in this chain.
+    extraExempt(path) ||
     // Break-glass self-audits with before/after detail — and its callers may
     // hold a session WITHOUT a membership (principal null), which this
     // middleware could not attribute anyway.
@@ -111,10 +112,15 @@ function isAuditExempt(path: string): boolean {
  * Handlers add semantics via c.set('audit', ...); without it the row records
  * method + path.
  */
-export function auditMiddleware(audit: AuditService, clientIp: (c: Context) => string): MiddlewareHandler {
+export function auditMiddleware(
+  audit: AuditService,
+  clientIp: (c: Context) => string,
+  options: AuditMiddlewareOptions = {}
+): MiddlewareHandler {
+  const extraExempt = options.exempt ?? (() => false);
   return async (c, next) => {
     await next();
-    if (isAuditExempt(c.req.path)) return;
+    if (isAuditExempt(c.req.path, extraExempt)) return;
     const principal = c.get('principal');
     if (!principal) return;
     if (c.res.status >= 400) return;

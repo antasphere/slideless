@@ -59,7 +59,8 @@ export default tseslint.config(
       'packages/contract/**/*.ts',
       'packages/db/**/*.ts',
       'packages/chassis-db/**/*.ts',
-      'packages/chassis-contract/**/*.ts'
+      'packages/chassis-contract/**/*.ts',
+      'packages/chassis-server/**/*.ts'
     ],
     rules: {
       'no-restricted-imports': [
@@ -105,6 +106,10 @@ export default tseslint.config(
                 '@antasphere/chassis-contract/routes/*'
               ],
               message: 'The routes entry pulls Hono — clients import the contract root only.'
+            },
+            {
+              group: ['@antasphere/chassis-server', '@antasphere/chassis-server/*'],
+              message: 'The chassis server is server-side code — clients never import it.'
             }
           ]
         }

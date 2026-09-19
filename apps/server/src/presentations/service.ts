@@ -23,7 +23,7 @@ import {
   type PresentationsListType,
   type Reference
 } from '@slideless/contract';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 
 /** A version list row: the summary columns plus its per-version counts (PRDCT-2308). */
 export type VersionSummaryRow = Omit<PresentationVersionRow, 'manifest'> & {

@@ -7,7 +7,7 @@ import {
   parseReferenceFrontmatter,
   readReference
 } from '../../src/presentations/reference-frontmatter.js';
-import type { StorageDriver } from '../../src/storage/driver.js';
+import type { StorageDriver } from '@antasphere/chassis-server/storage';
 
 /**
  * ADR 024: the AGENT.md frontmatter reader. It classifies and never refuses:

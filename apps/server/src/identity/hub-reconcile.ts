@@ -1,8 +1,8 @@
 import { Counter } from 'prom-client';
 import { and, eq, inArray, isNotNull, ne, notInArray } from 'drizzle-orm';
 import { workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
-import type { AuditService } from '../audit/service.js';
-import type { Logger } from '../logger.js';
+import type { AuditService } from '@antasphere/chassis-server/audit';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import { projectOrgMembership } from './hub-projection.js';
 import type { HubUserClient, LoginAccessToken } from './hub-user-client.js';
 

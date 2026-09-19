@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@antasphere/chassis-contract';
-import type { PlatformRegistry } from '../platform/registry.js';
+import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
 import { WorkspaceMismatchError } from '../apikeys/service.js';
 import { apiError } from '../api/errors.js';
 import {

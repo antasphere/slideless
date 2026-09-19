@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { decodeJwt } from 'jose';
 import { symmetricDecrypt } from 'better-auth/crypto';
 import { account, type Db } from '@antasphere/chassis-db';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import { isLikelyEncrypted } from './hub-grant.js';
 import { HUB_SSO_PROVIDER_ID } from './hub-sso.js';
 

@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '@antasphere/chassis-db';
 import { shareTokenDownloads, shareTokens } from '@slideless/db';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**
  * Per-download share-link events (PRDCT-2278), the sibling of the view

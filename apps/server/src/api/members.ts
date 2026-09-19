@@ -11,8 +11,12 @@ import {
 } from '@antasphere/chassis-contract/routes';
 import { workspaceMembers, user as userTable, type Db } from '@antasphere/chassis-db';
 import type { Auth } from '../identity/better-auth.js';
-import { isLastOwnerDbError, LastOwnerError, type AccountDeletionService } from '../accounts/deletion.js';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import {
+  isLastOwnerDbError,
+  LastOwnerError,
+  type AccountDeletionService
+} from '@antasphere/chassis-server/accounts';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
 import { hubManagedMembershipGate } from '../middleware/hub-managed.js';
 

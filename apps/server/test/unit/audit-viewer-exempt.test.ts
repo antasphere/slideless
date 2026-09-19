@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { auditMiddleware, type AuditService, type AuditWrite } from '../../src/audit/service.js';
+import { auditMiddleware, type AuditService, type AuditWrite } from '@antasphere/chassis-server/audit';
 import type { Principal } from '@antasphere/chassis-contract';
+import { isDeckAuditExempt } from '../../src/audit/deck-exempt.js';
 
 /**
  * PRIV-1, the audit-table corner: the share-token viewer API carries the
@@ -32,7 +33,7 @@ function appWithAudit(principal: Partial<Principal>) {
   });
   app.use(
     '*',
-    auditMiddleware(audit, () => '127.0.0.1')
+    auditMiddleware(audit, () => '127.0.0.1', { exempt: isDeckAuditExempt })
   );
   app.post('/api/v1/viewer/:secret/annotations', (c) => c.json({ ok: true }, 201));
   app.put('/api/v1/viewer/:secret/badge', (c) => c.json({ ok: true }));

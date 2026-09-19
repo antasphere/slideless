@@ -4,7 +4,7 @@ import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
 import { noControlChars, opaqueJsonChecks } from '@antasphere/chassis-contract';
 import { badgePositionSchema, MAX_SELECTION_JSON_BYTES } from '@slideless/contract';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import { annotationToReviewerWire, type AnnotationService } from '../annotations/service.js';

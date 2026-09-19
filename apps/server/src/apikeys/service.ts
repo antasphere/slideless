@@ -7,7 +7,7 @@ import {
   resolveMembership,
   type OnWorkspaceMiss
 } from '../identity/resolve-membership.js';
-import type { PepperRegistry } from './peppers.js';
+import type { PepperRegistry } from '@antasphere/chassis-server/apikeys';
 
 /**
  * API keys: `<prefix>_<keyId8>_<secret>`.

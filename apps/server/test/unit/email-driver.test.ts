@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createEmailDriver, type EmailMessage } from '../../src/email/driver.js';
-import type { Logger } from '../../src/logger.js';
+import { createEmailDriver, type EmailMessage } from '@antasphere/chassis-server/email';
+import type { Logger } from '@antasphere/chassis-server/logger';
 
 const logger = { info: () => {}, warn: () => {}, error: () => {} } as unknown as Logger;
 

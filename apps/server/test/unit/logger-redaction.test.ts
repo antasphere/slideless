@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pino } from 'pino';
-import { REDACT_PATHS } from '../../src/logger.js';
+import { REDACT_PATHS } from '@antasphere/chassis-server/logger';
 
 /**
  * The redaction list is the last line between a config payload and the log

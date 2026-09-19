@@ -4,9 +4,9 @@ import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { files, type Db } from '@antasphere/chassis-db';
 import type PgBoss from 'pg-boss';
-import { constantTimeEquals } from '../constant-time.js';
+import { constantTimeEquals } from '@antasphere/chassis-server/util';
 import { USAGE_QUEUE } from '../jobs/pgboss.js';
-import { routeLabel } from '../route-label.js';
+import { routeLabel } from '@antasphere/chassis-server/util';
 
 /**
  * Prometheus surface. Route labels use the MATCHED pattern (not the raw

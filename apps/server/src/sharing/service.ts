@@ -8,8 +8,8 @@ import {
   type ShareTokenPurpose,
   type ShareTokenRow
 } from '@slideless/db';
-import type { PepperRegistry } from '../apikeys/peppers.js';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import type { PepperRegistry } from '@antasphere/chassis-server/apikeys';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 
 /**
  * Per-recipient share tokens (Phase 4). The recipient credential is a

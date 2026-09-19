@@ -11,7 +11,15 @@ import { fileURLToPath } from 'node:url';
 import { envSchema } from '../src/env.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const envSource = await readFile(join(here, '../src/env.ts'), 'utf8');
+// The doc comments live beside the keys: the deck keys in the app's env.ts, the
+// generic ones in the chassis package's (read as SOURCE — dist carries no comments).
+const envSource = (
+  await Promise.all(
+    ['../src/env.ts', '../../../packages/chassis-server/src/env.ts'].map((p) =>
+      readFile(join(here, p), 'utf8')
+    )
+  )
+).join('\n');
 
 /** Doc comment IMMEDIATELY preceding `KEY:` in env.ts (never spans other comments). */
 function docFor(key: string): string {

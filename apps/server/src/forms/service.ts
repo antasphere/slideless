@@ -13,8 +13,8 @@ import {
   type ShareTokenRow
 } from '@slideless/db';
 import type { FormResponsePayload, FormSubmitFiles } from '@slideless/contract';
-import type { PepperRegistry } from '../apikeys/peppers.js';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import type { PepperRegistry } from '@antasphere/chassis-server/apikeys';
+import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 import { formFileSnapshot, type FormUploadService } from './uploads.js';
 
 /**

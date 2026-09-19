@@ -141,6 +141,9 @@ importers:
       '@antasphere/chassis-db':
         specifier: workspace:*
         version: link:../../packages/chassis-db
+      '@antasphere/chassis-server':
+        specifier: workspace:*
+        version: link:../../packages/chassis-server
       '@aws-sdk/client-s3':
         specifier: ^3.1079.0
         version: 3.1079.0
@@ -303,6 +306,73 @@ importers:
       '@types/pg':
         specifier: ^8.15.0
         version: 8.20.0
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
+
+  packages/chassis-server:
+    dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../chassis-contract
+      '@antasphere/chassis-db':
+        specifier: workspace:*
+        version: link:../chassis-db
+      '@aws-sdk/client-s3':
+        specifier: ^3.1079.0
+        version: 3.1079.0
+      '@aws-sdk/lib-storage':
+        specifier: ^3.1079.0
+        version: 3.1079.0(@aws-sdk/client-s3@3.1079.0)
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
+      '@opentelemetry/exporter-trace-otlp-http':
+        specifier: ^0.205.0
+        version: 0.205.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources':
+        specifier: ^2.9.0
+        version: 2.9.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base':
+        specifier: ^2.9.0
+        version: 2.9.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-node':
+        specifier: ^2.9.0
+        version: 2.9.0(@opentelemetry/api@1.9.1)
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0)
+      hono:
+        specifier: ^4.9.0
+        version: 4.12.27
+      nodemailer:
+        specifier: ^9.1.1
+        version: 9.1.1
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
+      pino:
+        specifier: ^9.7.0
+        version: 9.14.0
+      resend:
+        specifier: ^6.17.0
+        version: 6.17.0
+      zod:
+        specifier: ^4.1.0
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.0
+      '@types/nodemailer':
+        specifier: ^8.0.1
+        version: 8.0.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      pino-pretty:
+        specifier: ^13.0.0
+        version: 13.1.3
       vitest:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSecureSetupOrigin } from '../../src/setup-transport.js';
+import { isSecureSetupOrigin } from '@antasphere/chassis-server/util';
 import { INSECURE_SETUP_ORIGINS, SECURE_SETUP_ORIGINS } from '../fixtures/setup-origins.js';
 
 /**

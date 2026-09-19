@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSuperadminEmails } from '../../src/accounts/superadmin.js';
+import { parseSuperadminEmails } from '@antasphere/chassis-server/accounts';
 
 describe('parseSuperadminEmails', () => {
   it('returns an empty set (dormant) for undefined and blank input', () => {

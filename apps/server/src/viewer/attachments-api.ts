@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { attachmentsOf, type ManifestEntry } from '@slideless/contract';
-import type { Logger } from '../logger.js';
+import type { Logger } from '@antasphere/chassis-server/logger';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import type { ClientIpFn } from '../middleware/rate-limit.js';
