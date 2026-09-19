@@ -327,11 +327,17 @@ export function voiceOf(reference: Reference | null): Voice | null {
 }
 
 /** Every frontmatter key the type does not define, kept as rows: nothing the author wrote is dropped. */
-export function extraFieldsOf(reference: Reference | null, type: ReferenceType): KeyValue[] {
+export function extraFieldsOf(
+  reference: Reference | null,
+  type: ReferenceType,
+  /** Typed fields the section could not read in their own shape: shown here as plain rows rather than dropped. */
+  unread: readonly string[] = []
+): KeyValue[] {
   if (!reference) return [];
   const known = new Set<string>([...COMMON_FIELDS, ...typeFieldsOf(type)]);
+  const kept = new Set(unread);
   return Object.entries(reference)
-    .filter(([k]) => !known.has(k))
+    .filter(([k]) => !known.has(k) || kept.has(k))
     .map(([key, v]) => ({ key, value: plainValue(v) }))
     .filter((e) => e.value);
 }

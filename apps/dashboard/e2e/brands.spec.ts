@@ -198,6 +198,15 @@ test('brands: a pushed reference is read, downloaded, published, made the defaul
       'AGENT.md',
       'index.html'
     ]);
+    // PRDCT-2426: every download goes through $lib/download (a button and a
+    // fetch that carries the active workspace), never a plain anchor, which
+    // cannot carry X-Workspace-Id and answers 404 on a non-default workspace.
+    expect(await names.evaluateAll((els) => els.map((el) => el.tagName))).toEqual([
+      'BUTTON',
+      'BUTTON',
+      'BUTTON'
+    ]);
+    expect(await files.locator('a[download], a[href*="/assets/"]').count()).toBe(0);
 
     const download = await downloadFrom(page, () =>
       files.getByTestId('reference-file').filter({ hasText: 'logo.svg' }).click()

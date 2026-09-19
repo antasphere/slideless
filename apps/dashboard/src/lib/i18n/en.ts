@@ -303,7 +303,7 @@ export const en = {
   'refs.pushPush': '2. Push it:',
   'refs.pushPublish': '3. Publish it to the workspace, once it is ready:',
   'refs.pushLogin': 'The command line connects to this instance with slideless login, as for any deck.',
-  'refs.sheetPreview': 'The current version',
+  'refs.sheetPreview': 'Version {n}, as a recipient sees it',
   'refs.colours': 'Colours',
   'refs.fonts': 'Fonts',
   'refs.fontSpecimenTitle': 'A specimen in {family}',

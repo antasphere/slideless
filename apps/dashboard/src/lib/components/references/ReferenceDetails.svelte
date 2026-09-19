@@ -25,7 +25,7 @@
   import { Tag } from '$lib/components/ui/tag';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import VersionList from '$lib/components/decks/VersionList.svelte';
-  import VersionThumb from '$lib/components/decks/VersionThumb.svelte';
+  import { PREVIEW_SANDBOX } from '$lib/decks';
   import { canPreviewDeck, createThumbnailController } from '$lib/decks/preview.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
@@ -110,6 +110,12 @@
       .catch((e) => (detailErrors = { ...detailErrors, [v]: errorMessage(e, t('common.genericError')) }));
   });
   const detail = $derived(details[shownVersion] ?? null);
+  // the plate asks for the shown version's rendering once it may
+  let previewWidth = $state(0);
+  $effect(() => {
+    if (canPreview && shownVersion > 0) thumbs.request(shownVersion);
+  });
+  const previewUrl = $derived(canPreview ? thumbs.url(shownVersion) : null);
   // The frontmatter of the shown version: the detail's once it is here, the
   // deck's own for the current version meanwhile.
   const reference = $derived(
@@ -123,7 +129,16 @@
   const fonts = $derived(fontsOf(reference));
   const fontsHref = $derived(googleFontsHref(fonts));
   const voice = $derived(voiceOf(reference));
-  const extras = $derived(extraFieldsOf(reference, type));
+  // a typed field the section could not read (a string where a list was
+  // expected, an object as the description) is kept as a plain row below
+  const unread = $derived([
+    ...(description || !reference?.description ? [] : ['description']),
+    ...(tags.length || !reference?.tags ? [] : ['tags']),
+    ...(type !== 'brand' || swatches.length || !reference?.colors ? [] : ['colors']),
+    ...(type !== 'brand' || fonts.length || !reference?.fonts ? [] : ['fonts']),
+    ...(type !== 'brand' || voice || !reference?.voice ? [] : ['voice'])
+  ]);
+  const extras = $derived(extraFieldsOf(reference, type, unread));
   const field = (key: string) => reference?.[key];
   // the brand's three plain sections, each a label over its rows
   const BRAND_ROWS: [string, MessageKey][] = [
@@ -204,8 +219,25 @@
      stands for the deck -->
 {#if deck.currentVersion > 0 && canPreview}
   <section class="space-y-2">
-    <p class="eyebrow">{t('refs.sheetPreview')} · v{shownVersion}</p>
-    <VersionThumb {thumbs} version={shownVersion} width={464} class="w-full max-w-full" />
+    <p class="eyebrow">{t('refs.sheetPreview', { n: shownVersion })}</p>
+    <!-- the shown version, live, framed at deck size and scaled to the sheet's
+         width (the card's plate does the same); SECURITY: the same sandbox set
+         as every preview, never allow-same-origin, no pointer events -->
+    <div class="plate-window preview" bind:clientWidth={previewWidth} data-testid="reference-preview">
+      {#if previewUrl && previewWidth}
+        <iframe
+          src={previewUrl}
+          title={t('master.thumbTitle', { n: shownVersion })}
+          sandbox={PREVIEW_SANDBOX}
+          referrerpolicy="no-referrer"
+          tabindex="-1"
+          aria-hidden="true"
+          loading="lazy"
+          class="thumb"
+          style="transform: scale({previewWidth / 1280})"
+        ></iframe>
+      {/if}
+    </div>
   </section>
 {/if}
 
@@ -510,6 +542,21 @@
 </Dialog.Root>
 
 <style>
+  .preview {
+    aspect-ratio: 16 / 9;
+    width: 100%;
+  }
+  .thumb {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1280px;
+    height: 720px;
+    border: 0;
+    transform-origin: top left;
+    pointer-events: none;
+    background: var(--ground);
+  }
   .eyebrow {
     font-size: 11.5px;
     letter-spacing: 0.06em;

@@ -206,6 +206,20 @@ describe('the voice and the extra keys', () => {
       'owner'
     ]);
     expect(extraFieldsOf(null, 'brand')).toEqual([]);
+    // a typed field in an unusable shape is not dropped: the sheet names it unread and it comes back as a row
+    const odd: Reference = {
+      type: 'brand',
+      colors: 'just a string',
+      fonts: 'Inter',
+      description: { en: 'x' }
+    };
+    expect(swatchesOf(odd)).toEqual([]);
+    expect(extraFieldsOf(odd, 'brand')).toEqual([]);
+    expect(extraFieldsOf(odd, 'brand', ['colors', 'fonts', 'description'])).toEqual([
+      { key: 'colors', value: 'just a string' },
+      { key: 'fonts', value: 'Inter' },
+      { key: 'description', value: 'en: x' }
+    ]);
   });
 });
 
