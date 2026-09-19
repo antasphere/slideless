@@ -96,7 +96,7 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
 
   await test.step('decks list renders the deck with an ESCAPED title', async () => {
     await page.getByRole('link', { name: 'Decks', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Decks', exact: true })).toBeVisible();
     // The literal "<b>" text must be visible — meaning it was escaped.
     // the decks page shows one card per deck (PRDCT-2437); the card's heading is the title
     await expect(page.getByRole('heading', { name: DECK_TITLE })).toBeVisible();
