@@ -1,8 +1,8 @@
 <script lang="ts">
   import HeroBand from '$lib/components/brand/HeroBand.svelte';
   import StatTile from '$lib/components/brand/StatTile.svelte';
-  import BrandSlide from '$lib/components/brands/BrandSlide.svelte';
-  import { BRAND_FONTS_HREF, DEMO_BRANDS } from '$lib/brands-demo';
+  import Palette from '@lucide/svelte/icons/palette';
+  import { descriptionOf, swatchesOf } from '$lib/references';
   import DeckCard from '$lib/components/decks/DeckCard.svelte';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { THEMES } from '$lib/brand/recipe.js';
@@ -68,11 +68,27 @@
     { limit: 100 }
   );
 
+  // The workspace's default brand (PRDCT-2421), one call; undefined while
+  // it loads, null when the workspace has none. A guest reads no workspace
+  // reference, so the card is not offered.
+  let brand = $state<Presentation | null | undefined>(undefined);
+  const brandSwatches = $derived(
+    brand
+      ? swatchesOf(brand.reference)
+          .filter((s) => s.hex)
+          .slice(0, 5)
+      : []
+  );
+
   $effect(() => {
     void decksList.load();
     if (!isGuest) {
       void membersList.load();
       void filesList.load();
+      api
+        .defaultReference('brand')
+        .then((b) => (brand = b))
+        .catch(() => (brand = null));
     }
   });
 
@@ -163,7 +179,6 @@
 
 <svelte:head>
   <title>{t('overview.title')} · {data.instance.name}</title>
-  <link rel="stylesheet" href={BRAND_FONTS_HREF} />
 </svelte:head>
 
 <!-- The opening: the workspace on its own field, the sphere of the brand's
@@ -216,19 +231,34 @@
 {/if}
 
 <div class="mt-10 grid gap-4 lg:grid-cols-2">
-  <!-- Brands: a preview of an idea, with made-up brands ($lib/brands-demo.ts) -->
-  <a href="/brands" class="sheet tile lower">
-    <div class="fan" aria-hidden="true">
-      {#each DEMO_BRANDS.slice(0, 3) as brand, i (brand.id)}
-        <div class="fan-slide" style="--i: {i}"><BrandSlide {brand} small /></div>
-      {/each}
-    </div>
-    <div class="lower-copy">
-      <h2 class="lower-title">{t('overview.brandsTitle')}</h2>
-      <p class="lower-body">{t('overview.brandsBody')}</p>
-      <span class="lower-cta">{t('overview.brandsCta')}<ArrowRight class="size-3.5" /></span>
-    </div>
-  </a>
+  <!-- The workspace's brand: the default brand, or the invitation to make one -->
+  {#if !isGuest}
+    <a href="/brands" class="sheet tile lower" data-testid="default-brand">
+      <div class="fan" aria-hidden="true">
+        {#if brandSwatches.length}
+          {#each brandSwatches as swatch, i (swatch.name + swatch.hex)}
+            <div class="fan-slide" style="--i: {i}; background: {swatch.hex}"></div>
+          {/each}
+        {:else}
+          <div class="fan-slide fan-empty" style="--i: 0"><Palette class="size-6" strokeWidth={1.5} /></div>
+        {/if}
+      </div>
+      <div class="lower-copy">
+        {#if brand}
+          <p class="hero-eyebrow lower-eyebrow">{t('overview.defaultBrandTitle')}</p>
+          <h2 class="lower-title">{brand.title}</h2>
+          <p class="lower-body">{descriptionOf(brand.reference) || t('overview.defaultBrandBody')}</p>
+        {:else if brand === null}
+          <h2 class="lower-title">{t('overview.noBrandTitle')}</h2>
+          <p class="lower-body">{t('overview.noBrandBody')}</p>
+        {:else}
+          <h2 class="lower-title">{t('overview.defaultBrandTitle')}</h2>
+          <p class="lower-body">{t('overview.defaultBrandBody')}</p>
+        {/if}
+        <span class="lower-cta">{t('overview.brandsCta')}<ArrowRight class="size-3.5" /></span>
+      </div>
+    </a>
+  {/if}
 
   <!-- P7: a hub workspace's membership is managed at the hub; the members page links out -->
   <a href={isAdmin && !hubManaged ? '/invitations' : '/members'} class="sheet tile lower">
@@ -306,24 +336,40 @@
     font-size: 13.5px;
     color: var(--accent-deep);
   }
-  /* three slides, fanned like the Slideless mark */
+  /* the brand's colours as slides, fanned like the Slideless mark */
   .fan {
     position: relative;
     height: 128px;
   }
   .fan-slide {
     position: absolute;
-    left: calc(8px + var(--i) * 24px);
-    top: calc(26px - var(--i) * 10px);
-    width: 150px;
-    transform: rotate(calc(-7deg + var(--i) * 6deg));
+    left: calc(8px + var(--i) * 18px);
+    top: calc(26px - var(--i) * 7px);
+    width: 120px;
+    aspect-ratio: 16 / 9;
+    transform: rotate(calc(-9deg + var(--i) * 4.5deg));
     box-shadow: var(--shadow-md);
+    border: 1px solid var(--plate-edge);
     border-radius: 6px;
     transition: transform 320ms var(--motion-ease);
   }
+  .fan-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    left: 30px;
+    width: 150px;
+    border: 1.5px dashed color-mix(in oklab, var(--accent) 50%, var(--hairline));
+    background: var(--ground);
+    color: var(--accent-deep);
+    transform: rotate(-4deg);
+  }
+  .lower-eyebrow {
+    margin-bottom: -2px;
+  }
   @media (hover: hover) {
     .lower:hover .fan-slide {
-      transform: rotate(calc(-11deg + var(--i) * 10deg)) translateY(calc(var(--i) * -2px));
+      transform: rotate(calc(-13deg + var(--i) * 7deg)) translateY(calc(var(--i) * -2px));
     }
   }
   .faces {

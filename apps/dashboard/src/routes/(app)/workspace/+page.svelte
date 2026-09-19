@@ -7,14 +7,15 @@
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import WorkspaceSwitcher from '$lib/components/sidebar/WorkspaceSwitcher.svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { buildNav } from '$lib/nav';
+  import { behindWorkspace, buildNav } from '$lib/nav';
   import { seedOf } from '$lib/brand/seed';
   import { t } from '$lib/i18n';
 
   let { data } = $props();
 
   const nav = $derived(buildNav({ role: data.me.role, origin: data.me.origin }));
-  const tiles = $derived([...nav.workspace, ...nav.system.filter((i) => i.id !== 'settings')]);
+  // the references first, then the administration: what the phone's entry opens
+  const tiles = $derived(behindWorkspace(nav));
   const several = $derived(data.me.workspaces.length > 1 && data.me.activeWorkspaceId !== '');
 
   let played = $state<string | null>(null);
