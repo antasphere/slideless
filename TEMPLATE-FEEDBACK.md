@@ -1117,3 +1117,11 @@ calls for Romain, not template bugs. Nothing here is silently fixed.
    renders a card per row on a phone (PRDCT-2436). Whether that, and the page field under the
    signed-in shell (PRDCT-2439), go back to the template and to the hub is a decision for whoever
    owns the template: a product's need is not template machinery by itself.
+8. **`@antasphere/cli-core` can only save an active workspace on the hub profile** —
+   `setActiveWorkspace` / `getActiveWorkspace` (`org.ts`) are hardcoded to the hub tool, and
+   `CliProfile.activeWorkspaceId` is documented as "hub profiles only". A tool CLI has the same
+   need (a credential names a person, the workspace is per request), so Slideless writes the tool
+   profile's field itself with `loadConfig` / spread / `saveConfig` and carries its own resolution
+   order (`packages/cli/src/workspace.ts`, PRDCT-2419, 2026-09-19). A `tool` option on the two
+   helpers, and a shared flag → env → profile resolver beside `resolveApiKey`, would let the next
+   tool CLI take it from the library.

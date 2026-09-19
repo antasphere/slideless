@@ -61,12 +61,14 @@ export function registerWorkspaceCommands(program: Command, io: CliIo): void {
           `${w.id === selected ? '*' : ' '} ${w.id}  ${w.role.padEnd(6)}  ${w.name}${flags ? `  ${flags}` : ''}\n`
         );
       }
+      const chosenBy = !selection
+        ? 'the server (nothing is selected; `workspace use` selects one)'
+        : selected === null
+          ? `${describeSelection(selection)}; none is marked, the selection names none of these`
+          : describeSelection(selection);
       io.out.write(
-        `\n* = the workspace the commands run in, chosen by ${
-          selection
-            ? describeSelection(selection)
-            : 'the server (nothing is selected; `workspace use` selects one)'
-        }\n` + '(default) = what a request naming no workspace resolves to\n'
+        `\n* = the workspace the commands run in, chosen by ${chosenBy}\n` +
+          '(default) = what a request naming no workspace resolves to\n'
       );
     });
 
