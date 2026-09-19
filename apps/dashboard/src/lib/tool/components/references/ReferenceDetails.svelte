@@ -52,7 +52,7 @@
     voiceOf
   } from '$lib/tool/references';
   import { t } from '$lib/i18n';
-  import type { MessageKey } from '$lib/i18n/en';
+  import type { MessageKey } from '$lib/i18n';
   import Crown from '@lucide/svelte/icons/crown';
   import Download from '@lucide/svelte/icons/download';
   import ExternalLink from '@lucide/svelte/icons/external-link';

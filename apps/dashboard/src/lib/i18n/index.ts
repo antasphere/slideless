@@ -1,5 +1,6 @@
-import { en, type MessageKey } from './en';
-import { fr } from './fr';
+import { en as shellEn } from './en';
+import { fr as shellFr } from './fr';
+import { en as toolEn, fr as toolFr } from '$lib/tool/i18n';
 
 /**
  * Dashboard i18n — deliberately tiny (see ADR 007).
@@ -8,9 +9,23 @@ import { fr } from './fr';
  * `setLocale` persists the choice and reloads the page. Because of that,
  * `t()` is a plain synchronous function — no runes, no stores, no
  * reactivity plumbing anywhere. Both catalogs are statically imported, so
- * key parity is a compile-time guarantee (fr is `Record<MessageKey,
- * string>` against the English key set).
+ * key parity is a compile-time guarantee (each fr half is `Record<keyof
+ * typeof en, string>` against its English half).
+ *
+ * Each catalog is two halves merged here: the shell's words (./en, ./fr) and
+ * the tool's (`$lib/tool/i18n`, the shell's second door into the tool's half,
+ * see `$lib/contribution.ts`). Every string reads the same as before the
+ * split; `MessageKey` is the union of the two key sets.
  */
+
+/** A key is in one half only: a key in both would let the tool's string win in silence. */
+type Overlap = keyof typeof shellEn & keyof typeof toolEn;
+const noOverlap: [Overlap] extends [never] ? true : Overlap = true;
+void noOverlap;
+
+const en = { ...shellEn, ...toolEn };
+const fr = { ...shellFr, ...toolFr };
+type MessageKey = keyof typeof en;
 
 export const LANGS = ['en', 'fr'] as const;
 export type Lang = (typeof LANGS)[number];
