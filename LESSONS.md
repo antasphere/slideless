@@ -1211,3 +1211,32 @@ migrate` on an unchanged schema):
   server restarts on the next app-side save, and the old behaviour is still there. (The chassis
   package's OWN tests alias these names to `src`, so they never show the staleness; the app's
   integration run goes through turbo, which builds first.)
+- **The app's integration run and the Slideless-host CLI run read the chassis from `dist`: an
+  edit, OR A TEST MUTATION, under `packages/chassis-*/src` reaches them only after a rebuild.**
+  The chassis suites run twice, and only the chassis package's own run aliases the names to
+  `src`; `apps/server` (`vitest.integration.config.ts`) and `packages/cli` (`vitest.config.ts`)
+  resolve `@antasphere/chassis-*` to the built package, the same single copy that ships. Through
+  turbo this is invisible (`^build` runs first). By hand it is not: a mutation written into
+  `packages/chassis-cli/src/context.ts` turned the chassis run red and left the Slideless run
+  GREEN, 470 of 470, until `pnpm --filter @antasphere/chassis-cli build` made it red too
+  (measured 2026-09-20, PRDCT-2530). An independent reviewer measured a false "not caught" twice
+  this way. When mutating chassis source to prove a test bites: rebuild the package before
+  reading the tool-side result, and rebuild again after restoring the file.
+- **The published CLI stays ONE package because the chassis packages sit under `devDependencies`
+  and esbuild inlines them: never move them to `dependencies`.** `packages/cli` bundles with no
+  `external`, so `@antasphere/chassis-cli`, `@antasphere/chassis-sdk`, `@antasphere/chassis-contract`,
+  `@slideless/sdk`, `@slideless/contract`, `cli-core` and `commander` are all inside `dist/bin.js`,
+  and the packed `package.json` carries no `dependencies` key at all. These packages are private
+  and unpublished: one line under `dependencies` and `npm i @antasphere/slideless` fails on a name
+  the registry does not know. The proof to rerun after touching the CLI's packaging: `npm pack`,
+  install the tarball in an empty directory, `--version`, `--help`, and one class definition each
+  of `CliUsageError`, `PlatformApiError` and `CommanderError` in the bundle (two would mean two
+  loaded copies, and `context.ts` and `stdin.ts` hold module-level WeakMaps: a second copy routes
+  `--json` through the sanitizer). The test-only entry `@antasphere/chassis-cli/testing` is built
+  but excluded from the package's `files` and is imported by nothing under a `src/`.
+- **On this Mac, `docker build` and testcontainers can stall on pulling a PUBLIC image: the
+  keychain credential helper never answers.** The symptom is a pull that never progresses, with no error. The workaround leaves `~/.docker/config.json` alone: an empty
+  throwaway config, `export DOCKER_CONFIG=/private/tmp/sl-dockercfg` (a directory holding a
+  `config.json` of `{}` and a `cli-plugins` symlink to the real one, so `docker compose` and
+  `buildx` still resolve), exported in the shell that runs `docker build` or
+  `pnpm turbo test:integration`. Public images need no credentials, so nothing is lost.

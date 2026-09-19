@@ -30,10 +30,12 @@ deploys) + `dev` (day-to-day work).
 | `packages/chassis-db`               | The generic tables, the generated `auth-schema.ts`, the migration runner                                   |
 | `packages/chassis-contract`         | The generic zod schemas + route contracts                                                                  |
 | `packages/chassis-server`           | The generic server: identity, federation, middleware, routers, jobs, MCP kit; entry `createPlatform(tool)` |
+| `packages/chassis-sdk`              | The generic typed client (`ChassisClient`); `PlatformClient` extends it                                    |
+| `packages/chassis-cli`              | The generic CLI: profiles, context, `safe-write.ts`, generic commands; entry `defineCli(definition)`       |
 | `packages/db`                       | drizzle schema (the deck tables) + migrations (the one history, chassis tables included)                   |
 | `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard                                             |
 | `packages/sdk`                      | Typed client over the contract (hand-written today)                                                        |
-| `packages/cli`                      | Typed CLI over the SDK; the `slideless` binary (docs/agents/cli.md)                                        |
+| `packages/cli`                      | The `slideless` binary: the deck commands over `packages/chassis-cli`, one bundle (docs/agents/cli.md)     |
 | `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                                                                   |
 | `docs/`                             | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract    |
 | `internal/`                         | Engineering docs + ADRs (`internal/decisions/`), never published                                           |
@@ -60,12 +62,12 @@ deploys) + `dev` (day-to-day work).
   never loosen it back to "traversal-safe" alone (`isTraversalSafeAssetPath` is the separate,
   weaker rule the viewer's manifest LOOKUP uses, where no filesystem is involved). The CLI then
   re-checks every path at PULL, caps each blob at the manifest's `sizeBytes`, verifies its sha256
-  before writing, and writes through `safe-write.ts` only: lexical containment + a `realpath`
+  before writing, and writes through `packages/chassis-cli/src/safe-write.ts` only: lexical containment + a `realpath`
   parent check + `O_NOFOLLOW` + a forced 0644 (an `O_TRUNC` write PRESERVES an existing file's
   mode). `files download` uses the BASENAME of the server-chosen name inside a chosen directory.
   `slideless dev` is a real containment boundary: `realpath` re-check, dotfile paths 404, and a
   `Host` allowlist (the DNS-rebinding guard). Every non-`--json` sink goes through
-  `sanitizeForTty` — `--json` stays byte-exact and must never be routed through it.
+  `sanitizeForTty` (`packages/chassis-cli/src/context.ts`) — `--json` stays byte-exact and must never be routed through it.
 - **A tombstone the boot cannot replay closes the service (PRDCT-1809)**: the erasure replay in
   `packages/chassis-server/src/boot.ts` runs under `withAllLastOwnerGuards` (nothing touched on a refusal — Better Auth's
   cascade drops account rows before the user row, so an unguarded refusal half-erases), and a
