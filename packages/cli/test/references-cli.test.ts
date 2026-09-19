@@ -1082,6 +1082,27 @@ describe('the link file of a pushed reference folder (Major 1 / SG-1)', () => {
     expect(await readReferenceLink(dir)).toBeNull();
   });
 
+  it('a block from ANOTHER instance is dropped, even pushing the same deck id (SG2-1)', async () => {
+    // The folder was pulled from http://other; this push goes to http://x.
+    // Same deck id on both, so only the baseUrl half of `keepsBlock` can
+    // refuse the block — and it must, or the link would claim this instance
+    // holds a reference version it never served.
+    const dir = await pulledBrandFolder(2, 'http://other');
+    const h = routedHarness(
+      pushRoutes(
+        () =>
+          committed(refDeck(HOUSE, 'House brand', { currentVersion: 3 }), {
+            version: 3,
+            reference: { type: 'brand', title: 'House brand' }
+          }),
+        { existing: { id: HOUSE, currentVersion: 2 } }
+      )
+    );
+    expect(await run(argv('brand', 'push', dir, '--id', HOUSE), h.io)).toBe(0);
+    expect(await readLink(dir)).toEqual({ presentationId: HOUSE, baseUrl: URL_ });
+    expect(await readReferenceLink(dir)).toBeNull();
+  });
+
   it('an ordinary deck folder still gets a plain link (no block invented)', async () => {
     const dir = await tempDeck();
     const h = routedHarness(pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null }))));
@@ -1155,6 +1176,76 @@ describe('a failed pull leaves no half-written folder (Major 2 / Minor 5)', () =
     await expect(stat(join(root, 'escaped.txt'))).rejects.toThrow();
   });
 
+  it('a parent the PERSON made survives: refs/ stays, refs/house goes (SG2-2)', async () => {
+    const root = await emptyDir();
+    const refs = join(root, 'refs');
+    await mkdir(refs, { recursive: true });
+    const dest = join(refs, 'house');
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', '--into', dest), h.io)).toBe(1);
+    // The folder the command created is gone; the folder the person made is not.
+    await expect(stat(dest)).rejects.toThrow();
+    expect((await stat(refs)).isDirectory()).toBe(true);
+    expect(await readdir(refs)).toEqual([]);
+  });
+
+  it('a destination that existed EMPTY is emptied again, never deleted (SG2-2)', async () => {
+    const root = await emptyDir();
+    const dest = join(root, 'house');
+    await mkdir(dest, { recursive: true });
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+    expect((await stat(dest)).isDirectory()).toBe(true);
+    expect(await readdir(dest)).toEqual([]);
+  });
+
+  it('`start ./deck` never removes the cwd it was run from (SG2-2)', async () => {
+    const here = await emptyDir();
+    process.chdir(here);
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'start', 'house', './deck'), h.io)).toBe(1);
+    // The destination the command created goes; the directory it was run in stays.
+    await expect(stat(join(here, 'deck'))).rejects.toThrow();
+    expect((await stat(here)).isDirectory()).toBe(true);
+    expect(await readdir(here)).toEqual([]);
+  });
+
+  it('a .slideless/ the person already made is NOT removed by a failed default pull (SG2-2)', async () => {
+    const deck = await tempDeck();
+    await mkdir(join(deck, '.slideless'), { recursive: true });
+    process.chdir(deck);
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull'), h.io)).toBe(1);
+    await expect(stat(referenceDirFor(deck, 'brand'))).rejects.toThrow();
+    // It was there before the pull, so it is not the pull's to remove.
+    expect((await stat(join(deck, '.slideless'))).isDirectory()).toBe(true);
+    expect(await readdir(join(deck, '.slideless'))).toEqual([]);
+  });
+
+  it('the refusal says what was removed, on pull and on start (Minor 3)', async () => {
+    const root = await emptyDir();
+    const dest = join(root, 'out');
+    const pull = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), pull.io)).toBe(1);
+    expect(pull.err()).toContain('Nothing of the download is kept');
+    expect(pull.err()).toContain(dest);
+
+    const target = join(await emptyDir(), 'q1');
+    const start = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'start', 'house', target), start.io)).toBe(1);
+    expect(start.err()).toContain('Nothing of the download is kept');
+    expect(start.err()).toContain(target);
+  });
+
+  it('an emptied-again destination says the FILES were removed, not the folder (Minor 3)', async () => {
+    const root = await emptyDir();
+    const dest = join(root, 'house');
+    await mkdir(dest, { recursive: true });
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+    expect(h.err()).toContain(`Nothing of the download is kept: the files in ${dest} removed.`);
+  });
+
   it('the foreign-folder refusal now says how to get out of it', async () => {
     const dest = await tempDeck({ 'mine.txt': 'my own notes' });
     const h = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
@@ -1193,10 +1284,62 @@ describe('a --brand value is resolved WHOLE before @n is read (Minor 3)', () => 
     expect(await run_(rows, 'Rebrand@2')).toEqual([{ type: 'brand', id: REBRAND, version: 2 }]);
   });
 
-  it('both present: the exact title wins over the split reading', async () => {
+  it('both present: the exact title wins, and a Note names the id form for the other', async () => {
     const rows = [
       refDeck(REBRAND_AT_2, 'Rebrand@2', { currentVersion: 7 }),
-      refDeck(REBRAND, 'Rebrand', { currentVersion: 7 })
+      refDeck(REBRAND, 'Rebrand', { currentVersion: 3 })
+    ];
+    const dir = await tempDeck();
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null, metadata: {} }))),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir, '--brand', 'Rebrand@2'), h.io)).toBe(0);
+    const recorded = (
+      h.calls.find((c) => c.method === 'PATCH')!.body as { metadata: { references: unknown[] } }
+    ).metadata.references;
+    // The title won: Rebrand@2 at ITS latest version, not Rebrand at v2.
+    expect(recorded).toEqual([{ type: 'brand', id: REBRAND_AT_2, version: 7 }]);
+    // But the other reading was real, so the choice is said out loud.
+    expect(h.err()).toContain('Note:');
+    expect(h.err()).toContain('name it by id');
+    expect(h.err()).toContain(`--brand ${REBRAND}@2`);
+  });
+
+  it('only the `Rebrand@2` title present: no Note, there is no other reading', async () => {
+    const rows = [refDeck(REBRAND_AT_2, 'Rebrand@2', { currentVersion: 7 })];
+    const dir = await tempDeck();
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null, metadata: {} }))),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir, '--brand', 'Rebrand@2'), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+  });
+
+  it('only `Rebrand` present: the split reading records v2, and no Note', async () => {
+    const rows = [refDeck(REBRAND, 'Rebrand', { currentVersion: 7 })];
+    const dir = await tempDeck();
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null, metadata: {} }))),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir, '--brand', 'Rebrand@2'), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    const recorded = (
+      h.calls.find((c) => c.method === 'PATCH')!.body as { metadata: { references: unknown[] } }
+    ).metadata.references;
+    expect(recorded).toEqual([{ type: 'brand', id: REBRAND, version: 2 }]);
+  });
+
+  it('no Note when the other reference has no such version to pin', async () => {
+    // Rebrand is at v1, so "Rebrand@2" could not have meant it: nothing to say.
+    const rows = [
+      refDeck(REBRAND_AT_2, 'Rebrand@2', { currentVersion: 7 }),
+      refDeck(REBRAND, 'Rebrand', { currentVersion: 1 })
     ];
     expect(await run_(rows, 'Rebrand@2')).toEqual([{ type: 'brand', id: REBRAND_AT_2, version: 7 }]);
   });
@@ -1270,17 +1413,15 @@ describe('a crafted manifest reaches neither pull nor start (SG-2)', () => {
   ];
 
   /**
-   * What "nothing landed" means here: the destination is gone (the cleanup),
-   * and the parent holds no file the download put there — neither the escape
-   * target nor a stray blob. The parent may itself be gone: `downloadOrClean`
-   * rmdirs it when the removal left it empty, which is the `.slideless/` rule
-   * applying to whatever directory happens to sit above the destination.
+   * What "nothing landed" means here: the destination the command created is
+   * gone, and the parent — which the TEST created, so the command must never
+   * touch it — is still there and empty. No tolerance for the parent
+   * disappearing: that was the round-1 blocker.
    */
   const nothingLanded = async (root: string, dest: string) => {
     await expect(stat(dest)).rejects.toThrow();
-    await expect(stat(join(root, 'escaped.txt'))).rejects.toThrow();
-    const survivors = await readdir(root).catch(() => [] as string[]);
-    expect(survivors).toEqual([]);
+    expect((await stat(root)).isDirectory()).toBe(true);
+    expect(await readdir(root)).toEqual([]);
   };
 
   for (const [name, blobs, message] of CASES) {
