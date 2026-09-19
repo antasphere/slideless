@@ -1,9 +1,10 @@
 import { Command, CommanderError } from 'commander';
 import { CliAuthError } from '@antasphere/cli-core';
 import { PlatformApiError } from '@slideless/sdk';
-import { CliUsageError, setStdinApiKey, ttySafeIo, type CliIo } from './context.js';
+import { CliUsageError, explainWorkspaceRefusal, setStdinApiKey, ttySafeIo, type CliIo } from './context.js';
 import { readSecretFromStdin } from './stdin.js';
 import { registerAuthCommands } from './commands/auth.js';
+import { registerWorkspaceCommands } from './commands/workspaces.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
 import { registerSharingCommands } from './commands/sharing.js';
@@ -29,9 +30,11 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  *             → cached hub-connect key (cloud instances; user-scoped —
  *               one per hub profile, valid for every org)
  *             → connect-on-demand: `antasphere login` exchanged for an slk_ key
+ *   workspace: --workspace → SLIDELESS_WORKSPACE → profile activeWorkspaceId
+ *             → none sent (the server's default membership)
  */
 
-const VERSION = '0.2.4';
+const VERSION = '0.3.0';
 
 /**
  * The command tree, built once per run. Exported for the docs-coverage test
@@ -49,11 +52,17 @@ export function buildProgram(io: CliIo): Command {
     .option('--api-key <key>', 'API key (or SLIDELESS_API_KEY / profile apiKey)')
     .option('--api-key-stdin', 'read the API key from the first line of stdin (keeps it out of argv)', false)
     .option('--profile <name>', 'use this saved profile instead of the active one')
+    .option(
+      '--workspace <id-or-name>',
+      "run in this workspace (or SLIDELESS_WORKSPACE / profile activeWorkspaceId; default: the server's)"
+    )
     .option('--json', 'machine-readable JSON output', false);
 
   // Identity + profiles: auth login-request/login-complete, login, logout,
   // whoami, verify, use, profiles, config show/clear.
   registerAuthCommands(program, io);
+  // Which workspace the commands run in: workspaces, workspace use.
+  registerWorkspaceCommands(program, io);
   // Deck management: list, get, versions, delete.
   registerDeckCommands(program, io);
   // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
@@ -110,6 +119,13 @@ export async function run(argv: string[], rawIo: CliIo): Promise<number> {
       return e.exitCode;
     }
     if (e instanceof PlatformApiError || e instanceof CliAuthError) {
+      // A refusal the workspace SELECTION caused reads as a bad key (401) or
+      // a forbidden one (403) on the wire; say what it really was.
+      const explained = await explainWorkspaceRefusal(io, e);
+      if (explained) {
+        io.err.write(`Error: ${explained}\n`);
+        return 1;
+      }
       const hint =
         e.status === 403
           ? ' (this API key is not allowed to do that)'

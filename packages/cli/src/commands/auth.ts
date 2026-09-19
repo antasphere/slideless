@@ -17,8 +17,10 @@ import {
   resolveContext,
   stdinApiKey,
   table,
+  workspaceSource,
   type CliIo
 } from '../context.js';
+import { describeSource } from '../workspace.js';
 import { readSecretFromStdin } from '../stdin.js';
 
 /**
@@ -56,7 +58,13 @@ function saveProfileKey(
   apiKey: string
 ): { config: CliConfig; path: string } {
   const config = loadConfig(io.env);
-  config.profiles[profileName] = { ...config.profiles[profileName], apiKey, baseUrl };
+  const previous = config.profiles[profileName];
+  config.profiles[profileName] = { ...previous, apiKey, baseUrl };
+  // A saved workspace selection is an id of ONE instance: a login that
+  // moves the profile to another instance must not carry it along.
+  if (previous?.baseUrl !== undefined && previous.baseUrl.replace(/\/+$/, '') !== baseUrl) {
+    delete config.profiles[profileName]!.activeWorkspaceId;
+  }
   config.activeProfile = profileName;
   const path = saveConfig(io.env, config);
   return { config, path };
@@ -88,6 +96,15 @@ async function refuseOtpLoginOnCloud(baseUrl: string, io: CliIo): Promise<void> 
         '(or pass --api-key <slk_…> / set SLIDELESS_API_KEY).'
     );
   }
+}
+
+/** Logout's last step on the hub-connect path: the saved selection goes with the identity. */
+function forgetWorkspaceSelection(io: CliIo, profileName: string): void {
+  const config = loadConfig(io.env);
+  const profile = config.profiles[profileName];
+  if (!profile || profile.activeWorkspaceId === undefined) return;
+  delete profile.activeWorkspaceId;
+  saveConfig(io.env, config);
 }
 
 export function registerAuthCommands(program: Command, io: CliIo): void {
@@ -245,6 +262,7 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
           }
           removeConnectKey(io.env, profileName, slot);
         }
+        forgetWorkspaceSelection(io, profileName);
         if (globals.json) {
           return printJson(io, {
             profile: profileName,
@@ -259,6 +277,9 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
         return;
       }
       delete profile.apiKey;
+      // The selection goes with the identity: the next sign-in may be
+      // someone whose workspaces are not these.
+      delete profile.activeWorkspaceId;
       if (!profile.baseUrl) delete config.profiles[profileName];
       saveConfig(io.env, config);
       if (globals.json) return printJson(io, { loggedOut: profileName });
@@ -274,14 +295,18 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
       const ctx = resolveContext(cmd, io);
       await requireApiKey(ctx);
       const me = await ctx.client.me();
-      if (ctx.json) return printJson(io, me);
+      // `me` is the answer WITH the selection applied, so its workspace is
+      // the one this command (and any other, same flags) really ran in.
+      const source = workspaceSource(ctx);
+      if (ctx.json) return printJson(io, { ...me, workspaceSource: source });
       io.out.write(
         `${me.user.name} <${me.user.email}>\n` +
           `  instance:  ${ctx.baseUrl}\n` +
           // A key is a USER credential: with zero memberships /me can carry
           // no active workspace (the CLI only ever sees this for sessions,
           // but the wire shape is honest about it).
-          `  workspace: ${me.workspace?.name ?? '(none)'}\n` +
+          `  workspace: ${me.workspace ? `${me.workspace.name} (${me.workspace.id})` : '(none)'}\n` +
+          `  chosen by: ${describeSource(source, ctx.workspaceSelection?.profileName)}\n` +
           `  role:      ${me.role ?? '(none)'} (via ${me.via})\n` +
           `  scopes:    ${me.scopes ? me.scopes.join(', ') : 'full (session)'}\n` +
           (me.via === 'api_key' ? `  key expires: ${me.apiKeyExpiresAt ?? 'never'}\n` : '')
@@ -385,6 +410,8 @@ export function registerAuthCommands(program: Command, io: CliIo): void {
             {
               baseUrl: p.baseUrl ?? null,
               apiKey: p.apiKey ? redactKey(p.apiKey) : null,
+              // The workspace `workspace use` saved (null = the server default).
+              activeWorkspaceId: p.activeWorkspaceId ?? null,
               // Hub-connected keys (one per hub profile), redacted like the rest.
               connectKeys: Object.fromEntries(
                 Object.entries(p.connectKeys ?? {}).map(([slot, entry]) => [slot, redactKey(entry.apiKey)])

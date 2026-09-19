@@ -1,4 +1,4 @@
-import { PlatformClient } from '@slideless/sdk';
+import { PlatformApiError, PlatformClient } from '@slideless/sdk';
 import type { Command } from 'commander';
 import {
   activeHubProfile,
@@ -13,6 +13,14 @@ import {
   type ResolvedProfile
 } from '@antasphere/cli-core';
 import { loadConfig, type CliConfig, type CliProfile } from './config.js';
+import {
+  explainRefusal,
+  isWorkspaceId,
+  matchWorkspace,
+  pickWorkspaceSelection,
+  type WorkspaceSelection,
+  type WorkspaceSource
+} from './workspace.js';
 
 // The injectable I/O seam, the usage-error class, and the resolution
 // helpers live in @antasphere/cli-core (extracted from this CLI); re-exported
@@ -127,6 +135,14 @@ export interface CliContext {
   /** The profile the context resolved against (undefined = flags/env only). */
   profileName: string | undefined;
   config: CliConfig;
+  /**
+   * What selects the workspace (workspace.ts), undefined = the server's
+   * default. Resolved here, APPLIED by `requireApiKey`: a name needs `/me`,
+   * and `resolveContext` is synchronous.
+   */
+  workspaceSelection: WorkspaceSelection | undefined;
+  /** The id `requireApiKey` put on the client; undefined until then, or with no selection. */
+  workspaceId: string | undefined;
 }
 
 interface GlobalOpts {
@@ -134,6 +150,7 @@ interface GlobalOpts {
   url?: string;
   apiKey?: string;
   profile?: string;
+  workspace?: string;
   json?: boolean;
 }
 
@@ -154,6 +171,8 @@ export function resolveProfile(
  *   base URL:  --api-url (or --url) → SLIDELESS_URL → profile baseUrl → error
  *   API key:   --api-key            → SLIDELESS_API_KEY → profile apiKey
  *              → cached hub-connect key (cloud instances)
+ *   workspace: --workspace          → SLIDELESS_WORKSPACE → profile
+ *              activeWorkspaceId → none (the server's default; workspace.ts)
  *
  * There is deliberately NO hard-coded default URL: a self-hosted CLI must
  * name its instance explicitly (flag, env, or a saved profile) rather than
@@ -203,7 +222,15 @@ export function resolveContext(cmd: Command, io: CliIo): CliContext {
     json: Boolean(opts.json),
     io,
     profileName,
-    config
+    config,
+    workspaceSelection: pickWorkspaceSelection({
+      flag: opts.workspace,
+      env: io.env,
+      profile,
+      profileName,
+      baseUrl
+    }),
+    workspaceId: undefined
   };
 }
 
@@ -229,8 +256,68 @@ const MISSING_HUB_LOGIN_MESSAGE =
  * every subsequent run (no re-exchange, no fresh mint). Self-hosted
  * instances never take this branch: they get the classic error unchanged.
  */
-export async function requireApiKey(ctx: CliContext): Promise<string> {
-  if (ctx.apiKey) return ctx.apiKey;
+export async function requireApiKey(ctx: CliContext, opts: { workspace?: boolean } = {}): Promise<string> {
+  const key = ctx.apiKey ?? (await connectForKey(ctx));
+  if (opts.workspace !== false) await applyWorkspace(ctx);
+  return key;
+}
+
+/**
+ * Put the selected workspace on the client (PRDCT-2419). Every signed-in
+ * command calls `requireApiKey`, so this is the one place the selection is
+ * applied and no command names it. An id is sent as it is — the server fails
+ * closed on one that is not the person's, and `explainWorkspaceRefusal` says
+ * so; a name costs one `/me` to find its id. `workspaces` and `workspace use`
+ * pass `workspace: false`: they are how a person repairs a selection that no
+ * longer works, so they must answer when it does not.
+ */
+async function applyWorkspace(ctx: CliContext): Promise<void> {
+  const selection = ctx.workspaceSelection;
+  if (!selection || ctx.workspaceId !== undefined) return;
+  const id = isWorkspaceId(selection.value)
+    ? selection.value
+    : matchWorkspace((await ctx.client.me()).workspaces, selection.value).id;
+  ctx.client.setWorkspace(id);
+  ctx.workspaceId = id;
+  appliedContexts.set(ctx.io, ctx);
+}
+
+/** The context whose selection reached the wire, for the runner's error path. */
+const appliedContexts = new WeakMap<CliIo, CliContext>();
+
+/** How the workspace of this invocation was chosen (`whoami`). */
+export function workspaceSource(ctx: CliContext): WorkspaceSource {
+  return ctx.workspaceSelection?.source ?? 'default';
+}
+
+/**
+ * The sentence for a refusal the SELECTION caused, or null (workspace.ts
+ * `explainRefusal`). Asks `/me` once WITHOUT the selection: when that
+ * answers, the key is good and the workspace is what was refused. Any
+ * failure of the probe means the plain error is the honest one.
+ */
+export async function explainWorkspaceRefusal(io: CliIo, e: unknown): Promise<string | null> {
+  const ctx = appliedContexts.get(io);
+  if (!ctx?.workspaceSelection || ctx.workspaceId === undefined || !ctx.apiKey) return null;
+  if (!(e instanceof PlatformApiError)) return null;
+  if (e.code !== 'workspace_mismatch' && e.code !== 'invalid_api_key') return null;
+  try {
+    const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
+    const me = await new PlatformClient({ baseUrl: ctx.baseUrl, apiKey: ctx.apiKey, fetch: fetchImpl }).me();
+    return explainRefusal({
+      code: e.code,
+      status: e.status,
+      selection: ctx.workspaceSelection,
+      workspaceId: ctx.workspaceId,
+      me,
+      baseUrl: ctx.baseUrl
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function connectForKey(ctx: CliContext): Promise<string> {
   const { io } = ctx;
   const outcome = await connectOnDemand({
     tool: 'slideless',

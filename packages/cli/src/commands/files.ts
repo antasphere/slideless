@@ -140,8 +140,13 @@ export function registerFileCommands(program: Command, io: CliIo): void {
       const meta = await ctx.client.file(id);
       const fetchImpl = io.fetch ?? globalThis.fetch.bind(globalThis);
       const res = await fetchImpl(ctx.client.fileContentUrl(id), {
-        headers: { authorization: `Bearer ${apiKey}` },
-        // This one bypasses the SDK, so it carries the SDK's deadline itself.
+        // This one bypasses the SDK, so it carries the SDK's headers itself:
+        // the key, and the selected workspace (a download follows it too).
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          ...(ctx.workspaceId !== undefined ? { 'x-workspace-id': ctx.workspaceId } : {})
+        },
+        // …and the SDK's deadline.
         signal: AbortSignal.timeout(DEFAULT_DOWNLOAD_TIMEOUT_MS)
       });
       if (!res.ok) {
