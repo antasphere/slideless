@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeEntryName } from '../../src/api/export.js';
+import { sanitizeEntryName } from '@antasphere/chassis-server/api';
 
 /**
  * Zip-slip guard: export entry names embed the user-supplied originalName.

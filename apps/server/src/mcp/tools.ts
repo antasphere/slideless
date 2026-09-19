@@ -9,15 +9,18 @@ import {
   presentationsListTypeSchema,
   referenceTypeSchema
 } from '@slideless/contract';
-import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } from './errors.js';
 import {
+  ApiToolError,
   callApi,
-  checkScope,
+  deny,
   fetchApiRaw,
   forWorkspace,
+  jsonText,
   pageQuery,
-  type McpToolContext
-} from './tool-kit.js';
+  type McpToolContext,
+  type ToolTextResult
+} from '@antasphere/chassis-server/mcp';
+import { checkScope, wrapToolErrors } from './deck-kit.js';
 
 /**
  * The slideless_ tool set: the product surface (decks, versions, sharing,

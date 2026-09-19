@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import type { EntitlementService, Principal, RequestQuota } from '@antasphere/chassis-contract';
-import { createRequestQuota, principalBucketKey } from '../../src/middleware/rate-limit.js';
+import { createRequestQuota, principalBucketKey } from '@antasphere/chassis-server/middleware';
 import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**

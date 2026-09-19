@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { buildCsp, hstsValue, securityHeaders } from '../../src/middleware/security-headers.js';
+import { buildCsp, hstsValue, securityHeaders } from '@antasphere/chassis-server/middleware';
 import { createRuntimeState } from '@antasphere/chassis-server/util';
 
 /**

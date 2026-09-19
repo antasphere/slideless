@@ -4,7 +4,7 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, sql } from 'drizzle-orm';
 import { files } from '@antasphere/chassis-db';
 import { uploadSessions } from '@slideless/db';
-import { purgeExpiredUploadSessions } from '../../src/jobs/pgboss.js';
+import { purgeExpiredUploadSessions } from '../../src/jobs/deck-jobs.js';
 import {
   createDatabase,
   createTestApp,

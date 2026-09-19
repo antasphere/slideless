@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { healthRoutes } from '../../src/routes/health.js';
+import { healthRoutes } from '@antasphere/chassis-server/routes';
 import { createRuntimeState } from '@antasphere/chassis-server/util';
 
 /**

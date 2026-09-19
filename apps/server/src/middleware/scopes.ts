@@ -27,6 +27,9 @@ export const OAUTH_SCOPES = [
   'data:export'
 ] as const;
 
+/** The CLI key's fixed grant — the agent surface, never data:export. */
+export const CLI_KEY_SCOPES = ['presentations:read', 'presentations:write'] as const;
+
 const deckRules: ReadonlyArray<ScopeRule<Scope>> = [
   // Presentation domain (ADR 011): the primary agent surface. Covers the
   // whole /presentations tree — listings, upload sessions, precheck, asset

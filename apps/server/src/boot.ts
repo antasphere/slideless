@@ -41,17 +41,20 @@ import { OauthJwtVerifier } from '@antasphere/chassis-server/identity';
 import { preflightSigningKey } from '@antasphere/chassis-server/identity';
 import type { OnWorkspaceMiss } from '@antasphere/chassis-server/identity';
 import { isApiKeyToken } from '@antasphere/chassis-server/apikeys';
-import { mcpRoutes } from './mcp/http.js';
-import { wellKnownRoutes } from './routes/wellknown.js';
+import { mcpRoutes } from '@antasphere/chassis-server/mcp';
+import { wellKnownRoutes } from '@antasphere/chassis-server/routes';
 import { instanceSettings, user as userTable, workspaceMembers, workspaces } from '@antasphere/chassis-db';
 import { FileService } from '@antasphere/chassis-server/files';
-import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
+import { createJobs, PgBossUsageSink, type Jobs } from '@antasphere/chassis-server/jobs';
 import { createLogger, type Logger } from '@antasphere/chassis-server/logger';
 import { createStorageDriver } from '@antasphere/chassis-server/storage';
-import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-limit.js';
+import { createRateLimiters, makeClientIp, rateLimit } from '@antasphere/chassis-server/middleware';
 import { OAUTH_SCOPES } from './middleware/scopes.js';
-import { hstsValue } from './middleware/security-headers.js';
-import { createMetrics } from './observability/metrics.js';
+import { deckBuckets } from './middleware/deck-rate-limits.js';
+import { deckJobs } from './jobs/deck-jobs.js';
+import { slidelessMcp } from './mcp/index.js';
+import { hstsValue } from '@antasphere/chassis-server/middleware';
+import { createMetrics } from '@antasphere/chassis-server/observability';
 import { createOtel, type Otel } from '@antasphere/chassis-server/observability';
 import { bindEditionSeams } from '@antasphere/chassis-server/platform';
 import { AllowAllEntitlements } from '@antasphere/chassis-server/platform';
@@ -667,7 +670,12 @@ export async function boot(
     overrides.usageDownstream ?? new NoopUsageSink(),
     auth,
     audit,
-    { purgeFormUploads: async () => (await formUploadsRef.current?.purgeUnattached()) ?? 0 }
+    deckJobs({
+      env,
+      db: db.db,
+      logger,
+      purgeFormUploads: async () => (await formUploadsRef.current?.purgeUnattached()) ?? 0
+    })
   );
 
   // The edition split (internal/federation.md): the local defaults below are the
@@ -750,7 +758,7 @@ export async function boot(
     logger,
     cooldownMs: overrides.formsMailCooldownMs
   });
-  const limiters = await createRateLimiters(env, logger);
+  const limiters = await createRateLimiters(env, logger, deckBuckets);
 
   // Per-deck collaborators (Phase 5). Claim-at-signup: user creation is the
   // moment the template redeems invitations, so a fresh account (created via
@@ -868,6 +876,7 @@ export async function boot(
     resolveApiKey: (token) => apiKeys.resolve(token, null),
     isApiKeyToken,
     limiter: rateLimit(limiters.mcp, makeClientIp(env.TRUST_PROXY)),
+    tool: slidelessMcp,
     instanceName: async () => {
       if (cachedName) return cachedName;
       const [row] = await db.db.select({ name: instanceSettings.name }).from(instanceSettings).limit(1);
@@ -883,7 +892,7 @@ export async function boot(
     publicDir,
     api,
     mcp,
-    wellKnown: wellKnownRoutes({ auth, publicBaseUrl: env.PUBLIC_BASE_URL }),
+    wellKnown: wellKnownRoutes({ auth, publicBaseUrl: env.PUBLIC_BASE_URL, oauthScopes: OAUTH_SCOPES }),
     viewer,
     metricsMiddleware: metrics.middleware,
     metricsRoutes: metrics.routes(env.METRICS_TOKEN),

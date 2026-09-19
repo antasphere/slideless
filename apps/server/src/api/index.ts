@@ -2,12 +2,19 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { createEmailVerificationToken } from 'better-auth/api';
 import { jwtVerify } from 'jose';
-import { registerOpenApiDoc } from './openapi-doc.js';
+import { registerOpenApiDoc } from '@antasphere/chassis-server/api';
 import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACTIVE_WORKSPACE_HEADER } from '@antasphere/chassis-contract';
 import { instanceRoute, setupRoute } from '@antasphere/chassis-contract/routes';
-import { meRoute } from '@slideless/contract/routes';
+import {
+  apiKeyCreateRoute,
+  apiKeyRevokeRoute,
+  apiKeysListRoute,
+  cliAuthCompleteRoute,
+  meRoute,
+  ssoCliConnectRoute
+} from '@slideless/contract/routes';
 import {
   account,
   instanceSettings,
@@ -28,43 +35,44 @@ import { auditMiddleware, type AuditService } from '@antasphere/chassis-server/a
 import { isDeckAuditExempt } from '../audit/deck-exempt.js';
 import { constantTimeEquals } from '@antasphere/chassis-server/util';
 import { isSecureSetupOrigin } from '@antasphere/chassis-server/util';
-import { authBodyGuard } from '../middleware/auth-body.js';
+import { authBodyGuard } from '@antasphere/chassis-server/middleware';
 import { authContext, type PrincipalGate } from '@antasphere/chassis-server/middleware';
-import { idempotency } from '../middleware/idempotency.js';
-import { crossSiteGuard } from '../middleware/cross-site.js';
-import { jsonDepthLimit } from '../middleware/json-depth.js';
-import { noStoreAuthenticated } from '../middleware/no-store.js';
-import { oauthPublicEndpoints } from '../middleware/oauth-public.js';
+import { idempotency } from '@antasphere/chassis-server/middleware';
+import { isDeckIdempotencyTarget } from '../middleware/deck-idempotency.js';
+import { crossSiteGuard } from '@antasphere/chassis-server/middleware';
+import { jsonDepthLimit } from '@antasphere/chassis-server/middleware';
+import { noStoreAuthenticated } from '@antasphere/chassis-server/middleware';
+import { oauthPublicEndpoints } from '@antasphere/chassis-server/middleware';
 import {
   createRequestQuota,
   emailKeyOf,
   makeClientIp,
-  rateLimit,
-  type RateLimiters
-} from '../middleware/rate-limit.js';
-import { requiredScopeFor } from '../middleware/scopes.js';
+  rateLimit
+} from '@antasphere/chassis-server/middleware';
+import type { DeckRateLimiters } from '../middleware/deck-rate-limits.js';
+import { CLI_KEY_SCOPES, requiredScopeFor } from '../middleware/scopes.js';
 import type { OauthJwtVerifier } from '@antasphere/chassis-server/identity';
 import { HUB_SSO_PROVIDER_ID, type HubSsoService } from '@antasphere/chassis-server/identity';
 import type { HubGrantService } from '@antasphere/chassis-server/identity';
 import type { HubLogoutService } from '@antasphere/chassis-server/identity';
-import { registerBreakGlassRoutes } from './break-glass.js';
-import { registerCliAuthRoutes } from './cli-auth.js';
-import { registerOnboardingRoutes } from './onboarding.js';
+import { registerBreakGlassRoutes } from '@antasphere/chassis-server/api';
+import { registerCliAuthRoutes } from '@antasphere/chassis-server/api';
+import { registerOnboardingRoutes } from '@antasphere/chassis-server/api';
 import {
   registerWorkspaceRoutes,
   workspaceCreationPolicy,
   workspaceCreationRefusal,
   workspaceCreateWallClosed,
   type WorkspaceCloudDeps
-} from './workspaces.js';
-import { registerSsoConnectRoutes } from './sso-connect.js';
-import { registerSsoLogoutRoutes } from './sso-logout.js';
-import { registerMemberRoutes } from './members.js';
-import { registerApiKeyRoutes } from './apikeys.js';
-import { registerInvitationRoutes } from './invitations.js';
-import { registerAuditRoutes } from './audit.js';
-import { registerFileRoutes } from './files.js';
-import { registerExportRoutes } from './export.js';
+} from '@antasphere/chassis-server/api';
+import { registerSsoConnectRoutes } from '@antasphere/chassis-server/api';
+import { registerSsoLogoutRoutes } from '@antasphere/chassis-server/api';
+import { registerMemberRoutes } from '@antasphere/chassis-server/api';
+import { registerApiKeyRoutes } from '@antasphere/chassis-server/api';
+import { registerInvitationRoutes } from '@antasphere/chassis-server/api';
+import { registerAuditRoutes } from '@antasphere/chassis-server/api';
+import { registerFileRoutes } from '@antasphere/chassis-server/api';
+import { registerExportRoutes } from '@antasphere/chassis-server/api';
 import { registerPresentationRoutes } from './presentations.js';
 import { registerCollaboratorRoutes } from './collaborators.js';
 import { blobReadScope, PresentationService } from '../presentations/service.js';
@@ -209,7 +217,7 @@ export interface ApiDeps {
   apiKeys: ApiKeyService;
   audit: AuditService;
   email: EmailDriver;
-  limiters: RateLimiters;
+  limiters: DeckRateLimiters;
   storage: StorageDriver;
   fileService: FileService;
   oauthJwt: OauthJwtVerifier;
@@ -565,7 +573,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // Idempotency sits strictly BETWEEN authContext (it needs the resolved
   // principal to scope claims) and auditMiddleware (a replayed short-circuit
   // never reaches the audit layer, so a retry cannot land a second audit row).
-  api.use('*', idempotency({ db, authSecret: deps.authSecret }));
+  api.use('*', idempotency({ db, authSecret: deps.authSecret, toolTargets: isDeckIdempotencyTarget }));
 
   api.use('*', auditMiddleware(audit, clientIp, { exempt: isDeckAuditExempt }));
 
@@ -954,7 +962,17 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // logout), NOT public, open to machines under presentations:write. On
   // cloud (hubSso present) the mint pair refuses 403 cli_otp_disabled — the
   // D1 hub-only entrance closure; the self-revoke stays open.
-  registerCliAuthRoutes(api, { db, auth, email, apiKeys: apiKeyService, audit, logger, hubSso });
+  registerCliAuthRoutes(api, {
+    db,
+    auth,
+    email,
+    apiKeys: apiKeyService,
+    audit,
+    logger,
+    hubSso,
+    cliKeyScopes: CLI_KEY_SCOPES,
+    routes: { cliAuthCompleteRoute }
+  });
   // CLI cross-tool connect (internal/federation.md P5): PUBLIC exchange of a
   // hub-minted 120 s JWT (+ its H3 offline grant) for a USER-scoped `slk_`
   // key. Registered ONLY on cloud — an oss boot leaves the path to the JSON
@@ -968,7 +986,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       grant: deps.hubGrant,
       apiKeys: apiKeyService,
       audit,
-      logger
+      logger,
+      cliKeyScopes: CLI_KEY_SCOPES,
+      routes: { ssoCliConnectRoute }
     });
   }
   // Single logout (SL-2): cloud-only like /sso/cli-connect — an oss boot
@@ -994,7 +1014,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     accountDeletion: deps.accountDeletion,
     hubManaged
   });
-  registerApiKeyRoutes(api, db, apiKeyService);
+  registerApiKeyRoutes(api, db, apiKeyService, { apiKeysListRoute, apiKeyCreateRoute, apiKeyRevokeRoute });
   registerInvitationRoutes(api, {
     db,
     env,

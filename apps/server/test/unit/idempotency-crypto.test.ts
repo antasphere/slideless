@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { open, seal } from '../../src/middleware/idempotency.js';
+import { open, seal } from '@antasphere/chassis-server/middleware';
 
 /**
  * The replay cache stores response bodies AES-256-GCM encrypted because they
