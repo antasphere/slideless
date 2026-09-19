@@ -562,7 +562,19 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
     });
     created = true;
   }
-  await writeLink(scan.rootDir, { presentationId: committed.presentation.id, baseUrl: ctx.baseUrl });
+  // A pulled REFERENCE folder's link carries a `reference` block (its type
+  // and the version pulled). A push from that folder (its owner fixing the
+  // brand) must keep the block, with the version it just pushed: the folder
+  // now holds that version, and the deck beside it records the brand from
+  // this block. A wholesale rewrite here silently ended that record.
+  const pulled = await readReferenceLink(scan.rootDir);
+  const keepsBlock =
+    pulled !== null && pulled.presentationId === committed.presentation.id && pulled.baseUrl === ctx.baseUrl;
+  await writeLink(scan.rootDir, {
+    presentationId: committed.presentation.id,
+    baseUrl: ctx.baseUrl,
+    ...(keepsBlock ? { reference: { type: pulled.reference.type, version: committed.version.version } } : {})
+  });
 
   // Provenance: read (the commit's answer carries the metadata as it now
   // stands), merge, PATCH — never a wholesale replace of the owner's keys.
@@ -594,9 +606,8 @@ async function resolveProvenance(
   for (const type of ['brand', 'template'] as const) {
     const flag = opts[type];
     if (flag !== undefined) {
-      const { ref, version } = splitRefAtVersion(flag);
       const candidates = await listReferences(ctx, type);
-      const match = resolveReference(candidates, ref, type);
+      const { match, version } = pickPinned(candidates, flag, type);
       const pinned = version ?? match.currentVersion;
       if (pinned > match.currentVersion) {
         throw new CliUsageError(
@@ -607,7 +618,14 @@ async function resolveProvenance(
       continue;
     }
     const link = await readReferenceLink(referenceDirFor(rootDir, type));
-    if (!link || link.reference.type !== type) continue;
+    if (!link) continue;
+    if (link.reference.type !== type) {
+      ctx.io.err.write(
+        `Note: the folder ${REFERENCE_DIR}/${type}/ holds a ${link.reference.type}, not a ${type}; ` +
+          'it is not recorded on this deck.\n'
+      );
+      continue;
+    }
     if (link.baseUrl !== ctx.baseUrl) {
       ctx.io.err.write(
         `Note: the ${type} in ${REFERENCE_DIR}/${type}/ was pulled from ${link.baseUrl}, not ${ctx.baseUrl}; ` +
@@ -618,6 +636,26 @@ async function resolveProvenance(
     out.push({ type, id: link.presentationId, version: link.reference.version });
   }
   return out;
+}
+
+/**
+ * `<ref>[@n]` resolved: the WHOLE value first, so a reference whose title
+ * ends in `@<digits>` (an id never does) is named as written; only when
+ * nothing matches the whole value is a trailing `@n` read as the version.
+ */
+export function pickPinned(
+  candidates: readonly VersionCommitted['presentation'][],
+  flag: string,
+  what: string
+): { match: VersionCommitted['presentation']; version: number | undefined } {
+  const { ref, version } = splitRefAtVersion(flag);
+  if (version !== undefined) {
+    const whole = candidates.find(
+      (r) => r.id.toLowerCase() === flag.trim().toLowerCase() || r.title.trim() === flag.trim()
+    );
+    if (whole) return { match: whole, version: undefined };
+  }
+  return { match: resolveReference(candidates, ref, what), version };
 }
 
 /** Every reference of a type the caller can read (the list, all pages). */
@@ -645,7 +683,7 @@ export function provenanceLine(references: readonly ReferenceProvenance[]): stri
 }
 
 /** The one line a push prints about the deck's classification: the reference it became, or the warning. */
-export function referenceLines(committed: VersionCommitted): string {
+export function classificationLines(committed: VersionCommitted): string {
   const { version, presentation } = committed;
   let out = '';
   if (version.reference) {
@@ -690,7 +728,7 @@ export function printPushResult(ctx: CliContext, result: PushResult, opts: Pick<
   );
   if (attachments.count > 0) io.out.write(attachmentsLine(attachments));
   if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
-  io.out.write(referenceLines(committed));
+  io.out.write(classificationLines(committed));
   if (references.length > 0) io.out.write(`  references: ${provenanceLine(references)}\n`);
   if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
   openAfterPush(ctx, url, { created, flag: opts.open });

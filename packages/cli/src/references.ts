@@ -157,18 +157,26 @@ export interface FrontmatterRead {
   title: string | null;
 }
 
-/** A scalar as the frontmatter writes it: a double-quoted one is JSON, a single-quoted one is plain, else as is. */
+/**
+ * A scalar as the frontmatter writes it: a double-quoted one is JSON, a
+ * single-quoted one is plain, else as is. Control characters are dropped
+ * whatever the form: a JSON escape can spell one (`\u001b`), and a title
+ * is text for a screen, never a terminal sequence.
+ */
 function unquote(value: string): string {
   const trimmed = value.trim();
+  let out = trimmed;
   if (/^".*"$/.test(trimmed)) {
     try {
-      return String(JSON.parse(trimmed));
+      out = String(JSON.parse(trimmed));
     } catch {
-      return trimmed.slice(1, -1);
+      out = trimmed.slice(1, -1);
     }
+  } else if (/^'.*'$/.test(trimmed)) {
+    out = trimmed.slice(1, -1).replace(/''/g, "'");
   }
-  if (/^'.*'$/.test(trimmed)) return trimmed.slice(1, -1).replace(/''/g, "'");
-  return trimmed;
+  // eslint-disable-next-line no-control-regex -- dropping control characters IS the job here.
+  return out.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
 }
 
 /** What an AGENT.md declares, as the server will read it: the block, its `type:` line, the known type, its title. */

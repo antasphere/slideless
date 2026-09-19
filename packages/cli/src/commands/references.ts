@@ -1,5 +1,5 @@
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { mkdir, readdir, readFile, rm, rmdir, stat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { PlatformApiError } from '@slideless/sdk';
 import { AGENT_DOC_PATH, REFERENCE_TYPES, type Presentation, type ReferenceType } from '@slideless/contract';
@@ -168,7 +168,7 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
         // link file names a reference); anything else that is not empty is
         // refused, so a mistyped --into never wipes a folder of somebody's.
         await prepareReferenceDir(dest, ctx.baseUrl, noun);
-        const detail = await downloadVersionInto(ctx, match.id, version, dest);
+        const detail = await downloadOrClean(ctx, match.id, version, dest);
         await writeLink(dest, {
           presentationId: match.id,
           baseUrl: ctx.baseUrl,
@@ -385,7 +385,7 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
       if (!(await isMissingOrEmptyDir(target))) {
         throw new CliUsageError(`${target} exists and is not empty; start into a new or empty folder.`);
       }
-      const detail = await downloadVersionInto(ctx, match.id, version, target);
+      const detail = await downloadOrClean(ctx, match.id, version, target);
       // A deck made from a reference is not a reference: the type line goes,
       // the rest of the briefing (title, description, the fields) stays for
       // the agent that authors the deck. No link file: the first push of
@@ -554,7 +554,7 @@ async function prepareReferenceDir(dest: string, baseUrl: string, noun: string):
     throw new CliUsageError(
       plain
         ? `${dest} is a deck folder linked by ${LINK_FILENAME}, not a pulled ${noun}; pull into another folder (--into).`
-        : `${dest} is not empty and is not a folder a previous pull wrote; pull into another folder (--into).`
+        : `${dest} is not empty and is not a folder a previous pull wrote. Delete it to pull there, or pull into another folder (--into).`
     );
   }
   if (link.baseUrl !== baseUrl) {
@@ -565,6 +565,25 @@ async function prepareReferenceDir(dest: string, baseUrl: string, noun: string):
   }
   // Ours: replace it. The link file inside it is the proof it was ours.
   await rm(dest, { recursive: true, force: true });
+}
+
+/**
+ * The download into a folder this command owns (missing, empty, or emptied
+ * by `prepareReferenceDir`): on ANY failure (a lying hash, an escaping path,
+ * a dropped connection) what was written is removed, the folder with it,
+ * and its parent when that was created empty. A half-written folder with
+ * no link file would be refused by every later pull as "not a folder a
+ * previous pull wrote", with no way out but a deletion nobody names.
+ */
+async function downloadOrClean(ctx: CliContext, deckId: string, version: number, dest: string) {
+  try {
+    return await downloadVersionInto(ctx, deckId, version, dest);
+  } catch (e) {
+    await rm(dest, { recursive: true, force: true }).catch(() => undefined);
+    // `.slideless/` above a pulled folder: only when it is empty (rmdir refuses otherwise).
+    await rmdir(dirname(dest)).catch(() => undefined);
+    throw e;
+  }
 }
 
 async function isMissingOrEmptyDir(path: string): Promise<boolean> {
