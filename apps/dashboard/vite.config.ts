@@ -8,7 +8,12 @@ export default defineConfig({
     // bundle them (never externalize) in the SSR pass that renders the SPA
     // fallback shell, so the pre-rendered shell resolves them without a
     // separate runtime dependency.
-    noExternal: ['@slideless/sdk', '@slideless/contract', '@antasphere/chassis-contract']
+    noExternal: [
+      '@slideless/sdk',
+      '@slideless/contract',
+      '@antasphere/chassis-contract',
+      '@antasphere/chassis-sdk'
+    ]
   },
   server: {
     // Dev-only: the SPA calls the API same-origin in production; in dev

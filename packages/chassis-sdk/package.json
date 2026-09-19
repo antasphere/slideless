@@ -1,9 +1,12 @@
 {
-  "name": "@slideless/sdk",
+  "name": "@antasphere/chassis-sdk",
   "version": "0.1.0",
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,13 +16,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@antasphere/chassis-contract": "workspace:*",
-    "@antasphere/chassis-sdk": "workspace:*",
-    "@slideless/contract": "workspace:*"
+    "@antasphere/chassis-contract": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.0"

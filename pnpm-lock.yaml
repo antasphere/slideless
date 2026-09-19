@@ -266,6 +266,16 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
+  packages/chassis-sdk:
+    dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../chassis-contract
+    devDependencies:
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
+
   packages/chassis-server:
     dependencies:
       '@antasphere/chassis-contract':
@@ -469,6 +479,9 @@ importers:
       '@antasphere/chassis-contract':
         specifier: workspace:*
         version: link:../chassis-contract
+      '@antasphere/chassis-sdk':
+        specifier: workspace:*
+        version: link:../chassis-sdk
       '@slideless/contract':
         specifier: workspace:*
         version: link:../contract
