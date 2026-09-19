@@ -380,7 +380,9 @@ path as `slideless pull`: every manifest path is re-validated locally, each blob
 is capped at the size the manifest declares and must hash to the sha256 it
 claims before anything is written, and no write follows a symlink. A pull that
 fails part way (a blob that does not hash, a dropped connection) removes what it
-had written, so the next pull of that type starts clean. Pushing a new version
+had written and says so on stderr, so the next pull of that type starts clean;
+it removes only what it created: a folder that existed before the pull is
+emptied and kept, and a parent folder you made is never touched. Pushing a new version
 of the reference from its pulled folder (`slideless brand push .slideless/brand`,
 as its owner) keeps the link file's type and moves its version to the one just
 pushed, so the deck beside it keeps recording the brand.
@@ -449,7 +451,9 @@ an ordinary deck.
 `<ref>` forms as everywhere else and are resolved before any upload, so a wrong
 name costs nothing. The value is tried whole first, so a reference whose title
 ends in `@2` is named as written; only when nothing matches the whole value is
-the trailing `@n` read as a version. With neither flag, a push reads the link
+the trailing `@n` read as a version; when both readings name a real reference,
+the title wins and a note on stderr says how to pin the other by its id. With
+neither flag, a push reads the link
 files of `.slideless/brand/` and `.slideless/template/` beside the deck and
 records what was pulled there, which makes the ordinary sequence, pull then
 author then push, record itself. A reference pulled from another instance is not
