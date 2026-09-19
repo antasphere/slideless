@@ -980,12 +980,45 @@ describe('5. the workspace default: one per type, admins only', () => {
     const removed = await del(second, admin());
     expect(removed.status).toBeGreaterThanOrEqual(200);
     expect(removed.status).toBeLessThan(300);
+    // The delete DROPS the default on the row itself (verifier round 1,
+    // finding 1): the answer says so, and the deleted row does not keep a
+    // stale flag for a restore path to resurrect one day.
+    expect((await readJson(removed)).defaultReference).toBe(false);
+    const { rows: deletedRow } = await app.db.pool.query<{ is_default_reference: boolean }>(
+      'SELECT is_default_reference FROM presentations WHERE id = $1',
+      [second]
+    );
+    expect(deletedRow[0]?.is_default_reference).toBe(false);
     expect(await defaults('brand')).toEqual([]);
     expect(await defaultCount('brand')).toBe(0);
 
     await patchOk(first, { audience: 'workspace', defaultReference: true }, admin());
     expect(await defaults('brand')).toEqual([first]);
     expect(await defaultCount('brand')).toBe(1);
+  });
+
+  it('the one-default index is the backstop, and it ignores deleted rows (verifier round 1, finding 2)', async () => {
+    // The index as migration 0044 created it, read back from the catalogue.
+    const { rows: index } = await app.db.pool.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE indexname = 'presentations_default_reference_uniq'`
+    );
+    expect(index).toHaveLength(1);
+    expect(index[0]!.indexdef).toMatch(/UNIQUE/);
+    expect(index[0]!.indexdef).toMatch(/WHERE \(is_default_reference AND \(deleted_at IS NULL\)\)/);
+
+    // Two live defaults of one type in one workspace are refused by Postgres
+    // itself, whatever path tried to write them...
+    const other = await newBrand({ cookie: miaCookie }, 'd5-index-other');
+    await publish(other, { cookie: miaCookie });
+    expect(await defaults('brand')).toEqual([first]);
+    await expect(
+      app.db.pool.query('UPDATE presentations SET is_default_reference = true WHERE id = $1', [other])
+    ).rejects.toMatchObject({ code: '23505' });
+    // ...while a deleted row never holds the slot: flag the deleted brand by
+    // hand, and the live default still stands beside it.
+    await app.db.pool.query('UPDATE presentations SET is_default_reference = true WHERE id = $1', [second]);
+    expect(await defaults('brand')).toEqual([first]);
+    await app.db.pool.query('UPDATE presentations SET is_default_reference = false WHERE id = $1', [second]);
   });
 
   it('two concurrent sets on two different brands never leave two defaults, and never a 500', async () => {
