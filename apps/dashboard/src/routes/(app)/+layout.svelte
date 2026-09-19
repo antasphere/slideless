@@ -30,11 +30,12 @@
     data.me.workspaces.find((w) => w.id === data.me.activeWorkspaceId)?.name ?? data.instance.name
   );
 
-  // The look a person picked (the recipe box at the foot of the sidebar):
-  // the theme's slots on <html>, its field under the app.
+  // The look a person picked for THIS workspace (the recipe box at the foot
+  // of the sidebar): the theme's slots on <html>, its field under the app.
+  // The look follows the active workspace, so a switch changes it.
   $effect(() => {
     theme.start();
-    look.load();
+    look.use(data.me.activeWorkspaceId ?? '');
     look.apply(theme.dark);
   });
   const field = $derived(fieldPalette(look.value.theme, theme.dark));
@@ -60,6 +61,7 @@
     <!-- a phone has no sidebar: its own header, and the tab bar below -->
     <PhoneTopBar
       name={workspaceName}
+      workspaceId={data.me.activeWorkspaceId ?? ''}
       title={head.gone ? pageName : undefined}
       user={{ name: data.me.user.name, email: data.me.user.email }}
     />

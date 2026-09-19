@@ -3,15 +3,16 @@
   import { fieldPalette, look } from '$lib/look.svelte';
   import { theme } from '$lib/theme.svelte';
 
-  let { children } = $props();
+  let { data, children } = $props();
 
-  // The same ground as the signed-in shell: the look a person picked, its
+  // The same ground as the signed-in shell: the look a person picked for
+  // this workspace, its
   // slots on <html> and its field under the page. Without it the master
   // page sat on the recipe's bare cream and read yellow beside the app,
   // whose paper is the neutral field seen through a plate.
   $effect(() => {
     theme.start();
-    look.load();
+    look.use(data.me.activeWorkspaceId ?? '');
     look.apply(theme.dark);
   });
   const field = $derived(fieldPalette(look.value.theme, theme.dark));

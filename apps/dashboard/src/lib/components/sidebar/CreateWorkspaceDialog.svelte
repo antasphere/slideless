@@ -10,6 +10,11 @@
     workspaceCreateFailure
   } from '$lib/workspace-create';
   import { authClient } from '$lib/auth-client';
+  import ThemeDots from '$lib/components/shell/ThemeDots.svelte';
+  import FormGlyphs from '$lib/components/shell/FormGlyphs.svelte';
+  import BrandTile from './BrandTile.svelte';
+  import { dealtPattern, DEFAULT_LOOK, look, saveLook, type Look, type ThemeKey } from '$lib/look.svelte';
+  import { roleTag } from '$lib/tags';
   import { t } from '$lib/i18n';
 
   /**
@@ -41,6 +46,20 @@
   // the corrected name too.
   let idempotencyKey = $state(newIdempotencyKey());
 
+  // The look the new workspace is born with (the hub's way). Until the person
+  // picks, the colour is the current one and the form is dealt from the name
+  // as it is typed, so the tile takes shape with the words; the look is
+  // stored under the new workspace's id the moment it exists, before the
+  // switch, so it opens with the look they chose.
+  let pickedTheme = $state<ThemeKey | null>(null);
+  let pickedPattern = $state<string | null>(null);
+  const trimmedName = $derived(name.trim());
+  const preview = $derived<Look>({
+    ...DEFAULT_LOOK,
+    theme: pickedTheme ?? look.value.theme,
+    pattern: pickedPattern ?? dealtPattern(trimmedName || 'workspace')
+  });
+
   // Keyed on `open` itself, not on the primitive's onOpenChange: the menu
   // entry and the Cancel button move `open` from outside the primitive.
   $effect(() => {
@@ -51,6 +70,8 @@
       error = null;
       signInAgain = false;
       freshSignIn = false;
+      pickedTheme = null;
+      pickedPattern = null;
     }
   });
 
@@ -73,6 +94,7 @@
     loading = true;
     try {
       const { workspace } = await api.createWorkspace(trimmed, { idempotencyKey });
+      saveLook(workspace.id, $state.snapshot(preview));
       // Persist + reload: every loader restarts inside the new workspace. The
       // button stays disabled until the page goes away.
       switchWorkspace(workspace.id);
@@ -131,6 +153,22 @@
           </p>
         {/if}
       </FormField>
+      <fieldset class="space-y-3">
+        <legend class="eyebrow pb-1">{t('workspace.lookLegend')}</legend>
+        <!-- how it will sit in the sidebar. SECURITY: the name is user-authored: text interpolation only. -->
+        <div class="preview" data-testid="workspace-preview">
+          <BrandTile {preview} label={trimmedName || t('workspace.create')} size={40} />
+          <span class="grid min-w-0 flex-1 leading-tight">
+            <span class="truncate font-display text-[17px] font-normal tracking-[-0.005em] text-[var(--ink)]">
+              {trimmedName || t('workspace.create')}
+            </span>
+            <span class="role truncate">{roleTag('owner').label}</span>
+          </span>
+        </div>
+        <ThemeDots value={preview.theme} onpick={(key) => (pickedTheme = key)} size={15} />
+        <FormGlyphs value={preview.pattern} onpick={(key) => (pickedPattern = key)} size={24} />
+        <p class="text-xs text-muted-foreground">{t('workspace.lookHint')}</p>
+      </fieldset>
       <Dialog.Footer>
         <Button type="button" variant="outline" onclick={() => (open = false)} disabled={loading}>
           {t('common.cancel')}
@@ -142,3 +180,23 @@
     </form>
   </Dialog.Content>
 </Dialog.Root>
+
+<style>
+  .preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    background: color-mix(in oklab, var(--ground-2) 46%, transparent);
+  }
+  .role {
+    font-family: var(--second);
+    font-weight: 300;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+</style>

@@ -193,6 +193,7 @@ export const fr: Record<MessageKey, string> = {
   'look.field': 'Dégradé',
   'look.grain': 'Grain',
   'look.reset': 'Revenir au look Slideless',
+  'look.form': 'Forme de l’espace de travail',
   // la page d'une présentation : le panneau d'un lien de partage et le décompte de la table
   'tokens.panelEyebrow': 'Lien de partage',
   'tokens.panelCreated': 'Créé le {date}',
@@ -447,6 +448,8 @@ export const fr: Record<MessageKey, string> = {
   // Créer un espace de travail (PRDCT-2443 / PRDCT-2444). Un seul vocabulaire
   // sur les deux éditions : un espace de travail Slideless, rien d’autre.
   'workspace.create': 'Nouvel espace de travail',
+  'workspace.lookLegend': 'Sa couleur et sa forme',
+  'workspace.lookHint': 'Ainsi qu’il apparaît dans la barre latérale. Les deux se changent plus tard.',
   'workspace.createTitle': 'Nouvel espace de travail',
   'workspace.createDescription':
     'Un espace séparé, avec ses propres decks, ses membres et ses clés API. Vous en serez propriétaire, et vous passerez d’un espace à l’autre depuis ce menu.',

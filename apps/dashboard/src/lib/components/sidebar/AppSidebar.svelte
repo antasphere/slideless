@@ -4,7 +4,7 @@
   import NavUser from './NavUser.svelte';
   import { buildNav, isActive as navActive } from '$lib/nav';
   import { t } from '$lib/i18n';
-  import LogoTile from '$lib/components/brand/LogoTile.svelte';
+  import BrandTile from './BrandTile.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
   import LookPanel from '$lib/components/shell/LookPanel.svelte';
   import type { MeResponse, WorkspaceRole } from '@slideless/contract';
@@ -64,12 +64,10 @@
       <WorkspaceSwitcher {workspaces} {activeWorkspaceId} {hubManageUrl} {canCreateWorkspace} />
     {:else}
       <!-- The identity block: a contained header (the template convention the
-           bare version drifted from), the initial on a small brand field. -->
-      <div
-        class="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-background/70 px-2 py-2 shadow-sm"
-      >
-        <LogoTile label={instanceName} />
-        <span class="truncate font-display text-[15px] font-normal tracking-[-0.005em]">
+           bare version drifted from), the workspace's form on its tile. -->
+      <div class="flex items-center gap-2.5 px-1.5 py-1.5">
+        <BrandTile seedKey={instanceName} label={instanceName} />
+        <span class="truncate font-display text-[15px] font-normal tracking-[-0.005em] text-[var(--ink)]">
           {instanceName}
         </span>
       </div>

@@ -1,19 +1,21 @@
 <script lang="ts">
-  /* The phone's header: where you are (the workspace, on its small field)
+  /* The phone's header: where you are (the workspace, its form on its tile)
      and who you are (the way to the account), nothing else. Once the page's
      own header has scrolled away the workspace's name gives its place to the
      page's, and takes it back when the header returns. */
-  import LogoTile from '$lib/components/brand/LogoTile.svelte';
+  import BrandTile from '$lib/components/sidebar/BrandTile.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
     name: string;
+    /** The workspace whose look the tile wears, as in the sidebar; '' for the current look. */
+    workspaceId?: string;
     /** The open page's name, set while its own header is out of view. */
     title?: string;
     user: { name: string; email: string };
   }
 
-  let { name, title, user }: Props = $props();
+  let { name, workspaceId = '', title, user }: Props = $props();
 
   // the last title stays in place while it fades out
   let shownTitle = $state('');
@@ -34,7 +36,7 @@
 
 <header class="topbar">
   <a href="/" class="flex min-w-0 items-center gap-2.5">
-    <LogoTile label={name} size={30} />
+    <BrandTile {workspaceId} seedKey={name} label={name} size={30} />
     <span class="names font-display text-[16px] tracking-[-0.005em]">
       <span class="truncate" class:away={!!title} aria-hidden={title ? 'true' : undefined}>{name}</span>
       <!-- SECURITY: a page's name may be user-authored (a deck's title): text interpolation only. -->

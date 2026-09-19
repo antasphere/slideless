@@ -1,7 +1,9 @@
 /**
  * The look a person picks for their dashboard (PRDCT-2439): one of the brand's
- * ten themes, how much of the page field reaches them, and how much grain sits
- * on it. It is the brand console's recipe box, reduced to what an app needs.
+ * ten themes, how much of the page field reaches them, how much grain sits on
+ * it, and the workspace's form (one pattern of the brand's library, drawn
+ * still on its tile). It is the brand console's recipe box, reduced to what
+ * an app needs.
  *
  * A theme writes the brand's four slots and nothing else (tokens.css), plus the
  * shadcn triplets that mirror the accent, so every selected state, button and
@@ -10,8 +12,17 @@
  * hero, and an app a person reads all day wants the same hue as a whisper, so
  * each field is the paper with the accent pooled into it at low strengths.
  * Kept in this browser, like the language (ADR 007): it is the person's.
+ *
+ * The look is PER WORKSPACE, the way the hub keeps it per organization. Each
+ * workspace the person belongs to keeps its own look in this browser
+ * (`slideless.look.<workspaceId>`), the switcher's tiles carry each
+ * workspace's accent and form, and switching workspace switches the look. A
+ * look stored under the old single key (`slideless.look`) becomes the look of
+ * the first workspace loaded, so nobody loses what they picked.
  */
 import { PALETTES, THEMES } from '$lib/brand/recipe.js';
+import { isPatternKey, PATTERN_KEYS } from '$lib/brand/form';
+import { seedOf } from '$lib/brand/seed';
 
 export type ThemeKey = keyof typeof THEMES;
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
@@ -22,10 +33,25 @@ export interface Look {
   field: number;
   /** 0..1, the film grain on the field and over the app; 0.5 is the brand's constant. */
   grain: number;
+  /** The workspace's form: a key of the brand's pattern library, drawn still on its tile. */
+  pattern: string;
 }
 
-export const DEFAULT_LOOK: Look = { theme: 'paper', field: 0.7, grain: 0.5 };
-const KEY = 'slideless.look';
+export const DEFAULT_LOOK: Look = { theme: 'paper', field: 0.7, grain: 0.5, pattern: 'rings' };
+/** The form a workspace starts with: dealt from its id, so two workspaces never start alike. */
+export function dealtPattern(workspaceId: string): string {
+  return workspaceId ? PATTERN_KEYS[seedOf(workspaceId) % PATTERN_KEYS.length] : DEFAULT_LOOK.pattern;
+}
+/** The default look of one workspace: the shared defaults with its dealt form. */
+export function defaultLookFor(workspaceId: string): Look {
+  return { ...DEFAULT_LOOK, pattern: dealtPattern(workspaceId) };
+}
+/** The pre-workspace key: read once as the first workspace's look, then removed. */
+const LEGACY_KEY = 'slideless.look';
+/** Where a workspace's look lives; no workspace (a session /me listed none) keeps the legacy key. */
+function keyOf(workspaceId: string): string {
+  return workspaceId ? `${LEGACY_KEY}.${workspaceId}` : LEGACY_KEY;
+}
 
 const PAPER = { light: '#F7F4EC', dark: '#1F1B17' };
 
@@ -99,33 +125,114 @@ export function heroPalette(theme: ThemeKey, dark: boolean): string {
   return name;
 }
 
+/** A stored value read back as a Look for one workspace, or null when there is none or it is not one. */
+function parseLook(raw: string | null, workspaceId: string): Look | null {
+  try {
+    const stored = JSON.parse(raw ?? 'null') as Partial<Look> | null;
+    if (!stored || typeof stored !== 'object') return null;
+    return {
+      theme: THEME_KEYS.includes(stored.theme as ThemeKey) ? (stored.theme as ThemeKey) : DEFAULT_LOOK.theme,
+      field: clamp01(stored.field, DEFAULT_LOOK.field),
+      grain: clamp01(stored.grain, DEFAULT_LOOK.grain),
+      pattern: isPatternKey(stored.pattern) ? stored.pattern : dealtPattern(workspaceId)
+    };
+  } catch {
+    /* a hand-edited value: no look */
+    return null;
+  }
+}
+
+/**
+ * The look a workspace has in this browser, read only: what is stored for
+ * it, or its default. For the switcher's other rows; the active workspace's
+ * look is `look.value`, which follows the panel live.
+ */
+export function lookOf(workspaceId: string): Look {
+  if (typeof localStorage === 'undefined') return defaultLookFor(workspaceId);
+  try {
+    return parseLook(localStorage.getItem(keyOf(workspaceId)), workspaceId) ?? defaultLookFor(workspaceId);
+  } catch {
+    /* privacy modes: the default look */
+    return defaultLookFor(workspaceId);
+  }
+}
+
+/**
+ * Store a look for a workspace this browser has not loaded yet: the look a
+ * person picked in the create dialog, written under the new workspace's id
+ * the moment it exists, before the switch into it.
+ */
+export function saveLook(workspaceId: string, value: Look): void {
+  try {
+    localStorage.setItem(keyOf(workspaceId), JSON.stringify(value));
+  } catch {
+    /* not persisted: the workspace starts with its dealt look */
+  }
+}
+
+/**
+ * A theme's accent as the app shows it, with the ink that sits on it and the
+ * wash it pools into: what `apply` writes to `--accent`, `--accent-ink` and
+ * `--accent-soft`, factored so a workspace's tile carries the same colours as
+ * its selected state. At night the accent is lifted toward the paper so it
+ * keeps its contrast on a dark ground.
+ */
+export function accentOf(
+  theme: ThemeKey,
+  dark: boolean
+): { accent: string; ink: string; soft: string; hairline: string } {
+  const t = THEMES[theme];
+  const accent = dark ? mix(t.accent, '#F7F4EC', 0.28) : t.accent;
+  const [r, g, b] = rgb(accent);
+  return {
+    accent,
+    ink: dark ? mix(t.accent, '#14100C', 0.78) : t.accentInk,
+    soft: `rgba(${r}, ${g}, ${b}, ${dark ? 0.17 : 0.13})`,
+    hairline: `rgba(${r}, ${g}, ${b}, ${dark ? 0.4 : 0.32})`
+  };
+}
+
 class LookStore {
   value = $state<Look>({ ...DEFAULT_LOOK });
-  #loaded = false;
+  /** The workspace whose look `value` is ('' before `use`, or when the session has none). */
+  workspaceId = $state('');
+  #loadedFor: string | null = null;
 
-  load(): void {
-    if (this.#loaded || typeof localStorage === 'undefined') return;
-    this.#loaded = true;
+  /**
+   * Make a workspace's look the current one: read what this browser keeps
+   * for it and apply it. The pre-workspace value, if still there, is claimed
+   * by the first workspace loaded and removed. Called from an effect that
+   * also reads `value`, so it is a no-op for the workspace already loaded.
+   */
+  use(workspaceId: string): void {
+    if (this.#loadedFor === workspaceId) return;
+    this.#loadedFor = workspaceId;
+    this.workspaceId = workspaceId;
+    if (typeof localStorage === 'undefined') return;
     try {
-      const stored = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Look> | null;
-      if (stored && typeof stored === 'object') {
-        this.value = {
-          theme: THEME_KEYS.includes(stored.theme as ThemeKey)
-            ? (stored.theme as ThemeKey)
-            : DEFAULT_LOOK.theme,
-          field: clamp01(stored.field, DEFAULT_LOOK.field),
-          grain: clamp01(stored.grain, DEFAULT_LOOK.grain)
-        };
+      const key = keyOf(workspaceId);
+      let stored = parseLook(localStorage.getItem(key), workspaceId);
+      if (!stored && workspaceId && localStorage.getItem(LEGACY_KEY) !== null) {
+        stored = parseLook(localStorage.getItem(LEGACY_KEY), workspaceId);
+        if (stored) localStorage.setItem(key, JSON.stringify(stored));
+        localStorage.removeItem(LEGACY_KEY);
       }
+      this.value = stored ?? defaultLookFor(workspaceId);
     } catch {
-      /* privacy modes, a hand-edited value: the default look */
+      /* privacy modes: the default look */
+      this.value = defaultLookFor(workspaceId);
     }
+  }
+
+  /** The current workspace's default look (its dealt form): what the panel's reset returns to. */
+  get defaults(): Look {
+    return defaultLookFor(this.workspaceId);
   }
 
   set(patch: Partial<Look>): void {
     this.value = { ...this.value, ...patch };
     try {
-      localStorage.setItem(KEY, JSON.stringify(this.value));
+      localStorage.setItem(keyOf(this.workspaceId), JSON.stringify(this.value));
     } catch {
       /* not persisted, still applied */
     }
@@ -134,14 +241,11 @@ class LookStore {
   /** Write the theme's slots on <html>. Called from an effect, so it re-runs on a theme or mode change. */
   apply(dark: boolean): void {
     const t = THEMES[this.value.theme];
-    // at night the accent is lifted toward the paper so it keeps its contrast on a dark ground
-    const accent = dark ? mix(t.accent, '#F7F4EC', 0.28) : t.accent;
-    const ink = dark ? mix(t.accent, '#14100C', 0.78) : t.accentInk;
-    const [r, g, b] = rgb(accent);
+    const { accent, ink, soft } = accentOf(this.value.theme, dark);
     const root = document.documentElement.style;
     root.setProperty('--accent', accent);
     root.setProperty('--accent-ink', ink);
-    root.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, ${dark ? 0.17 : 0.13})`);
+    root.setProperty('--accent-soft', soft);
     root.setProperty('--accent-deep', dark ? mix(t.accent, '#F7F4EC', 0.6) : mix(t.accent, '#1C1915', 0.32));
     root.setProperty('--field-base', mix(dark ? PAPER.dark : PAPER.light, t.accent, 0.08));
     for (const name of ['--primary', '--ring', '--sidebar-ring']) root.setProperty(name, triplet(accent));

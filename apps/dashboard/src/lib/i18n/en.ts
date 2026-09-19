@@ -187,6 +187,7 @@ export const en = {
   'look.field': 'Gradient',
   'look.grain': 'Grain',
   'look.reset': 'Back to the Slideless look',
+  'look.form': 'Form of the workspace',
   // the deck page: a share link's panel and the links table's count
   'tokens.panelEyebrow': 'Share link',
   'tokens.panelCreated': 'Created {date}',
@@ -434,6 +435,8 @@ export const en = {
   // Creating a workspace (PRDCT-2443 / PRDCT-2444). One wording on both
   // editions: a Slideless workspace, never where it lives behind the scenes.
   'workspace.create': 'New workspace',
+  'workspace.lookLegend': 'Its colour and its form',
+  'workspace.lookHint': 'How it shows in the sidebar. Both can be changed later.',
   'workspace.createTitle': 'New workspace',
   'workspace.createDescription':
     'A separate space with its own decks, members and API keys. You will be its owner, and you can switch between your workspaces from this menu.',
