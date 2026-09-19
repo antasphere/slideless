@@ -45,7 +45,8 @@ const AGENT_MD = [
   'type: Brand',
   'title: E2E brand',
   'description: The look of every E2E deck.',
-  'tags: [brand, e2e]',
+  // tags in a shape the sheet cannot read as words: it must come back as a row, never be dropped
+  'tags: 12',
   'timestamp: 2026-09-19T05:00:00Z',
   'fonts:',
   '  heading: { family: Fraunces, weights: [600] }',
@@ -182,6 +183,11 @@ test('brands: a pushed reference is read, downloaded, published, made the defaul
     await expect(colours).toContainText('#0B3954');
     await expect(colours).toContainText('Signal');
     await expect(sheet.getByTestId('reference-fonts')).toContainText('Fraunces');
+    // a typed field in an unusable shape (tags: 12) is kept as a row under
+    // "Also in the frontmatter" rather than dropped (verifier round 2, G3)
+    const extras = sheet.getByTestId('reference-extras');
+    await expect(extras).toContainText('tags');
+    await expect(extras).toContainText('12');
     const voice = sheet.getByTestId('reference-voice');
     await expect(voice).toContainText('plain');
     await expect(voice).toContainText('synergy');
