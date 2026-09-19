@@ -233,6 +233,19 @@ describe('explaining a refusal the selection caused', () => {
     ).toBeNull();
   });
 
+  it('G8: workspace_mismatch is the pin only at 403; any other status keeps the plain error', () => {
+    expect(
+      explainRefusal({
+        code: 'workspace_mismatch',
+        status: 500,
+        selection: { value: B, source: 'flag' },
+        workspaceId: B,
+        me,
+        baseUrl: URL
+      })
+    ).toBeNull();
+  });
+
   it('any other refusal is not the selection to explain', () => {
     expect(
       explainRefusal({

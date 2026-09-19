@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { HUB_TOOL, saveConfig as saveCoreConfig } from '@antasphere/cli-core';
 import { run } from '../src/index.js';
 import { loadConfig, saveConfig } from '../src/config.js';
 import { DECK, routedHarness, tempConfigEnv, type Route } from './harness.js';
@@ -498,5 +499,191 @@ describe('the selection goes with the identity', () => {
       (JSON.parse(h.out()) as { profiles: Record<string, { activeWorkspaceId: string | null }> }).profiles
         .work!.activeWorkspaceId
     ).toBe(NORD);
+  });
+});
+
+/**
+ * The gaps the verifier's mutation battery found on 19 September 2026
+ * (verifier-1.md in the workstream bundle): behaviours that were right but
+ * that no test pinned. One test each.
+ */
+describe('pinned after the verifier round', () => {
+  it('G3: on the connect path, the name lookup carries the MINTED key, never goes out bare', async () => {
+    const env = await tempConfigEnv();
+    const SLK = 'slk_minted12_0123456789abcdefghijklmnopqrstuvwxyz';
+    saveCoreConfig(env, HUB_TOOL, {
+      activeProfile: 'default',
+      profiles: {
+        default: { apiKey: 'ant_hubkey12_secretsecretsecret1234', baseUrl: 'http://hub', email: 'ada@x.co' }
+      }
+    });
+    saveConfig(env, { activeProfile: 'work', profiles: { work: { baseUrl: URL } } });
+    const routes: Route[] = [
+      {
+        method: 'GET',
+        path: /\/api\/v1\/instance$/,
+        reply: () => ({
+          body: {
+            name: 'Cloud',
+            instanceId: 'i1',
+            edition: 'cloud',
+            version: '1.0.0',
+            apiVersion: 'v1',
+            setupRequired: false,
+            auth: {
+              methods: ['antasphere', 'api-key', 'oauth'],
+              passwordReset: false,
+              emailChange: false,
+              twoFactor: false
+            },
+            features: { mcp: true, oauth: true, files: true }
+          }
+        })
+      },
+      {
+        method: 'POST',
+        path: /\/api\/v1\/sso\/tool-token$/,
+        reply: () => ({
+          body: { token: 'jwt-1', expiresAt: '2026-07-13T00:02:00.000Z', hubRefreshToken: 'hrt-1' }
+        })
+      },
+      {
+        method: 'POST',
+        path: /\/api\/v1\/sso\/cli-connect$/,
+        reply: () => ({
+          status: 201,
+          body: {
+            key: SLK,
+            apiKey: {
+              id: 'k1',
+              name: 'connect',
+              keyId: 'minted12',
+              scopes: [],
+              createdBy: 'u1',
+              createdAt: 'x',
+              lastUsedAt: null,
+              revokedAt: null,
+              expiresAt: null
+            },
+            user: { id: 'u1', email: 'ada@x.co', name: 'Ada' },
+            workspaceId: null
+          }
+        })
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/v1\/me$/,
+        reply: ({ headers }) =>
+          headers.get('authorization') === `Bearer ${SLK}`
+            ? {
+                body: {
+                  user: { id: 'u1', name: 'Ada', email: 'ada@x.co' },
+                  workspaces: WORKSPACES,
+                  activeWorkspaceId: ACME
+                }
+              }
+            : refuse(401, 'invalid_api_key', 'API key not recognized')
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/v1\/presentations$/,
+        reply: () => ({ body: { presentations: [], nextCursor: null } })
+      }
+    ];
+    const h = routedHarness(routes, env);
+    expect(await run(['list', '--workspace', 'atelier nord'], h.io)).toBe(0);
+    const me = h.wire.find((c) => c.path === '/api/v1/me');
+    expect(me?.auth).toBe(`Bearer ${SLK}`);
+    expect(h.wire.at(-1)).toMatchObject({
+      path: '/api/v1/presentations',
+      auth: `Bearer ${SLK}`,
+      workspace: NORD
+    });
+  });
+
+  it('G1: workspace use re-reads the config before writing, so a key cached meanwhile survives', async () => {
+    const env = await profileEnv();
+    const routes = instance().map((r) =>
+      r.path.test('/api/v1/me')
+        ? {
+            ...r,
+            reply: (call: Parameters<Route['reply']>[0]) => {
+              // Something else wrote the profile between the read and the save.
+              const config = loadConfig(env);
+              config.profiles.work = {
+                ...config.profiles.work,
+                connectKeys: { hub: { apiKey: 'slk_cached_key' } }
+              };
+              saveConfig(env, config);
+              return r.reply(call);
+            }
+          }
+        : r
+    );
+    expect(await run(['workspace', 'use', NORD], routedHarness(routes, env).io)).toBe(0);
+    expect(loadConfig(env).profiles.work).toEqual({
+      apiKey: KEY,
+      baseUrl: URL,
+      connectKeys: { hub: { apiKey: 'slk_cached_key' } },
+      activeWorkspaceId: NORD
+    });
+  });
+
+  it('G5: the hub-connect logout drops the selection too', async () => {
+    const env = await tempConfigEnv();
+    saveConfig(env, {
+      activeProfile: 'work',
+      profiles: { work: { baseUrl: URL, connectKeys: { hub: { apiKey: KEY } }, activeWorkspaceId: NORD } }
+    });
+    const revoke: Route = {
+      method: 'DELETE',
+      path: /\/api\/v1\/cli\/auth\/key$/,
+      reply: () => ({ body: { revoked: true } })
+    };
+    expect(await run(['logout'], routedHarness([revoke], env).io)).toBe(0);
+    expect(loadConfig(env).profiles.work).toEqual({ baseUrl: URL });
+  });
+
+  it('G2: workspace use says so when the chosen workspace is suspended', async () => {
+    const list = [WORKSPACES[0]!, { ...WORKSPACES[1]!, suspended: true }];
+    const h = routedHarness(instance(list), await profileEnv());
+    expect(await run(['workspace', 'use', NORD], h.io)).toBe(0);
+    expect(h.out()).toContain('This workspace is suspended: requests into it are refused.');
+  });
+
+  it('G4: the stale-selection warning points at --clear for a profile selection only', async () => {
+    const viaProfile = routedHarness(instance(), await profileEnv(ELSEWHERE));
+    expect(await run(['workspaces'], viaProfile.io)).toBe(0);
+    expect(viaProfile.err()).toContain('Drop it with `slideless workspace use --clear`.');
+    const viaEnv = routedHarness(instance(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: ELSEWHERE });
+    expect(await run(['workspaces'], viaEnv.io)).toBe(0);
+    expect(viaEnv.err()).toContain('names none of these workspaces');
+    expect(viaEnv.err()).not.toContain('--clear');
+  });
+
+  it('G6: a saved selection with whitespace around it is sent trimmed', async () => {
+    const h = routedHarness(instance(), await profileEnv(`  ${NORD}\n`));
+    expect(await run(['list', '--json'], h.io)).toBe(0);
+    expect(h.wire[0]?.workspace).toBe(NORD);
+  });
+
+  it('G7: an id typed in capitals still matches the membership', async () => {
+    const h = routedHarness(instance(), await profileEnv());
+    expect(await run(['workspace', 'use', NORD.toUpperCase(), '--json'], h.io)).toBe(0);
+    expect(JSON.parse(h.out()).activeWorkspaceId).toBe(NORD);
+  });
+
+  it('G9: the 404 hint echoes what the person typed, not the resolved id', async () => {
+    const routes: Route[] = [
+      ...instance(),
+      {
+        method: 'GET',
+        path: /^\/api\/v1\/presentations\/[^/]+$/,
+        reply: () => refuse(404, 'not_found', 'Presentation not found')
+      }
+    ];
+    const h = routedHarness(routes, await profileEnv());
+    expect(await run(['get', DECK.id, '--workspace', 'Atelier Nord'], h.io)).toBe(1);
+    expect(h.err()).toContain('looked in the workspace "Atelier Nord", selected by the --workspace flag');
   });
 });
