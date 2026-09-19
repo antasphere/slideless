@@ -144,6 +144,48 @@ const BRAND_AGENT = '---\ntype: Brand\ntitle: House brand\ndescription: the look
 const BRAND_BUNDLE = bundle({ 'AGENT.md': BRAND_AGENT, 'index.html': '<html>brand v3</html>' });
 const BRAND_V1 = bundle({ 'index.html': '<html>brand v1</html>' });
 
+/**
+ * A hostile or broken instance, modelled on security.test.ts: each blob may
+ * lie about its hash or its size, and a manifest path may try to escape.
+ * `raw: new Response(...)` so the bytes travel exactly as written.
+ */
+interface CraftedBlob {
+  path: string;
+  bytes: Buffer;
+  /** The sha256 the manifest claims (the honest one when absent). */
+  declaredSha?: string;
+  /** The sizeBytes the manifest claims (the honest one when absent). */
+  declaredSize?: number;
+}
+
+function craftedRoutes(deckId: string, blobs: CraftedBlob[]): Route[] {
+  const manifest = blobs.map((b) => ({
+    path: b.path,
+    sha256: b.declaredSha ?? sha(b.bytes),
+    sizeBytes: b.declaredSize ?? b.bytes.length,
+    contentType: 'text/plain'
+  }));
+  const byHash = new Map(manifest.map((m, i) => [m.sha256, blobs[i]!.bytes]));
+  return [
+    {
+      method: 'GET',
+      path: new RegExp(`/api/v1/presentations/${deckId}/versions/\\d+$`),
+      reply: () => ({
+        body: { ...VERSION_ROW, presentationId: deckId, version: 3, fileCount: manifest.length, manifest }
+      })
+    },
+    {
+      method: 'GET',
+      path: new RegExp(`/api/v1/presentations/${deckId}/assets/`),
+      reply: ({ path }) => ({
+        raw: new Response(byHash.get(path.split('?')[0]!.split('/').pop()!) ?? Buffer.alloc(0), {
+          status: 200
+        })
+      })
+    }
+  ];
+}
+
 // ── The push side ────────────────────────────────────────────────────────────
 
 function pushRoutes(
@@ -951,5 +993,385 @@ describe('get shows the reference facts', () => {
     expect(await run(argv('get', HOUSE), h.io)).toBe(0);
     expect(h.out()).toContain('reference: brand · workspace · the workspace default');
     expect(h.out()).not.toContain('made from:');
+  });
+});
+
+// ── Round 1 of the verification: the twelve fixes, each pinned ───────────────
+
+describe('the link file of a pushed reference folder (Major 1 / SG-1)', () => {
+  const REF_AGENT = '---\ntype: Brand\ntitle: House brand\n---\n\n# House brand\n';
+
+  /** A pulled brand folder: the files plus the link carrying the reference block. */
+  async function pulledBrandFolder(version = 2, baseUrl = URL_): Promise<string> {
+    const dir = await tempDeck({ 'index.html': '<html>brand</html>', 'AGENT.md': REF_AGENT });
+    await writeLink(dir, {
+      presentationId: HOUSE,
+      baseUrl,
+      reference: { type: 'brand', version }
+    });
+    return dir;
+  }
+
+  it('a version push from a pulled folder KEEPS the reference block, at the pushed version', async () => {
+    const dir = await pulledBrandFolder(2);
+    const h = routedHarness(
+      pushRoutes(
+        () =>
+          committed(refDeck(HOUSE, 'House brand', { currentVersion: 3 }), {
+            version: 3,
+            reference: { type: 'brand', title: 'House brand' }
+          }),
+        { existing: { id: HOUSE, currentVersion: 2 } }
+      )
+    );
+    expect(await run(argv('brand', 'push', dir), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    // The block survives, and now names the version this push created.
+    expect(await readReferenceLink(dir)).toEqual({
+      presentationId: HOUSE,
+      baseUrl: URL_,
+      reference: { type: 'brand', version: 3 }
+    });
+  });
+
+  it('`reference push` keeps the block just the same', async () => {
+    const dir = await pulledBrandFolder(1);
+    const h = routedHarness(
+      pushRoutes(
+        () =>
+          committed(refDeck(HOUSE, 'House brand', { currentVersion: 4 }), {
+            version: 4,
+            reference: { type: 'brand', title: 'House brand' }
+          }),
+        { existing: { id: HOUSE, currentVersion: 3 } }
+      )
+    );
+    expect(await run(argv('reference', 'push', dir), h.io)).toBe(0);
+    expect((await readReferenceLink(dir))!.reference).toEqual({ type: 'brand', version: 4 });
+  });
+
+  it('--new targets a DIFFERENT deck, so the link is plain: no block', async () => {
+    const dir = await pulledBrandFolder(2);
+    const h = routedHarness(
+      pushRoutes(() =>
+        committed(refDeck(DECK_ID, 'House brand', { currentVersion: 1 }), {
+          version: 1,
+          reference: { type: 'brand', title: 'House brand' }
+        })
+      )
+    );
+    expect(await run(argv('brand', 'push', dir, '--new'), h.io)).toBe(0);
+    expect(await readLink(dir)).toEqual({ presentationId: DECK_ID, baseUrl: URL_ });
+    expect(await readReferenceLink(dir)).toBeNull();
+  });
+
+  it('--id of another deck writes a plain link too', async () => {
+    const dir = await pulledBrandFolder(2);
+    const h = routedHarness(
+      pushRoutes(
+        () =>
+          committed(refDeck(HARBOUR, 'Harbour brand', { currentVersion: 5 }), {
+            version: 5,
+            reference: { type: 'brand', title: 'Harbour brand' }
+          }),
+        { existing: { id: HARBOUR, currentVersion: 4 } }
+      )
+    );
+    expect(await run(argv('brand', 'push', dir, '--id', HARBOUR), h.io)).toBe(0);
+    expect(await readLink(dir)).toEqual({ presentationId: HARBOUR, baseUrl: URL_ });
+    expect(await readReferenceLink(dir)).toBeNull();
+  });
+
+  it('an ordinary deck folder still gets a plain link (no block invented)', async () => {
+    const dir = await tempDeck();
+    const h = routedHarness(pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null }))));
+    expect(await run(argv('push', dir), h.io)).toBe(0);
+    expect(await readReferenceLink(dir)).toBeNull();
+    expect(await readLink(dir)).toEqual({ presentationId: DECK_ID, baseUrl: URL_ });
+  });
+});
+
+describe('a failed pull leaves no half-written folder (Major 2 / Minor 5)', () => {
+  const liar = (deckId: string): Route[] =>
+    craftedRoutes(deckId, [
+      { path: 'index.html', bytes: Buffer.from('<html>ok</html>') },
+      { path: 'AGENT.md', bytes: Buffer.from('truth'), declaredSha: sha(Buffer.from('lie')) }
+    ]);
+
+  it('--into: the destination is removed, and an honest retry then succeeds in the same place', async () => {
+    const root = await emptyDir();
+    const dest = join(root, 'out');
+    const bad = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), bad.io)).toBe(1);
+    expect(bad.err()).toMatch(/hash to/);
+    // Not merely empty: gone. A folder with files and no link file is refused
+    // by every later pull, with no way out but a deletion nobody names.
+    await expect(stat(dest)).rejects.toThrow();
+
+    const good = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), good.io)).toBe(0);
+    expect(good.err()).toBe('');
+    expect(await readFile(join(dest, 'index.html'), 'utf8')).toBe('<html>brand v3</html>');
+  });
+
+  it('the default destination: .slideless/brand/ AND the empty .slideless/ above it go', async () => {
+    const deck = await tempDeck();
+    process.chdir(deck);
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull'), h.io)).toBe(1);
+    await expect(stat(referenceDirFor(deck, 'brand'))).rejects.toThrow();
+    await expect(stat(join(deck, '.slideless'))).rejects.toThrow();
+    // The deck's own files are untouched.
+    expect(await readdir(deck)).toEqual(['index.html']);
+  });
+
+  it('a .slideless/ that already held ANOTHER type is kept (rmdir refuses a non-empty parent)', async () => {
+    const deck = await tempDeck();
+    const templateDir = referenceDirFor(deck, 'template');
+    await mkdir(templateDir, { recursive: true });
+    await writeLink(templateDir, {
+      presentationId: MONTHLY,
+      baseUrl: URL_,
+      reference: { type: 'template', version: 1 }
+    });
+    process.chdir(deck);
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull'), h.io)).toBe(1);
+    await expect(stat(referenceDirFor(deck, 'brand'))).rejects.toThrow();
+    // The sibling template survives its neighbour's failure.
+    expect(await readReferenceLink(templateDir)).not.toBeNull();
+  });
+
+  it('an escaping manifest path fails the pull and removes the folder', async () => {
+    const root = await emptyDir();
+    const dest = join(root, 'out');
+    const h = routedHarness([
+      listRoute([HOUSE_ROW]),
+      ...craftedRoutes(HOUSE, [{ path: '../escaped.txt', bytes: Buffer.from('pwned') }])
+    ]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+    expect(h.err()).toMatch(/unsafe manifest path/);
+    await expect(stat(dest)).rejects.toThrow();
+    await expect(stat(join(root, 'escaped.txt'))).rejects.toThrow();
+  });
+
+  it('the foreign-folder refusal now says how to get out of it', async () => {
+    const dest = await tempDeck({ 'mine.txt': 'my own notes' });
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+    expect(h.err()).toContain('Delete it to pull there');
+    expect(await readFile(join(dest, 'mine.txt'), 'utf8')).toBe('my own notes');
+  });
+});
+
+describe('a --brand value is resolved WHOLE before @n is read (Minor 3)', () => {
+  const REBRAND_AT_2 = 'dddddddd-1111-4111-8111-111111111111';
+  const REBRAND = 'eeeeeeee-1111-4111-8111-111111111111';
+
+  const run_ = async (rows: Array<Record<string, unknown>>, flag: string) => {
+    const dir = await tempDeck();
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() =>
+        committed(refDeck(DECK_ID, 'Q1', { reference: null, audience: 'private', metadata: {} }))
+      ),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir, '--brand', flag), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    return (h.calls.find((c) => c.method === 'PATCH')!.body as { metadata: { references: unknown[] } })
+      .metadata.references;
+  };
+
+  it('a brand TITLED `Rebrand@2` is recorded at its current version, not split', async () => {
+    const rows = [refDeck(REBRAND_AT_2, 'Rebrand@2', { currentVersion: 7 })];
+    expect(await run_(rows, 'Rebrand@2')).toEqual([{ type: 'brand', id: REBRAND_AT_2, version: 7 }]);
+  });
+
+  it('with no such title, `Rebrand@2` names Rebrand at version 2', async () => {
+    const rows = [refDeck(REBRAND, 'Rebrand', { currentVersion: 7 })];
+    expect(await run_(rows, 'Rebrand@2')).toEqual([{ type: 'brand', id: REBRAND, version: 2 }]);
+  });
+
+  it('both present: the exact title wins over the split reading', async () => {
+    const rows = [
+      refDeck(REBRAND_AT_2, 'Rebrand@2', { currentVersion: 7 }),
+      refDeck(REBRAND, 'Rebrand', { currentVersion: 7 })
+    ];
+    expect(await run_(rows, 'Rebrand@2')).toEqual([{ type: 'brand', id: REBRAND_AT_2, version: 7 }]);
+  });
+});
+
+describe('a .slideless/<type>/ holding the wrong type says so (Minor 4 / SG-4)', () => {
+  it('a template link under .slideless/brand/ records nothing and writes a Note', async () => {
+    const dir = await tempDeck();
+    const brandDir = referenceDirFor(dir, 'brand');
+    await mkdir(brandDir, { recursive: true });
+    await writeLink(brandDir, {
+      presentationId: MONTHLY,
+      baseUrl: URL_,
+      reference: { type: 'template', version: 1 }
+    });
+    const rows = [HOUSE_ROW, MONTHLY_ROW];
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null, metadata: {} }))),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir), h.io)).toBe(0);
+    expect(h.err()).toContain('holds a template, not a brand');
+    expect(h.calls.some((c) => c.method === 'PATCH')).toBe(false);
+  });
+
+  it('the same folder under .slideless/template/ IS recorded (the type matches there)', async () => {
+    const dir = await tempDeck();
+    const templateDir = referenceDirFor(dir, 'template');
+    await mkdir(templateDir, { recursive: true });
+    await writeLink(templateDir, {
+      presentationId: MONTHLY,
+      baseUrl: URL_,
+      reference: { type: 'template', version: 1 }
+    });
+    const rows = [MONTHLY_ROW];
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null, metadata: {} }))),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    const metadata = (
+      h.calls.find((c) => c.method === 'PATCH')!.body as {
+        metadata: { references: unknown[] };
+      }
+    ).metadata;
+    expect(metadata.references).toEqual([{ type: 'template', id: MONTHLY, version: 1 }]);
+  });
+});
+
+describe('a crafted manifest reaches neither pull nor start (SG-2)', () => {
+  const CASES: Array<[string, CraftedBlob[], RegExp]> = [
+    ['an escaping path', [{ path: '../escaped.txt', bytes: Buffer.from('pwned') }], /unsafe manifest path/],
+    [
+      'a dotfile path',
+      [{ path: '.git/hooks/pre-commit', bytes: Buffer.from('#!/bin/sh\n') }],
+      /unsafe manifest path/
+    ],
+    [
+      'a blob whose bytes hash differently',
+      [{ path: 'index.html', bytes: Buffer.from('swapped'), declaredSha: sha(Buffer.from('honest')) }],
+      /hash to/
+    ],
+    [
+      'a blob bigger than its declared sizeBytes',
+      [{ path: 'index.html', bytes: Buffer.alloc(4096, 0x61), declaredSize: 8 }],
+      /exceeds/
+    ]
+  ];
+
+  /**
+   * What "nothing landed" means here: the destination is gone (the cleanup),
+   * and the parent holds no file the download put there — neither the escape
+   * target nor a stray blob. The parent may itself be gone: `downloadOrClean`
+   * rmdirs it when the removal left it empty, which is the `.slideless/` rule
+   * applying to whatever directory happens to sit above the destination.
+   */
+  const nothingLanded = async (root: string, dest: string) => {
+    await expect(stat(dest)).rejects.toThrow();
+    await expect(stat(join(root, 'escaped.txt'))).rejects.toThrow();
+    const survivors = await readdir(root).catch(() => [] as string[]);
+    expect(survivors).toEqual([]);
+  };
+
+  for (const [name, blobs, message] of CASES) {
+    it(`pull refuses ${name}, and nothing lands outside the destination`, async () => {
+      const root = await emptyDir();
+      const dest = join(root, 'out');
+      const h = routedHarness([listRoute([HOUSE_ROW]), ...craftedRoutes(HOUSE, blobs)]);
+      expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+      expect(h.err()).toMatch(message);
+      await nothingLanded(root, dest);
+    });
+
+    it(`start refuses ${name}, and nothing lands outside the destination`, async () => {
+      const root = await emptyDir();
+      const dest = join(root, 'q1');
+      const h = routedHarness([listRoute([HOUSE_ROW]), ...craftedRoutes(HOUSE, blobs)]);
+      expect(await run(argv('brand', 'start', 'house', dest), h.io)).toBe(1);
+      expect(h.err()).toMatch(message);
+      await nothingLanded(root, dest);
+    });
+  }
+});
+
+describe('a version push never renames the deck from the frontmatter (SG-3)', () => {
+  it('the commit body carries no title, and the server’s title is what is printed', async () => {
+    const dir = await tempDeck({
+      'index.html': '<html>brand</html>',
+      // The frontmatter disagrees with the deck the folder is linked to.
+      'AGENT.md': '---\ntype: Brand\ntitle: A local rename\n---\n'
+    });
+    await writeLink(dir, { presentationId: HOUSE, baseUrl: URL_ });
+    const h = routedHarness(
+      pushRoutes(
+        () =>
+          committed(refDeck(HOUSE, 'House brand', { currentVersion: 4 }), {
+            version: 4,
+            reference: { type: 'brand', title: 'House brand' }
+          }),
+        { existing: { id: HOUSE, currentVersion: 3 } }
+      )
+    );
+    expect(await run(argv('brand', 'push', dir), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    const body = h.calls.find((c) => c.path.endsWith('/versions'))!.body as Record<string, unknown>;
+    expect(body.title).toBeUndefined();
+    expect('title' in body).toBe(false);
+    expect(h.out()).toContain('Pushed "House brand"');
+    expect(h.out()).not.toContain('A local rename');
+  });
+
+  it('--title on a version push is still sent (the explicit rename)', async () => {
+    const dir = await tempDeck({
+      'index.html': '<html>brand</html>',
+      'AGENT.md': '---\ntype: Brand\ntitle: A local rename\n---\n'
+    });
+    await writeLink(dir, { presentationId: HOUSE, baseUrl: URL_ });
+    const h = routedHarness(
+      pushRoutes(
+        () =>
+          committed(refDeck(HOUSE, 'Chosen', { currentVersion: 4 }), {
+            version: 4,
+            reference: { type: 'brand', title: 'Chosen' }
+          }),
+        { existing: { id: HOUSE, currentVersion: 3 } }
+      )
+    );
+    expect(await run(argv('brand', 'push', dir, '--title', 'Chosen'), h.io)).toBe(0);
+    expect((h.calls.find((c) => c.path.endsWith('/versions'))!.body as { title: string }).title).toBe(
+      'Chosen'
+    );
+  });
+});
+
+describe('a target that is an existing FILE is refused (SG-5)', () => {
+  it('`reference new` refuses it and writes nothing', async () => {
+    const dir = await tempDeck({ 'taken.txt': 'a file, not a folder' });
+    const target = join(dir, 'taken.txt');
+    const h = routedHarness([]);
+    expect(await run(['brand', 'new', target], h.io)).toBe(1);
+    expect(h.err()).toContain('exists and is not empty');
+    expect(h.calls).toHaveLength(0);
+    expect(await readFile(target, 'utf8')).toBe('a file, not a folder');
+  });
+
+  it('`brand start` refuses it before any asset request', async () => {
+    const dir = await tempDeck({ 'taken.txt': 'a file, not a folder' });
+    const target = join(dir, 'taken.txt');
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
+    expect(await run(argv('brand', 'start', 'house', target), h.io)).toBe(1);
+    expect(h.err()).toContain('exists and is not empty');
+    expect(h.calls.some((c) => c.path.includes('/versions/') || c.path.includes('/assets/'))).toBe(false);
+    expect(await readFile(target, 'utf8')).toBe('a file, not a folder');
   });
 });

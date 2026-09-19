@@ -173,6 +173,26 @@ describe('readFrontmatter', () => {
     expect(readFrontmatter('---\ntype: brand\ntitle: ""\n---\n').title).toBeNull();
   });
 
+  it('a control character spelled by a JSON escape is dropped from the title (Note 7)', () => {
+    // `\u001b[2K` is an erase-line sequence: a title is text for a screen,
+    // never a terminal instruction. The escape decodes, the control byte goes.
+    const title = readFrontmatter('---\ntype: brand\ntitle: "EVIL\\u001b[2KHARMLESS"\n---\n').title;
+    expect(title).toBe('EVIL[2KHARMLESS');
+    // eslint-disable-next-line no-control-regex -- the point of the assertion.
+    expect(/[\u0000-\u001f]/.test(title!)).toBe(false);
+  });
+
+  it('control characters are dropped from an unquoted and a single-quoted title too', () => {
+    expect(readFrontmatter("---\ntype: brand\ntitle: 'EVIL\u001b[2KHARMLESS'\n---\n").title).toBe(
+      'EVIL[2KHARMLESS'
+    );
+    expect(readFrontmatter('---\ntype: brand\ntitle: EVIL\u0007BELL\n---\n').title).toBe('EVILBELL');
+  });
+
+  it('a title that is ONLY control characters reads as no title at all', () => {
+    expect(readFrontmatter('---\ntype: brand\ntitle: "\\u001b\\u0007"\n---\n').title).toBeNull();
+  });
+
   it('an indented title inside a nested mapping is not THE title', () => {
     const text = ['---', 'type: brand', 'voice:', '  title: not this one', '---', ''].join('\n');
     expect(readFrontmatter(text).title).toBeNull();
