@@ -1,16 +1,14 @@
 import House from '@lucide/svelte/icons/house';
-import Presentation from '@lucide/svelte/icons/presentation';
 import Users from '@lucide/svelte/icons/users';
 import KeyRound from '@lucide/svelte/icons/key-round';
 import Folder from '@lucide/svelte/icons/folder';
 import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-import Palette from '@lucide/svelte/icons/palette';
-import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 import type { Component } from 'svelte';
 import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 import { t } from '$lib/i18n';
+import { tool } from '$lib/tool';
 
 /**
  * The dashboard's one navigation model (PRDCT-2436). The desk sidebar, the
@@ -59,38 +57,8 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       icon: House,
       pattern: 'rings'
     },
-    // The product first: decks are what this instance is for.
-    {
-      id: 'decks',
-      title: t('nav.decks'),
-      blurb: t('nav.blurb.decks'),
-      href: '/decks',
-      icon: Presentation,
-      pattern: 'slides'
-    },
-    // The references (PRDCT-2421): the decks the workspace keeps to make
-    // other decks from. A guest reads no workspace reference (a guest invited
-    // on one reads it at /decks/{id}), so the two sections are not offered.
-    ...(isGuest
-      ? []
-      : [
-          {
-            id: 'brands',
-            title: t('nav.brands'),
-            blurb: t('nav.blurb.brands'),
-            href: '/brands',
-            icon: Palette,
-            pattern: 'aurora'
-          },
-          {
-            id: 'templates',
-            title: t('nav.templates'),
-            blurb: t('nav.blurb.templates'),
-            href: '/templates',
-            icon: LayoutTemplate,
-            pattern: 'crosses'
-          }
-        ])
+    // The product first: what the tool brings comes right after the overview.
+    ...tool.nav({ role, origin })
   ];
 
   const workspace: NavItem[] = [];
@@ -154,8 +122,8 @@ export function isActive(item: Pick<NavItem, 'href' | 'also'>, path: string): bo
   return [item.href, ...(item.also ?? [])].some((p) => path === p || path.startsWith(p + '/'));
 }
 
-/** The everyday sections a phone keeps as tabs; the references fold behind the workspace entry. */
-const PHONE_TABS = new Set(['overview', 'decks']);
+/** The everyday sections a phone keeps as tabs; the tool's other sections fold behind the workspace entry. */
+const PHONE_TABS = new Set(['overview', ...tool.phoneTabs]);
 
 /** The sections the phone's workspace entry opens: the references, then the administration. */
 export function behindWorkspace(nav: NavModel): NavItem[] {

@@ -32,13 +32,13 @@
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Mail from '@lucide/svelte/icons/mail';
   import Users from '@lucide/svelte/icons/users';
-  import Presentation from '@lucide/svelte/icons/presentation';
   import Folder from '@lucide/svelte/icons/folder';
   import Activity from '@lucide/svelte/icons/activity';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import X from '@lucide/svelte/icons/x';
   import { t } from '$lib/i18n';
+  import { tool } from '$lib/tool';
   import type { AuditEntry, Member } from '@slideless/contract';
 
   let { data } = $props();
@@ -168,7 +168,7 @@
     if (/key/.test(kind)) return KeyRound;
     if (/invit/.test(kind)) return Mail;
     if (/member|user|collab/.test(kind)) return Users;
-    if (/present|deck|share|version/.test(kind)) return Presentation;
+    for (const glyph of tool.audit.glyphs) if (glyph.test.test(kind)) return glyph.icon;
     if (/file|blob/.test(kind)) return Folder;
     return Activity;
   }

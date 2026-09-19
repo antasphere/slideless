@@ -6,12 +6,10 @@
  */
 import { api } from '$lib/api';
 import { warmList } from './pagedList.svelte';
+import { tool } from '$lib/tool';
 
 export function warmLists(): void {
-  void warmList('decks', async () => {
-    const { presentations, nextCursor } = await api.presentations({});
-    return { items: presentations, nextCursor };
-  });
+  tool.warm();
   void warmList('members', async () => {
     const { members, nextCursor } = await api.members({});
     return { items: members, nextCursor };

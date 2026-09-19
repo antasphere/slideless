@@ -8,13 +8,24 @@
   import { createHintWatch } from '$lib/hint-watch';
   import { consumePendingNext, pendingNextStorage } from '$lib/sso';
   import { signOutToLogin } from '$lib/session';
+  import { tool } from '$lib/tool';
 
   let { children, data } = $props();
 
   // Between two gate pages the right leaf turns (app.css, GateShell). Only
   // there: inside the app a page change stays instant.
-  const GATE =
-    /^\/(login|forgot-password|reset-password|setup|invite|collab|oauth|no-organization|suspended)(\/|$)/;
+  const GATE_ROUTES = [
+    'login',
+    'forgot-password',
+    'reset-password',
+    'setup',
+    'invite',
+    'oauth',
+    'no-organization',
+    'suspended',
+    ...tool.gateRoutes
+  ];
+  const GATE = new RegExp(`^/(${GATE_ROUTES.join('|')})(/|$)`);
   onNavigate((navigation) => {
     const from = navigation.from?.url.pathname ?? '';
     const to = navigation.to?.url.pathname ?? '';

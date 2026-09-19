@@ -18,6 +18,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { SvelteSet } from 'svelte/reactivity';
   import { t, type MessageKey } from '$lib/i18n';
+  import { tool } from '$lib/tool';
   import {
     ACTOR_SYSTEM,
     QUICK_RANGES,
@@ -68,23 +69,19 @@
     system: 'audit.viaSystemHint'
   };
 
+  // the shell's own, then the tool's; the list below is sorted either way
   const RESOURCE_TYPES = [
-    'annotation',
     'api_key',
-    'collaborator',
     'file',
-    'form_response',
     'instance',
     'invitation',
     'member',
-    'presentation',
-    'share_token',
-    'upload_session',
     'user',
-    'workspace'
+    'workspace',
+    ...tool.audit.resourceTypes
   ];
 
-  const families = $derived(actionFamilies(seenActions));
+  const families = $derived(actionFamilies([...tool.audit.actions, ...seenActions]));
   const resourceTypes = $derived([...new Set([...RESOURCE_TYPES, ...seenResourceTypes])].sort());
 
   // a family stays folded until its row is unfolded, or one of its actions is chosen
