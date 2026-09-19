@@ -96,7 +96,7 @@ export const fr: Record<MessageKey, string> = {
   'decks.viewAs': 'Afficher en',
   'decks.viewCards': 'Cartes',
   'decks.viewTable': 'Tableau',
-  'decks.noMatch': 'Aucune présentation ne correspond à « {query} ».',
+  'decks.noMatch': 'Aucune présentation ne correspond à « {query} ».',
   'overview.greetingMorning': 'Bonjour, {name}',
   'overview.greetingAfternoon': 'Bon après-midi, {name}',
   'overview.greetingEvening': 'Bonsoir, {name}',
@@ -219,7 +219,7 @@ export const fr: Record<MessageKey, string> = {
   'name.first': 'Prénom',
   'name.last': 'Nom',
   'tokens.nameHint':
-    'À qui est-il destiné ? Un libellé que vous seul voyez. Un lien nommé retient les réponses de son destinataire aux formulaires ; un lien sans nom ne s’adresse à personne en particulier et ne retient rien.',
+    'À qui est-il destiné ? Un libellé que vous seul voyez. Un lien nommé retient les réponses de son destinataire aux formulaires ; un lien sans nom ne s’adresse à personne en particulier et ne retient rien.',
   'tokens.unnamedLabel': 'Lien sans nom',
   'tokens.rememberNeedsName':
     'Seul un lien nommé retient les réponses. Indiquez ci-dessus à qui il est destiné pour activer cette option.',
@@ -227,9 +227,9 @@ export const fr: Record<MessageKey, string> = {
   'tokens.asideEyebrow': 'Lien de partage',
   'tokens.asideCaption': 'Un lien pour un lecteur. Vous décidez de ce qu’il ouvre, et pour combien de temps.',
   'tokens.createdAsideCaption':
-    'Le lien est actif. Il n’existe ici qu’une seule fois : copiez-le avant de fermer.',
+    'Le lien est actif. Il n’existe ici qu’une seule fois : copiez-le avant de fermer.',
   'tokens.embedRememberWarning':
-    'Ce lien retient les réponses. Ne l’intégrez pas : une intégration publie le lien dans le code source de votre page, et quiconque l’ouvre directement peut lire et modifier ces réponses. Pour un site web, créez un lien sans « Retenir les réponses ».',
+    'Ce lien retient les réponses. Ne l’intégrez pas : une intégration publie le lien dans le code source de votre page, et quiconque l’ouvre directement peut lire et modifier ces réponses. Pour un site web, créez un lien sans « Retenir les réponses ».',
   'collaborators.ownerYou': '{email} (vous)',
   'collaborators.ownerUnknown': 'Le propriétaire du deck',
   'collaborators.roleDev': 'Collaborateur',
@@ -473,8 +473,8 @@ export const fr: Record<MessageKey, string> = {
   'invite.invitedAs': '{email} a été invité en tant que',
   'invite.accepting': 'Acceptation…',
   'invite.accept': 'Accepter l’invitation',
-  'invite.switchToSignIn': 'Vous avez déjà un compte ? Connectez-vous pour accepter.',
-  'invite.switchToCreate': 'Nouveau ici ? Créez votre compte pour accepter.',
+  'invite.switchToSignIn': 'Vous avez déjà un compte ? Connectez-vous pour accepter.',
+  'invite.switchToCreate': 'Nouveau ici ? Créez votre compte pour accepter.',
   'invite.passwordFor': 'Mot de passe de {email}',
   'invite.signInAndAccept': 'Se connecter et accepter',
   'invite.choosePassword': 'Choisissez un mot de passe',
@@ -529,20 +529,20 @@ export const fr: Record<MessageKey, string> = {
   'workspace.signInAgain': 'Se reconnecter',
   'workspace.createErrorName': 'Ce nom ne peut pas être utilisé. Choisissez un nom de 1 à 120 caractères.',
   'workspace.createErrorLimit':
-    'Vous possédez déjà autant d’espaces de travail qu’une personne peut en avoir ici : impossible d’en créer un autre.',
+    'Vous possédez déjà autant d’espaces de travail qu’une personne peut en avoir ici : impossible d’en créer un autre.',
   'workspace.createErrorDisabled':
     'La création d’espaces de travail est désactivée sur cette instance. Adressez-vous à son administrateur.',
   'workspace.createErrorGuest':
-    'Votre accès couvre les decks auxquels vous avez été invité : ce compte ne peut pas créer d’espace de travail.',
+    'Votre accès couvre les decks auxquels vous avez été invité : ce compte ne peut pas créer d’espace de travail.',
   'workspace.createErrorUnconfirmed':
-    'Nous n’avons pas pu confirmer la création de l’espace de travail. Patientez une minute et rechargez cette page avant de réessayer : il figure peut-être déjà dans votre liste.',
+    'Nous n’avons pas pu confirmer la création de l’espace de travail. Patientez une minute et rechargez cette page avant de réessayer : il figure peut-être déjà dans votre liste.',
   'workspace.createErrorRefused':
     'L’espace de travail n’a pas pu être créé. Essayez un autre nom, ou réessayez plus tard.',
   'workspace.createErrorLinkRequired':
     'Votre mode de connexion ne permet pas de créer un espace de travail. Déconnectez-vous, reconnectez-vous de la manière habituelle, puis réessayez.',
   'workspace.createErrorFreshSignIn':
     'La création d’un espace de travail demande une nouvelle connexion. Reconnectez-vous, puis créez-le.',
-  'workspace.createErrorSignInAgain': 'Votre connexion a expiré : l’espace de travail n’a pas été créé.',
+  'workspace.createErrorSignInAgain': 'Votre connexion a expiré : l’espace de travail n’a pas été créé.',
   'workspace.createErrorRateLimited':
     'Trop d’espaces de travail ont été créés en peu de temps. Patientez un moment puis réessayez.',
   'workspace.createErrorInFlight':
@@ -686,7 +686,7 @@ export const fr: Record<MessageKey, string> = {
   'members.title': 'Membres',
   'members.description': 'Toutes les personnes ayant accès à cet espace de travail.',
   'members.hubManagedNotice':
-    'Les membres de cet espace de travail sont gérés sur Antasphere : invitations, retraits et rôles se font là-bas.',
+    'Les membres de cet espace de travail sont gérés sur Antasphere : invitations, retraits et rôles se font là-bas.',
   'members.hubManagedCta': 'Gérer sur Antasphere',
   'members.colEmail': 'E-mail',
   'members.colName': 'Nom',
@@ -863,7 +863,7 @@ export const fr: Record<MessageKey, string> = {
   'deck.agentDocHeading': 'Briefing agent (AGENT.md)',
   'deck.agentDocShow': 'Afficher le briefing',
   'deck.agentDocHide': 'Masquer le briefing',
-  'deck.agentDocLoadFailed': 'Impossible de charger le briefing : {error}',
+  'deck.agentDocLoadFailed': 'Impossible de charger le briefing : {error}',
   'deck.openMaster': 'Ouvrir la page du deck',
 
   // ── La page du deck (PRDCT-2279) ─────────────────────────────────────
@@ -875,7 +875,7 @@ export const fr: Record<MessageKey, string> = {
   'master.renameFailed': 'Le renommage a échoué',
   'master.duplicate': 'Dupliquer',
   'master.duplicating': 'Duplication…',
-  'master.duplicatedToast': 'Copie créée : « {title} »',
+  'master.duplicatedToast': 'Copie créée : « {title} »',
   'master.duplicateFailed': 'La duplication a échoué',
   'master.share': 'Partager',
   'master.shareTitle': 'Liens de partage',
@@ -884,7 +884,7 @@ export const fr: Record<MessageKey, string> = {
   'master.versionHistory': 'Historique des versions',
   'master.historyTitle': 'Historique des versions',
   'master.historyDescription':
-    'Chaque push, du plus récent au plus ancien. Affichez n’importe quelle version sur la page ; chaque version garde ses propres fichiers.',
+    'Chaque push, du plus récent au plus ancien. Affichez n’importe quelle version sur la page ; chaque version garde ses propres fichiers.',
   'master.historyShow': 'Afficher',
   'master.historyShowing': 'Affichée',
   'master.historyFiles': 'Fichiers',
@@ -896,10 +896,10 @@ export const fr: Record<MessageKey, string> = {
   'master.versionBadgeAria': 'Version {n}, survolez pour les autres versions',
   'master.allDecks': 'Tous les decks',
   'master.delete': 'Supprimer',
-  'master.deleteConfirmTitle': 'Supprimer ce deck ?',
+  'master.deleteConfirmTitle': 'Supprimer ce deck ?',
   'master.deleteConfirmDescription':
-    '« {title} » et ses versions cessent de répondre, et chaque lien de partage meurt avec lui.',
-  'master.deletedToast': 'Deck « {title} » supprimé',
+    '« {title} » et ses versions cessent de répondre, et chaque lien de partage meurt avec lui.',
+  'master.deletedToast': 'Deck « {title} » supprimé',
   'master.downloadFiles': 'Télécharger les fichiers',
   'master.downloadAll': 'Tous les fichiers (zip)',
   'master.openDashboard': 'Ouvrir dans le tableau de bord',
@@ -920,8 +920,8 @@ export const fr: Record<MessageKey, string> = {
   'tokens.colNotes': 'Notes',
   'tokens.colForms': 'Formulaires',
   'tokens.tagLatest': 'dernière',
-  'tokens.capOn': '{name} : oui',
-  'tokens.capOff': '{name} : non',
+  'tokens.capOn': '{name} : oui',
+  'tokens.capOff': '{name} : non',
   'tokens.passwordProtected': 'Protégé par mot de passe',
   'tokens.expiresOn': 'Expire le {date}',
   'tokens.actionCopy': 'Copier le lien',
@@ -946,18 +946,18 @@ export const fr: Record<MessageKey, string> = {
   'tokens.formsLabel': 'Autoriser l’envoi de formulaires',
   'tokens.formsHint': 'Les lecteurs de ce lien peuvent répondre aux formulaires intégrés au deck.',
   'tokens.rememberLabel': 'Retenir les réponses sur ce lien',
-  'tokens.rememberHint': 'Rouvrir le lien ramène les réponses ; chaque envoi les met à jour.',
+  'tokens.rememberHint': 'Rouvrir le lien ramène les réponses ; chaque envoi les met à jour.',
   'tokens.rememberWarning':
-    'Quiconque détient ce lien peut lire et modifier les réponses données par ce lien. Donnez-le à la seule personne à qui il est destiné ; décochez pour un lien que beaucoup de gens ouvriront.',
+    'Quiconque détient ce lien peut lire et modifier les réponses données par ce lien. Donnez-le à la seule personne à qui il est destiné ; décochez pour un lien que beaucoup de gens ouvriront.',
   'tokens.colRemembers': 'Retient',
   'tokens.uploadsLabel': 'Autoriser le dépôt de fichiers',
   'tokens.uploadsHint':
-    'Les répondants peuvent déposer des fichiers dans les champs fichier du formulaire ; l’instance en limite la taille.',
+    'Les répondants peuvent déposer des fichiers dans les champs fichier du formulaire ; l’instance en limite la taille.',
   'tokens.colUploads': 'Dépôts',
   'tokens.actionUploadsOn': 'Autoriser le dépôt de fichiers',
   'tokens.actionUploadsOff': 'Ne plus accepter de fichiers',
-  'tokens.uploadsOnToast': 'Le dépôt de fichiers est activé pour « {name} »',
-  'tokens.uploadsOffToast': 'Le dépôt de fichiers est désactivé pour « {name} »',
+  'tokens.uploadsOnToast': 'Le dépôt de fichiers est activé pour « {name} »',
+  'tokens.uploadsOffToast': 'Le dépôt de fichiers est désactivé pour « {name} »',
   'tokens.downloadsLabel': 'Autoriser les téléchargements',
   'tokens.downloadsHint':
     'Les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/).',
@@ -967,7 +967,7 @@ export const fr: Record<MessageKey, string> = {
   'tokens.badgePositionLabel': 'Position du bouton de notes',
   'tokens.badgePositionDefault': 'Défaut du deck',
   'tokens.badgePositionHint':
-    'Où le bouton flottant de notes se place dans la visionneuse : déplacez-le hors des zones importantes du deck. Un choix explicite devient le défaut de ce deck pour les prochains liens.',
+    'Où le bouton flottant de notes se place dans la visionneuse : déplacez-le hors des zones importantes du deck. Un choix explicite devient le défaut de ce deck pour les prochains liens.',
   'tokens.badgePosTopLeft': 'En haut à gauche',
   'tokens.badgePosTop': 'En haut au centre',
   'tokens.badgePosTopRight': 'En haut à droite',
@@ -993,9 +993,9 @@ export const fr: Record<MessageKey, string> = {
   'tokens.embedTitle': 'Intégrer sur un site web',
   'tokens.embedScriptLabel': 'Intégration par script (responsive)',
   'tokens.embedScriptHint':
-    'Collez le code là où le deck doit apparaître. Le script transforme la div en cadre isolé et responsive ; ajoutez data-slideless-placement="…" pour étiqueter l’emplacement dans les statistiques du lien.',
+    'Collez le code là où le deck doit apparaître. Le script transforme la div en cadre isolé et responsive ; ajoutez data-slideless-placement="…" pour étiqueter l’emplacement dans les statistiques du lien.',
   'tokens.embedIframeLabel': 'Iframe simple',
-  'tokens.embedIframeHint': 'Sans script : un cadre isolé fixe avec les mêmes attributs de sécurité.',
+  'tokens.embedIframeHint': 'Sans script : un cadre isolé fixe avec les mêmes attributs de sécurité.',
   'tokens.embedCopyScriptAria': 'Copier le code d’intégration par script',
   'tokens.embedCopyIframeAria': 'Copier le code d’intégration iframe',
   'tokens.embedCopied': 'Code d’intégration copié dans le presse-papiers',
@@ -1113,13 +1113,13 @@ export const fr: Record<MessageKey, string> = {
   'formResponses.historyDescription':
     'Chaque version de cette réponse, la plus récente en premier. Le répondant ne voit que la dernière.',
   'formResponses.historyRevision': 'Version {n}',
-  'formResponses.historyLoadFailed': 'Échec du chargement de l’historique : {error}',
+  'formResponses.historyLoadFailed': 'Échec du chargement de l’historique : {error}',
   'formResponses.notifyLabel': 'M’envoyer un mail quand des réponses arrivent',
   'formResponses.notifyHint':
-    'Un mail à chaque nouvelle réponse, un autre à chaque modification ; au plus un toutes les dix minutes.',
+    'Un mail à chaque nouvelle réponse, un autre à chaque modification ; au plus un toutes les dix minutes.',
   'formResponses.notifyOnToast': 'Les mails de réponse sont activés pour ce deck',
   'formResponses.notifyOffToast': 'Les mails de réponse sont désactivés pour ce deck',
-  'formResponses.notifyFailed': 'Échec du changement du réglage des mails : {error}',
+  'formResponses.notifyFailed': 'Échec du changement du réglage des mails : {error}',
   'formResponses.actionDelete': 'Supprimer',
   'formResponses.deletedToast': 'Réponse supprimée',
   'formResponses.deleteConfirmTitle': 'Supprimer la réponse ?',
@@ -1160,8 +1160,8 @@ export const fr: Record<MessageKey, string> = {
   'collab.invitedAs': '{email} a été invité en tant que',
   'collab.claiming': 'Réclamation…',
   'collab.claim': 'Réclamer l’accès',
-  'collab.switchToSignIn': 'Vous avez déjà un compte ? Connectez-vous pour réclamer.',
-  'collab.switchToCreate': 'Nouveau ici ? Créez votre compte pour réclamer.',
+  'collab.switchToSignIn': 'Vous avez déjà un compte ? Connectez-vous pour réclamer.',
+  'collab.switchToCreate': 'Nouveau ici ? Créez votre compte pour réclamer.',
   'collab.passwordFor': 'Mot de passe de {email}',
   'collab.signInAndClaim': 'Se connecter et réclamer',
   'collab.choosePassword': 'Choisissez un mot de passe',
