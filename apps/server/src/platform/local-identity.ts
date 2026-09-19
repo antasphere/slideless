@@ -5,7 +5,7 @@ import {
   type InstanceAuthDescriptor,
   type Principal,
   type RequestContext
-} from '@slideless/contract';
+} from '@antasphere/chassis-contract';
 import type { Auth } from '../identity/better-auth.js';
 import {
   isWorkspaceSelector,

@@ -6,7 +6,8 @@ import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import type { Component } from 'svelte';
-import type { MeResponse, WorkspaceRole } from '@slideless/contract';
+import type { WorkspaceRole } from '@antasphere/chassis-contract';
+import type { MeResponse } from '@slideless/contract';
 import { t } from '$lib/i18n';
 import { tool } from '$lib/tool';
 

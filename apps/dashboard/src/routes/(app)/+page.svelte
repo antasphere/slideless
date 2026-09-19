@@ -7,7 +7,7 @@
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
   import { tool } from '$lib/tool';
-  import type { FileInfo, Member } from '@slideless/contract';
+  import type { FileInfo, Member } from '@antasphere/chassis-contract';
 
   let { data } = $props();
 

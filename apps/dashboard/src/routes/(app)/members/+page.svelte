@@ -33,7 +33,7 @@
     MemberChangeEmailLink,
     MemberResetLink,
     WorkspaceRole
-  } from '@slideless/contract';
+  } from '@antasphere/chassis-contract';
 
   let { data } = $props();
 

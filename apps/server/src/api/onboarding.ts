@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
-import { onboardingDismissRoute } from '@slideless/contract/routes';
+import { onboardingDismissRoute } from '@antasphere/chassis-contract/routes';
 import { userOnboarding, type Db } from '@antasphere/chassis-db';
 import type { Auth } from '../identity/better-auth.js';
 

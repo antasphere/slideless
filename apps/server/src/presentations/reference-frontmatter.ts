@@ -1,10 +1,8 @@
+import { MAX_OPAQUE_JSON_DEPTH, hasNulDeep, jsonDepthOf } from '@antasphere/chassis-contract';
 import {
   AGENT_DOC_PATH,
-  MAX_OPAQUE_JSON_DEPTH,
   REFERENCE_MAX_LENGTH,
   REFERENCE_TYPES,
-  hasNulDeep,
-  jsonDepthOf,
   type ManifestEntry,
   type Reference,
   type ReferenceType

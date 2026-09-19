@@ -5,8 +5,9 @@ import { jwtVerify } from 'jose';
 import { registerOpenApiDoc } from './openapi-doc.js';
 import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
-import { instanceRoute, meRoute, setupRoute } from '@slideless/contract/routes';
+import { ACTIVE_WORKSPACE_HEADER } from '@antasphere/chassis-contract';
+import { instanceRoute, setupRoute } from '@antasphere/chassis-contract/routes';
+import { meRoute } from '@slideless/contract/routes';
 import {
   account,
   instanceSettings,

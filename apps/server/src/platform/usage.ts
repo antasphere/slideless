@@ -1,4 +1,4 @@
-import type { UsageEvent, UsageSink } from '@slideless/contract';
+import type { UsageEvent, UsageSink } from '@antasphere/chassis-contract';
 
 /**
  * Default UsageSink: drop everything. Domain code always emits usage events

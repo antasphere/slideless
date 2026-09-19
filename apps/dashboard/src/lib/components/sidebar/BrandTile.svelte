@@ -6,7 +6,7 @@
      look on it); another workspace's wears the look /me carries for it.
      Without a workspace (the instance's own header) the tile wears the
      current look. */
-  import type { WorkspaceLook } from '@slideless/contract';
+  import type { WorkspaceLook } from '@antasphere/chassis-contract';
   import { formMask } from '$lib/brand/form';
   import { accentOf, look, resolveLook, type Look } from '$lib/look.svelte';
   import { theme } from '$lib/theme.svelte';

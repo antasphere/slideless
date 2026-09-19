@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { plainText, versionNumberSchema } from './common.js';
+import { plainText, versionNumberSchema } from '@antasphere/chassis-contract';
 
 /**
  * Per-recipient share tokens: each recipient gets their own 48-byte secret

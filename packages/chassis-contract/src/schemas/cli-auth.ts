@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { apiKeySchema } from './api-keys.js';
 import { plainText } from './common.js';
 
 /**
@@ -49,24 +48,31 @@ export const cliAuthCompleteSchema = z.object({
 });
 export type CliAuthComplete = z.infer<typeof cliAuthCompleteSchema>;
 
-/** The full key appears exactly once, in this response (API-key semantics). */
-export const cliAuthCompletedSchema = z.object({
-  /** Full key `<prefix>_<keyid>_<secret>` — shown once, never retrievable. */
-  key: z.string(),
-  apiKey: apiKeySchema,
-  user: z.object({
-    id: z.string(),
-    email: z.string(),
-    name: z.string()
-  }),
-  /** The workspace the key is PINNED to; null = user-scoped (unpinned). */
-  workspaceId: z.string().nullable()
-});
-export type CliAuthCompleted = z.infer<typeof cliAuthCompletedSchema>;
-
 /** DELETE /cli/auth/key — the presenting key was revoked (CLI logout). */
 export const cliAuthRevokedSchema = z.object({
   revoked: z.literal(true),
   id: z.string()
 });
 export type CliAuthRevoked = z.infer<typeof cliAuthRevokedSchema>;
+
+/**
+ * The one CLI-auth schema that embeds the API key (and with it the tool's
+ * scope vocabulary): built per tool (../define.ts).
+ */
+export function defineCliAuthSchemas<TApiKey extends z.ZodType>(apiKeySchema: TApiKey) {
+  /** The full key appears exactly once, in this response (API-key semantics). */
+  const cliAuthCompletedSchema = z.object({
+    /** Full key `<prefix>_<keyid>_<secret>` — shown once, never retrievable. */
+    key: z.string(),
+    apiKey: apiKeySchema,
+    user: z.object({
+      id: z.string(),
+      email: z.string(),
+      name: z.string()
+    }),
+    /** The workspace the key is PINNED to; null = user-scoped (unpinned). */
+    workspaceId: z.string().nullable()
+  });
+
+  return { cliAuthCompletedSchema };
+}

@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasNulDeep,
+  jsonDepthOf,
+  MAX_OPAQUE_JSON_DEPTH,
+  memberUpdateSchema,
+  versionNumberSchema,
+  versionParamSchema
+} from '@antasphere/chassis-contract';
+import {
   annotationCreateSchema,
   formResponsePayloadSchema,
   formResponsesListQuerySchema,
-  hasNulDeep,
   isValidMediaType,
-  jsonDepthOf,
   manifestEntrySchema,
-  MAX_OPAQUE_JSON_DEPTH,
-  memberUpdateSchema,
-  presentationMetadataSchema,
-  versionNumberSchema,
-  versionParamSchema
+  presentationMetadataSchema
 } from '../src/index.js';
 
 /**

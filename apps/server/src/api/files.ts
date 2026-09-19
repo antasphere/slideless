@@ -3,8 +3,13 @@ import type { Context } from 'hono';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { SQL } from 'drizzle-orm';
-import { fileDeleteRoute, fileGetRoute, filesListRoute, fileUploadRoute } from '@slideless/contract/routes';
-import type { Principal } from '@slideless/contract';
+import {
+  fileDeleteRoute,
+  fileGetRoute,
+  filesListRoute,
+  fileUploadRoute
+} from '@antasphere/chassis-contract/routes';
+import type { Principal } from '@antasphere/chassis-contract';
 import type { DbConn, FileRow } from '@antasphere/chassis-db';
 import { ulid } from 'ulid';
 import type { Env } from '../env.js';

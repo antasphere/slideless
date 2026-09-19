@@ -1,5 +1,5 @@
 import { auditLog, type Db } from '@antasphere/chassis-db';
-import type { Principal } from '@slideless/contract';
+import type { Principal } from '@antasphere/chassis-contract';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { Logger } from '../logger.js';
 

@@ -4,7 +4,7 @@ import type {
   MeteredAction,
   Principal,
   RequestQuota
-} from '@slideless/contract';
+} from '@antasphere/chassis-contract';
 
 /**
  * Default EntitlementService: everything is allowed, bounded only by

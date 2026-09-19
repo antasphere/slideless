@@ -19,7 +19,7 @@
   import { toast } from 'svelte-sonner';
   import { download } from '$lib/download';
   import { t } from '$lib/i18n';
-  import type { FileInfo } from '@slideless/contract';
+  import type { FileInfo } from '@antasphere/chassis-contract';
 
   const list = createPagedList<FileInfo>(
     async (p) => {

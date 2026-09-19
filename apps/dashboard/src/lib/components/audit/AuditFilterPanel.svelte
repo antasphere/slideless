@@ -7,8 +7,8 @@
      exact id). The host puts it in a popover on a desk and a bottom sheet on
      a phone; every change goes straight out through `onchange`, except the
      typed id which waits a beat. */
-  import type { Member } from '@slideless/contract';
-  import type { AuditVia } from '@slideless/contract';
+  import type { Member } from '@antasphere/chassis-contract';
+  import type { AuditVia } from '@antasphere/chassis-contract';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';

@@ -13,6 +13,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@antasphere/chassis-contract": "workspace:*",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
     "better-auth": "1.6.22"

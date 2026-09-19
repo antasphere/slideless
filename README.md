@@ -111,16 +111,17 @@ here:
 
 ## Repository layout
 
-| Path                  | What it is                                                                                    |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| `apps/server`         | The Node 22 Hono monolith: API, viewer, health, metrics, MCP, static dashboard                |
-| `apps/dashboard`      | SvelteKit SPA (adapter-static), built into the server image                                   |
-| `packages/chassis-db` | Generic tables (auth, workspaces, keys, audit, files) + pool factory + advisory-lock migrator |
-| `packages/db`         | The deck tables + ALL committed versioned migrations (chassis and deck)                       |
-| `packages/contract`   | zod schemas + route contracts (OpenAPI source of truth)                                       |
-| `packages/sdk`        | Typed fetch client over the contract                                                          |
-| `packages/cli`        | Typed CLI over the SDK; the `slideless` binary ([docs/agents/cli.md](docs/agents/cli.md))     |
-| `docs/`               | Public product docs ([docs/index.md](docs/index.md) is the landing page)                      |
+| Path                        | What it is                                                                                                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server`               | The Node 22 Hono monolith: API, viewer, health, metrics, MCP, static dashboard                                                                                       |
+| `apps/dashboard`            | SvelteKit SPA (adapter-static), built into the server image                                                                                                          |
+| `packages/chassis-db`       | Generic tables (auth, workspaces, keys, audit, files) + pool factory + advisory-lock migrator                                                                        |
+| `packages/db`               | The deck tables + ALL committed versioned migrations (chassis and deck)                                                                                              |
+| `packages/chassis-contract` | Generic zod schemas + route contracts (instance, identity, workspaces, keys, audit, files); the scope-carrying ones are built by `defineChassisContract({ scopes })` |
+| `packages/contract`         | The deck zod schemas + route contracts, and the chassis contract instantiated with the Slideless scopes (OpenAPI source of truth)                                    |
+| `packages/sdk`              | Typed fetch client over the contract                                                                                                                                 |
+| `packages/cli`              | Typed CLI over the SDK; the `slideless` binary ([docs/agents/cli.md](docs/agents/cli.md))                                                                            |
+| `docs/`                     | Public product docs ([docs/index.md](docs/index.md) is the landing page)                                                                                             |
 
 ## Operating an instance
 

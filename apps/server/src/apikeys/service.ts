@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { apiKeys, type Db } from '@antasphere/chassis-db';
-import type { Principal } from '@slideless/contract';
+import type { Principal } from '@antasphere/chassis-contract';
 import {
   isWorkspaceSelector,
   resolveMembership,

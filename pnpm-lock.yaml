@@ -59,6 +59,9 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../../packages/chassis-contract
       '@slideless/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -132,6 +135,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../../packages/chassis-contract
       '@antasphere/chassis-db':
         specifier: workspace:*
         version: link:../../packages/chassis-db
@@ -269,6 +275,19 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
+  packages/chassis-contract:
+    dependencies:
+      '@hono/zod-openapi':
+        specifier: ^1.4.0
+        version: 1.4.0(hono@4.12.27)(zod@4.4.3)
+      zod:
+        specifier: ^4.1.0
+        version: 4.4.3
+    devDependencies:
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
+
   packages/chassis-db:
     dependencies:
       '@opentelemetry/api':
@@ -290,6 +309,9 @@ importers:
 
   packages/cli:
     devDependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../chassis-contract
       '@antasphere/cli-core':
         specifier: ^0.4.0
         version: 0.4.0
@@ -314,6 +336,9 @@ importers:
 
   packages/contract:
     dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../chassis-contract
       '@hono/zod-openapi':
         specifier: ^1.4.0
         version: 1.4.0(hono@4.12.27)(zod@4.4.3)
@@ -352,6 +377,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../chassis-contract
       '@slideless/contract':
         specifier: workspace:*
         version: link:../contract

@@ -65,7 +65,7 @@ import { PresentationService } from './presentations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { viewerRoutes } from './viewer/routes.js';
 import { createRuntimeState, type RuntimeState } from './state.js';
-import type { UsageSink } from '@slideless/contract';
+import type { UsageSink } from '@antasphere/chassis-contract';
 
 /** Test seams only — production boot never passes overrides. */
 export interface BootOverrides {

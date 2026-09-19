@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { hasNulDeep, noControlChars } from './common.js';
+import { hasNulDeep, noControlChars } from '@antasphere/chassis-contract';
 
 /**
  * Deck-embedded form responses (ADR 022). The deck HTML is the form

@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { StreamableHTTPTransport } from '@hono/mcp';
-import type { Principal } from '@slideless/contract';
+import type { Principal } from '@antasphere/chassis-contract';
 import { looksLikeJwt } from '../middleware/scopes.js';
 import { buildMcpServer } from './server.js';
 

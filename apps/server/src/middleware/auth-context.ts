@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@slideless/contract';
+import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@antasphere/chassis-contract';
 import type { PlatformRegistry } from '../platform/registry.js';
 import { WorkspaceMismatchError } from '../apikeys/service.js';
 import { apiError } from '../api/errors.js';

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { hasControlChars, plainText } from '../src/schemas/common.js';
-import { apiKeyCreateSchema } from '../src/schemas/api-keys.js';
-import { setupRequestSchema } from '../src/schemas/setup.js';
-import { invitationAcceptSchema } from '../src/schemas/invitations.js';
-import { cliAuthCompleteSchema } from '../src/schemas/cli-auth.js';
-import { fileUploadQuerySchema } from '../src/schemas/files.js';
+import {
+  cliAuthCompleteSchema,
+  fileUploadQuerySchema,
+  hasControlChars,
+  invitationAcceptSchema,
+  plainText,
+  setupRequestSchema
+} from '@antasphere/chassis-contract';
+import { apiKeyCreateSchema } from '../src/chassis.js';
 import { annotationCreateSchema, annotationUpdateSchema } from '../src/schemas/annotations.js';
 import { presentationUpdateSchema, uploadSessionCommitSchema } from '../src/schemas/presentations.js';
 import { shareTokenCreateSchema } from '../src/schemas/share-tokens.js';

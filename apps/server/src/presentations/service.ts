@@ -14,13 +14,13 @@ import {
   type UploadSessionRow,
   type VersionAuthorRole
 } from '@slideless/db';
+import type { Principal } from '@antasphere/chassis-contract';
 import {
   AGENT_DOC_PATH,
   isAttachmentPath,
   type Audience,
   type ManifestEntry,
   type PresentationsListType,
-  type Principal,
   type Reference
 } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';

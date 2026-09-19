@@ -39,7 +39,7 @@
   import X from '@lucide/svelte/icons/x';
   import { t } from '$lib/i18n';
   import { tool } from '$lib/tool';
-  import type { AuditEntry, Member } from '@slideless/contract';
+  import type { AuditEntry, Member } from '@antasphere/chassis-contract';
 
   let { data } = $props();
 
