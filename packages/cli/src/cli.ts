@@ -29,15 +29,8 @@ export const cli = defineCli({
 /** The context every command resolves: the chassis's, over the Slideless client. */
 export type CliContext = ChassisCliContext<PlatformClient>;
 
-export const configPath = cli.configPath;
 export const loadConfig = cli.loadConfig;
 export const saveConfig = cli.saveConfig;
-export const clearConfig = cli.clearConfig;
 
 export const resolveContext = cli.resolveContext;
 export const requireApiKey = cli.requireApiKey;
-
-export const pickWorkspaceSelection = cli.workspace.pickWorkspaceSelection;
-export const describeSelection = cli.workspace.describeSelection;
-export const describeSource = cli.workspace.describeSource;
-export const explainRefusal = cli.workspace.explainRefusal;

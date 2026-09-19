@@ -6,7 +6,12 @@ import {
   type MeResponse,
   type MeWorkspace
 } from '@antasphere/chassis-cli';
-import { describeSelection, describeSource, explainRefusal, pickWorkspaceSelection } from '../src/cli.js';
+import { cli } from '@chassis-cli-test/host';
+
+// The kit's workspace functions, and the literals that spell the tool (its identity).
+const { describeSelection, describeSource, explainRefusal, pickWorkspaceSelection } = cli.workspace;
+const { bin } = cli.identity;
+const WS_ENV = `${cli.identity.envPrefix}_WORKSPACE`;
 
 /**
  * PRDCT-2419, the pure half: which value selects the workspace (the
@@ -46,14 +51,14 @@ describe('the resolution order: flag, then environment, then profile, then nothi
   const profile = { baseUrl: URL, activeWorkspaceId: C };
 
   it('the flag wins over the environment and the profile', () => {
-    expect(pick({ flag: 'Acme', env: { SLIDELESS_WORKSPACE: B }, profile, profileName: 'work' })).toEqual({
+    expect(pick({ flag: 'Acme', env: { [WS_ENV]: B }, profile, profileName: 'work' })).toEqual({
       value: 'Acme',
       source: 'flag'
     });
   });
 
   it('the environment wins over the profile', () => {
-    expect(pick({ env: { SLIDELESS_WORKSPACE: B }, profile, profileName: 'work' })).toEqual({
+    expect(pick({ env: { [WS_ENV]: B }, profile, profileName: 'work' })).toEqual({
       value: B,
       source: 'env'
     });
@@ -74,16 +79,16 @@ describe('the resolution order: flag, then environment, then profile, then nothi
 
   it('values are trimmed', () => {
     expect(pick({ flag: '  Acme  ' })?.value).toBe('Acme');
-    expect(pick({ env: { SLIDELESS_WORKSPACE: ` ${B}\n` } })?.value).toBe(B);
+    expect(pick({ env: { [WS_ENV]: ` ${B}\n` } })?.value).toBe(B);
   });
 
   it('an empty flag is a usage error, never a silent fall-through', () => {
-    expect(() => pick({ flag: '   ', env: { SLIDELESS_WORKSPACE: B } })).toThrow(/--workspace needs/);
+    expect(() => pick({ flag: '   ', env: { [WS_ENV]: B } })).toThrow(/--workspace needs/);
   });
 
   it('an empty environment variable is an unset one and falls through to the profile', () => {
-    expect(pick({ env: { SLIDELESS_WORKSPACE: '' }, profile, profileName: 'work' })?.source).toBe('profile');
-    expect(pick({ env: { SLIDELESS_WORKSPACE: '  ' } })).toBeUndefined();
+    expect(pick({ env: { [WS_ENV]: '' }, profile, profileName: 'work' })?.source).toBe('profile');
+    expect(pick({ env: { [WS_ENV]: '  ' } })).toBeUndefined();
   });
 
   it('the profile field counts only for the instance the profile names', () => {
@@ -171,7 +176,7 @@ describe('matching a value against the memberships', () => {
 describe('the words for a source', () => {
   it('names the flag, the variable, the profile and the default', () => {
     expect(describeSelection({ source: 'flag' })).toBe('the --workspace flag');
-    expect(describeSelection({ source: 'env' })).toBe('SLIDELESS_WORKSPACE');
+    expect(describeSelection({ source: 'env' })).toBe(WS_ENV);
     expect(describeSelection({ source: 'profile', profileName: 'work' })).toBe('profile "work"');
     expect(describeSource('default', undefined)).toContain("the server's default");
     expect(describeSource('profile', 'work')).toBe('profile "work"');
@@ -211,7 +216,7 @@ describe('explaining a refusal the selection caused', () => {
     expect(text).toContain(`The workspace "${C}" (selected by profile "work") is not one of yours on ${URL}`);
     expect(text).toContain('the API key itself works');
     expect(text).toContain(`${B}  member  Atelier Nord`);
-    expect(text).toContain('slideless workspace use --clear');
+    expect(text).toContain(`${bin} workspace use --clear`);
   });
 
   it('the --clear advice is for a profile selection only', () => {

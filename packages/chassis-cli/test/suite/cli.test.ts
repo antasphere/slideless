@@ -2,8 +2,11 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { run } from '../src/index.js';
 import type { CliIo } from '@antasphere/chassis-cli';
+import { cli, run } from '@chassis-cli-test/host';
+
+// The literals that spell the tool come from the host (its identity).
+const { bin, envPrefix: P } = cli.identity;
 
 /**
  * Unit coverage: each command hits the right method + path (via a recording
@@ -56,7 +59,7 @@ const ME = {
   scopes: ['presentations:read']
 };
 
-describe('slideless CLI', () => {
+describe(`${bin} CLI`, () => {
   it('instance → GET /api/v1/instance (no key needed)', async () => {
     const h = harness([{ body: INSTANCE }]);
     const code = await run(['instance', '--url', 'http://x'], h.io);
@@ -73,10 +76,10 @@ describe('slideless CLI', () => {
     expect(h.out()).toContain('ada@x.co');
   });
 
-  it('reads SLIDELESS_URL / SLIDELESS_API_KEY from the environment', async () => {
+  it(`reads ${P}_URL / ${P}_API_KEY from the environment`, async () => {
     const h = harness([{ body: ME }]);
-    h.io.env.SLIDELESS_URL = 'http://from-env';
-    h.io.env.SLIDELESS_API_KEY = 'key_env';
+    h.io.env[`${P}_URL`] = 'http://from-env';
+    h.io.env[`${P}_API_KEY`] = 'key_env';
     const code = await run(['whoami'], h.io);
     expect(code).toBe(0);
     expect(h.calls[0]).toEqual({ method: 'GET', path: '/api/v1/me' });

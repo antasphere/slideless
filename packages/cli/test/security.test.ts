@@ -15,7 +15,6 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
 import { parseIgnoreFile, scanDeck, writeLink } from '../src/manifest.js';
-import { safeDownloadName, sanitizeForTty } from '@antasphere/chassis-cli';
 import { DECK, routedHarness, VERSION_ROW, type Route } from './harness.js';
 
 /**
@@ -24,6 +23,10 @@ import { DECK, routedHarness, VERSION_ROW, type Route } from './harness.js';
  * arbitrary file write through `pull` and `files download`, the dev server
  * reading the whole filesystem, a ReDoS in the ignore matcher, and terminal
  * control sequences reaching the owner's terminal from a share recipient.
+ *
+ * The generic half (`files download`, the sanitizer itself, `--api-key-stdin`)
+ * is the chassis suite, `packages/chassis-cli/test/suite/security.test.ts`,
+ * which this package runs too (vitest.config.ts).
  */
 
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
@@ -186,87 +189,6 @@ describe('pull and the link file', () => {
   });
 });
 
-// ── CLI-3: `files download` cannot be steered by the stored name ─────────────
-
-describe('files download', () => {
-  const FILE_ID = '44444444-4444-4444-4444-444444444444';
-
-  function fileRoutes(originalName: string): Route[] {
-    return [
-      {
-        method: 'GET',
-        path: new RegExp(`/api/v1/files/${FILE_ID}$`),
-        reply: () => ({
-          body: {
-            id: FILE_ID,
-            sha256: sha('payload'),
-            sizeBytes: 7,
-            contentType: 'text/plain',
-            originalName,
-            createdBy: 'u1',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          }
-        })
-      },
-      {
-        method: 'GET',
-        path: new RegExp(`/api/v1/files/${FILE_ID}/content$`),
-        reply: () => ({ raw: new Response(Buffer.from('payload'), { status: 200 }) })
-      }
-    ];
-  }
-
-  it('writes the BASENAME of a traversing stored name inside --dir', async () => {
-    const root = await emptyDir('slideless-sec-');
-    const dir = join(root, 'downloads');
-    const h = routedHarness(fileRoutes('../../pwned.txt'));
-    const code = await run(['files', 'download', FILE_ID, '--dir', dir, ...KEY], h.io);
-    expect(h.err()).toBe('');
-    expect(code).toBe(0);
-    expect(await readFile(join(dir, 'pwned.txt'), 'utf8')).toBe('payload');
-    await expect(stat(join(root, 'pwned.txt'))).rejects.toThrow();
-  });
-
-  it('refuses an absolute stored name rather than writing to it', async () => {
-    const dir = await emptyDir('slideless-sec-');
-    const h = routedHarness(fileRoutes('/etc/cron.d/backdoor'));
-    const code = await run(['files', 'download', FILE_ID, '--dir', dir, ...KEY], h.io);
-    // The basename survives; it lands inside the chosen directory.
-    expect(code).toBe(0);
-    expect(await readFile(join(dir, 'backdoor'), 'utf8')).toBe('payload');
-  });
-
-  it('refuses a dotfile stored name and points at --out', async () => {
-    const dir = await emptyDir('slideless-sec-');
-    const h = routedHarness(fileRoutes('.bashrc'));
-    const code = await run(['files', 'download', FILE_ID, '--dir', dir, ...KEY], h.io);
-    expect(code).toBe(1);
-    expect(h.err()).toMatch(/--out/);
-    await expect(stat(join(dir, '.bashrc'))).rejects.toThrow();
-  });
-
-  it('refuses to write through a symlink planted at the derived name', async () => {
-    const root = await emptyDir('slideless-sec-');
-    const dir = join(root, 'downloads');
-    await mkdir(dir, { recursive: true });
-    const victim = join(root, 'victim.txt');
-    await writeFile(victim, 'original');
-    await symlink(victim, join(dir, 'report.txt'));
-    const h = routedHarness(fileRoutes('report.txt'));
-    const code = await run(['files', 'download', FILE_ID, '--dir', dir, ...KEY], h.io);
-    expect(code).toBe(1);
-    expect(await readFile(victim, 'utf8')).toBe('original');
-  });
-
-  it('safeDownloadName strips both separator flavours', () => {
-    expect(safeDownloadName('a/b/c.txt')).toBe('c.txt');
-    expect(safeDownloadName('..\\..\\windows.txt')).toBe('windows.txt');
-    expect(safeDownloadName('plain.txt')).toBe('plain.txt');
-    expect(() => safeDownloadName('..')).toThrow(/--out/);
-    expect(() => safeDownloadName('.npmrc')).toThrow(/--out/);
-  });
-});
-
 // ── CLI-6: the ignore matcher is no longer a ReDoS ───────────────────────────
 
 describe('.slidelessignore matcher', () => {
@@ -316,17 +238,6 @@ describe('deck scanning honours the manifest-path contract', () => {
 // ── CLI-5: terminal control sequences never reach the terminal ───────────────
 
 describe('terminal-control sanitation', () => {
-  it('strips CSI, OSC and C1 while keeping tabs, newlines and CR', () => {
-    const ESC = '\u001b';
-    expect(sanitizeForTty(`${ESC}[31mred${ESC}[0m`)).toBe('red');
-    expect(sanitizeForTty(`${ESC}]8;;https://evil.example${ESC}\\click${ESC}]8;;${ESC}\\`)).toBe('click');
-    expect(sanitizeForTty(`${ESC}]52;c;cGF5bG9hZA==\u0007`)).toBe('');
-    // 8-bit C1: 0x9b IS a CSI introducer on its own.
-    expect(sanitizeForTty('a\u009b31mBb')).toBe('a31mBb');
-    expect(sanitizeForTty('a\tb\r\nc\n')).toBe('a\tb\r\nc\n');
-    expect(sanitizeForTty('plain')).toBe('plain');
-  });
-
   it('prints a control-character annotation body inert', async () => {
     const ESC = '\u001b';
     const body = `${ESC}[2K${ESC}[1AAll good ${ESC}]8;;https://evil.example${ESC}\\click here${ESC}]8;;${ESC}\\`;
@@ -471,17 +382,6 @@ describe('secrets off the command line', () => {
       })
     }
   ];
-
-  it('--api-key-stdin authenticates without the key ever entering argv', async () => {
-    const h = routedHarness([
-      { method: 'GET', path: /\/api\/v1\/files$/, reply: () => ({ body: { files: [], nextCursor: null } }) }
-    ]);
-    h.io.readStdin = async () => 'slk_from_stdin\n';
-    const code = await run(['files', 'list', '--url', 'http://x', '--api-key-stdin'], h.io);
-    expect(h.err()).toBe('');
-    expect(code).toBe(0);
-    expect(h.wire[0]!.auth).toBe('Bearer slk_from_stdin');
-  });
 
   it('share --password-stdin sends the piped password', async () => {
     const h = routedHarness(SHARE_ROUTES);
