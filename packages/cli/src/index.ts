@@ -42,7 +42,7 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  *             → none sent (the server's default membership)
  */
 
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
 
 /**
  * The command tree, built once per run. Exported for the docs-coverage test
