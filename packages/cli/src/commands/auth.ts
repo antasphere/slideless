@@ -2,26 +2,26 @@ import type { Command } from 'commander';
 import { CliAuthClient, CliAuthError } from '@antasphere/cli-core';
 import { PlatformClient } from '@slideless/sdk';
 import {
-  clearConfig,
-  configPath,
-  loadConfig,
-  redactKey,
-  removeConnectKey,
-  saveConfig,
-  type CliConfig
-} from '../config.js';
-import {
   CliUsageError,
   printJson,
-  requireApiKey,
-  resolveContext,
+  readSecretFromStdin,
+  redactKey,
   stdinApiKey,
   table,
-  workspaceSource,
+  type CliConfig,
   type CliIo
-} from '../context.js';
-import { describeSource } from '../workspace.js';
-import { readSecretFromStdin } from '../stdin.js';
+} from '@antasphere/chassis-cli';
+import {
+  clearConfig,
+  configPath,
+  describeSource,
+  loadConfig,
+  removeConnectKey,
+  requireApiKey,
+  resolveContext,
+  saveConfig,
+  workspaceSource
+} from '../cli.js';
 
 /**
  * Identity + profile commands: the OTP sign-in pair (login-request /

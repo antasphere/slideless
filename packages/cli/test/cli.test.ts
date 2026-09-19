@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
-import type { CliIo } from '../src/context.js';
+import type { CliIo } from '@antasphere/chassis-cli';
 
 /**
  * Unit coverage: each command hits the right method + path (via a recording

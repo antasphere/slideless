@@ -3,13 +3,12 @@ import { CliAuthError } from '@antasphere/cli-core';
 import { PlatformApiError } from '@slideless/sdk';
 import {
   CliUsageError,
-  explainWorkspaceRefusal,
+  readSecretFromStdin,
   setStdinApiKey,
   ttySafeIo,
-  workspaceNotFoundHint,
   type CliIo
-} from './context.js';
-import { readSecretFromStdin } from './stdin.js';
+} from '@antasphere/chassis-cli';
+import { explainWorkspaceRefusal, workspaceNotFoundHint } from './cli.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { registerWorkspaceCommands } from './commands/workspaces.js';
 import { registerDeckCommands } from './commands/decks.js';
@@ -20,7 +19,7 @@ import { registerResponseFilesCommand } from './commands/response-files.js';
 import { registerFileCommands } from './commands/files.js';
 import { registerCompletionCommand } from './commands/completion.js';
 
-export type { CliIo } from './context.js';
+export type { CliIo } from '@antasphere/chassis-cli';
 export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
 
 /**

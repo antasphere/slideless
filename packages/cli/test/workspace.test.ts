@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  describeSelection,
-  describeSource,
-  explainRefusal,
   findWorkspace,
   isWorkspaceId,
   matchWorkspace,
-  pickWorkspaceSelection,
   type MeResponse,
   type MeWorkspace
-} from '../src/workspace.js';
+} from '@antasphere/chassis-cli';
+import { describeSelection, describeSource, explainRefusal, pickWorkspaceSelection } from '../src/cli.js';
 
 /**
  * PRDCT-2419, the pure half: which value selects the workspace (the

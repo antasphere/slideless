@@ -36,7 +36,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
+    "@antasphere/chassis-cli": "workspace:*",
     "@antasphere/chassis-contract": "workspace:*",
+    "@antasphere/chassis-sdk": "workspace:*",
     "@antasphere/cli-core": "^0.4.0",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",

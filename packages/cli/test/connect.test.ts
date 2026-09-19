@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HUB_TOOL, saveConfig as saveCoreConfig } from '@antasphere/cli-core';
 import { run } from '../src/index.js';
-import { loadConfig, saveConfig } from '../src/config.js';
+import { loadConfig, saveConfig } from '../src/cli.js';
 import { routedHarness, tempConfigEnv, type Route } from './harness.js';
 
 /**

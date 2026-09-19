@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { clearConfig, configPath, loadConfig, redactKey, saveConfig } from '../src/config.js';
+import { redactKey } from '@antasphere/chassis-cli';
+import { clearConfig, configPath, loadConfig, saveConfig } from '../src/cli.js';
 import { tempConfigEnv } from './harness.js';
 
 describe('CLI config store', () => {

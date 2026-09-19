@@ -12,6 +12,7 @@ COPY packages/contract/package.json packages/contract/package.json
 COPY packages/chassis-server/package.json packages/chassis-server/package.json
 COPY packages/chassis-sdk/package.json packages/chassis-sdk/package.json
 COPY packages/sdk/package.json packages/sdk/package.json
+COPY packages/chassis-cli/package.json packages/chassis-cli/package.json
 COPY packages/cli/package.json packages/cli/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY apps/dashboard/package.json apps/dashboard/package.json

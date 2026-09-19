@@ -1,14 +1,7 @@
 import type { Command } from 'commander';
 import type { ListParams } from '@slideless/sdk';
-import {
-  CliUsageError,
-  fmtBytes,
-  printJson,
-  requireApiKey,
-  resolveContext,
-  table,
-  type CliIo
-} from '../context.js';
+import { CliUsageError, fmtBytes, printJson, table, type CliIo } from '@antasphere/chassis-cli';
+import { requireApiKey, resolveContext } from '../cli.js';
 import { provenanceOf } from '../references.js';
 import { provenanceLine } from './content.js';
 

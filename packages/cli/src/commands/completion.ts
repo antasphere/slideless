@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { CliUsageError, type CliIo } from '../context.js';
+import { CliUsageError, type CliIo } from '@antasphere/chassis-cli';
 
 /**
  * Shell completion scripts, generated from the live command tree (so a new

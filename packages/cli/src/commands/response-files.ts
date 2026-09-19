@@ -11,14 +11,13 @@ import {
   CliUsageError,
   fmtBytes,
   printJson,
-  requireApiKey,
-  resolveContext,
+  streamContained,
   table,
-  type CliContext,
+  writeContained,
   type CliIo
-} from '../context.js';
+} from '@antasphere/chassis-cli';
+import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
 import { readCapped, sha256Hex } from '../download.js';
-import { streamContained, writeContained } from '../safe-write.js';
 
 /**
  * `slideless response-files` (PRDCT-2403): the files respondents uploaded

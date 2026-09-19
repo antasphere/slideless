@@ -14,12 +14,11 @@ import {
   CliUsageError,
   fmtBytes,
   printJson,
-  requireApiKey,
-  resolveContext,
+  readSecretFromStdin,
   table,
   type CliIo
-} from '../context.js';
-import { readSecretFromStdin } from '../stdin.js';
+} from '@antasphere/chassis-cli';
+import { requireApiKey, resolveContext } from '../cli.js';
 
 /** Env fallback for the viewer password — never forces a secret into argv. */
 const SHARE_PASSWORD_ENV = 'SLIDELESS_SHARE_PASSWORD';

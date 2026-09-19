@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
-import { configPath, loadConfig, saveConfig } from '../src/config.js';
+import { configPath, loadConfig, saveConfig } from '../src/cli.js';
 import { routedHarness, tempConfigEnv, type Route } from './harness.js';
 
 /**

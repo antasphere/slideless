@@ -234,6 +234,28 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
+  packages/chassis-cli:
+    dependencies:
+      '@antasphere/chassis-contract':
+        specifier: workspace:*
+        version: link:../chassis-contract
+      '@antasphere/chassis-sdk':
+        specifier: workspace:*
+        version: link:../chassis-sdk
+      '@antasphere/cli-core':
+        specifier: ^0.4.0
+        version: 0.4.0
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.0
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
+
   packages/chassis-contract:
     dependencies:
       '@hono/zod-openapi':
@@ -408,9 +430,15 @@ importers:
 
   packages/cli:
     devDependencies:
+      '@antasphere/chassis-cli':
+        specifier: workspace:*
+        version: link:../chassis-cli
       '@antasphere/chassis-contract':
         specifier: workspace:*
         version: link:../chassis-contract
+      '@antasphere/chassis-sdk':
+        specifier: workspace:*
+        version: link:../chassis-sdk
       '@antasphere/cli-core':
         specifier: ^0.4.0
         version: 0.4.0

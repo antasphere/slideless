@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { deckMasterUrl } from '@slideless/contract';
 import { run } from '../src/index.js';
 import { writeLink } from '../src/manifest.js';
-import { openInBrowser, platformOpener, shouldOpenAfterPush } from '../src/open.js';
+import { openInBrowser, platformOpener } from '@antasphere/chassis-cli';
+import { shouldOpenAfterPush } from '../src/open.js';
 import { DECK, routedHarness, VERSION_ROW, type Route } from './harness.js';
 
 /**

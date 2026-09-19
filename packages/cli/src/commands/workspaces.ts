@@ -1,14 +1,13 @@
 import type { Command } from 'commander';
-import { loadConfig, saveConfig } from '../config.js';
+import { CliUsageError, findWorkspace, matchWorkspace, printJson, type CliIo } from '@antasphere/chassis-cli';
 import {
-  CliUsageError,
-  printJson,
+  describeSelection,
+  loadConfig,
   requireApiKey,
   resolveContext,
-  workspaceSource,
-  type CliIo
-} from '../context.js';
-import { describeSelection, findWorkspace, matchWorkspace } from '../workspace.js';
+  saveConfig,
+  workspaceSource
+} from '../cli.js';
 
 /**
  * Which workspace the commands run in (PRDCT-2419): `workspaces` lists the

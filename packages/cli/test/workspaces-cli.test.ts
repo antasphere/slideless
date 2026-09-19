@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { HUB_TOOL, saveConfig as saveCoreConfig } from '@antasphere/cli-core';
 import { run } from '../src/index.js';
-import { loadConfig, saveConfig } from '../src/config.js';
+import { loadConfig, saveConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, type Route } from './harness.js';
 
 /**

@@ -6,8 +6,8 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Command } from 'commander';
 import { DEFAULT_DOWNLOAD_TIMEOUT_MS, PlatformApiError, type ListParams } from '@slideless/sdk';
-import { CliUsageError, fmtBytes, printJson, requireApiKey, resolveContext, type CliIo } from '../context.js';
-import { writeContained } from '../safe-write.js';
+import { CliUsageError, fmtBytes, printJson, writeContained, type CliIo } from '@antasphere/chassis-cli';
+import { requireApiKey, resolveContext } from '../cli.js';
 
 /**
  * The platform substrate commands inherited from the template: instance

@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
 import { parseIgnoreFile, scanDeck, writeLink } from '../src/manifest.js';
-import { sanitizeForTty } from '../src/context.js';
+import { sanitizeForTty } from '@antasphere/chassis-cli';
 import { safeDownloadName } from '../src/commands/files.js';
 import { DECK, routedHarness, VERSION_ROW, type Route } from './harness.js';
 

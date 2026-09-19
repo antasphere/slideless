@@ -1,7 +1,7 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CliIo } from '../src/context.js';
+import type { CliIo } from '@antasphere/chassis-cli';
 
 /**
  * Router-style fake fetch: handlers matched by method + path regex, so

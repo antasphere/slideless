@@ -171,5 +171,37 @@ export default tseslint.config(
         }
       ]
     }
+  },
+  {
+    // The chassis CLI is a client too, and a chassis package: the same pair of
+    // restrictions as the chassis client above, stated whole for the same
+    // reason (a later `no-restricted-imports` block replaces an earlier one).
+    files: ['packages/chassis-cli/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@slideless/*'],
+              message:
+                'The chassis never names the tool: packages/chassis-* may not import @slideless/* (the tool depends on the chassis, never the reverse).'
+            },
+            {
+              group: ['@antasphere/chassis-db', '@antasphere/chassis-db/*'],
+              message: 'Clients never touch the database layer.'
+            },
+            {
+              group: ['@antasphere/chassis-contract/routes', '@antasphere/chassis-contract/routes/*'],
+              message: 'The routes entry pulls Hono — clients import the contract root only.'
+            },
+            {
+              group: ['@antasphere/chassis-server', '@antasphere/chassis-server/*'],
+              message: 'The chassis server is server-side code — clients never import it.'
+            }
+          ]
+        }
+      ]
+    }
   }
 );

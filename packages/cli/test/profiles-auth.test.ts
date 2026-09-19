@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
-import { loadConfig, saveConfig } from '../src/config.js';
+import { loadConfig, saveConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './harness.js';
 
 /**

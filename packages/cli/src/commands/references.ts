@@ -3,17 +3,9 @@ import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { PlatformApiError } from '@slideless/sdk';
 import { AGENT_DOC_PATH, REFERENCE_TYPES, type Presentation, type ReferenceType } from '@slideless/contract';
-import {
-  CliUsageError,
-  printJson,
-  requireApiKey,
-  resolveContext,
-  table,
-  type CliContext,
-  type CliIo
-} from '../context.js';
+import { CliUsageError, printJson, table, writeNoFollow, type CliIo } from '@antasphere/chassis-cli';
+import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
 import { LINK_FILENAME, readLink, writeLink } from '../manifest.js';
-import { writeNoFollow } from '../safe-write.js';
 import {
   parseReferenceType,
   readFrontmatter,
