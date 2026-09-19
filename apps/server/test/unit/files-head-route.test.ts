@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { Readable } from 'node:stream';
 import { pino } from 'pino';
-import type { Principal } from '@slideless/contract';
+import type { Principal } from '@antasphere/chassis-contract';
 import { registerFileRoutes } from '../../src/api/files.js';
 import type { FileService } from '../../src/files/service.js';
 import type { PlatformRegistry } from '../../src/platform/registry.js';

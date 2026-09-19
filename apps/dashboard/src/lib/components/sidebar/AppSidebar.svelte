@@ -6,7 +6,8 @@
   import { t } from '$lib/i18n';
   import BrandTile from './BrandTile.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
-  import type { MeResponse, WorkspaceRole } from '@slideless/contract';
+  import type { WorkspaceRole } from '@antasphere/chassis-contract';
+  import type { MeResponse } from '@slideless/contract';
 
   interface Props {
     instanceName: string;

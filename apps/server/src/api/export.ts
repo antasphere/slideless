@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { ZipFile } from 'yazl';
-import { workspaceExportRoute } from '@slideless/contract/routes';
+import { workspaceExportRoute } from '@antasphere/chassis-contract/routes';
 import {
   apiKeys,
   auditLog,

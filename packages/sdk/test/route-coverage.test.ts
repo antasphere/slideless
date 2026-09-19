@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import * as routes from '@slideless/contract/routes';
+import * as chassisRoutes from '@antasphere/chassis-contract/routes';
+import * as deckRoutes from '@slideless/contract/routes';
 import { PlatformClient } from '../src/index.js';
 
 /**
@@ -137,7 +138,12 @@ interface ContractRoute {
 }
 
 function contractRoutes(): Array<{ key: string; method: string; path: string }> {
-  return Object.values(routes as Record<string, unknown>)
+  // Both route sets: the static generic routes of the chassis, then the deck
+  // routes together with the generic routes instantiated with the tool's scopes.
+  return [
+    ...Object.values(chassisRoutes as Record<string, unknown>),
+    ...Object.values(deckRoutes as Record<string, unknown>)
+  ]
     .filter((r): r is ContractRoute => {
       const o = r as Partial<ContractRoute>;
       return typeof o?.method === 'string' && typeof o?.path === 'string';

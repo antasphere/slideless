@@ -1,4 +1,4 @@
-import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@slideless/contract';
+import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@antasphere/chassis-contract';
 import { ApiToolError, deny, type ToolTextResult } from './errors.js';
 
 /**

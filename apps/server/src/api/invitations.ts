@@ -6,7 +6,7 @@ import {
   invitationLookupRoute,
   invitationRevokeRoute,
   invitationsListRoute
-} from '@slideless/contract/routes';
+} from '@antasphere/chassis-contract/routes';
 import { invitations, workspaces, user as userTable, type Db, type Invitation } from '@antasphere/chassis-db';
 import { isDuplicateAccountError } from '../accounts/signup-duplicate.js';
 import type { Env } from '../env.js';

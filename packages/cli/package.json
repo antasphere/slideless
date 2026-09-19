@@ -36,6 +36,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
+    "@antasphere/chassis-contract": "workspace:*",
     "@antasphere/cli-core": "^0.4.0",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",

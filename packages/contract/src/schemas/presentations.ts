@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { cursorPageQuerySchema, opaqueJsonChecks, plainText } from './common.js';
+import { cursorPageQuerySchema, opaqueJsonChecks, plainText } from '@antasphere/chassis-contract';
 
 /**
  * Presentation domain wire schemas (ADR 011). A deck is a set of static

@@ -1,4 +1,4 @@
-import type { InstanceInfo } from '@slideless/contract';
+import type { InstanceInfo } from '@antasphere/chassis-contract';
 import { safeNext } from '$lib/utils';
 
 /**

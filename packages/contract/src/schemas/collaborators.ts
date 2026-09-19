@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { plainText } from './common.js';
+import { plainText } from '@antasphere/chassis-contract';
 
 /**
  * Per-deck dev grants: an email is invited to develop one deck. The grant

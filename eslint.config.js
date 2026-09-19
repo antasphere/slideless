@@ -58,7 +58,8 @@ export default tseslint.config(
       'packages/sdk/**/*.ts',
       'packages/contract/**/*.ts',
       'packages/db/**/*.ts',
-      'packages/chassis-db/**/*.ts'
+      'packages/chassis-db/**/*.ts',
+      'packages/chassis-contract/**/*.ts'
     ],
     rules: {
       'no-restricted-imports': [
@@ -97,7 +98,12 @@ export default tseslint.config(
               message: 'Clients never touch the database layer.'
             },
             {
-              group: ['@slideless/contract/routes', '@slideless/contract/routes/*'],
+              group: [
+                '@slideless/contract/routes',
+                '@slideless/contract/routes/*',
+                '@antasphere/chassis-contract/routes',
+                '@antasphere/chassis-contract/routes/*'
+              ],
               message: 'The routes entry pulls Hono — clients import the contract root only.'
             }
           ]

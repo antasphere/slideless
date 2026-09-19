@@ -39,7 +39,7 @@
   import Link from '@lucide/svelte/icons/link';
   import MailCheck from '@lucide/svelte/icons/mail-check';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-  import type { WorkspaceRole } from '@slideless/contract';
+  import type { WorkspaceRole } from '@antasphere/chassis-contract';
 
   interface Props {
     open: boolean;

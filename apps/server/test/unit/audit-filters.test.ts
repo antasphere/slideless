@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { and, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { auditListQuerySchema } from '@slideless/contract';
+import { auditListQuerySchema } from '@antasphere/chassis-contract';
 import {
   auditFilterConditions,
   cursorId,

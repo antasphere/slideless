@@ -9,7 +9,8 @@
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
-  import type { FileInfo, Member, Presentation } from '@slideless/contract';
+  import type { FileInfo, Member } from '@antasphere/chassis-contract';
+  import type { Presentation } from '@slideless/contract';
 
   let { data } = $props();
 

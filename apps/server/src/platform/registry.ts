@@ -1,4 +1,4 @@
-import type { EntitlementService, IdentityProvider, UsageSink } from '@slideless/contract';
+import type { EntitlementService, IdentityProvider, UsageSink } from '@antasphere/chassis-contract';
 import type { EventBus } from './events.js';
 import type { WorkspaceService } from './workspaces.js';
 

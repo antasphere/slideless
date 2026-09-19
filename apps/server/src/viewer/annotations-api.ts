@@ -2,12 +2,8 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { z } from 'zod';
-import {
-  badgePositionSchema,
-  MAX_SELECTION_JSON_BYTES,
-  noControlChars,
-  opaqueJsonChecks
-} from '@slideless/contract';
+import { noControlChars, opaqueJsonChecks } from '@antasphere/chassis-contract';
+import { badgePositionSchema, MAX_SELECTION_JSON_BYTES } from '@slideless/contract';
 import type { Logger } from '../logger.js';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';

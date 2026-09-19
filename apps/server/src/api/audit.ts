@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { count, eq, lt, desc } from 'drizzle-orm';
-import { auditListRoute } from '@slideless/contract/routes';
+import { auditListRoute } from '@antasphere/chassis-contract/routes';
 import { auditLog, user as userTable, type Db } from '@antasphere/chassis-db';
 import { requireRole } from '../middleware/auth-context.js';
 import { auditFilterConditions, auditWhere, cursorId } from '../audit/filters.js';

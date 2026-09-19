@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
-import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
-import { workspaceCreateRoute, workspaceUpdateRoute } from '@slideless/contract/routes';
-import type { WorkspaceLook } from '@slideless/contract';
+import { ACTIVE_WORKSPACE_HEADER } from '@antasphere/chassis-contract';
+import { workspaceCreateRoute, workspaceUpdateRoute } from '@antasphere/chassis-contract/routes';
+import type { WorkspaceLook } from '@antasphere/chassis-contract';
 import { workspaceMembers, workspaces, type Db, type DbConn } from '@antasphere/chassis-db';
 import type { AuditService } from '../audit/service.js';
 import type { Auth } from '../identity/better-auth.js';

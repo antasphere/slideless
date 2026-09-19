@@ -6,7 +6,7 @@ import type {
   Principal,
   RequestContext,
   UsageSink
-} from '@slideless/contract';
+} from '@antasphere/chassis-contract';
 import { HUB_SSO_PROVIDER_ID } from '../identity/hub-sso.js';
 import { HubLiveGate } from '../identity/hub-live-gate.js';
 import type { HubOrgReconciler } from '../identity/hub-reconcile.js';

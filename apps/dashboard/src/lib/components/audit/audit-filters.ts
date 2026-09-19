@@ -6,7 +6,7 @@
  * against the clock when the request goes out.
  */
 import type { AuditListParams } from '@slideless/sdk';
-import type { AuditVia } from '@slideless/contract';
+import type { AuditVia } from '@antasphere/chassis-contract';
 import { t } from '$lib/i18n';
 
 export type QuickRange = 'hour' | 'today' | '7d' | '30d';

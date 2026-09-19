@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { opaqueJsonChecks, plainText, versionNumberSchema, versionParamSchema } from './common.js';
+import {
+  opaqueJsonChecks,
+  plainText,
+  versionNumberSchema,
+  versionParamSchema
+} from '@antasphere/chassis-contract';
 
 /**
  * Reviewer notes tied to a specific deck version. Authored either by a

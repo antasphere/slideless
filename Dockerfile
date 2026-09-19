@@ -7,6 +7,7 @@ WORKDIR /repo
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.json ./
 COPY packages/chassis-db/package.json packages/chassis-db/package.json
 COPY packages/db/package.json packages/db/package.json
+COPY packages/chassis-contract/package.json packages/chassis-contract/package.json
 COPY packages/contract/package.json packages/contract/package.json
 COPY packages/sdk/package.json packages/sdk/package.json
 COPY packages/cli/package.json packages/cli/package.json
@@ -26,6 +27,7 @@ COPY apps ./apps
 # `.dockerignore` strips any host-built `dist` from the context.
 RUN pnpm --filter @antasphere/chassis-db build \
  && pnpm --filter @slideless/db build \
+ && pnpm --filter @antasphere/chassis-contract build \
  && pnpm --filter @slideless/contract build \
  && pnpm --filter @slideless/sdk build \
  && pnpm --filter @slideless/dashboard build \

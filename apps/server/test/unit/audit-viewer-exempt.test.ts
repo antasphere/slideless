@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { auditMiddleware, type AuditService, type AuditWrite } from '../../src/audit/service.js';
-import type { Principal } from '@slideless/contract';
+import type { Principal } from '@antasphere/chassis-contract';
 
 /**
  * PRIV-1, the audit-table corner: the share-token viewer API carries the

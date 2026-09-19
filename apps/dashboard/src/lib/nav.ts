@@ -9,7 +9,8 @@ import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import Palette from '@lucide/svelte/icons/palette';
 import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 import type { Component } from 'svelte';
-import type { MeResponse, WorkspaceRole } from '@slideless/contract';
+import type { WorkspaceRole } from '@antasphere/chassis-contract';
+import type { MeResponse } from '@slideless/contract';
 import { t } from '$lib/i18n';
 
 /**

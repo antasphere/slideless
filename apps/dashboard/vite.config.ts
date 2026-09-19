@@ -4,11 +4,11 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [sveltekit()],
   ssr: {
-    // @slideless/sdk and @slideless/contract are internal workspace packages —
+    // @slideless/sdk, @slideless/contract and @antasphere/chassis-contract are internal workspace packages —
     // bundle them (never externalize) in the SSR pass that renders the SPA
     // fallback shell, so the pre-rendered shell resolves them without a
     // separate runtime dependency.
-    noExternal: ['@slideless/sdk', '@slideless/contract']
+    noExternal: ['@slideless/sdk', '@slideless/contract', '@antasphere/chassis-contract']
   },
   server: {
     // Dev-only: the SPA calls the API same-origin in production; in dev

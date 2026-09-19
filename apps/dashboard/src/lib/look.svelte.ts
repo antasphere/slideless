@@ -23,7 +23,7 @@
  * a whisper, so each field is the paper with the accent pooled into it at
  * low strengths.
  */
-import type { WorkspaceLook } from '@slideless/contract';
+import type { WorkspaceLook } from '@antasphere/chassis-contract';
 import { PALETTES, THEMES } from '$lib/brand/recipe.js';
 import { isPatternKey, PATTERN_KEYS } from '$lib/brand/form';
 import { seedOf } from '$lib/brand/seed';

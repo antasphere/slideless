@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import { hasNulDeep } from '@slideless/contract';
+import { hasNulDeep } from '@antasphere/chassis-contract';
 import { apiError } from '../api/errors.js';
 
 /** Matches better-call's / Hono's JSON content-type test (the json-depth regex). */

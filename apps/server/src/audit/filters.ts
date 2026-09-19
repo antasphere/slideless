@@ -1,5 +1,5 @@
 import { and, eq, gte, ilike, inArray, isNull, like, lte, or, type SQL } from 'drizzle-orm';
-import { AUDIT_ACTOR_SYSTEM, type AuditListQuery, type AuditVia } from '@slideless/contract';
+import { AUDIT_ACTOR_SYSTEM, type AuditListQuery, type AuditVia } from '@antasphere/chassis-contract';
 import { auditLog, user as userTable } from '@antasphere/chassis-db';
 
 /**

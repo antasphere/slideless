@@ -17,7 +17,7 @@
   import { roleTag } from '$lib/tags';
   import { signOutToLogin } from '$lib/session';
   import { t } from '$lib/i18n';
-  import type { WorkspaceRole } from '@slideless/contract';
+  import type { WorkspaceRole } from '@antasphere/chassis-contract';
 
   interface Props {
     user: { name: string; email: string };
