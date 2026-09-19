@@ -15,7 +15,7 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
-  import DialogDrawing from '$lib/components/decks/drawings/DialogDrawing.svelte';
+  import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import LookPicker from '$lib/components/settings/LookPicker.svelte';
   import AutoHeight from '$lib/components/shared/AutoHeight.svelte';
   import BrandTile from './BrandTile.svelte';

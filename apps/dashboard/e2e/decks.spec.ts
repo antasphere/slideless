@@ -94,9 +94,24 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     expect(note.status()).toBe(201);
   });
 
+  await test.step('the overview shows what the decks bring: the sentence, the two figures, the latest decks, the brand tile', async () => {
+    // These four pieces reach the page through the tool's contribution
+    // (src/lib/tool/index.ts): a piece dropped there shows nowhere else.
+    await page.goto('/');
+    await expect(page.locator('.hero-lede')).toContainText(/deck/i);
+    const main = page.getByRole('main');
+    await expect(main.getByRole('link', { name: /Decks/ }).first()).toBeVisible();
+    await expect(main.getByRole('link', { name: /Opens/ }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'All decks', exact: true })).toBeVisible();
+    await expect(main.getByRole('heading', { name: DECK_TITLE })).toBeVisible();
+    await expect(page.getByTestId('default-brand')).toBeVisible();
+    // the escaped title holds on this page too
+    expect(await page.locator('main b').count()).toBe(0);
+  });
+
   await test.step('decks list renders the deck with an ESCAPED title', async () => {
     await page.getByRole('link', { name: 'Decks', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Decks' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Decks', exact: true })).toBeVisible();
     // The literal "<b>" text must be visible — meaning it was escaped.
     // the decks page shows one card per deck (PRDCT-2437); the card's heading is the title
     await expect(page.getByRole('heading', { name: DECK_TITLE })).toBeVisible();

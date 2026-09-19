@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fr } from './fr';
+import { fr } from './index';
 
 /**
  * French typography lint, VALUES only: the space before double punctuation

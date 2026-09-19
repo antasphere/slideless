@@ -49,14 +49,16 @@ export const EMPTY_FILTERS: AuditFilters = {
  * Every action the server writes today, so the panel offers the whole
  * vocabulary before a single row of a family has loaded. Kept in step with
  * the `c.set('audit', { action })` calls of apps/server by hand; an action
- * the rows carry and this list lacks still shows, from the rows.
+ * the rows carry and this list lacks still shows, from the rows. These are
+ * the shell's own; the panel adds the tool's (contribution.ts) to what it has
+ * seen, and `actionFamilies` sorts the lot. This module stays plain logic: it
+ * never imports the tool's door, which carries components.
  */
 export const KNOWN_ACTIONS: string[] = [
   'apikey.create',
   'apikey.revoke',
   'break_glass.claim_ownership',
   'break_glass.reset_two_factor',
-  'collaborator.claim',
   'file.delete',
   'file.upload',
   'instance.setup',
@@ -68,25 +70,6 @@ export const KNOWN_ACTIONS: string[] = [
   'member.delete',
   'member.reset_link',
   'member.update',
-  'presentation.annotation_create',
-  'presentation.annotation_delete',
-  'presentation.annotation_update',
-  'presentation.asset_upload',
-  'presentation.collaborator_invite',
-  'presentation.collaborator_revoke',
-  'presentation.create',
-  'presentation.delete',
-  'presentation.duplicate',
-  'presentation.form_response_delete',
-  'presentation.form_response_files_download',
-  'presentation.preview_token_create',
-  'presentation.share_token_create',
-  'presentation.share_token_revoke',
-  'presentation.share_token_send',
-  'presentation.share_token_update',
-  'presentation.update',
-  'presentation.upload_session_create',
-  'presentation.version_commit',
   'user.account_delete',
   'user.erasure_replay_refused',
   'user.erasure_replayed',

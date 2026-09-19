@@ -1,15 +1,13 @@
 <script lang="ts">
   import HeroBand from '$lib/components/brand/HeroBand.svelte';
   import StatTile from '$lib/components/brand/StatTile.svelte';
-  import Palette from '@lucide/svelte/icons/palette';
-  import { descriptionOf, swatchesOf } from '$lib/references';
-  import DeckCard from '$lib/components/decks/DeckCard.svelte';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { THEMES } from '$lib/brand/recipe.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
-  import type { FileInfo, Member, Presentation } from '@slideless/contract';
+  import { tool } from '$lib/tool';
+  import type { FileInfo, Member } from '@slideless/contract';
 
   let { data } = $props();
 
@@ -46,13 +44,12 @@
     )
   );
 
-  const decksList = createPagedList<Presentation>(
-    async (p) => {
-      const { presentations, nextCursor } = await api.presentations(p);
-      return { items: presentations, nextCursor };
-    },
-    { limit: 100, remember: 'overview.decksList' }
-  );
+  // What the tool shows here (contribution.ts): its sentence in the hero, its
+  // figures before the shell's, what it made of late, the first lower tile.
+  const toolOverview = tool.overview.create({
+    isGuest: () => isGuest,
+    workspaceName: () => workspaceName
+  });
   const membersList = createPagedList<Member>(
     async (p) => {
       const { members, nextCursor } = await api.members(p);
@@ -68,27 +65,11 @@
     { limit: 100, remember: 'overview.filesList' }
   );
 
-  // The workspace's default brand (PRDCT-2421), one call; undefined while
-  // it loads, null when the workspace has none. A guest reads no workspace
-  // reference, so the card is not offered.
-  let brand = $state<Presentation | null | undefined>(undefined);
-  const brandSwatches = $derived(
-    brand
-      ? swatchesOf(brand.reference)
-          .filter((s) => s.hex)
-          .slice(0, 5)
-      : []
-  );
-
   $effect(() => {
-    void decksList.load();
+    toolOverview.load();
     if (!isGuest) {
       void membersList.load();
       void filesList.load();
-      api
-        .defaultReference('brand')
-        .then((b) => (brand = b))
-        .catch(() => (brand = null));
     }
   });
 
@@ -104,44 +85,10 @@
       ? null
       : `${filesList.items.length}${filesList.nextCursor ? '+' : ''}`
   );
-  const deckCount = $derived(
-    decksList.loading || (decksList.error && !decksList.items.length)
-      ? null
-      : `${decksList.items.length}${decksList.nextCursor ? '+' : ''}`
-  );
-
-  // Opens are counted per deck today (PRDCT-2438 will bring the workspace's
-  // own figures); the sum of the loaded page is honest with the same "+".
-  const openCount = $derived(
-    decksList.loading || (decksList.error && !decksList.items.length)
-      ? null
-      : `${decksList.items.reduce((n, d) => n + d.totalViews, 0)}${decksList.nextCursor ? '+' : ''}`
-  );
-  const recentDecks = $derived(
-    [...decksList.items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3)
-  );
 
   // One drawing and one colour per figure, each colour one of the brand's own themes.
   const stats = $derived([
-    {
-      id: 'decks',
-      label: t('overview.decksCard'),
-      value: deckCount,
-      href: '/decks',
-      // the link under the recent decks carries its own arrow; the card draws one on hover
-      hint: t('overview.browseDecks').replace(/\s*→$/, ''),
-      drawing: 'decks' as const,
-      color: THEMES.dawn.accent
-    },
-    {
-      id: 'opens',
-      label: t('overview.opensCard'),
-      value: openCount,
-      href: '/decks',
-      hint: t('overview.opensHint'),
-      drawing: 'opens' as const,
-      color: THEMES.solar.accent
-    },
+    ...toolOverview.stats,
     ...(isGuest
       ? []
       : [
@@ -190,13 +137,7 @@
   <h1 class="sr-only">{t('overview.title')}</h1>
   <p class="hero-title">{greeting}</p>
   <p class="hero-lede">
-    {#if deckCount === null}
-      {overviewDescription}
-    {:else if decksList.items.length}
-      {t('overview.lede', { decks: deckCount, workspace: workspaceName, opens: openCount ?? '0' })}
-    {:else}
-      {t('overview.ledeEmpty')}
-    {/if}
+    {toolOverview.lede ?? overviewDescription}
   </p>
 </HeroBand>
 
@@ -213,52 +154,10 @@
   {/each}
 </div>
 
-{#if recentDecks.length}
-  <div class="section-head mt-10 !mb-5 items-center justify-between">
-    <h2>{t('overview.allDecks')}</h2>
-    <a
-      href="/decks"
-      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      {t('overview.browseDecks')}
-    </a>
-  </div>
-  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-    {#each recentDecks as deck (deck.id)}
-      <DeckCard {deck} compact />
-    {/each}
-  </div>
-{/if}
+<tool.overview.Recent model={toolOverview} />
 
 <div class="mt-10 grid gap-4 lg:grid-cols-2">
-  <!-- The workspace's brand: the default brand, or the invitation to make one -->
-  {#if !isGuest}
-    <a href="/brands" class="sheet tile lower" data-testid="default-brand">
-      <div class="fan" aria-hidden="true">
-        {#if brandSwatches.length}
-          {#each brandSwatches as swatch, i (swatch.name + swatch.hex)}
-            <div class="fan-slide" style="--i: {i}; background: {swatch.hex}"></div>
-          {/each}
-        {:else}
-          <div class="fan-slide fan-empty" style="--i: 0"><Palette class="size-6" strokeWidth={1.5} /></div>
-        {/if}
-      </div>
-      <div class="lower-copy">
-        {#if brand}
-          <p class="hero-eyebrow lower-eyebrow">{t('overview.defaultBrandTitle')}</p>
-          <h2 class="lower-title">{brand.title}</h2>
-          <p class="lower-body">{descriptionOf(brand.reference) || t('overview.defaultBrandBody')}</p>
-        {:else if brand === null}
-          <h2 class="lower-title">{t('overview.noBrandTitle')}</h2>
-          <p class="lower-body">{t('overview.noBrandBody')}</p>
-        {:else}
-          <h2 class="lower-title">{t('overview.defaultBrandTitle')}</h2>
-          <p class="lower-body">{t('overview.defaultBrandBody')}</p>
-        {/if}
-        <span class="lower-cta">{t('overview.brandsCta')}<ArrowRight class="size-3.5" /></span>
-      </div>
-    </a>
-  {/if}
+  <tool.overview.Tile model={toolOverview} />
 
   <!-- P7: a hub workspace's membership is managed at the hub; the members page links out -->
   <a href={isAdmin && !hubManaged ? '/invitations' : '/members'} class="sheet tile lower">
@@ -289,6 +188,8 @@
 </p>
 
 <style>
+  /* the team tile. The tool's tile beside it (contribution.ts, overview.Tile)
+     writes the same `.lower` rules in its own file: keep the two in step. */
   .lower {
     display: grid;
     grid-template-columns: 1fr;
@@ -335,42 +236,6 @@
     margin-top: 2px;
     font-size: 13.5px;
     color: var(--accent-deep);
-  }
-  /* the brand's colours as slides, fanned like the Slideless mark */
-  .fan {
-    position: relative;
-    height: 128px;
-  }
-  .fan-slide {
-    position: absolute;
-    left: calc(8px + var(--i) * 18px);
-    top: calc(26px - var(--i) * 7px);
-    width: 120px;
-    aspect-ratio: 16 / 9;
-    transform: rotate(calc(-9deg + var(--i) * 4.5deg));
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--plate-edge);
-    border-radius: 6px;
-    transition: transform 320ms var(--motion-ease);
-  }
-  .fan-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    left: 30px;
-    width: 150px;
-    border: 1.5px dashed color-mix(in oklab, var(--accent) 50%, var(--hairline));
-    background: var(--ground);
-    color: var(--accent-deep);
-    transform: rotate(-4deg);
-  }
-  .lower-eyebrow {
-    margin-bottom: -2px;
-  }
-  @media (hover: hover) {
-    .lower:hover .fan-slide {
-      transform: rotate(calc(-13deg + var(--i) * 7deg)) translateY(calc(var(--i) * -2px));
-    }
   }
   .faces {
     display: flex;
