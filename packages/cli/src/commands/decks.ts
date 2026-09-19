@@ -9,6 +9,8 @@ import {
   table,
   type CliIo
 } from '../context.js';
+import { provenanceOf } from '../references.js';
+import { provenanceLine } from './content.js';
 
 /** Deck management: list / get / versions / meta / delete. */
 
@@ -75,6 +77,10 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
       const deck = await ctx.client.presentation(id);
       if (ctx.json) return printJson(io, deck);
       const metaKeys = Object.keys(deck.metadata);
+      const references = provenanceOf(deck.metadata);
+      const reference = deck.reference
+        ? `${deck.reference.type} · ${deck.audience}${deck.defaultReference ? ' · the workspace default' : ''}`
+        : 'no (an ordinary deck)';
       io.out.write(
         `${deck.title}\n` +
           `  id:        ${deck.id}\n` +
@@ -82,6 +88,8 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
           `  version:   ${deck.currentVersion}\n` +
           `  entry:     ${deck.entryPath}\n` +
           `  agent doc: ${deck.hasAgentDoc ? 'yes (slideless agent-doc)' : 'no'}\n` +
+          `  reference: ${reference}\n` +
+          (references.length > 0 ? `  made from: ${provenanceLine(references)}\n` : '') +
           `  metadata:  ${metaKeys.length === 0 ? '(none)' : `${metaKeys.length} key(s) — slideless meta ${deck.id}`}\n` +
           `  owner:     ${deck.ownerUserId ?? '(deleted user)'}\n` +
           `  created:   ${deck.createdAt}\n` +
