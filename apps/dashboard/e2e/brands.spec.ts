@@ -219,7 +219,8 @@ test('brands: a pushed reference is read, downloaded, published, made the defaul
 
     const read = await page.request.get(`/api/v1/presentations/${deckId}`);
     expect(read.status()).toBe(200);
-    expect((await read.json()).presentation.audience).toBe('workspace');
+    // GET /presentations/{id} answers the presentation itself, unwrapped.
+    expect((await read.json()).audience).toBe('workspace');
   });
 
   await test.step('the default brand: the crown on the card, the button becomes Clear the default', async () => {
@@ -232,7 +233,7 @@ test('brands: a pushed reference is read, downloaded, published, made the defaul
     await expect(sheet.getByRole('button', { name: 'Clear the default' })).toBeVisible();
 
     const read = await page.request.get(`/api/v1/presentations/${deckId}`);
-    expect((await read.json()).presentation.defaultReference).toBe(true);
+    expect((await read.json()).defaultReference).toBe(true);
   });
 
   await test.step('a default cannot go private: the refusal is a sentence, the switch stays on', async () => {
