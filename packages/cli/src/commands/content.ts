@@ -461,6 +461,12 @@ export interface PushOptions {
   brand?: string;
   /** `<ref>[@n]`: the template to record on the deck. */
   template?: string;
+  /**
+   * The title of a NEW deck when `--title` is not given, instead of the
+   * folder name (`reference push` passes the frontmatter's `title`). A
+   * version push keeps the deck's title either way.
+   */
+  defaultTitle?: string;
 }
 
 export interface PushResult {
@@ -543,7 +549,8 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
     if (!['presentation', 'app', 'plan'].includes(kind)) {
       throw new CliUsageError('--kind must be presentation, app, or plan');
     }
-    const title = opts.title ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
+    const title =
+      opts.title ?? opts.defaultTitle ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
     const { uploadSession } = await ctx.client.createUploadSession();
     uploaded = await uploadMissing(ctx, scan);
     committed = await ctx.client.commitUploadSession(uploadSession.id, {

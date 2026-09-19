@@ -22,7 +22,8 @@ import {
   referenceDirFor,
   resolveReference,
   scaffoldReference,
-  stripTypeLine
+  stripTypeLine,
+  type FrontmatterRead
 } from '../references.js';
 import {
   downloadVersionInto,
@@ -247,12 +248,16 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
         await requireApiKey(ctx);
         const type = typeOf(family, opts.type, false);
         const target = dir ?? '.';
-        await refuseUnlessDeclared(target, type, noun);
+        const declared = await refuseUnlessDeclared(target, type, noun);
         const pushOpts: PushOptions = {
           kind: 'presentation',
           interactive: false,
           new: opts.new,
           ...(opts.title !== undefined ? { title: opts.title } : {}),
+          // A reference is named by its frontmatter: a new deck takes that
+          // title, not the folder's name, so `<ref>` resolves by the name
+          // the author wrote.
+          ...(declared.title !== null ? { defaultTitle: declared.title } : {}),
           ...(opts.entry !== undefined ? { entry: opts.entry } : {}),
           ...(opts.id !== undefined ? { id: opts.id } : {}),
           ...(opts.open !== undefined ? { open: opts.open } : {})
@@ -491,7 +496,7 @@ async function refuseUnlessDeclared(
   target: string,
   type: ReferenceType | undefined,
   noun: string
-): Promise<void> {
+): Promise<FrontmatterRead> {
   const abs = resolve(target);
   const info = await stat(abs).catch(() => null);
   if (!info) throw new CliUsageError(`No such file or directory: ${target}`);
@@ -532,6 +537,7 @@ async function refuseUnlessDeclared(
         `Use \`slideless ${read.type} push\` (or \`slideless reference push\`). Nothing was uploaded.`
     );
   }
+  return read;
 }
 
 /**

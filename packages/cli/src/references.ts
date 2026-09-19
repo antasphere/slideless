@@ -115,6 +115,8 @@ const OPEN_FENCE = /^---[ \t]*$/;
 const CLOSE_FENCE = /^(?:---|\.\.\.)[ \t]*$/;
 /** A top-level `type:` line: no indent, the key, a colon, the value. */
 const TYPE_LINE = /^type[ \t]*:[ \t]*(.*?)[ \t]*$/;
+/** A top-level `title:` line, the reference's name (`reference push` names a new deck after it). */
+const TITLE_LINE = /^title[ \t]*:[ \t]*(.*?)[ \t]*$/;
 
 function splitLines(text: string): string[] {
   return text.split('\n');
@@ -151,20 +153,43 @@ export interface FrontmatterRead {
   declared: string | null;
   /** The known type the declaration names, in lowercase, or null when it is unknown or absent. */
   type: ReferenceType | null;
+  /** The top-level `title:` of the block, quotes stripped, or null when it has none (or an empty one). */
+  title: string | null;
 }
 
-/** What an AGENT.md declares, as the server will read it: the block, its `type:` line, the known type. */
+/** A scalar as the frontmatter writes it: a double-quoted one is JSON, a single-quoted one is plain, else as is. */
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  if (/^".*"$/.test(trimmed)) {
+    try {
+      return String(JSON.parse(trimmed));
+    } catch {
+      return trimmed.slice(1, -1);
+    }
+  }
+  if (/^'.*'$/.test(trimmed)) return trimmed.slice(1, -1).replace(/''/g, "'");
+  return trimmed;
+}
+
+/** What an AGENT.md declares, as the server will read it: the block, its `type:` line, the known type, its title. */
 export function readFrontmatter(text: string): FrontmatterRead {
   const lines = splitLines(text);
   const span = frontmatterSpan(lines);
-  if (!span) return { frontmatter: false, declared: null, type: null };
+  if (!span) return { frontmatter: false, declared: null, type: null, title: null };
+  let title: string | null = null;
+  for (let i = span.open + 1; i < span.close; i++) {
+    const m = bare(lines[i]!).match(TITLE_LINE);
+    if (m) {
+      const value = unquote(m[1]!);
+      title = value === '' ? null : value;
+      break;
+    }
+  }
   const at = typeLineIndex(lines, span);
-  if (at === -1) return { frontmatter: true, declared: null, type: null };
-  let declared = bare(lines[at]!).match(TYPE_LINE)![1]!;
-  const quoted = declared.match(/^(["'])(.*)\1$/);
-  if (quoted) declared = quoted[2]!;
-  const wanted = declared.trim().toLowerCase();
-  return { frontmatter: true, declared, type: isReferenceType(wanted) ? wanted : null };
+  if (at === -1) return { frontmatter: true, declared: null, type: null, title };
+  const declared = unquote(bare(lines[at]!).match(TYPE_LINE)![1]!);
+  const wanted = declared.toLowerCase();
+  return { frontmatter: true, declared, type: isReferenceType(wanted) ? wanted : null, title };
 }
 
 /**
