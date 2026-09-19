@@ -53,7 +53,7 @@
   "devDependencies": {
     "@better-auth/cli": "1.4.21",
     "@antasphere/slideless": "workspace:*",
-    "@testcontainers/postgresql": "^11.0.0",
+    "@testcontainers/postgresql": "^12.1.0",
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.15.0",
     "@types/nodemailer": "^8.0.1",
