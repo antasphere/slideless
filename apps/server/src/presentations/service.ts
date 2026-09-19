@@ -58,6 +58,12 @@ export interface CommitSuccess {
   ok: true;
   presentation: PresentationRow;
   version: PresentationVersionRow;
+  /**
+   * What a re-push took from a reference (ADR 025), for the audit row: a
+   * dev collaborator's push can close a published brand or drop the house
+   * default, and the version's warning must not be the only trace.
+   */
+  referenceLoss?: { audienceReset: boolean; defaultDropped: boolean };
 }
 export type SessionCommitResult = CommitSuccess | { ok: false; failure: SessionCommitFailure };
 export type VersionCommitResult = CommitSuccess | { ok: false; failure: VersionCommitFailure };
@@ -492,7 +498,14 @@ export class PresentationService {
         .where(eq(presentations.id, deck.id))
         .returning();
 
-      return { ok: true, presentation: updated!, version: version! };
+      const audienceReset = stoppedBeingReference && deck.audience === 'workspace';
+      const defaultDropped = (stoppedBeingReference || typeChanged) && deck.isDefaultReference;
+      return {
+        ok: true,
+        presentation: updated!,
+        version: version!,
+        ...(audienceReset || defaultDropped ? { referenceLoss: { audienceReset, defaultDropped } } : {})
+      };
     });
   }
 

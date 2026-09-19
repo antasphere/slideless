@@ -413,7 +413,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       metadata: {
         version: result.version.version,
         fileCount: result.version.fileCount,
-        referenceType: result.version.referenceType
+        referenceType: result.version.referenceType,
+        ...(result.referenceLoss ? { referenceLoss: result.referenceLoss } : {})
       }
     });
     registry.events.emit('presentation.version_committed', {
