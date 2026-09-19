@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
-import { fileUploaders, files, type Db, type DbConn, type FileRow } from '@slideless/db';
+import { fileUploaders, files, type Db, type DbConn, type FileRow } from '@antasphere/chassis-db';
 import { blobKey, type StorageDriver } from '../storage/driver.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 import type { Logger } from '../logger.js';

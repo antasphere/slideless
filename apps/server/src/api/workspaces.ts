@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
 import { workspaceCreateRoute, workspaceUpdateRoute } from '@slideless/contract/routes';
 import type { WorkspaceLook } from '@slideless/contract';
-import { workspaceMembers, workspaces, type Db, type DbConn } from '@slideless/db';
+import { workspaceMembers, workspaces, type Db, type DbConn } from '@antasphere/chassis-db';
 import type { AuditService } from '../audit/service.js';
 import type { Auth } from '../identity/better-auth.js';
 import { projectOrgMembership } from '../identity/hub-projection.js';

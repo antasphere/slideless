@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { workspaceMembers, workspaces, type Db } from '@slideless/db';
+import { workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 import type { Logger } from '../logger.js';
 import type { PrincipalGate, PrincipalGateResult } from '../middleware/auth-context.js';
 import type { HubOrgReconciler } from './hub-reconcile.js';

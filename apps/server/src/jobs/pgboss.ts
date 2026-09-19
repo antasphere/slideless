@@ -1,7 +1,7 @@
 import PgBoss from 'pg-boss';
 import pg from 'pg';
 import { sql } from 'drizzle-orm';
-import type { Db } from '@slideless/db';
+import type { Db } from '@antasphere/chassis-db';
 import type { UsageEvent, UsageSink } from '@slideless/contract';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
@@ -51,7 +51,7 @@ export async function purgeExpiredUploadSessions(db: Db): Promise<number> {
  * partition CREATE TABLE/attach) with NO lock: two or more all|worker
  * replicas booting a fresh database reliably deadlock there (Postgres
  * DeadLockReport; scale drill, I2). Same session-scoped pattern as the
- * migration lock (packages/db/src/migrate.ts). The key is distinct from the
+ * migration lock (packages/chassis-db/src/migrate.ts). The key is distinct from the
  * migration lock (7432001) and the last-owner locks (7432002 trigger xact /
  * 7432003 session) — see internal/scale-drill-findings.md.
  */

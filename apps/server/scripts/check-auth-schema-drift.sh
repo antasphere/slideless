@@ -2,7 +2,7 @@
 # CI drift guard: a Better Auth upgrade that changes the expected table shape
 # must fail the build until someone regenerates the schema AND writes the
 # matching migration. Compares the pinned CLI's current output against the
-# committed snapshot (which mirrors packages/db/src/auth-schema.ts).
+# committed snapshot (which mirrors packages/chassis-db/src/auth-schema.ts).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -21,11 +21,11 @@ pnpm exec better-auth generate --config scripts/auth-schema-config.ts --output "
 pnpm exec prettier --config "$(pwd)/../../.prettierrc" --log-level silent --write "$out"
 
 # The snapshot is only a proxy: the file the server actually compiles against
-# is packages/db/src/auth-schema.ts. A hand edit to one and not the other
+# is packages/chassis-db/src/auth-schema.ts. A hand edit to one and not the other
 # passed this guard silently (verifier finding, 2026-08-29) — pin them equal.
-if ! diff -u ../../packages/db/src/auth-schema.ts scripts/auth-schema.snapshot.ts; then
+if ! diff -u ../../packages/chassis-db/src/auth-schema.ts scripts/auth-schema.snapshot.ts; then
   echo ""
-  echo "packages/db/src/auth-schema.ts and scripts/auth-schema.snapshot.ts differ."
+  echo "packages/chassis-db/src/auth-schema.ts and scripts/auth-schema.snapshot.ts differ."
   echo "They must be the same file: regenerate both from the pinned CLI."
   exit 1
 fi
@@ -33,7 +33,7 @@ fi
 if ! diff -u scripts/auth-schema.snapshot.ts "$out"; then
   echo ""
   echo "Better Auth schema drift detected."
-  echo "Regenerate packages/db/src/auth-schema.ts + scripts/auth-schema.snapshot.ts,"
+  echo "Regenerate packages/chassis-db/src/auth-schema.ts + scripts/auth-schema.snapshot.ts,"
   echo "write the corresponding migration in packages/db/drizzle, and re-run."
   exit 1
 fi

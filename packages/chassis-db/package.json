@@ -1,5 +1,5 @@
 {
-  "name": "@slideless/db",
+  "name": "@antasphere/chassis-db",
   "version": "0.1.0",
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
@@ -22,18 +22,15 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run --passWithNoTests",
-    "db:generate": "drizzle-kit generate"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@antasphere/chassis-db": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "drizzle-orm": "^0.45.1",
     "pg": "^8.16.0"
   },
   "devDependencies": {
     "@types/pg": "^8.15.0",
-    "drizzle-kit": "^0.31.10",
     "vitest": "^3.2.0"
   }
 }

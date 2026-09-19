@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, gte, inArray, lt, max, sql } from 'drizzle-orm';
+import type { Db } from '@antasphere/chassis-db';
 import {
   formResponseMailState,
   formResponseVersions,
   formResponses,
   shareTokens,
-  type Db,
   type FormResponseFileRow,
   type FormResponseRow,
   type FormResponseSource,

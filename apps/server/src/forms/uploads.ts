@@ -2,12 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, sql, sum } from 'drizzle-orm';
+import type { Db, DbConn } from '@antasphere/chassis-db';
 import {
   formResponseFiles,
   formResponses,
   presentations,
-  type Db,
-  type DbConn,
   type FormResponseFileRow,
   type FormResponseFileSnapshot
 } from '@slideless/db';

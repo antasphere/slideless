@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import { workspaceMembers, workspaces, type Db, type WorkspaceRole } from '@slideless/db';
+import { workspaceMembers, workspaces, type Db, type WorkspaceRole } from '@antasphere/chassis-db';
 
 /**
  * The ONE hub-org projection primitive (internal/federation.md, ADR 015/018):

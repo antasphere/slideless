@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import AdmZip from 'adm-zip';
-import { files, presentations, shareTokenDownloads, shareTokens } from '@slideless/db';
+import { files } from '@antasphere/chassis-db';
+import { presentations, shareTokenDownloads, shareTokens } from '@slideless/db';
 import { purgeShareTokenDownloads } from '../../src/sharing/download-events.js';
 import { VIEWER_CSP } from '../../src/viewer/routes.js';
 import {

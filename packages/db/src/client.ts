@@ -1,34 +1,14 @@
-import pg from 'pg';
-import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from './schema.js';
-
-export type Db = NodePgDatabase<typeof schema>;
+import * as chassisSchema from '@antasphere/chassis-db/schema';
+import { createDb as createChassisDb, type DbHandle } from '@antasphere/chassis-db';
+import * as deckSchema from './schema.js';
 
 /**
- * A database handle OR an open transaction — for code that must run either
- * standalone or inside a caller's transaction (e.g. the presentation blob
- * in-use guard inside the file-delete transaction).
+ * The one place the chassis tables and the deck tables are merged: the full
+ * schema object drizzle is constructed with. It is NOT re-exported — a chassis
+ * table is imported from `@antasphere/chassis-db`, a deck table from here.
  */
-export type DbConn = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
-
-export interface DbHandle {
-  db: Db;
-  pool: pg.Pool;
-}
+const schema = { ...chassisSchema, ...deckSchema };
 
 export function createDb(connectionString: string): DbHandle {
-  // Conservative pool defaults for a single-container instance. A runaway
-  // query cannot hold a connection (or a transaction) forever, and the pool
-  // cannot starve Postgres' default max_connections when replicas multiply.
-  // Note for PgBouncer transaction mode: statement_timeout is a session-level
-  // setting — set it server-side instead (documented in deployment-profiles).
-  const pool = new pg.Pool({
-    connectionString,
-    max: 10,
-    connectionTimeoutMillis: 10_000,
-    statement_timeout: 30_000,
-    idle_in_transaction_session_timeout: 30_000
-  });
-  const db = drizzle(pool, { schema });
-  return { db, pool };
+  return createChassisDb(connectionString, schema);
 }

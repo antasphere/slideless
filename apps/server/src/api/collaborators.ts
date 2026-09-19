@@ -7,7 +7,7 @@ import {
   collaboratorRemoveRoute,
   collaboratorsListRoute
 } from '@slideless/contract/routes';
-import { user as userTable, workspaceMembers, type Db } from '@slideless/db';
+import { user as userTable, workspaceMembers, type Db } from '@antasphere/chassis-db';
 import { isDuplicateAccountError } from '../accounts/signup-duplicate.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';

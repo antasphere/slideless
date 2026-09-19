@@ -1,5 +1,5 @@
 import { createLocalJWKSet, jwtVerify, type JWK, type JWTVerifyOptions } from 'jose';
-import { type Db } from '@slideless/db';
+import { type Db } from '@antasphere/chassis-db';
 import type { Principal } from '@slideless/contract';
 import { mcpResourceUrl, type Auth } from './better-auth.js';
 import { isWorkspaceSelector, resolveMembership, type OnWorkspaceMiss } from './resolve-membership.js';

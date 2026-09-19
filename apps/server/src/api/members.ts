@@ -9,7 +9,7 @@ import {
   memberUpdateRoute,
   membersListRoute
 } from '@slideless/contract/routes';
-import { workspaceMembers, user as userTable, type Db } from '@slideless/db';
+import { workspaceMembers, user as userTable, type Db } from '@antasphere/chassis-db';
 import type { Auth } from '../identity/better-auth.js';
 import { isLastOwnerDbError, LastOwnerError, type AccountDeletionService } from '../accounts/deletion.js';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';

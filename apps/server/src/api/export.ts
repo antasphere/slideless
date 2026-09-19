@@ -14,7 +14,7 @@ import {
   workspaceMembers,
   workspaces,
   type Db
-} from '@slideless/db';
+} from '@antasphere/chassis-db';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { AuditService } from '../audit/service.js';

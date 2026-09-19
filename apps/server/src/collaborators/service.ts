@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { collaborators, type CollaboratorRow, type Db, type DbConn } from '@slideless/db';
+import type { Db, DbConn } from '@antasphere/chassis-db';
+import { collaborators, type CollaboratorRow } from '@slideless/db';
 import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
 
 /**

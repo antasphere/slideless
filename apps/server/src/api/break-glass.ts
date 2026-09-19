@@ -2,7 +2,7 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { breakGlassClaimOwnershipRoute, breakGlassResetTwoFactorRoute } from '@slideless/contract/routes';
-import { twoFactor, user as userTable, workspaceMembers, workspaces, type Db } from '@slideless/db';
+import { twoFactor, user as userTable, workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 import type { Auth } from '../identity/better-auth.js';
 import type { AuditService } from '../audit/service.js';
 import type { Logger } from '../logger.js';

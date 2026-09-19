@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { cliAuthCompleteRoute, cliAuthRequestRoute, cliAuthRevokeRoute } from '@slideless/contract/routes';
-import { apiKeys as apiKeysTable, type Db } from '@slideless/db';
+import { apiKeys as apiKeysTable, type Db } from '@antasphere/chassis-db';
 import type { Auth } from '../identity/better-auth.js';
 import { resolveMembership } from '../identity/resolve-membership.js';
 import type { HubSsoService } from '../identity/hub-sso.js';

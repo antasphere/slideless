@@ -37,7 +37,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 COMPOSE_FILE="$REPO/docker-compose.scale.yml"
 PROJECT=scale-drill
 IMAGE="${DRILL_IMAGE:-slideless:scale}"
-MIGRATION_LOCK_KEY=7432001 # packages/db/src/migrate.ts
+MIGRATION_LOCK_KEY=7432001 # packages/chassis-db/src/migrate.ts
 PASS_COUNT=0
 
 say() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, sql } from 'drizzle-orm';
-import { files, uploadSessions } from '@slideless/db';
+import { files } from '@antasphere/chassis-db';
+import { uploadSessions } from '@slideless/db';
 import { purgeExpiredUploadSessions } from '../../src/jobs/pgboss.js';
 import {
   createDatabase,

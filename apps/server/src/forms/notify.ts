@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { presentations, user, type Db, type FormResponseRow } from '@slideless/db';
+import { user, type Db } from '@antasphere/chassis-db';
+import { presentations, type FormResponseRow } from '@slideless/db';
 import { deckMasterUrl } from '@slideless/contract';
 import type { Logger } from '../logger.js';
 import type { Env } from '../env.js';

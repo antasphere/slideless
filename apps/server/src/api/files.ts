@@ -5,7 +5,7 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { SQL } from 'drizzle-orm';
 import { fileDeleteRoute, fileGetRoute, filesListRoute, fileUploadRoute } from '@slideless/contract/routes';
 import type { Principal } from '@slideless/contract';
-import type { DbConn, FileRow } from '@slideless/db';
+import type { DbConn, FileRow } from '@antasphere/chassis-db';
 import { ulid } from 'ulid';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';

@@ -1,4 +1,4 @@
-import { workspaceRoles, type WorkspaceRole } from '@slideless/db';
+import { workspaceRoles, type WorkspaceRole } from '@antasphere/chassis-db';
 import type { Logger } from '../logger.js';
 import type { GrantAccess, HubGrantService } from './hub-grant.js';
 

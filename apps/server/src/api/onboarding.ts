@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { onboardingDismissRoute } from '@slideless/contract/routes';
-import { userOnboarding, type Db } from '@slideless/db';
+import { userOnboarding, type Db } from '@antasphere/chassis-db';
 import type { Auth } from '../identity/better-auth.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });

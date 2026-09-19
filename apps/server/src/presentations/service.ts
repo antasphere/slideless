@@ -1,16 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, exists, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { files, type Db, type DbConn } from '@antasphere/chassis-db';
 import {
   collaborators,
-  files,
   presentations,
   presentationVersions,
   shareTokenDownloads,
   shareTokenViews,
   uploadSessions,
   type BadgePosition,
-  type Db,
-  type DbConn,
   type PresentationRow,
   type PresentationVersionRow,
   type UploadSessionRow,
