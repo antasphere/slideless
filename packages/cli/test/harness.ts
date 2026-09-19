@@ -26,13 +26,15 @@ export interface WireCall {
   origin: string;
   path: string;
   auth: string | undefined;
+  /** The `x-workspace-id` header, present only when the request carried one. */
+  workspace?: string;
   body?: unknown;
 }
 
 export interface Route {
   method: string;
   path: RegExp;
-  reply: (call: { path: string; body?: unknown; form?: FormData }) => {
+  reply: (call: { path: string; body?: unknown; form?: FormData; headers: Headers }) => {
     status?: number;
     body?: unknown;
     raw?: Response;
@@ -61,8 +63,17 @@ export function routedHarness(routes: Route[], env: Record<string, string | unde
       body = { sha256: form.get('sha256') };
     }
     calls.push({ method, path, ...(body !== undefined ? { body } : {}) });
-    const auth = new Headers(init?.headers).get('authorization') ?? undefined;
-    wire.push({ method, origin: url.origin, path, auth, ...(body !== undefined ? { body } : {}) });
+    const headers = new Headers(init?.headers);
+    const auth = headers.get('authorization') ?? undefined;
+    const workspace = headers.get('x-workspace-id') ?? undefined;
+    wire.push({
+      method,
+      origin: url.origin,
+      path,
+      auth,
+      ...(workspace !== undefined ? { workspace } : {}),
+      ...(body !== undefined ? { body } : {})
+    });
     const route = routes.find((r) => r.method === method && r.path.test(url.pathname));
     if (!route) {
       return new Response(
@@ -73,7 +84,7 @@ export function routedHarness(routes: Route[], env: Record<string, string | unde
         }
       );
     }
-    const result = route.reply({ path, body, ...(form ? { form } : {}) });
+    const result = route.reply({ path, body, headers, ...(form ? { form } : {}) });
     if (result.raw) return result.raw;
     return new Response(JSON.stringify(result.body ?? {}), {
       status: result.status ?? 200,

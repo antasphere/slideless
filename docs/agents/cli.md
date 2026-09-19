@@ -57,12 +57,30 @@ imported again on the next run; delete `~/.config/slideless/config.json` too
 if you want a truly clean slate.
 
 Every command accepts `--api-url` (alias `--url`), `--api-key`, `--profile`,
-and `--json`. Resolution order:
+`--workspace`, and `--json`. Resolution order:
 
-| Setting  | 1st         | 2nd                 | 3rd               | Otherwise                                                                     |
-| -------- | ----------- | ------------------- | ----------------- | ----------------------------------------------------------------------------- |
-| Base URL | `--api-url` | `SLIDELESS_URL`     | profile `baseUrl` | **error**                                                                     |
-| API key  | `--api-key` | `SLIDELESS_API_KEY` | profile `apiKey`  | hub connect (cloud, below) — else the public commands work and the rest error |
+| Setting   | 1st           | 2nd                   | 3rd                         | Otherwise                                                                     |
+| --------- | ------------- | --------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| Base URL  | `--api-url`   | `SLIDELESS_URL`       | profile `baseUrl`           | **error**                                                                     |
+| API key   | `--api-key`   | `SLIDELESS_API_KEY`   | profile `apiKey`            | hub connect (cloud, below) — else the public commands work and the rest error |
+| Workspace | `--workspace` | `SLIDELESS_WORKSPACE` | profile `activeWorkspaceId` | the server's default workspace                                                |
+
+**Choosing the workspace**: an API key identifies a person, and a person can
+belong to several workspaces. `--workspace <id or name>` (or
+`SLIDELESS_WORKSPACE`, or the selection `slideless workspace use` saves on the
+profile) names the one a command runs in; with none, the server picks your
+default workspace. The value is a Slideless workspace id as `slideless
+workspaces` prints it, or a workspace name, matched without regard to case; a
+name that matches several workspaces, or none, is an error that lists the
+candidates. An id is sent as it is, a name costs one extra request to look it
+up, and `workspace use` always saves the id. The saved selection applies only
+to the instance its profile names, and `slideless logout` removes it.
+`slideless whoami` shows the workspace the command ran in and what chose it.
+A key pinned to one workspace only ever acts there: selecting another one is
+refused, and the error names the pin.
+A deck lives in one workspace: a deck id (a linked folder's, a pasted one)
+asked of another workspace answers "not found", and the error names the
+workspace that was asked and what selected it.
 
 **Keeping secrets out of `argv`**: a value passed as `--api-key slk_…` or
 `--password …` is visible to every process on the machine (`ps`) and lands in
@@ -494,6 +512,9 @@ slideless versions <id> [--all]  # version history, newest first (numbers line u
                                  # or the MCP tool slideless_get_version
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed
+slideless workspaces          # your workspaces: id, role, name; * = the one the commands run in, (default) = the server's
+slideless workspace use <id or name>   # save the selection on the profile (the id is what is stored)
+slideless workspace use --clear        # remove it: commands run in the server's default again
 slideless files list [--all]
 slideless files upload <path> [--name <stored name>] [--content-type <type>]
 slideless files rm <id>
