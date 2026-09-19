@@ -28,7 +28,7 @@ export const api = new PlatformClient({ workspaceId: storedWorkspaceId() ?? unde
  * Switch the active workspace: persist + full reload (the setLocale
  * pattern — every loader and paged store restarts against the new scope).
  */
-export function switchWorkspace(workspaceId: string): void {
+export function switchWorkspace(workspaceId: string, to?: string): void {
   try {
     globalThis.localStorage?.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
   } catch {
@@ -36,7 +36,9 @@ export function switchWorkspace(workspaceId: string): void {
     // because the server default takes over (sole workspace) or the user
     // re-picks; never block the switch on storage.
   }
-  window.location.reload();
+  // `to`: land on a page of the new workspace (its settings) instead of this one.
+  if (to) window.location.assign(to);
+  else window.location.reload();
 }
 
 /** Drop a stale selection (revoked membership, deleted workspace) — no reload. */

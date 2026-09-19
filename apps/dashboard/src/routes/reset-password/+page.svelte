@@ -62,7 +62,7 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<GateShell width="max-w-sm">
+<GateShell width="max-w-sm" eyebrow={t('gate.eyebrowPassword')}>
   <Card.Root class="w-full border-0 bg-transparent shadow-none">
     {#if linkDead}
       <Card.Header>

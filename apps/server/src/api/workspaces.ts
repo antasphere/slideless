@@ -1,11 +1,13 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { ACTIVE_WORKSPACE_HEADER } from '@slideless/contract';
-import { workspaceCreateRoute } from '@slideless/contract/routes';
+import { workspaceCreateRoute, workspaceUpdateRoute } from '@slideless/contract/routes';
+import type { WorkspaceLook } from '@slideless/contract';
 import { workspaceMembers, workspaces, type Db, type DbConn } from '@slideless/db';
 import type { AuditService } from '../audit/service.js';
 import type { Auth } from '../identity/better-auth.js';
 import { projectOrgMembership } from '../identity/hub-projection.js';
+import { requireRole } from '../middleware/auth-context.js';
 import type { ReconcilePassOutcome } from '../identity/hub-reconcile.js';
 import type { HubOrgCreator } from '../identity/hub-user-client.js';
 import type { Logger } from '../logger.js';
@@ -196,6 +198,8 @@ export interface WorkspaceCloudDeps {
   /** The login-grade, TTL-bypassing reconcile pass (identity/hub-reconcile.ts). */
   forceReconcile: (userId: string) => Promise<ReconcilePassOutcome>;
   hasHubLink: (userId: string) => Promise<boolean>;
+  /** The hub console: where a hub-origin workspace is renamed (P7's pointer). */
+  manageUrl: string;
 }
 
 export interface WorkspaceRouteDeps {
@@ -257,8 +261,18 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
       return c.json(err('rate_limited', 'Too many requests, slow down'), 429);
     }
 
-    const name = c.req.valid('json').name.trim();
+    const body = c.req.valid('json');
+    const name = body.name.trim();
     if (!name) return c.json(err('validation_error', 'The workspace needs a name'), 400);
+    // The look the person picked in the dialog: written on the row the
+    // moment it exists (oss) or once it is projected (cloud), so the
+    // workspace opens with it on every member's screen, not just this browser's.
+    const look: WorkspaceLook = {
+      theme: body.look?.theme ?? null,
+      pattern: body.look?.pattern ?? null,
+      field: body.look?.field ?? null,
+      grain: body.look?.grain ?? null
+    };
 
     let workspaceId: string;
     let workspaceName = name;
@@ -277,7 +291,17 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
           // The registry's WorkspaceService (ADR 014), joined to this
           // transaction exactly as setup does: workspace + ACTIVE OWNER
           // membership (origin defaults to 'local') or nothing.
-          return (await registry.workspaces.create(name, userId, tx)).workspaceId;
+          const created = await registry.workspaces.create(name, userId, tx);
+          await tx
+            .update(workspaces)
+            .set({
+              lookTheme: look.theme,
+              lookPattern: look.pattern,
+              lookField: look.field,
+              lookGrain: look.grain
+            })
+            .where(eq(workspaces.id, created.workspaceId));
+          return created.workspaceId;
         });
       } catch (cause) {
         if (cause instanceof CreationRefused) {
@@ -380,6 +404,17 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
       }
       workspaceId = local.id;
       workspaceName = local.name;
+      // The look is a LOCAL fact of the projection (the hub reconcile writes
+      // the name and the status, never the look's columns).
+      await db
+        .update(workspaces)
+        .set({
+          lookTheme: look.theme,
+          lookPattern: look.pattern,
+          lookField: look.field,
+          lookGrain: look.grain
+        })
+        .where(eq(workspaces.id, workspaceId));
     }
 
     // Genesis row in the NEW workspace's own trail — and nowhere else.
@@ -395,6 +430,77 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
     });
     registry.events.emit('workspace.created', { workspaceId, ownerUserId: userId });
 
-    return c.json({ workspace: { id: workspaceId, name: workspaceName } }, 201);
+    return c.json({ workspace: { id: workspaceId, name: workspaceName, look } }, 201);
+  });
+
+  // ── PATCH /workspace: the active workspace's own settings ───────────────
+  // Owners and admins, from a browser session (unlisted in the machine scope
+  // allowlist like the create; re-checked here). The route names no id: the
+  // request's one workspace is the one edited (ADR 014). A guest never
+  // holds admin, so requireRole covers D2 too.
+  api.use('/workspace', requireRole('admin'));
+  api.openapi(workspaceUpdateRoute, async (c) => {
+    const principal = c.get('principal');
+    if (!principal) return c.json(err('unauthenticated', 'Authentication required'), 401);
+    if (principal.via !== 'session') {
+      return c.json(err('session_required', 'Changing a workspace requires a browser session'), 403);
+    }
+    const body = c.req.valid('json');
+    const patch: Partial<{
+      name: string;
+      lookTheme: string | null;
+      lookPattern: string | null;
+      lookField: number | null;
+      lookGrain: number | null;
+    }> = {};
+    if (body.name !== undefined) {
+      const name = body.name.trim();
+      if (!name) return c.json(err('validation_error', 'The workspace needs a name'), 400);
+      // P7: a hub-origin workspace's name is the hub's — renamed there, and
+      // the next reconcile pass would overwrite a local rename anyway.
+      if (principal.accountRef) {
+        return c.json(
+          {
+            error: {
+              code: 'hub_managed',
+              message: 'This workspace is an Antasphere organization — rename it at Antasphere',
+              details: { manageUrl: cloud?.manageUrl ?? null }
+            }
+          },
+          403
+        );
+      }
+      patch.name = name;
+    }
+    if (body.look?.theme !== undefined) patch.lookTheme = body.look.theme;
+    if (body.look?.pattern !== undefined) patch.lookPattern = body.look.pattern;
+    if (body.look?.field !== undefined) patch.lookField = body.look.field;
+    if (body.look?.grain !== undefined) patch.lookGrain = body.look.grain;
+
+    const [row] = await db
+      .update(workspaces)
+      .set(patch)
+      .where(eq(workspaces.id, principal.workspaceId))
+      .returning({
+        id: workspaces.id,
+        name: workspaces.name,
+        lookTheme: workspaces.lookTheme,
+        lookPattern: workspaces.lookPattern,
+        lookField: workspaces.lookField,
+        lookGrain: workspaces.lookGrain
+      });
+    // The principal's workspace exists by construction (a live join built
+    // it); a missing row here is a race with a deletion, refused like a gate.
+    if (!row) return c.json(err('forbidden', 'Workspace not found'), 403);
+    return c.json(
+      {
+        workspace: {
+          id: row.id,
+          name: row.name,
+          look: { theme: row.lookTheme, pattern: row.lookPattern, field: row.lookField, grain: row.lookGrain }
+        }
+      },
+      200
+    );
   });
 }

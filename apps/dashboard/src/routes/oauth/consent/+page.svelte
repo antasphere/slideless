@@ -152,7 +152,7 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<GateShell width="max-w-md">
+<GateShell width="max-w-md" eyebrow={t('gate.eyebrowConsent')}>
   <Card.Root class="w-full border-0 bg-transparent shadow-none">
     {#if view === 'invalid'}
       <Card.Header class="text-center">

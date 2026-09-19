@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -79,6 +80,20 @@ export const workspaces = pgTable(
      * stay 'active' forever.
      */
     hubStatus: text('hub_status', { enum: workspaceHubStatuses }).notNull().default('active'),
+    /**
+     * The workspace's look (PRDCT-2439 made it per workspace, in the browser;
+     * the settings pass of 2026-09-19 made it a fact of the workspace): one
+     * of the brand's theme keys and one pattern key of its library, as the
+     * dashboard names them. NULL = the dashboard's default for this
+     * workspace (the paper theme, a form dealt from the id). Validated as
+     * short slugs server-side; the dashboard falls back to its defaults on
+     * a key it does not know, so a retired theme never breaks a workspace.
+     */
+    lookTheme: text('look_theme'),
+    lookPattern: text('look_pattern'),
+    /** 0..1: how much of the field's gradient shows, how much grain sits on it. NULL = the brand's constant. */
+    lookField: doublePrecision('look_field'),
+    lookGrain: doublePrecision('look_grain'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [

@@ -1,6 +1,6 @@
 <script lang="ts" module>
   export type DialogDrawingKind =
-    'share' | 'shared' | 'invite' | 'invited' | 'key' | 'member' | 'membered' | 'push';
+    'share' | 'shared' | 'invite' | 'invited' | 'key' | 'member' | 'membered' | 'push' | 'workspace';
 </script>
 
 <script lang="ts">
@@ -22,14 +22,53 @@
        its chain glyph once it exists.
      - push: a terminal prompt sending a folder of slides up to the deck,
        where it lands as the new version.
+     - workspace: the space, rings around a centre on its ground, its people
+       on the outer ring each tied to the centre; the accent is the ring
+       closing around them (the hub's organization drawing).
 
      The accent line is drawn once when the dialog opens; a reader who asked
      for no motion gets the still drawing. Ink comes from the tokens, so the
      dark set just works. */
   interface Props {
     kind: DialogDrawingKind;
+    /**
+     * A walk's shape, for the `workspace` drawing: how many steps it has and how
+     * many are behind the person. The outer ring is divided into that many
+     * arcs, one seat per step on the divisions, and the accent travels
+     * around as the walk advances — it does not restart at each step.
+     */
+    steps?: number;
+    done?: number;
   }
-  let { kind }: Props = $props();
+  let { kind, steps = 3, done = 0 }: Props = $props();
+
+  /* The ring's geometry, computed rather than drawn: the seats sit on the
+     divisions between arcs, so three steps give three seats and four give
+     four. Angles start at the top and run clockwise. */
+  const C = { x: 120, y: 126, r: 84 };
+  const polar = (angle: number, radius: number) => ({
+    x: C.x + radius * Math.cos(((angle - 90) * Math.PI) / 180),
+    y: C.y + radius * Math.sin(((angle - 90) * Math.PI) / 180)
+  });
+  const seats = $derived(
+    Array.from({ length: steps }, (_, i) => {
+      const angle = (360 / steps) * i;
+      return { angle, ...polar(angle, C.r), inner: polar(angle, 30), stop: polar(angle, C.r - 14) };
+    })
+  );
+  /**
+   * How far round the walk has gone, in seats: 0 at the first step, `steps`
+   * once the walk is over. The accent is ONE fixed circle revealed by its dash
+   * offset, measured in the ring's REAL length: a normalised `pathLength`
+   * under `non-scaling-stroke` is dashed in screen units, which showed a
+   * sliver before the start and overshot every stop. Each step advances the
+   * accent by one division, so it always stops on a seat.
+   */
+  const reached = $derived(Math.max(0, Math.min(done, steps)));
+  const LENGTH = 2 * Math.PI * C.r;
+  const offset = $derived(LENGTH * (1 - reached / steps));
+  /** A circle drawn from the top, clockwise, as two half arcs (one arc cannot close a circle). */
+  const RING = `M${C.x},${C.y - C.r} A${C.r},${C.r} 0 0 1 ${C.x},${C.y + C.r} A${C.r},${C.r} 0 0 1 ${C.x},${C.y - C.r}`;
 
   const uid = $props.id();
 </script>
@@ -60,6 +99,10 @@
     >
       <path class="head head--c" d="M1.5,1.5 L8,5 L1.5,8.5" />
     </marker>
+    <radialGradient id="{uid}-wash">
+      <stop class="wash-stop wash-stop--in" offset="0.35" />
+      <stop class="wash-stop wash-stop--out" offset="1" />
+    </radialGradient>
   </defs>
 
   {#if kind === 'share' || kind === 'shared'}
@@ -167,68 +210,48 @@
     <circle class="ring" cx="198" cy="64" r="18" />
     <circle class="ring ring--pulse" cx="198" cy="64" r="18" />
     <circle class="dot" cx="198" cy="64" r="6" />
-  {:else if kind === 'push'}
-    <!-- the deck up there: its versions fanned, the new one in front -->
-    <rect class="bx fan-up fan-l" x="112" y="30" width="104" height="66" rx="7" />
-    <rect class="bx fan-up fan-r" x="112" y="30" width="104" height="66" rx="7" />
-    <rect class="bx bx--front" x="112" y="30" width="104" height="66" rx="7" />
-    <line class="ln" x1="126" y1="50" x2="156" y2="50" />
-    <line class="ln ln--thin" x1="126" y1="64" x2="196" y2="64" />
-    <line class="ln ln--thin" x1="126" y1="77" x2="178" y2="77" />
-    <circle class="ring" cx="216" cy="30" r="9" />
-    <circle class="ring ring--pulse" cx="216" cy="30" r="9" />
-    <circle class="dot" cx="216" cy="30" r="3.5" />
-
-    <!-- the terminal: its bar, the prompt and the command typed after it -->
-    <line class="ln ln--thin" x1="10" y1="232" x2="170" y2="232" />
-    <rect class="bx bx--front" x="20" y="150" width="132" height="76" rx="8" />
-    <line class="ln ln--thin" x1="20" y1="166" x2="152" y2="166" />
-    <circle class="ring" cx="31" cy="158" r="2.5" />
-    <circle class="ring" cx="40" cy="158" r="2.5" />
-    <circle class="ring" cx="49" cy="158" r="2.5" />
-    <path class="ln" d="M33,180 L40,186 L33,192" />
-    <line class="ln" x1="48" y1="186" x2="104" y2="186" />
-    <line class="ln ln--thin" x1="33" y1="206" x2="86" y2="206" />
-
-    <!-- the push, and the folder of slides it carries -->
-    <path
-      class="ln ln--c draw"
-      pathLength="1"
-      d="M154,186 C196,182 204,150 178,106"
-      marker-end="url(#{uid}-arrow-c)"
+  {:else if kind === 'workspace'}
+    <!-- the end effect's wash: a breath of the accent that swells out of the
+         closed ring and fades as it goes -->
+    <circle
+      class="wash"
+      class:wash--go={reached >= steps}
+      cx={C.x}
+      cy={C.y}
+      r={C.r}
+      fill="url(#{uid}-wash)"
     />
-    <g class="chain" transform="translate(200 150)">
-      <path class="bx bx--front" d="M-14,-10 H-5 L-2,-6 H14 V10 H-14 Z" />
-      <line class="ln ln--thin" x1="-8" y1="0" x2="8" y2="0" />
-      <line class="ln ln--thin" x1="-8" y1="5" x2="3" y2="5" />
+
+    <g class="space" class:space--closed={reached >= steps}>
+      <!-- the space: the ring the walk goes round, on its ground -->
+      <line class="ln ln--thin" x1="10" y1="232" x2="230" y2="232" />
+      <circle class="ring" cx={C.x} cy={C.y} r={C.r} />
+      <circle class="ln ln--soft" cx={C.x} cy={C.y} r="46" />
+
+      <!-- how far the walk has gone: the accent, one fixed path revealed
+           further at each step. It sits UNDER the seats, so its tip always
+           ends behind the seat it has reached -->
+      <path
+        class="ln ln--c travel"
+        d={RING}
+        stroke-dasharray="{LENGTH} {LENGTH}"
+        stroke-dashoffset={offset}
+      />
+
+      <!-- one seat per step, on the ring's divisions, each tied to the centre;
+           a seat the walk has reached is filled, the ones ahead stay open -->
+      {#each seats as seat, i (i)}
+        <path class="ln ln--thin" d="M{seat.inner.x},{seat.inner.y} L{seat.stop.x},{seat.stop.y}" />
+        <circle class="bx bx--front" cx={seat.x} cy={seat.y} r="12" />
+        <circle class="dot seat-dot" class:dot--ahead={i > reached} cx={seat.x} cy={seat.y} r="4" />
+      {/each}
+
+      <!-- the centre -->
+      <circle class="bx bx--front" cx={C.x} cy={C.y} r="22" />
+      <circle class="ring" cx={C.x} cy={C.y} r="9" />
+      <circle class="ring ring--pulse" cx={C.x} cy={C.y} r="9" />
+      <circle class="dot" cx={C.x} cy={C.y} r="3.5" />
     </g>
-  {:else}
-    <!-- one slide, and the people who work on it -->
-    <rect class="bx" x="52" y="140" width="136" height="88" rx="8" />
-    <line class="ln" x1="68" y1="162" x2="110" y2="162" />
-    <line class="ln ln--thin" x1="68" y1="180" x2="166" y2="180" />
-    <line class="ln ln--thin" x1="68" y1="196" x2="140" y2="196" />
-    <line class="ln ln--thin" x1="68" y1="212" x2="122" y2="212" />
-
-    <!-- the owner and a collaborator already there -->
-    <path class="ln" d="M52,80 C60,104 72,122 84,138" />
-    <path class="ln ln--thin" d="M120,60 V138" />
-    <circle class="ring" cx="46" cy="64" r="14" />
-    <circle class="dot" cx="46" cy="64" r="5" />
-    <circle class="ring" cx="120" cy="44" r="11" />
-    <circle class="dot" cx="120" cy="44" r="4" />
-
-    <!-- the invitation on its way: dashed until it is claimed -->
-    <path class="ln ln--soft" d="M158,138 C170,120 184,100 191,84" marker-end="url(#{uid}-arrow)" />
-    {#if kind === 'invited'}
-      <g class="chain" transform="translate(175 112) rotate(-56)">
-        <rect class="bx bx--front" x="-13" y="-5" width="16" height="10" rx="5" />
-        <rect class="bx bx--front" x="-3" y="-5" width="16" height="10" rx="5" />
-      </g>
-    {/if}
-    <circle class="ring ring--c" cx="198" cy="64" r="16" />
-    <circle class="ring ring--c ring--pulse" cx="198" cy="64" r="16" />
-    <circle class="dot dot--c" cx="198" cy="64" r="5.5" />
   {/if}
 </svg>
 
@@ -317,6 +340,91 @@
   .draw {
     stroke-dasharray: 1;
     stroke-dashoffset: 0;
+  }
+  /* the walk's arc: one path, revealed further at each step. Only the dash
+     offset moves, so the line grows along the ring and nothing re-lays out.
+     It scales with the drawing (no non-scaling-stroke): its dashes must be
+     measured in the same units as its length. */
+  .drawing {
+    --travel: calc(var(--motion-duration) * 3.4);
+  }
+  .drawing .travel {
+    vector-effect: none;
+    transition: stroke-dashoffset var(--travel) cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  /* a seat lights when the accent arrives, not when it leaves */
+  .seat-dot {
+    transition: fill var(--motion-duration) var(--motion-ease) var(--travel);
+  }
+  /* a seat the walk has not reached: present, not yet lit */
+  .dot--ahead {
+    fill: color-mix(in oklab, var(--ink) 26%, transparent);
+    transition-delay: 0ms;
+  }
+  /* the end effect: once the ring has closed, the space gathers itself and
+     lets go like a droplet, leaving a wash of the accent behind it */
+  .space,
+  .wash {
+    transform-box: view-box;
+    transform-origin: 120px 126px;
+  }
+  .wash {
+    opacity: 0;
+  }
+  .wash-stop {
+    stop-color: var(--accent);
+  }
+  .wash-stop--in {
+    stop-opacity: 0.32;
+  }
+  .wash-stop--out {
+    stop-opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .drawing .travel,
+    .seat-dot {
+      transition: none;
+    }
+    .space--closed {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .space--closed {
+      animation: space-release 560ms var(--travel) 1 forwards;
+    }
+    .wash--go {
+      animation: space-wash 1100ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--travel) + 200ms) 1 both;
+    }
+  }
+  @keyframes space-release {
+    0% {
+      transform: scale(1);
+      opacity: 1;
+      animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0);
+    }
+    42% {
+      transform: scale(0.86);
+      opacity: 1;
+      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    100% {
+      transform: scale(1.22);
+      opacity: 0;
+    }
+  }
+  @keyframes space-wash {
+    0% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    25% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.7);
+    }
   }
 
   @media (prefers-reduced-motion: no-preference) {

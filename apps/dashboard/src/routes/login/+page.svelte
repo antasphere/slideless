@@ -4,9 +4,11 @@
   import { page } from '$app/state';
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
+  import { stagger } from '$lib/stagger';
   import { Button } from '$lib/components/ui/button/index.js';
   import FormError from '$lib/components/shared/FormError.svelte';
-  import { Reveal, appear } from '$lib/components/ui/reveal/index.js';
+  import { Reveal, appear, motionDuration } from '$lib/components/ui/reveal/index.js';
+  import { fade } from 'svelte/transition';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
@@ -98,6 +100,19 @@
   // A failed SSO dance lands back here with ?error=<code> (both the
   // server's per-login checks and the OAuth plugin's own error redirects).
   let error = $state<string | null>(ssoErrorMessage(page.url.searchParams.get('error')));
+  // The one call to action of the sign-in form: what it says follows the way
+  // in and where the person is in it.
+  const submitLabel = $derived(
+    mode === 'password'
+      ? loading
+        ? t('login.signingIn')
+        : t('login.signIn')
+      : loading
+        ? t('common.working')
+        : otpSent
+          ? t('login.verifyCode')
+          : t('login.sendCode')
+  );
 
   function ssoErrorMessage(code: string | null): string | null {
     if (!code) return null;
@@ -273,10 +288,10 @@
 {:else}
   <LanguageSwitcher class="fixed right-4 top-4 z-20" />
 
-  <GateShell>
-    <Card.Root class="w-full border-0 bg-transparent shadow-none">
+  <GateShell eyebrow={t('login.gateEyebrow')}>
+    <Card.Root>
       <Card.Header>
-        <Card.Title class="font-display text-xl font-normal">{data.instance.name}</Card.Title>
+        <Card.Title>{t('login.welcome')}</Card.Title>
         <Card.Description>{t('login.subtitle')}</Card.Description>
       </Card.Header>
       <Card.Content class="space-y-4">
@@ -340,12 +355,12 @@
           </form>
         {:else}
           {#if hasPassword && hasOtp}
-            <div class="grid grid-cols-2 gap-[2px] rounded-[10px] border bg-[var(--ground-2)] p-[3px]">
+            <div class="seg" role="group" aria-label={t('login.signIn')}>
               <button
                 type="button"
-                class="rounded-[7px] px-3 py-1.5 text-sm transition-colors {mode === 'password'
-                  ? 'bg-[var(--ground)] shadow-sm'
-                  : 'text-muted-foreground'}"
+                class="seg-btn"
+                class:on={mode === 'password'}
+                aria-pressed={mode === 'password'}
                 onclick={() => {
                   mode = 'password';
                   error = null;
@@ -355,9 +370,9 @@
               </button>
               <button
                 type="button"
-                class="rounded-[7px] px-3 py-1.5 text-sm transition-colors {mode === 'otp'
-                  ? 'bg-[var(--ground)] shadow-sm'
-                  : 'text-muted-foreground'}"
+                class="seg-btn"
+                class:on={mode === 'otp'}
+                aria-pressed={mode === 'otp'}
                 onclick={() => {
                   mode = 'otp';
                   error = null;
@@ -369,101 +384,88 @@
           {/if}
 
           {#if hasPassword}
-            {#if mode === 'password'}
-              <form
-                in:appear
-                class="space-y-4"
-                onsubmit={(e) => {
-                  e.preventDefault();
-                  void signInPassword();
-                }}
-              >
-                <div class="space-y-2">
-                  <Label for="email">{t('login.email')}</Label>
-                  <Input id="email" type="email" autocomplete="email" bind:value={email} required />
-                </div>
-                <div class="space-y-2">
-                  <Label for="password">{t('login.password')}</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    autocomplete="current-password"
-                    bind:value={password}
-                    required
-                  />
-                  {#if hasPasswordReset}
-                    <div class="text-right">
-                      <a
-                        href="/forgot-password"
-                        class="text-xs text-muted-foreground underline-offset-4 hover:underline"
-                      >
-                        {t('login.forgotPassword')}
-                      </a>
-                    </div>
-                  {/if}
-                </div>
-                <FormError message={error} />
-                <Button type="submit" class="w-full" disabled={loading}>
-                  {loading ? t('login.signingIn') : t('login.signIn')}
-                </Button>
-              </form>
-            {:else}
-              <form
-                in:appear
-                class="space-y-4"
-                onsubmit={(e) => {
-                  e.preventDefault();
-                  void (otpSent ? signInOtp() : sendOtp());
-                }}
-              >
-                <div class="space-y-2">
-                  <Label for="otp-email">{t('login.email')}</Label>
-                  <Input
-                    id="otp-email"
-                    type="email"
-                    autocomplete="email"
-                    bind:value={email}
-                    required
-                    disabled={otpSent}
-                  />
-                </div>
-                <Reveal open={otpSent} class="space-y-2">
-                  <Label for="otp-code">{t('login.otpCode')}</Label>
-                  <Input
-                    id="otp-code"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    bind:value={otp}
-                    required
-                  />
-                  <p class="text-xs text-muted-foreground">{t('login.otpSentTo', { email })}</p>
-                </Reveal>
-                <FormError message={error} />
-                <Button type="submit" class="w-full" disabled={loading}>
-                  {loading ? t('common.working') : otpSent ? t('login.verifyCode') : t('login.sendCode')}
-                </Button>
-                {#if otpSent}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    class="w-full"
-                    onclick={() => {
-                      otpSent = false;
-                      otp = '';
-                    }}
-                  >
-                    {t('login.useDifferentEmail')}
-                  </Button>
+            <!-- ONE form for both ways in: the email is the same question either
+                 way, so it stays where it is, and what differs folds open under
+                 it (the password, or the code once it has been sent), the button
+                 gliding with the fold. Switching never retypes the address. -->
+            <form
+              class="space-y-4"
+              use:stagger
+              onsubmit={(e) => {
+                e.preventDefault();
+                void (mode === 'password' ? signInPassword() : otpSent ? signInOtp() : sendOtp());
+              }}
+            >
+              <div class="space-y-2">
+                <Label for="email">{t('login.email')}</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autocomplete="email"
+                  bind:value={email}
+                  required
+                  disabled={mode === 'otp' && otpSent}
+                />
+              </div>
+              <Reveal open={mode === 'password'} scale={2} fadeFrom={0.05} class="space-y-2">
+                <Label for="password">{t('login.password')}</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autocomplete="current-password"
+                  bind:value={password}
+                  required
+                />
+                {#if hasPasswordReset}
+                  <div class="text-right">
+                    <a
+                      href="/forgot-password"
+                      class="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                      {t('login.forgotPassword')}
+                    </a>
+                  </div>
                 {/if}
-              </form>
-            {/if}
+              </Reveal>
+              <Reveal open={mode === 'otp' && otpSent} scale={2} fadeFrom={0.05} class="space-y-2">
+                <Label for="otp-code">{t('login.otpCode')}</Label>
+                <Input
+                  id="otp-code"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  bind:value={otp}
+                  required
+                />
+                <p class="break-words text-xs text-muted-foreground">{t('login.otpSentTo', { email })}</p>
+              </Reveal>
+              <FormError message={error} />
+              <Button type="submit" class="w-full" disabled={loading}>
+                <!-- the same button for both ways in: its word changes in place -->
+                {#key submitLabel}
+                  <span in:fade={{ duration: motionDuration(1.4) }}>{submitLabel}</span>
+                {/key}
+              </Button>
+              <Reveal open={mode === 'otp' && otpSent}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  class="w-full"
+                  onclick={() => {
+                    otpSent = false;
+                    otp = '';
+                  }}
+                >
+                  {t('login.useDifferentEmail')}
+                </Button>
+              </Reveal>
+            </form>
           {/if}
 
           {#if hasGoogle}
             <div class="relative">
               <div class="absolute inset-0 flex items-center"><span class="w-full border-t"></span></div>
               <div class="relative flex justify-center text-xs uppercase">
-                <span class="bg-card px-2 text-muted-foreground">{t('login.or')}</span>
+                <span class="bg-[var(--plate-strong)] px-2 text-muted-foreground">{t('login.or')}</span>
               </div>
             </div>
             <Button variant="outline" class="w-full" onclick={signInGoogle}>
@@ -479,7 +481,7 @@
               <div class="relative">
                 <div class="absolute inset-0 flex items-center"><span class="w-full border-t"></span></div>
                 <div class="relative flex justify-center text-xs uppercase">
-                  <span class="bg-card px-2 text-muted-foreground">{t('login.or')}</span>
+                  <span class="bg-[var(--plate-strong)] px-2 text-muted-foreground">{t('login.or')}</span>
                 </div>
               </div>
             {/if}
@@ -495,6 +497,34 @@
 {/if}
 
 <style>
+  /* the way in, chosen: password or a code by mail */
+  .seg {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--ground-2) 62%, transparent);
+  }
+  .seg-btn {
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-size: 13.5px;
+    color: var(--muted);
+    transition:
+      background-color var(--motion-duration) var(--motion-ease),
+      color var(--motion-duration) var(--motion-ease);
+  }
+  .seg-btn:hover {
+    color: var(--ink);
+  }
+  .seg-btn.on {
+    background: var(--plate-strong);
+    color: var(--ink);
+    box-shadow: var(--shadow-sm);
+  }
+
   /* The connecting mark: a quiet ring, one revolving arc in the primary
      tone, a solid core — deliberate and calm, not a throwaway spinner. */
   .connect-mark {

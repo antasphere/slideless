@@ -111,7 +111,14 @@ describe('POST /workspaces — self-hosted', () => {
     const res = await create(memberCookie, '  Mia’s studio  ');
     expect(res.status).toBe(201);
     const body = await readJson(res);
-    expect(body).toEqual({ workspace: { id: expect.any(String), name: 'Mia’s studio' } }); // trimmed
+    // trimmed; the look is the dialog's to set, absent here so the row carries none
+    expect(body).toEqual({
+      workspace: {
+        id: expect.any(String),
+        name: 'Mia’s studio',
+        look: { theme: null, pattern: null, field: null, grain: null }
+      }
+    });
     created = body.workspace.id;
     expect(created).not.toBe(w1);
 

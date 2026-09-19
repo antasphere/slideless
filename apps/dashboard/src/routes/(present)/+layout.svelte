@@ -12,7 +12,7 @@
   // whose paper is the neutral field seen through a plate.
   $effect(() => {
     theme.start();
-    look.use(data.me.activeWorkspaceId ?? '');
+    look.use(data.me.activeWorkspaceId ?? '', data.me.workspace.look);
     look.apply(theme.dark);
   });
   const field = $derived(fieldPalette(look.value.theme, theme.dark));

@@ -45,7 +45,7 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<GateShell width="max-w-sm">
+<GateShell width="max-w-sm" eyebrow={t('gate.eyebrowPassword')}>
   <Card.Root class="w-full border-0 bg-transparent shadow-none">
     <Card.Header>
       <Card.Title class="font-display text-xl font-normal">{t('forgot.title')}</Card.Title>

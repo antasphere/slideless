@@ -56,17 +56,22 @@
             {...props}
             size="default"
             class="!h-auto {sidebar.state === 'collapsed'
-              ? '!mx-auto !w-9 !justify-center !p-0'
-              : '!gap-2.5 !px-1.5 !py-1.5'}"
+              ? '!size-8 !justify-center !gap-0 !p-0'
+              : '!w-full !gap-2.5 !px-1.5 !py-1.5'}"
           >
             <span class="disc" class:lone={sidebar.state === 'collapsed'}>{initials}</span>
-            {#if sidebar.state !== 'collapsed'}
+            <!-- fades with the rail rather than being destroyed; see the switcher -->
+            <div
+              class="label"
+              class:away={sidebar.state === 'collapsed'}
+              aria-hidden={sidebar.state === 'collapsed'}
+            >
               <span class="grid min-w-0 flex-1 text-left leading-tight">
                 <span class="truncate text-[13.5px] font-medium text-[var(--ink)]">{displayName}</span>
                 <span class="truncate text-[11.5px] text-[var(--muted)]">{user.email}</span>
               </span>
               <ChevronsUpDown class="ml-auto !size-3.5 shrink-0 text-[var(--muted)] opacity-70" />
-            {/if}
+            </div>
           </Sidebar.MenuButton>
         {/snippet}
       </DropdownMenu.Trigger>
@@ -135,9 +140,47 @@
     letter-spacing: 0.02em;
     color: var(--ink-soft);
   }
+  /* collapsed: the same 28px mark the workspace's tile shows, so the two
+     ends of the rail read as one column */
   .disc.lone {
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
+  }
+  .label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+    opacity: 1;
+    transition:
+      opacity 180ms var(--motion-ease),
+      transform 300ms ease-out,
+      visibility 0s linear 0s;
+  }
+  .label.away {
+    opacity: 0;
+    transform: translateX(-6px);
+    visibility: hidden;
+    /* width, not just visibility: a hidden flex child still takes its
+       basis, and the row's gap still counts it, which pushed the mark a
+       few px off the rail's centre. */
+    flex: 0 0 0;
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition:
+      opacity 140ms var(--motion-ease),
+      transform 300ms ease-out,
+      visibility 0s linear 300ms;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .label,
+    .label.away {
+      transition: none;
+      transform: none;
+    }
   }
   /* in the card the disc takes the accent's wash: this is the person, lit */
   .disc.big {

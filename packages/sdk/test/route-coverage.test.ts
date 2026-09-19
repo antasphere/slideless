@@ -53,6 +53,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /api-keys': (c) => c.apiKeys(),
   'POST /api-keys': (c) => c.createApiKey({ name: 'k', scopes: ['presentations:read'] }),
   'DELETE /api-keys/{id}': (c) => c.revokeApiKey(SAMPLE_ID),
+  'PATCH /workspace': (c) => c.updateWorkspace({ name: 'Acme' }),
   'GET /invitations': (c) => c.invitations(),
   'POST /invitations': (c) => c.createInvitation({ email: 'a@b.co', role: 'member' }),
   'DELETE /invitations/{id}': (c) => c.revokeInvitation(SAMPLE_ID),

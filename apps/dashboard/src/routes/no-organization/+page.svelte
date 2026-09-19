@@ -21,7 +21,7 @@
   let showCreateDialog = $state(false);
 </script>
 
-<GateShell palette="paper" strength="quiet" width="max-w-md">
+<GateShell palette="paper" strength="quiet" width="max-w-md" eyebrow={t('gate.eyebrowEdge')}>
   <div class="flex flex-col items-center gap-4 p-8 text-center">
     <h1 class="font-display text-2xl font-normal">
       {canCreate ? t('noOrg.titleCreate') : t('noOrg.title')}

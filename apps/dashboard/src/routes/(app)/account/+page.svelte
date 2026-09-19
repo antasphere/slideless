@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
+  import { Tag } from '$lib/components/ui/tag';
+  import { roleTag } from '$lib/tags';
+  import Monitor from '@lucide/svelte/icons/monitor';
+  import Sun from '@lucide/svelte/icons/sun';
+  import Moon from '@lucide/svelte/icons/moon';
+  import { theme, type ThemeMode } from '$lib/theme.svelte';
+  import { settingsTabs } from '$lib/settings-tabs';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -237,36 +244,57 @@
     }
   }
 
-  // Settings is one section with two tabs (PRDCT-2441): the instance, and the
-  // person's own account, so nobody has to find it under their name.
-  const settingsTabs = [
-    { href: '/settings', label: t('settings.tabInstance') },
-    { href: '/account', label: t('settings.tabAccount') }
+  // ── Who: the strip at the top ──────────────────────────────────────────
+  const displayName = $derived(data.me.user.name || data.me.user.email.split('@')[0] || t('common.user'));
+  const initials = $derived(
+    displayName
+      .split(' ')
+      .map((word: string) => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  );
+
+  // ── Reading: the person's, this browser's ──────────────────────────────
+  $effect(() => theme.start());
+  const modes: { key: ThemeMode; label: string; icon: typeof Sun }[] = [
+    { key: 'system', label: t('account.modeSystem'), icon: Monitor },
+    { key: 'light', label: t('account.modeLight'), icon: Sun },
+    { key: 'dark', label: t('account.modeDark'), icon: Moon }
   ];
 </script>
 
 <SectionHero
   eyebrow={t('nav.system')}
   title={t('nav.settings')}
-  lede={t('account.description')}
+  lede={t('account.lede')}
   pageTitle={t('account.title')}
-  tabs={settingsTabs}
+  tabs={settingsTabs()}
   drawing="meridians"
 />
 
-<div class="grid gap-6 lg:grid-cols-2">
-  <!-- The language is the person's, not the instance's: it is kept in this
-       browser (ADR 007), and this is where a person looks for it (PRDCT-2441). -->
-  <Card.Root class="lg:col-span-2">
-    <Card.Content class="flex flex-wrap items-center justify-between gap-4">
-      <div class="min-w-0">
-        <p class="font-display text-base">{t('account.languageTitle')}</p>
-        <p class="text-sm text-muted-foreground">{t('account.languageDescription')}</p>
-      </div>
-      <LanguageSwitcher />
-    </Card.Content>
-  </Card.Root>
+<!-- who is signed in, and as what: the card the sidebar's person opens, laid
+     flat. SECURITY: the name, the email and the workspace name are
+     user-authored: text interpolation only. -->
+<div class="who sheet mb-6">
+  <span class="disc">{initials}</span>
+  <div class="min-w-0 flex-1">
+    <p
+      class="truncate font-display text-[22px] font-normal leading-tight tracking-[-0.01em] text-[var(--ink)]"
+    >
+      {displayName}
+    </p>
+    <p class="truncate text-[13.5px] text-muted-foreground">{data.me.user.email}</p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+    <Tag {...roleTag(data.me.role)} />
+    <span class="truncate">{data.me.workspace.name}</span>
+    <span class="hidden sm:inline">·</span>
+    <span class="hidden sm:inline">{t('account.signedInVia', { via: data.me.via })}</span>
+  </div>
+</div>
 
+<div class="grid gap-6 lg:grid-cols-2">
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-base">{t('account.profileTitle')}</Card.Title>
@@ -292,7 +320,7 @@
           </div>
         {/if}
         <FormError message={profileError} />
-        <Button type="submit" disabled={profileLoading}>
+        <Button type="submit" disabled={profileLoading || name.trim() === data.me.user.name}>
           {profileLoading ? t('common.saving') : t('account.saveChanges')}
         </Button>
       </form>
@@ -321,12 +349,44 @@
     </Card.Content>
   </Card.Root>
 
+  <!-- The preferences are the person's, not the instance's or the
+       workspace's: kept in this browser (ADR 007). -->
   <Card.Root>
     <Card.Header>
-      <Card.Title class="text-base">{t('account.passwordTitle')}</Card.Title>
-      <Card.Description>{t('account.passwordDescription')}</Card.Description>
+      <Card.Title class="text-base">{t('account.preferencesTitle')}</Card.Title>
+      <Card.Description>{t('account.preferencesDescription')}</Card.Description>
     </Card.Header>
-    <Card.Content>
+    <Card.Content class="space-y-5">
+      <div class="pref">
+        <span class="pref-label">{t('account.languageTitle')}</span>
+        <LanguageSwitcher />
+      </div>
+      <div class="pref">
+        <span class="pref-label">{t('account.mode')}</span>
+        <div class="seg" role="group" aria-label={t('account.mode')}>
+          {#each modes as m (m.key)}
+            <button
+              type="button"
+              class="seg-btn"
+              class:on={theme.mode === m.key}
+              aria-pressed={theme.mode === m.key}
+              onclick={() => theme.setMode(m.key)}
+            >
+              <m.icon class="size-3.5" strokeWidth={1.8} />
+              <span>{m.label}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root class="lg:col-span-2">
+    <Card.Header>
+      <Card.Title class="text-base">{t('account.securityTitle')}</Card.Title>
+      <Card.Description>{t('account.securityDescription')}</Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-8 md:grid-cols-2">
       <form
         class="space-y-4"
         onsubmit={(e) => {
@@ -334,6 +394,8 @@
           void submitPassword();
         }}
       >
+        <p class="eyebrow">{t('account.passwordTitle')}</p>
+        <p class="-mt-2 text-sm text-muted-foreground">{t('account.passwordDescription')}</p>
         <div class="space-y-2">
           <Label for="current-password">{t('account.currentPassword')}</Label>
           <Input
@@ -366,140 +428,136 @@
           />
         </div>
         <FormError message={passwordError} />
-        <Button type="submit" disabled={passwordLoading}>
+        <Button type="submit" variant="outline" disabled={passwordLoading}>
           {passwordLoading ? t('account.changingPassword') : t('account.changePassword')}
         </Button>
       </form>
+
+      {#if twoFactorAvailable}
+        <div class="space-y-4 border-t pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+          <p class="eyebrow">{t('account.twoFactorTitle')}</p>
+          <p class="-mt-2 text-sm text-muted-foreground">{t('account.twoFactorDescription')}</p>
+          {#if twoFactorEnabled === null}
+            <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
+          {:else if enrollment}
+            <div class="space-y-4" in:appear>
+              <div class="space-y-2">
+                <p class="text-sm font-medium leading-none">{t('account.twoFactorSecret')}</p>
+                <CodeBlock
+                  field
+                  code={enrollment.secret}
+                  ariaLabel={t('account.twoFactorSecret')}
+                  copyLabel={t('account.twoFactorCopySecret')}
+                />
+                <p class="text-xs text-muted-foreground">{t('account.twoFactorSecretHint')}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => void copyText(enrollment!.totpURI)}
+                >
+                  {t('account.twoFactorCopyUri')}
+                </Button>
+              </div>
+              <div class="space-y-2">
+                <CodeBlock
+                  code={enrollment.backupCodes.join('\n')}
+                  label={t('account.twoFactorBackupTitle')}
+                  ariaLabel={t('account.twoFactorBackupTitle')}
+                  copyLabel={t('account.twoFactorCopyCodes')}
+                  class="[--code-max-h:none]"
+                />
+                <p class="text-xs text-muted-foreground">{t('account.twoFactorBackupHint')}</p>
+              </div>
+              {#if enrollmentActivated}
+                <div class="space-y-4" in:appear>
+                  <p class="text-sm">{t('account.twoFactorActivated')}</p>
+                  <Button type="button" onclick={finishTwoFactorEnrollment}>{t('common.done')}</Button>
+                </div>
+              {:else}
+                <form
+                  class="space-y-4"
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    void activateTwoFactor();
+                  }}
+                >
+                  <div class="space-y-2">
+                    <Label for="totp-activate">{t('account.twoFactorVerifyLabel')}</Label>
+                    <Input
+                      id="totp-activate"
+                      inputmode="numeric"
+                      autocomplete="one-time-code"
+                      bind:value={activateCode}
+                      required
+                    />
+                  </div>
+                  <FormError message={twoFaError} />
+                  <Button type="submit" disabled={twoFaLoading}>
+                    {twoFaLoading ? t('common.working') : t('account.twoFactorActivate')}
+                  </Button>
+                </form>
+              {/if}
+            </div>
+          {:else if twoFactorEnabled}
+            <form
+              in:appear
+              class="space-y-4"
+              onsubmit={(e) => {
+                e.preventDefault();
+                void disableTwoFactor();
+              }}
+            >
+              <p class="notice">{t('account.twoFactorOn')}</p>
+              <div class="space-y-2">
+                <Label for="twofa-disable-password">{t('account.currentPassword')}</Label>
+                <Input
+                  id="twofa-disable-password"
+                  type="password"
+                  autocomplete="current-password"
+                  bind:value={disablePassword}
+                  required
+                />
+                <p class="text-xs text-muted-foreground">{t('account.twoFactorDisableHint')}</p>
+              </div>
+              <FormError message={twoFaError} />
+              <Button type="submit" variant="outline" disabled={twoFaLoading}>
+                {twoFaLoading ? t('common.working') : t('account.twoFactorDisable')}
+              </Button>
+            </form>
+          {:else}
+            <form
+              in:appear
+              class="space-y-4"
+              onsubmit={(e) => {
+                e.preventDefault();
+                void startTwoFactorEnrollment();
+              }}
+            >
+              <p class="text-sm text-muted-foreground">{t('account.twoFactorOff')}</p>
+              <div class="space-y-2">
+                <Label for="twofa-enable-password">{t('account.currentPassword')}</Label>
+                <Input
+                  id="twofa-enable-password"
+                  type="password"
+                  autocomplete="current-password"
+                  bind:value={enablePassword}
+                  required
+                />
+                <p class="text-xs text-muted-foreground">{t('account.twoFactorEnableHint')}</p>
+              </div>
+              <FormError message={twoFaError} />
+              <Button type="submit" variant="outline" disabled={twoFaLoading}>
+                {twoFaLoading ? t('common.working') : t('account.twoFactorStart')}
+              </Button>
+            </form>
+          {/if}
+        </div>
+      {/if}
     </Card.Content>
   </Card.Root>
 
-  {#if twoFactorAvailable}
-    <Card.Root>
-      <Card.Header>
-        <Card.Title class="text-base">{t('account.twoFactorTitle')}</Card.Title>
-        <Card.Description>{t('account.twoFactorDescription')}</Card.Description>
-      </Card.Header>
-      <Card.Content>
-        {#if twoFactorEnabled === null}
-          <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-        {:else if enrollment}
-          <div class="space-y-4" in:appear>
-            <div class="space-y-2">
-              <p class="text-sm font-medium leading-none">{t('account.twoFactorSecret')}</p>
-              <CodeBlock
-                field
-                code={enrollment.secret}
-                ariaLabel={t('account.twoFactorSecret')}
-                copyLabel={t('account.twoFactorCopySecret')}
-              />
-              <p class="text-xs text-muted-foreground">{t('account.twoFactorSecretHint')}</p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onclick={() => void copyText(enrollment!.totpURI)}
-              >
-                {t('account.twoFactorCopyUri')}
-              </Button>
-            </div>
-            <div class="space-y-2">
-              <CodeBlock
-                code={enrollment.backupCodes.join('\n')}
-                label={t('account.twoFactorBackupTitle')}
-                ariaLabel={t('account.twoFactorBackupTitle')}
-                copyLabel={t('account.twoFactorCopyCodes')}
-                class="[--code-max-h:none]"
-              />
-              <p class="text-xs text-muted-foreground">{t('account.twoFactorBackupHint')}</p>
-            </div>
-            {#if enrollmentActivated}
-              <div class="space-y-4" in:appear>
-                <p class="text-sm">{t('account.twoFactorActivated')}</p>
-                <Button type="button" onclick={finishTwoFactorEnrollment}>{t('common.done')}</Button>
-              </div>
-            {:else}
-              <form
-                class="space-y-4"
-                onsubmit={(e) => {
-                  e.preventDefault();
-                  void activateTwoFactor();
-                }}
-              >
-                <div class="space-y-2">
-                  <Label for="totp-activate">{t('account.twoFactorVerifyLabel')}</Label>
-                  <Input
-                    id="totp-activate"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    bind:value={activateCode}
-                    required
-                  />
-                </div>
-                <FormError message={twoFaError} />
-                <Button type="submit" disabled={twoFaLoading}>
-                  {twoFaLoading ? t('common.working') : t('account.twoFactorActivate')}
-                </Button>
-              </form>
-            {/if}
-          </div>
-        {:else if twoFactorEnabled}
-          <form
-            in:appear
-            class="space-y-4"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void disableTwoFactor();
-            }}
-          >
-            <p class="text-sm">{t('account.twoFactorOn')}</p>
-            <div class="space-y-2">
-              <Label for="twofa-disable-password">{t('account.currentPassword')}</Label>
-              <Input
-                id="twofa-disable-password"
-                type="password"
-                autocomplete="current-password"
-                bind:value={disablePassword}
-                required
-              />
-              <p class="text-xs text-muted-foreground">{t('account.twoFactorDisableHint')}</p>
-            </div>
-            <FormError message={twoFaError} />
-            <Button type="submit" variant="outline" disabled={twoFaLoading}>
-              {twoFaLoading ? t('common.working') : t('account.twoFactorDisable')}
-            </Button>
-          </form>
-        {:else}
-          <form
-            in:appear
-            class="space-y-4"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void startTwoFactorEnrollment();
-            }}
-          >
-            <p class="text-sm text-muted-foreground">{t('account.twoFactorOff')}</p>
-            <div class="space-y-2">
-              <Label for="twofa-enable-password">{t('account.currentPassword')}</Label>
-              <Input
-                id="twofa-enable-password"
-                type="password"
-                autocomplete="current-password"
-                bind:value={enablePassword}
-                required
-              />
-              <p class="text-xs text-muted-foreground">{t('account.twoFactorEnableHint')}</p>
-            </div>
-            <FormError message={twoFaError} />
-            <Button type="submit" disabled={twoFaLoading}>
-              {twoFaLoading ? t('common.working') : t('account.twoFactorStart')}
-            </Button>
-          </form>
-        {/if}
-      </Card.Content>
-    </Card.Root>
-  {/if}
-
-  <Card.Root class="border-destructive/40">
+  <Card.Root class="border-destructive/40 lg:col-span-2">
     <Card.Header>
       <Card.Title class="text-base">{t('account.dangerTitle')}</Card.Title>
       <Card.Description>
@@ -508,7 +566,7 @@
     </Card.Header>
     <Card.Content>
       <form
-        class="space-y-4"
+        class="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end"
         onsubmit={(e) => {
           e.preventDefault();
           void submitDelete();
@@ -530,11 +588,76 @@
             bind:value={deletePassword}
           />
         </div>
-        <FormError message={deleteError} />
         <Button type="submit" variant="destructive" disabled={!deleteArmed || deleteLoading}>
           {deleteLoading ? t('account.deleting') : t('account.deleteSubmit')}
         </Button>
+        <FormError message={deleteError} class="md:col-span-3" />
       </form>
     </Card.Content>
   </Card.Root>
 </div>
+
+<style>
+  .who {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 20px;
+  }
+  /* the person, lit: the accent's wash under the initials */
+  .disc {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--hairline));
+    background: var(--accent-soft);
+    font-family: var(--display);
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--accent-deep);
+  }
+  .pref {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .pref-label {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--plate-strong);
+  }
+  .seg-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--muted);
+    transition:
+      background-color var(--motion-duration) var(--motion-ease),
+      color var(--motion-duration) var(--motion-ease);
+  }
+  .seg-btn:hover {
+    color: var(--ink);
+  }
+  .seg-btn.on {
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+  }
+</style>

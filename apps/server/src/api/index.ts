@@ -856,7 +856,11 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         role: workspaceMembers.role,
         centralAccountId: workspaces.centralAccountId,
         hubStatus: workspaces.hubStatus,
-        isDefault: workspaceMembers.isDefault
+        isDefault: workspaceMembers.isDefault,
+        lookTheme: workspaces.lookTheme,
+        lookPattern: workspaces.lookPattern,
+        lookField: workspaces.lookField,
+        lookGrain: workspaces.lookGrain
       })
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
@@ -869,6 +873,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       name: m.name,
       role: m.role,
       hubOrigin: m.centralAccountId !== null,
+      look: { theme: m.lookTheme, pattern: m.lookPattern, field: m.lookField, grain: m.lookGrain },
       suspended: m.hubStatus === 'suspended',
       default: m.isDefault
     }));
@@ -882,7 +887,8 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
           // The ACTIVE workspace's flag comes from the principal itself —
           // accountRef IS the request workspace's centralAccountId, read
           // live by every credential resolver.
-          hubOrigin: Boolean(principal.accountRef)
+          hubOrigin: Boolean(principal.accountRef),
+          look: active?.look ?? { theme: null, pattern: null, field: null, grain: null }
         },
         role: principal.role,
         origin: principal.origin,

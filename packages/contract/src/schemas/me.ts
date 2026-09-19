@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { scopeSchema, workspaceRoleSchema } from './common.js';
+import { workspaceLookSchema } from './workspaces.js';
 
 /**
  * GET /api/v1/me — the resolved AuthContext of the calling principal,
@@ -36,7 +37,9 @@ export const meResponseSchema = z.object({
        * (P7). Derived from `centralAccountId IS NOT NULL`; the raw hub org
        * id is deliberately never exposed. Always false on oss.
        */
-      hubOrigin: z.boolean()
+      hubOrigin: z.boolean(),
+      /** The workspace's look, a fact of the workspace (schemas/workspaces.ts). */
+      look: workspaceLookSchema
     })
     .nullable(),
   /** Null only in the zero-membership session state. */
@@ -69,6 +72,8 @@ export const meResponseSchema = z.object({
       role: workspaceRoleSchema,
       /** Same semantics as `workspace.hubOrigin`, per listed workspace. */
       hubOrigin: z.boolean(),
+      /** Each workspace's look, so the switcher's tiles carry them (schemas/workspaces.ts). */
+      look: workspaceLookSchema,
       /**
        * The hub asserted this org suspended (cloud edition): it stays
        * VISIBLE here but requests into it are refused. Always false on oss

@@ -64,6 +64,9 @@
     data-sidebar="content"
     class={cn(
       'flex min-h-0 flex-1 flex-col gap-2 overflow-auto pr-1 group-data-[collapsible=icon]:overflow-hidden',
+      // collapsed the rail is 48px wide and the only thing in it is a
+      // 32px button: the scrollbar gutter would push it off centre.
+      'group-data-[collapsible=icon]:pr-0',
       className
     )}
     {...restProps}

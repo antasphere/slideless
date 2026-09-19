@@ -46,7 +46,7 @@
     count?: (shown: number, total: number) => string;
     /** Filters, at the left after the search and the count. */
     toolbar?: Snippet;
-    /** The page's primary action, at the right after View. */
+    /** The page's primary action, at the right before View. */
     actions?: Snippet;
     /** What the one quiet row says when there is nothing to list. */
     emptyMessage?: string;

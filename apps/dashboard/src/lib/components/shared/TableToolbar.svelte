@@ -1,7 +1,7 @@
 <script lang="ts">
   /* The one row over every table (and over the decks grid): at the left the
      search field, a quiet count right beside it and any filters the page
-     has; at the right the View button and then the page's primary action,
+     has; at the right the page's primary action and then the View button,
      side by side against the table's right edge. DataTable renders it over
      its own card; a page whose rows are cards renders it itself, so the two
      read as one thing. On a phone the search takes the whole first line and
@@ -22,7 +22,7 @@
     filters?: Snippet;
     /** The View button (which columns, or cards or table). */
     view?: Snippet;
-    /** The page's primary action, last at the right. */
+    /** The page's primary action, at the right before View. */
     actions?: Snippet;
     /** Stays at the top of the page's scroll while the rows pass under it. */
     sticky?: boolean;
@@ -63,8 +63,8 @@
   {@render filters?.()}
   {#if view || actions}
     <div class="toolbar-acts">
-      {@render view?.()}
       {@render actions?.()}
+      {@render view?.()}
     </div>
   {/if}
 </div>

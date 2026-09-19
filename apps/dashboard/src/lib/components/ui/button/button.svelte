@@ -12,7 +12,7 @@
         // its top edge, and under the pointer it lifts and its edge takes the
         // accent, so the look a person picked still shows on it.
         default:
-          'bg-[var(--ink)] text-[var(--ground)] shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(28_25_21/0.18)] hover:-translate-y-px hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_0_0_3px_var(--accent-soft),0_6px_14px_-6px_rgb(28_25_21/0.45)]',
+          'bg-[var(--ink)] text-[var(--ground)] shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(28_25_21/0.18)] hover:scale-[1.012]',
         // The accent is a clay (dawn) and danger IS the ember: two filled
         // clays side by side read as one button. Danger is therefore a wash
         // at rest and only fills under the hand.

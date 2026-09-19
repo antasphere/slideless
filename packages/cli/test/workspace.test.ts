@@ -23,7 +23,16 @@ const C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const URL = 'https://slides.example.com';
 
 function ws(id: string, name: string, over: Partial<MeWorkspace> = {}): MeWorkspace {
-  return { id, name, role: 'member', hubOrigin: false, suspended: false, default: false, ...over };
+  return {
+    id,
+    name,
+    role: 'member',
+    hubOrigin: false,
+    look: { theme: null, pattern: null, field: null, grain: null },
+    suspended: false,
+    default: false,
+    ...over
+  };
 }
 
 const pick = (over: Partial<Parameters<typeof pickWorkspaceSelection>[0]>) =>

@@ -102,6 +102,7 @@ describe('session resolution (X-Workspace-Id)', () => {
       name: 'Second Workspace',
       role: 'owner',
       hubOrigin: false,
+      look: { theme: null, pattern: null, field: null, grain: null },
       suspended: false,
       default: false
     });

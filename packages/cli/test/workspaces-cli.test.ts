@@ -22,8 +22,24 @@ const KEY = 'slk_free_secret';
 const PINNED_KEY = 'slk_pinned_secret';
 
 const WORKSPACES = [
-  { id: ACME, name: 'Acme', role: 'owner', hubOrigin: false, suspended: false, default: true },
-  { id: NORD, name: 'Atelier Nord', role: 'member', hubOrigin: false, suspended: false, default: false }
+  {
+    id: ACME,
+    name: 'Acme',
+    role: 'owner',
+    hubOrigin: false,
+    look: { theme: null, pattern: null, field: null, grain: null },
+    suspended: false,
+    default: true
+  },
+  {
+    id: NORD,
+    name: 'Atelier Nord',
+    role: 'member',
+    hubOrigin: false,
+    look: { theme: null, pattern: null, field: null, grain: null },
+    suspended: false,
+    default: false
+  }
 ];
 const DECKS: Record<string, unknown[]> = {
   [ACME]: [{ ...DECK, id: '11111111-1111-1111-1111-111111111111', title: 'Acme pitch' }],
@@ -68,7 +84,7 @@ function instance(workspaces = WORKSPACES): Route[] {
         return {
           body: {
             user: { id: 'u1', name: 'Ada', email: 'ada@x.co' },
-            workspace: { id: active.id, name: active.name, hubOrigin: false },
+            workspace: { id: active.id, name: active.name, hubOrigin: false, look: active.look },
             role: active.role,
             origin: 'local',
             via: 'api_key',

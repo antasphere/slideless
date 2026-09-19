@@ -3,7 +3,12 @@ import { apiErrorSchema, cursorPageQuerySchema, versionParamSchema } from '../sc
 import { instanceInfoSchema } from '../schemas/instance.js';
 import { setupRequestSchema, setupResponseSchema } from '../schemas/setup.js';
 import { meResponseSchema, onboardingDismissedSchema } from '../schemas/me.js';
-import { workspaceCreatedSchema, workspaceCreateSchema } from '../schemas/workspaces.js';
+import {
+  workspaceCreatedSchema,
+  workspaceCreateSchema,
+  workspaceUpdatedSchema,
+  workspaceUpdateSchema
+} from '../schemas/workspaces.js';
 import {
   memberChangeEmailLinkRequestSchema,
   memberChangeEmailLinkSchema,
@@ -229,6 +234,23 @@ export const workspaceCreateRoute = createRoute({
 });
 
 // ── Members ──────────────────────────────────────────────────────────────────
+
+export const workspaceUpdateRoute = createRoute({
+  method: 'patch',
+  path: '/workspace',
+  tags: ['workspaces'],
+  summary: "Change the active workspace's name or look (owner/admin, sessions only)",
+  request: { body: jsonRequestBody(workspaceUpdateSchema, 'The name, the look, or both') },
+  responses: {
+    200: jsonBody(workspaceUpdatedSchema, 'The workspace as it now is'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: jsonBody(
+      apiErrorSchema,
+      'session_required, insufficient_role, guest_forbidden, hub_managed (a rename of a hub-origin workspace)'
+    )
+  }
+});
 
 export const membersListRoute = createRoute({
   method: 'get',

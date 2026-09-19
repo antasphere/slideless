@@ -171,6 +171,24 @@
   [data-sidebar='sidebar']:not([data-mobile='true']) {
     background: transparent;
   }
+  /* The top bar closes with a hairline once the page has scrolled under it,
+     and only then: at the top of a page the bar and the page's own header
+     are one surface, and a line there would cut the header off its page.
+     The same line the held table header draws, at the same weight, so the
+     two edges in the shell read as one idea. */
+  .top-bar {
+    box-shadow: inset 0 -1px 0 transparent;
+    transition: box-shadow 200ms var(--motion-ease);
+  }
+  .top-bar[data-stuck] {
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--hairline) 80%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .top-bar {
+      transition: none;
+    }
+  }
+
   /* --main-pad-top mirrors the top padding the shell gives the scroll
      container (`pt-5 md:pt-2` in (app)/+layout.svelte). A stuck element is
      held at the container's CONTENT edge, under that padding, so everything
@@ -811,5 +829,59 @@
     );
     pointer-events: none;
     z-index: 10;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   The gate's pages turn like leaves of one book: between two gate pages
+   (sign in, create an account, reset a password…) the left leaf holds
+   still and the right leaf's words leave upward as the next ones arrive
+   from below (View Transitions, started in routes/+layout.svelte for gate
+   routes only). A browser without them, or a reader who asked for no
+   motion, gets the plain page change.
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(gate-form) {
+    animation: gate-leave 170ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+  /* the leaf itself only fades in: what rises is its parts, one after the
+     other (use:staggerParts on the leaf, GateShell), and a leaf that rose
+     as one block under them would flatten the sequence */
+  ::view-transition-new(gate-form) {
+    animation: gate-arrive 220ms cubic-bezier(0.16, 1, 0.3, 1) 110ms both;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 200ms;
+  }
+}
+@keyframes gate-leave {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes gate-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   A panel's parts arrive one after the other (lib/stagger.ts): the action
+   stamps each child's delay, this plays it. One beat apart, the same
+   motion as everything else.
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  [data-stagger] > [data-stagger-item],
+  [data-stagger-part] {
+    animation: stagger-in calc(var(--motion-duration) * 2.4) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--stagger-delay, 0ms) backwards;
+  }
+}
+@keyframes stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
   }
 }

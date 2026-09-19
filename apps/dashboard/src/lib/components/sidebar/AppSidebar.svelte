@@ -6,7 +6,6 @@
   import { t } from '$lib/i18n';
   import BrandTile from './BrandTile.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
-  import LookPanel from '$lib/components/shell/LookPanel.svelte';
   import type { MeResponse, WorkspaceRole } from '@slideless/contract';
 
   interface Props {
@@ -84,7 +83,7 @@
                    the icon in the accent — never a fill. -->
               <Sidebar.MenuButton
                 isActive={navActive(item, currentPath)}
-                class="transition-[transform,background-color] duration-200 hover:translate-x-0.5 data-[active=true]:!bg-[var(--accent-soft)] data-[active=true]:!text-foreground"
+                class="transition-[transform,background-color,width,padding] duration-200 ease-out hover:translate-x-0.5 data-[active=true]:!bg-[var(--accent-soft)] data-[active=true]:!text-foreground group-data-[collapsible=icon]:hover:translate-x-0"
               >
                 {#snippet child({ props }: { props: Record<string, unknown> })}
                   <a href={item.href} {...props}>
@@ -93,7 +92,12 @@
                         ? 'text-brand-accent'
                         : 'text-muted-foreground'} transition-transform"
                     />
-                    <span>{item.title}</span>
+                    <!-- The word fades out early while the rail is still
+                         narrowing, so it is gone before the 32px clip would
+                         cut it mid-glyph. The icon never moves: it is the
+                         button's first child at a fixed 16px, and the box's
+                         padding animates on the rail's own curve. -->
+                    <span class="nav-label">{item.title}</span>
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
@@ -104,7 +108,23 @@
     {/each}
   </Sidebar.Content>
   <Sidebar.Footer>
-    <div class="group-data-[collapsible=icon]:hidden"><LookPanel /></div>
     <NavUser {user} {role} {workspaceName} />
   </Sidebar.Footer>
 </Sidebar.Root>
+
+<style>
+  /* the nav word travels with the rail: out fast, in on the rail's curve */
+  .nav-label {
+    opacity: 1;
+    transition: opacity 160ms ease-out 60ms;
+  }
+  :global([data-collapsible='icon']) .nav-label {
+    opacity: 0;
+    transition: opacity 90ms ease-in;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-label {
+      transition: none;
+    }
+  }
+</style>

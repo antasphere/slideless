@@ -56,13 +56,23 @@ export interface RevealParams {
   /** Multiplies the product's duration: a tall block may take a breath more. */
   scale?: number;
   delay?: number;
+  /**
+   * Where in the fold the content starts to show, 0..1. A one-line block (an
+   * error) waits for its room, 0.35 by default; a tall block (a field with
+   * its label) would stay blank for most of its fold and then pop, so it
+   * starts almost at once.
+   */
+  fadeFrom?: number;
 }
 
 /**
  * The Svelte transition behind `Reveal`, usable directly on any element
  * (`transition:reveal`): a list row, an error line, a banner.
  */
-export function reveal(node: Element, { scale = 1.25, delay = 0 }: RevealParams = {}): TransitionConfig {
+export function reveal(
+  node: Element,
+  { scale = 1.25, delay = 0, fadeFrom = 0.35 }: RevealParams = {}
+): TransitionConfig {
   const style = getComputedStyle(node);
   const opacity = Number(style.opacity);
   const px = (v: string) => Number.parseFloat(v) || 0;
@@ -78,8 +88,8 @@ export function reveal(node: Element, { scale = 1.25, delay = 0 }: RevealParams 
     duration: motionDuration(scale),
     easing: motionEase,
     css: (t) => {
-      // the content arrives once there is room for it: nothing before 35 %
-      const fade = Math.max(0, (t - 0.35) / 0.65);
+      // the content arrives once there is room for it: nothing before `fadeFrom`
+      const fade = Math.max(0, (t - fadeFrom) / (1 - fadeFrom));
       return (
         'overflow: hidden;' +
         `opacity: ${fade * opacity};` +

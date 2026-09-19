@@ -9,9 +9,51 @@
 import { ANIMATIONS, animationByKey } from './animations.js';
 import { mulberry32, clamp, TAU } from '$lib/engine/engine.js';
 
-export const PATTERN_KEYS: string[] = ANIMATIONS.map((a) => a.key);
+/**
+ * The forms a NEW workspace is dealt from, and the list `dealtPattern`
+ * indexes by seed. Twelve of the library's nineteen, the ones that read as
+ * distinct marks at tile size (the settings pass of 2026-09-19: two ring
+ * forms, four line forms, two grids, two dot matrices and two stars were
+ * one too many of each). A form retired from the offer stays a valid key,
+ * so a workspace that wears one keeps its tile.
+ *
+ * ORDER AND LENGTH ARE LOAD-BEARING: `dealtPattern` is
+ * `PATTERN_KEYS[seed % length]`, so inserting, removing or reordering a key
+ * re-deals the starting form of every workspace that has not chosen one.
+ * To change what the PICKER offers, edit `OFFERED_PATTERN_KEYS` below.
+ */
+export const PATTERN_KEYS: string[] = [
+  'crosses',
+  'blooms',
+  'gears',
+  'slides',
+  'panes',
+  'rings',
+  'weave',
+  'stagger',
+  'truss',
+  'sonar',
+  'diamond',
+  'triangle'
+];
+/**
+ * What the picker shows: five forms, not twelve. A dozen small glyphs read
+ * as a swatch sheet to work through rather than a choice to make, and at
+ * picker size the differences between near neighbours (two rings, two
+ * grids) are not the point — five distinct marks are. Each one here is a
+ * different family: a cross, a bloom, a pane, a ring and a diamond.
+ *
+ * This is the OFFER only. `PATTERN_KEYS` stays whole, so every existing
+ * workspace keeps the form it was dealt or chose, and a person who already
+ * wears a form outside this five keeps wearing it (the picker shows it as
+ * the current mark; `patternName` and `formMask` work for every library
+ * key). Widen the offer by adding a key here, never by reordering above.
+ */
+export const OFFERED_PATTERN_KEYS: string[] = ['crosses', 'blooms', 'panes', 'rings', 'diamond'];
+
+const LIBRARY_KEYS: string[] = ANIMATIONS.map((a) => a.key);
 export function isPatternKey(key: unknown): key is string {
-  return typeof key === 'string' && PATTERN_KEYS.includes(key);
+  return typeof key === 'string' && LIBRARY_KEYS.includes(key);
 }
 /** The library's own name for a pattern (its card title). */
 export function patternName(key: string): string {

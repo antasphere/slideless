@@ -78,7 +78,7 @@
         </Select.Content>
       </Select.Root>
     </div>
-    <div class="flex w-[100px] items-center justify-center text-sm font-medium">
+    <div class="flex min-w-[100px] items-center justify-center whitespace-nowrap text-sm font-medium">
       {t('table.pageOf', { page: pageIndex + 1, count: pageCount })}
     </div>
     <div class="flex items-center space-x-2">

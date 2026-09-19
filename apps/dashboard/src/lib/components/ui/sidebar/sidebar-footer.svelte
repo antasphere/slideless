@@ -14,7 +14,7 @@
 <div
   bind:this={ref}
   data-sidebar="footer"
-  class={cn('flex flex-col gap-1 px-1 pb-1', className)}
+  class={cn('flex flex-col gap-1 px-1 pb-1', 'group-data-[collapsible=icon]:px-2', className)}
   {...restProps}
 >
   {@render children?.()}

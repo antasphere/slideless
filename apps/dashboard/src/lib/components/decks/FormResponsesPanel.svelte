@@ -324,7 +324,7 @@
       if (v) filterForm = v;
     }}
   >
-    <Select.Trigger id="response-filter-form" class="h-8 w-[150px]">
+    <Select.Trigger id="response-filter-form" class="h-8 w-auto min-w-[150px] max-w-full">
       {filterForm === 'all' ? t('formResponses.filterAllForms') : filterForm}
     </Select.Trigger>
     <Select.Content>
@@ -342,7 +342,7 @@
       if (v === 'all' || v === 'link' || v === 'embed') filterSource = v;
     }}
   >
-    <Select.Trigger id="response-filter-source" class="h-8 w-[150px]">
+    <Select.Trigger id="response-filter-source" class="h-8 w-auto min-w-[150px] max-w-full">
       {filterSource === 'all' ? t('formResponses.filterAllSources') : sourceLabel(filterSource)}
     </Select.Trigger>
     <Select.Content>

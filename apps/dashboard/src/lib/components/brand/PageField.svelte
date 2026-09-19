@@ -7,6 +7,7 @@
   import { buildBlobs, DPR, noiseTile, renderLow } from '$lib/engine/engine.js';
   import { CONSTANTS, PALETTES, RECIPE } from '$lib/brand/recipe.js';
   import { paletteFor, theme } from '$lib/theme.svelte';
+  import { followPointer } from '$lib/brand/follow';
 
   interface Props {
     palette?: string;
@@ -17,16 +18,28 @@
         the field's opacity 0..1, and the grain as a factor of the brand's constant. */
     opacity?: number;
     grain?: number;
+    /** The gate's page: the field floats a little and leans WITH the pointer,
+        the other way from the gate's own ground, and far less. The painted
+        sheet is moved, never repainted; it is cut a little larger than the
+        page so its edge never shows. */
+    alive?: boolean;
   }
 
-  let { palette = 'labs-field', seed = RECIPE.seed, strength = 'full', opacity, grain = 1 }: Props = $props();
+  let {
+    palette = 'labs-field',
+    seed = RECIPE.seed,
+    strength = 'full',
+    opacity,
+    grain = 1,
+    alive = false
+  }: Props = $props();
 
   let wrap = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
 
   function rebuild() {
     if (!wrap || !canvas) return;
-    const rect = wrap.getBoundingClientRect();
+    const rect = { width: canvas.offsetWidth, height: canvas.offsetHeight };
     if (rect.width < 2 || rect.height < 2) return;
     const named = PALETTES[palette] ? palette : RECIPE.theme;
     /* the dark set paints the palette's night twin when it has one */
@@ -67,12 +80,27 @@
     rebuild();
     return () => ro.disconnect();
   });
+
+  $effect(() => {
+    if (!alive || !wrap || !canvas) return;
+    const sheet = canvas;
+    const stop = followPointer(wrap, ({ x, y, t }) => {
+      const dx = x * 12 + Math.sin(t * 0.17) * 5;
+      const dy = y * 9 + Math.cos(t * 0.13) * 4;
+      sheet.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
+    });
+    return () => {
+      stop();
+      sheet.style.transform = '';
+    };
+  });
 </script>
 
 <div
   class="page-field"
   class:soft={strength === 'soft'}
   class:quiet={strength === 'quiet'}
+  class:alive
   bind:this={wrap}
   aria-hidden="true"
 >
@@ -91,6 +119,16 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+  .alive {
+    overflow: hidden;
+  }
+  .alive canvas {
+    position: absolute;
+    inset: -24px;
+    width: calc(100% + 48px);
+    height: calc(100% + 48px);
+    will-change: transform;
   }
   /* under an app a person reads all day: the weather, one notch down */
   .soft canvas {

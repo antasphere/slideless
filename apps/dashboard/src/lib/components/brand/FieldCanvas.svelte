@@ -17,6 +17,15 @@
     dpr?: number;
     grained?: boolean;
     animate?: boolean;
+    /** How far the field has been slid, in field widths and heights, read
+        on every animated frame. The whole field moves as ONE sheet: it is
+        the ground under whatever rolls on it. */
+    drift?: () => { x: number; y: number };
+    /** Milliseconds between two animated frames: the film cadence, or
+        tighter where the field has to keep up with something moving. */
+    cadence?: number;
+    /** Seconds of clock per unit of the engine's drift time. */
+    tempo?: number;
   }
 
   let {
@@ -27,10 +36,21 @@
     inkBoost = 1,
     dpr = DPR,
     grained = true,
-    animate = false
+    animate = false,
+    drift,
+    cadence = 44,
+    tempo = 5.2
   }: Props = $props();
 
   let canvas = $state<HTMLCanvasElement | null>(null);
+
+  const blobs = $derived(buildBlobs(seed, palette));
+
+  function pulled() {
+    const d = drift?.();
+    if (!d || (!d.x && !d.y)) return blobs;
+    return blobs.map((b: { x: number; y: number }) => ({ ...b, x: b.x + d.x, y: b.y + d.y }));
+  }
 
   function draw(t = 0, grainOffset: { x: number; y: number } | null = null) {
     if (!canvas) return;
@@ -56,7 +76,7 @@
         grainAlpha: grained ? g.alpha : 0,
         grainSize: g.size,
         seed,
-        blobs: buildBlobs(seed, palette)
+        blobs: pulled()
       },
       t,
       grainOffset
@@ -92,9 +112,9 @@
     const t0 = performance.now();
     let last = 0;
     let rafId = requestAnimationFrame(function frame(now) {
-      if (visible && now - last > 44) {
+      if (visible && now - last > cadence) {
         last = now;
-        draw((now - t0) / 5200, { x: Math.random() * 512, y: Math.random() * 512 });
+        draw((now - t0) / (tempo * 1000), { x: Math.random() * 512, y: Math.random() * 512 });
       }
       rafId = requestAnimationFrame(frame);
     });

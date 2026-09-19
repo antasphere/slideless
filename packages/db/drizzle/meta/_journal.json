@@ -316,6 +316,13 @@
       "when": 1789781390644,
       "tag": "0044_references",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789808502424,
+      "tag": "0045_workspace_look",
+      "breakpoints": true
     }
   ]
 }

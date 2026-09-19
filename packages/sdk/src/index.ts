@@ -62,6 +62,9 @@ import type {
   ShareTokenView,
   SsoCliConnect,
   WorkspaceCreated,
+  WorkspaceLook,
+  WorkspaceUpdate,
+  WorkspaceUpdated,
   SsoLogoutResponse,
   UploadSession,
   UploadSessionCommit,
@@ -360,8 +363,21 @@ export class PlatformClient {
    * `hub_refused`, 401 `hub_grant_expired`, 401 `hub_reauth_required` (both
    * healed by signing in again), 400 `validation_error`, 429 `rate_limited`.
    */
-  createWorkspace(name: string, opts: IdempotentRequestOptions = {}): Promise<WorkspaceCreated> {
-    return this.request('POST', '/workspaces', { name }, idempotencyHeader(opts));
+  createWorkspace(
+    name: string,
+    opts: IdempotentRequestOptions & { look?: Partial<WorkspaceLook> } = {}
+  ): Promise<WorkspaceCreated> {
+    const { look, ...rest } = opts;
+    return this.request('POST', '/workspaces', look ? { name, look } : { name }, idempotencyHeader(rest));
+  }
+
+  /**
+   * PATCH /workspace — the ACTIVE workspace's name and look (owner/admin,
+   * sessions only). A rename of a hub-origin workspace answers 403
+   * `hub_managed` with `details.manageUrl`; its look is accepted.
+   */
+  updateWorkspace(body: WorkspaceUpdate): Promise<WorkspaceUpdated> {
+    return this.request('PATCH', '/workspace', body);
   }
 
   /** Better Auth session probe — null when signed out. */

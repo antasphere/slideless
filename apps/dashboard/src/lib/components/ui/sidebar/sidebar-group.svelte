@@ -14,7 +14,15 @@
 <div
   bind:this={ref}
   data-sidebar="group"
-  class={cn('relative flex w-full min-w-0 flex-col px-2 pt-2', className)}
+  class={cn(
+    'relative flex w-full min-w-0 flex-col px-2 pt-2',
+    // Collapsed the rail is 48px and the button is 32px, so 8px a side is
+    // exactly centre: keep px-2 and change nothing. Centring with
+    // `items-center` instead would re-align the row at frame 0 — the jump
+    // before the slide. The box stays put; only the rail's width moves.
+    'group-data-[collapsible=icon]:px-2',
+    className
+  )}
   {...restProps}
 >
   {@render children?.()}

@@ -786,11 +786,12 @@ export async function boot(
     // the hub AS THE CALLER, then forces their reconcile. undefined on oss —
     // the route creates locally there.
     workspaceCloud:
-      hubGrant && hubUserClient && hubReconciler
+      hub && hubGrant && hubUserClient && hubReconciler
         ? {
             createOrg: overrides.hubCreateOrg ?? ((userId, name) => hubUserClient.createOrg(userId, name)),
             forceReconcile: (userId) => hubReconciler.forceReconcile(userId),
-            hasHubLink: (userId) => hubGrant.hasStoredGrant(userId)
+            hasHubLink: (userId) => hubGrant.hasStoredGrant(userId),
+            manageUrl: hub.issuerUrl
           }
         : undefined
   });

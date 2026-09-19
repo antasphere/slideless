@@ -1,7 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, onNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { Toaster } from '$lib/components/ui/sonner/index.js';
   import PageGrain from '$lib/components/brand/PageGrain.svelte';
@@ -10,6 +10,22 @@
   import { signOutToLogin } from '$lib/session';
 
   let { children, data } = $props();
+
+  // Between two gate pages the right leaf turns (app.css, GateShell). Only
+  // there: inside the app a page change stays instant.
+  const GATE =
+    /^\/(login|forgot-password|reset-password|setup|invite|collab|oauth|no-organization|suspended)(\/|$)/;
+  onNavigate((navigation) => {
+    const from = navigation.from?.url.pathname ?? '';
+    const to = navigation.to?.url.pathname ?? '';
+    if (!document.startViewTransition || !GATE.test(from) || !GATE.test(to) || from === to) return;
+    return new Promise<void>((resolve) => {
+      document.startViewTransition(async () => {
+        resolve();
+        await navigation.complete;
+      });
+    });
+  });
 
   // Return-to-origin (SL-3, decision 7): after a successful bootstrap with
   // a signed-in user, consume the pendingNext memory EXACTLY ONCE. The

@@ -207,7 +207,7 @@
 
 <LanguageSwitcher class="fixed right-4 top-4" />
 
-<GateShell width="max-w-md">
+<GateShell width="max-w-md" eyebrow={t('gate.eyebrowInvite')}>
   <Card.Root class="w-full border-0 bg-transparent shadow-none">
     {#if recovering}
       <Card.Header>

@@ -176,7 +176,7 @@
       if (v) filterVersion = v;
     }}
   >
-    <Select.Trigger id="annotation-filter-version" class="h-8 w-[150px]">
+    <Select.Trigger id="annotation-filter-version" class="h-8 w-auto min-w-[150px] max-w-full">
       {filterVersion === 'all' ? t('annotations.filterAllVersions') : `v${filterVersion}`}
     </Select.Trigger>
     <Select.Content>
@@ -194,7 +194,7 @@
       if (v === 'all' || v === 'open' || v === 'resolved') filterStatus = v;
     }}
   >
-    <Select.Trigger id="annotation-filter-status" class="h-8 w-[130px]">
+    <Select.Trigger id="annotation-filter-status" class="h-8 w-auto min-w-[130px] max-w-full">
       {filterStatus === 'all'
         ? t('annotations.filterAll')
         : filterStatus === 'open'
