@@ -105,6 +105,13 @@ ordinary deck, and the push answer says what was unusable in
 `version.referenceWarning`. An `AGENT.md` with no frontmatter, or with a
 frontmatter that has no `type`, is an ordinary briefing and raises no warning.
 
+`slideless brand new <dir>` and `slideless template new <dir>` scaffold a folder
+whose `AGENT.md` already carries a correct frontmatter, with every field of the
+type filled with an example to replace. `slideless reference push` is the push
+that checks it: a folder whose `AGENT.md` is missing, carries no frontmatter, or
+names no known type is refused before a single byte is uploaded
+([CLI](cli.md#references-brand-template)).
+
 ## Which one to use
 
 |          | `metadata`                        | `AGENT.md`                       |
