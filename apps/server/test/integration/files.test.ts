@@ -257,7 +257,9 @@ describe('s3 driver (MinIO)', () => {
   let cookie: string;
 
   beforeAll(async () => {
-    minio = await new GenericContainer('minio/minio:latest')
+    // MinIO's own registry, pinned: the Docker Hub repository `minio/minio` is
+    // gone (404), so `:latest` there only resolved from a machine's local cache.
+    minio = await new GenericContainer('quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z')
       .withCommand(['server', '/data'])
       .withEnvironment({ MINIO_ROOT_USER: 'minioadmin', MINIO_ROOT_PASSWORD: 'minioadmin' })
       .withExposedPorts(9000)

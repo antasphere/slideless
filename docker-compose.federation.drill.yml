@@ -53,6 +53,9 @@ services:
     depends_on:
       hubhop:
         condition: service_started
+    environment:
+      # The claim credential POST /setup requires (PRDCT-1347).
+      - SETUP_TOKEN=${FEDERATION_DRILL_SETUP_TOKEN:?set by scripts/federation-drill.sh}
     extra_hosts:
       - 'hub.localhost:${FEDERATION_SUBNET_PREFIX:-172.30.250}.250'
 

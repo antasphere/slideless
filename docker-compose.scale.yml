@@ -39,6 +39,8 @@ x-app-env: &app-env
   DATABASE_URL: postgres://slideless:${DRILL_PG_PASSWORD:?set by scripts/scale-drill.sh}@db:5432/slideless
   # Profile B invariant under test: every replica shares one explicit secret.
   AUTH_SECRET: ${DRILL_AUTH_SECRET:?set by scripts/scale-drill.sh}
+  # The claim credential POST /setup requires (PRDCT-1347), shared like the secret.
+  SETUP_TOKEN: ${DRILL_SETUP_TOKEN:?set by scripts/scale-drill.sh}
   # redis://redis:6379 for the shared-bucket stacks, empty for the
   # per-replica-memory contrast stack. The drill switches env files.
   REDIS_URL: ${DRILL_REDIS_URL:-}

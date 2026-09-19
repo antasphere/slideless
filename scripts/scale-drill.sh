@@ -67,12 +67,17 @@ JAR="$SCRATCH/cookies.txt"
 # Throwaway secrets — never a committed .env.
 PG_PASSWORD="$(openssl rand -hex 16)"
 AUTH_SECRET="$(openssl rand -hex 32)"
+# The first-boot claim credential POST /setup requires (PRDCT-1347). One
+# explicit value shared by every replica, like AUTH_SECRET: a boot-generated
+# token would live in one container's /data and be unknown to the script.
+SETUP_TOKEN="$(openssl rand -hex 16)"
 
 write_envfile() { # path REDIS_URL PUBLIC_BASE_URL
   {
     echo "DRILL_IMAGE=$IMAGE"
     echo "DRILL_PG_PASSWORD=$PG_PASSWORD"
     echo "DRILL_AUTH_SECRET=$AUTH_SECRET"
+    echo "DRILL_SETUP_TOKEN=$SETUP_TOKEN"
     echo "DRILL_REDIS_URL=$2"
     echo "DRILL_PUBLIC_BASE_URL=$3"
   } > "$1"
@@ -259,7 +264,7 @@ say "Phase 2 — a session/API key minted on app1 authenticates on app2/app3"
 
 code=$(curl -s -o "$SCRATCH/setup.json" -w '%{http_code}' -X POST http://localhost:3801/api/v1/setup \
   -H 'content-type: application/json' \
-  -d '{"instanceName":"Scale Drill","owner":{"email":"owner@drill.test","name":"Drill Owner","password":"drill-password-123456"}}')
+  -d '{"instanceName":"Scale Drill","setupToken":"'"$SETUP_TOKEN"'","owner":{"email":"owner@drill.test","name":"Drill Owner","password":"drill-password-123456"}}')
 [ "$code" = "201" ] || fail "setup on app1 answered $code"
 
 code=$(curl -s -c "$JAR" -o /dev/null -w '%{http_code}' -X POST http://localhost:3801/api/v1/auth/sign-in/email \
@@ -309,26 +314,39 @@ pass "file metadata crosses replicas; unreachable blob content answers a clean 4
 say "Phase 3 — a login bucket exhausted through app1 also 429s on app2/app3 (Redis)"
 
 attempt() { # port -> http code for a failing login with a fixed probe email
-  curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$1/api/v1/auth/sign-in/email" \
+  curl -s -o "$SCRATCH/ratelimit.json" -w '%{http_code}' -X POST "http://localhost:$1/api/v1/auth/sign-in/email" \
     -H 'content-type: application/json' \
     -d '{"email":"ratelimit-probe@drill.test","password":"wrong-password-123"}'
 }
 
-hit=0
-for i in $(seq 1 12); do
-  code=$(attempt 3801)
-  if [ "$code" = "429" ]; then
-    hit=$i
-    break
-  fi
-done
-[ "$hit" -gt 0 ] || fail "app1 never returned 429 within 12 attempts (limit is 10/15min)"
+# Two limiters answer 429 on /sign-in/*. The product's own (middleware/rate-limit.ts,
+# 10 failures/15min, the Redis-backed one under test) answers error.code
+# "rate_limited". Better Auth's built-in one (3 requests/10s, per-process memory,
+# on in production) answers first on a burst and is never shared: taking its 429
+# for the bucket made app2's honest 401 read as "NOT shared through Redis".
+app_limited() { jq -e '.error.code == "rate_limited"' "$SCRATCH/ratelimit.json" >/dev/null 2>&1; }
+exhaust() { # port -> sets $hit to the attempt the PRODUCT's bucket refused, 0 if never
+  hit=0
+  for i in $(seq 1 30); do
+    code=$(attempt "$1")
+    if [ "$code" = "429" ]; then
+      if app_limited; then
+        hit=$i
+        break
+      fi
+      sleep 11 # Better Auth's 10s window, then carry on draining the product's bucket
+    fi
+  done
+}
+
+exhaust 3801
+[ "$hit" -gt 0 ] || fail "app1 never returned the product's 429 rate_limited within 30 attempts (limit is 10/15min)"
 note "app1 started rejecting at attempt $hit"
 
 codeB=$(attempt 3802)
+[ "$codeB" = "429" ] && app_limited || fail "app2 answered $codeB to a bucket exhausted via app1 — NOT shared through Redis"
 codeC=$(attempt 3803)
-[ "$codeB" = "429" ] || fail "app2 answered $codeB to a bucket exhausted via app1 — NOT shared through Redis"
-[ "$codeC" = "429" ] || fail "app3 answered $codeC to a bucket exhausted via app1 — NOT shared through Redis"
+[ "$codeC" = "429" ] && app_limited || fail "app3 answered $codeC to a bucket exhausted via app1 — NOT shared through Redis"
 pass "bucket exhausted via app1 → immediate 429 on app2 AND app3 (shared Redis store)"
 
 # ── Phase 4 — the contrast: no Redis = per-replica buckets ───────────────────
@@ -344,15 +362,8 @@ for svc in app1 app2; do
   [ "$r" = "0" ] || fail "$svc still reports the redis backend despite REDIS_URL being unset"
 done
 
-hit=0
-for i in $(seq 1 12); do
-  code=$(attempt 3801)
-  if [ "$code" = "429" ]; then
-    hit=$i
-    break
-  fi
-done
-[ "$hit" -gt 0 ] || fail "app1 (memory backend) never returned 429 within 12 attempts"
+exhaust 3801
+[ "$hit" -gt 0 ] || fail "app1 (memory backend) never returned the product's 429 rate_limited within 30 attempts"
 note "app1 started rejecting at attempt $hit"
 
 codeB=$(attempt 3802)
@@ -399,17 +410,22 @@ done
 role=$(applogs worker | jq -Rr 'fromjson? | select(.msg=="booting") | .serviceRole' | tail -1)
 [ "$role" = "worker" ] || fail "worker booted with serviceRole=$role"
 
-schedules=$(psqlq "SELECT count(*) FROM pgboss.schedule")
-[ "$schedules" = "3" ] || fail "expected the worker's 3 nightly schedules in pgboss.schedule, found $schedules"
+# By NAME, not by count: the four schedules jobs/pgboss.ts registers
+# unconditionally. The retention-driven ones (audit-purge, view-events-purge,
+# orphan-user-purge) come and go with the env, so a total is not a fact.
+for queue in apikey-expiry-sweep idempotency-purge upload-session-purge form-upload-purge; do
+  n=$(psqlq "SELECT count(*) FROM pgboss.schedule WHERE name = '$queue'")
+  [ "$n" = "1" ] || fail "expected the worker's nightly schedule '$queue' in pgboss.schedule, found $n"
+done
 cron_on=$(psqlq "SELECT COALESCE(cron_on::text,'') FROM pgboss.version")
 [ -n "$cron_on" ] || fail "worker never stamped the pgboss.version.cron_on scheduler heartbeat"
-pass "worker registered 3 nightly schedules and stamps the scheduler heartbeat (cron_on)"
+pass "worker registered its 4 unconditional nightly schedules and stamps the scheduler heartbeat (cron_on)"
 
 # Session sanity in the split topology, then enqueue a job via the api pool:
 # a file upload emits a usage event into pg-boss (api/files.ts).
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3811/api/v1/setup \
   -H 'content-type: application/json' \
-  -d '{"instanceName":"Scale Drill Split","owner":{"email":"owner@drill.test","name":"Drill Owner","password":"drill-password-123456"}}')
+  -d '{"instanceName":"Scale Drill Split","setupToken":"'"$SETUP_TOKEN"'","owner":{"email":"owner@drill.test","name":"Drill Owner","password":"drill-password-123456"}}')
 [ "$code" = "201" ] || fail "setup on api1 answered $code"
 code=$(curl -s -c "$JAR" -o /dev/null -w '%{http_code}' -X POST http://localhost:3811/api/v1/auth/sign-in/email \
   -H 'content-type: application/json' \
