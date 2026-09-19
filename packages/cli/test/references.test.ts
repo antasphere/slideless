@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Presentation } from '@slideless/contract';
 import { isIgnored, scanDeck, writeLink } from '../src/manifest.js';
 import {
+  pathExists,
   mergeProvenance,
   provenanceOf,
   readFrontmatter,
@@ -608,4 +609,31 @@ describe('readReferenceLink', () => {
     const { readLink } = await import('../src/manifest.js');
     expect(await readLink(dir)).toEqual({ presentationId: PID, baseUrl: 'http://x' });
   });
+});
+
+describe('pathExists, the ownership record of a cleanup', () => {
+  it('a missing path and a file where a folder was expected are absent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slideless-exists-'));
+    expect(await pathExists(join(dir, 'missing'))).toBe(false);
+    await writeFile(join(dir, 'afile'), 'x');
+    expect(await pathExists(join(dir, 'afile', 'below'))).toBe(false);
+    expect(await pathExists(join(dir, 'afile'))).toBe(true);
+    expect(await pathExists(dir)).toBe(true);
+  });
+
+  // Root reads everything, so the unreadable-parent case cannot be built there.
+  it.skipIf(process.getuid?.() === 0)(
+    'a path under a parent that cannot be read is PRESENT, never absent',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'slideless-exists-'));
+      await mkdir(join(dir, 'locked', 'inner'), { recursive: true });
+      await chmod(join(dir, 'locked'), 0o000);
+      try {
+        expect(await pathExists(join(dir, 'locked', 'inner'))).toBe(true);
+        expect(await pathExists(join(dir, 'locked', 'never-made'))).toBe(true);
+      } finally {
+        await chmod(join(dir, 'locked'), 0o755);
+      }
+    }
+  );
 });

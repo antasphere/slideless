@@ -22,6 +22,7 @@ import {
   referenceDirFor,
   resolveReference,
   scaffoldReference,
+  pathExists,
   stripTypeLine,
   type FrontmatterRead
 } from '../references.js';
@@ -582,12 +583,12 @@ async function downloadOrClean(ctx: CliContext, deckId: string, version: number,
   // empty folder is emptied again on failure, never deleted; a folder this
   // command created goes; its parent goes only when the command created it
   // (the `.slideless/` above a default pull), and only while it is empty.
-  const destExisted = await exists(dest);
+  const destExisted = await pathExists(dest);
   // The nearest ancestor that existed before: every level between it and
   // `dest` is one the download's mkdir creates, and one this command may
   // remove again (while empty) when the download fails.
   let firstExisting = dirname(dest);
-  while (firstExisting !== dirname(firstExisting) && !(await exists(firstExisting))) {
+  while (firstExisting !== dirname(firstExisting) && !(await pathExists(firstExisting))) {
     firstExisting = dirname(firstExisting);
   }
   try {
@@ -599,7 +600,7 @@ async function downloadOrClean(ctx: CliContext, deckId: string, version: number,
         await rm(join(dest, entry), { recursive: true, force: true }).catch(() => undefined);
         removed.push(join(dest, entry));
       }
-    } else if (await exists(dest)) {
+    } else if (await pathExists(dest)) {
       // Created by this download (it was absent before): remove it, then
       // every level the mkdir created above it, stopping at the first that
       // is not empty (rmdir refuses it, so a sibling reference survives).
@@ -620,22 +621,6 @@ async function downloadOrClean(ctx: CliContext, deckId: string, version: number,
       );
     }
     throw e;
-  }
-}
-
-/**
- * Whether a path exists, for the ownership record above. Only ENOENT (and
- * ENOTDIR, a file where a folder was expected on the way) means absent;
- * any other failure (a parent the person cannot read) reads as PRESENT, so
- * nothing the command cannot see is ever taken for its own and removed.
- */
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    return !(code === 'ENOENT' || code === 'ENOTDIR');
   }
 }
 

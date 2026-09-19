@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliUsageError } from '@antasphere/cli-core';
 import {
@@ -636,4 +636,23 @@ function yamlString(value: string): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── The ownership record of a cleanup ───────────────────────────────────────
+
+/**
+ * Whether a path exists, for the cleanup after a failed download (which
+ * removes only what the command created). Only ENOENT (and ENOTDIR, a file
+ * where a folder was expected on the way) means absent; any other failure
+ * (a parent the person cannot read) reads as PRESENT, so nothing the
+ * command cannot see is ever taken for its own and removed.
+ */
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    return !(code === 'ENOENT' || code === 'ENOTDIR');
+  }
 }

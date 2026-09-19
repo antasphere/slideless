@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -275,6 +275,24 @@ async function tempDeck(
 }
 
 const emptyDir = () => mkdtemp(join(tmpdir(), 'slideless-refcli-empty-'));
+
+/**
+ * Root defeats every permission bit, so the chmod cases below would see a
+ * successful write where an ordinary user sees EACCES. They are skipped
+ * there rather than asserting something untrue of the run.
+ */
+const asRoot = process.getuid?.() === 0;
+
+/** Run `body` with `path` at `mode`, restoring the mode whatever happens (so the temp dir can be cleaned). */
+async function withMode(path: string, mode: number, body: () => Promise<void>): Promise<void> {
+  const original = (await stat(path)).mode & 0o777;
+  await chmod(path, mode);
+  try {
+    await body();
+  } finally {
+    await chmod(path, original);
+  }
+}
 
 // `reference pull` with no --into writes into the CWD; restore it after.
 const cwd = process.cwd();
@@ -1246,6 +1264,81 @@ describe('a failed pull leaves no half-written folder (Major 2 / Minor 5)', () =
     expect(h.err()).toContain(`Nothing of the download is kept: the files in ${dest} removed.`);
   });
 
+  it.skipIf(asRoot)(
+    'a download that failed BEFORE its mkdir reports no removal (SG3-1 / Minor 1)',
+    async () => {
+      const root = await emptyDir();
+      const ro = join(root, 'ro');
+      await mkdir(ro);
+      await withMode(ro, 0o555, async () => {
+        const dest = join(ro, 'x');
+        const h = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
+        expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+        expect(h.err()).toMatch(/EACCES|permission denied/i);
+        // Nothing was created, so nothing was removed: the line would be a lie.
+        expect(h.err()).not.toContain('Nothing of the download is kept');
+        await expect(stat(dest)).rejects.toThrow();
+        expect(await readdir(ro)).toEqual([]);
+      });
+    }
+  );
+
+  it('every level the mkdir created above the destination goes too (Minor 2)', async () => {
+    const root = await emptyDir();
+    const dest = join(root, 'a', 'b', 'c');
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+    for (const level of [dest, join(root, 'a', 'b'), join(root, 'a')]) {
+      await expect(stat(level)).rejects.toThrow();
+    }
+    // The level the TEST made is the floor: it stays, and it is empty.
+    expect((await stat(root)).isDirectory()).toBe(true);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it('the walk up stops at a level that existed, keeping its other contents (Minor 2)', async () => {
+    const root = await emptyDir();
+    const a = join(root, 'a');
+    await mkdir(a, { recursive: true });
+    await writeFile(join(a, 'keep.txt'), 'mine');
+    const dest = join(a, 'b', 'c');
+    const h = routedHarness([listRoute([HOUSE_ROW]), ...liar(HOUSE)]);
+    expect(await run(argv('brand', 'pull', 'house', '--into', dest), h.io)).toBe(1);
+    // a/b and below were the command's; a/ and its file were not.
+    await expect(stat(join(a, 'b'))).rejects.toThrow();
+    expect((await stat(a)).isDirectory()).toBe(true);
+    expect(await readFile(join(a, 'keep.txt'), 'utf8')).toBe('mine');
+  });
+
+  it.skipIf(asRoot)('a destination the command cannot SEE survives a failed pull (Note 3)', async () => {
+    // `outer/` is unreadable, so `stat(outer/mine)` fails with EACCES, not
+    // ENOENT. `exists` reads any non-ENOENT failure as PRESENT, so the folder
+    // is never taken for the command's own and never removed.
+    //
+    // Caveat, verified by reverting `exists` to a bare `stat().catch(null)`:
+    // this test stays GREEN either way, because the same permission that makes
+    // `stat` fail also makes the cleanup's `rm` fail with EACCES, which
+    // `.catch(() => undefined)` swallows. Every non-ENOENT stat failure
+    // reachable here (EACCES, ELOOP) equally blocks the mkdir, the readdir or
+    // the rm the cleanup would need, so the discrimination has no
+    // CLI-observable consequence today. What is pinned is the outcome that
+    // matters — somebody's folder is not destroyed — while the error-code rule
+    // stays belt-and-braces for a future caller.
+    const root = await emptyDir();
+    const outer = join(root, 'outer');
+    const mine = join(outer, 'mine');
+    await mkdir(mine, { recursive: true });
+    await writeFile(join(mine, 'precious.txt'), 'keep me');
+    await withMode(outer, 0o000, async () => {
+      const h = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
+      expect(await run(argv('brand', 'pull', 'house', '--into', mine), h.io)).toBe(1);
+      expect(h.err()).toMatch(/EACCES|permission denied/i);
+    });
+    // Read back once the mode is restored: the folder and its file are there.
+    expect(await readdir(mine)).toEqual(['precious.txt']);
+    expect(await readFile(join(mine, 'precious.txt'), 'utf8')).toBe('keep me');
+  });
+
   it('the foreign-folder refusal now says how to get out of it', async () => {
     const dest = await tempDeck({ 'mine.txt': 'my own notes' });
     const h = routedHarness([listRoute([HOUSE_ROW]), ...downloadRoutes(HOUSE, { 3: BRAND_BUNDLE })]);
@@ -1333,6 +1426,31 @@ describe('a --brand value is resolved WHOLE before @n is read (Minor 3)', () => 
       h.calls.find((c) => c.method === 'PATCH')!.body as { metadata: { references: unknown[] } }
     ).metadata.references;
     expect(recorded).toEqual([{ type: 'brand', id: REBRAND, version: 2 }]);
+  });
+
+  it('an ambiguous split reading is swallowed: the exact title wins, silently (SG3-2)', async () => {
+    // `Solo@2` is a title; the split reading is "Solo at v2", and "Solo" is a
+    // prefix of BOTH rows, so resolveReference throws. That throw is caught
+    // and means "no other reading to warn about" — it must never escape and
+    // fail the push.
+    const SOLO_3 = 'aaaaaaaa-3333-4333-8333-333333333333';
+    const SOLO_2 = 'bbbbbbbb-3333-4333-8333-333333333333';
+    const rows = [
+      refDeck(SOLO_3, 'Solo@3', { currentVersion: 1, reference: { type: 'template' } }),
+      refDeck(SOLO_2, 'Solo@2', { currentVersion: 1, reference: { type: 'template' } })
+    ];
+    const dir = await tempDeck();
+    const h = routedHarness([
+      listRoute(rows),
+      ...pushRoutes(() => committed(refDeck(DECK_ID, 'Q1', { reference: null, metadata: {} }))),
+      patchRoute(rows)
+    ]);
+    expect(await run(argv('push', dir, '--template', 'Solo@2'), h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    const recorded = (
+      h.calls.find((c) => c.method === 'PATCH')!.body as { metadata: { references: unknown[] } }
+    ).metadata.references;
+    expect(recorded).toEqual([{ type: 'template', id: SOLO_2, version: 1 }]);
   });
 
   it('no Note when the other reference has no such version to pin', async () => {
