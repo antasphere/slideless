@@ -37,7 +37,7 @@
 </script>
 
 <div class="section-hero" class:alone={!hasBar}>
-  <HeroBand {drawing} {seed} compact>
+  <HeroBand {drawing} {seed} compact wordsKey="{eyebrow}|{title}">
     <p class="hero-eyebrow">{eyebrow}</p>
     <h1 class="hero-title">{title}</h1>
     {#if lede}<p class="hero-lede">{lede}</p>{/if}

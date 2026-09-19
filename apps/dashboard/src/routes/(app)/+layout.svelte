@@ -1,6 +1,7 @@
 <script lang="ts">
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import AppSidebar from '$lib/components/sidebar/AppSidebar.svelte';
+  import HeroStage from '$lib/components/brand/HeroStage.svelte';
   import PageField from '$lib/components/brand/PageField.svelte';
   import PhoneTabBar from '$lib/components/shell/PhoneTabBar.svelte';
   import PhoneTopBar from '$lib/components/shell/PhoneTopBar.svelte';
@@ -13,8 +14,20 @@
   import { buildNav, phoneTabs } from '$lib/nav';
   import { fieldPalette, look } from '$lib/look.svelte';
   import { theme } from '$lib/theme.svelte';
+  import { listScope } from '$lib/stores/pagedList.svelte';
+  import { warmLists } from '$lib/stores/warmLists';
 
   let { data, children } = $props();
+
+  // the lists a page remembers are one person's in one workspace
+  $effect.pre(() => listScope(`${data.me.user.id}:${data.me.activeWorkspaceId ?? ''}`));
+  // ...and once the app is idle they are fetched ahead, so a first visit to
+  // a page opens on its rows too (again after a switch of workspace)
+  $effect(() => {
+    void data.me.activeWorkspaceId;
+    const idle = window.requestIdleCallback ?? ((run: () => void) => setTimeout(run, 400));
+    idle(() => warmLists());
+  });
 
   const nav = $derived(buildNav({ role: data.me.role, origin: data.me.origin }));
   const tabs = $derived(phoneTabs(nav));
@@ -30,12 +43,12 @@
     data.me.workspaces.find((w) => w.id === data.me.activeWorkspaceId)?.name ?? data.instance.name
   );
 
-  // The look a person picked for THIS workspace (the recipe box at the foot
-  // of the sidebar): the theme's slots on <html>, its field under the app.
-  // The look follows the active workspace, so a switch changes it.
+  // The workspace's look (a fact of the workspace, /me carries it): the
+  // theme's slots on <html>, its field under the app at the workspace's own
+  // gradient and grain. A switch changes the look with the workspace.
   $effect(() => {
     theme.start();
-    look.use(data.me.activeWorkspaceId ?? '');
+    look.use(data.me.activeWorkspaceId ?? '', data.me.workspace.look);
     look.apply(theme.dark);
   });
   const field = $derived(fieldPalette(look.value.theme, theme.dark));
@@ -65,8 +78,11 @@
       title={head.gone ? pageName : undefined}
       user={{ name: data.me.user.name, email: data.me.user.email }}
     />
-    <header class="hidden h-11 shrink-0 items-center gap-3 px-4 md:flex">
-      <Sidebar.Trigger class="-ml-1" />
+    <header
+      class="top-bar hidden h-11 shrink-0 items-center gap-3 px-1.5 md:flex"
+      data-stuck={head.gone ? '' : undefined}
+    >
+      <Sidebar.Trigger />
       <TopCrumbs items={trail} shown={head.gone && trail.length > 0} />
     </header>
     <main class="app-main flex-1 overflow-y-auto px-4 pt-5 md:px-8 md:pt-2" use:head.attach>
@@ -75,6 +91,9 @@
           <!-- SL-6: cloud + sessions only — the field is absent on oss. -->
           <WelcomeBanner instanceName={data.instance.name} />
         {/if}
+        <!-- the band every page opens on: one element that stays while the
+             pages change, each page saying what it holds (HeroBand) -->
+        <HeroStage />
         {@render children()}
       </div>
     </main>
