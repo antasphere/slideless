@@ -146,6 +146,13 @@ describe('the fonts', () => {
       { slot: '2', family: 'Karla', weights: [], source: '' }
     ]);
     expect(fontsOf({ type: 'brand', fonts: { heading: { weights: [700] } } })).toEqual([]);
+    // the database keeps JSON keys sorted, so body arrives before heading: the reading order wins
+    expect(
+      fontsOf({
+        type: 'brand',
+        fonts: { body: 'Inter', mono: 'DM Mono', heading: 'Fraunces', eyebrow: 'Karla' }
+      }).map((f) => f.slot)
+    ).toEqual(['heading', 'body', 'mono', 'eyebrow']);
     expect(fontsOf(null)).toEqual([]);
   });
 

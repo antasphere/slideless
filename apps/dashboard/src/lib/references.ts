@@ -185,8 +185,29 @@ export function fontsOf(reference: Reference | null): FontFace[] {
   } else if (isRecord(fonts)) {
     for (const [slot, v] of Object.entries(fonts)) push(slot, v);
   }
-  return out;
+  // The stored object's key order is not the author's (the database keeps
+  // JSON keys sorted), so the known slots take their reading order: the
+  // display faces, then the body, then the labels and the code face; an
+  // unknown slot keeps its place after them.
+  return out
+    .map((face, i) => ({ face, i, rank: SLOT_RANK.indexOf(face.slot.toLowerCase()) }))
+    .sort((a, b) => (a.rank === -1 ? 99 : a.rank) - (b.rank === -1 ? 99 : b.rank) || a.i - b.i)
+    .map((x) => x.face);
 }
+
+const SLOT_RANK = [
+  'display',
+  'heading',
+  'headings',
+  'title',
+  'titles',
+  'body',
+  'text',
+  'label',
+  'labels',
+  'mono',
+  'code'
+];
 
 /**
  * The Google Fonts families the sheet may load a specimen for. The content

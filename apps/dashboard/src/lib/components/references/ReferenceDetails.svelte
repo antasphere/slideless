@@ -199,7 +199,10 @@
   {/if}
 </Sheet.Header>
 
-{#if deck.currentVersion > 0}
+<!-- the live rendering is owner-level on the server (the preview token): a
+     member who cannot mint one gets no empty plate here, the card's drawing
+     stands for the deck -->
+{#if deck.currentVersion > 0 && canPreview}
   <section class="space-y-2">
     <p class="eyebrow">{t('refs.sheetPreview')} · v{shownVersion}</p>
     <VersionThumb {thumbs} version={shownVersion} width={464} class="w-full max-w-full" />

@@ -32,6 +32,8 @@ export default defineConfig({
   projects: [
     { name: 'smoke', testMatch: /smoke\.spec\.ts/ },
     { name: 'decks', testMatch: /decks\.spec\.ts/, dependencies: ['smoke'] },
+    // PRDCT-2421: the Brands section — a pushed reference, its sheet, its audience, its default.
+    { name: 'brands', testMatch: /brands\.spec\.ts/, dependencies: ['smoke'] },
     // PRDCT-2279: the deck's master page, opened through the contract's path.
     { name: 'master', testMatch: /master\.spec\.ts/, dependencies: ['smoke'] },
     { name: 'viewer', testMatch: /viewer-annotations\.spec\.ts/, dependencies: ['smoke'] },
