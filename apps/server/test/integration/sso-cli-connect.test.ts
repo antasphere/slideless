@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
-import { FakeHub, type HubUserFixture } from '../fake-hub.js';
+import { FakeHub, type HubUserFixture } from '@antasphere/chassis-server/testing';
 import * as sso from './sso-helpers.js';
 
 /**

@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "vitest run --dir test/unit",
-    "test:integration": "vitest run --dir test/integration",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "drift:check": "bash scripts/check-auth-schema-drift.sh",
     "docs:env": "tsx scripts/generate-env-docs.ts && prettier --write ../../docs/reference/env-reference.md"
   },
