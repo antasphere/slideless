@@ -5,7 +5,9 @@ import {
   badgePositionSchema,
   deckMasterUrl,
   formNameSchema,
-  formResponseSourceSchema
+  formResponseSourceSchema,
+  presentationsListTypeSchema,
+  referenceTypeSchema
 } from '@slideless/contract';
 import { ApiToolError, deny, jsonText, wrapToolErrors, type ToolTextResult } from './errors.js';
 import {
@@ -347,6 +349,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     .uuid()
     .optional()
     .describe('Target organization (workspace id). Omit to use your default org — see slideless_whoami.');
+  const referenceListTypeInput = presentationsListTypeSchema
+    .optional()
+    .describe('`brand` or `template` for one type; `reference` (the default) for every type.');
   const cursorInput = z.string().optional().describe('nextCursor from a previous page.');
   const limitInput = z
     .number()
@@ -382,8 +387,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       description:
         'List the presentations (decks) this credential can read, newest first — deck reads are ' +
         'private: owners and workspace admins see the workspace, others see owned decks plus active ' +
-        'collaborations. Returns { presentations: [...], nextCursor }; when nextCursor is non-null, ' +
-        'call again with cursor set to it.',
+        'collaborations. ORDINARY decks only: references (brands, templates) are listed by ' +
+        'slideless_list_references. Returns { presentations: [...], nextCursor }; when nextCursor ' +
+        'is non-null, call again with cursor set to it.',
       inputSchema: { workspace: workspaceInput, cursor: cursorInput, limit: limitInput },
       annotations: { readOnlyHint: true }
     },
@@ -553,6 +559,77 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
             ? { note: `truncated at ${Math.floor(INLINE_DOWNLOAD_FILE_MAX / 1024)} KiB — ${CLI_HINT}` }
             : {})
         });
+      })
+  );
+
+  // ── References (ADR 025): reads ────────────────────────────────────────────
+
+  server.registerTool(
+    'slideless_list_references',
+    {
+      description:
+        'List the references this credential can read, newest first. A reference is a deck whose ' +
+        'AGENT.md frontmatter names a type: a `brand` (the house look: colors, fonts, logos, tone) ' +
+        'or a `template` (a deck to start from). You see your own references plus the ones ' +
+        'published to the workspace (audience: workspace). type narrows to `brand` or `template`; ' +
+        'omitted or `reference` lists every type. Returns { presentations: [...], nextCursor } in ' +
+        'the slideless_list_presentations shape: reference ({ type, ...the frontmatter fields }), ' +
+        'audience (private | workspace) and defaultReference (true on the workspace default of its ' +
+        'type) tell them apart. Read a reference with slideless_get_agent_doc before using it.',
+      inputSchema: {
+        workspace: workspaceInput,
+        type: referenceListTypeInput,
+        cursor: cursorInput,
+        limit: limitInput
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ workspace, type, cursor, limit }) =>
+      read(workspace, async (c) =>
+        jsonText(
+          await callApi(
+            c,
+            pageQuery('/api/v1/presentations', { cursor, limit }, { type: type ?? 'reference' })
+          )
+        )
+      )
+  );
+
+  server.registerTool(
+    'slideless_get_default_reference',
+    {
+      description:
+        "The workspace's default reference of one type: the `brand` or the `template` a workspace " +
+        'admin chose as the house default (at most one per type). Returns { type, presentation } ' +
+        'with the presentation in the slideless_get_presentation shape, or { type, presentation: ' +
+        'null, note } when no default of that type is set in this workspace. Call it before ' +
+        'building a deck, then read the AGENT.md of the reference with slideless_get_agent_doc ' +
+        '(and its files with slideless_download_version) and follow what it says. Nothing is ' +
+        'applied automatically: the default is a pointer, and using it is your work.',
+      inputSchema: {
+        workspace: workspaceInput,
+        type: referenceTypeSchema.describe('Which default to look up: `brand` or `template`.')
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ workspace, type }) =>
+      read(workspace, async (c) => {
+        const { presentations } = (await callApi(
+          c,
+          pageQuery('/api/v1/presentations', { limit: 1 }, { type, default: 'true' })
+        )) as { presentations: unknown[] };
+        const presentation = presentations[0] ?? null;
+        return jsonText(
+          presentation
+            ? { type, presentation }
+            : {
+                type,
+                presentation: null,
+                note:
+                  `No default ${type} is set in this workspace. List the ${type} references with ` +
+                  'slideless_list_references, or carry on without one.'
+              }
+        );
       })
   );
 

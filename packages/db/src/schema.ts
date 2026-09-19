@@ -495,6 +495,10 @@ export const badgePositions = [
 ] as const;
 export type BadgePosition = (typeof badgePositions)[number];
 
+/** Who reads a reference (ADR 025); an ordinary deck is always `private`. */
+export const audiences = ['private', 'workspace'] as const;
+export type Audience = (typeof audiences)[number];
+
 export const presentations = pgTable(
   'presentations',
   {
@@ -535,6 +539,26 @@ export const presentations = pgTable(
      * driver is (the `none` driver never sends anyway).
      */
     notifyOnResponse: boolean('notify_on_response').notNull().default(true),
+    /**
+     * References (ADR 025). Mirrors the current version's reference_type and
+     * reference (the AGENT.md frontmatter, parsed once at push) so listing,
+     * filtering and the read rule read columns, never a bundle. Free text,
+     * not an enum: a future type is a contract value, no migration. NULL =
+     * an ordinary deck. No backfill — a deck is classified at its next push.
+     */
+    referenceType: text('reference_type'),
+    reference: jsonb('reference').$type<Record<string, unknown>>(),
+    /**
+     * Who reads a reference: `private` (ADR 013 unchanged) or `workspace`
+     * (every non-guest member — the ADR 013 amendment). A COLUMN set by an
+     * action, never a frontmatter field: a pusher must not be able to
+     * publish to the workspace by editing a file. Only meaningful while
+     * reference_type is set; the commit path resets it when a deck stops
+     * being a reference.
+     */
+    audience: text('audience', { enum: audiences }).notNull().default('private'),
+    /** The workspace's default reference of its type — one per (workspace, type), see the partial unique index. */
+    isDefaultReference: boolean('is_default_reference').notNull().default(false),
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
@@ -558,7 +582,14 @@ export const presentations = pgTable(
     // Serves the API's keyset pagination (workspace_id, created_at DESC, id DESC).
     index('presentations_workspace_created_id_idx').on(t.workspaceId, t.createdAt, t.id),
     // Serves the owner's "my decks" listing.
-    index('presentations_workspace_owner_idx').on(t.workspaceId, t.ownerUserId, t.createdAt, t.id)
+    index('presentations_workspace_owner_idx').on(t.workspaceId, t.ownerUserId, t.createdAt, t.id),
+    // One default reference per type per workspace (ADR 025). The index is
+    // the backstop under two concurrent sets: the loser's UPDATE fails on it
+    // rather than leaving two defaults. A soft-deleted default frees the slot.
+    uniqueIndex('presentations_default_reference_uniq')
+      .on(t.workspaceId, t.referenceType)
+      .where(sql`${t.isDefaultReference} AND ${t.deletedAt} IS NULL`),
+    check('presentations_audience_check', sql`${t.audience} IN ('private', 'workspace')`)
   ]
 );
 
@@ -604,6 +635,13 @@ export const presentationVersions = pgTable(
     // folder — the version's ATTACHMENTS (PRDCT-2278). Stamped at commit like
     // has_agent_doc; listings and the dashboard never open a manifest to know.
     hasDownloads: boolean('has_downloads').notNull().default(false),
+    // References (ADR 025): THIS version's AGENT.md frontmatter, read once
+    // before the commit transaction (never at read time). reference_warning
+    // is the one sentence naming what made a frontmatter unusable — stored
+    // so the version detail says later what the push answer said on the day.
+    referenceType: text('reference_type'),
+    reference: jsonb('reference').$type<Record<string, unknown>>(),
+    referenceWarning: text('reference_warning'),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdByRole: text('created_by_role', { enum: versionAuthorRoles }).notNull().default('owner'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()

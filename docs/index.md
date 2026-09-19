@@ -27,7 +27,7 @@ out a link. No PowerPoint export, no static-host glue, no third party holding yo
   ([viewer security model](security/viewer-security-model.md)).
 - **Collaborators and reviewers.** Per-deck grants for external people who push new versions of one
   deck, and annotator links whose notes land in the owner's inbox.
-- **Agents as first-class users.** The `slideless` CLI, the `/mcp` endpoint with 22 `slideless_`
+- **Agents as first-class users.** The `slideless` CLI, the `/mcp` endpoint with 24 `slideless_`
   tools, and scoped `slk_` API keys: every instance is agent-ready at boot.
 
 ## Two ways to run it

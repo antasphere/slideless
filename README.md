@@ -83,7 +83,7 @@ Fresh VPS? There is a one-liner installer — see [docs/self-hosting/install.md]
   can push new versions of one deck) and reviewer annotations captured
   straight from annotator share links into the owner's inbox.
 - **Agents as first-class users.** The `slideless` CLI
-  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 22 `slideless_`
+  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 24 `slideless_`
   tools ([docs/agents/mcp-connector.md](docs/agents/mcp-connector.md)), scoped `slk_` API
   keys, and a browserless email-OTP → API-key login. Start at
   [docs/getting-started/connect-an-agent.md](docs/getting-started/connect-an-agent.md).

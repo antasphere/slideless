@@ -13,6 +13,7 @@ groups:
       - concepts/versions
       - concepts/links
       - concepts/attachments
+      - concepts/references
   - title: Agents
     pages:
       - agents/cli

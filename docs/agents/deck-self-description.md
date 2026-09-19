@@ -76,6 +76,35 @@ it publicly at `/v/{secret}/AGENT.md` — an agent handed only a viewer URL
 can fetch the briefing directly. Do not put anything in it you would not
 put in the deck itself.
 
+### The frontmatter
+
+`AGENT.md` may start with a frontmatter: a YAML block between two `---`
+lines, at the very top of the file. The briefing follows it as before.
+
+```markdown
+---
+type: Brand
+title: Northwind Freight brand
+description: The look and the voice of every Northwind Freight deck.
+---
+
+# Northwind Freight brand
+
+This deck is the brand of Northwind Freight. Read it before you build a deck for us.
+```
+
+A `type: Brand` or `type: Template` makes the deck a **reference**: a deck
+the workspace keeps to make other decks from. The server reads the
+frontmatter once, at push, and returns it as `reference` on the presentation
+and on the version. [References](../concepts/references.md) has the fields of
+each type, the audience, the default and the list.
+
+An unusable frontmatter never blocks a push. When it is malformed, too large
+(over 16 KB) or names an unknown type, the push succeeds, the deck stays an
+ordinary deck, and the push answer says what was unusable in
+`version.referenceWarning`. An `AGENT.md` with no frontmatter, or with a
+frontmatter that has no `type`, is an ordinary briefing and raises no warning.
+
 ## Which one to use
 
 |          | `metadata`                        | `AGENT.md`                       |
