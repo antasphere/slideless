@@ -2,8 +2,8 @@
   import HeroBand from '$lib/components/brand/HeroBand.svelte';
   import StatTile from '$lib/components/brand/StatTile.svelte';
   import Palette from '@lucide/svelte/icons/palette';
-  import { descriptionOf, swatchesOf } from '$lib/references';
-  import DeckCard from '$lib/components/decks/DeckCard.svelte';
+  import { descriptionOf, swatchesOf } from '$lib/tool/references';
+  import DeckCard from '$lib/tool/components/decks/DeckCard.svelte';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { THEMES } from '$lib/brand/recipe.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';

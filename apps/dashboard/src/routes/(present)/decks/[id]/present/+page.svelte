@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import DeckMaster from '$lib/components/decks/DeckMaster.svelte';
+  import DeckMaster from '$lib/tool/components/decks/DeckMaster.svelte';
 
   let { data } = $props();
 
