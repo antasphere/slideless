@@ -607,7 +607,7 @@ async function resolveProvenance(
     const flag = opts[type];
     if (flag !== undefined) {
       const candidates = await listReferences(ctx, type);
-      const { match, version } = pickPinned(candidates, flag, type);
+      const { match, version } = pickPinned(candidates, flag, type, (line) => ctx.io.err.write(line));
       const pinned = version ?? match.currentVersion;
       if (pinned > match.currentVersion) {
         throw new CliUsageError(
@@ -646,14 +646,32 @@ async function resolveProvenance(
 export function pickPinned(
   candidates: readonly VersionCommitted['presentation'][],
   flag: string,
-  what: string
+  what: string,
+  note: (line: string) => void = () => undefined
 ): { match: VersionCommitted['presentation']; version: number | undefined } {
   const { ref, version } = splitRefAtVersion(flag);
   if (version !== undefined) {
     const whole = candidates.find(
       (r) => r.id.toLowerCase() === flag.trim().toLowerCase() || r.title.trim() === flag.trim()
     );
-    if (whole) return { match: whole, version: undefined };
+    if (whole) {
+      // The other reading may be real too: say which one won and how to
+      // name the other, since a silent choice here writes the wrong
+      // provenance without a word.
+      let other: VersionCommitted['presentation'] | null = null;
+      try {
+        other = resolveReference(candidates, ref, what);
+      } catch {
+        other = null;
+      }
+      if (other && other.id !== whole.id && version <= other.currentVersion) {
+        note(
+          `Note: "${flag}" is the title of ${whole.id}, recorded at its latest version; to record ` +
+            `"${other.title}" at version ${version} instead, name it by id: --${what} ${other.id}@${version}.\n`
+        );
+      }
+      return { match: whole, version: undefined };
+    }
   }
   return { match: resolveReference(candidates, ref, what), version };
 }

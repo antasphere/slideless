@@ -576,14 +576,42 @@ async function prepareReferenceDir(dest: string, baseUrl: string, noun: string):
  * previous pull wrote", with no way out but a deletion nobody names.
  */
 async function downloadOrClean(ctx: CliContext, deckId: string, version: number, dest: string) {
+  // What exists BEFORE the download is the person's and stays; what this
+  // command creates is its own to remove. `dest` is missing or empty here
+  // (`prepareReferenceDir` or `isMissingOrEmptyDir` said so): an existing
+  // empty folder is emptied again on failure, never deleted; a folder this
+  // command created goes; its parent goes only when the command created it
+  // (the `.slideless/` above a default pull), and only while it is empty.
+  const destExisted = await exists(dest);
+  const parent = dirname(dest);
+  const parentExisted = await exists(parent);
   try {
     return await downloadVersionInto(ctx, deckId, version, dest);
   } catch (e) {
-    await rm(dest, { recursive: true, force: true }).catch(() => undefined);
-    // `.slideless/` above a pulled folder: only when it is empty (rmdir refuses otherwise).
-    await rmdir(dirname(dest)).catch(() => undefined);
+    const removed: string[] = [];
+    if (destExisted) {
+      for (const entry of await readdir(dest).catch(() => [] as string[])) {
+        await rm(join(dest, entry), { recursive: true, force: true }).catch(() => undefined);
+        removed.push(join(dest, entry));
+      }
+    } else {
+      await rm(dest, { recursive: true, force: true }).catch(() => undefined);
+      removed.push(dest);
+      // rmdir refuses a non-empty folder, so a sibling reference under `.slideless/` survives.
+      if (!parentExisted) await rmdir(parent).catch(() => undefined);
+    }
+    if (removed.length > 0) {
+      ctx.io.err.write(
+        `Nothing of the download is kept: ${removed.length === 1 && removed[0] === dest ? dest : `the files in ${dest}`} ` +
+          'removed.\n'
+      );
+    }
     throw e;
   }
+}
+
+async function exists(path: string): Promise<boolean> {
+  return (await stat(path).catch(() => null)) !== null;
 }
 
 async function isMissingOrEmptyDir(path: string): Promise<boolean> {
