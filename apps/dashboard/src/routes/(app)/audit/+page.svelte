@@ -210,8 +210,9 @@
   </Button>
 {/snippet}
 
-{#snippet panel(idPrefix: string)}
+{#snippet panel(idPrefix: string, layout: 'stack' | 'columns' = 'stack')}
   <AuditFilterPanel
+    {layout}
     {filters}
     {members}
     {membersError}
@@ -232,7 +233,7 @@
           {@render filterButton(props)}
         {/snippet}
       </Popover.Trigger>
-      <Popover.Content align="end" class="filter-float w-[380px] p-0">
+      <Popover.Content align="end" class="filter-float w-[680px] max-w-[calc(100vw-32px)] p-0">
         <div class="filter-head">
           <span class="text-[13.5px] font-medium">{t('audit.filtersTitle')}</span>
           {#if filtering}
@@ -240,7 +241,7 @@
           {/if}
         </div>
         <div class="filter-body">
-          {@render panel('desk')}
+          {@render panel('desk', 'columns')}
         </div>
       </Popover.Content>
     </Popover.Root>
@@ -591,7 +592,9 @@
   }
   /* the popover's head, body and foot: a hairline under the title, the body scrolls */
   :global(.filter-float) {
-    max-height: min(78vh, 720px);
+    /* never taller than the room under the button: the floating layer says
+       how much there is; the body scrolls inside the rest */
+    max-height: min(calc(var(--bits-popover-content-available-height, 78vh) - 12px), 760px);
     display: flex;
     flex-direction: column;
     overflow: hidden;

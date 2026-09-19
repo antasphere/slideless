@@ -44,6 +44,8 @@
     onchange: (next: AuditFilters) => void;
     /** Prefix of every element id, so two panels on a page never collide. */
     idPrefix?: string;
+    /** `stack`, the groups one under the other (a phone's sheet); `columns`, When, Who, How and Resource on the left, What on the right (a desk's popover). */
+    layout?: 'stack' | 'columns';
   }
 
   let {
@@ -53,7 +55,8 @@
     seenActions = [],
     seenResourceTypes = [],
     onchange,
-    idPrefix = 'af'
+    idPrefix = 'af',
+    layout = 'stack'
   }: Props = $props();
 
   const id = (name: string) => `${idPrefix}-${name}`;
@@ -136,7 +139,7 @@
   });
 </script>
 
-<div class="panel">
+<div class="panel" class:columns={layout === 'columns'}>
   <section>
     <h3 class="eyebrow">{t('audit.groupWhen')}</h3>
     <div class="ranges" role="group" aria-label={t('audit.groupWhen')}>
@@ -347,6 +350,35 @@
   .panel {
     display: grid;
     gap: 18px;
+  }
+  /* two columns on a desk: the four short groups stacked on the left, the
+     long What group alone on the right, so the panel is wide rather than
+     tall; the sections keep their order in the markup and for a reader */
+  .panel.columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'when what'
+      'who what'
+      'how what'
+      'resource what'
+      '. what';
+    column-gap: 28px;
+    align-content: start;
+  }
+  .panel.columns > section:nth-child(1) {
+    grid-area: when;
+  }
+  .panel.columns > section:nth-child(2) {
+    grid-area: who;
+  }
+  .panel.columns > section:nth-child(3) {
+    grid-area: how;
+  }
+  .panel.columns > section:nth-child(4) {
+    grid-area: what;
+  }
+  .panel.columns > section:nth-child(5) {
+    grid-area: resource;
   }
   .panel :global(.eyebrow) {
     margin-bottom: 8px;
