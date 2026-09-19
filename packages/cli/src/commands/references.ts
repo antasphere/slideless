@@ -583,8 +583,13 @@ async function downloadOrClean(ctx: CliContext, deckId: string, version: number,
   // command created goes; its parent goes only when the command created it
   // (the `.slideless/` above a default pull), and only while it is empty.
   const destExisted = await exists(dest);
-  const parent = dirname(dest);
-  const parentExisted = await exists(parent);
+  // The nearest ancestor that existed before: every level between it and
+  // `dest` is one the download's mkdir creates, and one this command may
+  // remove again (while empty) when the download fails.
+  let firstExisting = dirname(dest);
+  while (firstExisting !== dirname(firstExisting) && !(await exists(firstExisting))) {
+    firstExisting = dirname(firstExisting);
+  }
   try {
     return await downloadVersionInto(ctx, deckId, version, dest);
   } catch (e) {
@@ -594,11 +599,19 @@ async function downloadOrClean(ctx: CliContext, deckId: string, version: number,
         await rm(join(dest, entry), { recursive: true, force: true }).catch(() => undefined);
         removed.push(join(dest, entry));
       }
-    } else {
+    } else if (await exists(dest)) {
+      // Created by this download (it was absent before): remove it, then
+      // every level the mkdir created above it, stopping at the first that
+      // is not empty (rmdir refuses it, so a sibling reference survives).
       await rm(dest, { recursive: true, force: true }).catch(() => undefined);
       removed.push(dest);
-      // rmdir refuses a non-empty folder, so a sibling reference under `.slideless/` survives.
-      if (!parentExisted) await rmdir(parent).catch(() => undefined);
+      for (let level = dirname(dest); level !== firstExisting; level = dirname(level)) {
+        try {
+          await rmdir(level);
+        } catch {
+          break;
+        }
+      }
     }
     if (removed.length > 0) {
       ctx.io.err.write(
@@ -610,8 +623,20 @@ async function downloadOrClean(ctx: CliContext, deckId: string, version: number,
   }
 }
 
+/**
+ * Whether a path exists, for the ownership record above. Only ENOENT (and
+ * ENOTDIR, a file where a folder was expected on the way) means absent;
+ * any other failure (a parent the person cannot read) reads as PRESENT, so
+ * nothing the command cannot see is ever taken for its own and removed.
+ */
 async function exists(path: string): Promise<boolean> {
-  return (await stat(path).catch(() => null)) !== null;
+  try {
+    await stat(path);
+    return true;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    return !(code === 'ENOENT' || code === 'ENOTDIR');
+  }
 }
 
 async function isMissingOrEmptyDir(path: string): Promise<boolean> {
