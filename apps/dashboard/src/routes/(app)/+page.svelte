@@ -1,7 +1,7 @@
 <script lang="ts">
   import HeroBand from '$lib/components/brand/HeroBand.svelte';
   import StatTile from '$lib/components/brand/StatTile.svelte';
-  import OverviewTile from '$lib/components/shell/OverviewTile.svelte';
+  import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { THEMES } from '$lib/brand/recipe.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api } from '$lib/api';
@@ -160,23 +160,25 @@
   <tool.overview.Tile model={toolOverview} />
 
   <!-- P7: a hub workspace's membership is managed at the hub; the members page links out -->
-  <OverviewTile
-    href={isAdmin && !hubManaged ? '/invitations' : '/members'}
-    title={t('overview.teamTitle')}
-    body={isAdmin ? t('overview.teamLede') : t('overview.askAdmin')}
-    cta={isAdmin && !hubManaged ? t('overview.teamCta') : t('overview.manageMembers')}
-  >
-    {#snippet art()}
-      <div class="faces" aria-hidden="true">
-        {#each faces as member, i (member.id)}
-          <span class="face" style="--i: {i}">{initialsOf(member.name || member.email)}</span>
-        {/each}
-        {#each [0, 1, 2].slice(0, Math.max(1, 4 - faces.length)) as n (n)}
-          <span class="face seat" style="--i: {faces.length + n}">+</span>
-        {/each}
-      </div>
-    {/snippet}
-  </OverviewTile>
+  <a href={isAdmin && !hubManaged ? '/invitations' : '/members'} class="sheet tile lower">
+    <div class="faces" aria-hidden="true">
+      {#each faces as member, i (member.id)}
+        <span class="face" style="--i: {i}">{initialsOf(member.name || member.email)}</span>
+      {/each}
+      {#each [0, 1, 2].slice(0, Math.max(1, 4 - faces.length)) as n (n)}
+        <span class="face seat" style="--i: {faces.length + n}">+</span>
+      {/each}
+    </div>
+    <div class="lower-copy">
+      <h2 class="lower-title">{t('overview.teamTitle')}</h2>
+      <p class="lower-body">{isAdmin ? t('overview.teamLede') : t('overview.askAdmin')}</p>
+      <span class="lower-cta">
+        {isAdmin && !hubManaged ? t('overview.teamCta') : t('overview.manageMembers')}<ArrowRight
+          class="size-3.5"
+        />
+      </span>
+    </div>
+  </a>
 </div>
 
 <!-- what runs this workspace, for whoever needs it: one quiet line -->
@@ -186,6 +188,55 @@
 </p>
 
 <style>
+  /* the team tile. The tool's tile beside it (contribution.ts, overview.Tile)
+     writes the same `.lower` rules in its own file: keep the two in step. */
+  .lower {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    align-items: center;
+    padding: 20px;
+    overflow: hidden;
+  }
+  @media (min-width: 640px) {
+    .lower {
+      grid-template-columns: 210px 1fr;
+      gap: 24px;
+      padding: 22px 24px;
+    }
+  }
+  .lower-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lower-title {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .lower-body {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .lower:hover .lower-cta :global(svg) {
+    transform: translateX(3px);
+  }
+  .lower-cta :global(svg) {
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
+  .lower-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    font-size: 13.5px;
+    color: var(--accent-deep);
+  }
   .faces {
     display: flex;
     align-items: center;
@@ -197,8 +248,8 @@
      seconds before the next rise (the movement is the first quarter of a
      five-second loop, the stagger rides on the delay) */
   @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-    :global(.lower:hover) .face,
-    :global(.lower:focus-visible) .face {
+    .lower:hover .face,
+    .lower:focus-visible .face {
       animation: bob 5s var(--motion-ease) infinite;
       animation-delay: calc(var(--i) * 0.13s);
     }

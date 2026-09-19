@@ -1,7 +1,10 @@
-<!-- The workspace's brand: the default brand, or the invitation to make one -->
+<!-- The workspace's brand: the default brand, or the invitation to make one.
+     The first of the overview's two lower tiles; the second, the team, is the
+     shell's (routes/(app)/+page.svelte). Each half writes its tile in place with
+     its own scoped `.lower` rules, as the hub's overview does: keep the two in step. -->
 <script lang="ts">
   import Palette from '@lucide/svelte/icons/palette';
-  import OverviewTile from '$lib/components/shell/OverviewTile.svelte';
+  import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { descriptionOf } from '$lib/tool/references';
   import { t } from '$lib/i18n';
   import type { DeckOverview } from '$lib/tool/overview.svelte';
@@ -9,43 +12,84 @@
   let { model }: { model: DeckOverview } = $props();
 
   const brand = $derived(model.brand);
-  const copy = $derived(
-    brand
-      ? {
-          eyebrow: t('overview.defaultBrandTitle'),
-          title: brand.title,
-          body: descriptionOf(brand.reference) || t('overview.defaultBrandBody')
-        }
-      : brand === null
-        ? { title: t('overview.noBrandTitle'), body: t('overview.noBrandBody') }
-        : { title: t('overview.defaultBrandTitle'), body: t('overview.defaultBrandBody') }
-  );
 </script>
 
 {#if !model.isGuest}
-  <OverviewTile
-    href="/brands"
-    testid="default-brand"
-    eyebrow={copy.eyebrow}
-    title={copy.title}
-    body={copy.body}
-    cta={t('overview.brandsCta')}
-  >
-    {#snippet art()}
-      <div class="fan" aria-hidden="true">
-        {#if model.brandSwatches.length}
-          {#each model.brandSwatches as swatch, i (swatch.name + swatch.hex)}
-            <div class="fan-slide" style="--i: {i}; background: {swatch.hex}"></div>
-          {/each}
-        {:else}
-          <div class="fan-slide fan-empty" style="--i: 0"><Palette class="size-6" strokeWidth={1.5} /></div>
-        {/if}
-      </div>
-    {/snippet}
-  </OverviewTile>
+  <a href="/brands" class="sheet tile lower" data-testid="default-brand">
+    <div class="fan" aria-hidden="true">
+      {#if model.brandSwatches.length}
+        {#each model.brandSwatches as swatch, i (swatch.name + swatch.hex)}
+          <div class="fan-slide" style="--i: {i}; background: {swatch.hex}"></div>
+        {/each}
+      {:else}
+        <div class="fan-slide fan-empty" style="--i: 0"><Palette class="size-6" strokeWidth={1.5} /></div>
+      {/if}
+    </div>
+    <div class="lower-copy">
+      {#if brand}
+        <p class="hero-eyebrow lower-eyebrow">{t('overview.defaultBrandTitle')}</p>
+        <h2 class="lower-title">{brand.title}</h2>
+        <p class="lower-body">{descriptionOf(brand.reference) || t('overview.defaultBrandBody')}</p>
+      {:else if brand === null}
+        <h2 class="lower-title">{t('overview.noBrandTitle')}</h2>
+        <p class="lower-body">{t('overview.noBrandBody')}</p>
+      {:else}
+        <h2 class="lower-title">{t('overview.defaultBrandTitle')}</h2>
+        <p class="lower-body">{t('overview.defaultBrandBody')}</p>
+      {/if}
+      <span class="lower-cta">{t('overview.brandsCta')}<ArrowRight class="size-3.5" /></span>
+    </div>
+  </a>
 {/if}
 
 <style>
+  .lower {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    align-items: center;
+    padding: 20px;
+    overflow: hidden;
+  }
+  @media (min-width: 640px) {
+    .lower {
+      grid-template-columns: 210px 1fr;
+      gap: 24px;
+      padding: 22px 24px;
+    }
+  }
+  .lower-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lower-title {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .lower-body {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .lower:hover .lower-cta :global(svg) {
+    transform: translateX(3px);
+  }
+  .lower-cta :global(svg) {
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
+  .lower-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    font-size: 13.5px;
+    color: var(--accent-deep);
+  }
   /* the brand's colours as slides, fanned like the Slideless mark */
   .fan {
     position: relative;
@@ -74,8 +118,11 @@
     color: var(--accent-deep);
     transform: rotate(-4deg);
   }
+  .lower-eyebrow {
+    margin-bottom: -2px;
+  }
   @media (hover: hover) {
-    :global(.lower:hover) .fan-slide {
+    .lower:hover .fan-slide {
       transform: rotate(calc(-13deg + var(--i) * 7deg)) translateY(calc(var(--i) * -2px));
     }
   }

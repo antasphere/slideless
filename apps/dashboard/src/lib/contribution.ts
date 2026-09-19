@@ -13,7 +13,7 @@ import type { NavFacts, NavItem } from '$lib/nav';
  * It is a plain typed object the shell imports, on purpose: no registry,
  * nothing registered at run time, no layer over the components.
  */
-export interface ToolContribution {
+export interface ToolContribution<M extends ToolOverview = ToolOverview> {
   /** The tool's sections of the menu, after the overview: the everyday ones. */
   nav(facts: Required<NavFacts>): NavItem[];
   /** The ids of its sections a phone keeps as thumb tabs beside the overview. */
@@ -30,12 +30,16 @@ export interface ToolContribution {
     glyphs: { test: RegExp; icon: Component }[];
   };
   overview: {
-    /** One model for the page's life; the pieces below read it. */
-    create(facts: OverviewFacts): ToolOverview;
+    /**
+     * One model for the page's life; the pieces below read it. `M` is the
+     * tool's own model: the shell reads the ToolOverview part, the tool's two
+     * pieces may read more, and the type ties them to what `create` returns.
+     */
+    create(facts: OverviewFacts): M;
     /** Under the figures: what the tool has to show of late. */
-    Recent: Component<{ model: ToolOverview }>;
+    Recent: Component<{ model: M }>;
     /** The first of the two lower tiles. */
-    Tile: Component<{ model: ToolOverview }>;
+    Tile: Component<{ model: M }>;
   };
 }
 

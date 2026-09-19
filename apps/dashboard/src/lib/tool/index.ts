@@ -1,12 +1,11 @@
 import Presentation from '@lucide/svelte/icons/presentation';
 import Palette from '@lucide/svelte/icons/palette';
 import LayoutTemplate from '@lucide/svelte/icons/layout-template';
-import type { Component } from 'svelte';
-import type { ToolContribution, ToolOverview } from '$lib/contribution';
+import type { ToolContribution } from '$lib/contribution';
 import { api } from '$lib/api';
 import { t } from '$lib/i18n';
 import { warmList } from '$lib/stores/pagedList.svelte';
-import { createDeckOverview } from './overview.svelte';
+import { createDeckOverview, type DeckOverview } from './overview.svelte';
 import RecentDecks from './components/overview/RecentDecks.svelte';
 import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
 
@@ -15,7 +14,7 @@ import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
  * (contribution.ts says what each part is for). The words are the other
  * door, `./i18n`.
  */
-export const tool: ToolContribution = {
+export const tool: ToolContribution<DeckOverview> = {
   nav({ origin }) {
     const isGuest = origin === 'guest';
     return [
@@ -104,8 +103,7 @@ export const tool: ToolContribution = {
 
   overview: {
     create: createDeckOverview,
-    // The two pieces read the deck model `create` returns, a ToolOverview and more.
-    Recent: RecentDecks as unknown as Component<{ model: ToolOverview }>,
-    Tile: DefaultBrandTile as unknown as Component<{ model: ToolOverview }>
+    Recent: RecentDecks,
+    Tile: DefaultBrandTile
   }
 };
