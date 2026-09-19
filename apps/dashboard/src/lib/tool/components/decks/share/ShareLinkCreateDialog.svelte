@@ -8,7 +8,7 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { Reveal } from '$lib/components/ui/reveal/index.js';
-  import DialogDrawing from '$lib/components/shared/DialogDrawing.svelte';
+  import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { api, errorMessage } from '$lib/api';

@@ -9,7 +9,7 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import PushInstructions from '$lib/tool/components/decks/PushInstructions.svelte';
   import DeckCard from '$lib/tool/components/decks/DeckCard.svelte';
-  import DialogDrawing from '$lib/components/shared/DialogDrawing.svelte';
+  import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import FormError from '$lib/components/shared/FormError.svelte';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';

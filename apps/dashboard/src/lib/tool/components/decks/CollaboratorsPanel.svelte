@@ -14,7 +14,7 @@
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { Tag } from '$lib/components/ui/tag/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
-  import DialogDrawing from '$lib/components/shared/DialogDrawing.svelte';
+  import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';

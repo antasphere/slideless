@@ -13,7 +13,7 @@
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
-  import DialogDrawing from '$lib/components/shared/DialogDrawing.svelte';
+  import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import FormError from '$lib/components/shared/FormError.svelte';
   import ReferenceCard from './ReferenceCard.svelte';
   import ReferenceSheet from './ReferenceSheet.svelte';

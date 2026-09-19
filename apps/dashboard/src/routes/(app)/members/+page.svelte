@@ -19,7 +19,7 @@
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import FormError from '$lib/components/shared/FormError.svelte';
-  import DialogDrawing from '$lib/components/shared/DialogDrawing.svelte';
+  import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
