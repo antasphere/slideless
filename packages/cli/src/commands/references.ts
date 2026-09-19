@@ -69,14 +69,13 @@ export function registerReferenceCommands(program: Command, io: CliIo): void {
 /** The noun of the messages: `brand`, `template`, or `reference` when the type is open. */
 const nounOf = (type: ReferenceType | undefined): string => type ?? 'reference';
 
-/** `--type` where a family has none preset, resolved against the flag's value. */
+/**
+ * The type a verb runs with: the family's preset (a shortcut family never
+ * registers `--type`, so commander refuses the flag before this runs), else
+ * the flag's value, else nothing (or a usage error where the verb needs one).
+ */
 function typeOf(family: Family, flag: string | undefined, required: boolean): ReferenceType | undefined {
-  if (family.type) {
-    if (flag !== undefined) {
-      throw new CliUsageError(`\`slideless ${family.name}\` already names the type; drop --type.`);
-    }
-    return family.type;
-  }
+  if (family.type) return family.type;
   if (flag !== undefined) return parseReferenceType(flag);
   if (required) throw new CliUsageError(`Pass --type ${REFERENCE_TYPES.join('|')}.`);
   return undefined;

@@ -298,8 +298,7 @@ describe('reference list', () => {
     expect(await run(argv('brand', 'list', '--type', 'brand'), h.io)).toBe(1);
     // A shortcut family never registers --type at all (`withType` in
     // commands/references.ts hands the command back untouched), so commander
-    // is the one that refuses; `typeOf`'s "already names the type" sentence is
-    // unreachable from the command line. Either way: exit 1, nothing on the wire.
+    // is the one that refuses: exit 1, nothing on the wire.
     expect(h.err()).toContain("unknown option '--type'");
     expect(h.calls).toHaveLength(0);
   });
