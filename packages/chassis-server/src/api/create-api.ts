@@ -2,19 +2,11 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { createEmailVerificationToken } from 'better-auth/api';
 import { jwtVerify } from 'jose';
-import { registerOpenApiDoc } from '@antasphere/chassis-server/api';
+import { registerOpenApiDoc } from './index.js';
 import { ulid } from 'ulid';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACTIVE_WORKSPACE_HEADER } from '@antasphere/chassis-contract';
 import { instanceRoute, setupRoute } from '@antasphere/chassis-contract/routes';
-import {
-  apiKeyCreateRoute,
-  apiKeyRevokeRoute,
-  apiKeysListRoute,
-  cliAuthCompleteRoute,
-  meRoute,
-  ssoCliConnectRoute
-} from '@slideless/contract/routes';
 import {
   account,
   instanceSettings,
@@ -24,71 +16,57 @@ import {
   workspaces,
   type Db
 } from '@antasphere/chassis-db';
-import { hubConfig, type Env } from '../env.js';
-import type { Logger } from '@antasphere/chassis-server/logger';
-import type { Auth } from '@antasphere/chassis-server/identity';
-import type { DeckRegistry } from '../platform/deck-events.js';
-import type { ApiKeyService } from '@antasphere/chassis-server/apikeys';
-import type { EmailDriver } from '@antasphere/chassis-server/email';
-import { isApiKeyToken } from '@antasphere/chassis-server/apikeys';
-import { auditMiddleware, type AuditService } from '@antasphere/chassis-server/audit';
-import { isDeckAuditExempt } from '../audit/deck-exempt.js';
-import { constantTimeEquals } from '@antasphere/chassis-server/util';
-import { isSecureSetupOrigin } from '@antasphere/chassis-server/util';
-import { authBodyGuard } from '@antasphere/chassis-server/middleware';
-import { authContext, type PrincipalGate } from '@antasphere/chassis-server/middleware';
-import { idempotency } from '@antasphere/chassis-server/middleware';
-import { isDeckIdempotencyTarget } from '../middleware/deck-idempotency.js';
-import { crossSiteGuard } from '@antasphere/chassis-server/middleware';
-import { jsonDepthLimit } from '@antasphere/chassis-server/middleware';
-import { noStoreAuthenticated } from '@antasphere/chassis-server/middleware';
-import { oauthPublicEndpoints } from '@antasphere/chassis-server/middleware';
-import {
-  createRequestQuota,
-  emailKeyOf,
-  makeClientIp,
-  rateLimit
-} from '@antasphere/chassis-server/middleware';
-import type { DeckRateLimiters } from '../middleware/deck-rate-limits.js';
-import { CLI_KEY_SCOPES, requiredScopeFor } from '../middleware/scopes.js';
-import type { OauthJwtVerifier } from '@antasphere/chassis-server/identity';
-import { HUB_SSO_PROVIDER_ID, type HubSsoService } from '@antasphere/chassis-server/identity';
-import type { HubGrantService } from '@antasphere/chassis-server/identity';
-import type { HubLogoutService } from '@antasphere/chassis-server/identity';
-import { registerBreakGlassRoutes } from '@antasphere/chassis-server/api';
-import { registerCliAuthRoutes } from '@antasphere/chassis-server/api';
-import { registerOnboardingRoutes } from '@antasphere/chassis-server/api';
+import type { z } from 'zod';
+import { hubConfig, type ToolEnv } from '../env.js';
+import type { Logger } from '../logger.js';
+import type { Auth } from '../identity/index.js';
+import type { PlatformRegistry } from '../platform/index.js';
+import type {
+  ApiContext,
+  ApiRateLimitContext,
+  ApiRoutesContext,
+  ToolDefinition,
+  ToolRateLimiters
+} from '../tool-definition.js';
+import type { ApiKeyService } from '../apikeys/index.js';
+import type { EmailDriver } from '../email/index.js';
+import { isApiKeyToken } from '../apikeys/index.js';
+import { auditMiddleware, type AuditService } from '../audit/index.js';
+import { constantTimeEquals } from '../util/index.js';
+import { isSecureSetupOrigin } from '../util/index.js';
+import { authBodyGuard } from '../middleware/index.js';
+import { authContext, type PrincipalGate } from '../middleware/index.js';
+import { idempotency } from '../middleware/index.js';
+import { crossSiteGuard } from '../middleware/index.js';
+import { jsonDepthLimit } from '../middleware/index.js';
+import { noStoreAuthenticated } from '../middleware/index.js';
+import { oauthPublicEndpoints } from '../middleware/index.js';
+import { createRequestQuota, emailKeyOf, makeClientIp, rateLimit } from '../middleware/index.js';
+import type { OauthJwtVerifier } from '../identity/index.js';
+import { HUB_SSO_PROVIDER_ID, type HubSsoService } from '../identity/index.js';
+import type { HubGrantService } from '../identity/index.js';
+import type { HubLogoutService } from '../identity/index.js';
+import { registerBreakGlassRoutes } from './index.js';
+import { registerCliAuthRoutes } from './index.js';
+import { registerOnboardingRoutes } from './index.js';
 import {
   registerWorkspaceRoutes,
   workspaceCreationPolicy,
   workspaceCreationRefusal,
   workspaceCreateWallClosed,
   type WorkspaceCloudDeps
-} from '@antasphere/chassis-server/api';
-import { registerSsoConnectRoutes } from '@antasphere/chassis-server/api';
-import { registerSsoLogoutRoutes } from '@antasphere/chassis-server/api';
-import { registerMemberRoutes } from '@antasphere/chassis-server/api';
-import { registerApiKeyRoutes } from '@antasphere/chassis-server/api';
-import { registerInvitationRoutes } from '@antasphere/chassis-server/api';
-import { registerAuditRoutes } from '@antasphere/chassis-server/api';
-import { registerFileRoutes } from '@antasphere/chassis-server/api';
-import { registerExportRoutes } from '@antasphere/chassis-server/api';
-import { registerPresentationRoutes } from './presentations.js';
-import { registerCollaboratorRoutes } from './collaborators.js';
-import { blobReadScope, PresentationService } from '../presentations/service.js';
-import { AnnotationService } from '../annotations/service.js';
-import { ShareTokenViewService } from '../sharing/view-events.js';
-import type { CollaboratorService } from '../collaborators/service.js';
-import type { FormResponseService } from '../forms/service.js';
-import type { FormResponseNotifier } from '../forms/notify.js';
-import { isViewerFormUploadPath, registerViewerFormRoutes } from '../viewer/forms-api.js';
-import type { FormUploadService } from '../forms/uploads.js';
-import { registerViewerAttachmentRoutes } from '../viewer/attachments-api.js';
-import { registerViewerAnnotationRoutes, viewerApiCors } from '../viewer/annotations-api.js';
-import type { ShareTokenService } from '../sharing/service.js';
-import type { AccountDeletionService } from '@antasphere/chassis-server/accounts';
-import type { FileService } from '@antasphere/chassis-server/files';
-import type { StorageDriver } from '@antasphere/chassis-server/storage';
+} from './index.js';
+import { registerSsoConnectRoutes } from './index.js';
+import { registerSsoLogoutRoutes } from './index.js';
+import { registerMemberRoutes } from './index.js';
+import { registerApiKeyRoutes } from './index.js';
+import { registerInvitationRoutes } from './index.js';
+import { registerAuditRoutes } from './index.js';
+import { registerFileRoutes } from './index.js';
+import { registerExportRoutes } from './index.js';
+import type { AccountDeletionService } from '../accounts/index.js';
+import type { FileService } from '../files/index.js';
+import type { StorageDriver } from '../storage/index.js';
 
 /** Inline error body matching the wire shape; keeps openapi handlers typed. */
 const err = (code: string, message: string) => ({ error: { code, message } });
@@ -208,16 +186,22 @@ async function rewriteChangeEmailCollision(
   }
 }
 
-export interface ApiDeps {
+export interface ApiDeps<
+  TEnvShape extends z.ZodRawShape,
+  TDomain,
+  TBuckets extends string,
+  TEvents,
+  TToolOverrides
+> {
   db: Db;
-  env: Env;
+  env: ToolEnv<TEnvShape>;
   auth: Auth;
-  registry: DeckRegistry;
+  registry: PlatformRegistry<TEvents>;
   logger: Logger;
   apiKeys: ApiKeyService;
   audit: AuditService;
   email: EmailDriver;
-  limiters: DeckRateLimiters;
+  limiters: ToolRateLimiters<TBuckets>;
   storage: StorageDriver;
   fileService: FileService;
   oauthJwt: OauthJwtVerifier;
@@ -232,14 +216,12 @@ export interface ApiDeps {
   /** Removes the boot-generated token file after a successful claim (no-op when SETUP_TOKEN is set). */
   clearGeneratedSetupToken: () => Promise<void>;
   accountDeletion: AccountDeletionService;
-  /** Share tokens (Phase 4) — shared with the public viewer, built in boot. */
-  sharing: ShareTokenService;
-  forms: FormResponseService;
-  formUploads: FormUploadService;
-  /** Owner notifications for form responses (PRDCT-2330). */
-  formsNotifier: FormResponseNotifier;
-  /** Per-deck dev grants (Phase 5) — shared with the user.created hook in boot. */
-  collaborators: CollaboratorService;
+  /** The tool definition: its slots are invoked at their fixed positions below. */
+  tool: ToolDefinition<TEnvShape, TDomain, TBuckets, TEvents, TToolOverrides>;
+  /** What the tool's `services` slot returned — built in boot, shared with its public routes. */
+  domain: TDomain;
+  /** The tool's never-trusted origins, resolved ONCE in boot (the same list Better Auth got). */
+  untrustedOrigins: readonly string[];
   /**
    * Cloud edition only (internal/federation.md): the hub SSO binding. Its sole
    * job here is wrapping the auth mount in the request-scoped login scope
@@ -280,8 +262,35 @@ class SetupAlreadyDone extends Error {}
  * in @slideless/contract/routes; the OpenAPI document is generated from those
  * contracts and served at /api/v1/openapi.json.
  */
-export function createApiApp(deps: ApiDeps): OpenAPIHono {
-  const { db, env, auth, registry, logger, apiKeys: apiKeyService, audit, email, limiters } = deps;
+export function createApiApp<
+  TEnvShape extends z.ZodRawShape,
+  TDomain,
+  TBuckets extends string,
+  TEvents,
+  TToolOverrides
+>(deps: ApiDeps<TEnvShape, TDomain, TBuckets, TEvents, TToolOverrides>): OpenAPIHono {
+  const { db, env, auth, registry, logger, apiKeys: apiKeyService, audit, email, limiters, tool } = deps;
+  const { meRoute, apiKeysListRoute, apiKeyCreateRoute, apiKeyRevokeRoute, cliAuthCompleteRoute } =
+    tool.scopes.contractRoutes;
+  const { ssoCliConnectRoute } = tool.scopes.contractRoutes;
+  // The registry as the chassis routers read it (the generic events only):
+  // the same seams, the same bus, seen through its chassis view.
+  const chassisRegistry: PlatformRegistry = { ...registry, events: registry.events.chassisView() };
+  // What every positional hook of the tool receives.
+  const hookContext: ApiContext<TEnvShape, TBuckets, TEvents> = {
+    db,
+    env,
+    auth,
+    registry,
+    logger,
+    audit,
+    email,
+    limiters,
+    storage: deps.storage,
+    fileService: deps.fileService,
+    authSecret: deps.authSecret,
+    hubSso: deps.hubSso
+  };
 
   // P7 (internal/federation.md): on EDITION=cloud, membership of a hub-origin
   // (projected) workspace is managed at the hub — this is the pointer the
@@ -337,9 +346,10 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     '*',
     crossSiteGuard({
       publicBaseUrl: env.PUBLIC_BASE_URL,
-      // The viewer origin (PRDCT-1352) is author-controlled deck script's
-      // origin: never a trust grant here, even if it is the serving origin.
-      deniedOrigins: env.VIEWER_BASE_URL ? [env.VIEWER_BASE_URL] : [],
+      // The tool's never-trusted origins (for Slideless the viewer origin,
+      // PRDCT-1352: author-controlled deck script's origin): never a trust
+      // grant here, even if it is the serving origin.
+      deniedOrigins: deps.untrustedOrigins,
       // `/api/v1/viewer/*` is the share-token annotation API, and it is a
       // DELIBERATE wildcard-CORS surface (viewer/annotations-api.ts): it is
       // called by the overlay client running inside the sandboxed viewer
@@ -347,7 +357,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       // cookie-authenticated — the share token in the path is the credential —
       // so it is not the ambient-credential class this guard closes, and
       // refusing `Origin: null` would break annotations outright.
-      isExempt: (path) => path.startsWith('/api/v1/viewer/')
+      isExempt: (path) => tool.api.csrfExempt?.(path) ?? false
     })
   );
 
@@ -359,7 +369,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // The public viewer-token annotation surface (Phase 5): same posture — the
   // overlay calls cross-origin from the sandboxed opaque origin (Origin:
   // null), token-authed, never cookie-authed, so wildcard CORS is safe.
-  api.use('/viewer/*', viewerApiCors());
+  tool.api.early?.(api, hookContext);
 
   // ── Body size caps, path-routed. 1 MiB is generous for every JSON/auth
   // body. Exceptions:
@@ -375,23 +385,16 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     maxSize: 1024 * 1024,
     onError: (c) => c.json(err('payload_too_large', 'Request body exceeds the 1 MiB limit'), 413)
   });
-  const manifestBodyLimit = bodyLimit({
-    maxSize: 16 * 1024 * 1024,
-    onError: (c) => c.json(err('payload_too_large', 'Request body exceeds the 16 MiB limit'), 413)
-  });
-  const assetBodyLimit = bodyLimit({
-    maxSize: env.MAX_FILE_SIZE_MB * 1024 * 1024 + 1024 * 1024,
-    onError: (c) =>
-      c.json(err('file_too_large', `Asset exceeds the ${env.MAX_FILE_SIZE_MB} MB instance cap`), 413)
-  });
+  // The tool's own caps, built ONCE here (never per request).
+  const toolBodyLimit = tool.api.bodyLimit?.(hookContext);
   //  - the viewer's form file upload (PRDCT-2403): one raw streamed file per
   //    request, capped MID-STREAM by the form-upload ceiling in its handler.
   api.use('*', (c, next) => {
     const path = c.req.path;
     if (path.startsWith('/api/v1/files')) return next();
-    if (isViewerFormUploadPath(path)) return next();
-    if (path === '/api/v1/presentations/assets') return assetBodyLimit(c, next);
-    if (path.startsWith('/api/v1/presentations')) return manifestBodyLimit(c, next);
+    const verdict = toolBodyLimit?.(path);
+    if (verdict === 'exempt') return next();
+    if (verdict) return verdict(c, next);
     return jsonBodyLimit(c, next);
   });
 
@@ -403,7 +406,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   // respondent's `.json` sent with a JSON content type would otherwise be
   // cloned into memory whole (up to the upload ceiling) by the scan.
   const depthLimit = jsonDepthLimit();
-  api.use('*', (c, next) => (isViewerFormUploadPath(c.req.path) ? next() : depthLimit(c, next)));
+  api.use('*', (c, next) => (tool.api.jsonDepthExempt?.(c.req.path) ? next() : depthLimit(c, next)));
 
   // ── Auth-surface rate limits: registered FIRST so they run before auth
   // resolution — abusive traffic is rejected before it costs a DB query.
@@ -445,8 +448,8 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   api.use('/invitations/lookup', rateLimit(limiters.invitationAccept, clientIp));
   // Collaborator claims are invitation acceptances in per-deck clothing —
   // the same public token-redemption surface, the same wall.
-  api.use('/collaborators/claim', rateLimit(limiters.invitationAccept, clientIp));
-  api.use('/collaborators/lookup', rateLimit(limiters.invitationAccept, clientIp));
+  const rateLimitContext: ApiRateLimitContext<TEnvShape, TBuckets, TEvents> = { ...hookContext, clientIp };
+  tool.api.rateLimits?.(api, rateLimitContext);
   // Break-glass: a rare superadmin recovery action — a tight per-IP wall
   // bounds allowlist probing before the handlers' own session checks run.
   api.use('/admin/break-glass/*', rateLimit(limiters.breakGlass, clientIp));
@@ -545,7 +548,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
   api.use(
     '*',
     authContext({
-      registry,
+      registry: chassisRegistry,
       isApiKeyToken,
       resolveApiKey: (token, requested) => apiKeyService.resolve(token, requested),
       resolveOauthJwt: (token, requested) => deps.oauthJwt.resolve(token, requested),
@@ -565,17 +568,27 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       // Cloud edition's post-resolution veto (internal/federation.md P4);
       // undefined on oss.
       principalGate: deps.principalGate,
-      // The composed fail-closed allowlist: chassis rules, then the deck rules.
-      requiredScopeFor
+      // The composed fail-closed allowlist: chassis rules, then the tool's rules.
+      requiredScopeFor: tool.scopes.requiredScopeFor
     })
   );
 
   // Idempotency sits strictly BETWEEN authContext (it needs the resolved
   // principal to scope claims) and auditMiddleware (a replayed short-circuit
   // never reaches the audit layer, so a retry cannot land a second audit row).
-  api.use('*', idempotency({ db, authSecret: deps.authSecret, toolTargets: isDeckIdempotencyTarget }));
+  api.use(
+    '*',
+    idempotency({
+      db,
+      authSecret: deps.authSecret,
+      ...(tool.api.idempotencyTargets ? { toolTargets: tool.api.idempotencyTargets } : {})
+    })
+  );
 
-  api.use('*', auditMiddleware(audit, clientIp, { exempt: isDeckAuditExempt }));
+  api.use(
+    '*',
+    auditMiddleware(audit, clientIp, tool.api.auditExempt ? { exempt: tool.api.auditExempt } : {})
+  );
 
   // ── GET /instance — unauthenticated discovery ────────────────────────────
   api.openapi(instanceRoute, async (c) => {
@@ -583,7 +596,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     c.header('Cache-Control', 'public, max-age=60');
     return c.json(
       {
-        name: row?.name ?? 'Slideless',
+        name: row?.name ?? tool.mcp.defaultInstanceName,
         instanceId: row?.instanceId ?? null,
         edition: env.EDITION,
         version: env.APP_VERSION,
@@ -718,7 +731,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       return c.json(err('internal', 'Setup failed; the instance remains uninitialized — retry'), 500);
     }
 
-    registry.events.emit('setup.completed', { workspaceId, instanceId });
+    chassisRegistry.events.emit('setup.completed', { workspaceId, instanceId });
     logger.info({ workspaceId, instanceId }, 'first-boot setup completed');
     // The generated token has done its one job; a leftover copy in the data
     // volume is a secret with no purpose (it would ride in every backup).
@@ -906,9 +919,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
         role: principal.role,
         origin: principal.origin,
         via: principal.via,
-        scopes: principal.scopes
-          ? ([...principal.scopes] as Array<'presentations:read' | 'presentations:write' | 'data:export'>)
-          : null,
+        scopes: principal.scopes ? [...principal.scopes] : null,
         apiKeyExpiresAt: principal.apiKeyExpiresAt ?? null,
         workspaces: wireWorkspaces,
         activeWorkspaceId: principal.workspaceId,
@@ -937,7 +948,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     db,
     auth,
     audit,
-    registry,
+    registry: chassisRegistry,
     logger,
     clientIp,
     wall: creationWall,
@@ -970,7 +981,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     audit,
     logger,
     hubSso,
-    cliKeyScopes: CLI_KEY_SCOPES,
+    cliKeyScopes: tool.scopes.cliKey,
     routes: { cliAuthCompleteRoute }
   });
   // CLI cross-tool connect (internal/federation.md P5): PUBLIC exchange of a
@@ -987,7 +998,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       apiKeys: apiKeyService,
       audit,
       logger,
-      cliKeyScopes: CLI_KEY_SCOPES,
+      cliKeyScopes: tool.scopes.cliKey,
       routes: { ssoCliConnectRoute }
     });
   }
@@ -1021,7 +1032,7 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     auth,
     email,
     audit,
-    registry,
+    registry: chassisRegistry,
     logger,
     hubManaged,
     // CLOUD-5: no local-password accounts minted through invitations on cloud.
@@ -1046,101 +1057,24 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
     cachedInstanceId = row?.id ?? 'unsetup';
     return cachedInstanceId;
   };
-  // Presentation domain (ADR 011): Phases 3 (upload/versioning/pull),
-  // 4 (sharing + viewer), and 5 (collaborators/annotations) are all live.
-  const presentationService = new PresentationService(db);
-  const annotationService = new AnnotationService(db);
   registerFileRoutes(api, {
     service: deps.fileService,
     storage: deps.storage,
-    registry,
+    registry: chassisRegistry,
     env,
     logger,
     instanceId,
-    // ADR 011 sharp edge closed: a blob referenced by a live deck version
-    // manifest is not deletable through the generic files surface.
-    blobInUse: (tx, workspaceId, sha256) => presentationService.blobInUse(tx, workspaceId, sha256),
-    // SL-B1: the generic files surface authorizes per DECK, not per
-    // workspace — the ADR 013 policy expressed as a WHERE predicate.
-    blobReadScope
+    // The tool's blob policy. For Slideless — ADR 011 sharp edge closed: a
+    // blob referenced by a live deck version manifest is not deletable
+    // through the generic files surface; SL-B1: the generic files surface
+    // authorizes per DECK, not per workspace — the ADR 013 policy expressed
+    // as a WHERE predicate.
+    ...tool.api.filePolicy(deps.domain)
   });
-  registerPresentationRoutes(api, {
-    service: presentationService,
-    sharing: deps.sharing,
-    views: new ShareTokenViewService(db, logger),
-    annotations: annotationService,
-    forms: deps.forms,
-    formUploads: deps.formUploads,
-    fileService: deps.fileService,
-    storage: deps.storage,
-    registry,
-    env,
-    email,
-    logger,
-    instanceId
-  });
-  // Collaborator routes AFTER registerPresentationRoutes: the /presentations
-  // requireAuth gates registered there must precede these handlers.
-  registerCollaboratorRoutes(api, {
-    db,
-    env,
-    auth,
-    email,
-    audit,
-    registry,
-    logger,
-    presentations: presentationService,
-    collaborators: deps.collaborators,
-    // Cloud presence switch (internal/federation.md P6): closes the claim
-    // endpoint's local-password account creation — invitees arrive through
-    // the P3 SSO entrance instead. undefined on oss.
-    hubSso
-  });
-  // The PUBLIC viewer-token annotation surface (Phase 5): token-authed,
-  // deliberately outside requireAuth and the scope allowlist — see the
-  // module's containment story. Registered before the 404 terminator.
-  registerViewerAnnotationRoutes(api, {
-    sharing: deps.sharing,
-    presentations: presentationService,
-    annotations: annotationService,
-    logger,
-    authSecret: deps.authSecret,
-    annotateLimiter: limiters.viewerAnnotate,
-    passwordLimiter: limiters.viewerPassword,
-    clientIp
-  });
-  // The PUBLIC viewer-token form surface (ADR 022): the annotation surface's
-  // sibling — same containment story, same shared token-session resolver.
-  registerViewerFormRoutes(api, {
-    sharing: deps.sharing,
-    presentations: presentationService,
-    forms: deps.forms,
-    logger,
-    authSecret: deps.authSecret,
-    email,
-    env,
-    formSubmitLimiter: limiters.viewerFormSubmit,
-    formEmailLimiter: limiters.viewerFormEmail,
-    passwordLimiter: limiters.viewerPassword,
-    clientIp,
-    notifier: deps.formsNotifier,
-    uploads: deps.formUploads,
-    formUploadLimiter: limiters.viewerFormUpload
-  });
-  // The PUBLIC viewer-token attachments list (PRDCT-2278): the read-only
-  // third sibling — same resolver, same containment. Unknown-secret probes
-  // burn the annotation surface's per-IP bucket (nothing is written here,
-  // the bucket only keeps the endpoint from being a cheaper secret oracle
-  // than /v).
-  registerViewerAttachmentRoutes(api, {
-    sharing: deps.sharing,
-    presentations: presentationService,
-    logger,
-    authSecret: deps.authSecret,
-    invalidSecretLimiter: limiters.viewerAnnotate,
-    passwordLimiter: limiters.viewerPassword,
-    clientIp
-  });
+  // The tool's own routes: AFTER the files routes, BEFORE the OpenAPI
+  // document and the JSON 404. The tool keeps its own internal order.
+  const routesContext: ApiRoutesContext<TEnvShape, TBuckets, TEvents> = { ...rateLimitContext, instanceId };
+  tool.api.routes?.(api, routesContext, deps.domain);
 
   // Generated ONCE here, at the end of route registration — never per
   // request (api/openapi-doc.ts explains why that mattered).

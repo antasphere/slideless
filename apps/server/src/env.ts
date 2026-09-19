@@ -5,6 +5,7 @@ import {
   httpUrl,
   numeric,
   parseEnv as parseChassisEnv,
+  type EnvExtension,
   type EnvOptions,
   type ToolEnv
 } from '@antasphere/chassis-server/env';
@@ -47,44 +48,47 @@ const deckEnvShape = {
   VIEW_EVENTS_RETENTION_DAYS: numeric(z.coerce.number().int().min(0).default(90))
 };
 
-type DeckEnvShape = typeof deckEnvShape;
+export type DeckEnvShape = typeof deckEnvShape;
 
-const envOptions: EnvOptions<DeckEnvShape> = {
-  version: INTRINSIC_VERSION,
-  extension: {
-    shape: deckEnvShape,
-    // Where each deck key sits in the merged schema (and so in the reference).
-    after: {
-      VIEWER_BASE_URL: 'PUBLIC_BASE_URL',
-      VIEW_DEDUPE_WINDOW_MINUTES: 'PUBLIC_BASE_URL',
-      FORMS_MAX_UPLOAD_MB: 'MAX_FILE_SIZE_MB',
-      FORMS_MAX_FILES_PER_RESPONSE: 'MAX_FILE_SIZE_MB',
-      FORMS_MAX_UPLOADS_MB_PER_DECK: 'MAX_FILE_SIZE_MB',
-      VIEW_EVENTS_RETENTION_DAYS: 'AUDIT_RETENTION_DAYS'
-    },
-    refine: (env, ctx) => {
-      // The viewer origin is a boundary only if it is a DIFFERENT origin: equal
-      // to the public origin, the host gate (middleware/host-gate.ts) would put
-      // every dashboard, login and API request on the viewer side and answer
-      // 404 — a dead instance. Refuse at boot with the fix named.
-      if (env.VIEWER_BASE_URL !== undefined) {
-        let same = false;
-        try {
-          same = new URL(env.VIEWER_BASE_URL).origin === new URL(env.PUBLIC_BASE_URL).origin;
-        } catch {
-          same = false;
-        }
-        if (same) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['VIEWER_BASE_URL'],
-            message:
-              'must be a different origin than PUBLIC_BASE_URL (a second hostname for deck content) — unset it to serve decks on the app origin'
-          });
-        }
+/** The env slot of the tool definition (tool.ts): the deck keys, their placement, their cross-key check. */
+export const deckEnvExtension: EnvExtension<DeckEnvShape> = {
+  shape: deckEnvShape,
+  // Where each deck key sits in the merged schema (and so in the reference).
+  after: {
+    VIEWER_BASE_URL: 'PUBLIC_BASE_URL',
+    VIEW_DEDUPE_WINDOW_MINUTES: 'PUBLIC_BASE_URL',
+    FORMS_MAX_UPLOAD_MB: 'MAX_FILE_SIZE_MB',
+    FORMS_MAX_FILES_PER_RESPONSE: 'MAX_FILE_SIZE_MB',
+    FORMS_MAX_UPLOADS_MB_PER_DECK: 'MAX_FILE_SIZE_MB',
+    VIEW_EVENTS_RETENTION_DAYS: 'AUDIT_RETENTION_DAYS'
+  },
+  refine: (env, ctx) => {
+    // The viewer origin is a boundary only if it is a DIFFERENT origin: equal
+    // to the public origin, the host gate (middleware/host-gate.ts) would put
+    // every dashboard, login and API request on the viewer side and answer
+    // 404 — a dead instance. Refuse at boot with the fix named.
+    if (env.VIEWER_BASE_URL !== undefined) {
+      let same = false;
+      try {
+        same = new URL(env.VIEWER_BASE_URL).origin === new URL(env.PUBLIC_BASE_URL).origin;
+      } catch {
+        same = false;
+      }
+      if (same) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['VIEWER_BASE_URL'],
+          message:
+            'must be a different origin than PUBLIC_BASE_URL (a second hostname for deck content) — unset it to serve decks on the app origin'
+        });
       }
     }
   }
+};
+
+const envOptions: EnvOptions<DeckEnvShape> = {
+  version: INTRINSIC_VERSION,
+  extension: deckEnvExtension
 };
 
 export const envSchema = buildEnvSchema(envOptions);

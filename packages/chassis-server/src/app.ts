@@ -5,12 +5,11 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Logger } from '@antasphere/chassis-server/logger';
-import type { RuntimeState } from '@antasphere/chassis-server/util';
-import { requestId } from '@antasphere/chassis-server/middleware';
-import { hostGate } from './middleware/host-gate.js';
-import { buildCsp, inlineScriptHashes, securityHeaders } from '@antasphere/chassis-server/middleware';
-import { healthRoutes } from '@antasphere/chassis-server/routes';
+import type { Logger } from './logger.js';
+import type { RuntimeState } from './util/index.js';
+import { requestId } from './middleware/index.js';
+import { buildCsp, inlineScriptHashes, securityHeaders } from './middleware/index.js';
+import { healthRoutes } from './routes/index.js';
 
 export interface AppDeps {
   logger: Logger;
@@ -24,13 +23,14 @@ export interface AppDeps {
   /** Root-level OAuth discovery documents (/.well-known/*, M6). */
   wellKnown?: Hono;
   /**
-   * The public share-link viewer (/v/{secret}, Phase 4 / ADR 012). Mounted
-   * in the public-route slot: OUTSIDE /api/v1, outside the auth/scope
-   * middleware — token recipients are anonymous, the path secret is the
-   * whole credential, and every user-content response it emits is locked
-   * under `CSP: sandbox` (see viewer/routes.ts).
+   * The tool's public routes (for Slideless the public share-link viewer,
+   * /v/{secret}, Phase 4 / ADR 012). Mounted in the public-route slot:
+   * OUTSIDE /api/v1, outside the auth/scope middleware — token recipients
+   * are anonymous, the path secret is the whole credential, and every
+   * user-content response it emits is locked under `CSP: sandbox` (see
+   * viewer/routes.ts in the app).
    */
-  viewer?: Hono;
+  publicRoutes?: Hono | undefined;
   /** Observability middlewares + the /metrics route (M5). */
   metricsMiddleware?: MiddlewareHandler;
   metricsRoutes?: Hono;
@@ -43,13 +43,16 @@ export interface AppDeps {
   /** `Strict-Transport-Security` value (security-headers.ts `hstsValue`); null/absent = no HSTS. */
   hsts?: string | null;
   /**
-   * VIEWER_BASE_URL (PRDCT-1352): when present, installs the host gate
-   * (middleware/host-gate.ts) — the viewer hostname answers only `/v/*`,
-   * `/api/v1/viewer/*` and the probes, every other hostname redirects `/v/*`
-   * there — and lets the dashboard CSP frame that origin for the preview.
-   * Absent = single-origin behaviour, gate not installed.
+   * The tool's root middleware, installed after the metrics middleware and
+   * BEFORE every mount. For Slideless, VIEWER_BASE_URL (PRDCT-1352): when
+   * present, the host gate (middleware/host-gate.ts in the app) — the viewer
+   * hostname answers only `/v/*`, `/api/v1/viewer/*` and the probes, every
+   * other hostname redirects `/v/*` there. Absent = single-origin behaviour,
+   * gate not installed.
    */
-  viewerBaseUrl?: string | undefined;
+  rootMiddleware?: MiddlewareHandler | undefined;
+  /** Extra `frame-src` origins of the dashboard CSP (for Slideless the viewer origin, for the preview). */
+  cspFrameSrc?: readonly string[] | undefined;
 }
 
 /**
@@ -75,13 +78,14 @@ export async function createApp({
   api,
   mcp,
   wellKnown,
-  viewer,
+  publicRoutes,
   metricsMiddleware,
   metricsRoutes,
   otelMiddleware,
   probeStorage,
   hsts,
-  viewerBaseUrl
+  rootMiddleware,
+  cspFrameSrc
 }: AppDeps): Promise<Hono> {
   const app = new Hono();
 
@@ -94,7 +98,7 @@ export async function createApp({
     logger.warn({ publicDir }, 'no dashboard build found — serving a placeholder at /');
   }
   const csp = buildCsp(indexHtml ? inlineScriptHashes(indexHtml) : [], {
-    frameSrc: viewerBaseUrl ? [new URL(viewerBaseUrl).origin] : []
+    frameSrc: [...(cspFrameSrc ?? [])]
   });
 
   app.use('*', requestId(logger));
@@ -121,7 +125,7 @@ export async function createApp({
   // PRDCT-1352: the viewer-origin host gate, BEFORE every mount below — the
   // boundary between the two hostnames must be decided before any route
   // (and any cookie-reading middleware) runs.
-  if (viewerBaseUrl) app.use('*', hostGate({ viewerBaseUrl }));
+  if (rootMiddleware) app.use('*', rootMiddleware);
 
   // Uncaught handler errors: log with the request id, answer the wire shape.
   app.onError((error, c) => {
@@ -201,7 +205,7 @@ export async function createApp({
 
   // The public-route slot: the share-link viewer lives here — before the
   // static assets and the SPA fallback, after every credentialed surface.
-  if (viewer) app.route('/', viewer);
+  if (publicRoutes) app.route('/', publicRoutes);
 
   app.use('*', serveStatic({ root: publicDir }));
 
