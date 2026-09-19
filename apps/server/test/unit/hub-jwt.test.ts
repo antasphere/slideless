@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HubJwtVerifier } from '../../src/identity/hub-jwt.js';
+import { HubJwtVerifier } from '@antasphere/chassis-server/identity';
 import { FakeHub } from '../fake-hub.js';
 
 /**

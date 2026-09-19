@@ -24,7 +24,14 @@ import {
 } from '@antasphere/chassis-db';
 import type { Env } from '../env.js';
 import { HUB_SSO_PROVIDER_ID, HubSsoLoginError, type HubSsoService } from './hub-sso.js';
-import { parseSuperadminEmails } from '@antasphere/chassis-server/accounts';
+import { parseSuperadminEmails } from '../accounts/superadmin.js';
+// Types only, erased at emit: this package EMITS DECLARATIONS (the app bundled
+// the file and never did), and `Auth = ReturnType<typeof createAuth>` is an
+// inferred type that names these two modules. TypeScript can only spell a
+// module it has resolved in this program (TS2742 otherwise), so they are
+// resolved here. Nothing is imported at run time.
+import type {} from '@better-auth/core/db/adapter';
+import type {} from 'better-call';
 
 /**
  * The only file that touches better-auth's constructor. Everything else goes
@@ -55,13 +62,26 @@ export interface CreateAuthOptions {
   env: Pick<
     Env,
     | 'PUBLIC_BASE_URL'
-    | 'VIEWER_BASE_URL'
     | 'GOOGLE_CLIENT_ID'
     | 'GOOGLE_CLIENT_SECRET'
     | 'OAUTH_DYNAMIC_CLIENT_REGISTRATION'
     | 'SUPERADMIN_EMAILS'
   >;
   authSecret: string;
+  /**
+   * The tool's OAuth scope list, in the ORDER it is published (discovery
+   * `scopes_supported`, the consent screen, client registration defaults).
+   * The chassis spells no scope name: the tool defines the list and hands it
+   * in; the well-known documents read the same array from the tool.
+   */
+  oauthScopes: readonly string[];
+  /**
+   * Origins that are NEVER trusted, serving origin or not (PRDCT-1352): each
+   * is filtered out of `trustedOrigins` and refused outright by the sign-in
+   * Origin lock. Empty = nothing installed. Slideless passes its viewer
+   * origin (author-controlled deck script runs there).
+   */
+  untrustedOrigins: readonly string[];
   /** When provided (an email driver delivers), the email-OTP login auto-enables. */
   sendOtp?: (params: { email: string; otp: string; type: string }) => Promise<void>;
   /**
@@ -122,22 +142,6 @@ export interface CreateAuthOptions {
 }
 
 export const AUTH_BASE_PATH = '/api/v1/auth';
-
-/**
- * Products rename presentations:read / presentations:write to their domain's scopes — also in
- * middleware/scopes.ts and the consent page copy.
- */
-export const OAUTH_SCOPES = [
-  'openid',
-  'profile',
-  'email',
-  'offline_access',
-  'presentations:read',
-  'presentations:write',
-  // Full-workspace export download — a deliberate opt-in, never implied by
-  // presentations:read (see middleware/scopes.ts).
-  'data:export'
-] as const;
 
 /**
  * The canonical OAuth resource identifier (JWT `aud`, RFC 8707) — the bundled
@@ -343,7 +347,7 @@ function isHttpUrl(value: unknown): boolean {
  */
 export function trustedOriginsFor(
   publicBaseUrl: string,
-  viewerOrigin: string | null
+  untrustedOrigins: readonly string[]
 ): (request?: Request) => string[] {
   return (request) => {
     const origins = [publicBaseUrl];
@@ -352,7 +356,9 @@ export function trustedOriginsFor(
     } catch {
       // unparseable request URL — explicit origin only
     }
-    return viewerOrigin ? origins.filter((origin) => origin !== viewerOrigin) : origins;
+    return untrustedOrigins.length > 0
+      ? origins.filter((origin) => !untrustedOrigins.includes(origin))
+      : origins;
   };
 }
 
@@ -366,11 +372,11 @@ export function trustedOriginsFor(
 export function signInOriginRefused(input: {
   origin: string;
   servingOrigin: string | null;
-  viewerOrigin: string | null;
+  untrustedOrigins: readonly string[];
   isTrustedOrigin: (origin: string) => boolean;
 }): boolean {
-  const { origin, servingOrigin, viewerOrigin, isTrustedOrigin } = input;
-  if (viewerOrigin !== null && origin === viewerOrigin) return true;
+  const { origin, servingOrigin, untrustedOrigins, isTrustedOrigin } = input;
+  if (untrustedOrigins.includes(origin)) return true;
   return origin !== servingOrigin && !isTrustedOrigin(origin);
 }
 
@@ -378,6 +384,8 @@ export function createAuth({
   db,
   env,
   authSecret,
+  oauthScopes,
+  untrustedOrigins,
   sendOtp,
   sendResetPassword,
   sendChangeEmailConfirmation,
@@ -390,7 +398,6 @@ export function createAuth({
 }: CreateAuthOptions) {
   const isHttps = env.PUBLIC_BASE_URL.startsWith('https://');
   const resource = mcpResourceUrl(env.PUBLIC_BASE_URL);
-  const viewerOrigin = env.VIEWER_BASE_URL ? new URL(env.VIEWER_BASE_URL).origin : null;
 
   /**
    * Cloud only: may this email take the local password door? The setup
@@ -492,7 +499,7 @@ export function createAuth({
         // SPA routes; the API-side validation is Better Auth's signed query.
         loginPage: '/login',
         consentPage: '/oauth/consent',
-        scopes: [...OAUTH_SCOPES],
+        scopes: [...oauthScopes],
         // `resource` (RFC 8707) must be the bundled MCP endpoint — its exact `aud`.
         validAudiences: [resource],
         // No M2M clients: every token is bound to a consenting user.
@@ -513,8 +520,8 @@ export function createAuth({
         // this hardening pass. This adds the control and nothing else.
         allowDynamicClientRegistration: env.OAUTH_DYNAMIC_CLIENT_REGISTRATION,
         allowUnauthenticatedClientRegistration: env.OAUTH_DYNAMIC_CLIENT_REGISTRATION,
-        clientRegistrationDefaultScopes: [...OAUTH_SCOPES],
-        clientRegistrationAllowedScopes: [...OAUTH_SCOPES],
+        clientRegistrationDefaultScopes: [...oauthScopes],
+        clientRegistrationAllowedScopes: [...oauthScopes],
         // Short access tokens: stateless JWTs can't be revoked, so revocation
         // latency == remaining lifetime. Refresh tokens rotate (reuse detected).
         accessTokenExpiresIn: 900, // 15 min
@@ -827,7 +834,7 @@ export function createAuth({
               signInOriginRefused({
                 origin,
                 servingOrigin,
-                viewerOrigin,
+                untrustedOrigins,
                 isTrustedOrigin: (o) => ctx.context.isTrustedOrigin(o)
               })
             ) {
@@ -1023,6 +1030,6 @@ export function createAuth({
     // Trust the serving origin (works on localhost, previews, any domain)
     // plus the configured public origin behind a TLS-terminating proxy.
     // Serving origin + public origin, never the viewer origin (see trustedOriginsFor).
-    trustedOrigins: trustedOriginsFor(env.PUBLIC_BASE_URL, viewerOrigin)
+    trustedOrigins: trustedOriginsFor(env.PUBLIC_BASE_URL, untrustedOrigins)
   });
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
-import { serveBlob } from '../../src/files/serve.js';
+import { serveBlob } from '@antasphere/chassis-server/files';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';
 import type { Logger } from '@antasphere/chassis-server/logger';
 

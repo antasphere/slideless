@@ -11,14 +11,14 @@ import { invitations, workspaces, user as userTable, type Db, type Invitation } 
 import { isDuplicateAccountError } from '@antasphere/chassis-server/accounts';
 import type { Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
-import type { Auth } from '../identity/better-auth.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
 import type { EmailDriver } from '@antasphere/chassis-server/email';
 import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
 import type { AuditService } from '@antasphere/chassis-server/audit';
 import { buildInviteEmail } from '@antasphere/chassis-server/email';
 import { InvitationError, InvitationService } from '@antasphere/chassis-server/invitations';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
-import { requireRole } from '../middleware/auth-context.js';
+import { requireRole } from '@antasphere/chassis-server/middleware';
 import { hubManagedMembershipGate } from '../middleware/hub-managed.js';
 
 const err = (code: string, message: string) => ({ error: { code, message } });

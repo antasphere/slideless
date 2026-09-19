@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { ACTIVE_WORKSPACE_HEADER, type Principal } from '@antasphere/chassis-contract';
-import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
+import type { PlatformRegistry } from '../platform/registry.js';
 import { WorkspaceMismatchError } from '../apikeys/service.js';
 import { apiError } from '../api/errors.js';
 import {
@@ -10,7 +10,7 @@ import {
   type QuotaDecision,
   type RequestQuotaService
 } from './rate-limit.js';
-import { looksLikeJwt, requiredScopeFor } from './scopes.js';
+import { looksLikeJwt } from './scopes.js';
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -83,6 +83,12 @@ export interface AuthContextDeps {
    * (internal/decisions/016). Absent (oss) = zero overhead, zero hub surface.
    */
   principalGate?: PrincipalGate | undefined;
+  /**
+   * The composed fail-closed scope allowlist (`createScopeAllowlist` in
+   * scopes.ts: the chassis rules, then the tool's). `null` = the endpoint is
+   * not open to machine principals. Required: a tool must state its list.
+   */
+  requiredScopeFor: (path: string, method: string) => string | null;
 }
 
 /**
@@ -107,7 +113,8 @@ export function authContext({
   keyFailureLimiter,
   clientIp,
   requestQuota,
-  principalGate
+  principalGate,
+  requiredScopeFor
 }: AuthContextDeps): MiddlewareHandler {
   return async (c, next) => {
     c.set('principal', null);

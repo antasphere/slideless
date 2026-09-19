@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import { apiError } from '../api/errors.js';
+import { apiError } from '@antasphere/chassis-server/util';
 
 /**
  * Nesting cap for request JSON. Deliberately far above anything a contract in

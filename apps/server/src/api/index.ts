@@ -19,17 +19,17 @@ import {
 } from '@antasphere/chassis-db';
 import { hubConfig, type Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
-import type { Auth } from '../identity/better-auth.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
 import type { DeckRegistry } from '../platform/deck-events.js';
-import type { ApiKeyService } from '../apikeys/service.js';
+import type { ApiKeyService } from '@antasphere/chassis-server/apikeys';
 import type { EmailDriver } from '@antasphere/chassis-server/email';
-import { isApiKeyToken } from '../apikeys/service.js';
+import { isApiKeyToken } from '@antasphere/chassis-server/apikeys';
 import { auditMiddleware, type AuditService } from '@antasphere/chassis-server/audit';
 import { isDeckAuditExempt } from '../audit/deck-exempt.js';
 import { constantTimeEquals } from '@antasphere/chassis-server/util';
 import { isSecureSetupOrigin } from '@antasphere/chassis-server/util';
 import { authBodyGuard } from '../middleware/auth-body.js';
-import { authContext, type PrincipalGate } from '../middleware/auth-context.js';
+import { authContext, type PrincipalGate } from '@antasphere/chassis-server/middleware';
 import { idempotency } from '../middleware/idempotency.js';
 import { crossSiteGuard } from '../middleware/cross-site.js';
 import { jsonDepthLimit } from '../middleware/json-depth.js';
@@ -42,10 +42,11 @@ import {
   rateLimit,
   type RateLimiters
 } from '../middleware/rate-limit.js';
-import type { OauthJwtVerifier } from '../identity/oauth-jwt.js';
-import { HUB_SSO_PROVIDER_ID, type HubSsoService } from '../identity/hub-sso.js';
-import type { HubGrantService } from '../identity/hub-grant.js';
-import type { HubLogoutService } from '../identity/hub-logout.js';
+import { requiredScopeFor } from '../middleware/scopes.js';
+import type { OauthJwtVerifier } from '@antasphere/chassis-server/identity';
+import { HUB_SSO_PROVIDER_ID, type HubSsoService } from '@antasphere/chassis-server/identity';
+import type { HubGrantService } from '@antasphere/chassis-server/identity';
+import type { HubLogoutService } from '@antasphere/chassis-server/identity';
 import { registerBreakGlassRoutes } from './break-glass.js';
 import { registerCliAuthRoutes } from './cli-auth.js';
 import { registerOnboardingRoutes } from './onboarding.js';
@@ -555,7 +556,9 @@ export function createApiApp(deps: ApiDeps): OpenAPIHono {
       }),
       // Cloud edition's post-resolution veto (internal/federation.md P4);
       // undefined on oss.
-      principalGate: deps.principalGate
+      principalGate: deps.principalGate,
+      // The composed fail-closed allowlist: chassis rules, then the deck rules.
+      requiredScopeFor
     })
   );
 

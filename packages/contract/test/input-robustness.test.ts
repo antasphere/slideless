@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   hasNulDeep,
+  isValidMediaType,
   jsonDepthOf,
   MAX_OPAQUE_JSON_DEPTH,
   memberUpdateSchema,
@@ -11,7 +12,6 @@ import {
   annotationCreateSchema,
   formResponsePayloadSchema,
   formResponsesListQuerySchema,
-  isValidMediaType,
   manifestEntrySchema,
   presentationMetadataSchema
 } from '../src/index.js';

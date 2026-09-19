@@ -19,8 +19,9 @@ import type { Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { AuditService } from '@antasphere/chassis-server/audit';
 import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
-import { requireAuth, requireNonGuest, requireRole } from '../middleware/auth-context.js';
-import { rateLimit, type ClientIpFn, type RateLimiters } from '../middleware/rate-limit.js';
+import { requireAuth, requireNonGuest, requireRole } from '@antasphere/chassis-server/middleware';
+import { rateLimit, type RateLimiters } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 
 /**
  * GET /workspace/export — the GDPR/portability bundle: every workspace table

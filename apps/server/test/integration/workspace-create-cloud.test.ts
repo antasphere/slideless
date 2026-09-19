@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
 import { FakeHub, LEGACY_GRANT_SCOPE, type HubUserFixture } from '../fake-hub.js';
-import type { HubCreateOrgResult } from '../../src/identity/hub-user-client.js';
+import type { HubCreateOrgResult } from '@antasphere/chassis-server/identity';
 import * as sso from './sso-helpers.js';
 
 /**

@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { randomUUID } from 'node:crypto';
-import type { Logger } from '@antasphere/chassis-server/logger';
-import { routeLabel } from '@antasphere/chassis-server/util';
+import type { Logger } from '../logger.js';
+import { routeLabel } from '../route-label.js';
 
 declare module 'hono' {
   interface ContextVariableMap {

@@ -9,6 +9,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import type { EntitlementService, Principal } from '@antasphere/chassis-contract';
 import type { Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
+import type { ClientIpFn, RequestQuotaService } from '@antasphere/chassis-server/middleware';
 
 /**
  * Auth-surface rate limits (ours, not Better Auth's built-in): login, OTP
@@ -167,8 +168,6 @@ export function makeClientIp(trustProxy: boolean): ClientIpFn {
   };
 }
 
-export type ClientIpFn = (c: Context) => string;
-
 /** 429 with the standard wire shape when the bucket is empty. */
 /**
  * WHEN a request costs a point.
@@ -268,38 +267,6 @@ export function principalBucketKey(p: Principal): string {
   if (p.via === 'api_key') return `key:${p.apiKeyId ?? p.userId}`;
   if (p.via === 'oauth') return `oauth:${p.userId}`;
   return `session:${p.userId}`;
-}
-
-/** Outcome of one quota consume — everything the HTTP layer needs for headers. */
-export interface QuotaDecision {
-  ok: boolean;
-  /** The sustained per-minute limit (what RateLimit-Limit reports). */
-  limit: number;
-  remaining: number;
-  /** Seconds until the sustained window resets. */
-  resetSeconds: number;
-  /** Present when ok=false: seconds the client should wait before retrying. */
-  retryAfterSeconds?: number;
-}
-
-export interface RequestQuotaService {
-  /** Consume one request for this principal; null = quota disabled (no headers). */
-  consume(principal: Principal): Promise<QuotaDecision | null>;
-}
-
-/** RateLimit draft headers + the X- legacy mirror; reset values are delta seconds. */
-export function quotaHeaderEntries(d: QuotaDecision): Array<[string, string]> {
-  const remaining = String(Math.max(0, d.remaining));
-  const reset = String(Math.max(0, d.resetSeconds));
-  const limit = String(d.limit);
-  return [
-    ['RateLimit-Limit', limit],
-    ['RateLimit-Remaining', remaining],
-    ['RateLimit-Reset', reset],
-    ['X-RateLimit-Limit', limit],
-    ['X-RateLimit-Remaining', remaining],
-    ['X-RateLimit-Reset', reset]
-  ];
 }
 
 export interface RequestQuotaDeps {

@@ -4,7 +4,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { StreamableHTTPTransport } from '@hono/mcp';
 import type { Principal } from '@antasphere/chassis-contract';
-import { looksLikeJwt } from '../middleware/scopes.js';
+import { looksLikeJwt } from '@antasphere/chassis-server/middleware';
 import { buildMcpServer } from './server.js';
 
 /**

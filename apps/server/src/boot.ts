@@ -11,7 +11,7 @@ import { AccountDeletionService, LastOwnerError } from '@antasphere/chassis-serv
 import { ErasureLog } from '@antasphere/chassis-server/accounts';
 import { createApiApp } from './api/index.js';
 import { buildPepperRegistry } from '@antasphere/chassis-server/apikeys';
-import { ApiKeyService } from './apikeys/service.js';
+import { ApiKeyService } from '@antasphere/chassis-server/apikeys';
 import { createApp } from './app.js';
 import { AuditService } from '@antasphere/chassis-server/audit';
 import { createEmailDriver, type EmailDriver } from '@antasphere/chassis-server/email';
@@ -22,20 +22,25 @@ import {
   buildVerifyEmailEmail
 } from '@antasphere/chassis-server/email';
 import { hubConfig, parseEnv, type Env } from './env.js';
-import { createAuth, mcpResourceUrl, type AccountEvent, type Auth } from './identity/better-auth.js';
-import { HubSsoService } from './identity/hub-sso.js';
-import { HubGrantService } from './identity/hub-grant.js';
-import { HubLogoutService } from './identity/hub-logout.js';
-import { hubApiResource, HubUserClient, type HubOrgCreator } from './identity/hub-user-client.js';
+import {
+  createAuth,
+  mcpResourceUrl,
+  type AccountEvent,
+  type Auth
+} from '@antasphere/chassis-server/identity';
+import { HubSsoService } from '@antasphere/chassis-server/identity';
+import { HubGrantService } from '@antasphere/chassis-server/identity';
+import { HubLogoutService } from '@antasphere/chassis-server/identity';
+import { hubApiResource, HubUserClient, type HubOrgCreator } from '@antasphere/chassis-server/identity';
 import {
   DEFAULT_FEDERATION_DIALS,
   HubOrgReconciler,
   type HubFederationDials
-} from './identity/hub-reconcile.js';
-import { OauthJwtVerifier } from './identity/oauth-jwt.js';
-import { preflightSigningKey } from './identity/signing-key.js';
-import type { OnWorkspaceMiss } from './identity/resolve-membership.js';
-import { isApiKeyToken } from './apikeys/service.js';
+} from '@antasphere/chassis-server/identity';
+import { OauthJwtVerifier } from '@antasphere/chassis-server/identity';
+import { preflightSigningKey } from '@antasphere/chassis-server/identity';
+import type { OnWorkspaceMiss } from '@antasphere/chassis-server/identity';
+import { isApiKeyToken } from '@antasphere/chassis-server/apikeys';
 import { mcpRoutes } from './mcp/http.js';
 import { wellKnownRoutes } from './routes/wellknown.js';
 import { instanceSettings, user as userTable, workspaceMembers, workspaces } from '@antasphere/chassis-db';
@@ -44,13 +49,14 @@ import { createJobs, PgBossUsageSink, type Jobs } from './jobs/pgboss.js';
 import { createLogger, type Logger } from '@antasphere/chassis-server/logger';
 import { createStorageDriver } from '@antasphere/chassis-server/storage';
 import { createRateLimiters, makeClientIp, rateLimit } from './middleware/rate-limit.js';
+import { OAUTH_SCOPES } from './middleware/scopes.js';
 import { hstsValue } from './middleware/security-headers.js';
 import { createMetrics } from './observability/metrics.js';
 import { createOtel, type Otel } from '@antasphere/chassis-server/observability';
-import { bindEditionSeams } from './platform/edition.js';
+import { bindEditionSeams } from '@antasphere/chassis-server/platform';
 import { AllowAllEntitlements } from '@antasphere/chassis-server/platform';
 import { EventBus } from '@antasphere/chassis-server/platform';
-import { LocalIdentityProvider } from './platform/local-identity.js';
+import { LocalIdentityProvider } from '@antasphere/chassis-server/platform';
 import { createRegistry } from '@antasphere/chassis-server/platform';
 import type { DeckEvents, DeckRegistry } from './platform/deck-events.js';
 import { NoopUsageSink } from '@antasphere/chassis-server/platform';
@@ -402,6 +408,12 @@ export async function boot(
     db: db.db,
     env,
     authSecret,
+    // The tool's values for the two generic-by-parameter points of the
+    // identity module: the published OAuth scope list (order included) and
+    // the origin that is never trusted — the viewer origin, where
+    // author-controlled deck script runs (PRDCT-1352). Unset = nothing installed.
+    oauthScopes: OAUTH_SCOPES,
+    untrustedOrigins: env.VIEWER_BASE_URL ? [new URL(env.VIEWER_BASE_URL).origin] : [],
     hubSso,
     onAccountEvent: auditAccountEvent,
     onUserCreated: (user) => events.emit('user.created', { userId: user.id, email: user.email }),

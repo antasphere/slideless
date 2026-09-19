@@ -4,7 +4,7 @@ import type { ShareTokenRow } from '@slideless/db';
 import type { PresentationService } from '../presentations/service.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import { verifyViewerPassword } from '../sharing/password.js';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import { verifyUnlockValue } from './unlock.js';
 
 /**

@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { and, eq } from 'drizzle-orm';
 import { idempotencyKeys, type Db } from '@antasphere/chassis-db';
-import { apiError } from '../api/errors.js';
+import { apiError } from '@antasphere/chassis-server/util';
 
 /**
  * Idempotency-Key middleware: an opt-in `Idempotency-Key` request header on

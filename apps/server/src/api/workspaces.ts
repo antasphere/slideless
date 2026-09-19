@@ -5,14 +5,14 @@ import { workspaceCreateRoute, workspaceUpdateRoute } from '@antasphere/chassis-
 import type { WorkspaceLook } from '@antasphere/chassis-contract';
 import { workspaceMembers, workspaces, type Db, type DbConn } from '@antasphere/chassis-db';
 import type { AuditService } from '@antasphere/chassis-server/audit';
-import type { Auth } from '../identity/better-auth.js';
-import { projectOrgMembership } from '../identity/hub-projection.js';
-import { requireRole } from '../middleware/auth-context.js';
-import type { ReconcilePassOutcome } from '../identity/hub-reconcile.js';
-import type { HubOrgCreator } from '../identity/hub-user-client.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
+import { projectOrgMembership } from '@antasphere/chassis-server/identity';
+import { requireRole } from '@antasphere/chassis-server/middleware';
+import type { ReconcilePassOutcome } from '@antasphere/chassis-server/identity';
+import type { HubOrgCreator } from '@antasphere/chassis-server/identity';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
-import type { ClientIpFn } from '../middleware/rate-limit.js';
+import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import type { PlatformRegistry } from '@antasphere/chassis-server/platform';
 
 const err = (code: string, message: string) => ({ error: { code, message } });

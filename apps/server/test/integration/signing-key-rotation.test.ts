@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createHash, randomBytes } from 'node:crypto';
 import { createDb } from '@slideless/db';
-import { preflightSigningKey, retireSigningKey, runSigningKeyCli } from '../../src/identity/signing-key.js';
+import { preflightSigningKey, retireSigningKey, runSigningKeyCli } from '@antasphere/chassis-server/identity';
 import {
   createDatabase,
   createTestApp,

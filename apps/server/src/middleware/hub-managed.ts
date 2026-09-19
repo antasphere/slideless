@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import { apiError } from '../api/errors.js';
+import { apiError } from '@antasphere/chassis-server/util';
 
 /**
  * P7 (internal/federation.md "Hub-managed membership"): on the cloud edition,

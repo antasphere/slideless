@@ -6,7 +6,7 @@ import {
   breakGlassResetTwoFactorRoute
 } from '@antasphere/chassis-contract/routes';
 import { twoFactor, user as userTable, workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
-import type { Auth } from '../identity/better-auth.js';
+import type { Auth } from '@antasphere/chassis-server/identity';
 import type { AuditService } from '@antasphere/chassis-server/audit';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import { parseSuperadminEmails } from '@antasphere/chassis-server/accounts';

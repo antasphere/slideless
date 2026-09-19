@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono';
-import { apiError } from '../api/errors.js';
+import { apiError } from '@antasphere/chassis-server/util';
 import { isPublicOauthPath } from './oauth-public.js';
 
 /**

@@ -26,7 +26,7 @@ if (process.argv[2] === 'rotate-signing-key') {
       import('@slideless/db'),
       import('@antasphere/chassis-server/util'),
       import('@antasphere/chassis-server/logger'),
-      import('./identity/signing-key.js')
+      import('@antasphere/chassis-server/identity')
     ]);
   const env = parseEnv(process.env);
   const db = createDb(env.DATABASE_URL);
