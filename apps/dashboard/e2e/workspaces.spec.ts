@@ -14,8 +14,8 @@ import { INSTANCE_NAME, signInAsOwner } from './accounts';
  *    instance-name header, no menu.
  *  - Creation open: the same person gets the menu with their one workspace
  *    and "New workspace". The dialog takes the focus in its field, refuses an
- *    empty name, submits on Enter with an Idempotency-Key, and the person
- *    LANDS in the new workspace.
+ *    empty name, goes through its three steps, posts once with an
+ *    Idempotency-Key, and the person LANDS in the new workspace.
  *  - Downloads follow the active workspace. The new workspace is NOT the
  *    default one, so a plain anchor navigation (no `X-Workspace-Id`) answers
  *    404 for every file below: the signature of PRDCT-2426. Each dashboard
@@ -115,15 +115,18 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
     await menu.getByRole('menuitem', { name: 'New workspace' }).click();
   });
 
-  await test.step('the dialog: focus in the field, no empty name, Enter submits once with an Idempotency-Key, the person lands in the new workspace', async () => {
-    const dialog = page.getByRole('dialog', { name: 'New workspace' });
-    await expect(dialog).toBeVisible();
+  await test.step('the dialog: focus in the field, no empty name, three steps, one POST with an Idempotency-Key, the person lands in the new workspace', async () => {
+    // The creation is three steps and a door since the settings pass: the
+    // dialog is named after its step, so it is found by its first title and
+    // followed by role from there.
+    await expect(page.getByRole('dialog', { name: 'Name your workspace' })).toBeVisible();
+    const dialog = page.getByRole('dialog');
     const field = dialog.getByLabel('Workspace name');
     await expect(field).toBeFocused();
-    const submit = dialog.getByRole('button', { name: 'Create workspace' });
-    await expect(submit).toBeDisabled();
+    const next = dialog.getByTestId('workspace-step-next');
+    await expect(next).toBeDisabled();
     await field.fill('   ');
-    await expect(submit).toBeDisabled();
+    await expect(next).toBeDisabled();
     // The wording is a Slideless workspace, nothing behind it.
     await expect(dialog).not.toContainText(/organi[sz]ation|hub|antasphere/i);
 
@@ -138,8 +141,16 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
       (response) =>
         response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/workspaces'
     );
+    // Enter in the name field is the first Continue; nothing is posted before the third step's submit.
     await field.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Give it a look' })).toBeVisible();
+    await dialog.getByTestId('workspace-step-next').click();
+    await expect(page.getByRole('dialog', { name: 'Bring people in' })).toBeVisible();
+    expect(posts).toHaveLength(0);
+    await dialog.getByRole('button', { name: 'Create workspace' }).click();
     expect((await created).status()).toBe(201);
+    await expect(page.getByRole('dialog', { name: `${SECOND} is ready` })).toBeVisible();
+    await dialog.getByTestId('workspace-open').click();
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatch(/^ws-create-[0-9a-f]{32}$/);
 
