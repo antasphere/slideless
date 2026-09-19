@@ -9,7 +9,11 @@ import {
   isAttachmentPath,
   isSafeAssetPath,
   type ManifestEntry,
-  type PresentationKind
+  type PresentationKind,
+  type PresentationVersionDetail,
+  type ReferenceProvenance,
+  type ReferenceType,
+  type VersionCommitted
 } from '@slideless/contract';
 import {
   CliUsageError,
@@ -26,6 +30,14 @@ import { readCapped, sha256Hex } from '../download.js';
 import { writeContained } from '../safe-write.js';
 import { startDevServer } from '../devserver.js';
 import { isInteractive, openInBrowser, shouldOpenAfterPush } from '../open.js';
+import {
+  mergeProvenance,
+  readReferenceLink,
+  REFERENCE_DIR,
+  referenceDirFor,
+  resolveReference,
+  splitRefAtVersion
+} from '../references.js';
 
 /**
  * Authoring commands: push (the 3-step upload protocol, answering with the
@@ -160,134 +172,17 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .option('--new', `force a NEW deck even when ${LINK_FILENAME} links one`, false)
     .option('--open', "open the deck's page in the browser after the push (default: on the first push only)")
     .option('--no-open', 'never open the browser')
-    .action(
-      async (
-        path: string | undefined,
-        opts: {
-          title?: string;
-          entry?: string;
-          kind: string;
-          interactive: boolean;
-          id?: string;
-          new: boolean;
-          /** --open → true, --no-open → false, neither → undefined. */
-          open?: boolean;
-        },
-        cmd: Command
-      ) => {
-        const ctx = resolveContext(cmd, io);
-        await requireApiKey(ctx);
-        const target = path ?? '.';
-        const scan = await scanDeck(target);
-        const entryPath = detectEntry(scan, opts.entry);
-        const manifest = toManifest(scan);
-        const totalBytes = scan.files.reduce((sum, f) => sum + f.sizeBytes, 0);
-        const attachments = attachmentsOfScan(scan);
-
-        // New deck vs new version: --id wins, then the link file (which must
-        // point at THIS instance), then a fresh deck.
-        const link = await readLink(scan.rootDir);
-        let existingId: string | null = opts.id ?? null;
-        if (!existingId && !opts.new && link) {
-          if (link.baseUrl === ctx.baseUrl) {
-            existingId = link.presentationId;
-          } else {
-            throw new CliUsageError(
-              `${LINK_FILENAME} links this folder to ${link.baseUrl}, but you are pushing to ` +
-                `${ctx.baseUrl}. Pass --new to create a fresh deck here, or --id <deckId> to ` +
-                'target one explicitly.'
-            );
-          }
-        }
-
-        // The cap, before the first write of either branch (discovery is a
-        // public read): a refusal here costs no upload.
-        refuseOverCap(scan, await resolveFileCapBytes(ctx));
-
-        if (existingId) {
-          const deck = await ctx.client.presentation(existingId);
-          const uploaded = await uploadMissing(ctx, scan);
-          let committed;
-          try {
-            committed = await ctx.client.commitVersion(existingId, {
-              expectedBaseVersion: deck.currentVersion,
-              entryPath,
-              manifest,
-              ...(opts.title ? { title: opts.title } : {})
-            });
-          } catch (e) {
-            if (e instanceof PlatformApiError && e.code === 'version_conflict') {
-              throw new CliUsageError(
-                'Someone pushed a new version while this push was running — rerun to retry on top of it.'
-              );
-            }
-            throw e;
-          }
-          await writeLink(scan.rootDir, { presentationId: existingId, baseUrl: ctx.baseUrl });
-          const formNames = await detectFormNames(scan);
-          const url = deckMasterUrl(ctx.baseUrl, committed.presentation.id);
-          if (ctx.json) {
-            return printJson(
-              io,
-              formNames.length > 0
-                ? { ...committed, url, attachments, formsDetected: formNames }
-                : { ...committed, url, attachments }
-            );
-          }
-          io.out.write(
-            `Pushed "${committed.presentation.title}" → version ${committed.version.version} ` +
-              `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
-              `  id: ${committed.presentation.id}\n` +
-              `  url: ${url}\n`
-          );
-          if (attachments.count > 0) io.out.write(attachmentsLine(attachments));
-          if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
-          if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
-          openAfterPush(ctx, url, { created: false, flag: opts.open });
-          return;
-        }
-
-        const kind = opts.kind as PresentationKind;
-        if (!['presentation', 'app', 'plan'].includes(kind)) {
-          throw new CliUsageError('--kind must be presentation, app, or plan');
-        }
-        const title = opts.title ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
-        const { uploadSession } = await ctx.client.createUploadSession();
-        const uploaded = await uploadMissing(ctx, scan);
-        const committed = await ctx.client.commitUploadSession(uploadSession.id, {
-          title,
-          kind,
-          interactive: opts.interactive,
-          entryPath,
-          manifest
-        });
-        await writeLink(scan.rootDir, {
-          presentationId: committed.presentation.id,
-          baseUrl: ctx.baseUrl
-        });
-        const formNames = await detectFormNames(scan);
-        const url = deckMasterUrl(ctx.baseUrl, committed.presentation.id);
-        if (ctx.json) {
-          return printJson(
-            io,
-            formNames.length > 0
-              ? { ...committed, url, attachments, formsDetected: formNames }
-              : { ...committed, url, attachments }
-          );
-        }
-        io.out.write(
-          `Created "${committed.presentation.title}" at version 1 ` +
-            `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
-            `  id: ${committed.presentation.id}\n` +
-            `  url: ${url}\n` +
-            `  linked: ${join(scan.rootDir, LINK_FILENAME)}\n`
-        );
-        if (attachments.count > 0) io.out.write(attachmentsLine(attachments));
-        if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
-        if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
-        openAfterPush(ctx, url, { created: true, flag: opts.open });
-      }
-    );
+    .option(
+      '--brand <ref[@n]>',
+      'record the brand this deck follows (id, title or title prefix; @n pins a version, default the latest)'
+    )
+    .option('--template <ref[@n]>', 'record the template this deck was made from (same forms as --brand)')
+    .action(async (path: string | undefined, opts: PushOptions, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      const result = await pushDeck(ctx, path ?? '.', opts);
+      printPushResult(ctx, result, opts);
+    });
 
   program
     .command('open [path]')
@@ -407,29 +302,9 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       const deck = await ctx.client.presentation(deckId);
       const version = opts.at ?? deck.currentVersion;
       if (version < 1) throw new CliUsageError('This deck has no committed versions yet.');
-      const detail = await ctx.client.presentationVersion(deckId, version);
 
       const destRoot = resolve(dest);
-      await mkdir(destRoot, { recursive: true });
-      // Every manifest path is re-validated locally (the instance may be
-      // older than this CLI, or hostile), every blob is size-capped and
-      // hash-verified against the manifest BEFORE it touches the disk, and
-      // every write is symlink-refusing + contained (safe-write.ts).
-      for (const entry of detail.manifest) {
-        if (!isSafeAssetPath(entry.path)) {
-          throw new Error(`Refusing to write unsafe manifest path: ${entry.path}`);
-        }
-        const res = await ctx.client.downloadPresentationAsset(deckId, entry.sha256);
-        const bytes = await readCapped(res, entry.sizeBytes, entry.path);
-        const digest = sha256Hex(bytes);
-        if (digest !== entry.sha256) {
-          throw new Error(
-            `Refusing ${entry.path}: the downloaded bytes hash to ${digest}, but the manifest ` +
-              `claims ${entry.sha256}.`
-          );
-        }
-        await writeContained(destRoot, entry.path, bytes);
-      }
+      const detail = await downloadVersionInto(ctx, deckId, version, destRoot);
       await writeLink(destRoot, { presentationId: deckId, baseUrl: ctx.baseUrl });
       if (ctx.json) {
         return printJson(io, {
@@ -569,6 +444,349 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         });
       }
     );
+}
+
+// ── The push routine, shared by `push` and `reference push` ─────────────────
+
+export interface PushOptions {
+  title?: string;
+  entry?: string;
+  kind: string;
+  interactive: boolean;
+  id?: string;
+  new: boolean;
+  /** --open → true, --no-open → false, neither → undefined. */
+  open?: boolean;
+  /** `<ref>[@n]`: the brand to record on the deck (PRDCT-2420). */
+  brand?: string;
+  /** `<ref>[@n]`: the template to record on the deck. */
+  template?: string;
+  /**
+   * The title of a NEW deck when `--title` is not given, instead of the
+   * folder name (`reference push` passes the frontmatter's `title`). A
+   * version push keeps the deck's title either way.
+   */
+  defaultTitle?: string;
+}
+
+export interface PushResult {
+  committed: VersionCommitted;
+  /** Whether this push created the deck (a first push) rather than a version of it. */
+  created: boolean;
+  scan: DeckScan;
+  url: string;
+  uploaded: number;
+  totalBytes: number;
+  attachments: { count: number; sizeBytes: number };
+  formNames: string[];
+  /** The references recorded on the deck by this push (`metadata.references`), in the order written. */
+  references: ReferenceProvenance[];
+}
+
+/**
+ * The 3-step upload protocol (scan → precheck → upload the missing blobs →
+ * commit) for a folder or a single HTML file, as a new deck or a new version
+ * of the linked one, then the provenance write (PRDCT-2420). One routine
+ * behind `push` and `reference push`: the second only adds a refusal before
+ * the first byte leaves and a sentence after the commit. The caller has
+ * already resolved the key (`requireApiKey`).
+ */
+export async function pushDeck(ctx: CliContext, target: string, opts: PushOptions): Promise<PushResult> {
+  const scan = await scanDeck(target);
+  const entryPath = detectEntry(scan, opts.entry);
+  const manifest = toManifest(scan);
+  const totalBytes = scan.files.reduce((sum, f) => sum + f.sizeBytes, 0);
+  const attachments = attachmentsOfScan(scan);
+
+  // New deck vs new version: --id wins, then the link file (which must
+  // point at THIS instance), then a fresh deck.
+  const link = await readLink(scan.rootDir);
+  let existingId: string | null = opts.id ?? null;
+  if (!existingId && !opts.new && link) {
+    if (link.baseUrl === ctx.baseUrl) {
+      existingId = link.presentationId;
+    } else {
+      throw new CliUsageError(
+        `${LINK_FILENAME} links this folder to ${link.baseUrl}, but you are pushing to ` +
+          `${ctx.baseUrl}. Pass --new to create a fresh deck here, or --id <deckId> to ` +
+          'target one explicitly.'
+      );
+    }
+  }
+
+  // The references to record, resolved BEFORE any upload: a wrong `--brand`
+  // is a usage error that must cost nothing.
+  const references = await resolveProvenance(ctx, scan.rootDir, opts);
+
+  // The cap, before the first write of either branch (discovery is a
+  // public read): a refusal here costs no upload.
+  refuseOverCap(scan, await resolveFileCapBytes(ctx));
+
+  let committed: VersionCommitted;
+  let created: boolean;
+  let uploaded: number;
+  if (existingId) {
+    const deck = await ctx.client.presentation(existingId);
+    uploaded = await uploadMissing(ctx, scan);
+    try {
+      committed = await ctx.client.commitVersion(existingId, {
+        expectedBaseVersion: deck.currentVersion,
+        entryPath,
+        manifest,
+        ...(opts.title ? { title: opts.title } : {})
+      });
+    } catch (e) {
+      if (e instanceof PlatformApiError && e.code === 'version_conflict') {
+        throw new CliUsageError(
+          'Someone pushed a new version while this push was running — rerun to retry on top of it.'
+        );
+      }
+      throw e;
+    }
+    created = false;
+  } else {
+    const kind = opts.kind as PresentationKind;
+    if (!['presentation', 'app', 'plan'].includes(kind)) {
+      throw new CliUsageError('--kind must be presentation, app, or plan');
+    }
+    const title =
+      opts.title ?? opts.defaultTitle ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
+    const { uploadSession } = await ctx.client.createUploadSession();
+    uploaded = await uploadMissing(ctx, scan);
+    committed = await ctx.client.commitUploadSession(uploadSession.id, {
+      title,
+      kind,
+      interactive: opts.interactive,
+      entryPath,
+      manifest
+    });
+    created = true;
+  }
+  // A pulled REFERENCE folder's link carries a `reference` block (its type
+  // and the version pulled). A push from that folder (its owner fixing the
+  // brand) must keep the block, with the version it just pushed: the folder
+  // now holds that version, and the deck beside it records the brand from
+  // this block. A wholesale rewrite here silently ended that record.
+  const pulled = await readReferenceLink(scan.rootDir);
+  const keepsBlock =
+    pulled !== null && pulled.presentationId === committed.presentation.id && pulled.baseUrl === ctx.baseUrl;
+  await writeLink(scan.rootDir, {
+    presentationId: committed.presentation.id,
+    baseUrl: ctx.baseUrl,
+    ...(keepsBlock ? { reference: { type: pulled.reference.type, version: committed.version.version } } : {})
+  });
+
+  // Provenance: read (the commit's answer carries the metadata as it now
+  // stands), merge, PATCH — never a wholesale replace of the owner's keys.
+  if (references.length > 0) {
+    const metadata = mergeProvenance(committed.presentation.metadata, references);
+    const updated = await ctx.client.updatePresentation(committed.presentation.id, { metadata });
+    committed = { ...committed, presentation: updated };
+  }
+
+  const formNames = await detectFormNames(scan);
+  const url = deckMasterUrl(ctx.baseUrl, committed.presentation.id);
+  return { committed, created, scan, url, uploaded, totalBytes, attachments, formNames, references };
+}
+
+/**
+ * Which references this push records: `--brand` / `--template` first
+ * (resolved among the references the caller can read, the version pinned
+ * by `@n` or the reference's latest), else the link file of a pulled
+ * reference in `.slideless/<type>/` beside the deck, when it was pulled
+ * from THIS instance (a reference from another instance means nothing
+ * here and is said on stderr, never recorded).
+ */
+async function resolveProvenance(
+  ctx: CliContext,
+  rootDir: string,
+  opts: PushOptions
+): Promise<ReferenceProvenance[]> {
+  const out: ReferenceProvenance[] = [];
+  for (const type of ['brand', 'template'] as const) {
+    const flag = opts[type];
+    if (flag !== undefined) {
+      const candidates = await listReferences(ctx, type);
+      const { match, version } = pickPinned(candidates, flag, type, (line) => ctx.io.err.write(line));
+      const pinned = version ?? match.currentVersion;
+      if (pinned > match.currentVersion) {
+        throw new CliUsageError(
+          `--${type} ${flag}: "${match.title}" is at version ${match.currentVersion}, there is no version ${pinned}.`
+        );
+      }
+      out.push({ type, id: match.id, version: pinned });
+      continue;
+    }
+    const link = await readReferenceLink(referenceDirFor(rootDir, type));
+    if (!link) continue;
+    if (link.reference.type !== type) {
+      ctx.io.err.write(
+        `Note: the folder ${REFERENCE_DIR}/${type}/ holds a ${link.reference.type}, not a ${type}; ` +
+          'it is not recorded on this deck.\n'
+      );
+      continue;
+    }
+    if (link.baseUrl !== ctx.baseUrl) {
+      ctx.io.err.write(
+        `Note: the ${type} in ${REFERENCE_DIR}/${type}/ was pulled from ${link.baseUrl}, not ${ctx.baseUrl}; ` +
+          'it is not recorded on this deck.\n'
+      );
+      continue;
+    }
+    out.push({ type, id: link.presentationId, version: link.reference.version });
+  }
+  return out;
+}
+
+/**
+ * `<ref>[@n]` resolved: the WHOLE value first, so a reference whose title
+ * ends in `@<digits>` (an id never does) is named as written; only when
+ * nothing matches the whole value is a trailing `@n` read as the version.
+ */
+export function pickPinned(
+  candidates: readonly VersionCommitted['presentation'][],
+  flag: string,
+  what: string,
+  note: (line: string) => void = () => undefined
+): { match: VersionCommitted['presentation']; version: number | undefined } {
+  const { ref, version } = splitRefAtVersion(flag);
+  if (version !== undefined) {
+    const whole = candidates.find(
+      (r) => r.id.toLowerCase() === flag.trim().toLowerCase() || r.title.trim() === flag.trim()
+    );
+    if (whole) {
+      // The other reading may be real too: say which one won and how to
+      // name the other, since a silent choice here writes the wrong
+      // provenance without a word.
+      let other: VersionCommitted['presentation'] | null = null;
+      try {
+        other = resolveReference(candidates, ref, what);
+      } catch {
+        other = null;
+      }
+      if (other && other.id !== whole.id && version <= other.currentVersion) {
+        note(
+          `Note: "${flag}" is the title of ${whole.id}, recorded at its latest version; to record ` +
+            `"${other.title}" at version ${version} instead, name it by id: --${what} ${other.id}@${version}.\n`
+        );
+      }
+      return { match: whole, version: undefined };
+    }
+  }
+  return { match: resolveReference(candidates, ref, what), version };
+}
+
+/** Every reference of a type the caller can read (the list, all pages). */
+export async function listReferences(
+  ctx: CliContext,
+  type: ReferenceType | undefined
+): Promise<VersionCommitted['presentation'][]> {
+  const rows: VersionCommitted['presentation'][] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await ctx.client.references({
+      ...(type ? { type } : {}),
+      limit: 100,
+      ...(cursor ? { cursor } : {})
+    });
+    rows.push(...page.presentations);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return rows;
+}
+
+/** One line per recorded reference, as the human summary and `get` print them. */
+export function provenanceLine(references: readonly ReferenceProvenance[]): string {
+  return references.map((r) => `${r.type} ${r.id}@${r.version}`).join(', ');
+}
+
+/** The one line a push prints about the deck's classification: the reference it became, or the warning. */
+export function classificationLines(committed: VersionCommitted): string {
+  const { version, presentation } = committed;
+  let out = '';
+  if (version.reference) {
+    const title = typeof version.reference.title === 'string' ? ` "${version.reference.title}"` : '';
+    out += `  reference: ${version.reference.type}${title}`;
+    out += presentation.audience === 'workspace' ? ' · published to the workspace' : ' · private';
+    if (presentation.defaultReference) out += ' · the workspace default';
+    out += '\n';
+  }
+  if (version.referenceWarning) out += `  warning: ${version.referenceWarning}\n`;
+  return out;
+}
+
+/**
+ * The push's summary, human or `--json`. The JSON is the commit's answer
+ * plus `url`, `attachments`, `formsDetected` when any, and `references`
+ * when this push recorded some.
+ */
+export function printPushResult(ctx: CliContext, result: PushResult, opts: Pick<PushOptions, 'open'>): void {
+  const { io } = ctx;
+  const { committed, created, scan, url, uploaded, totalBytes, attachments, formNames, references } = result;
+  if (ctx.json) {
+    return printJson(io, {
+      ...committed,
+      url,
+      attachments,
+      ...(formNames.length > 0 ? { formsDetected: formNames } : {}),
+      ...(references.length > 0 ? { references } : {})
+    });
+  }
+  io.out.write(
+    created
+      ? `Created "${committed.presentation.title}" at version 1 ` +
+          `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
+          `  id: ${committed.presentation.id}\n` +
+          `  url: ${url}\n` +
+          `  linked: ${join(scan.rootDir, LINK_FILENAME)}\n`
+      : `Pushed "${committed.presentation.title}" → version ${committed.version.version} ` +
+          `(${scan.files.length} files, ${fmtBytes(totalBytes)}, ${uploaded} uploaded)\n` +
+          `  id: ${committed.presentation.id}\n` +
+          `  url: ${url}\n`
+  );
+  if (attachments.count > 0) io.out.write(attachmentsLine(attachments));
+  if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
+  io.out.write(classificationLines(committed));
+  if (references.length > 0) io.out.write(`  references: ${provenanceLine(references)}\n`);
+  if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
+  openAfterPush(ctx, url, { created, flag: opts.open });
+}
+
+// ── The pull routine, shared by `pull`, `reference pull` and `start` ────────
+
+/**
+ * Downloads one version's files into `destRoot` (created if needed). Every
+ * manifest path is re-validated locally (the instance may be older than
+ * this CLI, or hostile), every blob is size-capped and hash-verified
+ * against the manifest BEFORE it touches the disk, and every write is
+ * symlink-refusing + contained (safe-write.ts). The link file is the
+ * caller's to write: `pull` binds the folder to the deck, `reference pull`
+ * adds the reference's type and version, `start` writes none.
+ */
+export async function downloadVersionInto(
+  ctx: CliContext,
+  deckId: string,
+  version: number,
+  destRoot: string
+): Promise<PresentationVersionDetail> {
+  const detail = await ctx.client.presentationVersion(deckId, version);
+  await mkdir(destRoot, { recursive: true });
+  for (const entry of detail.manifest) {
+    if (!isSafeAssetPath(entry.path)) {
+      throw new Error(`Refusing to write unsafe manifest path: ${entry.path}`);
+    }
+    const res = await ctx.client.downloadPresentationAsset(deckId, entry.sha256);
+    const bytes = await readCapped(res, entry.sizeBytes, entry.path);
+    const digest = sha256Hex(bytes);
+    if (digest !== entry.sha256) {
+      throw new Error(
+        `Refusing ${entry.path}: the downloaded bytes hash to ${digest}, but the manifest ` +
+          `claims ${entry.sha256}.`
+      );
+    }
+    await writeContained(destRoot, entry.path, bytes);
+  }
+  return detail;
 }
 
 /**

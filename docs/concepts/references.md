@@ -313,7 +313,34 @@ Agents connected over MCP have two tools:
 - `slideless_list_references` takes a `type` and lists the references of that type.
 - `slideless_get_default_reference` takes a `type` and returns the workspace's default of that type.
 
-The CLI carries the same operations ([CLI](../agents/cli.md)).
+## From the command line
+
+The CLI carries the same operations, in one real family and two shortcuts:
+`slideless reference <verb>` takes `--type brand|template` where the type
+matters, and `slideless brand` and `slideless template` are the same verbs with
+the type already chosen. Eight verbs: `list`, `pull`, `new`, `push`, `publish`,
+`unpublish`, `default`, `start`
+([References: brand, template](../agents/cli.md#references-brand-template)).
+
+The everyday sequence:
+
+- An admin scaffolds a folder with [`slideless brand new`](../agents/cli.md#references-brand-template),
+  fills its `AGENT.md` and its pages, and pushes it with `slideless brand push`.
+  That push is what classifies the deck as a brand, and it names the new deck
+  after the frontmatter's `title:` line.
+- The same admin opens it with `slideless brand publish`, so every member of the
+  workspace reads it, and makes it the house brand with `slideless brand default`.
+- A member authoring a deck runs `slideless brand pull` with no name, which
+  fetches the workspace's default into `.slideless/brand/` beside the deck, and
+  reads `.slideless/brand/AGENT.md` before writing a page.
+- A deck that follows a template starts as a copy of it:
+  `slideless template start <ref> ./new-deck` writes a fresh folder with the
+  `type:` line removed, so the deck is an ordinary deck.
+- The push records what the deck was made from:
+  [`slideless push --brand <ref>`](../agents/cli.md#references-brand-template)
+  and `--template <ref>` write the `references` entries above, and a push with
+  neither flag records whatever `.slideless/brand/` and `.slideless/template/`
+  were pulled from.
 
 ## Reusing a reference's files
 

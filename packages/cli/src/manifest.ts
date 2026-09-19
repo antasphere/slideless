@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
-import { isAttachmentPath, isSafeAssetPath, RESERVED_ASSET_FILENAMES } from '@slideless/contract';
+import {
+  isAttachmentPath,
+  isSafeAssetPath,
+  RESERVED_ASSET_FILENAMES,
+  type ReferenceType
+} from '@slideless/contract';
 
 /**
  * Deck folder scanning for `slideless push`: walk a folder (or take a single
@@ -321,6 +326,13 @@ export function detectEntry(scan: DeckScan, explicit?: string): string {
 export interface DeckLink {
   presentationId: string;
   baseUrl: string;
+  /**
+   * Present in the link file of a pulled REFERENCE (references.ts): the
+   * reference's type and the version that was pulled. `readLink` ignores
+   * it (a push from the folder targets the deck all the same);
+   * `readReferenceLink` reads it.
+   */
+  reference?: { type: ReferenceType; version: number };
 }
 
 export async function readLink(rootDir: string): Promise<DeckLink | null> {

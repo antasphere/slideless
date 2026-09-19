@@ -163,7 +163,10 @@ describe('push', () => {
     const h = routedHarness(routes);
     const code = await run(['push', dir, '--id', DECK.id, '--url', 'http://x', '--api-key', 'slk_k_s'], h.io);
     expect(code).toBe(1);
-    expect(h.err()).toContain('rerun');
+    // The CLI's OWN sentence, not the generic PlatformApiError fallback —
+    // that one also ends in "rerun to retry", so `toContain('rerun')` passed
+    // whether or not the version_conflict branch ran at all.
+    expect(h.err()).toContain('Someone pushed a new version while this push was running');
   });
 });
 

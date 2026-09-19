@@ -14,6 +14,7 @@ import { registerAuthCommands } from './commands/auth.js';
 import { registerWorkspaceCommands } from './commands/workspaces.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
+import { registerReferenceCommands } from './commands/references.js';
 import { registerSharingCommands } from './commands/sharing.js';
 import { registerResponseFilesCommand } from './commands/response-files.js';
 import { registerFileCommands } from './commands/files.js';
@@ -41,7 +42,7 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  *             → none sent (the server's default membership)
  */
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 /**
  * The command tree, built once per run. Exported for the docs-coverage test
@@ -74,6 +75,9 @@ export function buildProgram(io: CliIo): Command {
   registerDeckCommands(program, io);
   // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
   registerContentCommands(program, io);
+  // References: reference list/pull/new/push/publish/unpublish/default/start,
+  // and brand / template as the same verbs with the type preset.
+  registerReferenceCommands(program, io);
   // Sharing + collaborators: share, unshare, share-email, pin, tokens, views,
   // responses, response, uploads, notify, invite, uninvite.
   registerSharingCommands(program, io);
