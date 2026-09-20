@@ -2,9 +2,10 @@ import type { ToolIdentity } from '@antasphere/chassis-contract';
 
 /**
  * The identity of this tool: every value that names it where a person, an
- * agent or an operator can see it, written ONCE. The server, the SDK, the CLI
- * and the dashboard all read it from here; the chassis packages spell none of
- * it. A new tool rewrites this file and nothing else to take its own name.
+ * agent or an operator can see it, written ONCE. The contract, the server and
+ * the CLI read it from here (the SDK and the dashboard can: they already depend
+ * on this package); the chassis packages spell none of it. A new tool rewrites
+ * this file to take its own name.
  *
  * What cannot read a value at run time (package names, the `bin` key of the
  * CLI's package.json, the image reference in the Dockerfile and the workflows,
