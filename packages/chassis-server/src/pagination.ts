@@ -90,12 +90,9 @@ export function encodeKeysetCursor(row: { id: string; createdAtText: string }): 
 
 export function decodeKeysetCursor(cursor: string | undefined): KeysetValueCursor | null {
   if (!cursor || cursor.length > 200) return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-  } catch {
-    return null;
-  }
+  // Node's base64url decoder never throws (it drops what it cannot read):
+  // the guard is the two shape checks below, not the decode.
+  const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
   const at = decoded.lastIndexOf('|');
   if (at < 0) return null;
   const createdAt = decoded.slice(0, at);
