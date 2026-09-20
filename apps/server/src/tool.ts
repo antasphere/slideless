@@ -7,8 +7,10 @@ import {
   apiKeyRevokeRoute,
   apiKeysListRoute,
   cliAuthCompleteRoute,
+  fileDeleteRoute,
   meRoute,
-  ssoCliConnectRoute
+  ssoCliConnectRoute,
+  workspaceExportRoute
 } from '@slideless/contract/routes';
 import type { BootOverrides, BootResult, ToolDefinition } from '@antasphere/chassis-server';
 import { makeClientIp, rateLimit } from '@antasphere/chassis-server/middleware';
@@ -99,7 +101,9 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         apiKeyCreateRoute,
         apiKeyRevokeRoute,
         cliAuthCompleteRoute,
-        ssoCliConnectRoute
+        ssoCliConnectRoute,
+        workspaceExportRoute,
+        fileDeleteRoute
       }
     },
 
@@ -373,7 +377,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       guestForbidden: 'Guest access is limited to the decks you were invited to',
       guestTarget:
         'This member is an external per-deck guest — their account is not this workspace’s to recover',
-      fileInUse: 'This file is referenced by a presentation version — delete the presentation first',
-      fileInUseOpenApi: 'file_in_use: referenced by a presentation version'
+      // Its OpenAPI twin is in @slideless/contract/routes, where the delete route is instantiated.
+      fileInUse: 'This file is referenced by a presentation version — delete the presentation first'
     }
   };

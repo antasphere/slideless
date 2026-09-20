@@ -72,8 +72,9 @@ import {
  */
 
 /**
- * The generic routes that carry the scope vocabulary, instantiated ONCE with
- * the Slideless scopes (../chassis.ts) and identity (../identity.ts). Every
+ * The generic routes that carry something of the tool, instantiated ONCE with
+ * the Slideless scopes (../chassis.ts), its identity (../identity.ts) and the
+ * deck domain's wording of the one OpenAPI sentence that names it. Every
  * other generic route contract is a static export of
  * `@antasphere/chassis-contract/routes`.
  */
@@ -83,8 +84,12 @@ export const {
   apiKeyCreateRoute,
   apiKeyRevokeRoute,
   cliAuthCompleteRoute,
-  ssoCliConnectRoute
-} = defineChassisRoutes(chassisContract, IDENTITY);
+  ssoCliConnectRoute,
+  workspaceExportRoute,
+  fileDeleteRoute
+} = defineChassisRoutes(chassisContract, IDENTITY, {
+  fileInUseOpenApi: 'file_in_use: referenced by a presentation version'
+});
 
 // ═══ Presentation domain (ADR 011) ═══════════════════════════════════════════
 //
