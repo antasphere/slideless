@@ -118,11 +118,23 @@
       return { items: presentations, nextCursor };
     });
   });
-  const decks = $derived(list.items);
+  // The plain list leaves the references out, and a project holds its brand
+  // and its templates too: they come in one more read, after the decks. A
+  // project links far fewer than a hundred references.
+  let references = $state<DeckWithProjects[]>([]);
+  async function loadReferences() {
+    try {
+      references = (await deckProjects.decksOf(project.id, { type: 'reference', limit: 100 })).presentations;
+    } catch {
+      // the decks' own error line says what went wrong
+    }
+  }
+  const decks = $derived([...list.items, ...references]);
 
   $effect(() => {
     void loadBrand();
     void list.load();
+    void loadReferences();
   });
 
   const pushCommand = $derived(`slideless push --project ${project.id}`);
@@ -140,8 +152,13 @@
     addChoicesError = null;
     showAddDialog = true;
     try {
-      const { presentations } = await deckProjects.decksOf(null, { limit: 100 });
-      addChoices = presentations.filter(
+      // the plain list leaves the references out: a brand or a template joins
+      // a project too, so both lists are offered
+      const [decks, references] = await Promise.all([
+        deckProjects.decksOf(null, { limit: 100 }),
+        deckProjects.decksOf(null, { type: 'reference', limit: 100 })
+      ]);
+      addChoices = [...decks.presentations, ...references.presentations].filter(
         (d) => me && administersDeck(me, d) && !deckProjects.named(d).some((p) => p.id === project.id)
       );
     } catch (e) {
@@ -156,7 +173,7 @@
       await deckProjects.link(addChoice, project.id);
       showAddDialog = false;
       toast.success(t('deckProjects.linked'));
-      await list.refresh();
+      await Promise.all([list.refresh(), loadReferences()]);
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -177,7 +194,7 @@
       await deckProjects.unlink(unlinkTarget.id, project.id);
       showUnlinkDialog = false;
       toast.success(t('deckProjects.unlinked'));
-      await list.refresh();
+      await Promise.all([list.refresh(), loadReferences(), loadBrand()]);
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
