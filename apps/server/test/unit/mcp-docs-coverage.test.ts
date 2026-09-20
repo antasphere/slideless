@@ -19,9 +19,19 @@ const DOC_PATH = resolve(DOCS, 'agents/mcp-connector.md');
 /** The pages that announce the tool count in prose ("22 `slideless_` tools"). */
 const COUNT_PAGES = ['index.md', 'getting-started/connect-an-agent.md'].map((p) => resolve(DOCS, p));
 
+/**
+ * One tool of the set is not in that file: the chassis registers
+ * `<toolPrefix>whoami` itself (`buildMcpServer`, PRDCT-2531), right before the
+ * tool's own set. It is named here by its literal, the name the docs carry.
+ */
+const CHASSIS_REGISTERED = ['slideless_whoami'];
+
 function registeredTools(): string[] {
   const src = readFileSync(TOOLS_SRC, 'utf8');
-  return [...src.matchAll(/registerTool\(\s*'(slideless_[a-z_]+)'/g)].map((m) => m[1]!).sort();
+  return [
+    ...CHASSIS_REGISTERED,
+    ...[...src.matchAll(/registerTool\(\s*'(slideless_[a-z_]+)'/g)].map((m) => m[1]!)
+  ].sort();
 }
 
 function documentedTools(doc: string): string[] {

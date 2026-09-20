@@ -364,23 +364,8 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     .optional()
     .describe('Page size (server max 100). Default 50.');
 
-  // ── Identity ───────────────────────────────────────────────────────────────
-
-  server.registerTool(
-    'slideless_whoami',
-    {
-      description:
-        'Who is connected: the user this MCP connection acts as, plus ALL their organizations ' +
-        '(workspaces) with per-entry role/default/suspended flags. Returns { user: { id, email, ' +
-        'name }, workspace, role, via, scopes, workspaces: [...], activeWorkspaceId }. The ' +
-        'credential is the USER; the organization is a PER-CALL parameter: every tool accepts an ' +
-        'optional `workspace` (an id from `workspaces[]`) — omitted, the entry flagged `default: ' +
-        'true` is used (else the oldest membership). Call this first to discover the ids.',
-      inputSchema: { workspace: workspaceInput },
-      annotations: { readOnlyHint: true }
-    },
-    async ({ workspace }) => read(workspace, async (c) => jsonText(await callApi(c, '/api/v1/me')))
-  );
+  // Identity: `slideless_whoami` is registered by the chassis (`<toolPrefix>whoami`,
+  // right before this set), since it reads `/api/v1/me` and nothing of the decks.
 
   // ── Decks: reads ───────────────────────────────────────────────────────────
 
