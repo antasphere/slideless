@@ -179,6 +179,12 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
       shot(`${P}/tokens/${realTokenId}/views`, 'GET', cookie),
     'post /presentations/{id}/tokens/{tokenId}/send': () =>
       shot(`${P}/tokens/${realTokenId}/send`, 'POST', cookie, { email: 'oracle-recipient@oracle.test' }),
+    // Projects (ADR 026): a phantom project id, so the deck's 404 is the one
+    // under test — the project check comes AFTER it.
+    'put /presentations/{id}/projects/{projectId}': () =>
+      shot(`${P}/projects/00000000-0000-4000-8000-000000000001`, 'PUT', cookie),
+    'delete /presentations/{id}/projects/{projectId}': () =>
+      shot(`${P}/projects/00000000-0000-4000-8000-000000000001`, 'DELETE', cookie),
     'get /presentations/{id}/collaborators': () => shot(`${P}/collaborators`, 'GET', cookie),
     'post /presentations/{id}/collaborators': () =>
       shot(`${P}/collaborators`, 'POST', cookie, { email: OTHER.email }),

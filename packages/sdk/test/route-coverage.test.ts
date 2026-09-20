@@ -30,6 +30,9 @@ const SAMPLE_MANIFEST = [
 ];
 
 /** contract route → an SDK call. Keyed by `METHOD path` (contract shape). */
+/** A Better Auth user id: text, never a uuid. */
+const SAMPLE_USER_ID = 'usr_projects_coverage';
+
 const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /instance': (c) => c.instance(),
   'POST /setup': (c) =>
@@ -73,6 +76,24 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'PATCH /presentations/{id}': (c) => c.updatePresentation(SAMPLE_ID, { title: 'T' }),
   'DELETE /presentations/{id}': (c) => c.deletePresentation(SAMPLE_ID),
   'POST /presentations/{id}/duplicate': (c) => c.duplicatePresentation(SAMPLE_ID),
+  'PUT /presentations/{id}/projects/{projectId}': (c) =>
+    c.linkPresentationProject(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'DELETE /presentations/{id}/projects/{projectId}': (c) =>
+    c.unlinkPresentationProject(SAMPLE_ID, SAMPLE_CHILD_ID),
+  // The chassis' own project routes, inherited by PlatformClient.
+  'GET /projects': (c) => c.projects(),
+  'POST /projects': (c) => c.createProject({ name: 'P' }),
+  'GET /projects/{id}': (c) => c.project(SAMPLE_ID),
+  'PATCH /projects/{id}': (c) => c.updateProject(SAMPLE_ID, { name: 'P' }),
+  'POST /projects/{id}/archive': (c) => c.archiveProject(SAMPLE_ID),
+  'POST /projects/{id}/unarchive': (c) => c.unarchiveProject(SAMPLE_ID),
+  'GET /projects/{id}/members': (c) => c.projectMembers(SAMPLE_ID),
+  'POST /projects/{id}/members': (c) => c.addProjectMember(SAMPLE_ID, { email: 'a@b.co', role: 'viewer' }),
+  'PATCH /projects/{id}/members/{userId}': (c) => c.setProjectMemberRole(SAMPLE_ID, SAMPLE_USER_ID, 'editor'),
+  'DELETE /projects/{id}/members/{userId}': (c) => c.removeProjectMember(SAMPLE_ID, SAMPLE_USER_ID),
+  'GET /projects/{id}/brand': (c) => c.projectBrand(SAMPLE_ID),
+  'PUT /projects/{id}/brand': (c) => c.setProjectBrand(SAMPLE_ID, SAMPLE_ID),
+  'DELETE /projects/{id}/brand': (c) => c.clearProjectBrand(SAMPLE_ID),
   'POST /presentations/uploads': (c) => c.createUploadSession(),
   'POST /presentations/precheck': (c) => c.precheckAssets([SAMPLE_SHA256]),
   'POST /presentations/assets': (c) => c.uploadAsset(SAMPLE_SHA256, new Uint8Array([1])),
@@ -170,7 +191,8 @@ function recordingClient(): { client: PlatformClient; calls: Array<{ method: str
 function expectedPath(contractPath: string): string {
   return `/api/v1${contractPath
     .replace('{id}', SAMPLE_ID)
-    .replace(/\{(tokenId|collaboratorId|annotationId|responseId)\}/, SAMPLE_CHILD_ID)
+    .replace(/\{(tokenId|collaboratorId|annotationId|responseId|projectId)\}/, SAMPLE_CHILD_ID)
+    .replace('{userId}', SAMPLE_USER_ID)
     .replace('{fileId}', SAMPLE_FILE_ID)
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)

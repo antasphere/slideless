@@ -7,13 +7,14 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
   uuid,
   type AnyPgColumn
 } from 'drizzle-orm/pg-core';
-import { user, workspaces } from '@antasphere/chassis-db';
+import { projects, user, workspaces } from '@antasphere/chassis-db';
 
 // ═══ Presentation domain (ADR 011) ══════════════════════════════════════════
 // The Slideless product model: decks with append-only immutable versions,
@@ -386,6 +387,47 @@ export const collaborators = pgTable(
     index('collaborators_user_idx').on(t.userId),
     // Serves the API's keyset pagination (created_at DESC, id DESC per deck).
     index('collaborators_presentation_created_id_idx').on(t.presentationId, t.createdAt, t.id)
+  ]
+);
+
+/**
+ * A deck's place in the workspace's PROJECTS (the chassis concept; this table
+ * is the tool's own link to it). Many-to-many: a deck may sit in several
+ * projects. The link is what widens the deck's READ rule to the project's
+ * members (ADR 026), so creating it is the deck administrator's act.
+ *
+ * `is_brand` marks the project's BRAND: the project's companion, at most one
+ * per project (the partial unique index). The flagged deck must be a `brand`
+ * reference when the flag is set, and the flag drops in the same commit when
+ * the deck stops being one (fail closed, like the default reference).
+ *
+ * Both sides cascade: a link carries no value once the deck or the project
+ * is gone. A project is never deleted in practice; its workspace can be.
+ */
+export const presentationProjects = pgTable(
+  'presentation_projects',
+  {
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    isBrand: boolean('is_brand').notNull().default(false),
+    addedBy: text('added_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    primaryKey({ columns: [t.presentationId, t.projectId] }),
+    // "The decks of this project": the list's project filter.
+    index('presentation_projects_project_idx').on(t.projectId),
+    // ONE brand per project, enforced by the database.
+    uniqueIndex('presentation_projects_brand_uniq')
+      .on(t.projectId)
+      .where(sql`${t.isBrand}`)
   ]
 );
 
@@ -770,6 +812,7 @@ export type PresentationRow = typeof presentations.$inferSelect;
 export type PresentationVersionRow = typeof presentationVersions.$inferSelect;
 export type ShareTokenRow = typeof shareTokens.$inferSelect;
 export type CollaboratorRow = typeof collaborators.$inferSelect;
+export type PresentationProjectRow = typeof presentationProjects.$inferSelect;
 export type AnnotationRow = typeof annotations.$inferSelect;
 export type FormResponseRow = typeof formResponses.$inferSelect;
 export type FormResponseVersionRow = typeof formResponseVersions.$inferSelect;

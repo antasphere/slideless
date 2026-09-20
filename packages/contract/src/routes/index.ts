@@ -27,7 +27,10 @@ import {
   uploadSessionCommitSchema,
   uploadSessionCreatedSchema,
   versionCommitSchema,
-  versionCommittedSchema
+  versionCommittedSchema,
+  deckProjectParamsSchema,
+  projectBrandSchema,
+  projectBrandSetSchema
 } from '../schemas/presentations.js';
 import {
   previewTokenCreateSchema,
@@ -133,7 +136,11 @@ export const presentationsListRoute = createRoute({
   request: { query: presentationsListQuerySchema },
   responses: {
     200: jsonBody(presentationsListSchema, 'Presentations, newest first'),
-    401: errorResponses[401]
+    401: errorResponses[401],
+    404: jsonBody(
+      apiErrorSchema,
+      'project_not_found: the `project` filter names a project the caller cannot read'
+    )
   }
 });
 
@@ -171,6 +178,95 @@ export const presentationUpdateRoute = createRoute({
       'audience_private or default_reference: the audience and the default disagree'
     ),
     422: jsonBody(apiErrorSchema, 'not_a_reference: audience and defaultReference apply to references only')
+  }
+});
+
+// ── Projects (ADR 026) ───────────────────────────────────────────────────────
+// A deck belongs to projects (the chassis concept); the link is the tool's.
+// Linking widens who READS the deck, so it is the deck administrator's act,
+// with editor or more on the project. The 404-never-403 posture of ADR 013
+// holds: a deck or a project the caller cannot read answers 404.
+
+export const presentationProjectLinkRoute = createRoute({
+  method: 'put',
+  path: '/presentations/{id}/projects/{projectId}',
+  tags: ['presentations', 'projects'],
+  summary: 'Link a deck to a project: its members read the deck (deck administrator + project editor)',
+  request: { params: deckProjectParamsSchema },
+  responses: {
+    200: jsonBody(presentationSchema, 'The deck, with the project among its projects'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: jsonBody(
+      apiErrorSchema,
+      'guest_forbidden, forbidden (not the deck administrator), insufficient_project_role'
+    ),
+    404: jsonBody(apiErrorSchema, 'Deck not found, or project_not_found'),
+    409: jsonBody(apiErrorSchema, 'The project is archived (project_archived)')
+  }
+});
+
+export const presentationProjectUnlinkRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}/projects/{projectId}',
+  tags: ['presentations', 'projects'],
+  summary: 'Take a deck out of a project (the deck administrator, or a project manager)',
+  request: { params: deckProjectParamsSchema },
+  responses: {
+    200: jsonBody(presentationSchema, 'The deck, without the project'),
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: jsonBody(apiErrorSchema, 'guest_forbidden, or forbidden for a reader who is neither'),
+    404: jsonBody(apiErrorSchema, 'Deck not found, project_not_found, or not_linked'),
+    409: jsonBody(apiErrorSchema, 'project_archived, for a project manager who does not administer the deck')
+  }
+});
+
+export const projectBrandGetRoute = createRoute({
+  method: 'get',
+  path: '/projects/{id}/brand',
+  tags: ['projects'],
+  summary: "The project's brand: the brand reference its decks are authored with, or null",
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(projectBrandSchema, "The project's brand, or null"),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404]
+  }
+});
+
+export const projectBrandSetRoute = createRoute({
+  method: 'put',
+  path: '/projects/{id}/brand',
+  tags: ['projects'],
+  summary: "Set the project's brand: a brand reference already linked to the project (project manager)",
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(projectBrandSetSchema, 'The deck that becomes the brand')
+  },
+  responses: {
+    200: jsonBody(projectBrandSchema, "The project's brand"),
+    400: jsonBody(apiErrorSchema, 'Validation error, or not_a_brand: the deck is not a brand reference'),
+    401: errorResponses[401],
+    403: jsonBody(apiErrorSchema, 'guest_forbidden or insufficient_project_role'),
+    404: jsonBody(apiErrorSchema, 'Project not found, or the deck is not found'),
+    409: jsonBody(apiErrorSchema, 'project_archived, or not_linked: link the deck to the project first')
+  }
+});
+
+export const projectBrandClearRoute = createRoute({
+  method: 'delete',
+  path: '/projects/{id}/brand',
+  tags: ['projects'],
+  summary: "Clear the project's brand (project manager). The deck and its link stay",
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(projectBrandSchema, 'brand: null'),
+    401: errorResponses[401],
+    403: jsonBody(apiErrorSchema, 'guest_forbidden or insufficient_project_role'),
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'project_archived')
   }
 });
 
