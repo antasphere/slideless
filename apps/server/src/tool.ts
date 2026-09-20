@@ -14,6 +14,7 @@ import {
 } from '@slideless/contract/routes';
 import type { BootOverrides, BootResult, ToolDefinition } from '@antasphere/chassis-server';
 import { makeClientIp, rateLimit } from '@antasphere/chassis-server/middleware';
+import { MAIL_COPY } from './email/brand.js';
 import { deckEnvExtension, type DeckEnvShape } from './env.js';
 import { INTRINSIC_VERSION } from './version.js';
 import { findMigrationsFolder, publicDir } from './runtime.js';
@@ -378,6 +379,8 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       guestTarget:
         'This member is an external per-deck guest — their account is not this workspace’s to recover',
       // Its OpenAPI twin is in @slideless/contract/routes, where the delete route is instantiated.
-      fileInUse: 'This file is referenced by a presentation version — delete the presentation first'
+      fileInUse: 'This file is referenced by a presentation version — delete the presentation first',
+      // The account mails' words that are Slideless's own; the deck mails are email/deck-templates.ts.
+      mail: MAIL_COPY
     }
   };

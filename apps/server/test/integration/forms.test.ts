@@ -2185,7 +2185,7 @@ describe('owner mails (PRDCT-2330)', () => {
     const second = sent[1]!;
     expect(second.subject).toBe('A response on "Kituo questionnaire" was edited');
     expect(second.subject).not.toBe(first.subject);
-    expect(second.html).toContain('revision 2');
+    expect(second.html).toContain('version 2');
     expect(second.html).not.toContain('tart');
     expect(second.text).not.toContain('tart');
   });
@@ -2213,7 +2213,7 @@ describe('owner mails (PRDCT-2330)', () => {
     expect(mailBox.sent.length).toBe(before + 2);
     const digest = mailBox.sent[mailBox.sent.length - 1]!;
     expect(digest.subject).toBe('New response on "RSVP wall"');
-    expect(digest.text).toContain('2 other new responses and 1 other edit arrived too');
+    expect(digest.text).toContain('2 more responses and 1 more edit came in too');
     // A THIRD window (verifier round 2, F-G2): the held-back counts are reset
     // on every send, so the next mail reports only its own window's events.
     expect((await mSubmit(secret, 'rsvp', { payload: { n: '5' } })).status).toBe(201);
@@ -2224,8 +2224,8 @@ describe('owner mails (PRDCT-2330)', () => {
     await drained();
     expect(mailBox.sent.length).toBe(before + 3);
     const third = mailBox.sent[mailBox.sent.length - 1]!;
-    expect(third.text).toContain('1 other new response arrived too');
-    expect(third.text).not.toContain('3 other');
+    expect(third.text).toContain('1 more response came in too');
+    expect(third.text).not.toContain('3 more');
   });
 
   it('the per-deck switch silences the mails without touching forms; the wire carries it; PATCH alone flips it', async () => {
@@ -2276,7 +2276,7 @@ describe('owner mails (PRDCT-2330)', () => {
     expect((await mSubmit(secret, 'rsvp', { payload: { n: 'later' } })).status).toBe(201);
     await drained();
     expect(mailBox.sent.length).toBe(before + 2);
-    expect(mailBox.sent[mailBox.sent.length - 1]!.text).toContain('9 other new responses arrived too');
+    expect(mailBox.sent[mailBox.sent.length - 1]!.text).toContain('9 more responses came in too');
   });
 
   it('a burst right after the window expires mails exactly once: the claim is under the row lock (verifier round 1, F4)', async () => {

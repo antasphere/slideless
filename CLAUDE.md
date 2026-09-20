@@ -264,7 +264,26 @@ pnpm turbo lint typecheck test build         # the CI gate, part 1
 pnpm format:check                            # part 2 — CI runs this too; `pnpm format` fixes
 pnpm --filter @slideless/server drift:check  # part 3 — the auth-schema drift guard
 pnpm turbo test:integration                  # real Postgres via testcontainers; needs Docker
+cd apps/server && pnpm preview:emails        # render every email to a local review wall
 ```
+
+The mail wall (`apps/server/scripts/previewEmails.ts`) is the same wall as the hub's and the
+sibling templates' — one family, so a change to one is a change to consider on the others.
+It renders every builder with fixture data, several shapes for the mails that have them, and
+nothing is ever sent. A new mail means a new `TemplateSpec` in its `catalogue()`, with
+reader-facing `when` copy; the builders stay env-free (urls, names and dates arrive as
+parameters), which is what lets `tsx` render them standalone.
+
+The mails' layout is `packages/chassis-server/src/email/shell.ts`, carried BYTE-IDENTICAL by the
+hub's `apps/server/src/email/shell.ts` (`cmp` the two before closing a mail task). The five
+account mails are the chassis's `email/templates.ts`: they spell no product, the name comes from
+`identity.displayName` and the three phrases that are a tool's own from the `copy.mail` slot
+(`apps/server/src/email/brand.ts` here). The deck mails are `apps/server/src/email/deck-templates.ts`,
+on the same shell and blocks. The grain band and the mark are hosted images,
+`apps/dashboard/static/email/band.jpg` and `mark.png`, because Gmail strips SVG and data URIs; the
+chassis boot hands their urls to the shell from `PUBLIC_BASE_URL`, and the shell falls back to a
+CSS gradient without them. Integration tests read links and codes out of the TEXT part (the first
+url in it must be the action link), and `forms.test.ts` pins the held-back-activity wording.
 
 Local dev mail: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d` runs Mailpit
 and points the SMTP driver at it (internal/dev-mailpit.md).

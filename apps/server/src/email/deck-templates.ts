@@ -1,16 +1,25 @@
-import { IDENTITY } from '@slideless/contract';
-import { esc, makeShell } from '@antasphere/chassis-server/email';
-
-/** The product's name and the mails' shared layout, from the tool's identity. */
-const PRODUCT_NAME = IDENTITY.displayName;
-const shell = makeShell({ name: PRODUCT_NAME });
-
 /**
  * The deck domain's transactional mails: share link, collaborator invite and
  * the three form-response mails. Same convention as the chassis builders
- * (env-free, every value a parameter); the HTML shell and the escaper are the
- * chassis ones.
+ * (env-free, every value a parameter, `pnpm preview:emails` renders them
+ * standalone); the layout and the blocks are the chassis's shell, so these
+ * mails and the account mails are one family. This file holds what they SAY.
  */
+import {
+  button,
+  esc,
+  facts,
+  fine,
+  fmtDate,
+  makeShell,
+  para,
+  quote,
+  spelledLink
+} from '@antasphere/chassis-server/email';
+import { MAIL_BRAND } from './brand.js';
+
+const PRODUCT_NAME = MAIL_BRAND.name;
+const shell = makeShell(MAIL_BRAND);
 
 export interface ShareEmailParams {
   /** Display name of the sharer (the deck owner/admin who hit send). */
@@ -34,33 +43,31 @@ export interface ShareEmailParams {
  */
 export function buildShareEmail(p: ShareEmailParams): { subject: string; html: string; text: string } {
   const subject = `${p.senderName} shared "${p.presentationTitle}" with you`;
-  const note = p.message
-    ? `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6;border-left:3px solid #e4e4e7;padding-left:12px">${esc(p.message)}</p>`
-    : '';
-  const passwordNote = p.hasPassword
-    ? `<p style="margin:0 0 16px;color:#3f3f46;font-size:13px">This link is password protected — ${esc(p.senderName)} will give you the password separately.</p>`
-    : '';
-  const expiryNote = p.expiresAt ? ` This link expires on ${p.expiresAt.toUTCString()}.` : '';
-  const html = shell(
-    `${esc(p.senderName)} shared a presentation`,
-    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
-       ${esc(p.senderName)} shared <strong>${esc(p.presentationTitle)}</strong> with you on ${PRODUCT_NAME}.</p>
-     ${note}${passwordNote}
-     <p style="margin:0 0 24px">
-       <a href="${p.viewerUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
-          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
-         Open presentation</a></p>
-     <p style="margin:0;color:#a1a1aa;font-size:12px">
-       This link is personal to you.${expiryNote} If the button does not work, open:<br>
-       <span style="word-break:break-all">${p.viewerUrl}</span></p>`
-  );
+  const expiry = p.expiresAt ? ` It stays open until ${fmtDate(p.expiresAt)}.` : '';
+  const html = shell({
+    preheader: p.message ?? `Open "${p.presentationTitle}" in your browser. Nothing to install.`,
+    eyebrow: 'A deck for you',
+    title: esc(p.presentationTitle),
+    body:
+      para(
+        `<strong>${esc(p.senderName)}</strong> shared this presentation with you. It opens in your browser, nothing to install.`
+      ) +
+      (p.message ? quote(esc(p.message)) : '') +
+      button(p.viewerUrl, 'Open the presentation') +
+      (p.hasPassword
+        ? fine(`The link asks for a password. ${esc(p.senderName)} will give it to you separately.`)
+        : '') +
+      fine(`This link was made for you alone, so keep it to yourself.${expiry}`) +
+      spelledLink(p.viewerUrl)
+  });
   const text =
     `${p.senderName} shared "${p.presentationTitle}" with you on ${PRODUCT_NAME}.\n\n` +
-    (p.message ? `${p.message}\n\n` : '') +
+    (p.message ? `"${p.message}"\n\n` : '') +
+    `Open the presentation: ${p.viewerUrl}\n\n` +
     (p.hasPassword
-      ? `This link is password protected — the sender will give you the password separately.\n\n`
+      ? `The link asks for a password. ${p.senderName} will give it to you separately.\n\n`
       : '') +
-    `Open it: ${p.viewerUrl}\n\nThis link is personal to you.${expiryNote}`;
+    `This link was made for you alone, so keep it to yourself.${expiry}`;
   return { subject, html, text };
 }
 
@@ -83,21 +90,22 @@ export function buildCollaboratorInviteEmail(p: CollaboratorInviteEmailParams): 
   text: string;
 } {
   const subject = `${p.inviterName} invited you to collaborate on "${p.presentationTitle}"`;
-  const html = shell(
-    `Collaborate on ${esc(p.presentationTitle)}`,
-    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
-       ${esc(p.inviterName)} invited you (${esc(p.inviteeEmail)}) to collaborate on
-       <strong>${esc(p.presentationTitle)}</strong> on ${PRODUCT_NAME} — you will be able to
-       push new versions and manage its share links.</p>
-     <p style="margin:0 0 24px">
-       <a href="${p.claimUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
-          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
-         Accept and start collaborating</a></p>
-     <p style="margin:0;color:#a1a1aa;font-size:12px">
-       This invite expires on ${p.expiresAt.toUTCString()}. If the button does not work, open:<br>
-       <span style="word-break:break-all">${p.claimUrl}</span></p>`
-  );
-  const text = `${p.inviterName} invited you to collaborate on "${p.presentationTitle}" on ${PRODUCT_NAME}.\n\nAccept: ${p.claimUrl}\n\nExpires ${p.expiresAt.toUTCString()}.`;
+  const html = shell({
+    preheader: `Work on "${p.presentationTitle}" together: publish new versions, manage who sees it.`,
+    eyebrow: 'Work on a deck together',
+    title: esc(p.presentationTitle),
+    body:
+      para(
+        `<strong>${esc(p.inviterName)}</strong> invited you to work on this presentation with them on ${PRODUCT_NAME}.
+         Once you accept, you can publish new versions of it and manage the links it is shared through.`
+      ) +
+      button(p.claimUrl, 'Accept and open the deck') +
+      fine(
+        `This invitation was sent to ${esc(p.inviteeEmail)} and stays open until ${fmtDate(p.expiresAt)}.`
+      ) +
+      spelledLink(p.claimUrl)
+  });
+  const text = `${p.inviterName} invited you to collaborate on "${p.presentationTitle}" on ${PRODUCT_NAME}.\n\nAccept and open the deck: ${p.claimUrl}\n\nThe invitation stays open until ${fmtDate(p.expiresAt)}.`;
   return { subject, html, text };
 }
 
@@ -122,22 +130,28 @@ export interface FormResponseNoticeParams {
   pendingEdited: number;
 }
 
-/** The "since the last mail" sentence, or '' when nothing was held back. */
+/** What was held back since the last mail, as a sentence, or '' when nothing was. */
 function pendingSentence(p: FormResponseNoticeParams): string {
   const parts: string[] = [];
-  if (p.pendingNew > 0) parts.push(`${p.pendingNew} other new response${p.pendingNew === 1 ? '' : 's'}`);
-  if (p.pendingEdited > 0) parts.push(`${p.pendingEdited} other edit${p.pendingEdited === 1 ? '' : 's'}`);
-  return parts.length === 0 ? '' : ` Since the previous mail, ${parts.join(' and ')} arrived too.`;
+  if (p.pendingNew > 0) parts.push(`${p.pendingNew} more response${p.pendingNew === 1 ? '' : 's'}`);
+  if (p.pendingEdited > 0) parts.push(`${p.pendingEdited} more edit${p.pendingEdited === 1 ? '' : 's'}`);
+  return parts.length === 0 ? '' : ` Since we last wrote, ${parts.join(' and ')} came in too.`;
 }
 
-function responseNoticeMeta(p: FormResponseNoticeParams): string {
-  const link = p.shareTokenName === null ? 'a link since deleted' : `the link "${esc(p.shareTokenName)}"`;
-  return `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
-       Deck: <strong>${esc(p.presentationTitle)}</strong><br>
-       Form: <strong>${esc(p.formName)}</strong><br>
-       Through: ${link}<br>
-       When: ${p.at.toUTCString()}</p>`;
+/** Where the response came through, in words. */
+const throughLink = (p: FormResponseNoticeParams): string =>
+  p.shareTokenName === null ? 'a link you have since deleted' : `the link "${p.shareTokenName}"`;
+
+function responseNoticeFacts(p: FormResponseNoticeParams): string {
+  return facts([
+    ['Deck', esc(p.presentationTitle)],
+    ['Form', esc(p.formName)],
+    ['Through', p.shareTokenName === null ? 'A link you have since deleted' : esc(p.shareTokenName)],
+    ['When', fmtDate(p.at)]
+  ]);
 }
+
+const RESPONSES_STAY = `The answers themselves never travel by email: they wait for you in ${PRODUCT_NAME}. You can switch these notices off for this deck from its responses panel.`;
 
 /**
  * To the DECK OWNER: a new form response arrived (PRDCT-2330). Carries the
@@ -151,22 +165,22 @@ export function buildFormResponseEmail(p: FormResponseNoticeParams): {
   text: string;
 } {
   const subject = `New response on "${p.presentationTitle}"`;
-  const html = shell(
-    'A new response arrived',
-    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
-       Someone answered the <strong>${esc(p.formName)}</strong> form of your ${PRODUCT_NAME} deck.${esc(pendingSentence(p))}</p>
-     ${responseNoticeMeta(p)}
-     <p style="margin:0 0 24px">
-       <a href="${p.deckUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
-          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
-         Open the responses</a></p>
-     <p style="margin:0;color:#a1a1aa;font-size:12px">
-       The answers stay in ${PRODUCT_NAME}; this mail never carries them. Switch these mails off per deck from the responses panel.<br>
-       <span style="word-break:break-all">${p.deckUrl}</span></p>`
-  );
+  const html = shell({
+    preheader: `Someone answered the ${p.formName} form.${pendingSentence(p)}`,
+    eyebrow: 'New response',
+    title: 'Someone answered your form',
+    body:
+      para(
+        `A new answer just came in on <strong>${esc(p.presentationTitle)}</strong>.${esc(pendingSentence(p))}`
+      ) +
+      responseNoticeFacts(p) +
+      button(p.deckUrl, 'Read the responses') +
+      fine(RESPONSES_STAY) +
+      spelledLink(p.deckUrl)
+  });
   const text =
-    `A new response arrived on "${p.presentationTitle}" (form "${p.formName}", through ${p.shareTokenName === null ? 'a link since deleted' : `the link "${p.shareTokenName}"`}) at ${p.at.toUTCString()}.${pendingSentence(p)}\n\n` +
-    `Open the responses: ${p.deckUrl}\n\nThe answers stay in ${PRODUCT_NAME}; this mail never carries them.`;
+    `Someone answered the "${p.formName}" form of "${p.presentationTitle}", through ${throughLink(p)}, on ${fmtDate(p.at)}.${pendingSentence(p)}\n\n` +
+    `Read the responses: ${p.deckUrl}\n\n${RESPONSES_STAY}`;
   return { subject, html, text };
 }
 
@@ -186,24 +200,23 @@ export function buildFormResponseEditedEmail(p: FormResponseEditedParams): {
   text: string;
 } {
   const subject = `A response on "${p.presentationTitle}" was edited`;
-  const html = shell(
-    'An existing response was edited',
-    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
-       An answer already given on the <strong>${esc(p.formName)}</strong> form of your ${PRODUCT_NAME} deck
-       was changed — this is revision ${p.revision} of that response. The earlier revisions are kept;
-       the responses panel shows the history.${esc(pendingSentence(p))}</p>
-     ${responseNoticeMeta(p)}
-     <p style="margin:0 0 24px">
-       <a href="${p.deckUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
-          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
-         Open the responses</a></p>
-     <p style="margin:0;color:#a1a1aa;font-size:12px">
-       The answers stay in ${PRODUCT_NAME}; this mail never carries them. Switch these mails off per deck from the responses panel.<br>
-       <span style="word-break:break-all">${p.deckUrl}</span></p>`
-  );
+  const html = shell({
+    preheader: `An answer on the ${p.formName} form changed. The earlier versions are kept.`,
+    eyebrow: 'Response edited',
+    title: 'Someone changed their answer',
+    body:
+      para(
+        `An answer already given on <strong>${esc(p.presentationTitle)}</strong> was updated. This is version ${p.revision}
+         of that response; the earlier ones are kept, and the responses panel shows the whole history.${esc(pendingSentence(p))}`
+      ) +
+      responseNoticeFacts(p) +
+      button(p.deckUrl, 'See what changed') +
+      fine(RESPONSES_STAY) +
+      spelledLink(p.deckUrl)
+  });
   const text =
-    `A response on "${p.presentationTitle}" (form "${p.formName}", through ${p.shareTokenName === null ? 'a link since deleted' : `the link "${p.shareTokenName}"`}) was edited at ${p.at.toUTCString()} — revision ${p.revision}; earlier revisions are kept.${pendingSentence(p)}\n\n` +
-    `Open the responses: ${p.deckUrl}\n\nThe answers stay in ${PRODUCT_NAME}; this mail never carries them.`;
+    `Someone changed their answer on the "${p.formName}" form of "${p.presentationTitle}", through ${throughLink(p)}, on ${fmtDate(p.at)}. This is version ${p.revision}; the earlier ones are kept.${pendingSentence(p)}\n\n` +
+    `See what changed: ${p.deckUrl}\n\n${RESPONSES_STAY}`;
   return { subject, html, text };
 }
 
@@ -224,19 +237,16 @@ export function buildResponseLinkEmail(p: ResponseLinkEmailParams): {
   text: string;
 } {
   const subject = `Your ${PRODUCT_NAME} form response`;
-  const html = shell(
-    'Your response was recorded',
-    `<p style="margin:0 0 16px;color:#3f3f46;font-size:14px;line-height:1.6">
-       Keep this personal link to view or update your answer later — anyone
-       who has it can edit this one response, so treat it like a password.</p>
-     <p style="margin:0 0 24px">
-       <a href="${p.editUrl}" style="display:inline-block;background:#18181b;color:#ffffff;
-          text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">
-         View or update my response</a></p>
-     <p style="margin:0;color:#a1a1aa;font-size:12px">
-       If the button does not work, open:<br>
-       <span style="word-break:break-all">${p.editUrl}</span></p>`
-  );
-  const text = `Your ${PRODUCT_NAME} form response was recorded.\n\nView or update it: ${p.editUrl}\n\nAnyone holding this link can edit this one response — treat it like a password.`;
+  const html = shell({
+    preheader: 'Your answer is in. Keep this link to read or change it later.',
+    eyebrow: 'Your response',
+    title: 'Got it, your answer is in',
+    body:
+      para('Thank you. Keep this link if you want to read your answer again or change it later:') +
+      button(p.editUrl, 'See or change my answer') +
+      fine('Anyone who has this link can edit this one response, so treat it like a password.') +
+      spelledLink(p.editUrl)
+  });
+  const text = `Your answer is in. Keep this link to read it again or change it later:\n\n${p.editUrl}\n\nAnyone who has this link can edit this one response, so treat it like a password.`;
   return { subject, html, text };
 }

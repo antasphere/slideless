@@ -23,7 +23,7 @@
   import { staggerParts } from '$lib/stagger';
 
   interface Props {
-    /** Field palette: labs-field for gates, paper for error/edge pages. */
+    /** Field palette: umber-field for gates, paper for error/edge pages. */
     palette?: string;
     /** quiet halves the field's reach (error pages). */
     strength?: 'full' | 'quiet';
@@ -39,7 +39,7 @@
   }
 
   let {
-    palette = 'labs-field',
+    palette = 'umber-field',
     strength = 'full',
     width: _width,
     plate = true,
@@ -143,13 +143,14 @@
     position: absolute;
     inset: 0;
   }
+  /* the whole body shows: it stands inside the leaf, over the words, clear of
+     both edges with room for its float and its lean toward the pointer */
   .gate-drawing {
     position: absolute;
-    top: 50%;
-    right: -18%;
-    width: 78%;
+    top: 5%;
+    right: 7%;
+    width: 64%;
     aspect-ratio: 1;
-    transform: translateY(-58%);
   }
   /* the leaf is set INTO the plate, with the hero band's own recess
      (HeroBand .shade: the casts and why they are inset shadows) */

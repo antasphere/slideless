@@ -76,6 +76,19 @@ Object.assign(PALETTES, {
     base: '#241A12',
     hues: ['#1B130C', '#241C13', '#33261A', '#453222', '#5C4129', '#20170F', '#7A4A28']
   },
+  /* the umber paper, the gates' ground (login, sign-up, every GateShell page): the mails' band as
+     a field, from nearly bare paper to a felt pool of the beige accent's own brown. It replaced
+     labs-field on the gates, whose clay read as orange; labs-field stays for the warm plates. */
+  'umber-field': {
+    light: true,
+    base: '#ECE4D6',
+    hues: ['#FAF6EE', '#F6F0E4', '#ECE4D6', '#D9C6AC', '#C9B193', '#F8F3EA', '#B89E80']
+  },
+  'umber-field-dark': {
+    light: false,
+    base: '#1F1A15',
+    hues: ['#171310', '#1F1A15', '#2B241D', '#3A3026', '#4B3E31', '#1B1612', '#6B5844']
+  },
   'studio-field-dark': {
     light: false,
     base: '#161B1F',
