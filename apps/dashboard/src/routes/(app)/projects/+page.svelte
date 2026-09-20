@@ -44,7 +44,7 @@
     try {
       const created = await projects.create({
         name: name.trim(),
-        description: description.trim() || null
+        description: description.trim() || undefined
       });
       showCreateDialog = false;
       toast.success(t('projects.createdToast', { name: created.name }));

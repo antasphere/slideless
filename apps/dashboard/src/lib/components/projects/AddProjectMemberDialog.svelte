@@ -78,7 +78,7 @@
     if (code === 'guest_target') return t('projects.addRefusedGuest');
     if (code === 'project_archived') return t('projects.refusedArchived');
     if (code === 'already_member' || status === 409) return t('projects.addRefusedAlready');
-    if (code === 'not_a_member' || status === 404) return t('projects.addRefusedNotMember');
+    if (code === 'member_not_found' || status === 404) return t('projects.addRefusedNotMember');
     return errorMessage(e, t('projects.addFailed'));
   }
 

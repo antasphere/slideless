@@ -21,7 +21,7 @@
     id="{idPrefix}-name"
     bind:value={name}
     placeholder={t('projects.namePlaceholder')}
-    maxlength={120}
+    maxlength={200}
     autocomplete="off"
     required
   />
@@ -32,7 +32,7 @@
     id="{idPrefix}-description"
     bind:value={description}
     placeholder={t('projects.descriptionPlaceholder')}
-    maxlength={500}
+    maxlength={2000}
     rows={3}
   />
   <p class="text-xs text-muted-foreground">{t('projects.descriptionHint')}</p>
