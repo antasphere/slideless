@@ -323,6 +323,13 @@
       "when": 1789808502424,
       "tag": "0045_workspace_look",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1789929600750,
+      "tag": "0046_projects",
+      "breakpoints": true
     }
   ]
 }
