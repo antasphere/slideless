@@ -366,5 +366,14 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         })
     },
 
-    mcp: { ...slidelessMcp, defaultInstanceName: 'Slideless' }
+    mcp: slidelessMcp,
+
+    // The chassis refusals that name the tool's domain, in Slideless's words (decks, presentations).
+    copy: {
+      guestForbidden: 'Guest access is limited to the decks you were invited to',
+      guestTarget:
+        'This member is an external per-deck guest — their account is not this workspace’s to recover',
+      fileInUse: 'This file is referenced by a presentation version — delete the presentation first',
+      fileInUseOpenApi: 'file_in_use: referenced by a presentation version'
+    }
   };

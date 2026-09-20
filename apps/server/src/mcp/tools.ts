@@ -20,7 +20,7 @@ import {
   type McpToolContext,
   type ToolTextResult
 } from '@antasphere/chassis-server/mcp';
-import { checkScope, wrapToolErrors } from './deck-kit.js';
+import { DECK_MCP_SCOPES, checkScope, wrapToolErrors } from './deck-kit.js';
 
 /**
  * The slideless_ tool set: the product surface (decks, versions, sharing,
@@ -327,7 +327,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     workspace: string | undefined,
     fn: (c: McpToolContext) => Promise<ToolTextResult>
   ): Promise<ToolTextResult> | ToolTextResult => {
-    const denied = checkScope(ctx.principal, 'presentations:read');
+    const denied = checkScope(ctx.principal, DECK_MCP_SCOPES.read);
     if (denied) return denied;
     return wrapToolErrors(() => fn(forWorkspace(ctx, workspace)));
   };
@@ -335,7 +335,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     workspace: string | undefined,
     fn: (c: McpToolContext) => Promise<ToolTextResult>
   ): Promise<ToolTextResult> | ToolTextResult => {
-    const denied = checkScope(ctx.principal, 'presentations:write');
+    const denied = checkScope(ctx.principal, DECK_MCP_SCOPES.write);
     if (denied) return denied;
     return wrapToolErrors(async () => {
       try {

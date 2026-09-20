@@ -5,13 +5,14 @@ import {
   type ErrorHints,
   type ToolTextResult
 } from '@antasphere/chassis-server/mcp';
+import { IDENTITY } from '@slideless/contract';
 
 /**
  * The deck domain's half of the MCP kit: its two scope names and the error
  * hints of its own API codes, bound ONCE so the slideless_ tool set (tools.ts)
  * keeps calling `checkScope(principal, scope)` and `wrapToolErrors(fn)`.
  */
-export const DECK_MCP_SCOPES = { read: 'presentations:read', write: 'presentations:write' } as const;
+export const DECK_MCP_SCOPES = { read: IDENTITY.scopes.read, write: IDENTITY.scopes.write } as const;
 
 export const DECK_ERROR_HINTS: ErrorHints = {
   // ── Presentation domain (the slideless_ tool set) ──────────────────────────

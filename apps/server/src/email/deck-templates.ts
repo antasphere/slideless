@@ -1,4 +1,9 @@
-import { PRODUCT_NAME, esc, shell } from '@antasphere/chassis-server/email';
+import { IDENTITY } from '@slideless/contract';
+import { esc, makeShell } from '@antasphere/chassis-server/email';
+
+/** The product's name and the mails' shared layout, from the tool's identity. */
+const PRODUCT_NAME = IDENTITY.displayName;
+const shell = makeShell({ name: PRODUCT_NAME });
 
 /**
  * The deck domain's transactional mails: share link, collaborator invite and

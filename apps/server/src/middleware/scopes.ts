@@ -1,4 +1,4 @@
-import type { Scope } from '@slideless/contract';
+import { IDENTITY, type Scope } from '@slideless/contract';
 import { createScopeAllowlist, type ScopeRule } from '@antasphere/chassis-server/middleware';
 
 /**
@@ -11,6 +11,9 @@ import { createScopeAllowlist, type ScopeRule } from '@antasphere/chassis-server
  */
 export type { Scope };
 
+/** The three scope names, spelled ONCE in the tool's identity (`packages/contract/src/identity.ts`). */
+const { read: READ, write: WRITE, dataExport: DATA_EXPORT } = IDENTITY.scopes;
+
 /**
  * Products rename presentations:read / presentations:write to their domain's scopes — also in
  * middleware/scopes.ts and the consent page copy.
@@ -20,15 +23,15 @@ export const OAUTH_SCOPES = [
   'profile',
   'email',
   'offline_access',
-  'presentations:read',
-  'presentations:write',
+  READ,
+  WRITE,
   // Full-workspace export download — a deliberate opt-in, never implied by
   // presentations:read (see middleware/scopes.ts).
-  'data:export'
+  DATA_EXPORT
 ] as const;
 
 /** The CLI key's fixed grant — the agent surface, never data:export. */
-export const CLI_KEY_SCOPES = ['presentations:read', 'presentations:write'] as const;
+export const CLI_KEY_SCOPES = [READ, WRITE] as const;
 
 const deckRules: ReadonlyArray<ScopeRule<Scope>> = [
   // Presentation domain (ADR 011): the primary agent surface. Covers the
@@ -49,13 +52,13 @@ const deckRules: ReadonlyArray<ScopeRule<Scope>> = [
   // reads, and the handler's guest wall + read check still rule on top.
   (path, _method, isRead) => {
     if (path === '/api/v1/presentations' || path.startsWith('/api/v1/presentations/')) {
-      return isRead ? 'presentations:read' : 'presentations:write';
+      return isRead ? READ : WRITE;
     }
     return null;
   },
   // Workspace-wide annotation inbox: read-only today — list ONLY the read so
   // any future mutation on this path stays fail-closed until opened here.
-  (path, _method, isRead) => (path === '/api/v1/annotations' && isRead ? 'presentations:read' : null)
+  (path, _method, isRead) => (path === '/api/v1/annotations' && isRead ? READ : null)
   // Deliberately UNLISTED (fail-closed 403 for keys/tokens), like break-glass:
   //  - /collaborators/lookup + /collaborators/claim — public token-redemption
   //    endpoints for HUMANS (they mint accounts/memberships); a machine
@@ -71,8 +74,8 @@ const deckRules: ReadonlyArray<ScopeRule<Scope>> = [
 ];
 
 export const requiredScopeFor = createScopeAllowlist<Scope>({
-  read: 'presentations:read',
-  write: 'presentations:write',
-  dataExport: 'data:export',
+  read: READ,
+  write: WRITE,
+  dataExport: DATA_EXPORT,
   rules: deckRules
 });
