@@ -1,3 +1,4 @@
+import { projectRoleAtLeast } from '@antasphere/chassis-contract';
 import type { Project, ProjectMember, ProjectRole } from './types';
 
 /**
@@ -8,11 +9,8 @@ import type { Project, ProjectMember, ProjectRole } from './types';
  * same two rules, from the `myRole` the API hands over. It decides what is
  * SHOWN, never what is allowed.
  */
-const RANK: Record<ProjectRole, number> = { viewer: 0, editor: 1, manager: 2 };
-
-export function atLeast(role: ProjectRole, floor: ProjectRole): boolean {
-  return RANK[role] >= RANK[floor];
-}
+/** The contract's own rank of the three roles: `manager` contains `editor` contains `viewer`. */
+export const atLeast = (role: ProjectRole, floor: ProjectRole): boolean => projectRoleAtLeast(role, floor);
 
 type Facts = Pick<Project, 'myRole' | 'archivedAt'>;
 

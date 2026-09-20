@@ -829,7 +829,7 @@ export const fr: Record<keyof typeof en, string> = {
   'projects.namePlaceholder': 'Lancement d’automne',
   'projects.descriptionLabel': 'Description',
   'projects.descriptionPlaceholder': 'À quoi sert ce projet',
-  'projects.descriptionHint': 'Facultatif. 500 caractères au plus.',
+  'projects.descriptionHint': 'Facultatif. 2000 caractères au plus.',
   'projects.notFoundTitle': 'Projet introuvable',
   'projects.notFoundBody': 'Ce projet n’existe pas, ou vous n’en êtes pas membre.',
   'projects.backToProjects': 'Retour aux projets',

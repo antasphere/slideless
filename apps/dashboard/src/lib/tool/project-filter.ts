@@ -88,15 +88,17 @@ export function projectsToAddTo<P extends Pick<Project, 'id' | 'myRole' | 'archi
 
 /**
  * Whether the deck's page offers to take the deck out of one project: to who
- * administers the deck, and to the project's manager. `readable` holds no
- * archived project, so a project missing from it takes no change.
+ * administers the deck, archived project or not (taking one's own deck back
+ * is not a change of the project, and the route allows it), and to the
+ * project's manager while the project is open. `readable` holds no archived
+ * project, so a manager's grant on one missing from it takes no change.
  */
 export function canUnlinkFrom(
   projectId: string,
   readable: Pick<Project, 'id' | 'myRole' | 'archivedAt'>[],
   administers: boolean
 ): boolean {
+  if (administers) return true;
   const project = readable.find((p) => p.id === projectId);
-  if (!project || project.archivedAt !== null) return false;
-  return administers || projectCan.edit(project);
+  return project !== undefined && projectCan.edit(project);
 }

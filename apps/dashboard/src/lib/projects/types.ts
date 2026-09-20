@@ -13,6 +13,7 @@ export type {
   ProjectUpdate,
   ProjectsArchivedFilter as ProjectArchivedFilter
 } from '@antasphere/chassis-contract';
-import type { ProjectRole } from '@antasphere/chassis-contract';
+import { projectRoleSchema } from '@antasphere/chassis-contract';
 
-export const PROJECT_ROLES: readonly ProjectRole[] = ['manager', 'editor', 'viewer'];
+/** The three roles in the order a picker offers them, from the contract's own list. */
+export const PROJECT_ROLES = projectRoleSchema.options;

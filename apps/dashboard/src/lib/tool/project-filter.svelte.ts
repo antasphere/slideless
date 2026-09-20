@@ -45,7 +45,9 @@ export function createProjectFilter(page: ProjectFilterPage): ProjectFilter {
       try {
         projects = await deckProjects.readableProjects();
       } catch {
-        // no list of projects, no dropdown: the page still lists its decks
+        // no list of projects, no dropdown: the page lists every deck, since a
+        // remembered project could not be widened back without the dropdown
+        choose(null);
         return;
       }
       if (standingFilter(projectId, projects) !== projectId) choose(null);

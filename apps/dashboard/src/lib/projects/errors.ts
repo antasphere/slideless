@@ -1,8 +1,7 @@
 /**
  * What an answer of the projects API refused, read off the thrown error
- * (PRDCT-2582). The pages go through the `projects` client alone, whose errors
- * carry a `status` and a `code` whichever body it has (the stub today, the SDK
- * after the rebase), so they are read by shape and never by class.
+ * (PRDCT-2582): the SDK's `PlatformApiError` carries a `status` and a `code`.
+ * Read by shape, so a page never imports the SDK's class for one field.
  */
 export function errorStatus(e: unknown): number | null {
   const status = (e as { status?: unknown } | null)?.status;

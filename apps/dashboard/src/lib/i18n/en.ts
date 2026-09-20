@@ -809,7 +809,7 @@ export const en = {
   'projects.namePlaceholder': 'Autumn launch',
   'projects.descriptionLabel': 'Description',
   'projects.descriptionPlaceholder': 'What this project is for',
-  'projects.descriptionHint': 'Optional. 500 characters at most.',
+  'projects.descriptionHint': 'Optional. 2000 characters at most.',
   'projects.notFoundTitle': 'Project not found',
   'projects.notFoundBody': 'This project does not exist, or you are not one of its members.',
   'projects.backToProjects': 'Back to projects',

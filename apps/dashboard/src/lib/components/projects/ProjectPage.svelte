@@ -17,6 +17,7 @@
   import { isNotFound } from '$lib/projects/errors';
   import type { Project } from '$lib/projects/types';
   import { tool } from '$lib/tool';
+  import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -44,6 +45,9 @@
         project = null;
       } else if (!project) {
         loadError = errorMessage(e);
+      } else {
+        // the screen keeps the last answer; say that the fresh one did not come
+        toast.error(t('projects.loadOneFailed', { error: errorMessage(e) }));
       }
     } finally {
       loading = false;

@@ -15,7 +15,7 @@
   import { api, errorMessage } from '$lib/api';
   import { projects } from '$lib/projects/client';
   import { offeredMembers } from '$lib/projects/candidates';
-  import { errorCode, errorStatus } from '$lib/projects/errors';
+  import { errorCode } from '$lib/projects/errors';
   import type { ProjectRole } from '$lib/projects/types';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -74,11 +74,11 @@
   // The refusals that have a sentence of their own; the server's words otherwise.
   function refusalOf(e: unknown): string {
     const code = errorCode(e);
-    const status = errorStatus(e);
     if (code === 'guest_target') return t('projects.addRefusedGuest');
     if (code === 'project_archived') return t('projects.refusedArchived');
-    if (code === 'already_member' || status === 409) return t('projects.addRefusedAlready');
-    if (code === 'member_not_found' || status === 404) return t('projects.addRefusedNotMember');
+    if (code === 'already_member') return t('projects.addRefusedAlready');
+    if (code === 'member_not_found') return t('projects.addRefusedNotMember');
+    // a 404 without that code is the project itself: the page reads it again behind the dialog
     return errorMessage(e, t('projects.addFailed'));
   }
 

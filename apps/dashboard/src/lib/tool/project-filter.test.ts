@@ -127,8 +127,13 @@ describe('who links and unlinks a deck', () => {
     expect(canUnlinkFrom('c', readable, false)).toBe(false);
   });
 
-  it('an archived project, or one missing from the readable list, takes no change', () => {
-    expect(canUnlinkFrom('z', [project('a', 'manager')], true)).toBe(false);
-    expect(canUnlinkFrom('a', [project('a', 'manager', '2026-06-30T17:00:00.000Z')], true)).toBe(false);
+  it('a manager takes nothing out of an archived project, or of one missing from the readable list', () => {
+    expect(canUnlinkFrom('z', [project('a', 'manager')], false)).toBe(false);
+    expect(canUnlinkFrom('a', [project('a', 'manager', '2026-06-30T17:00:00.000Z')], false)).toBe(false);
+  });
+
+  it('whoever administers the deck takes it back out of an archived project too', () => {
+    expect(canUnlinkFrom('a', [project('a', 'viewer', '2026-06-30T17:00:00.000Z')], true)).toBe(true);
+    expect(canUnlinkFrom('z', [], true)).toBe(true);
   });
 });

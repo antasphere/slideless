@@ -49,10 +49,7 @@ export interface DeckProjectsClient {
   readableProjects(): Promise<Project[]>;
 }
 
-/** An answer that says "not there, or not yours": the API's error carries `status`. */
-export function isNotFound(e: unknown): boolean {
-  return typeof e === 'object' && e !== null && 'status' in e && e.status === 404;
-}
+export { isNotFound } from '$lib/projects/errors';
 
 /**
  * SHIM, flagged for removal (told to the wave on 20 September 2026): the
@@ -68,10 +65,11 @@ class DeckListClient extends PlatformClient {
     );
   }
 }
-const deckList = new DeckListClient({ workspaceId: storedWorkspaceId() ?? undefined });
+// built per call, so a workspace switch or a cleared selection reaches it as it reaches `api`
+const deckList = () => new DeckListClient({ workspaceId: storedWorkspaceId() ?? undefined });
 
 export const deckProjects: DeckProjectsClient = {
-  decksOf: (projectId, p) => (projectId ? deckList.presentationsOf(projectId, p) : api.presentations(p)),
+  decksOf: (projectId, p) => (projectId ? deckList().presentationsOf(projectId, p) : api.presentations(p)),
   named: (deck) => deck.projects,
   projectsOf: async (deckId) => (await api.presentation(deckId)).projects,
   async link(deckId, projectId) {

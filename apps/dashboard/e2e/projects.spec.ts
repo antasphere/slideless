@@ -230,7 +230,7 @@ test.describe('Projects — the shell section, four people and two widths', () =
     });
 
     await test.step('Archived shows the archived one, and only it', async () => {
-      await owner.getByRole('combobox', { name: 'Which projects to show' }).click();
+      await owner.getByRole('button', { name: 'Which projects to show' }).click();
       await owner.getByRole('option', { name: 'Archived', exact: true }).click();
       const row = owner.getByRole('row', { name: new RegExp(ARCHIVED_NAME) });
       await expect(row).toBeVisible({ timeout: 15_000 });
@@ -239,14 +239,14 @@ test.describe('Projects — the shell section, four people and two widths', () =
     });
 
     await test.step('All shows both', async () => {
-      await owner.getByRole('combobox', { name: 'Which projects to show' }).click();
+      await owner.getByRole('button', { name: 'Which projects to show' }).click();
       await owner.getByRole('option', { name: 'All', exact: true }).click();
       await expect(owner.getByRole('row', { name: new RegExp(PROJECT_NAME) })).toBeVisible({
         timeout: 15_000
       });
       await expect(owner.getByRole('row', { name: new RegExp(ARCHIVED_NAME) })).toBeVisible();
       // back to the live list for the rest of the walk
-      await owner.getByRole('combobox', { name: 'Which projects to show' }).click();
+      await owner.getByRole('button', { name: 'Which projects to show' }).click();
       await owner.getByRole('option', { name: 'Active', exact: true }).click();
       await expect(owner.getByRole('row', { name: new RegExp(ARCHIVED_NAME) })).toHaveCount(0);
     });
@@ -311,8 +311,8 @@ test.describe('Projects — the shell section, four people and two widths', () =
       const dialog = owner.getByRole('dialog').filter({ hasText: 'Change role' });
       await expect(dialog).toBeVisible();
       await expect(dialog).toContainText(VIEWER.email);
-      await dialog.getByRole('combobox', { name: 'Role' }).click();
-      await owner.getByRole('option', { name: 'Editor' }).click();
+      await dialog.getByRole('button', { name: 'Role', exact: true }).click();
+      await owner.getByRole('option', { name: /^Editor/ }).click();
       await dialog.getByRole('button', { name: 'Change role', exact: true }).click();
       await expect(rowMenu(owner, VIEWER.email)).toContainText('Editor', { timeout: 15_000 });
 
@@ -320,8 +320,8 @@ test.describe('Projects — the shell section, four people and two widths', () =
       await rowMenu(owner, VIEWER.email).getByRole('button', { name: 'Open menu' }).click();
       await owner.getByRole('menuitem', { name: 'Change role', exact: true }).click();
       const again = owner.getByRole('dialog').filter({ hasText: 'Change role' });
-      await again.getByRole('combobox', { name: 'Role' }).click();
-      await owner.getByRole('option', { name: 'Viewer' }).click();
+      await again.getByRole('button', { name: 'Role', exact: true }).click();
+      await owner.getByRole('option', { name: /^Viewer/ }).click();
       await again.getByRole('button', { name: 'Change role', exact: true }).click();
       await expect(rowMenu(owner, VIEWER.email)).toContainText('Viewer', { timeout: 15_000 });
     });
