@@ -36,6 +36,15 @@ const deckIn = (projects: Array<{ id: string; name: string; isBrand: boolean }>)
 const ATLAS = { id: PROJECT, name: 'Atlas', isBrand: false };
 const BOREALIS = { id: PROJECT_2, name: 'Borealis', isBrand: false };
 
+/**
+ * A name the terminal must never see raw: a C1 CSI introducer and a DEL, the
+ * bytes `JSON.stringify` leaves as they are (it escapes C0 only). Every
+ * `--json` pin carries it, so a sink routed through the sanitizer goes red
+ * instead of staying invisible (PRDCT-1353: `--json` is byte-exact).
+ */
+const RAW_NAME = 'Atlas\u009b2K\u007fHIDDEN';
+const RAW_ATLAS = { ...ATLAS, name: RAW_NAME };
+
 /** An error body in the server's shape. */
 const refusal = (status: number, code: string): { status: number; body: unknown } => ({
   status,
@@ -71,7 +80,7 @@ describe('projects link', () => {
   });
 
   it('--json is the deck payload, byte-exact', async () => {
-    const body = deckIn([ATLAS]);
+    const body = deckIn([RAW_ATLAS]);
     const h = routedHarness([route({ status: 200, body })]);
     expect(await run(argv('projects', 'link', PROJECT, DECK.id, '--json'), h.io)).toBe(0);
     expect(h.out()).toBe(`${JSON.stringify(body, null, 2)}\n`);
@@ -125,7 +134,7 @@ describe('projects link', () => {
   for (const [code, status, sentence] of [
     ['project_not_found', 404, 'No such project, or it is not yours to read.'],
     ['not_found', 404, 'No such deck, or it is not yours to read.'],
-    ['insufficient_project_role', 403, 'You need editor or more on this project to put a deck in it.'],
+    ['insufficient_project_role', 403, 'You need the editor role on this project to put a deck in it.'],
     ['project_archived', 409, 'This project is archived and read-only.'],
     ['guest_forbidden', 403, 'You are a guest of this workspace'],
     ['forbidden', 403, 'Only the deck administrator']
@@ -138,6 +147,19 @@ describe('projects link', () => {
       expect(h.err()).not.toContain('terse wire message');
     });
   }
+
+  it('names the role the wire names on insufficient_project_role', async () => {
+    const h = routedHarness([
+      route({
+        status: 403,
+        body: {
+          error: { code: 'insufficient_project_role', message: 'This needs the manager role on the project' }
+        }
+      })
+    ]);
+    expect(await run(argv('projects', 'link', PROJECT, DECK.id), h.io)).toBe(1);
+    expect(h.err()).toContain('You need the manager role on this project to put a deck in it.');
+  });
 });
 
 describe('projects unlink', () => {
@@ -158,6 +180,12 @@ describe('projects unlink', () => {
     const h = routedHarness([route({ status: 200, body: deckIn([]) })]);
     expect(await run(argv('projects', 'unlink', PROJECT, DECK.id), h.io)).toBe(0);
     expect(h.out()).toBe('"Test Deck" is in no project.\n');
+  });
+
+  it('says "take a deck out" on insufficient_project_role, never the link sentence', async () => {
+    const h = routedHarness([route(refusal(403, 'insufficient_project_role'))]);
+    expect(await run(argv('projects', 'unlink', PROJECT, DECK.id), h.io)).toBe(1);
+    expect(h.err()).toContain('You need the editor role on this project to take a deck out of it.');
   });
 
   it('reads not_linked as "nothing to unlink", and forbidden as the two who may', async () => {
@@ -204,7 +232,14 @@ describe('projects brand', () => {
     expect(h.out()).toBe(`House brand\n  id:      ${BRAND_ID}\n  version: 3\n`);
   });
 
-  it('--json is `{ brand }` byte-exact, null included', async () => {
+  it('--json is `{ brand }` byte-exact', async () => {
+    const brand = { ...BRAND_ROW, title: RAW_NAME };
+    const h = routedHarness([get({ status: 200, body: { brand } })]);
+    expect(await run(argv('projects', 'brand', PROJECT, '--json'), h.io)).toBe(0);
+    expect(h.out()).toBe(`${JSON.stringify({ brand }, null, 2)}\n`);
+  });
+
+  it('--json prints `{ brand: null }` as it is when there is none', async () => {
     const h = routedHarness([get({ status: 200, body: { brand: null } })]);
     expect(await run(argv('projects', 'brand', PROJECT, '--json'), h.io)).toBe(0);
     expect(h.out()).toBe(`${JSON.stringify({ brand: null }, null, 2)}\n`);
@@ -586,8 +621,20 @@ describe('push --project', () => {
       {
         projectId: PROJECT,
         linked: false,
-        error: 'You need editor or more on this project to put a deck in it.'
+        error: 'You need the editor role on this project to put a deck in it.'
       }
+    ]);
+  });
+
+  it('--json keeps the raw bytes of the committed deck, the project names included', async () => {
+    const dir = await makeDeckDir();
+    const h = routedHarness(
+      pushRoutes({ commit: () => ({ presentation: deckIn([RAW_ATLAS]), version: VERSION_ROW }) })
+    );
+    expect(await run(argv('push', dir, '--project', PROJECT, '--json'), h.io)).toBe(0);
+    expect(h.out()).toContain(RAW_NAME);
+    expect((JSON.parse(h.out()) as { presentation: { projects: unknown[] } }).presentation.projects).toEqual([
+      RAW_ATLAS
     ]);
   });
 

@@ -805,7 +805,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     },
     async ({ workspace, files, title, entryPath, kind, interactive, presentationId, projectIds }) =>
       write(workspace, async (c) => {
-        if (presentationId !== undefined && projectIds !== undefined) {
+        if (presentationId !== undefined && projectIds?.length) {
           return deny(
             'projectIds applies to a NEW deck only — link an existing deck with ' +
               'slideless_link_presentation_to_project.'

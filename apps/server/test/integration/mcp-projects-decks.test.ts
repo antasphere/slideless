@@ -304,6 +304,18 @@ describe('projectIds on an upload: an editor lands a deck the project’s viewer
     ).toBe(1);
   });
 
+  it('an empty projectIds beside presentationId is a plain new version, not a refusal', async () => {
+    const result = await callTool('editor', 'slideless_upload_presentation_files', {
+      presentationId: deckId,
+      projectIds: [],
+      files: [{ path: 'index.html', contentText: '<!doctype html><title>v2</title>' }]
+    });
+    expect(result.isError, result.text).toBe(false);
+    expect(
+      (await ok('editor', 'slideless_get_presentation', { presentationId: deckId })).currentVersion
+    ).toBe(2);
+  });
+
   it('a project the caller cannot read answers not found on both list filters — never 403', async () => {
     for (const name of ['slideless_list_presentations', 'slideless_list_references']) {
       await expectRefusal('outsider', name, { projectId: project }, 404, 'project_not_found');

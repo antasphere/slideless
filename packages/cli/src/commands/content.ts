@@ -58,7 +58,7 @@ import { explainDeckProjectRefusal, projectsLine, projectsOf } from './projects.
 const UPLOAD_CONCURRENCY = 4;
 
 /** A repeatable option's collector (commander hands it the value and the accumulator). */
-const collectOption = (value: string, all: string[]): string[] => [...all, value];
+const collectOption = (value: string, all: string[] | undefined): string[] => [...(all ?? []), value];
 
 /**
  * The per-blob cap the instance documents (`MAX_FILE_SIZE_MB`, 100 by
@@ -192,8 +192,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .option(
       '--project <id>',
       'put the deck in this project (repeatable; a new deck is linked in the commit, an existing one right after)',
-      collectOption,
-      []
+      collectOption
     )
     .action(async (path: string | undefined, opts: PushOptions, cmd: Command) => {
       const ctx = resolveContext(cmd, io);

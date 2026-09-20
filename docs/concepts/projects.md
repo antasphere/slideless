@@ -65,7 +65,7 @@ project.
 DELETE /api/v1/presentations/{id}/projects/{projectId}
 ```
 
-Unlinking a deck answers `409 not_linked` when the deck was not in the project. A deck that leaves a
+Unlinking a deck answers `404 not_linked` when the deck was not in the project. A deck that leaves a
 project keeps every other project it belongs to.
 
 A push lands a deck in a project directly. Name the projects on the push and the new deck, or the new
@@ -166,14 +166,15 @@ no scope of their own for projects, because a project is a way of reading and wr
 
 ## The refusals
 
-| Answer                          | When                                                   |
-| ------------------------------- | ------------------------------------------------------ |
-| `404 not_found`                 | The deck or the member is not one you can see          |
-| `404 project_not_found`         | No such project, or one you are not a member of        |
-| `404 member_not_found`          | The email or the user id names nobody in the workspace |
-| `403 insufficient_project_role` | Your role in the project does not carry the act        |
-| `403 guest_target`              | The person named is a per-deck guest                   |
-| `409 project_archived`          | The project is archived; unarchive it first            |
-| `409 already_member`            | That person is already in the project                  |
-| `409 not_linked`                | The deck is not linked to the project                  |
-| `400 not_a_brand`               | The deck named as the brand is not a brand reference   |
+| Answer                          | When                                                          |
+| ------------------------------- | ------------------------------------------------------------- |
+| `404 not_found`                 | The deck or the member is not one you can see                 |
+| `404 project_not_found`         | No such project, or one you are not a member of               |
+| `404 member_not_found`          | The email or the user id names nobody in the workspace        |
+| `403 insufficient_project_role` | Your role in the project does not carry the act               |
+| `403 guest_target`              | The person named is a per-deck guest                          |
+| `409 project_archived`          | The project is archived; unarchive it first                   |
+| `409 already_member`            | That person is already in the project                         |
+| `404 not_linked`                | The deck is not in the project, so there is nothing to unlink |
+| `409 not_linked`                | The deck named as the brand is not linked to the project yet  |
+| `400 not_a_brand`               | The deck named as the brand is not a brand reference          |

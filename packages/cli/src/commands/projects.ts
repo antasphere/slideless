@@ -84,12 +84,21 @@ export function explainDeckProjectRefusal(e: PlatformApiError, verb: DeckProject
         : 'That deck is not in this project, so there is nothing to unlink.';
     case 'not_a_brand':
       return 'That deck is not a brand reference: its AGENT.md frontmatter names no `type: brand`. Push it as a brand first (`slideless brand push`).';
-    case 'insufficient_project_role':
-      return verb === 'brand'
-        ? 'You need the manager role on this project to change its brand.'
-        : verb === 'list'
-          ? 'Your role on this project does not allow this listing.'
-          : 'You need editor or more on this project to put a deck in it.';
+    case 'insufficient_project_role': {
+      // The wire names the role the route gates on (`This needs the editor
+      // role on the project`), and the chassis reads it from there; the verb
+      // only says what the role would have allowed.
+      const role = /needs the (\w+) role/.exec(e.message)?.[1] ?? (verb === 'brand' ? 'manager' : 'editor');
+      const act =
+        verb === 'brand'
+          ? 'to change its brand'
+          : verb === 'unlink'
+            ? 'to take a deck out of it'
+            : verb === 'list'
+              ? 'for this listing'
+              : 'to put a deck in it';
+      return `You need the ${role} role on this project ${act}.`;
+    }
     case 'project_archived':
       return 'This project is archived and read-only. Unarchive it first to change what it holds.';
     case 'guest_forbidden':

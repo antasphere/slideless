@@ -1288,7 +1288,7 @@ migrate` on an unchanged schema):
   to the subquery's own tables.** In a WHERE it is qualified. A predicate builder that is embedded
   in both places therefore takes a raw qualified reference (`PROJECTS_ID`, `PRESENTATIONS_ID`,
   `sql\`dpp_r.project_id\``), never a column object, and every subquery alias is prefixed
-  (`prj_pm`, `dpp_r`) so it cannot shadow the caller's.
+(`prj_pm`, `dpp_r`) so it cannot shadow the caller's.
 - **A test fixture whose deck owner is the WORKSPACE owner cannot pin a 404 to a non-member:
   the workspace owner manages every project.** The first `deck-projects.test.ts` run failed 15 of
   29 tests on that alone, and the code was right. The deck author of an access-rule fixture is a
