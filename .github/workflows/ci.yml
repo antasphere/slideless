@@ -102,11 +102,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The hub is private: mint a short-lived token from the
+      # antasphere-federation-drill GitHub App (contents:read on antasphere/hub)
+      # rather than carry a personal token that expires every 90 days.
+      - uses: actions/create-github-app-token@v1
+        id: hub-checkout
+        with:
+          app-id: ${{ secrets.FEDERATION_DRILL_APP_ID }}
+          private-key: ${{ secrets.FEDERATION_DRILL_APP_KEY }}
+          owner: antasphere
+          repositories: hub
       - uses: actions/checkout@v4
         with:
           repository: antasphere/hub
           ref: dev
-          token: ${{ secrets.FEDERATION_CHECKOUT_TOKEN }}
+          token: ${{ steps.hub-checkout.outputs.token }}
           path: .federation-hub
       - uses: docker/setup-buildx-action@v3
       - name: Build the Slideless image
