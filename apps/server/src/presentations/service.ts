@@ -323,7 +323,18 @@ export class PresentationService {
         return { ok: false, failure: { code: 'session_expired' } };
       }
 
+      // The project rows FOR SHARE first, like `linkProject`: an archive
+      // landing between this check and the link insert waits here, or is
+      // seen by the check (a fresh snapshot per statement under READ
+      // COMMITTED). A phantom id locks nothing and fails the check.
       const projectIds = [...new Set(opts.projectIds ?? [])];
+      if (projectIds.length > 0) {
+        await tx
+          .select({ id: projects.id })
+          .from(projects)
+          .where(and(inArray(projects.id, projectIds), eq(projects.workspaceId, opts.workspaceId)))
+          .for('share');
+      }
       for (const projectId of projectIds) {
         if (!(await canLinkIntoProject(tx, opts.principal, projectId))) {
           return { ok: false, failure: { code: 'project_not_found', projectId } };

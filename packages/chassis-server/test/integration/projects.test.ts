@@ -458,6 +458,42 @@ describe('members: picked among the workspace’s own active non-guest members',
     await expectError(await send('GET', `/projects/${projectId}`, leaver), 404, 'not_found');
   });
 
+  it('the members list pages on a cursor that survives the removal of the row it names', async () => {
+    const paged = await createProject(actors.manager!, 'Paged');
+    for (const name of ['editor', 'viewer', 'outsider', 'leaver'] as const) {
+      await send('POST', `/projects/${paged}/members`, actors.manager!, {
+        userId: actors[name]!.userId,
+        role: 'viewer'
+      });
+    }
+    const first = await readJson(await send('GET', `/projects/${paged}/members?limit=2`, actors.manager!));
+    expect(first.members).toHaveLength(2);
+    expect(first.nextCursor).toMatch(/^\d+\.[0-9a-f-]{36}$/);
+    // The row the cursor names is removed before the next page is asked for.
+    const lastOnPage = first.members[1].userId;
+    expect((await send('DELETE', `/projects/${paged}/members/${lastOnPage}`, actors.manager!)).status).toBe(
+      200
+    );
+    const second = await readJson(
+      await send('GET', `/projects/${paged}/members?limit=2&cursor=${first.nextCursor}`, actors.manager!)
+    );
+    expect(second.members).toHaveLength(2);
+    const third = await readJson(
+      await send('GET', `/projects/${paged}/members?limit=2&cursor=${second.nextCursor}`, actors.manager!)
+    );
+    expect(third.members).toHaveLength(1);
+    expect(third.nextCursor).toBeNull();
+    const seen = [...first.members, ...second.members, ...third.members].map(
+      (m: { userId: string }) => m.userId
+    );
+    expect(new Set(seen).size).toBe(5);
+    // A cursor that is not one of ours reads as no cursor.
+    const fromTop = await readJson(
+      await send('GET', `/projects/${paged}/members?limit=10&cursor=garbage`, actors.manager!)
+    );
+    expect(fromTop.members).toHaveLength(4);
+  });
+
   it('a manager removes someone else, and there is no last-manager guard', async () => {
     const solo = await createProject(actors.leaver!, 'Solo');
     const gone = await send('DELETE', `/projects/${solo}/members/${actors.leaver!.userId}`, actors.leaver!);

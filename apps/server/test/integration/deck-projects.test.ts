@@ -514,6 +514,37 @@ describe('unlinking: the deck administrator, or a project manager', () => {
   });
 });
 
+describe('the deck administrator unlinks by the link alone, even after losing the project', () => {
+  it('an author removed from the project still takes their deck back out, and the members lose it', async () => {
+    // The author is an editor of the project since the tiers test; remove them.
+    expect((await send('DELETE', `/projects/${project}/members/${userIds.author}`, 'manager')).status).toBe(
+      200
+    );
+    // The author no longer reads the project: its link is invisible in the payload...
+    const byAuthor = await readJson(await send('GET', `/presentations/${deck}`, 'author'));
+    expect(byAuthor.projects).toEqual([]);
+    // ...but the link still opens the deck to the project's members.
+    expect((await send('GET', `/presentations/${deck}`, 'viewer')).status).toBe(200);
+    // Severing it is the administrator's right, project readable or not.
+    expect((await send('DELETE', `/presentations/${deck}/projects/${project}`, 'author')).status).toBe(200);
+    await expectError(await send('GET', `/presentations/${deck}`, 'viewer'), 404, 'not_found');
+    // Done twice, it is not_linked; a phantom project is the same answer for the administrator.
+    await expectError(
+      await send('DELETE', `/presentations/${deck}/projects/${project}`, 'author'),
+      404,
+      'not_linked'
+    );
+    await expectError(
+      await send('DELETE', `/presentations/${deck}/projects/00000000-0000-4000-8000-000000000000`, 'author'),
+      404,
+      'not_linked'
+    );
+    // Back as an editor, linked again, for the tests that follow.
+    await addToProject('author', 'editor');
+    expect((await send('PUT', `/presentations/${deck}/projects/${project}`, 'author')).status).toBe(200);
+  });
+});
+
 describe('projectIds on a push: an editor lands a deck the project’s viewers read', () => {
   const blob = (label: string): Blob => ({
     path: 'index.html',

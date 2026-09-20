@@ -227,10 +227,15 @@ export class ChassisClient<TScope extends string> {
   }
 
   /** Append cursor-pagination params to a list path. */
-  protected pathWithQuery(base: string, params: ListParams): string {
+  protected pathWithQuery(
+    base: string,
+    params: ListParams,
+    extra: Record<string, string | undefined> = {}
+  ): string {
     const query = new URLSearchParams();
     if (params.cursor) query.set('cursor', params.cursor);
     if (params.limit !== undefined) query.set('limit', String(params.limit));
+    for (const [key, value] of Object.entries(extra)) if (value !== undefined) query.set(key, value);
     const qs = query.toString();
     return qs ? `${base}?${qs}` : base;
   }
@@ -430,9 +435,7 @@ export class ChassisClient<TScope extends string> {
 
   /** The caller's projects (every project for a workspace owner or admin). `archived`: `false` by default. */
   projects(params: ListParams & { archived?: ProjectsArchivedFilter } = {}): Promise<ProjectsList> {
-    const base = this.pathWithQuery('/projects', params);
-    if (params.archived === undefined) return this.request('GET', base);
-    return this.request('GET', `${base}${base.includes('?') ? '&' : '?'}archived=${params.archived}`);
+    return this.request('GET', this.pathWithQuery('/projects', params, { archived: params.archived }));
   }
 
   /** The caller becomes the project's first manager. */

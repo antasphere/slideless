@@ -109,6 +109,23 @@ const projectSelection = (principal: Principal) => ({
   memberCount: sql<number>`(SELECT count(*)::int FROM project_members prj_count WHERE prj_count.project_id = ${PROJECTS_ID})`
 });
 
+/**
+ * The members list's cursor: `<microseconds since the epoch>.<row id>`, the
+ * row's own sort key. Not a row id looked up at page time (`keysetBefore`):
+ * project_members HARD-deletes rows, so a cursor naming a member removed
+ * between two pages would compare against NULL and end the roster early.
+ */
+const MEMBER_CURSOR_RE = /^(\d{1,20})\.([0-9a-f-]{36})$/i;
+
+function memberCursor(cursor: string | undefined): { micros: string; id: string } | null {
+  const match = cursor ? MEMBER_CURSOR_RE.exec(cursor) : null;
+  return match ? { micros: match[1]!, id: match[2]! } : null;
+}
+
+function memberCursorOf(row: { id: string; createdAt: Date }): string {
+  return `${BigInt(row.createdAt.getTime()) * 1000n}.${row.id}`;
+}
+
 const memberSelection = {
   id: projectMembers.id,
   userId: workspaceMembers.userId,
@@ -229,13 +246,8 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
       .orderBy(desc(projects.createdAt), desc(projects.id))
       .limit(limit + 1);
     const { page, nextCursor } = pageOf(rows, limit);
-    return c.json(
-      {
-        projects: page.filter((p) => p.myRole !== null).map((p) => toWire({ ...p, myRole: p.myRole! })),
-        nextCursor
-      },
-      200
-    );
+    // The WHERE is the rule: every selected row carries a role.
+    return c.json({ projects: page.map((p) => toWire({ ...p, myRole: p.myRole! })), nextCursor }, 200);
   });
 
   // ── Create ───────────────────────────────────────────────────────────────
@@ -381,7 +393,7 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
     const { id } = c.req.valid('param');
     const { cursor, limit } = c.req.valid('query');
     if ((await projectRole(db, principal, id)) === null) return c.json(notFound(), 404);
-    const cursorId = cursorRowId(cursor);
+    const after = memberCursor(cursor);
     const rows = await db
       .select(memberSelection)
       .from(projectMembers)
@@ -390,17 +402,18 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
       .where(
         and(
           eq(projectMembers.projectId, id),
-          ...(cursorId
+          ...(after
             ? [
-                sql`(${projectMembers.createdAt}, ${projectMembers.id}) < (SELECT ${projectMembers.createdAt}, ${projectMembers.id} FROM ${projectMembers} WHERE ${projectMembers.id} = ${cursorId} AND ${projectMembers.projectId} = ${id})`
+                sql`(${projectMembers.createdAt}, ${projectMembers.id}) < (to_timestamp(${after.micros}::numeric / 1000000), ${after.id}::uuid)`
               ]
             : [])
         )
       )
       .orderBy(desc(projectMembers.createdAt), desc(projectMembers.id))
       .limit(limit + 1);
-    const { page, nextCursor } = pageOf(rows, limit);
-    return c.json({ members: page.map(memberToWire), nextCursor }, 200);
+    const page = rows.slice(0, limit);
+    const last = rows.length > limit ? page[page.length - 1] : undefined;
+    return c.json({ members: page.map(memberToWire), nextCursor: last ? memberCursorOf(last) : null }, 200);
   });
 
   /** One member of one project, by the person's user id, or undefined. */
@@ -428,6 +441,8 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
       .select({
         id: workspaceMembers.id,
         userId: workspaceMembers.userId,
+        email: userTable.email,
+        name: userTable.name,
         origin: workspaceMembers.origin,
         isActive: workspaceMembers.isActive
       })
@@ -462,13 +477,17 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
         .insert(projectMembers)
         .values({ projectId: id, memberId: target.id, role: body.role, addedBy: principal.userId })
         .onConflictDoNothing({ target: [projectMembers.projectId, projectMembers.memberId] })
-        .returning({ id: projectMembers.id })
+        .returning({ createdAt: projectMembers.createdAt })
     );
     if (inserted === null) return c.json(archived(), 409);
-    if (inserted.length === 0) {
+    const [row] = inserted;
+    if (!row) {
       return c.json(err('already_member', 'This person is already a member of the project'), 409);
     }
-    const member = (await findProjectMember(db, id, target.userId))!;
+    // The answer is built from what the insert returned and the target row
+    // read above, never from a re-read outside the transaction: a removal
+    // landing in between would turn a succeeded add into a 500.
+    const member = { ...target, role: body.role, addedBy: principal.userId, createdAt: row.createdAt };
     c.set('audit', {
       action: 'project.member_add',
       resourceType: 'project',

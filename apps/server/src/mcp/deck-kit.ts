@@ -18,7 +18,15 @@ export const DECK_ERROR_HINTS: ErrorHints = {
   // ── Presentation domain (the slideless_ tool set) ──────────────────────────
   not_found:
     'The resource does not exist or this credential cannot read it (deck reads are private — ' +
-    'owner, workspace admin, or active collaborator only). Check the id with slideless_list_presentations.',
+    'the owner, a workspace admin, an active collaborator, or a member of a project the deck is in). ' +
+    'Check the id with slideless_list_presentations.',
+  project_not_found:
+    'No such project, or this credential cannot read it, or the push named a project it may not link ' +
+    'into (editor or more, not archived). List yours with slideless_list_projects.',
+  project_archived: 'The project is archived and read-only — unarchive it first, or leave it as it is.',
+  insufficient_project_role:
+    'This credential holds a role on the project below what the act needs (the message names it). ' +
+    'Ask a project manager to raise it.',
   forbidden:
     'This credential lacks the deck-level right for this action (e.g. only the deck owner or a ' +
     'workspace admin can delete/invite). Ask the deck owner to do it or to grant access.',

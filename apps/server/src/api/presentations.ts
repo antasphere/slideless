@@ -638,17 +638,23 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id, projectId } = c.req.valid('param');
     const deck = await service.get(principal.workspaceId, id);
     if (!deck || !(await service.canRead(principal, deck))) return c.json(notFound(), 404);
-    const role = await service.projectRoleOf(principal, projectId);
-    if (role === null) return c.json(projectNotFound(), 404);
-    const administers = canAdministerDeck(principal, deck);
-    if (!administers && role !== 'manager') {
-      return c.json(
-        err('forbidden', 'Only the deck owner, a workspace admin or a project manager does this'),
-        403
-      );
-    }
-    if (!administers && (await service.projectArchivedAt(principal.workspaceId, projectId)) !== null) {
-      return c.json(projectArchived(), 409);
+    // The deck administrator severs the link by its EXISTENCE, without
+    // reading the project: an owner removed from the project (or swept from
+    // it) must still be able to take their deck back out, or the project's
+    // members would keep reading and writing a deck its owner can no longer
+    // see the link of. Everyone else acts through the project grant.
+    if (!canAdministerDeck(principal, deck)) {
+      const role = await service.projectRoleOf(principal, projectId);
+      if (role === null) return c.json(projectNotFound(), 404);
+      if (role !== 'manager') {
+        return c.json(
+          err('forbidden', 'Only the deck owner, a workspace admin or a project manager does this'),
+          403
+        );
+      }
+      if ((await service.projectArchivedAt(principal.workspaceId, projectId)) !== null) {
+        return c.json(projectArchived(), 409);
+      }
     }
     if (!(await service.unlinkProject(deck.id, projectId))) {
       return c.json(err('not_linked', 'This deck is not in that project'), 404);
@@ -748,7 +754,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       resourceId: deck.id,
       metadata: { title: deck.title }
     });
-    return c.json(presentationToWire(deleted), 200);
+    return c.json(await wire(principal, deleted), 200);
   });
 
   // ── Duplicate (PRDCT-2279) ─────────────────────────────────────────────────
