@@ -448,11 +448,22 @@ describe('the MCP surface', () => {
     );
   });
 
-  it('tools/list names the two chassis tools, then slideless_whoami, then the slideless_ set, in this order', () => {
+  it('tools/list names the two chassis tools, then slideless_whoami, then the chassis projects, then the slideless_ set, in this order', () => {
     expect(tools.map((t) => t.name)).toEqual([
       'get_me',
       'list_files',
       'slideless_whoami',
+      // Projects are a chassis concept, so the chassis registers their nine
+      // tools too — under this tool's prefix, before its own set.
+      'slideless_list_projects',
+      'slideless_get_project',
+      'slideless_list_project_members',
+      'slideless_create_project',
+      'slideless_update_project',
+      'slideless_archive_project',
+      'slideless_add_project_member',
+      'slideless_set_project_member_role',
+      'slideless_remove_project_member',
       'slideless_list_presentations',
       'slideless_get_presentation',
       'slideless_list_versions',

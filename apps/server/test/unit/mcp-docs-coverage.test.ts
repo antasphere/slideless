@@ -20,11 +20,24 @@ const DOC_PATH = resolve(DOCS, 'agents/mcp-connector.md');
 const COUNT_PAGES = ['index.md', 'getting-started/connect-an-agent.md'].map((p) => resolve(DOCS, p));
 
 /**
- * One tool of the set is not in that file: the chassis registers
- * `<toolPrefix>whoami` itself (`buildMcpServer`, PRDCT-2531), right before the
- * tool's own set. It is named here by its literal, the name the docs carry.
+ * Ten tools of the set are in no tool-side source: the chassis registers
+ * `<toolPrefix>whoami` itself (`buildMcpServer`, PRDCT-2531) and, beside it,
+ * the nine PROJECT tools (PRDCT-2577 — a project is a chassis concept, so its
+ * tools are the chassis'), all built from a prefix at run time. They are
+ * named here by their literals, the names the docs carry.
  */
-const CHASSIS_REGISTERED = ['slideless_whoami'];
+const CHASSIS_REGISTERED = [
+  'slideless_whoami',
+  'slideless_list_projects',
+  'slideless_get_project',
+  'slideless_list_project_members',
+  'slideless_create_project',
+  'slideless_update_project',
+  'slideless_archive_project',
+  'slideless_add_project_member',
+  'slideless_set_project_member_role',
+  'slideless_remove_project_member'
+];
 
 function registeredTools(): string[] {
   const src = readFileSync(TOOLS_SRC, 'utf8');
