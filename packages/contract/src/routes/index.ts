@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { apiErrorSchema, cursorPageQuerySchema, versionParamSchema } from '@antasphere/chassis-contract';
+import { apiErrorSchema, cursorPageQuerySchema } from '@antasphere/chassis-contract';
 import {
   defineChassisRoutes,
   errorResponses,
@@ -10,6 +10,7 @@ import {
 } from '@antasphere/chassis-contract/routes';
 import { chassisContract } from '../chassis.js';
 import { IDENTITY } from '../identity.js';
+import { versionParamSchema } from '../schemas/versions.js';
 import {
   ASSET_PATH_MAX_LENGTH,
   assetPrecheckRequestSchema,

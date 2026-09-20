@@ -4,10 +4,9 @@ import {
   isValidMediaType,
   jsonDepthOf,
   MAX_OPAQUE_JSON_DEPTH,
-  memberUpdateSchema,
-  versionNumberSchema,
-  versionParamSchema
+  memberUpdateSchema
 } from '@antasphere/chassis-contract';
+import { versionNumberSchema, versionParamSchema } from '../src/schemas/versions.js';
 import {
   annotationCreateSchema,
   formResponsePayloadSchema,
