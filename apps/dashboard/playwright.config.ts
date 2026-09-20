@@ -59,7 +59,14 @@ export default defineConfig({
     // has to know about. It depends on `smoke` alone: depending on every project
     // makes Playwright schedule them in reverse, and `decks` needs to run before
     // the projects that leave a deck behind.
-    { name: 'workspaces', testMatch: /workspaces\.spec\.ts/, dependencies: ['smoke'] }
+    { name: 'workspaces', testMatch: /workspaces\.spec\.ts/, dependencies: ['smoke'] },
+    // PRDCT-2582 / PRDCT-2584: the Projects section of the shell — the list, a
+    // project's page, its members and their roles, the archive, and what each
+    // of four people may and may not do with it. Declared after `workspaces`
+    // (the projects run in declaration order, one worker): it adds four people
+    // to the instance and leaves projects behind, which no earlier project has
+    // to know about, and its own walk stays in the default workspace.
+    { name: 'projects', testMatch: /projects\.spec\.ts/, dependencies: ['smoke'] }
   ],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,
