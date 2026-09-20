@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import type { ListParams, PresentationListParams } from '@slideless/sdk';
-import { CliUsageError, fmtBytes, printJson, table, type CliIo } from '@antasphere/chassis-cli';
+import { CliUsageError, drainPages, fmtBytes, printJson, table, type CliIo } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext } from '../cli.js';
 import { provenanceOf } from '../references.js';
 import { provenanceLine } from './content.js';
@@ -50,15 +50,12 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
             ? ctx.client.presentations(p)
             : explainedDeckProject('list', () => ctx.client.presentations(p));
         const first = await listed(params);
-        const rows = [...first.presentations];
-        if (opts.all) {
-          let cursor = first.nextCursor;
-          while (cursor) {
-            const page = await listed({ ...params, cursor });
-            rows.push(...page.presentations);
-            cursor = page.nextCursor;
-          }
-        }
+        const rows = opts.all
+          ? await drainPages({ rows: first.presentations, nextCursor: first.nextCursor }, async (cursor) => {
+              const page = await listed({ ...params, cursor });
+              return { rows: page.presentations, nextCursor: page.nextCursor };
+            })
+          : [...first.presentations];
         const nextCursor = opts.all ? null : first.nextCursor;
         if (ctx.json) return printJson(io, { presentations: rows, nextCursor });
         if (rows.length === 0) {

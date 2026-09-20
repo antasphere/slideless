@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -115,6 +115,27 @@ describe('projects link', () => {
     expect(await run(argv('projects', 'link', PROJECT, dir), h.io)).toBe(1);
     expect(h.calls).toEqual([]);
     expect(h.err()).toContain('to http://other, but you are working against');
+  });
+
+  it('refuses a folder no push linked, and a name that is neither an id nor a folder, before any call', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slideless-projects-'));
+    const h = routedHarness([route({ status: 200, body: deckIn([ATLAS]) })]);
+    expect(await run(argv('projects', 'link', PROJECT, dir), h.io)).toBe(1);
+    expect(h.calls).toEqual([]);
+    expect(h.err()).toContain(`No .slideless.json in ${dir}`);
+
+    const g = routedHarness([route({ status: 200, body: deckIn([ATLAS]) })]);
+    expect(await run(argv('projects', 'link', PROJECT, 'my-deck'), g.io)).toBe(1);
+    expect(g.calls).toEqual([]);
+    expect(g.err()).toContain('my-deck is neither a deck id nor a folder');
+  });
+
+  it('a 404 under --workspace says which workspace was asked, like every other command', async () => {
+    const ws = 'aaaaaaaa-0000-4000-8000-000000000000';
+    const h = routedHarness([route(refusal(404, 'project_not_found'))]);
+    expect(await run(argv('projects', 'link', PROJECT, DECK.id, '--workspace', ws), h.io)).toBe(1);
+    expect(h.err()).toContain('No such project, or it is not yours to read.');
+    expect(h.err()).toContain(`looked in the workspace "${ws}"`);
   });
 
   it('says so when there is neither a deck nor a link file', async () => {
@@ -291,6 +312,21 @@ describe('projects brand', () => {
     const b = routedHarness([brandList(), put(refusal(400, 'not_a_brand'))]);
     expect(await run(argv('projects', 'brand', PROJECT, BRAND_ID), b.io)).toBe(1);
     expect(b.err()).toContain('is not a brand reference');
+  });
+
+  it('a title that is also the name of a folder no push linked is read as a title', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slideless-projects-'));
+    await mkdir(join(dir, 'House brand'));
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const h = routedHarness([brandList(), put({ status: 200, body: { brand: BRAND_ROW } })]);
+      expect(await run(argv('projects', 'brand', PROJECT, 'House brand'), h.io)).toBe(0);
+      expect(wire(h.calls)).toEqual(['GET /api/v1/presentations', `PUT /api/v1/projects/${PROJECT}/brand`]);
+      expect(h.calls[1]!.body).toEqual({ presentationId: BRAND_ID });
+    } finally {
+      process.chdir(cwd);
+    }
   });
 
   it('asks for the manager role, not the editor one, on insufficient_project_role', async () => {
@@ -602,6 +638,17 @@ describe('push --project', () => {
     // The one that refused says which and why; the other still went in.
     expect(h.err()).toContain(`project ${PROJECT_2}: This project is archived and read-only.`);
     expect(h.out()).toContain('projects: Atlas');
+  });
+
+  it('on an existing deck a project that cannot be read is a linked: false row after the version lands, never an abort', async () => {
+    const dir = await makeDeckDir();
+    await writeLink(dir, { presentationId: DECK.id, baseUrl: URL_ });
+    const h = routedHarness(pushRoutes({ existing: true, link: () => refusal(404, 'project_not_found') }));
+    expect(await run(argv('push', dir, '--project', PROJECT, '--no-open'), h.io)).toBe(0);
+    expect(h.out()).toContain('version 4');
+    expect(h.err()).toContain(`project ${PROJECT}: No such project`);
+    // No pre-flight read on this branch: the link route is the one reporter.
+    expect(wire(h.calls)).not.toContain(`GET /api/v1/projects/${PROJECT}`);
   });
 
   it('--json carries projectLinks, one row per --project, with the refusal', async () => {

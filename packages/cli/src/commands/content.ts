@@ -16,6 +16,7 @@ import {
   type VersionCommitted
 } from '@slideless/contract';
 import {
+  CliApiRefusal,
   CliUsageError,
   fmtBytes,
   isInteractive,
@@ -560,19 +561,24 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
   // commit's `projectIds` would be a duplicate and the link route a second
   // no-op call. Order is the one the person wrote.
   const wantedProjects = [...new Set(opts.project ?? [])];
-  // Each project read once BEFORE any upload, like `--brand`: a wrong or
-  // unreadable `--project` is a usage error that must cost nothing, and the
-  // sentence names the project it was about.
-  for (const projectId of wantedProjects) {
-    try {
-      await ctx.client.project(projectId);
-    } catch (e) {
-      if (!(e instanceof PlatformApiError)) throw e;
-      // The project route's own 404 is `not_found`; here it is about the project.
-      const asProject =
-        e.code === 'not_found' ? new PlatformApiError(404, 'project_not_found', e.message) : e;
-      const line = explainDeckProjectRefusal(asProject, 'push') ?? e.message;
-      throw new CliUsageError(`--project ${projectId}: ${line}`);
+  // On a NEW deck the projects ride in the commit, which refuses the whole
+  // push over one of them: each is read once BEFORE any upload, like
+  // `--brand`, so a wrong or unreadable `--project` costs nothing, and the
+  // sentence names the project it was about. An existing deck commits its
+  // version first and links after, one call each, so its link loop is the
+  // one reporter (a refused project is a `linked: false` row, never an abort).
+  if (!existingId) {
+    for (const projectId of wantedProjects) {
+      try {
+        await ctx.client.project(projectId);
+      } catch (e) {
+        if (!(e instanceof PlatformApiError)) throw e;
+        // The project route's own 404 is `not_found`; here it is about the project.
+        const asProject =
+          e.code === 'not_found' ? new PlatformApiError(404, 'project_not_found', e.message) : e;
+        const line = explainDeckProjectRefusal(asProject, 'push') ?? e.message;
+        throw new CliApiRefusal(`--project ${projectId}: ${line}`, e.status);
+      }
     }
   }
 

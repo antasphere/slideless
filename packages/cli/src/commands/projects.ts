@@ -1,12 +1,19 @@
+import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Command } from 'commander';
 import { PlatformApiError } from '@slideless/sdk';
 import type { Presentation, PresentationProjectRef } from '@slideless/contract';
-import { CliUsageError, explainProjectRefusal, printJson, type CliIo } from '@antasphere/chassis-cli';
+import {
+  CliApiRefusal,
+  CliUsageError,
+  explainProjectRefusal,
+  printJson,
+  type CliIo
+} from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
 import { LINK_FILENAME, linkedDeckId } from '../manifest.js';
 import { listReferences } from './content.js';
-import { resolveReference } from '../references.js';
+import { isDeckId, resolveReference } from '../references.js';
 
 /**
  * The DECK's side of the projects (ADR 026). The chassis owns the concept
@@ -39,17 +46,36 @@ function projectsGroup(program: Command): Command {
   return group;
 }
 
+/** Whether the argument names a folder on disk (a file or nothing is not one). */
+async function isFolder(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The deck a verb acts on: the id as written, else the `.slideless.json` of
  * the named folder (or of the current one), which must name THIS instance.
- * A folder path and a deck id are told apart the way the rest of the CLI
- * does it — an argument that names an existing link file is a folder. The
+ * A folder that no push linked is refused here, never sent as an id; the
  * instance check is `linkedDeckId`'s, the one `push` runs.
  */
 async function resolveDeck(ctx: CliContext, deck: string | undefined): Promise<string> {
   if (deck !== undefined) {
+    if (isDeckId(deck)) return deck;
+    if (!(await isFolder(resolve(deck)))) {
+      throw new CliUsageError(
+        `${deck} is neither a deck id nor a folder. Name the deck by id, or by a folder a push linked.`
+      );
+    }
     const linked = await linkedDeckId(ctx, resolve(deck), 'Name the deck by id instead.');
-    return linked ?? deck;
+    if (!linked) {
+      throw new CliUsageError(
+        `No ${LINK_FILENAME} in ${deck} — push that folder first, or name the deck by id.`
+      );
+    }
+    return linked;
   }
   const linked = await linkedDeckId(ctx, resolve('.'), 'Name the deck by id instead.');
   if (!linked) {
@@ -121,7 +147,7 @@ export async function explainedDeckProject<T>(verb: DeckProjectVerb, run: () => 
   } catch (e) {
     if (e instanceof PlatformApiError) {
       const line = explainDeckProjectRefusal(e, verb);
-      if (line) throw new CliUsageError(line);
+      if (line) throw new CliApiRefusal(line, e.status);
     }
     throw e;
   }
@@ -226,8 +252,11 @@ export function registerProjectDeckCommands(program: Command, io: CliIo): void {
 
       // A brand is named the way every reference ref is (`--brand`, `pull`):
       // its id, its title or the start of its title, among the brands the
-      // caller can read; a linked folder still counts.
-      const linked = await linkedDeckId(ctx, resolve(ref), 'Name the brand by id or title instead.');
+      // caller can read; a folder a push linked counts too, and only a folder
+      // is read as one (a title that happens to match a folder's name is a title).
+      const linked = (await isFolder(resolve(ref)))
+        ? await linkedDeckId(ctx, resolve(ref), 'Name the brand by id or title instead.')
+        : null;
       const deckId = linked ?? resolveReference(await listReferences(ctx, 'brand'), ref, 'brand').id;
       const set = await explainedDeckProject('brand', () => ctx.client.setProjectBrand(project, deckId));
       if (ctx.json) return printJson(io, set);

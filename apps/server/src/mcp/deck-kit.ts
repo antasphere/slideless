@@ -21,7 +21,7 @@ export const DECK_ERROR_HINTS: ErrorHints = {
     'the owner, a workspace admin, an active collaborator, or a member of a project the deck is in). ' +
     'Check the id with slideless_list_presentations.',
   // `project_archived` and `insufficient_project_role` are the chassis' codes
-  // and carry the chassis' hints (PROJECT_ERROR_HINTS, merged below — the deck
+  // and carry the chassis' hints (projectErrorHints, merged below — the deck
   // routes answer them too); only the deck-side codes are worded here.
   project_not_found:
     'No such project, or this credential cannot read it, or the push named a project it may not link ' +
@@ -60,7 +60,7 @@ export const checkScope = createScopeCheck(DECK_MCP_SCOPES);
 
 // The chassis composes the table (its own groups, then the deck's last):
 // one composition, read here and in `buildMcpServer`, never copied.
-const hints = composeErrorHints(DECK_ERROR_HINTS);
+const hints = composeErrorHints(DECK_ERROR_HINTS, IDENTITY.mcp.toolPrefix);
 
 /** `wrapToolErrors` reading the chassis hints (the project ones included) AND the deck ones. */
 export const wrapToolErrors = (fn: () => Promise<ToolTextResult>): Promise<ToolTextResult> =>

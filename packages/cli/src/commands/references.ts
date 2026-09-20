@@ -3,7 +3,14 @@ import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { PlatformApiError, type ReferenceListParams } from '@slideless/sdk';
 import { AGENT_DOC_PATH, REFERENCE_TYPES, type Presentation, type ReferenceType } from '@slideless/contract';
-import { CliUsageError, printJson, table, writeNoFollow, type CliIo } from '@antasphere/chassis-cli';
+import {
+  CliUsageError,
+  drainPages,
+  printJson,
+  table,
+  writeNoFollow,
+  type CliIo
+} from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
 import { LINK_FILENAME, readLink, writeLink } from '../manifest.js';
 import {
@@ -117,15 +124,12 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
             ? ctx.client.references(p)
             : explainedDeckProject('list', () => ctx.client.references(p));
         const first = await listed(params);
-        const rows = [...first.presentations];
-        if (opts.all) {
-          let cursor = first.nextCursor;
-          while (cursor) {
-            const page = await listed({ ...params, cursor });
-            rows.push(...page.presentations);
-            cursor = page.nextCursor;
-          }
-        }
+        const rows = opts.all
+          ? await drainPages({ rows: first.presentations, nextCursor: first.nextCursor }, async (cursor) => {
+              const page = await listed({ ...params, cursor });
+              return { rows: page.presentations, nextCursor: page.nextCursor };
+            })
+          : [...first.presentations];
         const nextCursor = opts.all ? null : first.nextCursor;
         if (ctx.json) return printJson(io, { references: rows, nextCursor });
         if (rows.length === 0) {
