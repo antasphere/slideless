@@ -1240,3 +1240,35 @@ migrate` on an unchanged schema):
   `config.json` of `{}` and a `cli-plugins` symlink to the real one, so `docker compose` and
   `buildx` still resolve), exported in the shell that runs `docker build` or
   `pnpm turbo test:integration`. Public images need no credentials, so nothing is lost.
+
+## The tool's identity in one definition (PRDCT-2531, 2026-09-20)
+
+- **A test suite that takes the identity from its host pins nothing about its value.** The chassis
+  suites read the key prefix, the scopes and the hub client id from `{ boot, scopes, … }`, so they
+  stay green whatever the host says: rename `slk` to anything and every one of them still passes.
+  The literals therefore live on the PRODUCT's side, in
+  `apps/server/test/integration/identity-pins.test.ts` (the prefix on a minted key and on an
+  accepted bearer, the OTel service name, the MCP server name and `slideless_whoami`, the mail
+  subjects, the fallback page, the four wire sentences, the three OpenAPI strings), and they were
+  written BEFORE the move, on the tree as it was, so the move is judged by them and not by a test
+  written to agree with it. Never make that file read `IDENTITY`.
+- **Spreading a `createRoute` result drops its `getRoutingPath`: re-word a route through a
+  factory, never a spread.** `@hono/zod-openapi` attaches `getRoutingPath` with
+  `Object.defineProperty(route, 'getRoutingPath', { enumerable: false })`, and an object spread
+  copies enumerable properties only, so the copy is a plain config and no longer what
+  `createRoute` returns. A route whose wording depends on the tool (the export route's scope in its
+  summary, the file delete route's in-use sentence) is built INSIDE `defineChassisRoutes` from the
+  identity and the `copy` slot, with one `createRoute` call per route.
+- **`turbo` without `--continue` silently skips the dependants of a failed task.** The CLI's test
+  task exits 1 on this machine's file-watcher limit with every test green (`EMFILE … watch`, after
+  the run), and turbo then never starts what depends on it: one gate run ended without the 368
+  server unit tests having run at all, and the only red line was the flaky task's own. Run the
+  gate as `pnpm turbo lint typecheck test build --continue`, and judge it by the per-package test
+  COUNTS against the last known figures, never by the absence of a red line.
+- **A docs-coverage test that scans a source file as text breaks when a registration moves.**
+  `apps/server/test/unit/mcp-docs-coverage.test.ts` finds the tools by matching
+  `registerTool('slideless_…'` in `apps/server/src/mcp/tools.ts`. Once the chassis registers
+  `<toolPrefix>whoami` itself (`buildMcpServer`), that name is in no tool-side source and is built
+  from a prefix at run time, so the scan loses it while the server still serves it. The test now
+  carries the literal (`CHASSIS_REGISTERED = ['slideless_whoami']`); a text scan is only as good
+  as the rule "every name is a literal in THAT file", so re-read it whenever a registration moves.

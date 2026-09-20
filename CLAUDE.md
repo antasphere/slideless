@@ -13,7 +13,21 @@ deploys) + `dev` (day-to-day work).
   it publishes to npm as **`@antasphere/slideless`** (binary still `slideless`, released via
   `.github/workflows/publish-cli.yml` on `cli-v*` tags — internal/cli-release.md). Env var prefix
   `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
-- API key prefix `slk` (`packages/chassis-server/src/apikeys/service.ts`).
+- **One definition**: `packages/contract/src/identity.ts` (`IDENTITY`, typed by `ToolIdentity` of
+  `@antasphere/chassis-contract`) spells the slug, the display name, the key prefix, the three
+  scopes, the CLI's binary and env prefix, the MCP server name and tool prefix, the OTel service
+  name and the image name ONCE. It feeds the three existing inputs: `defineChassisContract`
+  (`packages/contract/src/chassis.ts`), the `identity` slot of `slidelessTool`
+  (`apps/server/src/tool.ts`; the deck-named sentences of the chassis sit in its `copy` slot) and
+  `cliIdentity(IDENTITY)` in `packages/cli/src/cli.ts`. No `packages/chassis-*` file names the tool
+  (`git grep -i slideless -- 'packages/chassis-*'` returns nothing), and
+  `apps/server/test/integration/identity-pins.test.ts` pins every visible value by its literal.
+  What cannot read it at run time (package names, the `bin` key, the image reference, the Postgres
+  role, env var names, the MCP tool-name literals) is listed in the project OS,
+  `knowledge/internal/identity-audit-server-and-packages.md`.
+- API key prefix `slk` (`IDENTITY.apiKeyPrefix`; `ApiKeyService` in
+  `packages/chassis-server/src/apikeys/service.ts` takes it as a required constructor value, with
+  no chassis default).
 - Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
 - License: fair-code under the Sustainable Use License 1.0, licensor Antasphere (`LICENSE`; every
   `package.json` says `SEE LICENSE IN LICENSE`, the CLI included). Say fair-code or source-available,
