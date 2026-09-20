@@ -17,6 +17,7 @@
   import { page } from '$app/state';
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import { Tag } from '$lib/components/ui/tag';
+  import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import { PREVIEW_SANDBOX } from '$lib/tool/decks';
   import { canPreviewDeck, createThumbnailController } from '$lib/tool/decks/preview.svelte';
   import { descriptionOf, fontsOf, swatchesOf } from '$lib/tool/references';
@@ -28,10 +29,10 @@
   import { seedOf } from '$lib/brand/seed';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
-  import type { Presentation } from '@slideless/contract';
+  import type { DeckWithProjects } from '$lib/tool/projects-client';
 
   interface Props {
-    deck: Presentation;
+    deck: DeckWithProjects;
     /** The sheet is open on this reference. */
     selected?: boolean;
     onOpen: () => void;
@@ -141,6 +142,8 @@
         <span class="fact">{t('decks.noVersions')}</span>
       {/if}
     </p>
+    <!-- the projects the reference sits in (PRDCT-2584): the reader's own only -->
+    <DeckProjectTags {deck} />
   </div>
 </button>
 

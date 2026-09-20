@@ -1,5 +1,6 @@
 <script lang="ts" module>
-  export type DeckDrawingKind = 'preview' | 'links' | 'collaborators' | 'annotations' | 'forms' | 'versions';
+  export type DeckDrawingKind =
+    'preview' | 'links' | 'projects' | 'collaborators' | 'annotations' | 'forms' | 'versions';
 </script>
 
 <script lang="ts">
@@ -44,6 +45,16 @@
     <g class="shift shift-x">
       <circle class="ring ring--c" cx="83" cy="48" r="8" />
       <circle class="dot dot--c" cx="83" cy="48" r="3.6" />
+    </g>
+  {:else if kind === 'projects'}
+    <!-- a folder, and the slide that goes into it -->
+    <path class="ln ln--soft" d="M12,34 V27 Q12,23 16,23 H33 L39,30 H50" />
+    <rect class="bx" x="12" y="34" width="72" height="46" rx="5" />
+    <line class="ln ln--thin" x1="21" y1="70" x2="47" y2="70" />
+    <g class="shift shift-y">
+      <rect class="bx bx--front" x="40" y="16" width="38" height="28" rx="4" />
+      <line class="ln ln--thin" x1="47" y1="25" x2="60" y2="25" />
+      <line class="ln ln--c draw" pathLength="1" x1="47" y1="33" x2="70" y2="33" />
     </g>
   {:else if kind === 'collaborators'}
     <!-- people joined to one slide; one of them holds the pen -->

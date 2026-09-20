@@ -15,6 +15,7 @@
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import ShareTokensPanel from './ShareTokensPanel.svelte';
   import CollaboratorsPanel from './CollaboratorsPanel.svelte';
+  import DeckProjectsPanel from '$lib/tool/components/projects/DeckProjectsPanel.svelte';
   import AnnotationsPanel from './AnnotationsPanel.svelte';
   import FormResponsesPanel from './FormResponsesPanel.svelte';
   import VersionsPanel from './VersionsPanel.svelte';
@@ -285,6 +286,13 @@
     <DeckMetaPanel {deck} />
 
     <ShareTokensPanel {deckId} list={tokensList} versions={versionsList.items} />
+
+    <!-- A guest is never a project's member (the design of 20 September 2026):
+         the block is not theirs. Adding the deck to a project widens who reads
+         it, so it takes what managing its collaborators takes. -->
+    {#if me.origin !== 'guest'}
+      <DeckProjectsPanel {deckId} deckTitle={deck.title} canManage={canManageCollaborators} />
+    {/if}
 
     <CollaboratorsPanel {deckId} canManage={canManageCollaborators} />
 

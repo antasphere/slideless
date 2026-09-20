@@ -109,6 +109,12 @@ describe('the gate', () => {
   });
 });
 
+describe('the project page', () => {
+  it('gives the shell what a project holds here: its brand and its decks', () => {
+    expect(tool.project.Resources).toBeDefined();
+  });
+});
+
 describe('the audit vocabulary', () => {
   it('names every action the deck routes write, sorted', () => {
     expect(tool.audit.actions).toHaveLength(20);

@@ -9,6 +9,8 @@
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
   import PushInstructions from '$lib/tool/components/decks/PushInstructions.svelte';
   import DeckCard from '$lib/tool/components/decks/DeckCard.svelte';
+  import ProjectFilter from '$lib/tool/components/projects/ProjectFilter.svelte';
+  import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import FormError from '$lib/components/shared/FormError.svelte';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
@@ -20,11 +22,11 @@
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
-  import { api } from '$lib/api';
   import { kindLabel } from '$lib/tool/decks';
+  import { deckProjects, isNotFound, type DeckWithProjects } from '$lib/tool/projects-client';
+  import { createProjectFilter } from '$lib/tool/project-filter.svelte';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
-  import type { Presentation } from '@slideless/contract';
 
   let { data } = $props();
 
@@ -32,14 +34,31 @@
   // to the decks they were invited to, never creates new ones here.
   const isGuest = $derived(data.me.origin === 'guest');
 
-  const list = createPagedList<Presentation>(
-    async (p) => {
-      const { presentations, nextCursor } = await api.presentations(p);
-      return { items: presentations, nextCursor };
-    },
-    { remember: 'decks' }
-  );
+  // The project filter (PRDCT-2584), remembered across reloads and pages. The
+  // list is made anew for each choice and remembered per choice; with no
+  // filter it keeps the name `decks`, the one the shell warms. A remembered
+  // project that is gone or no longer readable answers 404: the filter falls
+  // back to all projects and forgets itself, without a word.
+  const filter = createProjectFilter('decks');
+  const list = $derived.by(() => {
+    const projectId = filter.projectId;
+    return createPagedList<DeckWithProjects>(
+      async (p) => {
+        try {
+          const { presentations, nextCursor } = await deckProjects.decksOf(projectId, p);
+          return { items: presentations, nextCursor };
+        } catch (e) {
+          if (projectId && isNotFound(e)) filter.forget();
+          throw e;
+        }
+      },
+      { remember: filter.listName('decks') }
+    );
+  });
 
+  $effect(() => {
+    void filter.load();
+  });
   $effect(() => {
     void list.load();
   });
@@ -98,7 +117,7 @@
   // "New deck" is instructions, not an upload form — decks arrive via push.
   let showPushDialog = $state(false);
 
-  const columns: ColumnDef<Presentation, unknown>[] = $derived([
+  const columns: ColumnDef<DeckWithProjects, unknown>[] = $derived([
     {
       accessorKey: 'title',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('decks.colTitle') }),
@@ -114,6 +133,13 @@
       cell: ({ row }) =>
         `${kindLabel(row.original.kind)}${row.original.interactive ? ` · ${t('decks.badgeInteractive')}` : ''}`,
       meta: { title: t('decks.colKind'), width: '160px' }
+    },
+    {
+      id: 'projects',
+      header: () => t('deckProjects.colProjects'),
+      // SECURITY: project names are USER-AUTHORED; the tags render them as text.
+      cell: ({ row }) => renderComponent(DeckProjectTags, { deck: row.original }),
+      meta: { title: t('deckProjects.colProjects'), width: '200px' }
     },
     {
       accessorKey: 'currentVersion',
@@ -137,12 +163,10 @@
       meta: { title: t('decks.colUpdated'), width: '130px' }
     }
   ]);
-  // the columns a reader may hide: every one but the title
-  const hideable = $derived(
-    columns.filter((column) => 'accessorKey' in column && column.accessorKey !== 'title')
-  );
-  const columnId = (column: ColumnDef<Presentation, unknown>) =>
+  const columnId = (column: ColumnDef<DeckWithProjects, unknown>) =>
     'accessorKey' in column ? String(column.accessorKey) : (column.id ?? '');
+  // the columns a reader may hide: every one but the title
+  const hideable = $derived(columns.filter((column) => columnId(column) !== 'title'));
 </script>
 
 <!-- the page opens as the overview and the brands do: on a field, the
@@ -191,6 +215,10 @@
   {/if}
 {/snippet}
 
+{#snippet projectFilter()}
+  <ProjectFilter {filter} id="decks-project-filter" />
+{/snippet}
+
 {#snippet newDeck()}
   {#if !isGuest}
     <Button size="sm" class="h-8 gap-1.5" onclick={() => (showPushDialog = true)}>
@@ -208,7 +236,7 @@
   <TableSkeleton columns={5} />
 {:else if list.error && !decks.length}
   <p class="text-sm text-destructive" in:appear>{t('decks.loadFailed', { error: list.error })}</p>
-{:else if !decks.length}
+{:else if !decks.length && !filter.projectId}
   <Card.Root class="mx-auto mt-6 max-w-xl">
     <Card.Header>
       <Card.Title class="text-base">{t('decks.emptyTitle')}</Card.Title>
@@ -226,12 +254,18 @@
     <TableToolbar
       searchPlaceholder={t('decks.searchPlaceholder')}
       bind:searchValue={query}
-      count={countLine}
+      count={decks.length ? countLine : undefined}
+      filters={projectFilter}
       view={viewMenu}
       actions={newDeck}
       bind:height={toolbarHeight}
     />
-    {#if view === 'cards'}
+    {#if !decks.length}
+      <!-- a project with no deck: the toolbar stays, so the filter can be changed -->
+      <p class="py-10 text-center text-sm text-muted-foreground" in:appear>
+        {t('deckProjects.emptyDecks')}
+      </p>
+    {:else if view === 'cards'}
       <div in:appear>
         {#if shown.length}
           <div class="deck-grid grid gap-4 sm:grid-cols-2 xl:grid-cols-3" use:entering>

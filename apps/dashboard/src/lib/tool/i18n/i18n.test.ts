@@ -9,6 +9,7 @@ describe('the French typography rule, on the references section', () => {
   const pinned = (Object.keys(fr) as (keyof typeof fr)[]).filter(
     (k) =>
       k.startsWith('refs.') ||
+      k.startsWith('deckProjects.') ||
       k === 'nav.brands' ||
       k === 'nav.templates' ||
       k === 'nav.library' ||

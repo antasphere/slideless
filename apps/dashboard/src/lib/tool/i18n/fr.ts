@@ -561,5 +561,61 @@ export const fr: Record<keyof typeof en, string> = {
     'Cette instance se connecte via Antasphere. Connectez-vous pour réclamer votre invitation.',
   'collab.ssoWrongAccount':
     'Vous êtes connecté en tant que {current}, mais cette invitation est destinée à {email}. Connectez-vous avec le compte invité pour la réclamer.',
-  'collab.finishing': 'Finalisation de votre invitation…'
+  'collab.finishing': 'Finalisation de votre invitation…',
+  // the decks of a project, the projects of a deck (PRDCT-2582, PRDCT-2584)
+  'deckProjects.filterAria': 'Filtrer par projet',
+  'deckProjects.filterAll': 'Tous les projets',
+  'deckProjects.colProjects': 'Projets',
+  'deckProjects.tagBrand': 'identité',
+  'deckProjects.tagBrandOf': 'Identité du projet',
+  'deckProjects.emptyDecks': 'Aucune présentation dans ce projet pour le moment.',
+  'deckProjects.emptyBrands': 'Aucune identité dans ce projet pour le moment.',
+  'deckProjects.emptyTemplates': 'Aucun modèle dans ce projet pour le moment.',
+  'deckProjects.emptyHow': 'Envoyez-y une présentation depuis la ligne de commande.',
+  'deckProjects.emptyOr': 'Ou liez-en une depuis sa page.',
+  'deckProjects.brandTitle': 'Identité',
+  'deckProjects.brandDescription': 'L’identité avec laquelle les présentations de ce projet sont faites.',
+  'deckProjects.brandNone': 'Pas encore d’identité.',
+  'deckProjects.brandSet': 'Choisir une identité',
+  'deckProjects.brandChange': 'Changer',
+  'deckProjects.brandClear': 'Retirer',
+  'deckProjects.brandLoadFailed': 'Impossible de charger l’identité : {error}',
+  'deckProjects.brandPickTitle': 'Choisir l’identité du projet',
+  'deckProjects.brandPickDescription':
+    'Une des identités de l’espace de travail. Les membres du projet pourront la lire.',
+  'deckProjects.brandPickEmpty':
+    'Cet espace de travail n’a pas encore d’identité. Envoyez-en une d’abord, depuis la Bibliothèque.',
+  'deckProjects.brandPickFailed': 'Impossible de charger les identités : {error}',
+  'deckProjects.brandPickSubmit': 'Utiliser cette identité',
+  'deckProjects.brandSaved': 'Identité choisie.',
+  'deckProjects.brandClearTitle': 'Retirer l’identité du projet ?',
+  'deckProjects.brandClearDescription':
+    'Le projet fonctionne sans identité. L’identité elle-même n’est pas supprimée et reste liée au projet.',
+  'deckProjects.brandCleared': 'Identité retirée.',
+  'deckProjects.decksTitle': 'Présentations',
+  'deckProjects.decksDescription': 'Les présentations liées à ce projet. Ses membres peuvent les lire.',
+  'deckProjects.add': 'Ajouter une présentation',
+  'deckProjects.addTitle': 'Ajouter une présentation au projet',
+  'deckProjects.addDescription':
+    'Vos présentations qui ne sont pas encore dans ce projet. Lier une présentation permet aux membres du projet de la lire. C’est pourquoi seul le propriétaire d’une présentation la lie.',
+  'deckProjects.addEmpty': 'Vous n’avez plus de présentation à ajouter.',
+  'deckProjects.addSubmit': 'Ajouter au projet',
+  'deckProjects.linked': 'Présentation ajoutée au projet.',
+  'deckProjects.unlink': 'Retirer du projet',
+  'deckProjects.unlinkShort': 'Retirer',
+  'deckProjects.unlinkAria': 'Retirer {deck} du projet',
+  'deckProjects.unlinkFromAria': 'Retirer la présentation de {project}',
+  'deckProjects.unlinkTitle': 'Retirer cette présentation du projet ?',
+  'deckProjects.unlinkDescription':
+    '{deck} quitte {project}. Les membres du projet ne la lisent plus par le projet. La présentation elle-même n’est pas supprimée.',
+  'deckProjects.unlinked': 'Présentation retirée du projet.',
+  'deckProjects.panelTitle': 'Projets',
+  'deckProjects.panelDescription':
+    'Les projets où se trouve cette présentation. Les membres d’un projet peuvent lire ses présentations.',
+  'deckProjects.panelEmpty': 'Cette présentation n’est dans aucun projet.',
+  'deckProjects.panelLoadFailed': 'Impossible de charger les projets : {error}',
+  'deckProjects.addToProject': 'Ajouter à un projet',
+  'deckProjects.addToProjectTitle': 'Ajouter cette présentation à un projet',
+  'deckProjects.addToProjectDescription':
+    'Les projets où vous êtes éditeur ou responsable. Les membres du projet choisi pourront lire cette présentation.'
 };
