@@ -15,6 +15,7 @@ vi.mock('$lib/api', async (original) => ({
 
 const { tool } = await import('./index');
 const { behindWorkspace, buildNav, isActive, phoneTabs } = await import('$lib/nav');
+const { pathCrumbs } = await import('$lib/components/shell/path');
 const { actionFamilies } = await import('$lib/components/audit/audit-filters');
 const { createDeckOverview } = await import('./overview.svelte');
 const { listScope } = await import('$lib/stores/pagedList.svelte');
@@ -60,6 +61,13 @@ describe('the menu', () => {
     expect(isActive(library, '/templates')).toBe(true);
     expect(isActive(library, '/decks')).toBe(false);
     expect(isActive(library, '/templates-of-mine')).toBe(false);
+    // the path in the top bar names the open tab: Library / Templates
+    const nav = buildNav({ role: 'member', origin: 'local' });
+    expect(pathCrumbs(nav, '/templates').map((c) => [c.label, c.href])).toEqual([
+      ['Library', '/brands'],
+      ['Templates', '/templates']
+    ]);
+    expect(pathCrumbs(nav, '/brands')).toHaveLength(2);
   });
 
   it('a guest reads no workspace reference: decks only', () => {

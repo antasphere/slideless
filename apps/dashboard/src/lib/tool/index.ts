@@ -39,6 +39,10 @@ export const tool: ToolContribution<DeckOverview> = {
               blurb: t('nav.blurb.library'),
               href: '/brands',
               also: ['/templates'],
+              tabs: [
+                { href: '/brands', label: t('nav.brands') },
+                { href: '/templates', label: t('nav.templates') }
+              ],
               icon: Library,
               pattern: 'aurora'
             }

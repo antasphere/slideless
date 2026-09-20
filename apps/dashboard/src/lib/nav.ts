@@ -26,6 +26,8 @@ export interface NavItem {
   icon: Component;
   /** Extra path prefixes that light this item (a section reached by tabs from it). */
   also?: string[];
+  /** The pages the section carries as tabs, when the tool names them: the path in the top bar reads the open one here. */
+  tabs?: { href: string; label: string }[];
   /** The drawing the section's tile carries: a key of the brand's pattern library. */
   pattern: string;
 }
