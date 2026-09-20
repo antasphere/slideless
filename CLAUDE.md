@@ -114,6 +114,22 @@ deploys) + `dev` (day-to-day work).
   deck. A failed read check answers **404, never 403** (deck existence is not probeable).
   Workspace membership alone is NOT a deck read grant — collaborators are external parties
   invited to one deck, and revoking a grant must cut content access immediately.
+- **A deck linked to a project is read by the project's members, in the read rule's THREE
+  homes at once (ADR 026)**: `canReadDeck`, the list's WHERE and `blobReadScope` each call
+  `deckProjectReadPredicate` (`apps/server/src/presentations/projects.ts`), itself the chassis'
+  `projectGrantPredicate` (`packages/chassis-server/src/projects/access.ts`, the ONE statement
+  of who holds a grant: guest refused on the principal and on the row, live membership, one
+  workspace, the role ladder, the operator view, the archived-write rule) over
+  `presentation_projects`. Change one home, change all three; `deck-projects.test.ts` pins each
+  alone. The write rule has a FOURTH home: `commitVersion` checks inside its own transaction and
+  carries the editor branch beside `canWriteDeck`. Linking is the deck administrator's act with
+  editor or more on the project (it widens reads); a non-reader of a project gets 404, never 403,
+  a proven reader below the role 403 `insufficient_project_role`, an archived project 409
+  `project_archived` on every change but unarchive. Project membership is LOCAL on both editions
+  (never under `hub_managed`), a guest is never a project member (403 `guest_forbidden` on the
+  whole `/projects` subtree), and a grant dies with the workspace membership it rides on (the
+  foreign key's cascade; the hub sweep deletes the grants itself since it only deactivates).
+  Nothing under `packages/chassis-*` names a deck, a brand or Slideless.
 - **The BLOB surface carries the same policy (SL-B1, ADR 013 amendment)**: the generic
   `/files` routes — list, `GET /files/{id}`, `GET|HEAD /files/{id}/content`, DELETE — apply
   `blobReadScope` (`presentations/service.ts`), the SQL form of `canReadDeck`: blobs you

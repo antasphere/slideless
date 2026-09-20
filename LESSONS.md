@@ -1272,3 +1272,31 @@ migrate` on an unchanged schema):
   from a prefix at run time, so the scan loses it while the server still serves it. The test now
   carries the literal (`CHASSIS_REGISTERED = ['slideless_whoami']`); a text scan is only as good
   as the rule "every name is a literal in THAT file", so re-read it whenever a registration moves.
+
+## Projects in the chassis (PRDCT-2576 / PRDCT-2578, 2026-09-20, lane A of the projects wave)
+
+- **The hub reconcile DEACTIVATES a swept membership and never deletes it, so a foreign key's
+  ON DELETE CASCADE never fires on a hub removal.** `identity/hub-reconcile.ts` flips
+  `is_active` and `projectOrgMembership` reuses the same row when the hub adds the person back.
+  A design that says "a removed member loses X by cascade" is true for a local delete and false
+  for the cloud edition; anything that must die with a hub removal is deleted in the sweep's own
+  transaction (the project grants are, `projects-cloud.test.ts` pins a real removal and re-add
+  through the fake hub). A LOCAL deactivation by an admin (`PATCH /members/{id}`) is a pause and
+  keeps such rows on purpose.
+- **A drizzle column object inside a `sql` template renders UNQUALIFIED in the select list of a
+  single-table query (`"id"`, not `"projects"."id"`), and inside a subquery that bare name binds
+  to the subquery's own tables.** In a WHERE it is qualified. A predicate builder that is embedded
+  in both places therefore takes a raw qualified reference (`PROJECTS_ID`, `PRESENTATIONS_ID`,
+  `sql\`dpp_r.project_id\``), never a column object, and every subquery alias is prefixed
+  (`prj_pm`, `dpp_r`) so it cannot shadow the caller's.
+- **A test fixture whose deck owner is the WORKSPACE owner cannot pin a 404 to a non-member:
+  the workspace owner manages every project.** The first `deck-projects.test.ts` run failed 15 of
+  29 tests on that alone, and the code was right. The deck author of an access-rule fixture is a
+  plain member, and the setup owner appears nowhere else.
+- **A per-deck route is not done until it is in the existence-oracle probe table**
+  (`test/integration/deck-existence-oracle.test.ts`): the completeness check pins the table to
+  the OpenAPI document, and a new `PUT /presentations/{id}/projects/{projectId}` turned it red
+  before any handler was probed. The SDK coverage guards (`packages/sdk/test/route-coverage.test.ts`,
+  `packages/chassis-sdk/test/route-coverage.test.ts`) and the export's reserved-entry list test do
+  the same for a new route and a new bundle entry: expect all three to go red on a route, and
+  read them as the checklist they are.
