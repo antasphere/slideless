@@ -81,6 +81,8 @@ describe('GET /workspace/export, the entry list of the Slideless bundle', () => 
       'members.json',
       'invitations.json',
       'api-keys.json',
+      'projects.json',
+      'project_members.json',
       'audit-log.ndjson',
       'files.json',
       `files/${liveId}-kept.bin`,
