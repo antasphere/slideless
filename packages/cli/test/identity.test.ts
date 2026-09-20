@@ -198,6 +198,9 @@ const COMMANDS = [
   'config',
   'workspaces',
   'workspace',
+  // chassis: the subgroups of the workspace (the tool hangs link/unlink/brand
+  // off this same group, which is why it keeps its place here).
+  'projects',
   // Slideless: decks, authoring, references, sharing, response files
   'list',
   'get',

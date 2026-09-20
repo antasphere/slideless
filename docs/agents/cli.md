@@ -270,7 +270,8 @@ re-uploaded.
 - Flags: `--title`, `--entry`, `--kind presentation|app|plan`,
   `--interactive`, `--id`, `--new`, `--open` / `--no-open`, `--brand` /
   `--template` (the references this deck was made from, recorded on it:
-  "References: brand, template" below).
+  "References: brand, template" below), and `--project` (repeatable — the
+  projects the deck goes in: "Projects" below).
 
 **open** opens the page of the deck a folder is linked to: it reads
 `.slideless.json` (deck id + instance) and composes the same URL a push
@@ -465,6 +466,98 @@ into `metadata.references`, one entry per type, every other entry and every othe
 metadata key kept. The push prints the result as a `references:` line, `brand
 <id>@<n>, template <id>@<n>`, and `slideless get <id>` shows the same entries as
 `made from:`.
+
+## Projects
+
+A project is a subgroup of the workspace: a name, its own members with one of
+three roles (viewer < editor < manager), the decks linked to it and at most one
+brand. [Projects](../concepts/projects.md) is the model — a workspace
+membership is not a grant on its decks, and the project is the grant.
+
+```bash
+slideless projects list                          # the projects you belong to
+slideless projects list --archived all           # …the archived ones too (false | true | all)
+slideless projects get <project>                 # one project, with your own role on it
+slideless projects create "Atlas" --description "The launch work"
+slideless projects create "Atlas" --metadata '{"client":"acme"}'
+slideless projects update <project> --name "Atlas 2026" --description "…"
+slideless projects update <project> --clear-description
+slideless projects update <project> --metadata '{"client":"acme"}'
+slideless projects archive <project>             # read-only, out of the default list. Never deleted
+slideless projects unarchive <project>           # …and writable again
+slideless projects members list <project>
+slideless projects members add <project> ada@acme.co --role editor
+slideless projects members add <project> <userId> --role manager
+slideless projects members role <project> <userId> viewer
+slideless projects members remove <project> <userId>
+slideless projects link <project> <deck>         # put a deck in the project
+cd deck && slideless projects link <project>     # …no deck: the .slideless.json of this folder
+slideless projects unlink <project> <deck>       # take it back out
+slideless projects brand <project>               # the project's brand, or nothing
+slideless projects brand <project> <deck>        # make that linked brand reference its brand
+slideless projects brand <project> --clear       # no brand; the deck and its link stay
+slideless list --project <project>               # only the decks linked to the project
+slideless brand list --project <project>         # …the same filter on the reference listings
+slideless push ./deck --project <project>        # push and put the deck in the project
+```
+
+**The projects themselves** page like every other listing (`--cursor`,
+`--limit`, `--all`) and take `--json`. `list` shows the live projects;
+`--archived true` shows the archived ones and `--archived all` both.
+`create` makes you the project's first manager and takes `--description` and
+`--metadata` (a JSON object of your own, opaque to the server); `update` takes
+`--name`, `--description` or `--clear-description`, and `--metadata`, which
+replaces the whole object. `archive` takes a project out of the default listing
+and makes it read-only; nothing is ever deleted, and `unarchive` brings it back.
+
+**Members** come from the workspace's own roster, named by email (anything with
+an `@`) or by user id. `add` takes a required `--role viewer|editor|manager`.
+A manager removes anyone; anyone removes themselves. A stranger's address is
+`No active member of this workspace matches — check the user id or email. Only a
+member of the workspace can join a project.`, and a per-deck guest is refused
+with `That person is a guest of the workspace, and a guest cannot be a project
+member. Invite them as a workspace member first.`
+
+**link / unlink** are the deck's side. Linking widens who reads the deck, so it
+is the deck administrator's act — its owner, or a workspace admin or owner —
+with editor or more on the project; unlinking is theirs or a project manager's.
+The deck is named by id, or by a folder whose `.slideless.json` names it, or by
+nothing at all, in which case the current folder's link file is read (the same
+file `push`, `open` and `pull` use). Both print the projects the deck is in
+afterwards, and `--json` is the deck payload verbatim.
+
+**brand** reads, sets and clears the project's brand: with no `<deck>` it prints
+the brand deck's title, id and version (`--json` is `{ brand }`, `{ "brand":
+null }` when there is none); with one it makes that deck the brand, and
+`--clear` removes it. The deck must be a brand reference already linked to the
+project, so the two refusals are `That deck is not in this project. Link it
+first (slideless projects link <project> <deck>).` and `That deck is not a brand
+reference: its AGENT.md frontmatter names no type: brand. Push it as a brand
+first (slideless brand push).` Only a project manager changes it.
+
+**`--project <id>`** filters the deck listings: `slideless list --project` keeps
+the decks linked to it, and `slideless brand list --project` / `template list` /
+`reference list` do the same for the references. A project you cannot read
+answers the same way the project itself does, so the filter refuses with `No such
+project, or it is not yours to read.` rather than an empty page.
+
+**`slideless push --project <id>`** is repeatable, and the two branches differ on
+purpose. On a **new deck** the projects ride in the commit itself: one
+transaction, and a project that does not qualify refuses the whole push, so a
+new deck is never half-placed. On an **existing deck** (the folder's
+`.slideless.json` names one) the version is committed first and each project is
+linked after it, one call each: the push stays a success, the summary's
+`projects:` line names what the deck is in, and a project that refused prints its
+sentence on stderr under `project <id>:` without touching the others. `--json`
+carries the same as `projectLinks`, one `{ projectId, linked, error? }` per
+`--project` given.
+
+The refusals every project verb shares read as sentences: `No such project, or it
+is not yours to read. (A project you are not a member of answers the same way:
+its existence is not probeable.)`, `You need the manager role on this project to
+do that.`, `This project is archived and read-only. Unarchive it first to change
+it.`, and `You are a guest of this workspace, and guests do not take part in
+projects.`
 
 ## Share
 

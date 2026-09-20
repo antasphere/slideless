@@ -76,12 +76,20 @@ export interface PresentationListParams extends ListParams {
    * type). Without `type` the server reads it as `type=reference`.
    */
   default?: boolean;
+  /**
+   * Keeps only the decks linked to this project (ADR 026), under every
+   * `type`. A project the caller cannot read answers 404, like the project
+   * itself.
+   */
+  project?: string;
 }
 
 /** Params of {@link PlatformClient.references}: the list's page plus a reference type. */
 export interface ReferenceListParams extends ListParams {
   /** `brand`, `template`, or `reference` for every type (the default). */
   type?: PresentationsListType;
+  /** Keeps only the references linked to this project (ADR 026). */
+  project?: string;
 }
 
 /** Cursor pagination + the annotation-specific filters. */
@@ -139,6 +147,7 @@ export class PlatformClient extends ChassisClient<Scope> {
     if (params.limit !== undefined) query.set('limit', String(params.limit));
     if (params.type) query.set('type', params.type);
     if (params.default) query.set('default', 'true');
+    if (params.project) query.set('project', params.project);
     const qs = query.toString();
     return this.request('GET', qs ? `/presentations?${qs}` : '/presentations');
   }

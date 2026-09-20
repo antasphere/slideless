@@ -1,9 +1,10 @@
 import type { Command } from 'commander';
-import type { ListParams } from '@slideless/sdk';
+import type { ListParams, PresentationListParams } from '@slideless/sdk';
 import { CliUsageError, fmtBytes, printJson, table, type CliIo } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext } from '../cli.js';
 import { provenanceOf } from '../references.js';
 import { provenanceLine } from './content.js';
+import { explainedDeckProject, projectsLine, projectsOf } from './projects.js';
 
 /** Deck management: list / get / versions / meta / delete. */
 
@@ -33,33 +34,57 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
     .option('--cursor <cursor>', 'resume from a previous nextCursor')
     .option('--limit <n>', 'page size (1-100)', (v: string) => parseInt(v, 10))
     .option('--all', 'follow nextCursor until every page is fetched', false)
-    .action(async (opts: { cursor?: string; limit?: number; all: boolean }, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
-      await requireApiKey(ctx);
-      const params: ListParams = {};
-      if (opts.cursor) params.cursor = opts.cursor;
-      if (opts.limit !== undefined) params.limit = opts.limit;
-      const first = await ctx.client.presentations(params);
-      const rows = [...first.presentations];
-      if (opts.all) {
-        let cursor = first.nextCursor;
-        while (cursor) {
-          const page = await ctx.client.presentations({ ...params, cursor });
-          rows.push(...page.presentations);
-          cursor = page.nextCursor;
+    .option('--project <id>', 'only the decks in this project')
+    .action(
+      async (opts: { cursor?: string; limit?: number; all: boolean; project?: string }, cmd: Command) => {
+        const ctx = resolveContext(cmd, io);
+        await requireApiKey(ctx);
+        const params: PresentationListParams = {};
+        if (opts.cursor) params.cursor = opts.cursor;
+        if (opts.limit !== undefined) params.limit = opts.limit;
+        if (opts.project !== undefined) params.project = opts.project;
+        // A project the caller cannot read answers 404 like the project
+        // itself; without the sentence it reads as "no such deck listing".
+        const listed = (p: PresentationListParams) =>
+          opts.project === undefined
+            ? ctx.client.presentations(p)
+            : explainedDeckProject('link', () => ctx.client.presentations(p));
+        const first = await listed(params);
+        const rows = [...first.presentations];
+        if (opts.all) {
+          let cursor = first.nextCursor;
+          while (cursor) {
+            const page = await listed({ ...params, cursor });
+            rows.push(...page.presentations);
+            cursor = page.nextCursor;
+          }
+        }
+        const nextCursor = opts.all ? null : first.nextCursor;
+        if (ctx.json) return printJson(io, { presentations: rows, nextCursor });
+        if (rows.length === 0) {
+          io.out.write('No presentations.\n');
+          return;
+        }
+        // The projects column appears only when a row has something in it:
+        // a workspace that uses no project keeps byte-for-byte the table it
+        // has always had (the title stays the last, unpadded cell).
+        const anyProjects = rows.some((p) => projectsOf(p).length > 0);
+        io.out.write(
+          table(
+            rows.map((p) => [
+              p.id,
+              `v${p.currentVersion}`,
+              p.kind,
+              p.title,
+              ...(anyProjects ? [projectsLine(projectsOf(p))] : [])
+            ])
+          )
+        );
+        if (nextCursor) {
+          io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
         }
       }
-      const nextCursor = opts.all ? null : first.nextCursor;
-      if (ctx.json) return printJson(io, { presentations: rows, nextCursor });
-      if (rows.length === 0) {
-        io.out.write('No presentations.\n');
-        return;
-      }
-      io.out.write(table(rows.map((p) => [p.id, `v${p.currentVersion}`, p.kind, p.title])));
-      if (nextCursor) {
-        io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
-      }
-    });
+    );
 
   program
     .command('get <id>')
@@ -82,6 +107,7 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
           `  entry:     ${deck.entryPath}\n` +
           `  agent doc: ${deck.hasAgentDoc ? 'yes (slideless agent-doc)' : 'no'}\n` +
           `  reference: ${reference}\n` +
+          (projectsOf(deck).length > 0 ? `  projects:  ${projectsLine(projectsOf(deck))}\n` : '') +
           (references.length > 0 ? `  made from: ${provenanceLine(references)}\n` : '') +
           `  metadata:  ${metaKeys.length === 0 ? '(none)' : `${metaKeys.length} key(s) — slideless meta ${deck.id}`}\n` +
           `  owner:     ${deck.ownerUserId ?? '(deleted user)'}\n` +

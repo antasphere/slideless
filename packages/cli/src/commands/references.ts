@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, rmdir, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
-import { PlatformApiError } from '@slideless/sdk';
+import { PlatformApiError, type ReferenceListParams } from '@slideless/sdk';
 import { AGENT_DOC_PATH, REFERENCE_TYPES, type Presentation, type ReferenceType } from '@slideless/contract';
 import { CliUsageError, printJson, table, writeNoFollow, type CliIo } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
@@ -25,6 +25,7 @@ import {
   pushDeck,
   type PushOptions
 } from './content.js';
+import { explainedDeckProject } from './projects.js';
 
 /**
  * References from the command line (PRDCT-2420). One real family,
@@ -94,47 +95,60 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
     .option('--cursor <cursor>', 'resume from a previous nextCursor')
     .option('--limit <n>', 'page size (1-100)', (v: string) => parseInt(v, 10))
     .option('--all', 'follow nextCursor until every page is fetched', false)
-    .action(async (opts: { type?: string; cursor?: string; limit?: number; all: boolean }, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
-      await requireApiKey(ctx);
-      const type = typeOf(family, opts.type, false);
-      const params = {
-        ...(type ? { type } : {}),
-        ...(opts.cursor ? { cursor: opts.cursor } : {}),
-        ...(opts.limit !== undefined ? { limit: opts.limit } : {})
-      };
-      const first = await ctx.client.references(params);
-      const rows = [...first.presentations];
-      if (opts.all) {
-        let cursor = first.nextCursor;
-        while (cursor) {
-          const page = await ctx.client.references({ ...params, cursor });
-          rows.push(...page.presentations);
-          cursor = page.nextCursor;
+    .option('--project <id>', `only the ${noun}s in this project`)
+    .action(
+      async (
+        opts: { type?: string; cursor?: string; limit?: number; all: boolean; project?: string },
+        cmd: Command
+      ) => {
+        const ctx = resolveContext(cmd, io);
+        await requireApiKey(ctx);
+        const type = typeOf(family, opts.type, false);
+        const params: ReferenceListParams = {
+          ...(type ? { type } : {}),
+          ...(opts.cursor ? { cursor: opts.cursor } : {}),
+          ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+          ...(opts.project !== undefined ? { project: opts.project } : {})
+        };
+        // A project the caller cannot read answers 404 like the project
+        // itself; the sentence says which of the two it was.
+        const listed = (p: ReferenceListParams) =>
+          opts.project === undefined
+            ? ctx.client.references(p)
+            : explainedDeckProject('link', () => ctx.client.references(p));
+        const first = await listed(params);
+        const rows = [...first.presentations];
+        if (opts.all) {
+          let cursor = first.nextCursor;
+          while (cursor) {
+            const page = await listed({ ...params, cursor });
+            rows.push(...page.presentations);
+            cursor = page.nextCursor;
+          }
         }
+        const nextCursor = opts.all ? null : first.nextCursor;
+        if (ctx.json) return printJson(io, { references: rows, nextCursor });
+        if (rows.length === 0) {
+          io.out.write(`No ${noun}s.\n`);
+          return;
+        }
+        io.out.write(
+          table(
+            rows.map((r) => [
+              r.defaultReference ? '*' : ' ',
+              r.reference?.type ?? '-',
+              r.title,
+              r.id,
+              r.audience,
+              `v${r.currentVersion}`,
+              r.ownerUserId ?? '(deleted user)'
+            ])
+          )
+        );
+        io.out.write(`\n* = the workspace's default ${type ?? 'of its type'}\n`);
+        if (nextCursor) io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
       }
-      const nextCursor = opts.all ? null : first.nextCursor;
-      if (ctx.json) return printJson(io, { references: rows, nextCursor });
-      if (rows.length === 0) {
-        io.out.write(`No ${noun}s.\n`);
-        return;
-      }
-      io.out.write(
-        table(
-          rows.map((r) => [
-            r.defaultReference ? '*' : ' ',
-            r.reference?.type ?? '-',
-            r.title,
-            r.id,
-            r.audience,
-            `v${r.currentVersion}`,
-            r.ownerUserId ?? '(deleted user)'
-          ])
-        )
-      );
-      io.out.write(`\n* = the workspace's default ${type ?? 'of its type'}\n`);
-      if (nextCursor) io.out.write(`More available: rerun with --cursor ${nextCursor} or --all\n`);
-    });
+    );
 
   // ── pull ──────────────────────────────────────────────────────────────────
   withType(

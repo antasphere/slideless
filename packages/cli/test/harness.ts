@@ -22,6 +22,8 @@ export const DECK = {
   hasDownloads: false,
   ownerUserId: 'u1',
   remixedFrom: null,
+  /** ADR 026: every deck payload carries its readable projects, `[]` when none. */
+  projects: [] as Array<{ id: string; name: string; isBrand: boolean }>,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
