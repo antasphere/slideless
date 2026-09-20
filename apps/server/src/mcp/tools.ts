@@ -6,6 +6,8 @@ import {
   deckMasterUrl,
   formNameSchema,
   formResponseSourceSchema,
+  PRESENTATION_PROJECT_IDS_MAX,
+  presentationProjectIdsSchema,
   presentationsListTypeSchema,
   referenceTypeSchema
 } from '@slideless/contract';
@@ -24,12 +26,12 @@ import { DECK_MCP_SCOPES, checkScope, wrapToolErrors } from './deck-kit.js';
 
 /**
  * The slideless_ tool set: the product surface (decks, versions, sharing,
- * collaborators, annotations) exposed as MCP tools. Every tool is a thin
- * shim over the instance's own /api/v1 called in-process with the caller's
- * bearer forwarded verbatim — identity always comes from the verified
- * credential, never from a tool parameter, and the API's fail-closed scope
- * allowlist plus ADR 013 deck-read privacy apply unchanged (a tool can never
- * read a deck the caller can't).
+ * collaborators, annotations, the deck side of projects) exposed as MCP
+ * tools. Every tool is a thin shim over the instance's own /api/v1 called
+ * in-process with the caller's bearer forwarded verbatim — identity always
+ * comes from the verified credential, never from a tool parameter, and the
+ * API's fail-closed scope allowlist plus ADR 013 deck-read privacy apply
+ * unchanged (a tool can never read a deck the caller can't).
  *
  * Conventions (the chassis patterns in server.ts):
  *  - reads: `readOnlyHint: true` + presentations:read pre-check
@@ -216,6 +218,8 @@ interface PushOptions {
   entryPath?: string | undefined;
   /** Set = commit a new version onto this existing deck instead of creating one. */
   presentationId?: string | undefined;
+  /** New decks only: the projects the deck is linked to in the same commit (ADR 026). */
+  projectIds?: string[] | undefined;
 }
 
 async function pushInlineDeck(
@@ -297,7 +301,10 @@ async function pushInlineDeck(
           kind: opts.kind ?? 'presentation',
           interactive: opts.interactive ?? false,
           entryPath,
-          manifest
+          manifest,
+          // The link rides in the commit, so a refused project (not yours to
+          // link into, or archived) refuses the whole upload and creates nothing.
+          ...(opts.projectIds?.length ? { projectIds: opts.projectIds } : {})
         })
       }
     );
@@ -363,6 +370,26 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     .max(100)
     .optional()
     .describe('Page size (server max 100). Default 50.');
+  // A project is named by its opaque id, never by its name (the chassis'
+  // projects.ts): a project the caller cannot read answers not found, so
+  // being refused is not proof that it exists.
+  const projectIdInput = z
+    .uuid()
+    .describe('The project id, from the project list or the create answer (never the project name).');
+  const projectFilterInput = z
+    .uuid()
+    .optional()
+    .describe(
+      'Only the decks linked to this project (the project id, never its name). A project you ' +
+        'cannot read answers not found.'
+    );
+  const projectIdsInput = presentationProjectIdsSchema
+    .optional()
+    .describe(
+      `Project ids to link the NEW deck to in the same commit (at most ${PRESENTATION_PROJECT_IDS_MAX}). ` +
+        'You must be an editor or manager of each and none may be archived, else the whole upload ' +
+        'is refused and nothing is created.'
+    );
 
   // Identity: `slideless_whoami` is registered by the chassis (`<toolPrefix>whoami`,
   // right before this set), since it reads `/api/v1/me` and nothing of the decks.
@@ -374,16 +401,26 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     {
       description:
         'List the presentations (decks) this credential can read, newest first — deck reads are ' +
-        'private: owners and workspace admins see the workspace, others see owned decks plus active ' +
-        'collaborations. ORDINARY decks only: references (brands, templates) are listed by ' +
-        'slideless_list_references. Returns { presentations: [...], nextCursor }; when nextCursor ' +
-        'is non-null, call again with cursor set to it.',
-      inputSchema: { workspace: workspaceInput, cursor: cursorInput, limit: limitInput },
+        'private: owners and workspace admins see the workspace, others see owned decks, active ' +
+        'collaborations and the decks of the projects they are on. projectId keeps the decks ' +
+        'linked to one project (a project you cannot read answers not found). ORDINARY decks ' +
+        'only: references (brands, templates) are listed by slideless_list_references. Returns ' +
+        '{ presentations: [...], nextCursor }, each deck carrying projects: [{ id, name, ' +
+        'isBrand }] (only the projects you can read); when nextCursor is non-null, call again ' +
+        'with cursor set to it.',
+      inputSchema: {
+        workspace: workspaceInput,
+        projectId: projectFilterInput,
+        cursor: cursorInput,
+        limit: limitInput
+      },
       annotations: { readOnlyHint: true }
     },
-    async ({ workspace, cursor, limit }) =>
+    async ({ workspace, projectId, cursor, limit }) =>
       read(workspace, async (c) =>
-        jsonText(await callApi(c, pageQuery('/api/v1/presentations', { cursor, limit })))
+        jsonText(
+          await callApi(c, pageQuery('/api/v1/presentations', { cursor, limit }, { project: projectId }))
+        )
       )
   );
 
@@ -394,7 +431,8 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'One presentation by id: title, kind, metadata (the owner-defined JSON object), ' +
         'currentVersion, entryPath, hasAgentDoc (whether the bundle ships an AGENT.md briefing — ' +
         'read it with slideless_get_agent_doc), hasDownloads (whether the current version carries ' +
-        'attachments under downloads/ — list them with slideless_get_version), owner, timestamps. ' +
+        'attachments under downloads/ — list them with slideless_get_version), projects ' +
+        '([{ id, name, isBrand }] — only the ones you can read), owner, timestamps. ' +
         'Answers not_found for decks this credential cannot read.',
       inputSchema: { workspace: workspaceInput, presentationId: deckIdInput },
       annotations: { readOnlyHint: true }
@@ -559,25 +597,32 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'List the references this credential can read, newest first. A reference is a deck whose ' +
         'AGENT.md frontmatter names a type: a `brand` (the house look: colors, fonts, logos, tone) ' +
         'or a `template` (a deck to start from). You see your own references plus the ones ' +
-        'published to the workspace (audience: workspace). type narrows to `brand` or `template`; ' +
-        'omitted or `reference` lists every type. Returns { presentations: [...], nextCursor } in ' +
-        'the slideless_list_presentations shape: reference ({ type, ...the frontmatter fields }), ' +
+        'published to the workspace (audience: workspace), plus the ones linked to a project you ' +
+        'are on. type narrows to `brand` or `template`; omitted or `reference` lists every type. ' +
+        'projectId keeps the references linked to one project (a project you cannot read answers ' +
+        'not found). Returns { presentations: [...], nextCursor } in the ' +
+        'slideless_list_presentations shape: reference ({ type, ...the frontmatter fields }), ' +
         'audience (private | workspace) and defaultReference (true on the workspace default of its ' +
         'type) tell them apart. Read a reference with slideless_get_agent_doc before using it.',
       inputSchema: {
         workspace: workspaceInput,
         type: referenceListTypeInput,
+        projectId: projectFilterInput,
         cursor: cursorInput,
         limit: limitInput
       },
       annotations: { readOnlyHint: true }
     },
-    async ({ workspace, type, cursor, limit }) =>
+    async ({ workspace, type, projectId, cursor, limit }) =>
       read(workspace, async (c) =>
         jsonText(
           await callApi(
             c,
-            pageQuery('/api/v1/presentations', { cursor, limit }, { type: type ?? 'reference' })
+            pageQuery(
+              '/api/v1/presentations',
+              { cursor, limit },
+              { type: type ?? 'reference', project: projectId }
+            )
           )
         )
       )
@@ -587,37 +632,72 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
     'slideless_get_default_reference',
     {
       description:
-        "The workspace's default reference of one type: the `brand` or the `template` a workspace " +
-        'admin chose as the house default (at most one per type). Returns { type, presentation } ' +
-        'with the presentation in the slideless_get_presentation shape, or { type, presentation: ' +
-        'null, note } when no default of that type is set in this workspace. Call it before ' +
-        'building a deck, then read the AGENT.md of the reference with slideless_get_agent_doc ' +
-        '(and its files with slideless_download_version) and follow what it says. Nothing is ' +
-        'applied automatically: the default is a pointer, and using it is your work.',
+        'The reference of one type to author with: the `brand` or the `template` a workspace admin ' +
+        'chose as the house default (at most one per type), and, with projectId, the PROJECT’s own ' +
+        'brand first — a project may carry a brand of its own (a brand reference linked to it and ' +
+        'flagged by a project manager), and a deck authored FOR a project follows that brand over ' +
+        "the house default; when the project has none the answer falls back to the workspace's. " +
+        'A project carries no template, so projectId goes with type `brand` only. Returns { type, ' +
+        "source, presentation } — source says which it was ('project' | 'workspace'), the " +
+        'presentation is in the slideless_get_presentation shape — or { type, source, ' +
+        'presentation: null, note } when none is set. A project you cannot read answers not ' +
+        'found. Call it before building a deck, then read the AGENT.md of the reference with ' +
+        'slideless_get_agent_doc (and its files with slideless_download_version) and follow what ' +
+        'it says. Nothing is applied automatically: the default is a pointer, and using it is ' +
+        'your work.',
       inputSchema: {
         workspace: workspaceInput,
-        type: referenceTypeSchema.describe('Which default to look up: `brand` or `template`.')
+        type: referenceTypeSchema.describe('Which default to look up: `brand` or `template`.'),
+        projectId: z
+          .uuid()
+          .optional()
+          .describe(
+            'The project the deck is for (its id, never its name): answers that project’s brand ' +
+              'when it has one, else the workspace default. Type `brand` only.'
+          )
       },
       annotations: { readOnlyHint: true }
     },
-    async ({ workspace, type }) =>
+    async ({ workspace, type, projectId }) =>
       read(workspace, async (c) => {
+        if (projectId !== undefined && type !== 'brand') {
+          return deny(
+            'A project carries a brand, not a template: pass type `brand` with projectId, or omit ' +
+              'projectId for the workspace default template.'
+          );
+        }
+        if (projectId !== undefined) {
+          // The project's own brand first (404 for a project the caller
+          // cannot read — the tiered answer, never a fall-through to the
+          // workspace default that would hide the refusal).
+          const { brand } = (await callApi(c, `/api/v1/projects/${encodeURIComponent(projectId)}/brand`)) as {
+            brand: unknown | null;
+          };
+          if (brand) return jsonText({ type, source: 'project', projectId, presentation: brand });
+        }
         const { presentations } = (await callApi(
           c,
           pageQuery('/api/v1/presentations', { limit: 1 }, { type, default: 'true' })
         )) as { presentations: unknown[] };
         const presentation = presentations[0] ?? null;
-        return jsonText(
+        const note = [
+          projectId !== undefined
+            ? 'This project has no brand of its own, so this is the workspace default.'
+            : null,
           presentation
-            ? { type, presentation }
-            : {
-                type,
-                presentation: null,
-                note:
-                  `No default ${type} is set in this workspace. List the ${type} references with ` +
-                  'slideless_list_references, or carry on without one.'
-              }
-        );
+            ? null
+            : `No default ${type} is set in this workspace. List the ${type} references with ` +
+              'slideless_list_references, or carry on without one.'
+        ]
+          .filter((s) => s !== null)
+          .join(' ');
+        return jsonText({
+          type,
+          source: 'workspace',
+          ...(projectId !== undefined ? { projectId } : {}),
+          presentation,
+          ...(note ? { note } : {})
+        });
       })
   );
 
@@ -630,12 +710,17 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'Create a NEW deck from a single self-contained HTML document (uploaded as index.html). ' +
         "Returns { presentation, version, url } where url is the deck's own page on the instance " +
         "(the owner's view behind their session, not a share link) — hand it to the person; share it " +
-        'with a recipient next with slideless_add_share_token. Inline ' +
+        'with a recipient next with slideless_add_share_token. projectIds links the new deck to ' +
+        'those projects in the same commit (you must be an editor or manager of each and none may ' +
+        'be archived, else the whole upload is refused and nothing is created); when the deck is ' +
+        "FOR a project, read the project's brand first with slideless_get_default_reference (type " +
+        'brand, projectId) and its AGENT.md with slideless_get_agent_doc. Inline ' +
         `uploads are capped at ${Math.floor(INLINE_UPLOAD_TOTAL_MAX / 1024)} KiB; ${CLI_HINT}. ` +
         'Always confirm with the user before calling.',
       inputSchema: {
         workspace: workspaceInput,
         html: z.string().min(1).describe('The complete HTML document.'),
+        projectIds: projectIdsInput,
         title: z
           .string()
           .min(1)
@@ -649,12 +734,12 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         interactive: z.boolean().optional().describe('Mark the deck as embedding interactive content.')
       }
     },
-    async ({ workspace, html, title, kind, interactive }) =>
+    async ({ workspace, html, projectIds, title, kind, interactive }) =>
       write(workspace, async (c) => {
         const files = decodeInlineFiles([
           { path: 'index.html', contentText: html, contentType: 'text/html' }
         ]);
-        return pushInlineDeck(c, files, { title, kind, interactive });
+        return pushInlineDeck(c, files, { title, kind, interactive, projectIds });
       })
   );
 
@@ -668,7 +753,11 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         `contain). Inline uploads are capped at ${Math.floor(INLINE_UPLOAD_TOTAL_MAX / 1024)} KiB total; ` +
         `${CLI_HINT}. Returns { presentation, version, url, uploadedBlobs, deduplicatedBlobs } where url is ` +
         "the deck's own page on the instance (an owner page, not a share link) to hand to the person. " +
-        'Always confirm with the user before calling.',
+        'projectIds (new decks only) links the deck to those projects in the same commit (you must ' +
+        'be an editor or manager of each and none may be archived, else the whole upload is refused ' +
+        "and nothing is created); when the deck is FOR a project, read the project's brand first " +
+        'with slideless_get_default_reference (type brand, projectId) and its AGENT.md with ' +
+        'slideless_get_agent_doc. Always confirm with the user before calling.',
       inputSchema: {
         workspace: workspaceInput,
         files: z
@@ -710,13 +799,27 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         presentationId: z
           .uuid()
           .optional()
-          .describe('Existing deck id — commit these files as its next version instead of creating a deck.')
+          .describe('Existing deck id — commit these files as its next version instead of creating a deck.'),
+        projectIds: projectIdsInput
       }
     },
-    async ({ workspace, files, title, entryPath, kind, interactive, presentationId }) =>
-      write(workspace, async (c) =>
-        pushInlineDeck(c, decodeInlineFiles(files), { title, entryPath, kind, interactive, presentationId })
-      )
+    async ({ workspace, files, title, entryPath, kind, interactive, presentationId, projectIds }) =>
+      write(workspace, async (c) => {
+        if (presentationId !== undefined && projectIds !== undefined) {
+          return deny(
+            'projectIds applies to a NEW deck only — link an existing deck with ' +
+              'slideless_link_presentation_to_project.'
+          );
+        }
+        return pushInlineDeck(c, decodeInlineFiles(files), {
+          title,
+          entryPath,
+          kind,
+          interactive,
+          presentationId,
+          projectIds
+        });
+      })
   );
 
   server.registerTool(
@@ -782,6 +885,124 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           })
         )
       )
+  );
+
+  // ── Projects (ADR 026): the deck side ──────────────────────────────────────
+  // A project is a chassis concept (its nine tools are the chassis', registered
+  // before this set); the LINK between a deck and a project, and a project's
+  // BRAND, are the deck domain's. The tiered answer of the API holds through
+  // every tool here: a deck or a project the caller cannot read answers not
+  // found (404, never 403), then the role refusal, then the archived refusal.
+
+  server.registerTool(
+    'slideless_get_project_brand',
+    {
+      description:
+        "A project's brand: the brand reference its decks are authored with — a brand deck linked " +
+        'to the project and flagged by a project manager — as { brand } with the deck in the ' +
+        'slideless_get_presentation shape, or { brand: null } when the project has none ' +
+        '(slideless_get_default_reference with projectId does this lookup AND the fall-back to the ' +
+        "workspace default in one call). Read the brand's AGENT.md with slideless_get_agent_doc " +
+        'before authoring for the project. A project you cannot read answers not found.',
+      inputSchema: { workspace: workspaceInput, projectId: projectIdInput },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ workspace, projectId }) =>
+      read(workspace, async (c) =>
+        jsonText(await callApi(c, `/api/v1/projects/${encodeURIComponent(projectId)}/brand`))
+      )
+  );
+
+  server.registerTool(
+    'slideless_link_presentation_to_project',
+    {
+      description:
+        "Link a deck to a project: the project's members then read the deck, and its editors and " +
+        'managers may push versions and share it. Only the deck administrator (the deck owner or a ' +
+        'workspace admin) may link, with the editor or manager role on the project; linking twice ' +
+        'is the same answer. Returns the deck, with the project among its projects. A deck or a ' +
+        'project you cannot read answers not found; below editor on the project is refused; an ' +
+        'archived project is refused until brought back. Always confirm with the user before calling.',
+      inputSchema: { workspace: workspaceInput, presentationId: deckIdInput, projectId: projectIdInput }
+    },
+    async ({ workspace, presentationId, projectId }) =>
+      write(workspace, async (c) =>
+        jsonText(
+          await callApi(
+            c,
+            `/api/v1/presentations/${encodeURIComponent(presentationId)}/projects/${encodeURIComponent(projectId)}`,
+            { method: 'PUT' }
+          )
+        )
+      )
+  );
+
+  server.registerTool(
+    'slideless_unlink_presentation_from_project',
+    {
+      description:
+        "Take a deck out of a project: the project's members lose the deck on their next request " +
+        "(the deck itself stays; unlinking the project's brand clears the brand). The deck " +
+        'administrator (the deck owner or a workspace admin) may unlink from any project, even an ' +
+        'archived one; a project manager may unlink any deck from their project while it is live. ' +
+        'Returns the deck, without the project. A deck or a project you cannot read answers not ' +
+        'found; a deck not linked to the project answers not_linked. Always confirm with the user ' +
+        'before calling.',
+      inputSchema: { workspace: workspaceInput, presentationId: deckIdInput, projectId: projectIdInput },
+      annotations: { destructiveHint: true }
+    },
+    async ({ workspace, presentationId, projectId }) =>
+      write(workspace, async (c) =>
+        jsonText(
+          await callApi(
+            c,
+            `/api/v1/presentations/${encodeURIComponent(presentationId)}/projects/${encodeURIComponent(projectId)}`,
+            { method: 'DELETE' }
+          )
+        )
+      )
+  );
+
+  server.registerTool(
+    'slideless_set_project_brand',
+    {
+      description:
+        "Set or clear a project's brand: the brand reference the project's decks are authored with " +
+        '(slideless_get_default_reference with projectId reads it, falling back to the workspace ' +
+        'default). Needs the manager role on the project (a workspace owner or admin has it ' +
+        'everywhere). Pass presentationId to set it: the deck must be a brand reference (an ' +
+        'AGENT.md saying type: brand) ALREADY linked to the project — link it first with ' +
+        'slideless_link_presentation_to_project — and a second brand replaces the first (one per ' +
+        'project). Pass clear: true to clear it; the deck and its link stay. Returns { brand } ' +
+        '(null once cleared). A project or a deck you cannot read answers not found; a deck that ' +
+        'is not a brand answers not_a_brand; a deck not linked to the project answers not_linked; ' +
+        'an archived project is refused. Always confirm with the user before calling.',
+      inputSchema: {
+        workspace: workspaceInput,
+        projectId: projectIdInput,
+        presentationId: z
+          .uuid()
+          .optional()
+          .describe('The brand deck to set (exactly one of presentationId and clear).'),
+        clear: z.boolean().optional().describe("true clears the project's brand (exactly one of the two).")
+      }
+    },
+    async ({ workspace, projectId, presentationId, clear }) =>
+      write(workspace, async (c) => {
+        if ((presentationId === undefined) === !clear) {
+          return deny('Pass exactly one of presentationId (to set the brand) or clear: true (to clear it).');
+        }
+        const path = `/api/v1/projects/${encodeURIComponent(projectId)}/brand`;
+        return jsonText(
+          clear
+            ? await callApi(c, path, { method: 'DELETE' })
+            : await callApi(c, path, {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ presentationId })
+              })
+        );
+      })
   );
 
   // ── Sharing ────────────────────────────────────────────────────────────────

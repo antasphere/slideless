@@ -32,6 +32,9 @@ import {
  *  - references (ADR 025): the two read tools list by type, answer the
  *    workspace default or a plain "none set", and follow the audience (a
  *    member's key sees a reference only once it is published).
+ *
+ * The deck side of projects (ADR 026: `projectIds` on an upload, the list
+ * filter, link/unlink, the project's brand) is mcp-projects-decks.test.ts.
  */
 
 const OWNER = { email: 'owner@mcp.test', name: 'MCP Owner', password: 'mcp-owner-password-1' };
@@ -51,6 +54,10 @@ const EXPECTED_TOOLS = [
   'slideless_delete_presentation',
   'slideless_upload_html_presentation',
   'slideless_upload_presentation_files',
+  'slideless_get_project_brand',
+  'slideless_link_presentation_to_project',
+  'slideless_unlink_presentation_from_project',
+  'slideless_set_project_brand',
   'slideless_add_share_token',
   'slideless_list_share_tokens',
   'slideless_list_token_views',
@@ -236,6 +243,7 @@ describe('discovery + auth gate', () => {
       'slideless_get_agent_doc',
       'slideless_list_references',
       'slideless_get_default_reference',
+      'slideless_get_project_brand',
       'slideless_list_share_tokens',
       'slideless_list_token_views',
       'slideless_list_collaborators',
@@ -246,6 +254,7 @@ describe('discovery + auth gate', () => {
     }
     for (const name of [
       'slideless_delete_presentation',
+      'slideless_unlink_presentation_from_project',
       'slideless_unshare_presentation',
       'slideless_uninvite_collaborator'
     ]) {
@@ -256,6 +265,8 @@ describe('discovery + auth gate', () => {
     for (const name of [
       'slideless_upload_html_presentation',
       'slideless_upload_presentation_files',
+      'slideless_link_presentation_to_project',
+      'slideless_set_project_brand',
       'slideless_add_share_token',
       'slideless_share_via_email',
       'slideless_invite_collaborator',

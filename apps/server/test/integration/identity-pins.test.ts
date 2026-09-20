@@ -124,16 +124,20 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Everything done through this server happens as this user. (Alias of slideless_whoami.)',
   slideless_list_presentations:
     'List the presentations (decks) this credential can read, newest first — deck reads are ' +
-    'private: owners and workspace admins see the workspace, others see owned decks plus ' +
-    'active collaborations. ORDINARY decks only: references (brands, templates) are listed ' +
-    'by slideless_list_references. Returns { presentations: [...], nextCursor }; when ' +
-    'nextCursor is non-null, call again with cursor set to it.',
+    'private: owners and workspace admins see the workspace, others see owned decks, active ' +
+    'collaborations and the decks of the projects they are on. projectId keeps the decks ' +
+    'linked to one project (a project you cannot read answers not found). ORDINARY decks ' +
+    'only: references (brands, templates) are listed by slideless_list_references. Returns ' +
+    '{ presentations: [...], nextCursor }, each deck carrying projects: [{ id, name, ' +
+    'isBrand }] (only the projects you can read); when nextCursor is non-null, call again ' +
+    'with cursor set to it.',
   slideless_get_presentation:
     'One presentation by id: title, kind, metadata (the owner-defined JSON object), ' +
     'currentVersion, entryPath, hasAgentDoc (whether the bundle ships an AGENT.md briefing — ' +
     'read it with slideless_get_agent_doc), hasDownloads (whether the current version ' +
-    'carries attachments under downloads/ — list them with slideless_get_version), owner, ' +
-    'timestamps. Answers not_found for decks this credential cannot read.',
+    'carries attachments under downloads/ — list them with slideless_get_version), projects ' +
+    '([{ id, name, isBrand }] — only the ones you can read), owner, timestamps. Answers ' +
+    'not_found for decks this credential cannot read.',
   slideless_list_versions:
     "A deck's immutable version history, newest first (metadata only — file lists come from " +
     'slideless_get_version). Returns { versions: [...], nextCursor }.',
@@ -151,28 +155,39 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'List the references this credential can read, newest first. A reference is a deck whose ' +
     'AGENT.md frontmatter names a type: a `brand` (the house look: colors, fonts, logos, ' +
     'tone) or a `template` (a deck to start from). You see your own references plus the ones ' +
-    'published to the workspace (audience: workspace). type narrows to `brand` or ' +
-    '`template`; omitted or `reference` lists every type. Returns { presentations: [...], ' +
-    'nextCursor } in the slideless_list_presentations shape: reference ({ type, ...the ' +
-    'frontmatter fields }), audience (private | workspace) and defaultReference (true on the ' +
-    'workspace default of its type) tell them apart. Read a reference with ' +
-    'slideless_get_agent_doc before using it.',
+    'published to the workspace (audience: workspace), plus the ones linked to a project you ' +
+    'are on. type narrows to `brand` or `template`; omitted or `reference` lists every type. ' +
+    'projectId keeps the references linked to one project (a project you cannot read answers ' +
+    'not found). Returns { presentations: [...], nextCursor } in the ' +
+    'slideless_list_presentations shape: reference ({ type, ...the frontmatter fields }), ' +
+    'audience (private | workspace) and defaultReference (true on the workspace default of ' +
+    'its type) tell them apart. Read a reference with slideless_get_agent_doc before using it.',
   slideless_get_default_reference:
-    "The workspace's default reference of one type: the `brand` or the `template` a " +
-    'workspace admin chose as the house default (at most one per type). Returns { type, ' +
-    'presentation } with the presentation in the slideless_get_presentation shape, or { ' +
-    'type, presentation: null, note } when no default of that type is set in this workspace. ' +
-    'Call it before building a deck, then read the AGENT.md of the reference with ' +
-    'slideless_get_agent_doc (and its files with slideless_download_version) and follow what ' +
-    'it says. Nothing is applied automatically: the default is a pointer, and using it is ' +
-    'your work.',
+    'The reference of one type to author with: the `brand` or the `template` a workspace ' +
+    'admin chose as the house default (at most one per type), and, with projectId, the ' +
+    'PROJECT’s own brand first — a project may carry a brand of its own (a brand reference ' +
+    'linked to it and flagged by a project manager), and a deck authored FOR a project ' +
+    'follows that brand over the house default; when the project has none the answer falls ' +
+    "back to the workspace's. A project carries no template, so projectId goes with type " +
+    '`brand` only. Returns { type, source, presentation } — source says which it was ' +
+    "('project' | 'workspace'), the presentation is in the slideless_get_presentation shape " +
+    '— or { type, source, presentation: null, note } when none is set. A project you cannot ' +
+    'read answers not found. Call it before building a deck, then read the AGENT.md of the ' +
+    'reference with slideless_get_agent_doc (and its files with slideless_download_version) ' +
+    'and follow what it says. Nothing is applied automatically: the default is a pointer, ' +
+    'and using it is your work.',
   slideless_upload_html_presentation:
     'Create a NEW deck from a single self-contained HTML document (uploaded as index.html). ' +
     "Returns { presentation, version, url } where url is the deck's own page on the instance " +
     "(the owner's view behind their session, not a share link) — hand it to the person; " +
-    'share it with a recipient next with slideless_add_share_token. Inline uploads are ' +
-    'capped at 768 KiB; use the slideless CLI (`slideless push` / `slideless pull`) for ' +
-    'large decks. Always confirm with the user before calling.',
+    'share it with a recipient next with slideless_add_share_token. projectIds links the new ' +
+    'deck to those projects in the same commit (you must be an editor or manager of each and ' +
+    'none may be archived, else the whole upload is refused and nothing is created); when ' +
+    "the deck is FOR a project, read the project's brand first with " +
+    'slideless_get_default_reference (type brand, projectId) and its AGENT.md with ' +
+    'slideless_get_agent_doc. Inline uploads are capped at 768 KiB; use the slideless CLI ' +
+    '(`slideless push` / `slideless pull`) for large decks. Always confirm with the user ' +
+    'before calling.',
   slideless_upload_presentation_files:
     'Upload a multi-file deck from inline content: each file carries contentText (UTF-8) or ' +
     'contentBase64 (binary). Without presentationId this creates a NEW deck; with it, it ' +
@@ -180,8 +195,33 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'version should contain). Inline uploads are capped at 768 KiB total; use the slideless ' +
     'CLI (`slideless push` / `slideless pull`) for large decks. Returns { presentation, ' +
     "version, url, uploadedBlobs, deduplicatedBlobs } where url is the deck's own page on " +
-    'the instance (an owner page, not a share link) to hand to the person. Always confirm ' +
-    'with the user before calling.',
+    'the instance (an owner page, not a share link) to hand to the person. projectIds (new ' +
+    'decks only) links the deck to those projects in the same commit (you must be an editor ' +
+    'or manager of each and none may be archived, else the whole upload is refused and ' +
+    "nothing is created); when the deck is FOR a project, read the project's brand first " +
+    'with slideless_get_default_reference (type brand, projectId) and its AGENT.md with ' +
+    'slideless_get_agent_doc. Always confirm with the user before calling.',
+  // The link and unlink tools name no tool and no CLI, so they are not in this
+  // table; the two brand tools point at the default lookup and the link tool.
+  slideless_get_project_brand:
+    "A project's brand: the brand reference its decks are authored with — a brand deck " +
+    'linked to the project and flagged by a project manager — as { brand } with the deck in ' +
+    'the slideless_get_presentation shape, or { brand: null } when the project has none ' +
+    '(slideless_get_default_reference with projectId does this lookup AND the fall-back to ' +
+    "the workspace default in one call). Read the brand's AGENT.md with " +
+    'slideless_get_agent_doc before authoring for the project. A project you cannot read ' +
+    'answers not found.',
+  slideless_set_project_brand:
+    "Set or clear a project's brand: the brand reference the project's decks are authored " +
+    'with (slideless_get_default_reference with projectId reads it, falling back to the ' +
+    'workspace default). Needs the manager role on the project (a workspace owner or admin ' +
+    'has it everywhere). Pass presentationId to set it: the deck must be a brand reference ' +
+    '(an AGENT.md saying type: brand) ALREADY linked to the project — link it first with ' +
+    'slideless_link_presentation_to_project — and a second brand replaces the first (one per ' +
+    'project). Pass clear: true to clear it; the deck and its link stay. Returns { brand } ' +
+    '(null once cleared). A project or a deck you cannot read answers not found; a deck that ' +
+    'is not a brand answers not_a_brand; a deck not linked to the project answers not_linked; ' +
+    'an archived project is refused. Always confirm with the user before calling.',
   slideless_list_form_responses:
     "A deck's embedded-form responses (what viewers submitted through <form " +
     'data-slideless-form> forms), newest first: each row carries the form name, the deck ' +
@@ -476,6 +516,12 @@ describe('the MCP surface', () => {
       'slideless_upload_presentation_files',
       'slideless_update_presentation',
       'slideless_delete_presentation',
+      // The deck side of projects (ADR 026): the link and the brand are the
+      // deck domain's, so they sit in this set, not the chassis'.
+      'slideless_get_project_brand',
+      'slideless_link_presentation_to_project',
+      'slideless_unlink_presentation_from_project',
+      'slideless_set_project_brand',
       'slideless_add_share_token',
       'slideless_list_share_tokens',
       'slideless_list_token_views',
