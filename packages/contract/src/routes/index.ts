@@ -9,6 +9,7 @@ import {
   uuidParams
 } from '@antasphere/chassis-contract/routes';
 import { chassisContract } from '../chassis.js';
+import { IDENTITY } from '../identity.js';
 import {
   ASSET_PATH_MAX_LENGTH,
   assetPrecheckRequestSchema,
@@ -72,8 +73,9 @@ import {
 
 /**
  * The generic routes that carry the scope vocabulary, instantiated ONCE with
- * the Slideless scopes (../chassis.ts). Every other generic route contract is
- * a static export of `@antasphere/chassis-contract/routes`.
+ * the Slideless scopes (../chassis.ts) and identity (../identity.ts). Every
+ * other generic route contract is a static export of
+ * `@antasphere/chassis-contract/routes`.
  */
 export const {
   meRoute,
@@ -82,7 +84,7 @@ export const {
   apiKeyRevokeRoute,
   cliAuthCompleteRoute,
   ssoCliConnectRoute
-} = defineChassisRoutes(chassisContract);
+} = defineChassisRoutes(chassisContract, IDENTITY);
 
 // ═══ Presentation domain (ADR 011) ═══════════════════════════════════════════
 //

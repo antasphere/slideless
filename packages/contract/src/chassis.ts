@@ -8,16 +8,17 @@ import {
   type ScopeOf
 } from '@antasphere/chassis-contract';
 
+import { IDENTITY } from './identity.js';
+
 /**
  * The ONE instantiation of the chassis contract for Slideless. The scope
- * vocabulary is the tool's identity, so it is spelled here and nowhere in
- * `@antasphere/chassis-contract`; every schema that carries it (the scope
- * enum, the API-key family, the CLI key mint answer, `/me`) is built from it
- * and exported under the name it has always had.
+ * vocabulary is the tool's identity, so it is spelled in `./identity.ts` and
+ * nowhere in `@antasphere/chassis-contract`; every schema that carries it (the
+ * scope enum, the API-key family, the CLI key mint answer, `/me`) is built
+ * from it and exported under the name it has always had.
  */
-export const chassisContract = defineChassisContract({
-  scopes: ['presentations:read', 'presentations:write', 'data:export']
-});
+const { read, write, dataExport } = IDENTITY.scopes;
+export const chassisContract = defineChassisContract({ scopes: [read, write, dataExport] });
 
 /**
  * Generic scopes; products define their own (e.g. products:read).

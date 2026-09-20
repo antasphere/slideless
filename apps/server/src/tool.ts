@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { bodyLimit } from 'hono/body-limit';
 import { createDb } from '@slideless/db';
+import { IDENTITY } from '@slideless/contract';
 import {
   apiKeyCreateRoute,
   apiKeyRevokeRoute,
@@ -80,6 +81,7 @@ export type SlidelessBootResult = BootResult<DeckEnvShape, DeckDomain, DeckEvent
 
 export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket, DeckEvents, DeckOverrides> =
   {
+    identity: IDENTITY,
     runtime: {
       version: INTRINSIC_VERSION,
       findMigrationsDir: findMigrationsFolder,
