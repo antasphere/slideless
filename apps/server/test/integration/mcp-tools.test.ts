@@ -288,6 +288,21 @@ describe('discovery + auth gate', () => {
     const me = await callTool(readOnlyKey, 'slideless_whoami');
     expect(me.isError).toBe(false);
   });
+
+  it('a write-only key gets the actionable scope denial on a READ tool (PRDCT-2531, verifier F-7)', async () => {
+    // The API's allowlist is the enforcement point (a key without the read scope is
+    // refused `/me` whatever the tool does); the tool-level pre-check is what makes the
+    // refusal a sentence the model can act on, instead of a raw 403.
+    const writeOnlyKey = await mintKey(ownerCookie, 'owner-wo', ['presentations:write']);
+    for (const name of ['slideless_whoami', 'get_me']) {
+      const result = await callTool(writeOnlyKey, name);
+      expect(result.isError, name).toBe(true);
+      expect(result.text, name).toBe(
+        'Missing scope "presentations:read": this connection was not granted permission to read data. ' +
+          'Reconnect the MCP server and approve the permission on the consent screen.'
+      );
+    }
+  });
 });
 
 describe('inline upload → commit → download round-trip (the legacy-broken surface)', () => {

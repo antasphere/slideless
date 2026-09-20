@@ -131,6 +131,17 @@ describe('the Slideless identity, by its observable bytes', () => {
     expect(await run(['whoami', '--url', 'http://x', '--api-key', 'slk_k_s'], h.io)).toBe(1);
     expect(h.err()).toBe('Error: bad key (check the key: `slideless verify`)\n');
   });
+
+  it('exportScope: `export --help` names the scope the key needs (PRDCT-2531, verifier F-5)', async () => {
+    // Commander prints a subcommand's help and exits the process; `helpInformation()` is the
+    // same text without the exit. The description line, whole: the third line of the output.
+    const exportCommand = buildProgram(routedHarness([]).io).commands.find((c) => c.name() === 'export')!;
+    expect(exportCommand.helpInformation().split('\n').slice(0, 3)).toEqual([
+      'Usage: slideless export [options]',
+      '',
+      'Download the full workspace export as a zip (key needs data:export)'
+    ]);
+  });
 });
 
 describe("the tool's errorHint (F-3)", () => {
