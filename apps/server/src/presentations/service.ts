@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, exists, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import { files, type Db, type DbConn } from '@antasphere/chassis-db';
+import { files, projects, type Db, type DbConn } from '@antasphere/chassis-db';
 import {
   collaborators,
+  presentationProjects,
   presentations,
   presentationVersions,
   shareTokenDownloads,
@@ -14,7 +15,7 @@ import {
   type UploadSessionRow,
   type VersionAuthorRole
 } from '@slideless/db';
-import type { Principal } from '@antasphere/chassis-contract';
+import type { Principal, ProjectRole } from '@antasphere/chassis-contract';
 import {
   AGENT_DOC_PATH,
   isAttachmentPath,
@@ -24,6 +25,14 @@ import {
   type Reference
 } from '@slideless/contract';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
+import { PROJECTS_ID, projectGrantPredicate, projectRole } from '@antasphere/chassis-server/projects';
+import {
+  PRESENTATIONS_ID,
+  canLinkIntoProject,
+  deckProjectReadPredicate,
+  readsDeckThroughProject,
+  writesDeckThroughProject
+} from './projects.js';
 
 /** A version list row: the summary columns plus its per-version counts (PRDCT-2308). */
 export type VersionSummaryRow = Omit<PresentationVersionRow, 'manifest'> & {
@@ -47,7 +56,11 @@ export type ManifestFailure =
   { code: 'invalid_manifest'; message: string } | { code: 'missing_blobs'; missing: string[] };
 
 export type SessionCommitFailure =
-  ManifestFailure | { code: 'not_found' } | { code: 'session_consumed' } | { code: 'session_expired' };
+  | ManifestFailure
+  | { code: 'not_found' }
+  | { code: 'session_consumed' }
+  | { code: 'session_expired' }
+  | { code: 'project_not_found'; projectId: string };
 
 export type VersionCommitFailure =
   ManifestFailure | { code: 'not_found' } | { code: 'version_conflict'; currentVersion: number };
@@ -279,6 +292,14 @@ export class PresentationService {
     hasForms: boolean;
     /** The AGENT.md frontmatter, read by the caller before the transaction (ADR 025). */
     reference: CommitReference;
+    /**
+     * Projects the new deck is linked to in this commit (ADR 026). The
+     * caller owns the deck they create, so only the project side is asked:
+     * editor or more on each, none archived. One that does not qualify
+     * refuses the whole commit, uniformly (`project_not_found`): a project
+     * the caller cannot read and one they may not link into look the same.
+     */
+    projectIds?: string[] | undefined;
   }): Promise<SessionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -300,6 +321,13 @@ export class PresentationService {
       if (session.consumedAt) return { ok: false, failure: { code: 'session_consumed' } };
       if (session.expiresAt.getTime() < Date.now()) {
         return { ok: false, failure: { code: 'session_expired' } };
+      }
+
+      const projectIds = [...new Set(opts.projectIds ?? [])];
+      for (const projectId of projectIds) {
+        if (!(await canLinkIntoProject(tx, opts.principal, projectId))) {
+          return { ok: false, failure: { code: 'project_not_found', projectId } };
+        }
       }
 
       const { missing, sizeBySha } = await this.lockAndResolveBlobs(
@@ -352,6 +380,16 @@ export class PresentationService {
           createdByRole: 'owner'
         })
         .returning();
+      if (projectIds.length > 0) {
+        await tx.insert(presentationProjects).values(
+          projectIds.map((projectId) => ({
+            presentationId: presentation!.id,
+            projectId,
+            workspaceId: opts.workspaceId,
+            addedBy: opts.principal.userId
+          }))
+        );
+      }
       await tx
         .update(uploadSessions)
         .set({ consumedAt: new Date() })
@@ -410,7 +448,12 @@ export class PresentationService {
       let authorRole: VersionAuthorRole;
       if (canAdministerDeck(opts.principal, deck)) {
         authorRole = 'owner';
-      } else if (await isActiveDevCollaborator(tx, deck.id, opts.principal.userId)) {
+      } else if (
+        (await isActiveDevCollaborator(tx, deck.id, opts.principal.userId)) ||
+        // ADR 026: an editor or manager of a live project the deck is linked
+        // to commits like a dev collaborator does, and is recorded as one.
+        (await writesDeckThroughProject(tx, opts.principal, deck.id))
+      ) {
         authorRole = 'dev';
       } else {
         return { ok: false, failure: { code: 'not_found' } };
@@ -452,6 +495,27 @@ export class PresentationService {
         mirrorNotes.push(
           `The reference type changed from ${deck.referenceType} to ${newType}: the deck is no longer the default ${deck.referenceType}.`
         );
+      }
+      // ADR 026, the same fail-closed move for a PROJECT's brand: the flag
+      // needs a `brand` reference, so it drops in this commit when the deck
+      // stops being one (no longer a reference, or another type).
+      let brandDropped = 0;
+      if (deck.referenceType === 'brand' && newType !== 'brand') {
+        const dropped = await tx
+          .update(presentationProjects)
+          .set({ isBrand: false })
+          .where(
+            and(eq(presentationProjects.presentationId, deck.id), eq(presentationProjects.isBrand, true))
+          )
+          .returning({ projectId: presentationProjects.projectId });
+        brandDropped = dropped.length;
+        if (brandDropped > 0) {
+          mirrorNotes.push(
+            brandDropped === 1
+              ? 'It is no longer the brand of the project it was the brand of.'
+              : `It is no longer the brand of the ${brandDropped} projects it was the brand of.`
+          );
+        }
       }
       const referenceWarning = [opts.reference.warning, ...mirrorNotes].filter(Boolean).join(' ') || null;
 
@@ -631,7 +695,13 @@ export class PresentationService {
 
   async list(
     principal: Principal,
-    opts: { cursor?: string; limit: number; type?: PresentationsListType; defaultOnly?: boolean }
+    opts: {
+      cursor?: string;
+      limit: number;
+      type?: PresentationsListType;
+      defaultOnly?: boolean;
+      projectId?: string;
+    }
   ): Promise<{ presentations: PresentationRow[]; nextCursor: string | null }> {
     const cursorId = cursorRowId(opts.cursor);
     // The `type` scope (ADR 025): absent = ORDINARY decks only (references
@@ -671,9 +741,21 @@ export class PresentationService {
             // guest membership exists for principal resolution only (D2).
             ...(principal.origin !== 'guest'
               ? [and(isNotNull(presentations.referenceType), eq(presentations.audience, 'workspace'))]
-              : [])
+              : []),
+            // ADR 026, in the list's WHERE: a deck linked to a project the
+            // caller is a member of. The same branch as canReadDeck and
+            // blobReadScope; the predicate refuses a guest by itself.
+            deckProjectReadPredicate(principal, PRESENTATIONS_ID)
           )!
         ];
+    // `project` keeps only the decks linked to that project, under every
+    // `type`. The caller read-checked the project already (404 otherwise);
+    // the visibility scope above still applies to each deck.
+    const projectScope = opts.projectId
+      ? [
+          sql`EXISTS (SELECT 1 FROM presentation_projects dpp_f WHERE dpp_f.presentation_id = ${PRESENTATIONS_ID} AND dpp_f.project_id = ${opts.projectId})`
+        ]
+      : [];
     const rows = await this.db
       .select()
       .from(presentations)
@@ -684,6 +766,7 @@ export class PresentationService {
           typeScope,
           ...(opts.defaultOnly ? [eq(presentations.isDefaultReference, true)] : []),
           ...visibility,
+          ...projectScope,
           ...(cursorId
             ? [
                 keysetBefore({
@@ -824,6 +907,187 @@ export class PresentationService {
       .update(presentations)
       .set({ annotationBadgePosition: position, updatedAt: new Date() })
       .where(and(eq(presentations.id, id), eq(presentations.workspaceId, workspaceId)));
+  }
+
+  // ── Projects (ADR 026) ─────────────────────────────────────────────────────
+
+  /**
+   * The projects each deck is linked to THAT THE PRINCIPAL CAN READ, for the
+   * deck payload. A link to a project the caller is not a member of is left
+   * out: its existence is not theirs to learn from a deck they read another way.
+   */
+  async projectsOf(
+    principal: Principal,
+    deckIds: string[]
+  ): Promise<Map<string, Array<{ id: string; name: string; isBrand: boolean }>>> {
+    const byDeck = new Map<string, Array<{ id: string; name: string; isBrand: boolean }>>();
+    if (deckIds.length === 0) return byDeck;
+    const rows = await this.db
+      .select({
+        presentationId: presentationProjects.presentationId,
+        id: projects.id,
+        name: projects.name,
+        isBrand: presentationProjects.isBrand
+      })
+      .from(presentationProjects)
+      .innerJoin(projects, eq(presentationProjects.projectId, projects.id))
+      .where(
+        and(
+          inArray(presentationProjects.presentationId, deckIds),
+          eq(projects.workspaceId, principal.workspaceId),
+          projectGrantPredicate(principal, PROJECTS_ID, { atLeast: 'viewer', access: 'read' })
+        )
+      )
+      .orderBy(projects.name, projects.id);
+    for (const row of rows) {
+      const list = byDeck.get(row.presentationId) ?? [];
+      list.push({ id: row.id, name: row.name, isBrand: row.isBrand });
+      byDeck.set(row.presentationId, list);
+    }
+    return byDeck;
+  }
+
+  /** The caller's effective role on a project of their workspace, or null (= 404). The chassis' own answer. */
+  projectRoleOf(principal: Principal, projectId: string): Promise<ProjectRole | null> {
+    return projectRole(this.db, principal, projectId);
+  }
+
+  /** When the project was archived, or null when it is live (or unknown). */
+  async projectArchivedAt(workspaceId: string, projectId: string): Promise<Date | null> {
+    const [row] = await this.db
+      .select({ archivedAt: projects.archivedAt })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)))
+      .limit(1);
+    return row?.archivedAt ?? null;
+  }
+
+  /** Link a deck to a project. Idempotent: an existing link is left as it is. WHO may is the handler's. */
+  async linkProject(
+    deck: PresentationRow,
+    projectId: string,
+    addedBy: string
+  ): Promise<'linked' | 'archived'> {
+    return this.db.transaction(async (tx) => {
+      // FOR SHARE on the project row: an archive landing between the
+      // handler's gate and this insert waits, or is seen here.
+      const [project] = await tx
+        .select({ archivedAt: projects.archivedAt })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.workspaceId, deck.workspaceId)))
+        .for('share')
+        .limit(1);
+      if (!project || project.archivedAt !== null) return 'archived';
+      await tx
+        .insert(presentationProjects)
+        .values({ presentationId: deck.id, projectId, workspaceId: deck.workspaceId, addedBy })
+        .onConflictDoNothing();
+      return 'linked';
+    });
+  }
+
+  /** Take a deck out of a project (its brand flag goes with the link). False when it was not linked. */
+  async unlinkProject(deckId: string, projectId: string): Promise<boolean> {
+    const removed = await this.db
+      .delete(presentationProjects)
+      .where(
+        and(eq(presentationProjects.presentationId, deckId), eq(presentationProjects.projectId, projectId))
+      )
+      .returning({ projectId: presentationProjects.projectId });
+    return removed.length > 0;
+  }
+
+  /** The deck flagged as the project's brand, or null. Read access to it is the caller's to check. */
+  async projectBrand(workspaceId: string, projectId: string): Promise<PresentationRow | null> {
+    const [row] = await this.db
+      .select({ deck: presentations })
+      .from(presentationProjects)
+      .innerJoin(presentations, eq(presentationProjects.presentationId, presentations.id))
+      .where(
+        and(
+          eq(presentationProjects.projectId, projectId),
+          eq(presentationProjects.isBrand, true),
+          eq(presentations.workspaceId, workspaceId),
+          isNull(presentations.deletedAt)
+        )
+      )
+      .limit(1);
+    return row?.deck ?? null;
+  }
+
+  /**
+   * Make a deck the project's brand. The deck must be a `brand` reference
+   * and already linked to the project; the previous brand is cleared in the
+   * same transaction, serialized on the project row (the partial unique
+   * index is the backstop). The deck row is locked too, so a push that
+   * reclassifies it cannot interleave with the check.
+   */
+  async setProjectBrand(
+    workspaceId: string,
+    projectId: string,
+    deckId: string
+  ): Promise<'set' | 'archived' | 'not_a_brand' | 'not_linked' | 'not_found'> {
+    return this.db.transaction(async (tx) => {
+      const [project] = await tx
+        .select({ archivedAt: projects.archivedAt })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)))
+        .for('update')
+        .limit(1);
+      if (!project) return 'not_found';
+      if (project.archivedAt !== null) return 'archived';
+      const [deck] = await tx
+        .select({ referenceType: presentations.referenceType })
+        .from(presentations)
+        .where(
+          and(
+            eq(presentations.id, deckId),
+            eq(presentations.workspaceId, workspaceId),
+            isNull(presentations.deletedAt)
+          )
+        )
+        .for('update')
+        .limit(1);
+      if (!deck) return 'not_found';
+      if (deck.referenceType !== 'brand') return 'not_a_brand';
+      const [link] = await tx
+        .select({ isBrand: presentationProjects.isBrand })
+        .from(presentationProjects)
+        .where(
+          and(eq(presentationProjects.presentationId, deckId), eq(presentationProjects.projectId, projectId))
+        )
+        .limit(1);
+      if (!link) return 'not_linked';
+      await tx
+        .update(presentationProjects)
+        .set({ isBrand: false })
+        .where(and(eq(presentationProjects.projectId, projectId), eq(presentationProjects.isBrand, true)));
+      await tx
+        .update(presentationProjects)
+        .set({ isBrand: true })
+        .where(
+          and(eq(presentationProjects.presentationId, deckId), eq(presentationProjects.projectId, projectId))
+        );
+      return 'set';
+    });
+  }
+
+  /** Clear the project's brand; the deck and its link stay. */
+  async clearProjectBrand(workspaceId: string, projectId: string): Promise<'cleared' | 'archived'> {
+    return this.db.transaction(async (tx) => {
+      const [project] = await tx
+        .select({ archivedAt: projects.archivedAt })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)))
+        .for('update')
+        .limit(1);
+      if (!project || project.archivedAt !== null) return 'archived';
+      await tx
+        .update(presentationProjects)
+        .set({ isBrand: false })
+        .where(and(eq(presentationProjects.projectId, projectId), eq(presentationProjects.isBrand, true)));
+      return 'cleared';
+    });
   }
 
   /** Handler-facing wrapper over the module-level canWriteDeck (needs a conn). */
@@ -1103,7 +1367,10 @@ export async function canWriteDeck(
   deck: PresentationRow
 ): Promise<boolean> {
   if (canAdministerDeck(principal, deck)) return true;
-  return isActiveDevCollaborator(conn, deck.id, principal.userId);
+  if (await isActiveDevCollaborator(conn, deck.id, principal.userId)) return true;
+  // ADR 026: an editor or manager of a project the deck is linked to, while
+  // that project is not archived. A viewer reads and never writes.
+  return writesDeckThroughProject(conn, principal, deck.id);
 }
 
 /**
@@ -1128,7 +1395,11 @@ export async function canReadDeck(
 ): Promise<boolean> {
   if (canAdministerDeck(principal, deck)) return true;
   if (isWorkspaceReference(deck) && principal.origin !== 'guest') return true;
-  return isActiveDevCollaborator(conn, deck.id, principal.userId);
+  if (await isActiveDevCollaborator(conn, deck.id, principal.userId)) return true;
+  // ADR 026: a member of a project the deck is linked to, whatever their
+  // role, archived project or not; never a guest. `list()` and
+  // `blobReadScope` carry the same branch: change one, change all three.
+  return readsDeckThroughProject(conn, principal, deck.id);
 }
 
 /**
@@ -1182,6 +1453,8 @@ export function blobReadScope(principal: Principal): SQL | undefined {
   // may read them — and BIND them (the wanted consequence: the house logo
   // goes into a member's own deck without a re-upload, and precheckMissing
   // answers "present" for it). Omitted entirely for a guest.
+  // The ADR 026 branch below it is the project one: the bytes of a deck
+  // linked to a project follow the deck's rule, for the project's members.
   const workspaceReference =
     principal.origin !== 'guest'
       ? sql`OR (p.reference_type IS NOT NULL AND p.audience = 'workspace')`
@@ -1206,6 +1479,7 @@ export function blobReadScope(principal: Principal): SQL | undefined {
               AND c.status = 'active'
           )
           ${workspaceReference}
+          OR ${deckProjectReadPredicate(principal, sql`p.id`)}
         )
         AND pv.manifest @> jsonb_build_array(jsonb_build_object('sha256', ${files.sha256}))
     )

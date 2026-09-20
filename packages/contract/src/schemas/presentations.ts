@@ -204,6 +204,18 @@ export const referenceProvenanceSchema = z.object({
 });
 export type ReferenceProvenance = z.infer<typeof referenceProvenanceSchema>;
 
+/** One project a deck is linked to, as its payload names it. */
+export const presentationProjectRefSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  isBrand: z.boolean()
+});
+export type PresentationProjectRef = z.infer<typeof presentationProjectRefSchema>;
+
+/** At most this many projects named on one create. */
+export const PRESENTATION_PROJECT_IDS_MAX = 20;
+export const presentationProjectIdsSchema = z.array(z.uuid()).max(PRESENTATION_PROJECT_IDS_MAX);
+
 export const presentationSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -252,6 +264,13 @@ export const presentationSchema = z.object({
   audience: audienceSchema,
   /** Whether this is the workspace's default reference of its type (one per type). */
   defaultReference: z.boolean(),
+  /**
+   * The projects this deck is linked to THAT THE CALLER CAN READ, never the
+   * others (a deck may sit in a project the caller is not a member of, and
+   * that project's existence is not theirs to learn). `isBrand` marks the
+   * deck as that project's brand.
+   */
+  projects: z.array(presentationProjectRefSchema),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -272,7 +291,12 @@ export const presentationsListQuerySchema = cursorPageQuerySchema.extend({
    * type): with `type=brand` it answers "which deck is the house brand"
    * in one call. Without `type` it implies `type=reference`.
    */
-  default: z.enum(['true']).optional()
+  default: z.enum(['true']).optional(),
+  /**
+   * Keeps only the decks linked to this project, under every `type`. A
+   * project the caller cannot read answers 404, like the project itself.
+   */
+  project: z.uuid().optional()
 });
 export type PresentationsListQuery = z.infer<typeof presentationsListQuerySchema>;
 
@@ -444,7 +468,14 @@ export const uploadSessionCommitSchema = z.object({
   interactive: z.boolean().default(false),
   metadata: presentationMetadataSchema.optional(),
   entryPath: assetPathSchema,
-  manifest: manifestSchema
+  manifest: manifestSchema,
+  /**
+   * Links the new deck to these projects in the same commit. The caller
+   * owns the deck they create, so what is asked of them is the project side:
+   * editor or more on each, none archived. One project that does not
+   * qualify refuses the whole commit with 404 `project_not_found`.
+   */
+  projectIds: presentationProjectIdsSchema.optional()
 });
 export type UploadSessionCommit = z.infer<typeof uploadSessionCommitSchema>;
 
@@ -519,3 +550,15 @@ export const presentationDuplicateSchema = z.object({
   title: plainText(1, 300).optional()
 });
 export type PresentationDuplicate = z.infer<typeof presentationDuplicateSchema>;
+
+// ── Projects (ADR 026) ───────────────────────────────────────────────────────
+
+export const deckProjectParamsSchema = z.object({ id: z.uuid(), projectId: z.uuid() });
+
+/** `PUT /projects/{id}/brand`: the deck that becomes the project's brand. */
+export const projectBrandSetSchema = z.object({ presentationId: z.uuid() });
+export type ProjectBrandSet = z.infer<typeof projectBrandSetSchema>;
+
+/** A project's brand: the deck, or `null` when the project has none. */
+export const projectBrandSchema = z.object({ brand: presentationSchema.nullable() });
+export type ProjectBrand = z.infer<typeof projectBrandSchema>;

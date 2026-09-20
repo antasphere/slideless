@@ -33,6 +33,8 @@ export const OAUTH_SCOPES = [
 /** The CLI key's fixed grant — the agent surface, never data:export. */
 export const CLI_KEY_SCOPES = [READ, WRITE] as const;
 
+const PROJECT_BRAND_RE = /^\/api\/v1\/projects\/[0-9a-fA-F-]{36}\/brand$/;
+
 const deckRules: ReadonlyArray<ScopeRule<Scope>> = [
   // Presentation domain (ADR 011): the primary agent surface. Covers the
   // whole /presentations tree — listings, upload sessions, precheck, asset
@@ -55,6 +57,15 @@ const deckRules: ReadonlyArray<ScopeRule<Scope>> = [
       return isRead ? READ : WRITE;
     }
     return null;
+  },
+  // A project's BRAND (ADR 026): the deck side of the chassis' projects, on
+  // the one `/projects` shape the chassis rules leave to the tool. Exact path
+  // and methods: read it under presentations:read, set or clear it under
+  // presentations:write. Every other shape under /projects is the chassis'.
+  (path, method) => {
+    if (!PROJECT_BRAND_RE.test(path)) return null;
+    if (method === 'GET' || method === 'HEAD') return READ;
+    return method === 'PUT' || method === 'DELETE' ? WRITE : null;
   },
   // Workspace-wide annotation inbox: read-only today — list ONLY the read so
   // any future mutation on this path stays fail-closed until opened here.

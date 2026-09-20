@@ -38,7 +38,12 @@ import {
   versionAttachmentsZipRoute,
   versionCommitRoute,
   versionGetRoute,
-  versionsListRoute
+  versionsListRoute,
+  presentationProjectLinkRoute,
+  presentationProjectUnlinkRoute,
+  projectBrandClearRoute,
+  projectBrandGetRoute,
+  projectBrandSetRoute
 } from '@slideless/contract/routes';
 import {
   AGENT_DOC_PATH,
@@ -47,8 +52,11 @@ import {
   isTraversalSafeAssetPath,
   PREVIEW_SHARE_TOKEN_NAME,
   type ManifestEntry,
+  type PresentationProjectRef,
   type Reference
 } from '@slideless/contract';
+import { projectRoleAtLeast, type Principal } from '@antasphere/chassis-contract';
+import type { Context } from 'hono';
 import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '@slideless/db';
 import type { Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
@@ -88,7 +96,7 @@ import { requireAuth, requireNonGuest } from '@antasphere/chassis-server/middlew
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
-const presentationToWire = (p: PresentationRow) => ({
+const presentationToWire = (p: PresentationRow, projects: PresentationProjectRef[] = []) => ({
   id: p.id,
   title: p.title,
   kind: p.kind,
@@ -108,6 +116,7 @@ const presentationToWire = (p: PresentationRow) => ({
   reference: (p.reference as Reference | null) ?? null,
   audience: p.audience,
   defaultReference: p.isDefaultReference,
+  projects,
   createdAt: p.createdAt.toISOString(),
   updatedAt: p.updatedAt.toISOString()
 });
@@ -167,6 +176,16 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     logger
   } = deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
+
+  /** A deck's payload AS THIS CALLER reads it: its projects are the ones they can read (ADR 026). */
+  const wireMany = async (principal: Principal, decks: PresentationRow[]) => {
+    const projectsByDeck = await service.projectsOf(
+      principal,
+      decks.map((d) => d.id)
+    );
+    return decks.map((d) => presentationToWire(d, projectsByDeck.get(d.id) ?? []));
+  };
+  const wire = async (principal: Principal, deck: PresentationRow) => (await wireMany(principal, [deck]))[0]!;
 
   api.use('/presentations', requireAuth());
   api.use('/presentations/*', requireAuth());
@@ -301,6 +320,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       metadata: body.metadata,
       entryPath: body.entryPath,
       manifest: body.manifest as ManifestEntry[],
+      projectIds: body.projectIds,
       // PRDCT-1333: scanned HERE, before the commit transaction, so blob
       // reads never happen while the session/deck rows are locked.
       hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[]),
@@ -317,6 +337,19 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
           return c.json(err('session_consumed', 'This upload session was already committed'), 409);
         case 'session_expired':
           return c.json(err('session_expired', 'This upload session has expired — reserve a new one'), 410);
+        case 'project_not_found':
+          // One answer for "no such project", "not yours to read" and "not
+          // yours to link into": nothing about a project is probeable here.
+          return c.json(
+            {
+              error: {
+                code: 'project_not_found',
+                message: 'A project named in projectIds was not found, is archived, or needs the editor role',
+                details: { projectId: f.projectId }
+              }
+            },
+            404
+          );
         case 'invalid_manifest':
           return c.json(err('invalid_manifest', f.message), 400);
         case 'missing_blobs':
@@ -348,7 +381,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       presentationId: result.presentation.id
     });
     return c.json(
-      { presentation: presentationToWire(result.presentation), version: versionToWire(result.version) },
+      { presentation: await wire(principal, result.presentation), version: versionToWire(result.version) },
       201
     );
   });
@@ -423,7 +456,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       version: result.version.version
     });
     return c.json(
-      { presentation: presentationToWire(result.presentation), version: versionToWire(result.version) },
+      { presentation: await wire(principal, result.presentation), version: versionToWire(result.version) },
       201
     );
   });
@@ -437,7 +470,12 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
 
   api.openapi(presentationsListRoute, async (c) => {
     const principal = c.get('principal')!;
-    const { cursor, limit, type, default: defaultOnly } = c.req.valid('query');
+    const { cursor, limit, type, default: defaultOnly, project } = c.req.valid('query');
+    // `project` names a project the caller must be able to READ: 404
+    // otherwise, under every `type`, like the project itself (ADR 026).
+    if (project !== undefined && (await service.projectRoleOf(principal, project)) === null) {
+      return c.json(err('project_not_found', 'Project not found'), 404);
+    }
     // Scoped in the service (ADR 013): admins/owners see the whole
     // workspace; members see owned decks + active collaborations, plus —
     // under `type` — the workspace's published references (ADR 025).
@@ -445,9 +483,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       ...(cursor !== undefined ? { cursor } : {}),
       limit,
       ...(type !== undefined ? { type } : {}),
-      ...(defaultOnly === 'true' ? { defaultOnly: true } : {})
+      ...(defaultOnly === 'true' ? { defaultOnly: true } : {}),
+      ...(project !== undefined ? { projectId: project } : {})
     });
-    return c.json({ presentations: presentations.map(presentationToWire), nextCursor }, 200);
+    return c.json({ presentations: await wireMany(principal, presentations), nextCursor }, 200);
   });
 
   api.openapi(presentationGetRoute, async (c) => {
@@ -457,7 +496,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (!deck || !(await service.canRead(principal, deck))) {
       return c.json(err('not_found', 'Presentation not found'), 404);
     }
-    return c.json(presentationToWire(deck), 200);
+    return c.json(await wire(principal, deck), 200);
   });
 
   api.openapi(presentationUpdateRoute, async (c) => {
@@ -542,7 +581,147 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         ...(result.displacedDefaultIds.length > 0 ? { displacedDefaultIds: result.displacedDefaultIds } : {})
       }
     });
-    return c.json(presentationToWire(result.presentation), 200);
+    return c.json(await wire(principal, result.presentation), 200);
+  });
+
+  // ── Projects (ADR 026) ─────────────────────────────────────────────────────
+  // The chassis owns the project; these routes are the deck's side of it.
+  // Registered under `/projects/{id}/brand`, a shape the chassis' machine
+  // allowlist deliberately leaves to the tool (middleware/scopes.ts).
+
+  const notFound = () => err('not_found', 'Presentation not found');
+  const projectNotFound = () => err('project_not_found', 'Project not found');
+  const projectArchived = () => err('project_archived', 'The project is archived: unarchive it to change it');
+  const guestForbidden = (c: Context) => c.json(err('guest_forbidden', c.get('guestForbiddenMessage')), 403);
+
+  // Linking WIDENS who reads the deck, so it is the deck administrator's act
+  // (canAdministerDeck), with editor or more on the project: an editor adds a
+  // deck OF THEIR OWN. Order: the deck's 404, the deck's 403, then the
+  // project's 404, 403, 409.
+  api.openapi(presentationProjectLinkRoute, async (c) => {
+    const principal = c.get('principal')!;
+    if (principal.origin === 'guest') return guestForbidden(c);
+    const { id, projectId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canRead(principal, deck))) return c.json(notFound(), 404);
+    if (!canAdministerDeck(principal, deck)) {
+      return c.json(
+        err('forbidden', 'Only the deck owner or a workspace admin links a deck to a project'),
+        403
+      );
+    }
+    const role = await service.projectRoleOf(principal, projectId);
+    if (role === null) return c.json(projectNotFound(), 404);
+    if (!projectRoleAtLeast(role, 'editor')) {
+      return c.json(err('insufficient_project_role', 'This needs the editor role on the project'), 403);
+    }
+    if ((await service.linkProject(deck, projectId, principal.userId)) === 'archived') {
+      return c.json(projectArchived(), 409);
+    }
+    c.set('audit', {
+      action: 'presentation.project_link',
+      resourceType: 'presentation',
+      resourceId: deck.id,
+      metadata: { projectId }
+    });
+    return c.json(await wire(principal, deck), 200);
+  });
+
+  // Unlinking NARROWS who reads the deck: whoever administers the deck, or a
+  // manager of the project. The deck administrator's unlink works on an
+  // archived project too (taking one's own deck back is not a change OF the
+  // project); a manager who does not administer the deck acts through the
+  // project grant, which an archive switches off.
+  api.openapi(presentationProjectUnlinkRoute, async (c) => {
+    const principal = c.get('principal')!;
+    if (principal.origin === 'guest') return guestForbidden(c);
+    const { id, projectId } = c.req.valid('param');
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canRead(principal, deck))) return c.json(notFound(), 404);
+    const role = await service.projectRoleOf(principal, projectId);
+    if (role === null) return c.json(projectNotFound(), 404);
+    const administers = canAdministerDeck(principal, deck);
+    if (!administers && role !== 'manager') {
+      return c.json(
+        err('forbidden', 'Only the deck owner, a workspace admin or a project manager does this'),
+        403
+      );
+    }
+    if (!administers && (await service.projectArchivedAt(principal.workspaceId, projectId)) !== null) {
+      return c.json(projectArchived(), 409);
+    }
+    if (!(await service.unlinkProject(deck.id, projectId))) {
+      return c.json(err('not_linked', 'This deck is not in that project'), 404);
+    }
+    c.set('audit', {
+      action: 'presentation.project_unlink',
+      resourceType: 'presentation',
+      resourceId: deck.id,
+      metadata: { projectId }
+    });
+    return c.json(await wire(principal, deck), 200);
+  });
+
+  // The project's BRAND: the project's companion, a brand reference linked to
+  // it. A guest is refused flat, like the chassis' own project routes.
+  api.use('/projects/:id/brand', requireAuth());
+  api.use('/projects/:id/brand', requireNonGuest());
+
+  api.openapi(projectBrandGetRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    if ((await service.projectRoleOf(principal, id)) === null) return c.json(projectNotFound(), 404);
+    // A project member reads the brand through the link itself (canReadDeck's
+    // project branch); the check stays, so the answer never outruns the rule.
+    const brand = await service.projectBrand(principal.workspaceId, id);
+    if (!brand || !(await service.canRead(principal, brand))) return c.json({ brand: null }, 200);
+    return c.json({ brand: await wire(principal, brand) }, 200);
+  });
+
+  api.openapi(projectBrandSetRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const { presentationId } = c.req.valid('json');
+    const role = await service.projectRoleOf(principal, id);
+    if (role === null) return c.json(projectNotFound(), 404);
+    if (role !== 'manager') {
+      return c.json(err('insufficient_project_role', 'This needs the manager role on the project'), 403);
+    }
+    const deck = await service.get(principal.workspaceId, presentationId);
+    if (!deck || !(await service.canRead(principal, deck))) return c.json(notFound(), 404);
+    const outcome = await service.setProjectBrand(principal.workspaceId, id, deck.id);
+    switch (outcome) {
+      case 'not_found':
+        return c.json(notFound(), 404);
+      case 'archived':
+        return c.json(projectArchived(), 409);
+      case 'not_a_brand':
+        return c.json(err('not_a_brand', 'Only a brand reference can be a project’s brand'), 400);
+      case 'not_linked':
+        return c.json(err('not_linked', 'Link the deck to the project first'), 409);
+    }
+    c.set('audit', {
+      action: 'project.brand_set',
+      resourceType: 'project',
+      resourceId: id,
+      metadata: { presentationId: deck.id }
+    });
+    return c.json({ brand: await wire(principal, deck) }, 200);
+  });
+
+  api.openapi(projectBrandClearRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id } = c.req.valid('param');
+    const role = await service.projectRoleOf(principal, id);
+    if (role === null) return c.json(projectNotFound(), 404);
+    if (role !== 'manager') {
+      return c.json(err('insufficient_project_role', 'This needs the manager role on the project'), 403);
+    }
+    if ((await service.clearProjectBrand(principal.workspaceId, id)) === 'archived') {
+      return c.json(projectArchived(), 409);
+    }
+    c.set('audit', { action: 'project.brand_clear', resourceType: 'project', resourceId: id });
+    return c.json({ brand: null }, 200);
   });
 
   api.openapi(presentationDeleteRoute, async (c) => {
@@ -640,7 +819,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       presentationId: result.presentation.id
     });
     return c.json(
-      { presentation: presentationToWire(result.presentation), version: versionToWire(result.version) },
+      { presentation: await wire(principal, result.presentation), version: versionToWire(result.version) },
       201
     );
   });
