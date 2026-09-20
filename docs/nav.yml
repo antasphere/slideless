@@ -9,6 +9,7 @@ groups:
   - title: Concepts
     pages:
       - concepts/workspaces
+      - concepts/projects
       - concepts/artifact
       - concepts/versions
       - concepts/links

@@ -262,6 +262,14 @@ The rules:
 - Deleting a default reference is allowed. The workspace then has no default of that type.
 - On an ordinary deck the call answers `422 not_a_reference`.
 
+## A project's brand
+
+A [project](projects.md) can name one brand of its own, chosen among the references linked to it. An
+agent authoring a deck for that project reads the project's brand instead of the workspace's default.
+A manager of the project sets it, and the reference has to be linked to the project first. When a
+push takes the `type: Brand` line out of that reference's `AGENT.md`, it stops being a brand, so it
+stops being the project's brand at the same moment.
+
 ## When a reference stops being one
 
 Each push classifies the deck again, from the new version's `AGENT.md`.
