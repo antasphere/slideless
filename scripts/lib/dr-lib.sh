@@ -52,7 +52,9 @@ dr_verify_tar() {
 # BEFORE it destroys anything.
 dr_tar_has_entry() {
   local file="$1" name="$2"
-  tar -tzf "$file" 2>/dev/null | grep -Fqx -e "./$name" -e "$name"
+  # No `grep -q`: it exits at the first match, tar then dies of SIGPIPE (141),
+  # and under `pipefail` a file that IS in the archive reads as missing.
+  tar -tzf "$file" 2>/dev/null | grep -Fx -e "./$name" -e "$name" >/dev/null
 }
 
 # dr_verify_pg_dump FILE

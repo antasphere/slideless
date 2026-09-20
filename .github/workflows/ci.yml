@@ -96,8 +96,8 @@ jobs:
   # internal/federation.md "The federation drill". The hub is checked out
   # beside this repo (its dev branch) and built by the compose file; the
   # checkout needs a token that can read antasphere/hub
-  # (FEDERATION_CHECKOUT_TOKEN — a fine-grained PAT or a GitHub App token
-  # with contents:read on antasphere/hub).
+  # (minted per run by the antasphere-federation-drill GitHub App, which has
+  # contents:read on antasphere/hub).
   federation-drill:
     runs-on: ubuntu-latest
     steps:
