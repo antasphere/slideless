@@ -23,6 +23,7 @@ import type {
   FormResponsesSummary,
   Presentation,
   PresentationDuplicate,
+  ProjectBrand,
   PresentationsListType,
   PresentationUpdate,
   PresentationVersionSummary,
@@ -203,6 +204,44 @@ export class PlatformClient extends ChassisClient<Scope> {
       req,
       idempotencyHeader(opts)
     );
+  }
+
+  // ── Projects (ADR 026) ────────────────────────────────────────────────────
+  // The chassis client carries the projects themselves (`projects()`,
+  // `createProject()`, the members); these are the deck's side of them.
+
+  /**
+   * Link a deck to a project: the project's members read it from then on.
+   * The deck administrator's act, with editor or more on the project.
+   */
+  linkPresentationProject(id: string, projectId: string): Promise<Presentation> {
+    return this.request(
+      'PUT',
+      `/presentations/${encodeURIComponent(id)}/projects/${encodeURIComponent(projectId)}`
+    );
+  }
+
+  /** Take a deck out of a project (the deck administrator, or a project manager). */
+  unlinkPresentationProject(id: string, projectId: string): Promise<Presentation> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/projects/${encodeURIComponent(projectId)}`
+    );
+  }
+
+  /** The project's brand: the brand reference its decks are authored with, or null. */
+  projectBrand(projectId: string): Promise<ProjectBrand> {
+    return this.request('GET', `/projects/${encodeURIComponent(projectId)}/brand`);
+  }
+
+  /** Make a linked brand reference the project's brand (project manager). */
+  setProjectBrand(projectId: string, presentationId: string): Promise<ProjectBrand> {
+    return this.request('PUT', `/projects/${encodeURIComponent(projectId)}/brand`, { presentationId });
+  }
+
+  /** Clear the project's brand; the deck and its link stay (project manager). */
+  clearProjectBrand(projectId: string): Promise<ProjectBrand> {
+    return this.request('DELETE', `/projects/${encodeURIComponent(projectId)}/brand`);
   }
 
   // ── Upload (push) ─────────────────────────────────────────────────────────
