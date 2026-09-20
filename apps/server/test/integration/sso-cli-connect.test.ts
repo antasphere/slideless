@@ -47,7 +47,10 @@ let container: StartedPostgreSqlContainer;
 let hub: FakeHub;
 
 beforeAll(async () => {
-  [container, hub] = await Promise.all([startPostgres(), FakeHub.start()]);
+  [container, hub] = await Promise.all([
+    startPostgres(),
+    FakeHub.start({ clientId: 'tool-slideless-cloud' })
+  ]);
 });
 
 afterAll(async () => {

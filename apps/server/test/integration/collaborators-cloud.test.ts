@@ -115,7 +115,10 @@ async function waitActive(grantId: string): Promise<void> {
 let grantId: string;
 
 beforeAll(async () => {
-  [container, hub] = await Promise.all([startPostgres(), FakeHub.start()]);
+  [container, hub] = await Promise.all([
+    startPostgres(),
+    FakeHub.start({ clientId: 'tool-slideless-cloud' })
+  ]);
   app = await createTestApp(await createDatabase(container, 'collab_cloud'), {
     EDITION: 'cloud',
     HUB_ISSUER_URL: hub.issuer,

@@ -1,3 +1,4 @@
+import { IDENTITY } from '@slideless/contract';
 import type { ChassisTestHost } from '@antasphere/chassis-server/testing';
 import { boot, type BootOverrides, type BootResult } from '../../src/boot.js';
 
@@ -14,6 +15,8 @@ export type HostBootOverrides = BootOverrides;
 
 export const host: ChassisTestHost<HostBootResult, HostBootOverrides> = {
   boot,
+  identity: IDENTITY,
+  hubClientId: 'tool-slideless-cloud',
   scopes: { read: 'presentations:read', write: 'presentations:write', dataExport: 'data:export' },
   probeRoute: '/api/v1/presentations'
 };
