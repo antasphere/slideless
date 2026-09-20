@@ -851,6 +851,7 @@ export const en = {
   'projects.addRosterHint': 'Only active members who are not in the project yet are listed.',
   'projects.addRosterPartial': 'This workspace has more people than the list shows.',
   'projects.addByEmail': 'Add by email instead',
+  'projects.addPickInstead': 'Pick from the list instead',
   'projects.addEmailLabel': 'Email',
   'projects.addEmailHint': 'The email of someone already in this workspace.',
   'projects.addNoMatch': 'Nobody matches {query}.',

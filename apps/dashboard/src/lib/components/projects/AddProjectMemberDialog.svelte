@@ -68,6 +68,10 @@
   });
 
   const usesEmail = $derived(roster === false || byEmail);
+  function switchTo(email: boolean) {
+    byEmail = email;
+    refusal = null;
+  }
   const offered = $derived(roster ? offeredMembers(roster, alreadyIn, query) : []);
   const picked = $derived(roster ? (roster.find((m) => m.userId === pickedId) ?? null) : null);
 
@@ -125,7 +129,14 @@
         placeholder={t('invitations.emailPlaceholder')}
         required
       />
-      <p class="text-xs text-muted-foreground">{t('projects.addEmailHint')}</p>
+      <p class="text-xs text-muted-foreground">
+        {t('projects.addEmailHint')}
+        {#if roster}
+          <button type="button" class="underline underline-offset-2" onclick={() => switchTo(false)}>
+            {t('projects.addPickInstead')}
+          </button>
+        {/if}
+      </p>
     </div>
   {:else}
     <div class="space-y-2">
@@ -173,7 +184,7 @@
       </ul>
       <p class="text-xs text-muted-foreground">
         {rosterPartial ? t('projects.addRosterPartial') : t('projects.addRosterHint')}
-        <button type="button" class="underline underline-offset-2" onclick={() => (byEmail = true)}>
+        <button type="button" class="underline underline-offset-2" onclick={() => switchTo(true)}>
           {t('projects.addByEmail')}
         </button>
       </p>

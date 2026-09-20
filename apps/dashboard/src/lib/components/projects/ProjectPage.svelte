@@ -65,7 +65,7 @@
     return () => crumbs.clear();
   });
 
-  const Resources = $derived(tool.project?.Resources);
+  const Resources = tool.project.Resources;
 </script>
 
 <svelte:head>

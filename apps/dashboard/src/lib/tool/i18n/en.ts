@@ -567,7 +567,7 @@ export const en = {
   'deckProjects.add': 'Add a deck',
   'deckProjects.addTitle': 'Add a deck to the project',
   'deckProjects.addDescription':
-    'Your decks that are not in this project yet. Linking a deck lets the members of the project read it. That is why only the owner of a deck links it.',
+    'The decks you administer that are not in this project yet: your own, and every deck of the workspace for an admin or owner. Linking a deck lets the members of the project read it, which is why it takes the deck’s administrator.',
   'deckProjects.addEmpty': 'You have no deck left to add.',
   'deckProjects.addSubmit': 'Add to the project',
   'deckProjects.linked': 'Deck added to the project.',

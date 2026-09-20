@@ -36,6 +36,12 @@
 
   let { project }: { project: Project } = $props();
 
+  // The route keys the page on the id: one project for this piece's life. The
+  // reads below run once on it, and the controls follow the prop, which the
+  // page hands over anew after every change.
+  // svelte-ignore state_referenced_locally
+  const projectId = project.id;
+
   const me = $derived((page.data as { me?: MeResponse | null }).me ?? null);
   // A manager sets the brand and takes any deck out; an editor adds their own decks.
   const canEdit = $derived(projectCan.edit(project));
@@ -49,7 +55,7 @@
 
   async function loadBrand() {
     try {
-      brand = await deckProjects.brandOf(project.id);
+      brand = await deckProjects.brandOf(projectId);
       brandError = null;
     } catch (e) {
       brandError = errorMessage(e);
@@ -72,7 +78,7 @@
     try {
       // the brand is one of the project's own decks: a brand reference linked
       // to it first (the add dialog, or a push with --project)
-      brandChoices = (await deckProjects.decksOf(project.id, { type: 'brand', limit: 100 })).presentations;
+      brandChoices = (await deckProjects.decksOf(projectId, { type: 'brand', limit: 100 })).presentations;
     } catch (e) {
       brandChoicesError = errorMessage(e);
     }
@@ -82,7 +88,7 @@
     if (!brandChoice || brandSaving) return;
     brandSaving = true;
     try {
-      await deckProjects.setBrand(project.id, brandChoice);
+      await deckProjects.setBrand(projectId, brandChoice);
       showBrandDialog = false;
       toast.success(t('deckProjects.brandSaved'));
       await loadBrand();
@@ -98,7 +104,7 @@
   async function clearBrand() {
     clearing = true;
     try {
-      await deckProjects.setBrand(project.id, null);
+      await deckProjects.setBrand(projectId, null);
       showClearDialog = false;
       toast.success(t('deckProjects.brandCleared'));
       await loadBrand();
@@ -110,13 +116,9 @@
   }
 
   // ── The decks ──────────────────────────────────────────────────────────
-  // one list per project: a project page that changes project under this piece starts over
-  const list = $derived.by(() => {
-    const id = project.id;
-    return createPagedList<DeckWithProjects>(async (p) => {
-      const { presentations, nextCursor } = await deckProjects.decksOf(id, p);
-      return { items: presentations, nextCursor };
-    });
+  const list = createPagedList<DeckWithProjects>(async (p) => {
+    const { presentations, nextCursor } = await deckProjects.decksOf(projectId, p);
+    return { items: presentations, nextCursor };
   });
   // The plain list leaves the references out, and a project holds its brand
   // and its templates too: they come in one more read, after the decks. A
@@ -124,7 +126,7 @@
   let references = $state<DeckWithProjects[]>([]);
   async function loadReferences() {
     try {
-      references = (await deckProjects.decksOf(project.id, { type: 'reference', limit: 100 })).presentations;
+      references = (await deckProjects.decksOf(projectId, { type: 'reference', limit: 100 })).presentations;
     } catch {
       // the decks' own error line says what went wrong
     }
@@ -137,7 +139,7 @@
     void loadReferences();
   });
 
-  const pushCommand = $derived(`slideless push --project ${project.id}`);
+  const pushCommand = `slideless push --project ${projectId}`;
 
   // Add a deck: the reader's own, since linking widens who reads the deck.
   let showAddDialog = $state(false);
@@ -159,7 +161,7 @@
         deckProjects.decksOf(null, { type: 'reference', limit: 100 })
       ]);
       addChoices = [...decks.presentations, ...references.presentations].filter(
-        (d) => me && administersDeck(me, d) && !deckProjects.named(d).some((p) => p.id === project.id)
+        (d) => me && administersDeck(me, d) && !deckProjects.named(d).some((p) => p.id === projectId)
       );
     } catch (e) {
       addChoicesError = errorMessage(e);
@@ -170,7 +172,7 @@
     if (!addChoice || adding) return;
     adding = true;
     try {
-      await deckProjects.link(addChoice, project.id);
+      await deckProjects.link(addChoice, projectId);
       showAddDialog = false;
       toast.success(t('deckProjects.linked'));
       await Promise.all([list.refresh(), loadReferences()]);
@@ -191,7 +193,7 @@
     if (!unlinkTarget) return;
     unlinking = true;
     try {
-      await deckProjects.unlink(unlinkTarget.id, project.id);
+      await deckProjects.unlink(unlinkTarget.id, projectId);
       showUnlinkDialog = false;
       toast.success(t('deckProjects.unlinked'));
       await Promise.all([list.refresh(), loadReferences(), loadBrand()]);
@@ -203,7 +205,7 @@
   }
 </script>
 
-<div class="space-y-6" data-testid="project-decks" data-project={project.id}>
+<div class="space-y-6" data-testid="project-decks" data-project={projectId}>
   <Card.Root data-testid="project-brand">
     <Card.Header>
       <Card.Title class="text-[19px]">{t('deckProjects.brandTitle')}</Card.Title>
@@ -285,8 +287,9 @@
           {#each decks as deck (deck.id)}
             <!-- the card is a link, so the action sits beside it, not inside -->
             <div class="relative grid min-w-0">
-              <DeckCard {deck} exceptProject={project.id} />
-              {#if canEdit}
+              <DeckCard {deck} exceptProject={projectId} />
+              <!-- a manager takes any deck out; whoever administers the deck takes their own back, as on the deck's page -->
+              {#if canEdit || (me && administersDeck(me, deck))}
                 <button
                   type="button"
                   class="unlink"

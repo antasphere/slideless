@@ -596,7 +596,7 @@ export const fr: Record<keyof typeof en, string> = {
   'deckProjects.add': 'Ajouter une présentation',
   'deckProjects.addTitle': 'Ajouter une présentation au projet',
   'deckProjects.addDescription':
-    'Vos présentations qui ne sont pas encore dans ce projet. Lier une présentation permet aux membres du projet de la lire. C’est pourquoi seul le propriétaire d’une présentation la lie.',
+    'Les présentations que vous administrez et qui ne sont pas encore dans ce projet : les vôtres, et toutes celles de l’espace pour un admin ou un propriétaire. Lier une présentation permet aux membres du projet de la lire, c’est pourquoi cela revient à qui l’administre.',
   'deckProjects.addEmpty': 'Vous n’avez plus de présentation à ajouter.',
   'deckProjects.addSubmit': 'Ajouter au projet',
   'deckProjects.linked': 'Présentation ajoutée au projet.',

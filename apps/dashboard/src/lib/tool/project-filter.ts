@@ -12,17 +12,19 @@ import type { DeckProjectRef } from './projects-client';
  */
 export type ProjectFilterPage = 'decks' | 'brands' | 'templates';
 
-export function projectFilterKey(page: ProjectFilterPage): string {
-  return `slideless.${page}.project`;
+/** One key per page, per person, per workspace (the shell's `filterScope`). */
+export function projectFilterKey(page: ProjectFilterPage, scope: string): string {
+  return `slideless.${page}.project:${scope}`;
 }
 
 /** The project the browser remembers for a page; none when nothing is remembered or storage is off. */
 export function readProjectFilter(
   page: ProjectFilterPage,
+  scope: string,
   storage: Pick<Storage, 'getItem'> | null = storageOrNull()
 ): string | null {
   try {
-    return storage?.getItem(projectFilterKey(page)) || null;
+    return storage?.getItem(projectFilterKey(page, scope)) || null;
   } catch {
     return null;
   }
@@ -31,12 +33,13 @@ export function readProjectFilter(
 /** Remember the project, or forget it (`null`); a browser that refuses storage keeps the choice for the visit only. */
 export function writeProjectFilter(
   page: ProjectFilterPage,
+  scope: string,
   projectId: string | null,
   storage: Pick<Storage, 'setItem' | 'removeItem'> | null = storageOrNull()
 ): void {
   try {
-    if (projectId) storage?.setItem(projectFilterKey(page), projectId);
-    else storage?.removeItem(projectFilterKey(page));
+    if (projectId) storage?.setItem(projectFilterKey(page, scope), projectId);
+    else storage?.removeItem(projectFilterKey(page, scope));
   } catch {
     /* not persisted, still applied */
   }

@@ -31,6 +31,7 @@
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { deckProjects, isNotFound, type DeckWithProjects } from '$lib/tool/projects-client';
   import { createProjectFilter } from '$lib/tool/project-filter.svelte';
+  import { filterScope } from '$lib/projects/filter';
   import { matchesQuery, readView, writeView, type ReferenceView } from '$lib/tool/references';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
@@ -62,7 +63,7 @@
   // projects and forgets itself. The page is made anew for each type (brands,
   // templates are two routes).
   // svelte-ignore state_referenced_locally
-  const filter = createProjectFilter(type === 'brand' ? 'brands' : 'templates');
+  const filter = createProjectFilter(type === 'brand' ? 'brands' : 'templates', filterScope(me));
   const list = $derived.by(() => {
     const projectId = filter.projectId;
     return createPagedList<DeckWithProjects>(

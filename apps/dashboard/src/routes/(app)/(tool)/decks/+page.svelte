@@ -25,6 +25,7 @@
   import { kindLabel } from '$lib/tool/decks';
   import { deckProjects, isNotFound, type DeckWithProjects } from '$lib/tool/projects-client';
   import { createProjectFilter } from '$lib/tool/project-filter.svelte';
+  import { filterScope } from '$lib/projects/filter';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
 
@@ -39,7 +40,9 @@
   // filter it keeps the name `decks`, the one the shell warms. A remembered
   // project that is gone or no longer readable answers 404: the filter falls
   // back to all projects and forgets itself, without a word.
-  const filter = createProjectFilter('decks');
+  // the page is made anew for each person and workspace (the layout reloads on a switch)
+  // svelte-ignore state_referenced_locally
+  const filter = createProjectFilter('decks', filterScope(data.me));
   const list = $derived.by(() => {
     const projectId = filter.projectId;
     return createPagedList<DeckWithProjects>(

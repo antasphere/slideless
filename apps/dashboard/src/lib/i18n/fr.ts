@@ -873,6 +873,7 @@ export const fr: Record<keyof typeof en, string> = {
   'projects.addRosterHint': 'Seuls les membres actifs qui ne sont pas encore dans le projet sont listés.',
   'projects.addRosterPartial': 'Cet espace de travail compte plus de personnes que la liste n’en montre.',
   'projects.addByEmail': 'Ajouter plutôt par e-mail',
+  'projects.addPickInstead': 'Choisir plutôt dans la liste',
   'projects.addEmailLabel': 'E-mail',
   'projects.addEmailHint': 'L’e-mail d’une personne déjà présente dans cet espace de travail.',
   'projects.addNoMatch': 'Personne ne correspond à {query}.',

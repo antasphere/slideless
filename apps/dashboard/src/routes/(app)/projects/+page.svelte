@@ -10,7 +10,7 @@
   import { appear } from '$lib/components/ui/reveal/index.js';
   import { errorMessage } from '$lib/api';
   import { projects } from '$lib/projects/client';
-  import { readArchivedFilter, writeArchivedFilter } from '$lib/projects/filter';
+  import { filterScope, readArchivedFilter, writeArchivedFilter } from '$lib/projects/filter';
   import type { ProjectArchivedFilter } from '$lib/projects/types';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -21,10 +21,13 @@
   // the menu hides this section from them, and a typed address lands here.
   const isGuest = $derived(data.me.origin === 'guest');
 
-  let filter = $state<ProjectArchivedFilter>(readArchivedFilter());
+  // the page is made anew for each person and workspace (the layout reloads on a switch)
+  // svelte-ignore state_referenced_locally
+  const scope = filterScope(data.me);
+  let filter = $state<ProjectArchivedFilter>(readArchivedFilter(scope));
   function choose(next: ProjectArchivedFilter) {
     filter = next;
-    writeArchivedFilter(next);
+    writeArchivedFilter(scope, next);
   }
 
   // ── New project ────────────────────────────────────────────────────────

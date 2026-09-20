@@ -33,37 +33,37 @@ const refusing = {
 
 describe('the remembered project filter', () => {
   it('keeps one key per page', () => {
-    expect(projectFilterKey('decks')).toBe('slideless.decks.project');
-    expect(projectFilterKey('brands')).toBe('slideless.brands.project');
-    expect(projectFilterKey('templates')).toBe('slideless.templates.project');
+    expect(projectFilterKey('decks', 'u1:w1')).toBe('slideless.decks.project:u1:w1');
+    expect(projectFilterKey('brands', 'u1:w1')).toBe('slideless.brands.project:u1:w1');
+    expect(projectFilterKey('templates', 'u1:w1')).toBe('slideless.templates.project:u1:w1');
   });
 
   it('reads back what it wrote, page by page', () => {
     const storage = memory();
-    writeProjectFilter('decks', 'p1', storage);
-    writeProjectFilter('brands', 'p2', storage);
-    expect(readProjectFilter('decks', storage)).toBe('p1');
-    expect(readProjectFilter('brands', storage)).toBe('p2');
-    expect(readProjectFilter('templates', storage)).toBeNull();
+    writeProjectFilter('decks', 'u1:w1', 'p1', storage);
+    writeProjectFilter('brands', 'u1:w1', 'p2', storage);
+    expect(readProjectFilter('decks', 'u1:w1', storage)).toBe('p1');
+    expect(readProjectFilter('brands', 'u1:w1', storage)).toBe('p2');
+    expect(readProjectFilter('templates', 'u1:w1', storage)).toBeNull();
   });
 
   it('forgets on null: the key is removed, not emptied', () => {
-    const storage = memory({ 'slideless.decks.project': 'p1' });
-    writeProjectFilter('decks', null, storage);
+    const storage = memory({ 'slideless.decks.project:u1:w1': 'p1' });
+    writeProjectFilter('decks', 'u1:w1', null, storage);
     expect(storage.data).toEqual({});
-    expect(readProjectFilter('decks', storage)).toBeNull();
+    expect(readProjectFilter('decks', 'u1:w1', storage)).toBeNull();
   });
 
   it('reads an empty value as no filter', () => {
-    expect(readProjectFilter('decks', memory({ 'slideless.decks.project': '' }))).toBeNull();
+    expect(readProjectFilter('decks', 'u1:w1', memory({ 'slideless.decks.project:u1:w1': '' }))).toBeNull();
   });
 
   it('lives without storage, and with a storage that refuses', () => {
-    expect(readProjectFilter('decks', null)).toBeNull();
-    expect(() => writeProjectFilter('decks', 'p1', null)).not.toThrow();
-    expect(readProjectFilter('decks', refusing)).toBeNull();
-    expect(() => writeProjectFilter('decks', 'p1', refusing)).not.toThrow();
-    expect(() => writeProjectFilter('decks', null, refusing)).not.toThrow();
+    expect(readProjectFilter('decks', 'u1:w1', null)).toBeNull();
+    expect(() => writeProjectFilter('decks', 'u1:w1', 'p1', null)).not.toThrow();
+    expect(readProjectFilter('decks', 'u1:w1', refusing)).toBeNull();
+    expect(() => writeProjectFilter('decks', 'u1:w1', 'p1', refusing)).not.toThrow();
+    expect(() => writeProjectFilter('decks', 'u1:w1', null, refusing)).not.toThrow();
   });
 });
 

@@ -25,13 +25,13 @@ export interface ProjectFilter {
   listName(base: string): string;
 }
 
-export function createProjectFilter(page: ProjectFilterPage): ProjectFilter {
-  let projectId = $state(readProjectFilter(page));
+export function createProjectFilter(page: ProjectFilterPage, scope: string): ProjectFilter {
+  let projectId = $state(readProjectFilter(page, scope));
   let projects = $state<Project[]>([]);
 
   function choose(next: string | null) {
     projectId = next;
-    writeProjectFilter(page, next);
+    writeProjectFilter(page, scope, next);
   }
 
   return {
