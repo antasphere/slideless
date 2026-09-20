@@ -448,8 +448,14 @@ describe('the write rule beyond the commit: canWriteDeck gates the share links a
 
 describe('one workspace: a grant held in one workspace opens nothing in another', () => {
   it('a member of two workspaces cannot push a deck of the second into a project of the first', async () => {
-    // The author gets a second workspace of their own (its owner there).
-    const other = (await app.registry.workspaces.create('Elsewhere', userIds.author)).workspaceId;
+    // A second workspace, the workspace owner's, where the author is a PLAIN
+    // member: the member branch of the predicate is the one under test (an
+    // owner's request takes the operator branch, which pins the workspace
+    // on its own).
+    const other = (await app.registry.workspaces.create('Elsewhere', userIds.owner)).workspaceId;
+    await app.db.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: other, userId: userIds.author, role: 'member' });
     const b: Blob = { path: 'index.html', bytes: htmlOf('pushed elsewhere'), contentType: 'text/html' };
     const at = { 'x-workspace-id': other };
     const form = new FormData();

@@ -468,7 +468,7 @@ describe('members: picked among the workspace’s own active non-guest members',
     }
     const first = await readJson(await send('GET', `/projects/${paged}/members?limit=2`, actors.manager!));
     expect(first.members).toHaveLength(2);
-    expect(first.nextCursor).toMatch(/^\d+\.[0-9a-f-]{36}$/);
+    expect(first.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
     // The row the cursor names is removed before the next page is asked for.
     const lastOnPage = first.members[1].userId;
     expect((await send('DELETE', `/projects/${paged}/members/${lastOnPage}`, actors.manager!)).status).toBe(
@@ -487,11 +487,52 @@ describe('members: picked among the workspace’s own active non-guest members',
       (m: { userId: string }) => m.userId
     );
     expect(new Set(seen).size).toBe(5);
-    // A cursor that is not one of ours reads as no cursor.
-    const fromTop = await readJson(
-      await send('GET', `/projects/${paged}/members?limit=10&cursor=garbage`, actors.manager!)
+    // A cursor that is not one of ours reads as no cursor, never as a 500:
+    // plain garbage, a well-formed pair whose halves the casts would refuse,
+    // and a huge one.
+    const b64 = (v: string) => Buffer.from(v, 'utf8').toString('base64url');
+    for (const bad of [
+      'garbage',
+      b64('2026-09-20 20:00:00.5+00|not-a-uuid'),
+      b64('99999999-99-99 99:99:99+00|aaaaaaaa-0000-4000-8000-000000000003'),
+      b64('1e+14|aaaaaaaa-0000-4000-8000-000000000003'),
+      b64('x'.repeat(300))
+    ]) {
+      const res = await send(
+        'GET',
+        `/projects/${paged}/members?limit=10&cursor=${encodeURIComponent(bad)}`,
+        actors.manager!
+      );
+      expect(res.status).toBe(200);
+      expect((await readJson(res)).members).toHaveLength(4);
+    }
+  });
+
+  it('members added in the same instant are all paged, none skipped, none repeated', async () => {
+    const same = await createProject(actors.manager!, 'Same instant');
+    // One INSERT statement: every row gets the SAME created_at, to the microsecond.
+    await app.db.pool.query(
+      `INSERT INTO project_members (project_id, member_id, role)
+       SELECT $1, id, 'viewer' FROM workspace_members WHERE id = ANY($2::uuid[])`,
+      [same, [actors.editor!, actors.viewer!, actors.outsider!, actors.leaver!].map((a) => a.memberId)]
     );
-    expect(fromTop.members).toHaveLength(4);
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let pages = 0; pages < 10; pages++) {
+      const res = await readJson(
+        await send(
+          'GET',
+          `/projects/${same}/members?limit=2${cursor ? `&cursor=${cursor}` : ''}`,
+          actors.manager!
+        )
+      );
+      seen.push(...res.members.map((m: { userId: string }) => m.userId));
+      cursor = res.nextCursor;
+      if (!cursor) break;
+    }
+    // The manager's own row plus the four: five distinct people, in three pages.
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
   });
 
   it('a manager removes someone else, and there is no last-manager guard', async () => {

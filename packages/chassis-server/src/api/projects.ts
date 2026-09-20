@@ -23,7 +23,15 @@ import {
   type DbConn
 } from '@antasphere/chassis-db';
 import { requireAuth, requireNonGuest } from '../middleware/auth-context.js';
-import { cursorRowId, keysetBefore, pageOf } from '../pagination.js';
+import {
+  createdAtText,
+  cursorRowId,
+  decodeKeysetCursor,
+  encodeKeysetCursor,
+  keysetBefore,
+  keysetBeforeValue,
+  pageOf
+} from '../pagination.js';
 import {
   PROJECTS_ID,
   projectGrantPredicate,
@@ -109,25 +117,14 @@ const projectSelection = (principal: Principal) => ({
   memberCount: sql<number>`(SELECT count(*)::int FROM project_members prj_count WHERE prj_count.project_id = ${PROJECTS_ID})`
 });
 
-/**
- * The members list's cursor: `<microseconds since the epoch>.<row id>`, the
- * row's own sort key. Not a row id looked up at page time (`keysetBefore`):
- * project_members HARD-deletes rows, so a cursor naming a member removed
- * between two pages would compare against NULL and end the roster early.
- */
-const MEMBER_CURSOR_RE = /^(\d{1,20})\.([0-9a-f-]{36})$/i;
-
-function memberCursor(cursor: string | undefined): { micros: string; id: string } | null {
-  const match = cursor ? MEMBER_CURSOR_RE.exec(cursor) : null;
-  return match ? { micros: match[1]!, id: match[2]! } : null;
-}
-
-function memberCursorOf(row: { id: string; createdAt: Date }): string {
-  return `${BigInt(row.createdAt.getTime()) * 1000n}.${row.id}`;
-}
-
+// The members list pages with the value-carrying cursor (`keysetBeforeValue`):
+// project_members HARD-deletes rows, so a cursor naming a member removed
+// between two pages would compare against NULL under `keysetBefore` and end
+// the roster early. The timestamp rides as Postgres rendered it, never as a
+// JS Date, so a millisecond shared by two rows loses nobody.
 const memberSelection = {
   id: projectMembers.id,
+  createdAtText: createdAtText(projectMembers.createdAt),
   userId: workspaceMembers.userId,
   email: userTable.email,
   name: userTable.name,
@@ -393,7 +390,7 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
     const { id } = c.req.valid('param');
     const { cursor, limit } = c.req.valid('query');
     if ((await projectRole(db, principal, id)) === null) return c.json(notFound(), 404);
-    const after = memberCursor(cursor);
+    const after = decodeKeysetCursor(cursor);
     const rows = await db
       .select(memberSelection)
       .from(projectMembers)
@@ -404,7 +401,11 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
           eq(projectMembers.projectId, id),
           ...(after
             ? [
-                sql`(${projectMembers.createdAt}, ${projectMembers.id}) < (to_timestamp(${after.micros}::numeric / 1000000), ${after.id}::uuid)`
+                keysetBeforeValue({
+                  id: projectMembers.id,
+                  createdAt: projectMembers.createdAt,
+                  cursor: after
+                })
               ]
             : [])
         )
@@ -413,7 +414,10 @@ export function registerProjectRoutes(api: OpenAPIHono, deps: ProjectRouteDeps):
       .limit(limit + 1);
     const page = rows.slice(0, limit);
     const last = rows.length > limit ? page[page.length - 1] : undefined;
-    return c.json({ members: page.map(memberToWire), nextCursor: last ? memberCursorOf(last) : null }, 200);
+    return c.json(
+      { members: page.map(memberToWire), nextCursor: last ? encodeKeysetCursor(last) : null },
+      200
+    );
   });
 
   /** One member of one project, by the person's user id, or undefined. */
