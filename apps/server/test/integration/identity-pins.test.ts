@@ -99,13 +99,14 @@ const linkOf = (message: EmailMessage): string => /https?:\/\/\S+/.exec(message.
 
 /**
  * A mail's part with its two run-time values taken out (the link, and the
- * expiry as `Date#toUTCString` prints it), so the rest compares as bytes.
+ * expiry as the mail shell's `fmtDate` writes it: "Thursday 22 January 2026,
+ * 14:00 UTC"), so the rest compares as bytes.
  */
 const fixed = (part: string | undefined, link: string): string =>
   (part ?? '')
     .split(link)
     .join('<LINK>')
-    .replace(/\w{3}, \d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2} GMT/g, '<DATE>');
+    .replace(/\w+ \d{1,2} \w+ \d{4}, \d{2}:\d{2} UTC/g, '<DATE>');
 
 /** An HTML part on one line: the templates wrap their sentences. */
 const oneLine = (html: string): string => html.replace(/\s+/g, ' ');
@@ -508,9 +509,26 @@ describe('the MCP surface', () => {
 });
 
 describe('the five generic mails, captured from the flows that send them', () => {
-  /** The two places the mail layout prints the name: its header and its footer. */
-  const HEADER = '<span style="color:#ffffff;font-size:16px;font-weight:600">Slideless</span>';
-  const FOOTER = '<span style="color:#a1a1aa;font-size:12px">Slideless</span>';
+  /**
+   * The three places the mail layout prints the name (its title, its header,
+   * its footer), and the footer's line saying what the product is, which is
+   * the tool's own (`copy.mail.tagline`).
+   */
+  const TITLE = '<title>Slideless</title>';
+  const HEADER =
+    `<td style="vertical-align:middle;font-family:'Sentient',Georgia,'Times New Roman',serif;` +
+    `font-size:23px;font-weight:300;letter-spacing:-0.01em;color:#1c1915">Slideless</td>`;
+  const FOOTER =
+    `<p style="margin:0 0 3px;font-family:'Sentient',Georgia,'Times New Roman',serif;` +
+    `font-size:15px;font-weight:400;color:#1c1915">Slideless</p>`;
+  const TAGLINE = '>Presentations made of HTML, hosted and shared. An Antasphere tool.</p>';
+  /** Every mail carries the layout's three names and the tagline. */
+  const expectLayout = (html: string): void => {
+    expect(html).toContain(TITLE);
+    expect(html).toContain(HEADER);
+    expect(html).toContain(FOOTER);
+    expect(html).toContain(TAGLINE);
+  };
 
   /** The mail a flow just sent: exactly one since `mail.sent` was emptied. */
   async function theOneMail(): Promise<EmailMessage> {
@@ -530,15 +548,19 @@ describe('the five generic mails, captured from the flows that send them', () =>
 
     expect(message.subject).toBe('Pins Owner invited you to Identity Pins');
     expect(fixed(message.text, link)).toBe(
-      'Pins Owner invited you to join Identity Pins on Slideless.\n\nAccept: <LINK>\n\nExpires <DATE>.'
+      'Pins Owner invited you to join Identity Pins on Slideless.\n\nJoin the workspace: <LINK>\n\n' +
+        'The invitation stays open until <DATE>.'
     );
     const html = oneLine(message.html);
-    expect(occurrences(html, 'Slideless')).toBe(3);
-    expect(html).toContain(HEADER);
-    expect(html).toContain(FOOTER);
+    // the layout's three, the inbox preview line, and the body
+    expect(occurrences(html, 'Slideless')).toBe(5);
+    expectLayout(html);
+    expect(html).toContain('>Join Identity Pins on Slideless: their decks, and a place for yours.</div>');
     expect(html).toContain(
-      'Pins Owner invited you (invitee@pins.test) to join <strong>Identity Pins</strong> on Slideless.</p>'
+      'You have been invited to <strong>Identity Pins</strong>, a workspace on Slideless. ' +
+        'Join to see the decks the team publishes there, and to publish your own.</p>'
     );
+    expect(html).toContain('This invitation was sent to invitee@pins.test and stays open until ');
   });
 
   it('the password reset', async () => {
@@ -553,14 +575,14 @@ describe('the five generic mails, captured from the flows that send them', () =>
 
     expect(message.subject).toBe('Reset your Slideless password');
     expect(fixed(message.text, link)).toBe(
-      'Reset your Slideless password: <LINK>\n\nExpires <DATE>. If you did not request this, ignore this email.'
+      'Reset your Slideless password: <LINK>\n\nThe link works until <DATE>. ' +
+        'If you did not ask for this, ignore this email: your password stays as it is.'
     );
     const html = oneLine(message.html);
-    expect(occurrences(html, 'Slideless')).toBe(3);
-    expect(html).toContain(HEADER);
-    expect(html).toContain(FOOTER);
+    expect(occurrences(html, 'Slideless')).toBe(4);
+    expectLayout(html);
     expect(html).toContain(
-      'We received a request to reset your Slideless password. Click below to choose a new one.</p>'
+      'Someone asked to reset the password of your Slideless account. If that was you, choose a new one here:</p>'
     );
   });
 
@@ -578,14 +600,13 @@ describe('the five generic mails, captured from the flows that send them', () =>
     expect(confirm.subject).toBe('Confirm your Slideless email change');
     expect(fixed(confirm.text, confirmLink)).toBe(
       'Confirm changing your Slideless email to owner-next@pins.test: <LINK>\n\n' +
-        'Expires <DATE>. If you did not request this, ignore this email.'
+        'The link works until <DATE>. If you did not ask for this, ignore this email: your address stays as it is.'
     );
     const confirmHtml = oneLine(confirm.html);
-    expect(occurrences(confirmHtml, 'Slideless')).toBe(3);
-    expect(confirmHtml).toContain(HEADER);
-    expect(confirmHtml).toContain(FOOTER);
+    expect(occurrences(confirmHtml, 'Slideless')).toBe(4);
+    expectLayout(confirmHtml);
     expect(confirmHtml).toContain(
-      'We received a request to change your Slideless email to <strong>owner-next@pins.test</strong>.'
+      'You asked to change the email of your Slideless account to <strong>owner-next@pins.test</strong>.'
     );
 
     // Consuming the confirmation sends the second leg; its link is left
@@ -601,13 +622,14 @@ describe('the five generic mails, captured from the flows that send them', () =>
     expect(verify.subject).toBe('Verify your Slideless email address');
     expect(fixed(verify.text, verifyLink)).toBe(
       'Verify your Slideless email address: <LINK>\n\n' +
-        'Expires <DATE>. If you did not request this, ignore this email.'
+        'The link works until <DATE>. If you did not ask for this, ignore this email.'
     );
     const verifyHtml = oneLine(verify.html);
-    expect(occurrences(verifyHtml, 'Slideless')).toBe(3);
-    expect(verifyHtml).toContain(HEADER);
-    expect(verifyHtml).toContain(FOOTER);
-    expect(verifyHtml).toContain('Click below to verify this address for your Slideless account.</p>');
+    expect(occurrences(verifyHtml, 'Slideless')).toBe(4);
+    expectLayout(verifyHtml);
+    expect(verifyHtml).toContain(
+      'One click confirms that this address belongs to you, and it becomes the email of your Slideless account.</p>'
+    );
   });
 
   it('the sign-in code', async () => {
@@ -618,16 +640,18 @@ describe('the five generic mails, captured from the flows that send them', () =>
     );
     expect(res.status).toBe(200);
     const message = await theOneMail();
-    const code = /\d+$/.exec(message.text ?? '')![0];
+    const code = /code: (\d+)/.exec(message.text ?? '')![1]!;
 
     expect(code).toMatch(/^\d{6}$/);
     expect(message.subject).toBe(`${code} is your Slideless code`);
-    expect(message.text).toBe(`Your Slideless code: ${code}`);
-    // The body of this mail never names the product: the layout alone does.
+    expect(message.text).toBe(
+      `Your Slideless code: ${code}\n\n` +
+        'It works once and only for a few minutes. If you did not ask for it, ignore this email.'
+    );
     const html = oneLine(message.html);
-    expect(occurrences(html, 'Slideless')).toBe(2);
-    expect(html).toContain(HEADER);
-    expect(html).toContain(FOOTER);
+    expect(occurrences(html, 'Slideless')).toBe(4);
+    expectLayout(html);
+    expect(html).toContain('Type this into Slideless to continue:</p>');
   });
 });
 
