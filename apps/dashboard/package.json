@@ -5,11 +5,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "svelte-kit sync",
     "build": "vite build",
     "dev": "vite dev",
     "typecheck": "rm -rf .svelte-kit/types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "eslint src",
-    "test": "vitest run --passWithNoTests",
+    "test": "svelte-kit sync && vitest run --passWithNoTests",
     "test:e2e": "playwright test"
   },
   "dependencies": {
