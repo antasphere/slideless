@@ -998,11 +998,17 @@ export class PresentationService {
   }
 
   /** Take a deck out of a project (its brand flag goes with the link). False when it was not linked. */
-  async unlinkProject(deckId: string, projectId: string): Promise<boolean> {
+  async unlinkProject(workspaceId: string, deckId: string, projectId: string): Promise<boolean> {
+    // The workspace clause is a habit of every write in this file, kept
+    // here too although both ids were workspace-checked by the handler.
     const removed = await this.db
       .delete(presentationProjects)
       .where(
-        and(eq(presentationProjects.presentationId, deckId), eq(presentationProjects.projectId, projectId))
+        and(
+          eq(presentationProjects.workspaceId, workspaceId),
+          eq(presentationProjects.presentationId, deckId),
+          eq(presentationProjects.projectId, projectId)
+        )
       )
       .returning({ projectId: presentationProjects.projectId });
     return removed.length > 0;
@@ -1072,12 +1078,22 @@ export class PresentationService {
       await tx
         .update(presentationProjects)
         .set({ isBrand: false })
-        .where(and(eq(presentationProjects.projectId, projectId), eq(presentationProjects.isBrand, true)));
+        .where(
+          and(
+            eq(presentationProjects.workspaceId, workspaceId),
+            eq(presentationProjects.projectId, projectId),
+            eq(presentationProjects.isBrand, true)
+          )
+        );
       await tx
         .update(presentationProjects)
         .set({ isBrand: true })
         .where(
-          and(eq(presentationProjects.presentationId, deckId), eq(presentationProjects.projectId, projectId))
+          and(
+            eq(presentationProjects.workspaceId, workspaceId),
+            eq(presentationProjects.presentationId, deckId),
+            eq(presentationProjects.projectId, projectId)
+          )
         );
       return 'set';
     });
@@ -1096,7 +1112,13 @@ export class PresentationService {
       await tx
         .update(presentationProjects)
         .set({ isBrand: false })
-        .where(and(eq(presentationProjects.projectId, projectId), eq(presentationProjects.isBrand, true)));
+        .where(
+          and(
+            eq(presentationProjects.workspaceId, workspaceId),
+            eq(presentationProjects.projectId, projectId),
+            eq(presentationProjects.isBrand, true)
+          )
+        );
       return 'cleared';
     });
   }

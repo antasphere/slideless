@@ -656,7 +656,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         return c.json(projectArchived(), 409);
       }
     }
-    if (!(await service.unlinkProject(deck.id, projectId))) {
+    if (!(await service.unlinkProject(principal.workspaceId, deck.id, projectId))) {
       return c.json(err('not_linked', 'This deck is not in that project'), 404);
     }
     c.set('audit', {

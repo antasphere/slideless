@@ -64,10 +64,17 @@ const DECK_HTML = htmlOf('the linked deck');
 let ipCounter = 0;
 const nextIp = () => `10.79.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
-const send = (method: string, path: string, who: Who | { key: string }, body?: unknown) =>
+const send = (
+  method: string,
+  path: string,
+  who: Who | { key: string },
+  body?: unknown,
+  headers: Record<string, string> = {}
+) =>
   app.app.request(`/api/v1${path}`, {
     method,
     headers: {
+      ...headers,
       'x-forwarded-for': nextIp(),
       ...(typeof who === 'string' ? { cookie: cookies[who] } : { authorization: `Bearer ${who.key}` }),
       ...(body !== undefined ? { 'content-type': 'application/json' } : {})
@@ -411,6 +418,62 @@ describe('the write rule: an editor commits a version, a viewer does not', () =>
     );
     expect((await send('POST', `/projects/${project}/unarchive`, 'manager')).status).toBe(200);
     expect((await send('POST', `/presentations/${deck}/versions`, 'editor', body)).status).toBe(201);
+  });
+});
+
+describe('the write rule beyond the commit: canWriteDeck gates the share links and the deck patch', () => {
+  it('an editor mints a share link and retitles the deck through the project; a viewer is refused', async () => {
+    const minted = await send('POST', `/presentations/${deck}/tokens`, 'editor', { name: 'From the editor' });
+    expect(minted.status).toBe(201);
+    expect((await send('GET', `/presentations/${deck}/tokens`, 'editor')).status).toBe(200);
+    expect(
+      (await send('PATCH', `/presentations/${deck}`, 'editor', { title: 'The linked deck' })).status
+    ).toBe(200);
+    // A viewer reads the deck (200 on GET) and writes nothing of it: the
+    // share-link surface answers the uniform 404, the patch the tiered 403.
+    expect((await send('GET', `/presentations/${deck}`, 'viewer')).status).toBe(200);
+    await expectError(
+      await send('POST', `/presentations/${deck}/tokens`, 'viewer', { name: 'nope' }),
+      404,
+      'not_found'
+    );
+    await expectError(await send('GET', `/presentations/${deck}/tokens`, 'viewer'), 404, 'not_found');
+    await expectError(
+      await send('PATCH', `/presentations/${deck}`, 'viewer', { title: 'nope' }),
+      403,
+      'forbidden'
+    );
+  });
+});
+
+describe('one workspace: a grant held in one workspace opens nothing in another', () => {
+  it('a member of two workspaces cannot push a deck of the second into a project of the first', async () => {
+    // The author gets a second workspace of their own (its owner there).
+    const other = (await app.registry.workspaces.create('Elsewhere', userIds.author)).workspaceId;
+    const b: Blob = { path: 'index.html', bytes: htmlOf('pushed elsewhere'), contentType: 'text/html' };
+    const at = { 'x-workspace-id': other };
+    const form = new FormData();
+    form.set('sha256', shaOf(b.bytes));
+    form.set('file', new Blob([new Uint8Array(b.bytes)], { type: b.contentType }), b.path);
+    const up = await app.app.request('/api/v1/presentations/assets', {
+      method: 'POST',
+      headers: { cookie: cookies.author, 'x-forwarded-for': nextIp(), ...at },
+      body: form
+    });
+    expect(up.status).toBe(201);
+    const reserve = await readJson(await send('POST', '/presentations/uploads', 'author', undefined, at));
+    const commit = await send(
+      'POST',
+      `/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      'author',
+      { title: 'Elsewhere', entryPath: 'index.html', manifest: [entryOf(b)], projectIds: [project] },
+      at
+    );
+    await expectError(commit, 404, 'project_not_found');
+    const { rows } = await app.db.pool.query(
+      'SELECT 1 FROM presentation_projects pp JOIN projects p ON p.id = pp.project_id WHERE pp.workspace_id <> p.workspace_id'
+    );
+    expect(rows).toHaveLength(0);
   });
 });
 
