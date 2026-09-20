@@ -552,9 +552,9 @@ export const en = {
   'deckProjects.brandClear': 'Clear',
   'deckProjects.brandLoadFailed': 'Could not load the brand: {error}',
   'deckProjects.brandPickTitle': 'Choose the brand of the project',
-  'deckProjects.brandPickDescription':
-    'One of the brands of the workspace. The members of the project will be able to read it.',
-  'deckProjects.brandPickEmpty': 'This workspace has no brand yet. Push one first, from the Library.',
+  'deckProjects.brandPickDescription': 'One of the brands already in this project.',
+  'deckProjects.brandPickEmpty':
+    'No brand is in this project yet. Add one with the deck button below, or push one with --project.',
   'deckProjects.brandPickFailed': 'Could not load the brands: {error}',
   'deckProjects.brandPickSubmit': 'Use this brand',
   'deckProjects.brandSaved': 'Brand set.',

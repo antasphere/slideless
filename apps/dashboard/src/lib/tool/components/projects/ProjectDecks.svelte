@@ -70,7 +70,9 @@
     brandChoicesError = null;
     showBrandDialog = true;
     try {
-      brandChoices = (await deckProjects.decksOf(null, { type: 'brand', limit: 100 })).presentations;
+      // the brand is one of the project's own decks: a brand reference linked
+      // to it first (the add dialog, or a push with --project)
+      brandChoices = (await deckProjects.decksOf(project.id, { type: 'brand', limit: 100 })).presentations;
     } catch (e) {
       brandChoicesError = errorMessage(e);
     }

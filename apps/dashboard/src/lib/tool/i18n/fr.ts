@@ -581,10 +581,9 @@ export const fr: Record<keyof typeof en, string> = {
   'deckProjects.brandClear': 'Retirer',
   'deckProjects.brandLoadFailed': 'Impossible de charger l’identité : {error}',
   'deckProjects.brandPickTitle': 'Choisir l’identité du projet',
-  'deckProjects.brandPickDescription':
-    'Une des identités de l’espace de travail. Les membres du projet pourront la lire.',
+  'deckProjects.brandPickDescription': 'Une des identités déjà dans ce projet.',
   'deckProjects.brandPickEmpty':
-    'Cet espace de travail n’a pas encore d’identité. Envoyez-en une d’abord, depuis la Bibliothèque.',
+    'Aucune identité n’est encore dans ce projet. Ajoutez-en une avec le bouton des présentations ci-dessous, ou envoyez-en une avec --project.',
   'deckProjects.brandPickFailed': 'Impossible de charger les identités : {error}',
   'deckProjects.brandPickSubmit': 'Utiliser cette identité',
   'deckProjects.brandSaved': 'Identité choisie.',
