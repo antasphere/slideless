@@ -1,6 +1,7 @@
 import type { Component } from 'svelte';
 import type { StatDrawingKind } from '$lib/components/brand/StatDrawing.svelte';
 import type { NavFacts, NavItem } from '$lib/nav';
+import type { Project } from '$lib/projects/types';
 
 /**
  * What the tool gives the shell (PRDCT-2532). The dashboard is two halves:
@@ -16,6 +17,8 @@ import type { NavFacts, NavItem } from '$lib/nav';
 export interface ToolContribution<M extends ToolOverview = ToolOverview> {
   /** The tool's sections of the menu, after the overview: the everyday ones. */
   nav(facts: Required<NavFacts>): NavItem[];
+  /** Its sections that come after the shell's Projects entry: what the everyday ones are made from. */
+  navAfter(facts: Required<NavFacts>): NavItem[];
   /** The ids of its sections a phone keeps as thumb tabs beside the overview. */
   phoneTabs: string[];
   /** First path segments of its signed-out pages, which turn like the gate's own. */
@@ -28,6 +31,16 @@ export interface ToolContribution<M extends ToolOverview = ToolOverview> {
     resourceTypes: string[];
     /** Which drawing a line of its own gets, tried after people and before files. */
     glyphs: { test: RegExp; icon: Component }[];
+  };
+  project: {
+    /**
+     * What a project holds in this tool, on the project's page under its
+     * members (PRDCT-2582). The shell owns the project, its members and their
+     * roles; the tool shows what it links to one. The project carries the
+     * reader's own role and whether it is archived (`$lib/projects/can`), so
+     * the piece shows a control only to who may use it.
+     */
+    Resources: Component<{ project: Project }>;
   };
   overview: {
     /**

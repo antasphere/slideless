@@ -188,6 +188,8 @@ export const fr: Record<keyof typeof en, string> = {
   'tags.fileOther': 'Fichier',
   'nav.workspace': 'Espace de travail',
   'nav.people': 'Personnes',
+  'nav.projects': 'Projets',
+  'nav.blurb.projects': 'Des groupes de l’espace, chacun avec ses membres et ce sur quoi ils travaillent.',
   'nav.primary': 'Navigation principale',
   'nav.blurb.people': 'Qui peut ouvrir cet espace, et les invitations en cours.',
   'nav.blurb.apiKeys': 'Des clés pour la ligne de commande et pour les agents.',

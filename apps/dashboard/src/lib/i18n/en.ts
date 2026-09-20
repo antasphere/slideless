@@ -185,6 +185,8 @@ export const en = {
   'tags.fileOther': 'File',
   'nav.workspace': 'Workspace',
   'nav.people': 'People',
+  'nav.projects': 'Projects',
+  'nav.blurb.projects': 'Groups of the workspace, each with its own members and what they work on.',
   'nav.primary': 'Main navigation',
   'nav.blurb.people': 'Who can open this workspace, and the invitations on their way.',
   'nav.blurb.apiKeys': 'Keys for the command line and for agents.',

@@ -7,6 +7,7 @@ import { warmList } from '$lib/stores/pagedList.svelte';
 import { createDeckOverview, type DeckOverview } from './overview.svelte';
 import RecentDecks from './components/overview/RecentDecks.svelte';
 import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
+import ProjectDecks from './components/projects/ProjectDecks.svelte';
 
 /**
  * What Slideless gives the shell: the one door into the tool's half
@@ -14,8 +15,7 @@ import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
  * door, `./i18n`.
  */
 export const tool: ToolContribution<DeckOverview> = {
-  nav({ origin }) {
-    const isGuest = origin === 'guest';
+  nav() {
     return [
       // The product first: decks are what this instance is for.
       {
@@ -25,12 +25,17 @@ export const tool: ToolContribution<DeckOverview> = {
         href: '/decks',
         icon: Presentation,
         pattern: 'slides'
-      },
+      }
+    ];
+  },
+
+  navAfter({ origin }) {
+    return [
       // The library (PRDCT-2583): the decks the workspace keeps to make other
       // decks from, brands and templates as the two tabs of one entry, each at
       // the address it always had. A guest reads no workspace reference (a guest
       // invited on one reads it at /decks/{id}), so the entry is not offered.
-      ...(isGuest
+      ...(origin === 'guest'
         ? []
         : [
             {
@@ -96,6 +101,10 @@ export const tool: ToolContribution<DeckOverview> = {
       'upload_session'
     ],
     glyphs: [{ test: /present|deck|share|version/, icon: Presentation }]
+  },
+
+  project: {
+    Resources: ProjectDecks
   },
 
   overview: {

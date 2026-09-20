@@ -27,26 +27,27 @@ const { listScope } = await import('$lib/stores/pagedList.svelte');
  * would say so.
  */
 describe('the menu', () => {
-  it('a member gets decks and the library, right after the overview', () => {
+  it('a member gets decks, projects and the library, right after the overview', () => {
     const nav = buildNav({ role: 'member', origin: 'local' });
     expect(nav.primary.map((i) => [i.id, i.href, i.pattern])).toEqual([
       ['overview', '/', 'rings'],
       ['decks', '/decks', 'slides'],
+      ['projects', '/projects', 'truss'],
       ['library', '/brands', 'aurora']
     ]);
     expect(nav.primary[1].icon).toBe(Presentation);
     for (const item of nav.primary.slice(1)) expect(item.title && item.blurb).toBeTruthy();
   });
 
-  // PRDCT-2583: the everyday entries, pinned for every role and origin. A
+  // PRDCT-2583: the four entries, pinned for every role and origin. A
   // guest's role is locked to member, the other two rows hold the rule anyway.
   it.each([
-    ['owner', 'local', ['overview', 'decks', 'library']],
-    ['admin', 'local', ['overview', 'decks', 'library']],
-    ['member', 'local', ['overview', 'decks', 'library']],
-    ['owner', 'hub', ['overview', 'decks', 'library']],
-    ['admin', 'hub', ['overview', 'decks', 'library']],
-    ['member', 'hub', ['overview', 'decks', 'library']],
+    ['owner', 'local', ['overview', 'decks', 'projects', 'library']],
+    ['admin', 'local', ['overview', 'decks', 'projects', 'library']],
+    ['member', 'local', ['overview', 'decks', 'projects', 'library']],
+    ['owner', 'hub', ['overview', 'decks', 'projects', 'library']],
+    ['admin', 'hub', ['overview', 'decks', 'projects', 'library']],
+    ['member', 'hub', ['overview', 'decks', 'projects', 'library']],
     ['owner', 'guest', ['overview', 'decks']],
     ['admin', 'guest', ['overview', 'decks']],
     ['member', 'guest', ['overview', 'decks']]
@@ -70,17 +71,24 @@ describe('the menu', () => {
     expect(pathCrumbs(nav, '/brands')).toHaveLength(2);
   });
 
-  it('a guest reads no workspace reference: decks only', () => {
+  it('a guest reads no workspace reference and joins no project: decks only', () => {
     expect(tool.nav({ role: 'member', origin: 'guest' }).map((i) => i.id)).toEqual(['decks']);
+    expect(tool.navAfter({ role: 'member', origin: 'guest' })).toEqual([]);
     expect(buildNav({ role: 'member', origin: 'guest' }).primary.map((i) => i.id)).toEqual([
       'overview',
       'decks'
     ]);
   });
 
-  it('a phone keeps decks as a thumb tab and folds the library behind the workspace entry', () => {
+  it('a phone keeps decks and projects as thumb tabs and folds the library behind the workspace entry', () => {
     const nav = buildNav({ role: 'owner', origin: 'local' });
-    expect(phoneTabs(nav).map((i) => i.id)).toEqual(['overview', 'decks', 'workspace', 'settings']);
+    expect(phoneTabs(nav).map((i) => i.id)).toEqual([
+      'overview',
+      'decks',
+      'projects',
+      'workspace',
+      'settings'
+    ]);
     expect(behindWorkspace(nav).map((i) => i.id)).toEqual([
       'library',
       'members',
@@ -91,6 +99,7 @@ describe('the menu', () => {
     const workspace = phoneTabs(nav).find((i) => i.id === 'workspace')!;
     expect(workspace.also).toEqual(expect.arrayContaining(['/brands', '/templates']));
     expect(workspace.also).not.toContain('/decks');
+    expect(workspace.also).not.toContain('/projects');
   });
 });
 
