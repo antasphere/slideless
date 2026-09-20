@@ -48,7 +48,6 @@ export const en = {
   'tokens.panelToday': 'Today',
   'tokens.panelPrivacy': 'No IP addresses and no full URLs are ever stored.',
   'tokens.countLine': '{active} active · {total} in total',
-  'nav.blurb.brands': 'The look and the voice your decks can take.',
   'overview.brandsCta': 'See the brands',
   'tokens.nameHint':
     'Who is it for? A label only you see. A named link remembers its recipient’s form answers; a link with no name is for nobody in particular and does not.',
@@ -77,7 +76,9 @@ export const en = {
   // ── References: the Brands and Templates sections (PRDCT-2421) ────────
   'nav.brands': 'Brands',
   'nav.templates': 'Templates',
-  'nav.blurb.templates': 'The structure of the decks you make again and again.',
+  // The library (PRDCT-2583): one entry of the menu, brands and templates as its tabs.
+  'nav.library': 'Library',
+  'nav.blurb.library': 'The brands and the templates your decks are made from.',
   'refs.brandsDescription':
     'The look and the voice of your decks, kept as decks. An agent reads a brand before it writes a deck for you.',
   'refs.templatesDescription':

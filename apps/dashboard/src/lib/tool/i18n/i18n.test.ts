@@ -11,6 +11,8 @@ describe('the French typography rule, on the references section', () => {
       k.startsWith('refs.') ||
       k === 'nav.brands' ||
       k === 'nav.templates' ||
+      k === 'nav.library' ||
+      k === 'nav.blurb.library' ||
       (k.startsWith('overview.') && /brand/i.test(k))
   );
 

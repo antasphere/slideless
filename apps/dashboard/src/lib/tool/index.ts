@@ -1,6 +1,5 @@
 import Presentation from '@lucide/svelte/icons/presentation';
-import Palette from '@lucide/svelte/icons/palette';
-import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+import Library from '@lucide/svelte/icons/library';
 import type { ToolContribution } from '$lib/contribution';
 import { api } from '$lib/api';
 import { t } from '$lib/i18n';
@@ -27,33 +26,27 @@ export const tool: ToolContribution<DeckOverview> = {
         icon: Presentation,
         pattern: 'slides'
       },
-      // The references (PRDCT-2421): the decks the workspace keeps to make
-      // other decks from. A guest reads no workspace reference (a guest invited
-      // on one reads it at /decks/{id}), so the two sections are not offered.
+      // The library (PRDCT-2583): the decks the workspace keeps to make other
+      // decks from, brands and templates as the two tabs of one entry, each at
+      // the address it always had. A guest reads no workspace reference (a guest
+      // invited on one reads it at /decks/{id}), so the entry is not offered.
       ...(isGuest
         ? []
         : [
             {
-              id: 'brands',
-              title: t('nav.brands'),
-              blurb: t('nav.blurb.brands'),
+              id: 'library',
+              title: t('nav.library'),
+              blurb: t('nav.blurb.library'),
               href: '/brands',
-              icon: Palette,
+              also: ['/templates'],
+              icon: Library,
               pattern: 'aurora'
-            },
-            {
-              id: 'templates',
-              title: t('nav.templates'),
-              blurb: t('nav.blurb.templates'),
-              href: '/templates',
-              icon: LayoutTemplate,
-              pattern: 'crosses'
             }
           ])
     ];
   },
 
-  // The references fold behind the phone's workspace entry: six thumb tabs do not fit the bar.
+  // The library folds behind the phone's workspace entry: the bar keeps the everyday sections.
   phoneTabs: ['decks'],
 
   // The collaborator's claim page, /collab/{token}.

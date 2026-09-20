@@ -1,6 +1,6 @@
 <script lang="ts">
-  /* The Brands and Templates sections (PRDCT-2421): one page, the type as a
-     prop. The decks page's toolbar as is (the search on the title and the
+  /* The library's two pages, Brands and Templates (PRDCT-2421, one section
+     since PRDCT-2583): one page, the type as a prop. The decks page's toolbar as is (the search on the title and the
      description, the count, the View menu with the cards-or-table choice kept
      per section, the add button that opens the command-line instructions),
      the references as cards or as a table, and the side sheet that opens on a
@@ -8,7 +8,7 @@
      edition-sniffs, the page reads /me and the list answer. */
   import { type ColumnDef, type VisibilityState } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import HeroBand from '$lib/components/brand/HeroBand.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
@@ -43,6 +43,11 @@
 
   const brand = $derived(type === 'brand');
   const title = $derived(brand ? t('nav.brands') : t('nav.templates'));
+  // The library is one section with two tabs (PRDCT-2583), each at its own address.
+  const libraryTabs = $derived([
+    { href: '/brands', label: t('nav.brands') },
+    { href: '/templates', label: t('nav.templates') }
+  ]);
 
   // A guest reads no workspace reference and creates no deck (D2): the
   // sections are not in a guest's navigation, and the add button never shows.
@@ -164,11 +169,15 @@
   <title>{title} · {instanceName}</title>
 </svelte:head>
 
-<HeroBand drawing={brand ? 'orbits' : 'apollonian'} seed={brand ? 20260919 : 20260920}>
-  <p class="hero-eyebrow">{t('nav.workspace')}</p>
-  <h1 class="hero-title">{title}</h1>
-  <p class="hero-lede">{brand ? t('refs.brandsDescription') : t('refs.templatesDescription')}</p>
-</HeroBand>
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={t('nav.library')}
+  lede={brand ? t('refs.brandsDescription') : t('refs.templatesDescription')}
+  pageTitle={title}
+  tabs={libraryTabs}
+  drawing={brand ? 'orbits' : 'apollonian'}
+  seed={brand ? 20260919 : 20260920}
+/>
 
 {#snippet viewMenu()}
   {#if !phone.current}

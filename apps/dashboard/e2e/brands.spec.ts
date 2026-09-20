@@ -156,7 +156,9 @@ test('brands: a pushed reference is read, downloaded, published, made the defaul
   });
 
   await test.step('Brands lists the brand as a card, with its title ESCAPED', async () => {
-    await page.getByRole('link', { name: 'Brands', exact: true }).click();
+    // the menu's Library entry opens on its first tab, Brands (PRDCT-2583)
+    await page.getByRole('link', { name: 'Library', exact: true }).click();
+    await expect(page).toHaveURL(/\/brands$/);
     await expect(page.getByRole('heading', { name: 'Brands' })).toBeVisible();
 
     const card = page.getByTestId('reference-card');

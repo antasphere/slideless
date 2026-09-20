@@ -54,7 +54,6 @@ export const fr: Record<keyof typeof en, string> = {
   'tokens.panelToday': 'Aujourd’hui',
   'tokens.panelPrivacy': 'Aucune adresse IP ni URL complète n’est jamais conservée.',
   'tokens.countLine': '{active} actifs · {total} au total',
-  'nav.blurb.brands': 'Le look et la voix de vos présentations, gardés comme des présentations.',
   'overview.brandsCta': 'Voir les identités',
   'tokens.nameHint':
     'À qui est-il destiné ? Un libellé que vous seul voyez. Un lien nommé retient les réponses de son destinataire aux formulaires ; un lien sans nom ne s’adresse à personne en particulier et ne retient rien.',
@@ -85,7 +84,9 @@ export const fr: Record<keyof typeof en, string> = {
   // ── Références : les sections Identités et Modèles (PRDCT-2421) ───────
   'nav.brands': 'Identités',
   'nav.templates': 'Modèles',
-  'nav.blurb.templates': 'La structure des présentations que vous refaites souvent.',
+  // La bibliothèque (PRDCT-2583) : une entrée du menu, identités et modèles en onglets.
+  'nav.library': 'Bibliothèque',
+  'nav.blurb.library': 'Les identités et les modèles dont vos présentations sont faites.',
   'refs.brandsDescription':
     'Le look et la voix de vos présentations, gardés sous forme de présentations. Un agent lit une identité avant d’écrire une présentation pour vous.',
   'refs.templatesDescription':
