@@ -26,7 +26,15 @@ import {
   type CliIo
 } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
-import { detectEntry, readLink, scanDeck, writeLink, LINK_FILENAME, type DeckScan } from '../manifest.js';
+import {
+  detectEntry,
+  linkedDeckId,
+  readLink,
+  scanDeck,
+  writeLink,
+  LINK_FILENAME,
+  type DeckScan
+} from '../manifest.js';
 import { readCapped, sha256Hex } from '../download.js';
 import { startDevServer } from '../devserver.js';
 import { shouldOpenAfterPush } from '../open.js';
@@ -538,15 +546,11 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
   const link = await readLink(scan.rootDir);
   let existingId: string | null = opts.id ?? null;
   if (!existingId && !opts.new && link) {
-    if (link.baseUrl === ctx.baseUrl) {
-      existingId = link.presentationId;
-    } else {
-      throw new CliUsageError(
-        `${LINK_FILENAME} links this folder to ${link.baseUrl}, but you are pushing to ` +
-          `${ctx.baseUrl}. Pass --new to create a fresh deck here, or --id <deckId> to ` +
-          'target one explicitly.'
-      );
-    }
+    existingId = await linkedDeckId(
+      ctx,
+      scan.rootDir,
+      'Pass --new to create a fresh deck here, or --id <deckId> to target one explicitly.'
+    );
   }
 
   // The references to record, resolved BEFORE any upload: a wrong `--brand`
@@ -557,6 +561,21 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
   // commit's `projectIds` would be a duplicate and the link route a second
   // no-op call. Order is the one the person wrote.
   const wantedProjects = [...new Set(opts.project ?? [])];
+  // Each project read once BEFORE any upload, like `--brand`: a wrong or
+  // unreadable `--project` is a usage error that must cost nothing, and the
+  // sentence names the project it was about.
+  for (const projectId of wantedProjects) {
+    try {
+      await ctx.client.project(projectId);
+    } catch (e) {
+      if (!(e instanceof PlatformApiError)) throw e;
+      // The project route's own 404 is `not_found`; here it is about the project.
+      const asProject =
+        e.code === 'not_found' ? new PlatformApiError(404, 'project_not_found', e.message) : e;
+      const line = explainDeckProjectRefusal(asProject, 'push') ?? e.message;
+      throw new CliUsageError(`--project ${projectId}: ${line}`);
+    }
+  }
 
   // The cap, before the first write of either branch (discovery is a
   // public read): a refusal here costs no upload.
@@ -593,18 +612,30 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
       opts.title ?? opts.defaultTitle ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
     const { uploadSession } = await ctx.client.createUploadSession();
     uploaded = await uploadMissing(ctx, scan);
-    committed = await ctx.client.commitUploadSession(uploadSession.id, {
-      title,
-      kind,
-      interactive: opts.interactive,
-      entryPath,
-      manifest,
-      // The deck the caller is creating is theirs, so the only question is
-      // the project side: editor or more, none archived. One that does not
-      // qualify refuses the WHOLE commit, which is what a new deck wants —
-      // nothing half-placed.
-      ...(wantedProjects.length > 0 ? { projectIds: wantedProjects } : {})
-    });
+    try {
+      committed = await ctx.client.commitUploadSession(uploadSession.id, {
+        title,
+        kind,
+        interactive: opts.interactive,
+        entryPath,
+        manifest,
+        // The deck the caller is creating is theirs, so the only question is
+        // the project side: editor or more, none archived. One that does not
+        // qualify refuses the WHOLE commit, which is what a new deck wants —
+        // nothing half-placed.
+        ...(wantedProjects.length > 0 ? { projectIds: wantedProjects } : {})
+      });
+    } catch (e) {
+      // The pre-flight read every project; what refuses HERE is the role or
+      // the archive, and the server names the project in `details`.
+      if (e instanceof PlatformApiError && e.code === 'project_not_found') {
+        const named = (e.details as { projectId?: string } | undefined)?.projectId;
+        throw new CliUsageError(
+          `--project${named ? ` ${named}` : ''}: ${explainDeckProjectRefusal(e, 'push') ?? e.message}`
+        );
+      }
+      throw e;
+    }
     created = true;
   }
   // A pulled REFERENCE folder's link carries a `reference` block (its type

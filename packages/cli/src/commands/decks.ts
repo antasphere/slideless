@@ -48,7 +48,7 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
         const listed = (p: PresentationListParams) =>
           opts.project === undefined
             ? ctx.client.presentations(p)
-            : explainedDeckProject('link', () => ctx.client.presentations(p));
+            : explainedDeckProject('list', () => ctx.client.presentations(p));
         const first = await listed(params);
         const rows = [...first.presentations];
         if (opts.all) {

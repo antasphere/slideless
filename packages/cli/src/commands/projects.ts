@@ -4,7 +4,9 @@ import { PlatformApiError } from '@slideless/sdk';
 import type { Presentation, PresentationProjectRef } from '@slideless/contract';
 import { CliUsageError, explainProjectRefusal, printJson, type CliIo } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
-import { LINK_FILENAME, readLink } from '../manifest.js';
+import { LINK_FILENAME, linkedDeckId } from '../manifest.js';
+import { listReferences } from './content.js';
+import { resolveReference } from '../references.js';
 
 /**
  * The DECK's side of the projects (ADR 026). The chassis owns the concept
@@ -41,34 +43,22 @@ function projectsGroup(program: Command): Command {
  * The deck a verb acts on: the id as written, else the `.slideless.json` of
  * the named folder (or of the current one), which must name THIS instance.
  * A folder path and a deck id are told apart the way the rest of the CLI
- * does it — an argument that names an existing link file is a folder.
+ * does it — an argument that names an existing link file is a folder. The
+ * instance check is `linkedDeckId`'s, the one `push` runs.
  */
 async function resolveDeck(ctx: CliContext, deck: string | undefined): Promise<string> {
   if (deck !== undefined) {
-    const link = await readLink(resolve(deck));
-    if (!link) return deck;
-    if (link.baseUrl !== ctx.baseUrl) {
-      throw new CliUsageError(
-        `${LINK_FILENAME} in ${deck} links that folder to ${link.baseUrl}, but you are working against ` +
-          `${ctx.baseUrl}. Name the deck by id instead.`
-      );
-    }
-    return link.presentationId;
+    const linked = await linkedDeckId(ctx, resolve(deck), 'Name the deck by id instead.');
+    return linked ?? deck;
   }
-  const link = await readLink(resolve('.'));
-  if (!link) {
+  const linked = await linkedDeckId(ctx, resolve('.'), 'Name the deck by id instead.');
+  if (!linked) {
     throw new CliUsageError(
       `No deck given and no ${LINK_FILENAME} in the current folder — name the deck by id, or run this ` +
         'from a folder a push linked.'
     );
   }
-  if (link.baseUrl !== ctx.baseUrl) {
-    throw new CliUsageError(
-      `${LINK_FILENAME} links this folder to ${link.baseUrl}, but you are working against ${ctx.baseUrl}. ` +
-        'Name the deck by id instead.'
-    );
-  }
-  return link.presentationId;
+  return linked;
 }
 
 /**
@@ -76,13 +66,14 @@ async function resolveDeck(ctx: CliContext, deck: string | undefined): Promise<s
  * ones (`explainProjectRefusal`); these are the codes the deck side adds,
  * where the same code means something different depending on the verb.
  */
-export function explainDeckProjectRefusal(
-  e: PlatformApiError,
-  verb: 'link' | 'unlink' | 'brand'
-): string | null {
+export type DeckProjectVerb = 'link' | 'unlink' | 'brand' | 'list' | 'push';
+
+export function explainDeckProjectRefusal(e: PlatformApiError, verb: DeckProjectVerb): string | null {
   switch (e.code) {
     case 'project_not_found':
-      return 'No such project, or it is not yours to read. (A project you are not a member of answers the same way: its existence is not probeable.)';
+      return verb === 'push'
+        ? 'No such project, or it is not yours to read, or you are not an editor of it, or it is archived: a new deck goes into a project you may link into.'
+        : 'No such project, or it is not yours to read. (A project you are not a member of answers the same way: its existence is not probeable.)';
     case 'not_found':
       return verb === 'brand'
         ? 'No such project or deck, or it is not yours to read.'
@@ -96,7 +87,9 @@ export function explainDeckProjectRefusal(
     case 'insufficient_project_role':
       return verb === 'brand'
         ? 'You need the manager role on this project to change its brand.'
-        : 'You need editor or more on this project to put a deck in it.';
+        : verb === 'list'
+          ? 'Your role on this project does not allow this listing.'
+          : 'You need editor or more on this project to put a deck in it.';
     case 'project_archived':
       return 'This project is archived and read-only. Unarchive it first to change what it holds.';
     case 'guest_forbidden':
@@ -104,17 +97,16 @@ export function explainDeckProjectRefusal(
     case 'forbidden':
       return verb === 'unlink'
         ? 'Only the deck administrator (its owner, or a workspace admin or owner) or a manager of the project takes a deck out of it.'
-        : 'Only the deck administrator — its owner, or a workspace admin or owner — puts a deck in a project.';
+        : verb === 'list'
+          ? 'This listing is not yours to read.'
+          : 'Only the deck administrator — its owner, or a workspace admin or owner — puts a deck in a project.';
     default:
       return explainProjectRefusal(e, 'project');
   }
 }
 
 /** Run a deck-side project call, turning the known refusals into sentences. */
-export async function explainedDeckProject<T>(
-  verb: 'link' | 'unlink' | 'brand',
-  run: () => Promise<T>
-): Promise<T> {
+export async function explainedDeckProject<T>(verb: DeckProjectVerb, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (e) {
@@ -223,7 +215,11 @@ export function registerProjectDeckCommands(program: Command, io: CliIo): void {
         return;
       }
 
-      const deckId = await resolveDeck(ctx, ref);
+      // A brand is named the way every reference ref is (`--brand`, `pull`):
+      // its id, its title or the start of its title, among the brands the
+      // caller can read; a linked folder still counts.
+      const linked = await linkedDeckId(ctx, resolve(ref), 'Name the brand by id or title instead.');
+      const deckId = linked ?? resolveReference(await listReferences(ctx, 'brand'), ref, 'brand').id;
       const set = await explainedDeckProject('brand', () => ctx.client.setProjectBrand(project, deckId));
       if (ctx.json) return printJson(io, set);
       io.out.write(

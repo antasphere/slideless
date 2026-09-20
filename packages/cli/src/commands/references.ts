@@ -115,7 +115,7 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
         const listed = (p: ReferenceListParams) =>
           opts.project === undefined
             ? ctx.client.references(p)
-            : explainedDeckProject('link', () => ctx.client.references(p));
+            : explainedDeckProject('list', () => ctx.client.references(p));
         const first = await listed(params);
         const rows = [...first.presentations];
         if (opts.all) {

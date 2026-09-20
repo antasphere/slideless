@@ -105,7 +105,7 @@ describe('projects link', () => {
     const h = routedHarness([route({ status: 200, body: deckIn([ATLAS]) })]);
     expect(await run(argv('projects', 'link', PROJECT, dir), h.io)).toBe(1);
     expect(h.calls).toEqual([]);
-    expect(h.err()).toContain('links that folder to http://other');
+    expect(h.err()).toContain('to http://other, but you are working against');
   });
 
   it('says so when there is neither a deck nor a link file', async () => {
@@ -180,6 +180,12 @@ describe('projects brand', () => {
     path: /\/api\/v1\/projects\/[^/]+\/brand$/,
     reply: () => answer
   });
+  /** The brand listing the ref of `projects brand` is resolved against. */
+  const brandList = (): Route => ({
+    method: 'GET',
+    path: /\/api\/v1\/presentations$/,
+    reply: () => ({ body: { presentations: [BRAND_ROW], nextCursor: null } })
+  });
   const put = (answer: { status: number; body: unknown }): Route => ({
     method: 'PUT',
     path: /\/api\/v1\/projects\/[^/]+\/brand$/,
@@ -210,12 +216,22 @@ describe('projects brand', () => {
     expect(h.out()).toContain('slideless projects brand <project> <ref>');
   });
 
-  it('with a ref: PUTs { presentationId } and prints the new brand', async () => {
-    const h = routedHarness([put({ status: 200, body: { brand: BRAND_ROW } })]);
-    expect(await run(argv('projects', 'brand', PROJECT, BRAND_ID), h.io)).toBe(0);
-    expect(wire(h.calls)).toEqual([`PUT /api/v1/projects/${PROJECT}/brand`]);
-    expect(h.calls[0]!.body).toEqual({ presentationId: BRAND_ID });
-    expect(h.out()).toContain('House brand');
+  it('with a ref: resolves it among the brands like every reference ref, PUTs { presentationId } and prints the new brand', async () => {
+    for (const ref of [BRAND_ID, 'House brand', 'House']) {
+      const h = routedHarness([brandList(), put({ status: 200, body: { brand: BRAND_ROW } })]);
+      const code = await run(argv('projects', 'brand', PROJECT, ref), h.io);
+      expect(h.err()).toBe('');
+      expect(code).toBe(0);
+      expect(wire(h.calls)).toEqual(['GET /api/v1/presentations', `PUT /api/v1/projects/${PROJECT}/brand`]);
+      expect(h.calls[1]!.body).toEqual({ presentationId: BRAND_ID });
+      expect(h.out()).toContain('House brand');
+    }
+  });
+
+  it('a ref that names no brand the caller can read is a usage error before any PUT', async () => {
+    const h = routedHarness([brandList()]);
+    expect(await run(argv('projects', 'brand', PROJECT, 'Nobody’s brand'), h.io)).toBe(1);
+    expect(wire(h.calls)).toEqual(['GET /api/v1/presentations']);
   });
 
   it('--clear DELETEs it and says the deck and its link stay', async () => {
@@ -233,17 +249,17 @@ describe('projects brand', () => {
   });
 
   it('reads not_linked as "link it first" and not_a_brand as "push it as a brand"', async () => {
-    const a = routedHarness([put(refusal(409, 'not_linked'))]);
+    const a = routedHarness([brandList(), put(refusal(409, 'not_linked'))]);
     expect(await run(argv('projects', 'brand', PROJECT, BRAND_ID), a.io)).toBe(1);
     expect(a.err()).toContain('That deck is not in this project. Link it first');
 
-    const b = routedHarness([put(refusal(400, 'not_a_brand'))]);
+    const b = routedHarness([brandList(), put(refusal(400, 'not_a_brand'))]);
     expect(await run(argv('projects', 'brand', PROJECT, BRAND_ID), b.io)).toBe(1);
     expect(b.err()).toContain('is not a brand reference');
   });
 
   it('asks for the manager role, not the editor one, on insufficient_project_role', async () => {
-    const h = routedHarness([put(refusal(403, 'insufficient_project_role'))]);
+    const h = routedHarness([brandList(), put(refusal(403, 'insufficient_project_role'))]);
     expect(await run(argv('projects', 'brand', PROJECT, BRAND_ID), h.io)).toBe(1);
     expect(h.err()).toContain('You need the manager role on this project to change its brand.');
   });
@@ -351,8 +367,19 @@ function pushRoutes(opts: {
   commit?: (body: unknown) => Record<string, unknown>;
   existing?: boolean;
   link?: (projectId: string) => { status: number; body: unknown };
+  project?: (projectId: string) => { status: number; body: unknown };
+  commitReply?: () => { status: number; body: unknown };
 }): Route[] {
   const routes: Route[] = [
+    {
+      // The pre-flight: every --project is read before the first byte moves.
+      method: 'GET',
+      path: /\/api\/v1\/projects\/[^/?]+$/,
+      reply: ({ path }) => {
+        const id = path.split('/').pop()!;
+        return opts.project?.(id) ?? { body: { ...ATLAS, id, myRole: 'editor' } };
+      }
+    },
     {
       method: 'POST',
       path: /\/api\/v1\/presentations\/precheck$/,
@@ -384,10 +411,11 @@ function pushRoutes(opts: {
     {
       method: 'POST',
       path: new RegExp(`/api/v1/presentations/uploads/${SESSION_ID}/commit$`),
-      reply: ({ body }) => ({
-        status: 201,
-        body: opts.commit?.(body) ?? { presentation: deckIn([ATLAS]), version: VERSION_ROW }
-      })
+      reply: ({ body }) =>
+        opts.commitReply?.() ?? {
+          status: 201,
+          body: opts.commit?.(body) ?? { presentation: deckIn([ATLAS]), version: VERSION_ROW }
+        }
     }
   ];
   if (opts.existing) {
@@ -434,6 +462,46 @@ describe('push --project', () => {
     expect(h.out()).toContain('projects: Atlas');
   });
 
+  it('a --project the caller cannot read refuses before any upload, naming the project', async () => {
+    const dir = await makeDeckDir();
+    const h = routedHarness(
+      pushRoutes({
+        project: (id) =>
+          id === PROJECT_2
+            ? { status: 404, body: { error: { code: 'not_found', message: 'Project not found' } } }
+            : { status: 200, body: { ...ATLAS, id, myRole: 'editor' } }
+      })
+    );
+    expect(
+      await run(argv('push', dir, '--project', PROJECT, '--project', PROJECT_2, '--no-open'), h.io)
+    ).toBe(1);
+    expect(h.err()).toContain(`--project ${PROJECT_2}: No such project`);
+    // Nothing uploaded, nothing committed: the two reads are the whole conversation.
+    expect(h.calls.map((c) => c.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('a project the commit refuses (archived, or below editor) is named in the sentence', async () => {
+    const dir = await makeDeckDir();
+    const h = routedHarness(
+      pushRoutes({
+        commitReply: () => ({
+          status: 404,
+          body: {
+            error: {
+              code: 'project_not_found',
+              message: 'A project named in projectIds was not found, is archived, or needs the editor role',
+              details: { projectId: PROJECT_2 }
+            }
+          }
+        })
+      })
+    );
+    expect(await run(argv('push', dir, '--project', PROJECT_2, '--no-open'), h.io)).toBe(1);
+    expect(h.err()).toContain(
+      `--project ${PROJECT_2}: No such project, or it is not yours to read, or you are not an editor`
+    );
+  });
+
   it('a push with no --project sends no projectIds at all', async () => {
     const dir = await makeDeckDir();
     const h = routedHarness(pushRoutes({}));
@@ -464,8 +532,13 @@ describe('push --project', () => {
     );
     expect(h.err()).toBe('');
     expect(code).toBe(0);
-    // The version first, then one link call per project, in the order given.
-    expect(wire(h.calls).filter((p) => p.includes('/versions') || p.includes('/projects/'))).toEqual([
+    // The version first, then one link call per project, in the order given
+    // (the pre-flight reads of the projects are GETs, before any of it).
+    expect(
+      wire(h.calls).filter(
+        (p) => !p.startsWith('GET') && (p.includes('/versions') || p.includes('/projects/'))
+      )
+    ).toEqual([
       `POST /api/v1/presentations/${DECK.id}/versions`,
       `POST /api/v1/presentations/${DECK.id}/projects/${PROJECT}`.replace('POST', 'PUT'),
       `PUT /api/v1/presentations/${DECK.id}/projects/${PROJECT_2}`

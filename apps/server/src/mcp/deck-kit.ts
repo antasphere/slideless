@@ -1,7 +1,6 @@
 import {
   createScopeCheck,
-  mergeErrorHints,
-  PROJECT_ERROR_HINTS,
+  composeErrorHints,
   wrapToolErrors as wrapToolErrorsWith,
   type ErrorHints,
   type ToolTextResult
@@ -59,9 +58,9 @@ export const DECK_ERROR_HINTS: ErrorHints = {
 /** Tool-level scope pre-check — UX only (the API's fail-closed allowlist enforces). */
 export const checkScope = createScopeCheck(DECK_MCP_SCOPES);
 
-// The deck's hints last, as `buildMcpServer` composes them: a tool may re-word
-// a chassis code, never the reverse.
-const hints = mergeErrorHints({ ...PROJECT_ERROR_HINTS, ...DECK_ERROR_HINTS });
+// The chassis composes the table (its own groups, then the deck's last):
+// one composition, read here and in `buildMcpServer`, never copied.
+const hints = composeErrorHints(DECK_ERROR_HINTS);
 
 /** `wrapToolErrors` reading the chassis hints (the project ones included) AND the deck ones. */
 export const wrapToolErrors = (fn: () => Promise<ToolTextResult>): Promise<ToolTextResult> =>
