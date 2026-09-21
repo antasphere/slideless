@@ -100,3 +100,41 @@ test('initializer preserves credentials, rejects corruption and validates the ho
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('every distribution path that publishes the template is ignored by the release workflow', () => {
+  // Two workflows read the same set of files from opposite sides:
+  // hostinger-pages.yml TRIGGERS on the self-hosting distribution, release.yml
+  // must SKIP on it (a template bump builds no image and rolls no fleet). The
+  // lists were maintained by hand and silently disagreed about the two scripts,
+  // so a pin bump would have promoted an unchanged version as a release and
+  // died on the version guard (2026-09-21). Neither workflow can state the set
+  // for both, so the agreement is asserted here instead of trusted.
+  const read = (name) => readFileSync(join(root, '.github/workflows', name), 'utf8');
+  const paths = (yaml, key) => {
+    const block = yaml.match(new RegExp(`^ {4}${key}:\\n((?: {6}- .*\\n)+)`, 'm'));
+    assert.ok(block, `${key} block not found`);
+    return block[1]
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.replace(/^ {6}- '?/, '').replace(/'?$/, ''));
+  };
+
+  const triggers = paths(read('hostinger-pages.yml'), 'paths');
+  const ignored = paths(read('release.yml'), 'paths-ignore');
+
+  // Its own workflow file is each side's business, not the other's.
+  const distribution = triggers.filter((p) => p !== '.github/workflows/hostinger-pages.yml');
+  assert.ok(distribution.length >= 3, 'expected the distribution trigger list');
+
+  const covered = (file) =>
+    ignored.some((pattern) =>
+      pattern.endsWith('/**') ? file.startsWith(pattern.slice(0, -2)) : pattern === file
+    );
+
+  for (const path of distribution) {
+    assert.ok(
+      covered(path),
+      `${path} publishes the Hostinger template but release.yml would still build an image for it — add it to paths-ignore`
+    );
+  }
+});
