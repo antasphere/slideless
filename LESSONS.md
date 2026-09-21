@@ -1270,7 +1270,8 @@ migrate` on an unchanged schema):
   `registerTool('slideless_…'` in `apps/server/src/mcp/tools.ts`. Once the chassis registers
   `<toolPrefix>whoami` itself (`buildMcpServer`), that name is in no tool-side source and is built
   from a prefix at run time, so the scan loses it while the server still serves it. The test now
-  carries the literal (`CHASSIS_REGISTERED = ['slideless_whoami']`); a text scan is only as good
+  carries the literals (`CHASSIS_REGISTERED`, `slideless_whoami` alone at first, the nine project
+  tools beside it since ADR 026); a text scan is only as good
   as the rule "every name is a literal in THAT file", so re-read it whenever a registration moves.
 
 ## Projects in the chassis (PRDCT-2576 / PRDCT-2578, 2026-09-20, lane A of the projects wave)

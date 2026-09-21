@@ -8,6 +8,7 @@ import {
   CliUsageError,
   explainProjectRefusal,
   printJson,
+  roleNamedBy,
   type CliIo
 } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
@@ -111,10 +112,9 @@ export function explainDeckProjectRefusal(e: PlatformApiError, verb: DeckProject
     case 'not_a_brand':
       return 'That deck is not a brand reference: its AGENT.md frontmatter names no `type: brand`. Push it as a brand first (`slideless brand push`).';
     case 'insufficient_project_role': {
-      // The wire names the role the route gates on (`This needs the editor
-      // role on the project`), and the chassis reads it from there; the verb
-      // only says what the role would have allowed.
-      const role = /needs the (\w+) role/.exec(e.message)?.[1] ?? (verb === 'brand' ? 'manager' : 'editor');
+      // The wire names the role the route gates on, read where the chassis
+      // reads it; the verb only says what the role would have allowed.
+      const role = roleNamedBy(e) ?? (verb === 'brand' ? 'manager' : 'editor');
       const act =
         verb === 'brand'
           ? 'to change its brand'
@@ -138,6 +138,15 @@ export function explainDeckProjectRefusal(e: PlatformApiError, verb: DeckProject
     default:
       return explainProjectRefusal(e, 'project');
   }
+}
+
+/**
+ * A listing with `--project`: a project the caller cannot read answers 404
+ * like the project itself, and without the sentence it reads as "no such
+ * listing". Without the flag the call runs as it always has.
+ */
+export function withProjectRefusal<T>(project: string | undefined, run: () => Promise<T>): Promise<T> {
+  return project === undefined ? run() : explainedDeckProject('list', run);
 }
 
 /** Run a deck-side project call, turning the known refusals into sentences. */

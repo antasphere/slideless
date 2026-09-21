@@ -32,7 +32,7 @@ import {
   pushDeck,
   type PushOptions
 } from './content.js';
-import { explainedDeckProject } from './projects.js';
+import { withProjectRefusal } from './projects.js';
 
 /**
  * References from the command line (PRDCT-2420). One real family,
@@ -117,12 +117,8 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
           ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
           ...(opts.project !== undefined ? { project: opts.project } : {})
         };
-        // A project the caller cannot read answers 404 like the project
-        // itself; the sentence says which of the two it was.
         const listed = (p: ReferenceListParams) =>
-          opts.project === undefined
-            ? ctx.client.references(p)
-            : explainedDeckProject('list', () => ctx.client.references(p));
+          withProjectRefusal(opts.project, () => ctx.client.references(p));
         const first = await listed(params);
         const rows = opts.all
           ? await drainPages({ rows: first.presentations, nextCursor: first.nextCursor }, async (cursor) => {

@@ -4,7 +4,7 @@ import { CliUsageError, drainPages, fmtBytes, printJson, table, type CliIo } fro
 import { requireApiKey, resolveContext } from '../cli.js';
 import { provenanceOf } from '../references.js';
 import { provenanceLine } from './content.js';
-import { explainedDeckProject, projectsLine, projectsOf } from './projects.js';
+import { withProjectRefusal, projectsLine, projectsOf } from './projects.js';
 
 /** Deck management: list / get / versions / meta / delete. */
 
@@ -43,12 +43,8 @@ export function registerDeckCommands(program: Command, io: CliIo): void {
         if (opts.cursor) params.cursor = opts.cursor;
         if (opts.limit !== undefined) params.limit = opts.limit;
         if (opts.project !== undefined) params.project = opts.project;
-        // A project the caller cannot read answers 404 like the project
-        // itself; without the sentence it reads as "no such deck listing".
         const listed = (p: PresentationListParams) =>
-          opts.project === undefined
-            ? ctx.client.presentations(p)
-            : explainedDeckProject('list', () => ctx.client.presentations(p));
+          withProjectRefusal(opts.project, () => ctx.client.presentations(p));
         const first = await listed(params);
         const rows = opts.all
           ? await drainPages({ rows: first.presentations, nextCursor: first.nextCursor }, async (cursor) => {

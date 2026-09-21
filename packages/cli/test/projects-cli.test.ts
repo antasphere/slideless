@@ -197,6 +197,13 @@ describe('projects unlink', () => {
     expect(h.out()).toBe('"Test Deck" is in 1 project: Borealis\n');
   });
 
+  it('--json is the deck payload, byte-exact', async () => {
+    const body = deckIn([RAW_ATLAS]);
+    const h = routedHarness([route({ status: 200, body })]);
+    expect(await run(argv('projects', 'unlink', PROJECT, DECK.id, '--json'), h.io)).toBe(0);
+    expect(h.out()).toBe(`${JSON.stringify(body, null, 2)}\n`);
+  });
+
   it('says the deck is in no project when the last link goes', async () => {
     const h = routedHarness([route({ status: 200, body: deckIn([]) })]);
     expect(await run(argv('projects', 'unlink', PROJECT, DECK.id), h.io)).toBe(0);
@@ -288,6 +295,19 @@ describe('projects brand', () => {
     const h = routedHarness([brandList()]);
     expect(await run(argv('projects', 'brand', PROJECT, 'Nobody’s brand'), h.io)).toBe(1);
     expect(wire(h.calls)).toEqual(['GET /api/v1/presentations']);
+  });
+
+  it('with a ref, --json is `{ brand }` byte-exact', async () => {
+    const brand = { ...BRAND_ROW, title: RAW_NAME };
+    const h = routedHarness([brandList(), put({ status: 200, body: { brand } })]);
+    expect(await run(argv('projects', 'brand', PROJECT, BRAND_ID, '--json'), h.io)).toBe(0);
+    expect(h.out()).toBe(`${JSON.stringify({ brand }, null, 2)}\n`);
+  });
+
+  it('--clear --json is `{ brand: null }` byte-exact', async () => {
+    const h = routedHarness([del({ status: 200, body: { brand: null } })]);
+    expect(await run(argv('projects', 'brand', PROJECT, '--clear', '--json'), h.io)).toBe(0);
+    expect(h.out()).toBe(`${JSON.stringify({ brand: null }, null, 2)}\n`);
   });
 
   it('--clear DELETEs it and says the deck and its link stay', async () => {
@@ -547,8 +567,18 @@ describe('push --project', () => {
       await run(argv('push', dir, '--project', PROJECT, '--project', PROJECT_2, '--no-open'), h.io)
     ).toBe(1);
     expect(h.err()).toContain(`--project ${PROJECT_2}: No such project`);
+    // The read's own sentence: the role and the archive are the commit's to refuse.
+    expect(h.err()).not.toContain('or you are not an editor of it');
     // Nothing uploaded, nothing committed: the two reads are the whole conversation.
     expect(h.calls.map((c) => c.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('a key without the read scope skips the pre-flight and lets the commit answer', async () => {
+    const dir = await makeDeckDir();
+    const h = routedHarness(pushRoutes({ project: () => refusal(403, 'insufficient_scope') }));
+    expect(await run(argv('push', dir, '--project', PROJECT, '--no-open'), h.io)).toBe(0);
+    const commit = h.calls.find((c) => c.path.includes('/commit'))!;
+    expect((commit.body as { projectIds: string[] }).projectIds).toEqual([PROJECT]);
   });
 
   it('a project the commit refuses (archived, or below editor) is named in the sentence', async () => {

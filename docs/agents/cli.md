@@ -494,7 +494,7 @@ slideless projects link <project> <deck>         # put a deck in the project
 cd deck && slideless projects link <project>     # …no deck: the .slideless.json of this folder
 slideless projects unlink <project> <deck>       # take it back out
 slideless projects brand <project>               # the project's brand, or nothing
-slideless projects brand <project> <deck>        # make that linked brand reference its brand
+slideless projects brand <project> <ref>         # make that linked brand reference its brand (id, title or title prefix, or a linked folder)
 slideless projects brand <project> --clear       # no brand; the deck and its link stay
 slideless list --project <project>               # only the decks linked to the project
 slideless brand list --project <project>         # …the same filter on the reference listings
@@ -528,7 +528,8 @@ afterwards, and `--json` is the deck payload verbatim.
 
 **brand** reads, sets and clears the project's brand: with no `<deck>` it prints
 the brand deck's title, id and version (`--json` is `{ brand }`, `{ "brand":
-null }` when there is none); with one it makes that deck the brand, and
+null }` when there is none); with one, named like every reference ref (its id, its
+title or the start of its title, or a folder a push linked), it makes that deck the brand, and
 `--clear` removes it. The deck must be a brand reference already linked to the
 project, so the two refusals are `That deck is not in this project. Link it
 first (slideless projects link <project> <deck>).` and `That deck is not a brand

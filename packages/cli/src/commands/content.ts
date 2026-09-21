@@ -18,6 +18,7 @@ import {
 import {
   CliApiRefusal,
   CliUsageError,
+  explainProjectRefusal,
   fmtBytes,
   isInteractive,
   openInBrowser,
@@ -573,10 +574,16 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
         await ctx.client.project(projectId);
       } catch (e) {
         if (!(e instanceof PlatformApiError)) throw e;
-        // The project route's own 404 is `not_found`; here it is about the project.
-        const asProject =
-          e.code === 'not_found' ? new PlatformApiError(404, 'project_not_found', e.message) : e;
-        const line = explainDeckProjectRefusal(asProject, 'push') ?? e.message;
+        // A key with the write scope alone cannot read a project, and the
+        // commit never needed it to: the commit answers such a key.
+        if (e.code === 'insufficient_scope' || e.code === 'endpoint_not_allowed') break;
+        // The project route's own 404 says what a read can say (no such
+        // project, or not yours to read); the role and the archive are the
+        // commit's to refuse, so its sentence is not borrowed here.
+        const line =
+          e.code === 'not_found'
+            ? explainProjectRefusal(e, 'project')
+            : (explainDeckProjectRefusal(e, 'push') ?? e.message);
         throw new CliApiRefusal(`--project ${projectId}: ${line}`, e.status);
       }
     }
