@@ -169,6 +169,32 @@ volumes together when planning recovery.
 
 The Slideless image is pinned to a tested build by its immutable image digest. Application upgrades are
 manual; there is no automatic updater. This Hostinger project does not use
-the checkout-based `setup.sh` or `update.sh` installation layout. Keep its
-Compose configuration and generated credentials when planning an upgrade.
+the checkout-based `setup.sh` or `update.sh` installation layout, so the
+upgrade is a redeploy from the template URL rather than a host command.
 This release covers installation, not managed hosting or ongoing maintenance.
+
+## Upgrading
+
+The template URL always serves the current tested pin, so upgrading is the
+install step done again:
+
+1. **Take a VPS snapshot first** (hPanel → VPS → Snapshots). Migrations are
+   forward-only: once the new version has booted, rolling the image back does
+   not undo the schema change, and the snapshot is what restores the instance.
+2. In Docker Manager, open the existing `slideless` project and redeploy it
+   from the same Compose URL,
+   `https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml`.
+   Keep the project name and every named volume — do not choose any option
+   that deletes volumes.
+3. Watch the app log until the new version is serving. Migrations apply at
+   boot under a Postgres advisory lock, and `/readyz` stays 503 until the
+   schema is current.
+4. Confirm the version: `https://<your domain>/api/v1/instance` reports the
+   version now running.
+
+Your data lives in the volumes above and survives the recreate. The generated
+credentials survive with them, which is why the volumes must be kept together.
+
+Downgrading across a migration is refused at boot rather than reported as
+current, so an instance that has moved forward stays forward until you restore
+the snapshot.

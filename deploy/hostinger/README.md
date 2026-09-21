@@ -29,12 +29,12 @@ sibling folder `deploy/<host>/` staged the same way, never a second domain. The
 compose URL customers paste is `https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml`;
 the deploy button and the guide both use it, never a raw GitHub URL.
 
-The pin is release `0.4.1` (tag `v0.4.1`, commit `b1da96e`), published by
+The pin is release `0.7.0` (tag `v0.7.0`, commit `609cf7d`), published by
 successful release run
-[35082568219](https://github.com/antasphere/slideless/actions/runs/35082568219),
-with manifest digest `sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2`
-(linux/amd64 — releases build amd64 only since PRDCT-2337, which is what a
-Hostinger VPS runs). The pin names a released version on purpose: the image
+[35549873028](https://github.com/antasphere/slideless/actions/runs/35549873028),
+with manifest digest `sha256:97f3dbfdaff5004a77a0e29db2ee4ebd351271f6def65bad7813370caa55fb45`
+(the index; it carries linux/amd64 only — releases build amd64 only since
+PRDCT-2337, which is what a Hostinger VPS runs). The pin names a released version on purpose: the image
 reports that version on `GET /instance`, so a customer and a support session
 agree on which build is running. The historical `v0.3.0` tag predates automatic
 setup-token generation and must not be used for this installation flow. The

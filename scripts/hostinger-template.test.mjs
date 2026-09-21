@@ -38,7 +38,7 @@ test('template renders without a hostname (hPanel runs it with no environment) a
   assert.equal(services.app.environment.ALLOW_INSECURE_SETUP, 'false');
   assert.equal(
     services.app.image,
-    'ghcr.io/antasphere/slideless:0.4.1@sha256:74ed6d9ff24cff07d22c7393e53fddb8d95819769e73cdc674bc22d28a29bed2'
+    'ghcr.io/antasphere/slideless:0.7.0@sha256:97f3dbfdaff5004a77a0e29db2ee4ebd351271f6def65bad7813370caa55fb45'
   );
   assert.equal(services.init.image, services.app.image);
   // Every image is digest-pinned: the Pages gate inspects exactly what customers pull.

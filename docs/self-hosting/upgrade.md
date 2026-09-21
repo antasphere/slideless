@@ -1,11 +1,21 @@
 # Upgrade
 
-Upgrading a self-hosted instance is one command; data survives in the
-Docker volumes and migrations apply themselves at boot.
+Upgrading a self-hosted instance recreates the containers on a newer image;
+data survives in the Docker volumes and migrations apply themselves at boot.
+How you trigger it depends on how you installed.
+
+**Checkout-based install** (`setup.sh`) — one command:
 
 ```bash
 ./update.sh            # = docker compose pull && docker compose up -d
 ```
+
+**Hostinger one-file install** — there is no checkout and no `update.sh`.
+Redeploy the existing Docker Manager project from the template URL,
+`https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml`, which
+always serves the current tested pin. Keep the project name and every named
+volume. The full procedure, including the snapshot to take first, is in
+[the Hostinger guide](hostinger.md#upgrading).
 
 Data survives in the `pg_data` and `app_data` volumes. Migrations are
 forward-only and additive-first; the booting replica applies them exactly
