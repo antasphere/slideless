@@ -55,6 +55,16 @@ describe('presentations() reference filters', () => {
     expect(calls[0]!.query).toEqual({ type: 'template', default: 'true' });
     expect(calls[1]!.query).toEqual({ type: 'template' });
   });
+
+  it('sends project beside the other filters, and nothing when it is absent (ADR 026)', async () => {
+    const { client, calls } = recordingClient();
+    await client.presentations({ project: 'p-1' });
+    await client.presentations({ type: 'brand', project: 'p-1', cursor: 'c1', limit: 10 });
+    await client.presentations({ type: 'brand' });
+    expect(calls[0]!.query).toEqual({ project: 'p-1' });
+    expect(calls[1]!.query).toEqual({ type: 'brand', project: 'p-1', cursor: 'c1', limit: '10' });
+    expect(calls[2]!.query).toEqual({ type: 'brand' });
+  });
 });
 
 describe('references()', () => {
@@ -69,6 +79,12 @@ describe('references()', () => {
     const { client, calls } = recordingClient();
     await client.references({ type: 'brand', cursor: 'c2', limit: 5 });
     expect(calls[0]!.query).toEqual({ type: 'brand', cursor: 'c2', limit: '5' });
+  });
+
+  it('carries the project filter through, the default type beside it', async () => {
+    const { client, calls } = recordingClient();
+    await client.references({ project: 'p-1' });
+    expect(calls[0]!.query).toEqual({ type: 'reference', project: 'p-1' });
   });
 
   it('returns the page as the server answered it', async () => {

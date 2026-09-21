@@ -1,3 +1,4 @@
+import { CliUsageError } from '@antasphere/chassis-cli';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -349,4 +350,25 @@ export async function readLink(rootDir: string): Promise<DeckLink | null> {
 
 export async function writeLink(rootDir: string, link: DeckLink): Promise<void> {
   await writeFile(join(rootDir, LINK_FILENAME), `${JSON.stringify(link, null, 2)}\n`);
+}
+
+/**
+ * The deck a folder's link file names on THIS instance: null when the folder
+ * carries no link, the id when it does, a usage error when the link points at
+ * another instance (`howElse` says what to do instead). The one check behind
+ * `push`, `projects link|unlink|brand` and any verb that takes a folder.
+ */
+export async function linkedDeckId(
+  ctx: { baseUrl: string },
+  rootDir: string,
+  howElse: string
+): Promise<string | null> {
+  const link = await readLink(rootDir);
+  if (!link) return null;
+  if (link.baseUrl !== ctx.baseUrl) {
+    throw new CliUsageError(
+      `${LINK_FILENAME} links ${rootDir} to ${link.baseUrl}, but you are working against ${ctx.baseUrl}. ${howElse}`
+    );
+  }
+  return link.presentationId;
 }

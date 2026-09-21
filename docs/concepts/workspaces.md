@@ -17,6 +17,14 @@ Being a member of a workspace is not a grant on its decks. Inside a workspace, a
 its owner, by the workspace's admins and owners, and by the collaborators invited on it
 ([Decks](artifact.md)).
 
+## A workspace holds projects
+
+A workspace can be split into projects ([Projects](projects.md)): a name, a description, members
+taken from the workspace's own roster, and the decks linked to the project. A project is the way to
+give a few colleagues one client's decks without opening the rest. Any member creates one and becomes
+its manager; the workspace's admins and owners act as managers on every project. On cloud the
+workspace roster is managed at Antasphere, but its projects stay in Slideless.
+
 ## Creating another workspace
 
 The first workspace of a self-hosted instance is created at setup. After that, a signed-in person

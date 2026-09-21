@@ -111,14 +111,21 @@ afterAll(async () => {
 });
 
 describe('MCP is unaffected (zero MCP code changes)', () => {
-  it('the tool surface exposes NO workspace-membership tool — only the sanctioned per-deck collaborator pair', async () => {
+  it('the tool surface exposes NO workspace-membership tool — only the two sanctioned LOCAL member surfaces', async () => {
     const result = await mcp('tools/list');
     const names = result.tools.map((t: { name: string }) => t.name);
     expect(names.length).toBeGreaterThan(0);
-    // The per-deck collaborator surface (ADR 013) is the sanctioned local
-    // path and STAYS; nothing touches /members or /invitations.
+    // Two surfaces name a member, and both are LOCAL on a projected workspace,
+    // so neither is under the hub-managed gate: the per-deck collaborator pair
+    // (ADR 013) and PROJECT membership (PRDCT-2577 — a project is a subgroup of
+    // the workspace, its roster is the tool's own on both editions). Nothing
+    // here touches /members or /invitations, which is what P7 gates.
     expect(names.filter((n: string) => /member|invit/i.test(n)).sort()).toEqual([
+      'slideless_add_project_member',
       'slideless_invite_collaborator',
+      'slideless_list_project_members',
+      'slideless_remove_project_member',
+      'slideless_set_project_member_role',
       'slideless_uninvite_collaborator'
     ]);
   });

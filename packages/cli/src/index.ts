@@ -4,6 +4,7 @@ import { cli } from './cli.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
 import { registerReferenceCommands } from './commands/references.js';
+import { registerProjectDeckCommands } from './commands/projects.js';
 import { registerSharingCommands } from './commands/sharing.js';
 import { registerResponseFilesCommand } from './commands/response-files.js';
 
@@ -44,6 +45,9 @@ function registerTool(program: Command, io: CliIo): void {
   // References: reference list/pull/new/push/publish/unpublish/default/start,
   // and brand / template as the same verbs with the type preset.
   registerReferenceCommands(program, io);
+  // The deck's side of the projects (ADR 026), hung off the chassis's own
+  // `projects` group: projects link / unlink / brand.
+  registerProjectDeckCommands(program, io);
   // Sharing + collaborators: share, unshare, share-email, pin, tokens, views,
   // responses, response, uploads, notify, invite, uninvite.
   registerSharingCommands(program, io);

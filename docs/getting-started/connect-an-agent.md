@@ -8,7 +8,7 @@ self-contained on your box:
   folders, pull them back, mint share links. Full reference:
   [cli.md](../agents/cli.md).
 - **The MCP endpoint** — for MCP hosts (claude.ai connectors, Claude
-  Desktop, Claude Code, any MCP client): 24 `slideless_` tools over
+  Desktop, Claude Code, any MCP client): 37 `slideless_` tools over
   streamable HTTP at `/mcp`. Full reference:
   [mcp-connector.md](../agents/mcp-connector.md).
 

@@ -16,7 +16,9 @@ import {
   type VersionCommitted
 } from '@slideless/contract';
 import {
+  CliApiRefusal,
   CliUsageError,
+  explainProjectRefusal,
   fmtBytes,
   isInteractive,
   openInBrowser,
@@ -26,7 +28,15 @@ import {
   type CliIo
 } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
-import { detectEntry, readLink, scanDeck, writeLink, LINK_FILENAME, type DeckScan } from '../manifest.js';
+import {
+  detectEntry,
+  linkedDeckId,
+  readLink,
+  scanDeck,
+  writeLink,
+  LINK_FILENAME,
+  type DeckScan
+} from '../manifest.js';
 import { readCapped, sha256Hex } from '../download.js';
 import { startDevServer } from '../devserver.js';
 import { shouldOpenAfterPush } from '../open.js';
@@ -38,6 +48,7 @@ import {
   resolveReference,
   splitRefAtVersion
 } from '../references.js';
+import { explainDeckProjectRefusal, projectsLine, projectsOf } from './projects.js';
 
 /**
  * Authoring commands: push (the 3-step upload protocol, answering with the
@@ -47,6 +58,9 @@ import {
  */
 
 const UPLOAD_CONCURRENCY = 4;
+
+/** A repeatable option's collector (commander hands it the value and the accumulator). */
+const collectOption = (value: string, all: string[] | undefined): string[] => [...(all ?? []), value];
 
 /**
  * The per-blob cap the instance documents (`MAX_FILE_SIZE_MB`, 100 by
@@ -177,6 +191,11 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       'record the brand this deck follows (id, title or title prefix; @n pins a version, default the latest)'
     )
     .option('--template <ref[@n]>', 'record the template this deck was made from (same forms as --brand)')
+    .option(
+      '--project <id>',
+      'put the deck in this project (repeatable; a new deck is linked in the commit, an existing one right after)',
+      collectOption
+    )
     .action(async (path: string | undefined, opts: PushOptions, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
       await requireApiKey(ctx);
@@ -462,6 +481,15 @@ export interface PushOptions {
   /** `<ref>[@n]`: the template to record on the deck. */
   template?: string;
   /**
+   * `--project <id>`, repeatable (ADR 026): the projects this deck goes in.
+   * Named `project` because that is the flag commander stores it under. A
+   * NEW deck carries them in the commit (one transaction, one refusal); an
+   * EXISTING one is linked by the link route after the version is
+   * committed, one call per project, each outcome reported. Absent from a
+   * `reference push`, which never registers the flag.
+   */
+  project?: string[];
+  /**
    * The title of a NEW deck when `--title` is not given, instead of the
    * folder name (`reference push` passes the frontmatter's `title`). A
    * version push keeps the deck's title either way.
@@ -481,6 +509,22 @@ export interface PushResult {
   formNames: string[];
   /** The references recorded on the deck by this push (`metadata.references`), in the order written. */
   references: ReferenceProvenance[];
+  /**
+   * One row per `--project` the push asked for, in the order given: whether
+   * the deck went in, and the sentence when it did not. A new deck's
+   * projects are the commit's own, so they all read `linked: true` (the
+   * commit refuses as a whole); an existing deck's are linked one by one,
+   * and one refusal never hides the others.
+   */
+  projectLinks: ProjectLinkOutcome[];
+}
+
+/** What one `--project <id>` of a push came to. */
+export interface ProjectLinkOutcome {
+  projectId: string;
+  linked: boolean;
+  /** The refusal as a sentence, present exactly when `linked` is false. */
+  error?: string;
 }
 
 /**
@@ -503,20 +547,47 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
   const link = await readLink(scan.rootDir);
   let existingId: string | null = opts.id ?? null;
   if (!existingId && !opts.new && link) {
-    if (link.baseUrl === ctx.baseUrl) {
-      existingId = link.presentationId;
-    } else {
-      throw new CliUsageError(
-        `${LINK_FILENAME} links this folder to ${link.baseUrl}, but you are pushing to ` +
-          `${ctx.baseUrl}. Pass --new to create a fresh deck here, or --id <deckId> to ` +
-          'target one explicitly.'
-      );
-    }
+    existingId = await linkedDeckId(
+      ctx,
+      scan.rootDir,
+      'Pass --new to create a fresh deck here, or --id <deckId> to target one explicitly.'
+    );
   }
 
   // The references to record, resolved BEFORE any upload: a wrong `--brand`
   // is a usage error that must cost nothing.
   const references = await resolveProvenance(ctx, scan.rootDir, opts);
+
+  // `--project` given twice with the same id is one link, not two: the
+  // commit's `projectIds` would be a duplicate and the link route a second
+  // no-op call. Order is the one the person wrote.
+  const wantedProjects = [...new Set(opts.project ?? [])];
+  // On a NEW deck the projects ride in the commit, which refuses the whole
+  // push over one of them: each is read once BEFORE any upload, like
+  // `--brand`, so a wrong or unreadable `--project` costs nothing, and the
+  // sentence names the project it was about. An existing deck commits its
+  // version first and links after, one call each, so its link loop is the
+  // one reporter (a refused project is a `linked: false` row, never an abort).
+  if (!existingId) {
+    for (const projectId of wantedProjects) {
+      try {
+        await ctx.client.project(projectId);
+      } catch (e) {
+        if (!(e instanceof PlatformApiError)) throw e;
+        // A key with the write scope alone cannot read a project, and the
+        // commit never needed it to: the commit answers such a key.
+        if (e.code === 'insufficient_scope' || e.code === 'endpoint_not_allowed') break;
+        // The project route's own 404 says what a read can say (no such
+        // project, or not yours to read); the role and the archive are the
+        // commit's to refuse, so its sentence is not borrowed here.
+        const line =
+          e.code === 'not_found'
+            ? explainProjectRefusal(e, 'project')
+            : (explainDeckProjectRefusal(e, 'push') ?? e.message);
+        throw new CliApiRefusal(`--project ${projectId}: ${line}`, e.status);
+      }
+    }
+  }
 
   // The cap, before the first write of either branch (discovery is a
   // public read): a refusal here costs no upload.
@@ -553,13 +624,30 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
       opts.title ?? opts.defaultTitle ?? scan.rootDir.split('/').filter(Boolean).pop() ?? 'Untitled deck';
     const { uploadSession } = await ctx.client.createUploadSession();
     uploaded = await uploadMissing(ctx, scan);
-    committed = await ctx.client.commitUploadSession(uploadSession.id, {
-      title,
-      kind,
-      interactive: opts.interactive,
-      entryPath,
-      manifest
-    });
+    try {
+      committed = await ctx.client.commitUploadSession(uploadSession.id, {
+        title,
+        kind,
+        interactive: opts.interactive,
+        entryPath,
+        manifest,
+        // The deck the caller is creating is theirs, so the only question is
+        // the project side: editor or more, none archived. One that does not
+        // qualify refuses the WHOLE commit, which is what a new deck wants —
+        // nothing half-placed.
+        ...(wantedProjects.length > 0 ? { projectIds: wantedProjects } : {})
+      });
+    } catch (e) {
+      // The pre-flight read every project; what refuses HERE is the role or
+      // the archive, and the server names the project in `details`.
+      if (e instanceof PlatformApiError && e.code === 'project_not_found') {
+        const named = (e.details as { projectId?: string } | undefined)?.projectId;
+        throw new CliUsageError(
+          `--project${named ? ` ${named}` : ''}: ${explainDeckProjectRefusal(e, 'push') ?? e.message}`
+        );
+      }
+      throw e;
+    }
     created = true;
   }
   // A pulled REFERENCE folder's link carries a `reference` block (its type
@@ -584,9 +672,43 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
     committed = { ...committed, presentation: updated };
   }
 
+  // The projects of an EXISTING deck: the version is already committed and
+  // is the point of the push, so a project that refuses must not undo it.
+  // One link call per project, each outcome kept, the run still a success —
+  // the summary says which went in and which did not, and why.
+  let projectLinks: ProjectLinkOutcome[] = wantedProjects.map((projectId) => ({ projectId, linked: true }));
+  if (!created && wantedProjects.length > 0) {
+    projectLinks = [];
+    for (const projectId of wantedProjects) {
+      try {
+        const updated = await ctx.client.linkPresentationProject(committed.presentation.id, projectId);
+        committed = { ...committed, presentation: updated };
+        projectLinks.push({ projectId, linked: true });
+      } catch (e) {
+        if (!(e instanceof PlatformApiError)) throw e;
+        projectLinks.push({
+          projectId,
+          linked: false,
+          error: explainDeckProjectRefusal(e, 'link') ?? e.message
+        });
+      }
+    }
+  }
+
   const formNames = await detectFormNames(scan);
   const url = deckMasterUrl(ctx.baseUrl, committed.presentation.id);
-  return { committed, created, scan, url, uploaded, totalBytes, attachments, formNames, references };
+  return {
+    committed,
+    created,
+    scan,
+    url,
+    uploaded,
+    totalBytes,
+    attachments,
+    formNames,
+    references,
+    projectLinks
+  };
 }
 
 /**
@@ -722,14 +844,26 @@ export function classificationLines(committed: VersionCommitted): string {
  */
 export function printPushResult(ctx: CliContext, result: PushResult, opts: Pick<PushOptions, 'open'>): void {
   const { io } = ctx;
-  const { committed, created, scan, url, uploaded, totalBytes, attachments, formNames, references } = result;
+  const {
+    committed,
+    created,
+    scan,
+    url,
+    uploaded,
+    totalBytes,
+    attachments,
+    formNames,
+    references,
+    projectLinks
+  } = result;
   if (ctx.json) {
     return printJson(io, {
       ...committed,
       url,
       attachments,
       ...(formNames.length > 0 ? { formsDetected: formNames } : {}),
-      ...(references.length > 0 ? { references } : {})
+      ...(references.length > 0 ? { references } : {}),
+      ...(projectLinks.length > 0 ? { projectLinks } : {})
     });
   }
   io.out.write(
@@ -748,6 +882,13 @@ export function printPushResult(ctx: CliContext, result: PushResult, opts: Pick<
   if (formNames.length > 0) io.out.write(formsDetectedLine(formNames, committed.presentation.id));
   io.out.write(classificationLines(committed));
   if (references.length > 0) io.out.write(`  references: ${provenanceLine(references)}\n`);
+  const inProjects = projectsOf(committed.presentation);
+  if (inProjects.length > 0) io.out.write(`  projects: ${projectsLine(inProjects)}\n`);
+  // A refused link is not a failed push: the version is committed and the
+  // url above is real. Say what did not go in, by project, on stderr.
+  for (const link of projectLinks) {
+    if (!link.linked) ctx.io.err.write(`  project ${link.projectId}: ${link.error}\n`);
+  }
   if (!committed.version.hasAgentDoc) io.out.write(AGENT_DOC_HINT);
   openAfterPush(ctx, url, { created, flag: opts.open });
 }

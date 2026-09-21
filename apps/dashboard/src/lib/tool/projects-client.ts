@@ -6,8 +6,7 @@
  * project the caller cannot read answers 404, like the project itself.
  */
 import type { Presentation, PresentationProjectRef, PresentationsListType } from '@slideless/contract';
-import { PlatformClient } from '@slideless/sdk';
-import { api, storedWorkspaceId } from '$lib/api';
+import { api } from '$lib/api';
 import type { Project } from '$lib/projects/types';
 
 /** A project as a deck's payload names it: only the ones the caller can read. */
@@ -51,25 +50,9 @@ export interface DeckProjectsClient {
 
 export { isNotFound } from '$lib/projects/errors';
 
-/**
- * SHIM, flagged for removal (told to the wave on 20 September 2026): the
- * contract's deck list takes `project`, and the SDK's `presentations()` does
- * not set it yet. Same cookie and same workspace header as `api`; the class
- * goes away the day `PresentationListParams` carries `project`.
- */
-class DeckListClient extends PlatformClient {
-  presentationsOf(projectId: string, p: DeckPageParams) {
-    return this.request<{ presentations: Presentation[]; nextCursor: string | null }>(
-      'GET',
-      this.pathWithQuery('/presentations', p, { type: p.type, project: projectId })
-    );
-  }
-}
-// built per call, so a workspace switch or a cleared selection reaches it as it reaches `api`
-const deckList = () => new DeckListClient({ workspaceId: storedWorkspaceId() ?? undefined });
-
 export const deckProjects: DeckProjectsClient = {
-  decksOf: (projectId, p) => (projectId ? deckList().presentationsOf(projectId, p) : api.presentations(p)),
+  // the SDK's list takes `project` (ADR 026); an unreadable project answers 404 there as on the wire
+  decksOf: (projectId, p) => api.presentations(projectId ? { ...p, project: projectId } : p),
   named: (deck) => deck.projects,
   projectsOf: async (deckId) => (await api.presentation(deckId)).projects,
   async link(deckId, projectId) {

@@ -1,6 +1,6 @@
 import {
   createScopeCheck,
-  mergeErrorHints,
+  composeErrorHints,
   wrapToolErrors as wrapToolErrorsWith,
   type ErrorHints,
   type ToolTextResult
@@ -20,13 +20,18 @@ export const DECK_ERROR_HINTS: ErrorHints = {
     'The resource does not exist or this credential cannot read it (deck reads are private — ' +
     'the owner, a workspace admin, an active collaborator, or a member of a project the deck is in). ' +
     'Check the id with slideless_list_presentations.',
+  // `project_archived` and `insufficient_project_role` are the chassis' codes
+  // and carry the chassis' hints (projectErrorHints, merged below — the deck
+  // routes answer them too); only the deck-side codes are worded here.
   project_not_found:
     'No such project, or this credential cannot read it, or the push named a project it may not link ' +
     'into (editor or more, not archived). List yours with slideless_list_projects.',
-  project_archived: 'The project is archived and read-only — unarchive it first, or leave it as it is.',
-  insufficient_project_role:
-    'This credential holds a role on the project below what the act needs (the message names it). ' +
-    'Ask a project manager to raise it.',
+  not_a_brand:
+    'This deck is not a brand reference (its AGENT.md frontmatter does not say type: brand), so it ' +
+    "cannot be a project's brand. List the brands with slideless_list_references.",
+  not_linked:
+    'The deck is not linked to this project. Link it first with slideless_link_presentation_to_project ' +
+    '(on a brand set), or there is nothing to unlink.',
   forbidden:
     'This credential lacks the deck-level right for this action (e.g. only the deck owner or a ' +
     'workspace admin can delete/invite). Ask the deck owner to do it or to grant access.',
@@ -53,8 +58,10 @@ export const DECK_ERROR_HINTS: ErrorHints = {
 /** Tool-level scope pre-check — UX only (the API's fail-closed allowlist enforces). */
 export const checkScope = createScopeCheck(DECK_MCP_SCOPES);
 
-const hints = mergeErrorHints(DECK_ERROR_HINTS);
+// The chassis composes the table (its own groups, then the deck's last):
+// one composition, read here and in `buildMcpServer`, never copied.
+const hints = composeErrorHints(DECK_ERROR_HINTS, IDENTITY.mcp.toolPrefix);
 
-/** `wrapToolErrors` reading the chassis hints AND the deck ones. */
+/** `wrapToolErrors` reading the chassis hints (the project ones included) AND the deck ones. */
 export const wrapToolErrors = (fn: () => Promise<ToolTextResult>): Promise<ToolTextResult> =>
   wrapToolErrorsWith(fn, hints);

@@ -43,6 +43,19 @@ responsible for, and the rules that govern rendering user content.
   `MAX_WORKSPACES_PER_USER` (`0` closes it), and is recorded in the new
   workspace's audit log alone: a workspace is never told what its members
   do elsewhere.
+- **A project is a grant, and only a grant.** A project
+  ([Projects](../concepts/projects.md)) opens the decks linked to it to the
+  people in it, and nothing else: a member reads the project's decks, their
+  versions and their files for as long as the grant lasts, and loses that read
+  the moment they leave the project or the workspace. Members come from the
+  workspace's own roster and a per-deck guest is refused, so a project is never
+  a way into a workspace. A project you are not in answers `404`, never `403` —
+  its name, its roster and its deck count are not probeable. Archiving is
+  read-only, not a delete: the decks stay readable and the share links keep
+  working, while every write through the project is refused until it is
+  unarchived. Membership is local to the instance on both editions; the cloud
+  edition manages the WORKSPACE roster at Antasphere, never the projects inside
+  it.
 - **Fail-closed machine access.** API keys and OAuth tokens reach only the
   endpoints consciously listed in `middleware/scopes.ts`, each behind its
   scope. New endpoints are unreachable to machine credentials until opened.
