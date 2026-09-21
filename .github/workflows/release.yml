@@ -8,9 +8,16 @@ on:
     # to roll. Those paths have their own publishers (docs-notify.yml,
     # hostinger-pages.yml). Any product file in the same push still releases —
     # paths-ignore only skips when EVERY changed file matches.
+    # The two hostinger scripts are distribution-side (they test and rehearse
+    # the published template, and never ship in the image), so they belong on
+    # this list exactly as hostinger-pages.yml already treats them as its own
+    # trigger — the two lists must agree, or a template bump that touches the
+    # test drags a no-op release behind it (2026-09-21).
     paths-ignore:
       - 'docs/**'
       - 'deploy/**'
+      - 'scripts/hostinger-template.test.mjs'
+      - 'scripts/hostinger-smoke.mjs'
       - '.github/workflows/hostinger-pages.yml'
       - '.github/workflows/docs-notify.yml'
       - '.github/workflows/docs-notify-release.yml'
