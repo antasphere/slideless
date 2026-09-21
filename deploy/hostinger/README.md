@@ -85,3 +85,29 @@ owner signed in, `POST /api/v1/setup` → 410 afterwards. Two things the run cor
 the template and the guide: hPanel runs the file with no environment (a `${VAR:?}`
 render refusal leaves no project), and the deploy button does not carry the template
 into a new VPS. The instance stays up as the reference self-hosted Slideless.
+
+## Verified upgrade on the reference instance
+
+2026-09-21, `share.antasphere.com` 0.4.1 → 0.7.0, three releases in one step. The
+deployed compose file was replaced with this published template (downloaded from
+the deploy URL, not hand-edited, so the instance runs exactly what a customer's
+redeploy installs) and `docker compose up -d` recreated `init` and `app` only; `db`
+and `caddy` kept running and every named volume was untouched. Migrations applied
+under the advisory lock at boot, `/readyz` answered 200 about two seconds later,
+and the downtime was the app container's restart.
+
+Verified after: `/api/v1/instance` reports 0.7.0 with the SAME `instanceId`, the
+data survived (3 users, 11 presentations, 1 workspace, 50 files), the three
+Projects tables 0.7.0 adds are present, HTTP still 308s to HTTPS on a valid
+certificate, `/metrics` still 401s, and `POST /api/v1/setup` with a well-formed
+body still answers 410 `already_setup` without creating a user — worth probing
+with the real body shape, since schema validation answers 400 first and a 400
+proves nothing about the closure.
+
+Two notes for the next one. The deployed file was the pre-fix template (the
+`${VAR:?}` render refusal of 2026-09-18), so taking the published file wholesale
+also carried that fix and the mail documentation — a hand-edited pin would have
+left both behind. And a VPS snapshot is the only true rollback, since migrations
+are forward-only; this run went without one by the operator's call, with a
+`pg_dumpall` and a tar of `app_data` + `db_credentials` (the auth secret and the
+pepper root) left in `/root/slideless-preupgrade/` as the partial net.
