@@ -383,6 +383,13 @@ describe('--project on the listings', () => {
     expect(h.calls.map((c) => c.path)).toEqual(['/api/v1/presentations']);
   });
 
+  it("list without --project keeps the server's own refusal: the project sentence is for the flag alone", async () => {
+    const h = routedHarness([listRoute(refusal(404, 'not_found'))]);
+    expect(await run(argv('list'), h.io)).toBe(1);
+    expect(h.err()).toContain('terse wire message');
+    expect(h.err()).not.toContain('No such deck');
+  });
+
   it('threads the project across every page of --all', async () => {
     let page = 0;
     const h = routedHarness([
