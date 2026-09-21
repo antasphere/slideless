@@ -14,12 +14,12 @@ export function pathCrumbs(nav: NavModel, path: string): Crumb[] {
   const item = [...nav.primary, ...nav.workspace, ...nav.system].find((i) => isActive(i, path));
   if (!item) return [];
   const trail: Crumb[] = [{ label: item.title, href: item.href }];
-  const tab = sectionTab(path);
+  const tab = item.tabs?.find((tab) => tab.href === path)?.label ?? sectionTab(path);
   if (tab && item.also?.length) trail.push({ label: tab, href: path });
   return trail;
 }
 
-/** The tab's own name on the pages that are tabs of a section (SectionHero). */
+/** The tab's own name on the shell's pages that are tabs of a section (SectionHero); a tool's section names its own in `NavItem.tabs`. */
 function sectionTab(path: string): string | undefined {
   switch (path) {
     case '/members':

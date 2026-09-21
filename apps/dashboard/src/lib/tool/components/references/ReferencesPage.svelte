@@ -1,6 +1,6 @@
 <script lang="ts">
-  /* The Brands and Templates sections (PRDCT-2421): one page, the type as a
-     prop. The decks page's toolbar as is (the search on the title and the
+  /* The library's two pages, Brands and Templates (PRDCT-2421, one section
+     since PRDCT-2583): one page, the type as a prop. The decks page's toolbar as is (the search on the title and the
      description, the count, the View menu with the cards-or-table choice kept
      per section, the add button that opens the command-line instructions),
      the references as cards or as a table, and the side sheet that opens on a
@@ -8,7 +8,7 @@
      edition-sniffs, the page reads /me and the list answer. */
   import { type ColumnDef, type VisibilityState } from '@tanstack/table-core';
   import { renderComponent } from '$lib/components/ui/data-table/index.js';
-  import HeroBand from '$lib/components/brand/HeroBand.svelte';
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
@@ -18,6 +18,8 @@
   import ReferenceCard from './ReferenceCard.svelte';
   import ReferenceSheet from './ReferenceSheet.svelte';
   import ReferencePushInstructions from './ReferencePushInstructions.svelte';
+  import ProjectFilter from '$lib/tool/components/projects/ProjectFilter.svelte';
+  import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -27,7 +29,9 @@
   import Plus from '@lucide/svelte/icons/plus';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
-  import { api } from '$lib/api';
+  import { deckProjects, isNotFound, type DeckWithProjects } from '$lib/tool/projects-client';
+  import { createProjectFilter } from '$lib/tool/project-filter.svelte';
+  import { filterScope } from '$lib/projects/filter';
   import { matchesQuery, readView, writeView, type ReferenceView } from '$lib/tool/references';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
@@ -43,20 +47,41 @@
 
   const brand = $derived(type === 'brand');
   const title = $derived(brand ? t('nav.brands') : t('nav.templates'));
+  // The library is one section with two tabs (PRDCT-2583), each at its own address.
+  const libraryTabs = $derived([
+    { href: '/brands', label: t('nav.brands') },
+    { href: '/templates', label: t('nav.templates') }
+  ]);
 
   // A guest reads no workspace reference and creates no deck (D2): the
   // sections are not in a guest's navigation, and the add button never shows.
   const isGuest = $derived(me.origin === 'guest');
 
-  // the page is made anew for each type (brands, templates are two routes)
+  // The project filter (PRDCT-2584), the decks page's own: each of the two
+  // pages remembers its project, the list is made anew and remembered per
+  // choice, and a remembered project that answers 404 falls back to all
+  // projects and forgets itself. The page is made anew for each type (brands,
+  // templates are two routes).
   // svelte-ignore state_referenced_locally
-  const list = createPagedList<Presentation>(
-    async (p) => {
-      const { presentations, nextCursor } = await api.presentations({ ...p, type });
-      return { items: presentations, nextCursor };
-    },
-    { remember: `references.${type}` }
-  );
+  const filter = createProjectFilter(type === 'brand' ? 'brands' : 'templates', filterScope(me));
+  const list = $derived.by(() => {
+    const projectId = filter.projectId;
+    return createPagedList<DeckWithProjects>(
+      async (p) => {
+        try {
+          const { presentations, nextCursor } = await deckProjects.decksOf(projectId, { ...p, type });
+          return { items: presentations, nextCursor };
+        } catch (e) {
+          if (projectId && isNotFound(e)) filter.forget();
+          throw e;
+        }
+      },
+      { remember: filter.listName(`references.${type}`) }
+    );
+  });
+  $effect(() => {
+    void filter.load();
+  });
   $effect(() => {
     void list.load();
   });
@@ -65,7 +90,10 @@
   // from the server's answer, and the whole page is refreshed behind it: a
   // default set here clears the previous default's crown elsewhere.
   let overrides = $state<Record<string, Presentation>>({});
-  const decks = $derived(list.items.map((d) => overrides[d.id] ?? d));
+  // the server's answer to a change names no project: the row keeps the list's
+  const decks = $derived(
+    list.items.map((d): DeckWithProjects => (overrides[d.id] ? { ...d, ...overrides[d.id] } : d))
+  );
   async function changed(updated: Presentation) {
     overrides = { ...overrides, [updated.id]: updated };
     await list.refresh();
@@ -114,7 +142,7 @@
 
   let showPushDialog = $state(false);
 
-  const columns: ColumnDef<Presentation, unknown>[] = $derived([
+  const columns: ColumnDef<DeckWithProjects, unknown>[] = $derived([
     {
       accessorKey: 'title',
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('decks.colTitle') }),
@@ -130,6 +158,13 @@
       cell: ({ row }) =>
         row.original.audience === 'workspace' ? t('refs.audienceWorkspace') : t('refs.audiencePrivate'),
       meta: { title: t('refs.colAudience'), width: '140px' }
+    },
+    {
+      id: 'projects',
+      header: () => t('deckProjects.colProjects'),
+      // SECURITY: project names are USER-AUTHORED; the tags render them as text.
+      cell: ({ row }) => renderComponent(DeckProjectTags, { deck: row.original }),
+      meta: { title: t('deckProjects.colProjects'), width: '200px' }
     },
     {
       accessorKey: 'currentVersion',
@@ -153,22 +188,24 @@
       meta: { title: t('refs.colDefault'), width: '100px' }
     }
   ]);
-  const hideable = $derived(
-    columns.filter((column) => 'accessorKey' in column && column.accessorKey !== 'title')
-  );
-  const columnId = (column: ColumnDef<Presentation, unknown>) =>
+  const columnId = (column: ColumnDef<DeckWithProjects, unknown>) =>
     'accessorKey' in column ? String(column.accessorKey) : (column.id ?? '');
+  const hideable = $derived(columns.filter((column) => columnId(column) !== 'title'));
 </script>
 
 <svelte:head>
   <title>{title} · {instanceName}</title>
 </svelte:head>
 
-<HeroBand drawing={brand ? 'orbits' : 'apollonian'} seed={brand ? 20260919 : 20260920}>
-  <p class="hero-eyebrow">{t('nav.workspace')}</p>
-  <h1 class="hero-title">{title}</h1>
-  <p class="hero-lede">{brand ? t('refs.brandsDescription') : t('refs.templatesDescription')}</p>
-</HeroBand>
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={t('nav.library')}
+  lede={brand ? t('refs.brandsDescription') : t('refs.templatesDescription')}
+  pageTitle={title}
+  tabs={libraryTabs}
+  drawing={brand ? 'orbits' : 'apollonian'}
+  seed={brand ? 20260919 : 20260920}
+/>
 
 {#snippet viewMenu()}
   {#if !phone.current}
@@ -206,6 +243,10 @@
   {/if}
 {/snippet}
 
+{#snippet projectFilter()}
+  <ProjectFilter {filter} id="{type}s-project-filter" />
+{/snippet}
+
 {#snippet addButton()}
   {#if !isGuest}
     <Button size="sm" class="h-8 gap-1.5" onclick={() => (showPushDialog = true)}>
@@ -223,7 +264,7 @@
   <TableSkeleton columns={5} />
 {:else if list.error && !decks.length}
   <p class="text-sm text-destructive" in:appear>{t('refs.loadFailed', { error: list.error })}</p>
-{:else if !decks.length}
+{:else if !decks.length && !filter.projectId}
   <Card.Root class="mx-auto mt-6 max-w-xl">
     <Card.Header>
       <Card.Title class="text-base"
@@ -242,12 +283,18 @@
     <TableToolbar
       searchPlaceholder={brand ? t('refs.searchBrands') : t('refs.searchTemplates')}
       bind:searchValue={query}
-      count={countLine}
+      count={decks.length ? countLine : undefined}
+      filters={projectFilter}
       view={viewMenu}
       actions={addButton}
       bind:height={toolbarHeight}
     />
-    {#if view === 'cards'}
+    {#if !decks.length}
+      <!-- a project with no reference of this type: the toolbar stays, so the filter can be changed -->
+      <p class="py-10 text-center text-sm text-muted-foreground" in:appear>
+        {brand ? t('deckProjects.emptyBrands') : t('deckProjects.emptyTemplates')}
+      </p>
+    {:else if view === 'cards'}
       <div in:appear>
         {#if shown.length}
           <div class="ref-grid grid gap-4 pt-3 sm:grid-cols-2 xl:grid-cols-3" use:entering>

@@ -14,7 +14,8 @@ vi.mock('$lib/api', async (original) => ({
 }));
 
 const { tool } = await import('./index');
-const { behindWorkspace, buildNav, phoneTabs } = await import('$lib/nav');
+const { behindWorkspace, buildNav, isActive, phoneTabs } = await import('$lib/nav');
+const { pathCrumbs } = await import('$lib/components/shell/path');
 const { actionFamilies } = await import('$lib/components/audit/audit-filters');
 const { createDeckOverview } = await import('./overview.svelte');
 const { listScope } = await import('$lib/stores/pagedList.svelte');
@@ -26,32 +27,70 @@ const { listScope } = await import('$lib/stores/pagedList.svelte');
  * would say so.
  */
 describe('the menu', () => {
-  it('a member gets decks, brands and templates, right after the overview', () => {
+  it('a member gets decks, projects and the library, right after the overview', () => {
     const nav = buildNav({ role: 'member', origin: 'local' });
     expect(nav.primary.map((i) => [i.id, i.href, i.pattern])).toEqual([
       ['overview', '/', 'rings'],
       ['decks', '/decks', 'slides'],
-      ['brands', '/brands', 'aurora'],
-      ['templates', '/templates', 'crosses']
+      ['projects', '/projects', 'truss'],
+      ['library', '/brands', 'aurora']
     ]);
     expect(nav.primary[1].icon).toBe(Presentation);
     for (const item of nav.primary.slice(1)) expect(item.title && item.blurb).toBeTruthy();
   });
 
-  it('a guest reads no workspace reference: decks only', () => {
+  // PRDCT-2583: the four entries, pinned for every role and origin. A
+  // guest's role is locked to member, the other two rows hold the rule anyway.
+  it.each([
+    ['owner', 'local', ['overview', 'decks', 'projects', 'library']],
+    ['admin', 'local', ['overview', 'decks', 'projects', 'library']],
+    ['member', 'local', ['overview', 'decks', 'projects', 'library']],
+    ['owner', 'hub', ['overview', 'decks', 'projects', 'library']],
+    ['admin', 'hub', ['overview', 'decks', 'projects', 'library']],
+    ['member', 'hub', ['overview', 'decks', 'projects', 'library']],
+    ['owner', 'guest', ['overview', 'decks']],
+    ['admin', 'guest', ['overview', 'decks']],
+    ['member', 'guest', ['overview', 'decks']]
+  ] as const)('%s, origin %s: %j', (role, origin, ids) => {
+    expect(buildNav({ role, origin }).primary.map((i) => i.id)).toEqual(ids);
+  });
+
+  it('the library is one entry lit on both of its tabs, at the addresses they always had', () => {
+    const library = buildNav({ role: 'member', origin: 'local' }).primary.find((i) => i.id === 'library')!;
+    expect([library.href, ...(library.also ?? [])]).toEqual(['/brands', '/templates']);
+    expect(isActive(library, '/brands')).toBe(true);
+    expect(isActive(library, '/templates')).toBe(true);
+    expect(isActive(library, '/decks')).toBe(false);
+    expect(isActive(library, '/templates-of-mine')).toBe(false);
+    // the path in the top bar names the open tab: Library / Templates
+    const nav = buildNav({ role: 'member', origin: 'local' });
+    expect(pathCrumbs(nav, '/templates').map((c) => [c.label, c.href])).toEqual([
+      ['Library', '/brands'],
+      ['Templates', '/templates']
+    ]);
+    expect(pathCrumbs(nav, '/brands')).toHaveLength(2);
+  });
+
+  it('a guest reads no workspace reference and joins no project: decks only', () => {
     expect(tool.nav({ role: 'member', origin: 'guest' }).map((i) => i.id)).toEqual(['decks']);
+    expect(tool.navAfter({ role: 'member', origin: 'guest' })).toEqual([]);
     expect(buildNav({ role: 'member', origin: 'guest' }).primary.map((i) => i.id)).toEqual([
       'overview',
       'decks'
     ]);
   });
 
-  it('a phone keeps decks as a thumb tab and folds the references behind the workspace entry', () => {
+  it('a phone keeps decks and projects as thumb tabs and folds the library behind the workspace entry', () => {
     const nav = buildNav({ role: 'owner', origin: 'local' });
-    expect(phoneTabs(nav).map((i) => i.id)).toEqual(['overview', 'decks', 'workspace', 'settings']);
+    expect(phoneTabs(nav).map((i) => i.id)).toEqual([
+      'overview',
+      'decks',
+      'projects',
+      'workspace',
+      'settings'
+    ]);
     expect(behindWorkspace(nav).map((i) => i.id)).toEqual([
-      'brands',
-      'templates',
+      'library',
       'members',
       'api-keys',
       'files',
@@ -60,12 +99,19 @@ describe('the menu', () => {
     const workspace = phoneTabs(nav).find((i) => i.id === 'workspace')!;
     expect(workspace.also).toEqual(expect.arrayContaining(['/brands', '/templates']));
     expect(workspace.also).not.toContain('/decks');
+    expect(workspace.also).not.toContain('/projects');
   });
 });
 
 describe('the gate', () => {
   it('the collaborator claim page turns like the gate’s own pages', () => {
     expect(tool.gateRoutes).toEqual(['collab']);
+  });
+});
+
+describe('the project page', () => {
+  it('gives the shell what a project holds here: its brand and its decks', () => {
+    expect(tool.project.Resources).toBeDefined();
   });
 });
 

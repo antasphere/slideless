@@ -5,6 +5,7 @@ import Folder from '@lucide/svelte/icons/folder';
 import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+import FolderKanban from '@lucide/svelte/icons/folder-kanban';
 import type { Component } from 'svelte';
 import type { WorkspaceRole } from '@antasphere/chassis-contract';
 import type { MeResponse } from '@slideless/contract';
@@ -26,6 +27,8 @@ export interface NavItem {
   icon: Component;
   /** Extra path prefixes that light this item (a section reached by tabs from it). */
   also?: string[];
+  /** The pages the section carries as tabs, when the tool names them: the path in the top bar reads the open one here. */
+  tabs?: { href: string; label: string }[];
   /** The drawing the section's tile carries: a key of the brand's pattern library. */
   pattern: string;
 }
@@ -59,7 +62,22 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       pattern: 'rings'
     },
     // The product first: what the tool brings comes right after the overview.
-    ...tool.nav({ role, origin })
+    ...tool.nav({ role, origin }),
+    // Projects are the shell's (PRDCT-2582): every tool gets them. A guest is
+    // an outsider invited on one resource and can never be a project's member.
+    ...(isGuest
+      ? []
+      : [
+          {
+            id: 'projects',
+            title: t('nav.projects'),
+            blurb: t('nav.blurb.projects'),
+            href: '/projects',
+            icon: FolderKanban,
+            pattern: 'truss'
+          }
+        ]),
+    ...tool.navAfter({ role, origin })
   ];
 
   const workspace: NavItem[] = [];
@@ -124,7 +142,7 @@ export function isActive(item: Pick<NavItem, 'href' | 'also'>, path: string): bo
 }
 
 /** The everyday sections a phone keeps as tabs; the tool's other sections fold behind the workspace entry. */
-const PHONE_TABS = new Set(['overview', ...tool.phoneTabs]);
+const PHONE_TABS = new Set(['overview', 'projects', ...tool.phoneTabs]);
 
 /** The sections the phone's workspace entry opens: the references, then the administration. */
 export function behindWorkspace(nav: NavModel): NavItem[] {
@@ -136,9 +154,9 @@ export function behindWorkspace(nav: NavModel): NavItem[] {
 }
 
 /**
- * The phone tab bar: the two everyday sections, the workspace behind one
- * entry (the references included: six thumb tabs do not fit the bar), the
- * settings.
+ * The phone tab bar: the everyday sections (the overview, the tool's own,
+ * the projects), the workspace behind one entry (the tool's other sections
+ * included: six thumb tabs do not fit the bar), the settings.
  */
 export function phoneTabs(nav: NavModel): NavItem[] {
   const settings = nav.system.find((i) => i.id === 'settings');

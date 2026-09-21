@@ -62,6 +62,18 @@ export function roleTag(role: string): TagSpec {
   }
 }
 
+/** A person's role in one project: what they may do with it and with what it holds. */
+export function projectRoleTag(role: string): TagSpec {
+  switch (role) {
+    case 'manager':
+      return { label: t('projects.roleManager'), tone: 'indigo', icon: UserCog };
+    case 'editor':
+      return { label: t('projects.roleEditor'), tone: 'clay', icon: PenLine };
+    default:
+      return { label: t('projects.roleViewer'), tone: 'slate', icon: Eye };
+  }
+}
+
 /** `presentations:read` reads as what it touches, then what it may do with it. */
 export function scopeTag(scope: string): TagSpec {
   const [what, verb = ''] = scope.split(':');

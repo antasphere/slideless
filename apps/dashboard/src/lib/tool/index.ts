@@ -1,6 +1,5 @@
 import Presentation from '@lucide/svelte/icons/presentation';
-import Palette from '@lucide/svelte/icons/palette';
-import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+import Library from '@lucide/svelte/icons/library';
 import type { ToolContribution } from '$lib/contribution';
 import { api } from '$lib/api';
 import { t } from '$lib/i18n';
@@ -8,6 +7,7 @@ import { warmList } from '$lib/stores/pagedList.svelte';
 import { createDeckOverview, type DeckOverview } from './overview.svelte';
 import RecentDecks from './components/overview/RecentDecks.svelte';
 import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
+import ProjectDecks from './components/projects/ProjectDecks.svelte';
 
 /**
  * What Slideless gives the shell: the one door into the tool's half
@@ -15,8 +15,7 @@ import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
  * door, `./i18n`.
  */
 export const tool: ToolContribution<DeckOverview> = {
-  nav({ origin }) {
-    const isGuest = origin === 'guest';
+  nav() {
     return [
       // The product first: decks are what this instance is for.
       {
@@ -26,34 +25,37 @@ export const tool: ToolContribution<DeckOverview> = {
         href: '/decks',
         icon: Presentation,
         pattern: 'slides'
-      },
-      // The references (PRDCT-2421): the decks the workspace keeps to make
-      // other decks from. A guest reads no workspace reference (a guest invited
-      // on one reads it at /decks/{id}), so the two sections are not offered.
-      ...(isGuest
+      }
+    ];
+  },
+
+  navAfter({ origin }) {
+    return [
+      // The library (PRDCT-2583): the decks the workspace keeps to make other
+      // decks from, brands and templates as the two tabs of one entry, each at
+      // the address it always had. A guest reads no workspace reference (a guest
+      // invited on one reads it at /decks/{id}), so the entry is not offered.
+      ...(origin === 'guest'
         ? []
         : [
             {
-              id: 'brands',
-              title: t('nav.brands'),
-              blurb: t('nav.blurb.brands'),
+              id: 'library',
+              title: t('nav.library'),
+              blurb: t('nav.blurb.library'),
               href: '/brands',
-              icon: Palette,
+              also: ['/templates'],
+              tabs: [
+                { href: '/brands', label: t('nav.brands') },
+                { href: '/templates', label: t('nav.templates') }
+              ],
+              icon: Library,
               pattern: 'aurora'
-            },
-            {
-              id: 'templates',
-              title: t('nav.templates'),
-              blurb: t('nav.blurb.templates'),
-              href: '/templates',
-              icon: LayoutTemplate,
-              pattern: 'crosses'
             }
           ])
     ];
   },
 
-  // The references fold behind the phone's workspace entry: six thumb tabs do not fit the bar.
+  // The library folds behind the phone's workspace entry: the bar keeps the everyday sections.
   phoneTabs: ['decks'],
 
   // The collaborator's claim page, /collab/{token}.
@@ -99,6 +101,10 @@ export const tool: ToolContribution<DeckOverview> = {
       'upload_session'
     ],
     glyphs: [{ test: /present|deck|share|version/, icon: Presentation }]
+  },
+
+  project: {
+    Resources: ProjectDecks
   },
 
   overview: {

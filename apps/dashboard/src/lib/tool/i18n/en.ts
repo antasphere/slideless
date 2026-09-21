@@ -48,7 +48,6 @@ export const en = {
   'tokens.panelToday': 'Today',
   'tokens.panelPrivacy': 'No IP addresses and no full URLs are ever stored.',
   'tokens.countLine': '{active} active · {total} in total',
-  'nav.blurb.brands': 'The look and the voice your decks can take.',
   'overview.brandsCta': 'See the brands',
   'tokens.nameHint':
     'Who is it for? A label only you see. A named link remembers its recipient’s form answers; a link with no name is for nobody in particular and does not.',
@@ -77,7 +76,9 @@ export const en = {
   // ── References: the Brands and Templates sections (PRDCT-2421) ────────
   'nav.brands': 'Brands',
   'nav.templates': 'Templates',
-  'nav.blurb.templates': 'The structure of the decks you make again and again.',
+  // The library (PRDCT-2583): one entry of the menu, brands and templates as its tabs.
+  'nav.library': 'Library',
+  'nav.blurb.library': 'The brands and the templates your decks are made from.',
   'refs.brandsDescription':
     'The look and the voice of your decks, kept as decks. An agent reads a brand before it writes a deck for you.',
   'refs.templatesDescription':
@@ -531,5 +532,60 @@ export const en = {
   'collab.ssoIntro': 'This instance signs in with Antasphere. Sign in to claim your invitation.',
   'collab.ssoWrongAccount':
     'You are signed in as {current}, but this invitation is for {email}. Sign in with the invited account to claim it.',
-  'collab.finishing': 'Finishing your invitation…'
+  'collab.finishing': 'Finishing your invitation…',
+  // the decks of a project, the projects of a deck (PRDCT-2582, PRDCT-2584)
+  'deckProjects.filterAria': 'Filter by project',
+  'deckProjects.filterAll': 'All projects',
+  'deckProjects.colProjects': 'Projects',
+  'deckProjects.tagBrand': 'brand',
+  'deckProjects.tagBrandOf': 'Brand of the project',
+  'deckProjects.emptyDecks': 'No deck in this project yet.',
+  'deckProjects.emptyBrands': 'No brand in this project yet.',
+  'deckProjects.emptyTemplates': 'No template in this project yet.',
+  'deckProjects.emptyHow': 'Push a deck into it from the command line.',
+  'deckProjects.emptyOr': 'Or link one from its page.',
+  'deckProjects.brandTitle': 'Brand',
+  'deckProjects.brandDescription': 'The brand the decks of this project are made with.',
+  'deckProjects.brandNone': 'No brand yet.',
+  'deckProjects.brandSet': 'Set brand',
+  'deckProjects.brandChange': 'Change',
+  'deckProjects.brandClear': 'Clear',
+  'deckProjects.brandLoadFailed': 'Could not load the brand: {error}',
+  'deckProjects.brandPickTitle': 'Choose the brand of the project',
+  'deckProjects.brandPickDescription': 'One of the brands already in this project.',
+  'deckProjects.brandPickEmpty':
+    'No brand is in this project yet. Add one with the deck button below, or push one with --project.',
+  'deckProjects.brandPickFailed': 'Could not load the brands: {error}',
+  'deckProjects.brandPickSubmit': 'Use this brand',
+  'deckProjects.brandSaved': 'Brand set.',
+  'deckProjects.brandClearTitle': 'Clear the brand of the project?',
+  'deckProjects.brandClearDescription':
+    'The project works without a brand. The brand itself is not deleted and stays linked to the project.',
+  'deckProjects.brandCleared': 'Brand cleared.',
+  'deckProjects.decksTitle': 'Decks',
+  'deckProjects.decksDescription': 'The decks linked to this project. Its members can read them.',
+  'deckProjects.add': 'Add a deck',
+  'deckProjects.addTitle': 'Add a deck to the project',
+  'deckProjects.addDescription':
+    'The decks you administer that are not in this project yet: your own, and every deck of the workspace for an admin or owner. Linking a deck lets the members of the project read it, which is why it takes the deck’s administrator.',
+  'deckProjects.addEmpty': 'You have no deck left to add.',
+  'deckProjects.addSubmit': 'Add to the project',
+  'deckProjects.linked': 'Deck added to the project.',
+  'deckProjects.unlink': 'Remove from the project',
+  'deckProjects.unlinkShort': 'Remove',
+  'deckProjects.unlinkAria': 'Remove {deck} from the project',
+  'deckProjects.unlinkFromAria': 'Remove the deck from {project}',
+  'deckProjects.unlinkTitle': 'Remove this deck from the project?',
+  'deckProjects.unlinkDescription':
+    '{deck} leaves {project}. The members of the project stop reading it through the project. The deck itself is not deleted.',
+  'deckProjects.unlinked': 'Deck removed from the project.',
+  'deckProjects.panelTitle': 'Projects',
+  'deckProjects.panelDescription':
+    'The projects this deck sits in. The members of a project can read its decks.',
+  'deckProjects.panelEmpty': 'This deck is in no project.',
+  'deckProjects.panelLoadFailed': 'Could not load the projects: {error}',
+  'deckProjects.addToProject': 'Add to a project',
+  'deckProjects.addToProjectTitle': 'Add this deck to a project',
+  'deckProjects.addToProjectDescription':
+    'The projects where you are an editor or a manager. The members of the project you choose will be able to read this deck.'
 } as const;
