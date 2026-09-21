@@ -1,7 +1,7 @@
 # Template feedback — the consolidated backlog
 
 Discoveries, friction, and improvement ideas that concern the upstream
-**codika-platform-template**, found while building Slideless on top of it
+**platform-template**, found while building Slideless on top of it
 (template @ `b0dcd13`). We do NOT change the template from here — this file
 is the backlog for future template improvements.
 
@@ -1007,7 +1007,7 @@ NOT EXISTS(row WHERE dismissed_at IS NOT NULL)` — absence means the
 
 Every finding below is template heritage, not Slideless product code — the
 same shapes ship in `packages/cli` and `packages/sdk` of
-codika-platform-template, so the whole tool family inherits them.
+platform-template, so the whole tool family inherits them.
 
 - **`files download` writes the server-chosen `originalName`.**
   `const out = opts.out ?? meta.originalName; await writeFile(out, buf)` with

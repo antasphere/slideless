@@ -4,7 +4,7 @@ The Slideless product monorepo, in the n8n mold: one Docker image plus a Postgre
 versioned Hono API (`/api/v1`), a SvelteKit dashboard, Better Auth (sessions, API keys, a built-in
 OAuth 2.1 authorization server), file storage, pg-boss jobs, an audit log, and a bundled MCP endpoint
 (`/mcp`) — so agents are first-class consumers of every instance. Instantiated from the
-codika-platform-template (commit `b0dcd13`); branches follow the workspace rule: `prod` (default,
+platform-template (commit `b0dcd13`); branches follow the workspace rule: `prod` (default,
 deploys) + `dev` (day-to-day work).
 
 ## Identity (fixed at instantiation)
@@ -316,7 +316,7 @@ under that folder is published; keep it out of this repo.
 - **LESSONS.md** — read it before touching auth, MCP, or Docker packaging; it records the traps
   already hit (inherited from the template) and why the current shapes exist.
 - **TEMPLATE-FEEDBACK.md** — friction/improvement ideas that concern the upstream
-  codika-platform-template. Never fix the template from here; append to this backlog instead.
+  platform-template. Never fix the template from here; append to this backlog instead.
 - **internal/decisions/** — ADRs: version pins (001, the exact-pinned Better Auth trio), MCP transport
   (002), OIDC client deferral (003), pgvector (004), auth-surface + metrics defaults (005).
 - **internal/production-readiness.md** — the honest gap list and roadmap.
