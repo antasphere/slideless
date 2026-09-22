@@ -248,13 +248,43 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
 { key, plan, requiredPlan, upgradeUrl }`, the hub's organization page) → the credit check; oss:
   the credit check first (413 `entitlement_denied`, today's message byte for byte), then the
   `oss` value, and NO event (unmetered by construction). The event's `userId` is the hub's `sub`,
-  never the local id. The poster (`entitlements/poster.ts`, cloud only) posts whole batches to
-  `POST <hub>/api/v1/usage/events` with a `client_credentials` token (`scope=usage:write`,
-  `resource=<hub>/mcp`) minted single-flight on `HUB_CLIENT_ID`/`SECRET`; a 404 from an older hub
-  is an outage the queue retries for about eight hours (`DEFAULT_USAGE_RETRY`), never data loss;
-  the plan read (`GET /usage/entitlements`) keeps the last known plan fifteen minutes on failure,
-  then free. Phase 1: every account is `free`, the free upload cap IS `MAX_FILE_SIZE_MB` by
-  construction, credits are a no-op; the seed values are data to review before phase 2.
+  never the local id. **The event never names the tool (PRDCT-2629)**: the hub takes the tool
+  from the machine token's registry entry (`slideless-cloud`, not `IDENTITY.slug`) and refuses a
+  body slug that differs as `tool_mismatch`, so `UsageEvent` has no slug field and the fake hub
+  (`testing/fake-hub.ts`) judges every element with the hub's schema mirrored verbatim
+  (`usageEventSchema`) and refuses a stamped body exactly as the real hub does. The poster
+  (`entitlements/poster.ts`, cloud only) posts whole batches to `POST <hub>/api/v1/usage/events`
+  with a `client_credentials` token (`scope=usage:write`, `resource=<hub>/mcp`) minted
+  single-flight on `HUB_CLIENT_ID`/`SECRET`; a 404 from an older hub, a 5xx, a 403 or a 2xx that
+  is not the hub's answer is an outage the queue retries for about eight hours
+  (`DEFAULT_USAGE_RETRY`), and the budget's END is a hold, never a loss (PRDCT-2635): the batch
+  moves to `usage-events-held` (the usage QUEUE's dead letter, set by the worker boot, never
+  named on a send: an api-role replica must be able to send before the worker of a release has
+  booted; pg-boss stamps it on each job row at insert, so a job sent before that worker's install
+  carries none; the dead-letter copy carries the original retry limit and no delay, pg-boss 10's rule),
+  is logged at error level and counted (`usage_events_held_total`),
+  and comes back through the queue every hour until the hub accepts it; the poster's per-event
+  and per-batch outcomes are on `/metrics` (`usage_poster_events_total`, `usage_poster_batches_total`).
+  A mint the hub refuses as a configuration error (`invalid_client` and its kin) is held five
+  minutes, a transient failure five seconds (PRDCT-2637: the hub's token wall is the one
+  people's sign-ins share). The plan read (`GET /usage/entitlements`, the hub's answer mirrored
+  verbatim, a boolean limit = unlimited or nothing, PRDCT-2636) is OFF the request path
+  (PRDCT-2633): a cached plan is served at once and refreshed behind the request, a cold account
+  waits at most 1.5 s, and the last known plan is kept fifteen minutes on failure, then free.
+  **The plan gate sees a declared size before any body limit refuses it (PRDCT-2632)**: the
+  tool's `bodyLimit` slot declares data (`BodyCap`), the chassis builds the middleware, and when
+  the matched route carries a gate that judges a limit (`isDeferringGate`) a Content-Length over
+  the cap is parked (`bodyRefusal`) with the request's body DROPPED, so nothing downstream can
+  read it by construction, and fired by the gate after the plan check, so a metered account meets 403
+  `plan_required` with the upgrade link at any size and the instance-cap 413 only when the plan
+  allows it; oss and a request with no plan meet the cap first, byte for byte once the
+  credential has resolved (a scope-less key now meets the scope gate's 403 before the cap's 413). The upload action
+  is metered in exact bytes and priced per mebibyte through `per` on the action (`5 credits per
+1,048,576 bytes`, PRDCT-2627), the boot refusing a route whose meter unit differs from its
+  action's. Phase 1: every account is `free`, the free upload cap IS `MAX_FILE_SIZE_MB` by
+  construction, credits are a no-op; the seed values are data to review before phase 2. The
+  federation drill's seventh leg (`scripts/federation-drill.sh`, Phase 8) is the regression test
+  of the pair: one metered action per surface read back from the hub's `usage_events`.
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
