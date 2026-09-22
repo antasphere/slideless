@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { declaredCredits } from '@antasphere/chassis-contract';
 import { FakeHub, type HubUserFixture } from '@antasphere/chassis-server/testing';
 import { IDENTITY } from '@slideless/contract';
 import { createDatabase, createTestApp, readJson, startPostgres, type TestApp } from './helpers.js';
@@ -18,6 +19,14 @@ import * as sso from './sso-helpers.js';
  * seed (the five actions, the three limits, the two features). The chassis
  * suite (entitlements.test.ts, run under this host too) pins the oss half
  * and the poster's retries.
+ *
+ * The pair's lessons (lane D of the billing rail wave): the event never
+ * names the tool and the fake hub's registry slug is `slideless-cloud`, not
+ * the identity slug, so a stamped body would be refused here as the real
+ * hub refuses it (PRDCT-2629); a plan refusal is proven on the PHASE-1
+ * profile with a declared size over the real cap, the body limit deferred
+ * behind the gate (PRDCT-2632); the upload price is pinned from the
+ * declaration (PRDCT-2627).
  */
 
 const OPERATOR = { email: 'operator@meter.test', name: 'Operator', password: 'operator-meter-pass-1' };
@@ -62,8 +71,13 @@ async function hubPerson(fixture: HubUserFixture): Promise<Person> {
   return { cookie, workspaceId: me.activeWorkspaceId, key: minted.key, sub: fixture.sub };
 }
 
-/** A multipart upload as a client sends it on the wire: the encoded bytes with their Content-Length. */
-async function uploadAsset(headers: Record<string, string>, bytes: Buffer) {
+/**
+ * A multipart upload as a client sends it on the wire: the encoded bytes
+ * with their Content-Length. `declaredLength` overrides the header: a size
+ * refusal happens on the declared size BEFORE a byte is read, so a header
+ * alone proves it without a 200 MB body in memory.
+ */
+async function uploadAsset(headers: Record<string, string>, bytes: Buffer, declaredLength?: number) {
   const form = new FormData();
   form.set('sha256', createHash('sha256').update(bytes).digest('hex'));
   form.set('file', new Blob([new Uint8Array(bytes)], { type: 'text/html' }), 'index.html');
@@ -74,12 +88,14 @@ async function uploadAsset(headers: Record<string, string>, bytes: Buffer) {
     headers: {
       'x-forwarded-for': sso.nextIp(),
       'content-type': encoded.headers.get('content-type')!,
-      'content-length': String(body.byteLength),
+      'content-length': String(declaredLength ?? body.byteLength),
       ...headers
     },
     body
   });
 }
+
+const MB = 1024 * 1024;
 
 let rpcId = 0;
 async function mcpTool(key: string, name: string, args: Record<string, unknown>) {
@@ -165,6 +181,20 @@ describe('discovery carries the Slideless seed', () => {
       'deck.password': { free: false, pro: true }
     });
   });
+
+  it('the upload action is metered in bytes and priced per MB: a 20 MB deck is 100 credits, never six digits (PRDCT-2627)', async () => {
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    const upload = info.entitlements.actions.find((a: { key: string }) => a.key === 'files.upload');
+    expect(upload).toMatchObject({
+      creditsPerUnit: 5,
+      unit: 'bytes',
+      per: MB,
+      label: 'Upload deck files (5 credits per MB)'
+    });
+    const credits = declaredCredits(upload, 20 * MB);
+    expect(credits).toBe(100);
+    expect(credits).toBeLessThan(100_000);
+  });
 });
 
 describe('one metered route, three surfaces, every event in the hub', () => {
@@ -201,9 +231,15 @@ describe('one metered route, three surfaces, every event in the hub', () => {
       userId: person.sub,
       via: 'session',
       resourceType: 'file',
-      toolSlug: IDENTITY.slug,
       source: { edition: 'cloud' }
     });
+    // The body never names the tool (PRDCT-2629): the hub records the token's
+    // registry slug, which is NOT the identity slug.
+    const posted = (hub.usageRequests.at(-1)!.body as { events: Array<Record<string, unknown>> }).events;
+    expect(posted.every((e) => !('toolSlug' in e))).toBe(true);
+    expect(hub.toolSlug).toBe('slideless-cloud');
+    expect(hub.toolSlug).not.toBe(IDENTITY.slug);
+    expect(events()[0]).toMatchObject({ toolSlug: 'slideless-cloud' });
   });
 
   it('the CLI (an API key, the SDK’s call) uploads: via api_key', async () => {
@@ -212,11 +248,10 @@ describe('one metered route, three surfaces, every event in the hub', () => {
       Buffer.from(HTML + '<!-- cli -->')
     );
     expect(res.status).toBe(201);
-    await until(
-      () => events().length,
-      (n) => n >= 2
-    );
-    expect(events()[1]).toMatchObject({
+    const { sizeBytes } = await readJson(res);
+    const mine = () => events().find((e) => e.via === 'api_key' && e.quantity === sizeBytes);
+    await until(mine, (e) => Boolean(e));
+    expect(mine()).toMatchObject({
       actionKey: 'files.upload',
       via: 'api_key',
       userId: person.sub,
@@ -323,6 +358,91 @@ describe('an idempotency replay is metered once', () => {
   });
 });
 
+describe('a plan refusal on the phase-1 profile: the gate sees the declared size before the body limit (PRDCT-2632)', () => {
+  // The phase-1 hub sends an empty `limits`: the free cap IS the instance cap
+  // (100 MB). A 200 MB upload used to meet the tool's multipart body limit
+  // (cap + 1 MiB, installed before the gate) as 413 file_too_large with no
+  // upgrade link, on every surface; only a size within 1 MiB above the cap
+  // reached the gate. The header alone is the proof: nothing reads the body.
+  const ORG_FREE = '77777777-aaaa-4bbb-8ccc-00000000ab04';
+  const ORG_PRO = '77777777-aaaa-4bbb-8ccc-00000000ab05';
+  let free: Person;
+  let pro: Person;
+
+  beforeAll(async () => {
+    hub.setEntitlements(ORG_PRO, { plan: 'pro' });
+    free = await hubPerson({
+      sub: 'hub-meter-free',
+      email: 'free@meter.test',
+      name: 'Meter Free',
+      workspaceId: ORG_FREE,
+      role: 'owner',
+      workspaceName: 'Org Free'
+    });
+    pro = await hubPerson({
+      sub: 'hub-meter-pro',
+      email: 'pro@meter.test',
+      name: 'Meter Pro',
+      workspaceId: ORG_PRO,
+      role: 'owner',
+      workspaceName: 'Org Pro'
+    });
+  });
+
+  const expectPlanRequired = async (res: Response) => {
+    expect(res.status).toBe(403);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('plan_required');
+    expect(body.error.details).toEqual({
+      key: 'files.maxBytes',
+      plan: 'free',
+      requiredPlan: 'pro',
+      upgradeUrl: hub.issuer
+    });
+  };
+
+  it('the dashboard (a session): 200 MB declared on the free plan answers 403 with the upgrade link, not the instance cap', async () => {
+    await expectPlanRequired(
+      await uploadAsset(
+        { cookie: free.cookie, 'x-workspace-id': free.workspaceId },
+        Buffer.from(HTML),
+        200 * MB
+      )
+    );
+  });
+
+  it('the CLI (an API key): the same at 200 MB, and at 100.5 MB', async () => {
+    await expectPlanRequired(
+      await uploadAsset({ authorization: `Bearer ${free.key}` }, Buffer.from(HTML), 200 * MB)
+    );
+    await expectPlanRequired(
+      await uploadAsset({ authorization: `Bearer ${free.key}` }, Buffer.from(HTML), 100 * MB + MB / 2)
+    );
+  });
+
+  it('a pro account (500 MB allowed) meets the instance’s hard ceiling behind the gate: 413 file_too_large', async () => {
+    const res = await uploadAsset({ authorization: `Bearer ${pro.key}` }, Buffer.from(HTML), 200 * MB);
+    expect(res.status).toBe(413);
+    expect((await readJson(res)).error.code).toBe('file_too_large');
+  });
+
+  it('nothing was posted for any refusal, and a small upload still lands', async () => {
+    const before = hub.usageEvents.size;
+    await new Promise((r) => setTimeout(r, 1_500));
+    expect(hub.usageEvents.size).toBe(before);
+    const ok = await uploadAsset(
+      { authorization: `Bearer ${free.key}` },
+      Buffer.from(HTML + '<!-- free -->')
+    );
+    expect(ok.status).toBe(201);
+    const { sizeBytes } = await readJson(ok);
+    await until(
+      () => events().some((e) => e.accountRef === ORG_FREE && e.quantity === sizeBytes),
+      (landed) => landed
+    );
+  });
+});
+
 describe('a plan refusal carries the upgrade link on the three surfaces', () => {
   let tight: Person;
 
@@ -368,5 +488,39 @@ describe('a plan refusal carries the upgrade link on the three surfaces', () => 
     expect(result.text).toContain(`Upgrade: ${hub.issuer}`);
     await new Promise((r) => setTimeout(r, 2_500));
     expect(hub.usageEvents.size).toBe(posted);
+  });
+});
+
+describe('the pair’s finding, pinned on the stub (PRDCT-2629)', () => {
+  it('a body that stamps the identity slug is refused by the hub as tool_mismatch — what the pair found (PRDCT-2629)', async () => {
+    const mint = await fetch(`${hub.issuer}/api/v1/auth/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        authorization: `Basic ${Buffer.from(`tool-slideless-cloud:${HUB_SECRET}`).toString('base64')}`
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        scope: 'usage:write',
+        resource: hub.apiResource
+      })
+    });
+    expect(mint.status).toBe(200);
+    const { access_token } = (await mint.json()) as { access_token: string };
+    const landed = events().find((e) => e.actionKey === 'files.upload')!;
+    const stamped = { ...landed, id: '01JZZZZZZZZZZZZZZZZZZZZZZ2', toolSlug: IDENTITY.slug };
+    const unstamped = { ...landed, id: '01JZZZZZZZZZZZZZZZZZZZZZZ3' };
+    delete (unstamped as { toolSlug?: string }).toolSlug;
+    const res = await fetch(`${hub.issuer}/api/v1/usage/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${access_token}` },
+      body: JSON.stringify({ events: [stamped, unstamped] })
+    });
+    expect(res.status).toBe(200);
+    const answer = (await res.json()) as { results: Array<{ id: string; status: string; reason?: string }> };
+    expect(answer.results).toEqual([
+      { id: stamped.id, status: 'rejected', reason: 'tool_mismatch' },
+      { id: unstamped.id, status: 'accepted' }
+    ]);
   });
 });

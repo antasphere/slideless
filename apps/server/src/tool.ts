@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { bodyLimit } from 'hono/body-limit';
 import { createDb } from '@slideless/db';
 import { IDENTITY } from '@slideless/contract';
 import {
@@ -16,7 +15,7 @@ import {
   ssoCliConnectRoute,
   workspaceExportRoute
 } from '@slideless/contract/routes';
-import type { BootOverrides, BootResult, ToolDefinition } from '@antasphere/chassis-server';
+import type { BodyCap, BootOverrides, BootResult, ToolDefinition } from '@antasphere/chassis-server';
 import { makeClientIp, rateLimit } from '@antasphere/chassis-server/middleware';
 import { MAIL_COPY } from './email/brand.js';
 import { deckEnvExtension, type DeckEnvShape } from './env.js';
@@ -214,16 +213,21 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       //    manifest while still bounding abuse.
       //  - the viewer's form file upload (PRDCT-2403): one raw streamed file per
       //    request, capped MID-STREAM by the form-upload ceiling in its handler.
+      //  The chassis builds the middleware from these caps and, on the asset
+      //  door (a route that declares the plan limit), refuses a declared
+      //  oversize body only AFTER the plan gate judged it (PRDCT-2632): a
+      //  metered account meets 403 plan_required with the upgrade link at
+      //  any size; this 413 is the instance's hard ceiling behind it.
       bodyLimit: ({ env }) => {
-        const manifestBodyLimit = bodyLimit({
-          maxSize: 16 * 1024 * 1024,
+        const manifestBodyLimit: BodyCap = {
+          maxBytes: 16 * 1024 * 1024,
           onError: (c) => c.json(err('payload_too_large', 'Request body exceeds the 16 MiB limit'), 413)
-        });
-        const assetBodyLimit = bodyLimit({
-          maxSize: env.MAX_FILE_SIZE_MB * 1024 * 1024 + 1024 * 1024,
+        };
+        const assetBodyLimit: BodyCap = {
+          maxBytes: env.MAX_FILE_SIZE_MB * 1024 * 1024 + 1024 * 1024,
           onError: (c) =>
             c.json(err('file_too_large', `Asset exceeds the ${env.MAX_FILE_SIZE_MB} MB instance cap`), 413)
-        });
+        };
         return (path) => {
           if (isViewerFormUploadPath(path)) return 'exempt';
           if (path === '/api/v1/presentations/assets') return assetBodyLimit;
@@ -390,11 +394,16 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       return {
         actions: [
           { key: DECK_ACTIONS.commit, creditsPerUnit: 50, unit: 'call', label: 'Publish a deck' },
+          // Metered in exact bytes, priced per mebibyte (PRDCT-2627): 5
+          // credits buy 1,048,576 bytes; the boot refuses a route whose meter
+          // unit differs from this one, and entitlements.test.ts pins the
+          // credits of a 20 MB upload from this declaration.
           {
             key: DECK_ACTIONS.upload,
             creditsPerUnit: 5,
             unit: 'bytes',
-            label: 'Upload deck files (per byte; the price book prices the MB)'
+            per: MB,
+            label: 'Upload deck files (5 credits per MB)'
           },
           { key: DECK_ACTIONS.shareToken, creditsPerUnit: 20, unit: 'call', label: 'Create a share link' },
           { key: DECK_ACTIONS.export, creditsPerUnit: 100, unit: 'call', label: 'Export the workspace' },
