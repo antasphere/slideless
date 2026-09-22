@@ -244,7 +244,7 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   gate, the idempotency claim and the audit middleware, before every handler) enforces it for the
   dashboard, the CLI and the MCP tools alike and emits the usage event after a 2xx; no handler checks
   or emits by hand, and `git grep -i 'files.maxBytes\|presentations.commit\|slideless' --
-'packages/chassis-*'` stays empty. Cloud order: feature → limit (403 `plan_required` + `details:
+'packages/chassis-*/src'` stays empty. Cloud order: feature → limit (403 `plan_required` + `details:
 { key, plan, requiredPlan, upgradeUrl }`, the hub's organization page) → the credit check; oss:
   the credit check first (413 `entitlement_denied`, today's message byte for byte), then the
   `oss` value, and NO event (unmetered by construction). The event's `userId` is the hub's `sub`,
