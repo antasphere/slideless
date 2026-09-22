@@ -1373,10 +1373,13 @@ migrate` on an unchanged schema):
   refuses a declared Content-Length over its cap at once, so on the asset door a 200 MB upload
   met 413 `file_too_large` and never the 403 with the upgrade link, on all three surfaces; the
   suite had proven the plan gate with a 10-byte hub override the phase-1 hub never sends. The
-  slot now declares DATA (`BodyCap`), the chassis builds the middleware, and on a declared-limit
-  route the refusal is parked on the context (`bodyRefusal`) for the gate to fire after the plan
-  check; the depth scan and the idempotency claim step aside while it is pending (both read the
-  body). Test a plan refusal on the phase-1 profile with a declared size over the REAL cap
+  slot now declares DATA (`BodyCap`), the chassis builds the middleware, and when the matched
+  route carries a limit-judging gate (`isDeferringGate`, keyed on the gate handler itself, never on
+  a re-reading of the path) the refusal is parked on the context (`bodyRefusal`) for the gate to
+  fire after the plan check, with the request's body DROPPED (`new Request(raw, { body: null })`)
+  so no middleware between the cap and the gate can read a byte of it, whatever the order (the
+  first cut asked two body readers to step aside; /code-review pointed at the third). Test a plan
+  refusal on the phase-1 profile with a declared size over the REAL cap
   (a header alone proves it: the refusal happens before a byte is read), never on an override.
 - **A stale-while-revalidate cache must still answer a cold account.** Serving the default on a
   first miss would judge a pro account as free once per boot; awaiting the read stalls the
@@ -1386,10 +1389,12 @@ migrate` on an unchanged schema):
 - **pg-boss's terminal `failed` is a silent drop unless a dead letter catches it.** Ten retries
   from thirty seconds is eight hours, then the job is `failed` and nothing re-drives it: an
   outage of a night or a mis-set `HUB_CLIENT_SECRET` lost usage the poster promised never to
-  lose. `deadLetter: 'usage-events-held'` on every send (the held queue created FIRST, the job row
-  holds a foreign key to it), a worker that logs, counts (`usage_events_held_total`) and re-sends
-  after `heldDelaySeconds`, and `usageSendOptions()` as the ONE statement both the sink and the
-  re-drive use. A test shrinks `usageRetry` to `{ limit: 1, delaySeconds: 1, heldDelaySeconds: 1 }`
+  lose. The dead letter is set ON THE QUEUE by the worker boot (`updateQueue`, the held queue
+  created first), never on a send: pg-boss's job row holds a foreign key on the dead letter it
+  names, and an api-role replica (no DDL, may roll before the worker of a release) would then fail
+  every send until the held queue existed, swallowed by the sink (/code-review, lane D). A worker
+  logs, counts (`usage_events_held_total`) and re-sends after `heldDelaySeconds`, and
+  `usageSendOptions()` is the ONE statement both the sink and the re-drive use. A test shrinks `usageRetry` to `{ limit: 1, delaySeconds: 1, heldDelaySeconds: 1 }`
   and reads the counter off `/metrics`.
 - **Mirror a hub schema verbatim or it bites at the first new value.** The chassis's profile
   mirror said `limits: number | null` where the hub's contract says `number | boolean`; the

@@ -1144,8 +1144,7 @@ Nothing under `packages/chassis-*` names a price, a limit key or a product word.
 The fixes of 2026-09-22 (lane D of the same wave, PRDCT-2629 to 2637) are chassis code to re-copy
 with it: `UsageEvent` without a tool slug and the fake hub judging with the hub's schema mirrored
 verbatim; the `bodyLimit` slot's verdict as DATA (`BodyCap`) with the deferred refusal
-(`middleware/body-refusal.ts`, the gate firing it, the depth scan and the idempotency claim
-stepping aside); `per` on an action and `declaredCredits()`; the profile cache off the request
+(`middleware/body-refusal.ts`, `isDeferringGate`, the body dropped, the gate firing it); `per` on an action and `declaredCredits()`; the profile cache off the request
 path (`coldWaitMs`, `settle()`); the held queue (`USAGE_HELD_QUEUE`, `usageSendOptions()`,
 `UsageRetry.heldDelaySeconds`) and the counters boot registers from the jobs and the poster; the
 two mint holds; the hub's entitlements answer mirrored verbatim. A template tool's `bodyLimit`

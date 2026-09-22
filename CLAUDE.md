@@ -258,7 +258,9 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   single-flight on `HUB_CLIENT_ID`/`SECRET`; a 404 from an older hub, a 5xx, a 403 or a 2xx that
   is not the hub's answer is an outage the queue retries for about eight hours
   (`DEFAULT_USAGE_RETRY`), and the budget's END is a hold, never a loss (PRDCT-2635): the batch
-  moves to `usage-events-held`, is logged at error level and counted (`usage_events_held_total`),
+  moves to `usage-events-held` (the usage QUEUE's dead letter, set by the worker boot, never
+  named on a send: an api-role replica must be able to send before the worker of a release has
+  booted), is logged at error level and counted (`usage_events_held_total`),
   and comes back through the queue every hour until the hub accepts it; the poster's per-event
   and per-batch outcomes are on `/metrics` (`usage_poster_events_total`, `usage_poster_batches_total`).
   A mint the hub refuses as a configuration error (`invalid_client` and its kin) is held five
@@ -268,9 +270,10 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   (PRDCT-2633): a cached plan is served at once and refreshed behind the request, a cold account
   waits at most 1.5 s, and the last known plan is kept fifteen minutes on failure, then free.
   **The plan gate sees a declared size before any body limit refuses it (PRDCT-2632)**: the
-  tool's `bodyLimit` slot declares data (`BodyCap`), the chassis builds the middleware, and on a
-  route that declares a limit a Content-Length over the cap is parked (`bodyRefusal`, nothing
-  reads the body) and fired by the gate after the plan check, so a metered account meets 403
+  tool's `bodyLimit` slot declares data (`BodyCap`), the chassis builds the middleware, and when
+  the matched route carries a gate that judges a limit (`isDeferringGate`) a Content-Length over
+  the cap is parked (`bodyRefusal`) with the request's body DROPPED, so nothing downstream can
+  read it by construction, and fired by the gate after the plan check, so a metered account meets 403
   `plan_required` with the upgrade link at any size and the instance-cap 413 only when the plan
   allows it; oss and a request with no plan meet the cap first, byte for byte. The upload action
   is metered in exact bytes and priced per mebibyte through `per` on the action (`5 credits per
