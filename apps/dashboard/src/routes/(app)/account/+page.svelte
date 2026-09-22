@@ -17,6 +17,7 @@
   import { appear } from '$lib/components/ui/reveal/index.js';
   import FormError from '$lib/components/shared/FormError.svelte';
   import { authClient } from '$lib/auth-client';
+  import { page } from '$app/state';
   import { copyText } from '$lib/clipboard';
   import { refreshSession } from '$lib/session';
   import { toast } from 'svelte-sonner';
@@ -28,6 +29,15 @@
   let name = $state(data.me.user.name);
   let profileLoading = $state(false);
   let profileError = $state<string | null>(null);
+
+  // ── How this person signs in ───────────────────────────────────────────
+  // The instance says what it offers (`/instance` auth.methods): a cloud
+  // tool drops `password` because every user is a hub identity with no
+  // local credential, so the password card would be a form that can only
+  // fail, and a delete armed on a password could never be submitted.
+  // Read the descriptor, not `me.ssoOnly` (cloud-and-session-only).
+  const hasPassword = $derived(data.instance.auth.methods.includes('password'));
+  const hubSignIn = $derived(data.instance.auth.methods.includes('antasphere'));
 
   // ── Email change (self-serve; needs a delivering email driver) ─────────
   const emailChangeEnabled = $derived(data.instance.auth.emailChange);
@@ -189,20 +199,50 @@
   let deleteLoading = $state(false);
   let deleteError = $state<string | null>(null);
 
-  const deleteArmed = $derived(deleteConfirm === 'DELETE' && deletePassword.length > 0);
+  // Without a local password the proof is a fresh hub sign-in: the button
+  // first sends the person through "Sign in with Antasphere" and lands
+  // back here with ?reauth=delete, where the same form deletes for real.
+  // Better Auth accepts a password-less delete for a session younger than
+  // its freshAge (24h), and a hub round trip mints a new session.
+  const deleteReauthed = $derived(
+    !hasPassword && hubSignIn && page.url.searchParams.get('reauth') === 'delete'
+  );
+  const deleteNeedsHubTrip = $derived(!hasPassword && hubSignIn && !deleteReauthed);
+  const deleteArmed = $derived(
+    deleteConfirm === 'DELETE' && (hasPassword ? deletePassword.length > 0 : true)
+  );
+
+  async function reauthThroughHub() {
+    const { error: err } = await authClient.signIn.oauth2({
+      providerId: 'antasphere',
+      callbackURL: '/account?reauth=delete',
+      errorCallbackURL: '/account'
+    });
+    if (err) deleteError = err.message || t('account.deleteFailed');
+  }
 
   async function submitDelete() {
     if (!deleteArmed) return;
     deleteError = null;
     deleteLoading = true;
     try {
-      const { error: err } = await authClient.deleteUser({ password: deletePassword });
+      if (deleteNeedsHubTrip) {
+        await reauthThroughHub();
+        return;
+      }
+      const { error: err } = await authClient.deleteUser(hasPassword ? { password: deletePassword } : {});
       if (err) {
-        deleteError =
-          err.code === 'INVALID_PASSWORD'
-            ? t('account.errorWrongPassword')
-            : // e.g. the last-owner guard — surface the server's message verbatim.
-              err.message || t('account.deleteFailed');
+        if (err.code === 'INVALID_PASSWORD') {
+          deleteError = t('account.errorWrongPassword');
+        } else if (err.code?.startsWith('SESSION_EXPIRED') && hubSignIn) {
+          // The session is older than the fresh window: one more hub trip.
+          // better-call derives the code from the whole message ("Session
+          // expired. Re-authenticate to perform this action."), so a prefix.
+          await reauthThroughHub();
+        } else {
+          // e.g. the last-owner guard — surface the server's message verbatim.
+          deleteError = err.message || t('account.deleteFailed');
+        }
         return;
       }
       window.location.href = '/login';
@@ -230,9 +270,13 @@
       });
       if (err) {
         passwordError =
-          err.status === 400 || err.status === 401
-            ? t('account.errorCurrentPassword')
-            : err.message || t('account.passwordChangeFailed');
+          err.code === 'CREDENTIAL_ACCOUNT_NOT_FOUND'
+            ? // An OTP or Google sign-in on an instance that offers passwords:
+              // the person has none yet, and the reset link is how one is set.
+              t('account.errorNoPasswordYet')
+            : err.status === 400 || err.status === 401
+              ? t('account.errorCurrentPassword')
+              : err.message || t('account.passwordChangeFailed');
         return;
       }
       toast.success(t('account.passwordChanged'));
@@ -384,54 +428,75 @@
   <Card.Root class="lg:col-span-2">
     <Card.Header>
       <Card.Title class="text-base">{t('account.securityTitle')}</Card.Title>
-      <Card.Description>{t('account.securityDescription')}</Card.Description>
+      <Card.Description>
+        {hasPassword ? t('account.securityDescription') : t('account.securityDescriptionSso')}
+      </Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-8 md:grid-cols-2">
-      <form
-        class="space-y-4"
-        onsubmit={(e) => {
-          e.preventDefault();
-          void submitPassword();
-        }}
-      >
-        <p class="eyebrow">{t('account.passwordTitle')}</p>
-        <p class="-mt-2 text-sm text-muted-foreground">{t('account.passwordDescription')}</p>
-        <div class="space-y-2">
-          <Label for="current-password">{t('account.currentPassword')}</Label>
-          <Input
-            id="current-password"
-            type="password"
-            autocomplete="current-password"
-            bind:value={currentPassword}
-            required
-          />
+      {#if !hasPassword}
+        <!-- The sign-in panel: no local password exists here, so say how
+             the person actually gets in and where that identity is managed. -->
+        <div class="space-y-3">
+          <p class="eyebrow">{t('account.signInTitle')}</p>
+          <p class="-mt-2 text-sm text-muted-foreground">
+            {hubSignIn ? t('account.signInWithHub') : t('account.signInNoPassword')}
+          </p>
+          {#if hubSignIn && data.me.hubManageUrl}
+            <Button
+              variant="outline"
+              onclick={() => window.open(data.me.hubManageUrl ?? '', '_blank', 'noopener,noreferrer')}
+            >
+              {t('account.manageHubAccount')}
+            </Button>
+          {/if}
         </div>
-        <div class="space-y-2">
-          <Label for="new-password">{t('account.newPassword')}</Label>
-          <Input
-            id="new-password"
-            type="password"
-            autocomplete="new-password"
-            bind:value={newPassword}
-            required
-          />
-          <p class="text-xs text-muted-foreground">{t('common.passwordMinHint')}</p>
-        </div>
-        <div class="space-y-2">
-          <Label for="confirm-password">{t('account.confirmNewPassword')}</Label>
-          <Input
-            id="confirm-password"
-            type="password"
-            autocomplete="new-password"
-            bind:value={confirmPassword}
-            required
-          />
-        </div>
-        <FormError message={passwordError} />
-        <Button type="submit" variant="outline" disabled={passwordLoading}>
-          {passwordLoading ? t('account.changingPassword') : t('account.changePassword')}
-        </Button>
-      </form>
+      {:else}
+        <form
+          class="space-y-4"
+          onsubmit={(e) => {
+            e.preventDefault();
+            void submitPassword();
+          }}
+        >
+          <p class="eyebrow">{t('account.passwordTitle')}</p>
+          <p class="-mt-2 text-sm text-muted-foreground">{t('account.passwordDescription')}</p>
+          <div class="space-y-2">
+            <Label for="current-password">{t('account.currentPassword')}</Label>
+            <Input
+              id="current-password"
+              type="password"
+              autocomplete="current-password"
+              bind:value={currentPassword}
+              required
+            />
+          </div>
+          <div class="space-y-2">
+            <Label for="new-password">{t('account.newPassword')}</Label>
+            <Input
+              id="new-password"
+              type="password"
+              autocomplete="new-password"
+              bind:value={newPassword}
+              required
+            />
+            <p class="text-xs text-muted-foreground">{t('common.passwordMinHint')}</p>
+          </div>
+          <div class="space-y-2">
+            <Label for="confirm-password">{t('account.confirmNewPassword')}</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              autocomplete="new-password"
+              bind:value={confirmPassword}
+              required
+            />
+          </div>
+          <FormError message={passwordError} />
+          <Button type="submit" variant="outline" disabled={passwordLoading}>
+            {passwordLoading ? t('account.changingPassword') : t('account.changePassword')}
+          </Button>
+        </form>
+      {/if}
 
       {#if twoFactorAvailable}
         <div class="space-y-4 border-t pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
@@ -561,12 +626,24 @@
     <Card.Header>
       <Card.Title class="text-base">{t('account.dangerTitle')}</Card.Title>
       <Card.Description>
+        <!-- The true scope, stated: a user row is instance-global, so the
+             erasure leaves every workspace here. On hub sign-in the hub
+             identity survives — deletion here is never a cross-tool act. -->
         {t('account.dangerDescription')}
+        {t('account.dangerScope')}
+        {#if hubSignIn}
+          {t('account.dangerHubNote')}
+        {/if}
       </Card.Description>
     </Card.Header>
     <Card.Content>
+      {#if deleteReauthed}
+        <p class="mb-4 text-sm font-medium">{t('account.deleteReauthed')}</p>
+      {/if}
       <form
-        class="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end"
+        class="grid gap-4 md:items-end {hasPassword
+          ? 'md:grid-cols-[1fr_1fr_auto]'
+          : 'md:grid-cols-[1fr_auto]'}"
         onsubmit={(e) => {
           e.preventDefault();
           void submitDelete();
@@ -579,19 +656,25 @@
           </Label>
           <Input id="delete-confirm" autocomplete="off" bind:value={deleteConfirm} placeholder="DELETE" />
         </div>
-        <div class="space-y-2">
-          <Label for="delete-password">{t('account.currentPassword')}</Label>
-          <Input
-            id="delete-password"
-            type="password"
-            autocomplete="current-password"
-            bind:value={deletePassword}
-          />
-        </div>
+        {#if hasPassword}
+          <div class="space-y-2">
+            <Label for="delete-password">{t('account.currentPassword')}</Label>
+            <Input
+              id="delete-password"
+              type="password"
+              autocomplete="current-password"
+              bind:value={deletePassword}
+            />
+          </div>
+        {/if}
         <Button type="submit" variant="destructive" disabled={!deleteArmed || deleteLoading}>
-          {deleteLoading ? t('account.deleting') : t('account.deleteSubmit')}
+          {deleteLoading
+            ? t('account.deleting')
+            : deleteNeedsHubTrip
+              ? t('account.deleteContinueHub')
+              : t('account.deleteSubmit')}
         </Button>
-        <FormError message={deleteError} class="md:col-span-3" />
+        <FormError message={deleteError} class={hasPassword ? 'md:col-span-3' : 'md:col-span-2'} />
       </form>
     </Card.Content>
   </Card.Root>
