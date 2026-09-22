@@ -6,6 +6,7 @@ export {
   type EntitlementGateDeps
 } from './gate.js';
 export {
+  DEFAULT_FAILURE_HOLD_MS,
   HUB_USAGE_SCOPE,
   HubMachineToken,
   HubMachineTokenError,

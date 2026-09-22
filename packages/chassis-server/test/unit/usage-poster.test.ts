@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UsageEvent } from '@antasphere/chassis-contract';
 import { HubMachineToken, HubUsagePoster } from '@antasphere/chassis-server';
+import { DEFAULT_FAILURE_HOLD_MS } from '../../src/entitlements/index.js';
 import { DEFAULT_USAGE_RETRY, PgBossUsageSink } from '../../src/jobs/index.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
 
@@ -253,6 +254,68 @@ describe('HubMachineToken', () => {
     token.invalidate();
     mode = 'ok';
     expect(await token.get()).toBe('mach_3');
+  });
+});
+
+describe('HubMachineToken, the default hold and the skew window', () => {
+  it('a token built with no dials holds a failed mint five seconds (the outage posture rests on the default)', async () => {
+    let now = 1_000_000;
+    let attempts = 0;
+    const fetchImpl = (async () => {
+      attempts += 1;
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    const token = new HubMachineToken({
+      issuerUrl: ISSUER,
+      clientId: 'tool-things',
+      clientSecret: 's'.repeat(20),
+      resource: `${ISSUER}/mcp`,
+      logger,
+      fetchImpl,
+      now: () => now
+    });
+    expect(DEFAULT_FAILURE_HOLD_MS).toBe(5_000);
+    await expect(token.get()).rejects.toThrow();
+    now += 4_999;
+    await expect(token.get()).rejects.toThrow();
+    expect(attempts).toBe(1);
+    now += 2;
+    await expect(token.get()).rejects.toThrow();
+    expect(attempts).toBe(2);
+  });
+
+  it('a refresh that fails inside the skew window serves the cached token while it is still live at the hub', async () => {
+    let now = 1_000_000;
+    let mode: 'ok' | 'down' = 'ok';
+    let attempts = 0;
+    const fetchImpl = (async () => {
+      attempts += 1;
+      if (mode === 'down') throw new TypeError('fetch failed');
+      return Response.json({ access_token: `mach_${attempts}`, expires_in: 900 });
+    }) as unknown as typeof fetch;
+    const token = new HubMachineToken({
+      issuerUrl: ISSUER,
+      clientId: 'tool-things',
+      clientSecret: 's'.repeat(20),
+      resource: `${ISSUER}/mcp`,
+      logger,
+      fetchImpl,
+      now: () => now
+    });
+    expect(await token.get()).toBe('mach_1');
+    mode = 'down';
+    now += 850_000; // 50 s of validity left, inside the 60 s skew: a refresh is tried and fails
+    expect(await token.get()).toBe('mach_1');
+    expect(attempts).toBe(2);
+    now += 1_000; // inside the hold: no attempt, the live token is served
+    expect(await token.get()).toBe('mach_1');
+    expect(attempts).toBe(2);
+    now += 60_000; // expired: the failure is what there is
+    await expect(token.get()).rejects.toThrow(/unreachable/);
+    mode = 'ok';
+    now += 5_001;
+    const next = attempts + 1;
+    expect(await token.get()).toBe(`mach_${next}`);
   });
 });
 

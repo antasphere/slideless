@@ -16,6 +16,9 @@ import type { Logger } from '../logger.js';
  */
 export const HUB_USAGE_SCOPE = USAGE_WRITE_SCOPE;
 
+/** How long a failed mint is held before the hub is asked again: one attempt per instance per window during an outage. */
+export const DEFAULT_FAILURE_HOLD_MS = 5_000;
+
 export interface HubMachineTokenOptions {
   issuerUrl: string;
   clientId: string;
@@ -70,13 +73,19 @@ export class HubMachineToken {
     this.now = opts.now ?? Date.now;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
     this.refreshSkewMs = opts.refreshSkewMs ?? 60_000;
-    this.failureHoldMs = opts.failureHoldMs ?? 5_000;
+    this.failureHoldMs = opts.failureHoldMs ?? DEFAULT_FAILURE_HOLD_MS;
   }
 
   /** The current token, minted or refreshed as needed. Throws `HubMachineTokenError`. */
   async get(): Promise<string> {
     if (this.cached && this.cached.expiresAtMs - this.refreshSkewMs > this.now()) return this.cached.token;
-    if (this.lastFailure && this.failedUntilMs > this.now()) throw this.lastFailure;
+    // Inside the skew window the token is still live at the hub: a refresh
+    // that fails serves it rather than the failure, until it really expires.
+    const stillLive = this.cached && this.cached.expiresAtMs > this.now() ? this.cached.token : null;
+    if (this.lastFailure && this.failedUntilMs > this.now()) {
+      if (stillLive) return stillLive;
+      throw this.lastFailure;
+    }
     if (!this.inflight) {
       this.inflight = this.mint()
         .then((token) => {
@@ -96,7 +105,8 @@ export class HubMachineToken {
           this.inflight = null;
         });
     }
-    return this.inflight;
+    if (!stillLive) return this.inflight;
+    return this.inflight.catch(() => stillLive);
   }
 
   /** Forget the cached token (the hub answered 401 to it) and the held failure. */
