@@ -1355,3 +1355,55 @@ migrate` on an unchanged schema):
   accountRef no seeded org holds, `unknown_user` for a userId no fixture minted, `invalid_event`
   with `id: null` for an element that does not parse, `duplicate` for a re-post. A test that
   seeds a person through `ssoLogin` gets its org known; a hand-written accountRef is rejected.
+
+## The pair meets (PRDCT-2629 to 2637, 2026-09-22, lane D of the billing-rail wave)
+
+- **Two halves verified against stubs of each other do not meet; the stub must speak the real
+  contract, not a paraphrase.** The chassis stamped `IDENTITY.slug` (`slideless`) into every
+  usage event, the real hub names the tool from the token's registry entry (`slideless-cloud`)
+  and refuses a body slug that differs, and lane B's fake hub never read the field: on the real
+  pair NOTHING landed (accepted 0, rejected 5) while the suite was green. The fix is
+  subtraction — the body never names the tool, the token is the only authority — plus the rule
+  that makes the class of defect visible: `usageEventSchema` in chassis-contract is the hub's
+  schema MIRRORED VERBATIM (uuid account reference, maximum lengths, the action key or its
+  alias), `FakeHub` parses every element with it and refuses `tool_mismatch` against a registry
+  slug that is NOT the identity slug by default. Re-mirror on any hub contract change; the
+  federation drill's seventh leg (Phase 8) is the proof on a real pair.
+- **A body limit installed before the gate shadows the plan refusal.** hono's `bodyLimit`
+  refuses a declared Content-Length over its cap at once, so on the asset door a 200 MB upload
+  met 413 `file_too_large` and never the 403 with the upgrade link, on all three surfaces; the
+  suite had proven the plan gate with a 10-byte hub override the phase-1 hub never sends. The
+  slot now declares DATA (`BodyCap`), the chassis builds the middleware, and on a declared-limit
+  route the refusal is parked on the context (`bodyRefusal`) for the gate to fire after the plan
+  check; the depth scan and the idempotency claim step aside while it is pending (both read the
+  body). Test a plan refusal on the phase-1 profile with a declared size over the REAL cap
+  (a header alone proves it: the refusal happens before a byte is read), never on an override.
+- **A stale-while-revalidate cache must still answer a cold account.** Serving the default on a
+  first miss would judge a pro account as free once per boot; awaiting the read stalls the
+  request on a slow hub. `coldWaitMs` (1.5 s) bounds the cold wait, the read finishes behind the
+  request, and `settle()` is the test seam that awaits background refreshes — a unit test that
+  counts reads right after `get()` reads one too few without it.
+- **pg-boss's terminal `failed` is a silent drop unless a dead letter catches it.** Ten retries
+  from thirty seconds is eight hours, then the job is `failed` and nothing re-drives it: an
+  outage of a night or a mis-set `HUB_CLIENT_SECRET` lost usage the poster promised never to
+  lose. `deadLetter: 'usage-events-held'` on every send (the held queue created FIRST, the job row
+  holds a foreign key to it), a worker that logs, counts (`usage_events_held_total`) and re-sends
+  after `heldDelaySeconds`, and `usageSendOptions()` as the ONE statement both the sink and the
+  re-drive use. A test shrinks `usageRetry` to `{ limit: 1, delaySeconds: 1, heldDelaySeconds: 1 }`
+  and reads the counter off `/metrics`.
+- **Mirror a hub schema verbatim or it bites at the first new value.** The chassis's profile
+  mirror said `limits: number | null` where the hub's contract says `number | boolean`; the
+  first boolean the hub serves would have read every profile as malformed and held paying
+  accounts to free caps after fifteen minutes. The mirror is now the hub's shape field for field
+  (`accountRef`, `planUntil`, `limits`, `features`), a boolean resolving as unlimited (`true`)
+  or nothing (`false`); a fake answer in a unit test must carry the whole shape.
+- **A negative cache sized for outages is a hammer on a configuration error.** Five seconds is
+  right for a hub that is down (one attempt per window) and wrong for a secret that is wrong
+  (it heals only by an operator's hand): twelve mints a minute per replica against the hub's
+  60-a-minute per-IP token wall, the bucket people's sign-ins from the same egress share. Two
+  holds, keyed on the failure's kind (`DEFAULT_INVALID_CLIENT_HOLD_MS`, five minutes).
+- **A price per byte is a price per byte.** `creditsPerUnit: 5, unit: 'bytes'` with a label
+  saying "the price book prices the MB" is a comment doing a contract's job: seeded verbatim, a
+  20 MB deck is a hundred million credits. `per` on the action (`5 per 1,048,576 bytes`) keeps
+  the meter exact, the boot already refuses a route whose meter unit differs from the action's,
+  and `declaredCredits()` lets a test pin the seed values from the declaration.
