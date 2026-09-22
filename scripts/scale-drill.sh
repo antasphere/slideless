@@ -17,9 +17,13 @@
 #   3. Rate limits: with REDIS_URL a bucket exhausted through replica A also
 #      429s on replica B (shared); without it replica B accepts (per-process
 #      memory) — the contrast that proves Redis is doing the work.
-#   4. SERVICE_ROLE split — a job enqueued via api replicas is executed by
-#      the worker only; with the worker stopped, api replicas run neither the
+#   4. SERVICE_ROLE split — a job in the usage queue is executed by the
+#      worker only; with the worker stopped, api replicas run neither the
 #      job nor the pg-boss scheduler (frozen pgboss.version.cron_on heartbeat).
+#      The probe job is inserted by the drill: since the billing rail
+#      (PRDCT-2626) a self-hosted instance emits no usage event by
+#      construction, and the api pool's own sends are cloud-only (the gate's
+#      emit); what the split proves is who EXECUTES, never who enqueues.
 #
 # Cross-replica assertions hit each replica's own published port directly, so
 # "minted on A, verified on B" is deterministic (no LB guessing).
@@ -421,8 +425,11 @@ cron_on=$(psqlq "SELECT COALESCE(cron_on::text,'') FROM pgboss.version")
 [ -n "$cron_on" ] || fail "worker never stamped the pgboss.version.cron_on scheduler heartbeat"
 pass "worker registered its 4 unconditional nightly schedules and stamps the scheduler heartbeat (cron_on)"
 
-# Session sanity in the split topology, then enqueue a job via the api pool:
-# a file upload emits a usage event into pg-boss (api/files.ts).
+# Session sanity in the split topology, then a probe job in the usage queue.
+# The drill inserts it (an upload on a self-hosted instance emits nothing
+# since PRDCT-2626, by construction): the queue partition exists once the
+# worker installed pg-boss, the worker's downstream on oss is a no-op sink,
+# so the job completes exactly when the worker polls — and never otherwise.
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3811/api/v1/setup \
   -H 'content-type: application/json' \
   -d '{"instanceName":"Scale Drill Split","setupToken":"'"$SETUP_TOKEN"'","owner":{"email":"owner@drill.test","name":"Drill Owner","password":"drill-password-123456"}}')
@@ -435,24 +442,30 @@ code=$(curl -s -b "$JAR" -o "$SCRATCH/me.json" -w '%{http_code}' http://localhos
 [ "$code" = "200" ] || fail "session minted on api1 rejected by api2 ($code)"
 pass "session minted on api1 authenticates on api2 (split topology)"
 
+# The api pool still serves while the probe is queued (the upload itself, unmetered).
 code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -X POST 'http://localhost:3811/api/v1/files?name=job-a.txt' \
   -H 'content-type: text/plain' --data-binary "usage probe A $(date +%s)")
 [ "$code" = "201" ] || fail "upload via api1 answered $code"
+probe_job() { # label → inserts one usage-events job (the oss worker's downstream is a no-op sink)
+  psqlq "INSERT INTO pgboss.job (name, data) VALUES ('usage-events', '{\"id\":\"01JSCALEDRILLPROBE000000$1\",\"meter\":\"scale.probe\",\"actionKey\":\"scale.probe\",\"quantity\":1,\"unit\":\"call\",\"occurredAt\":\"1970-01-01T00:00:00.000Z\",\"workspaceId\":\"drill\",\"userId\":null,\"via\":\"session\",\"source\":{\"instanceId\":\"drill\",\"edition\":\"oss\",\"version\":\"drill\"}}'::jsonb)" >/dev/null
+}
+probe_job 0A
 completed=0
 for _ in $(seq 1 30); do
   completed=$(psqlq "SELECT count(*) FROM pgboss.job WHERE name='usage-events' AND state='completed'")
   [ "$completed" -ge 1 ] && break
   sleep 1
 done
-[ "$completed" -ge 1 ] || fail "usage job enqueued via api1 was never completed while the worker ran"
+[ "$completed" -ge 1 ] || fail "the probe job in the usage queue was never completed while the worker ran"
 [ "$(logcount worker 'usage events flushed')" -ge 1 ] || fail "worker log lacks 'usage events flushed'"
 [ "$(logcount api1 'usage events flushed')" = "0" ] || fail "api1 executed a job — SERVICE_ROLE=api must not register workers"
 [ "$(logcount api2 'usage events flushed')" = "0" ] || fail "api2 executed a job — SERVICE_ROLE=api must not register workers"
-pass "job enqueued via api1 executed by the WORKER only (flush log on worker, absent on api1/api2)"
+pass "the probe job executed by the WORKER only (flush log on worker, absent on api1/api2)"
 
-# Negative window: stop the worker, enqueue through the api pool, and hold
-# 45s (> the 30s pg-boss cron monitor interval). Nothing may execute and the
-# scheduler heartbeat may not advance — api replicas run no job machinery.
+# Negative window: stop the worker, queue a second probe while only the api
+# pool serves, and hold 45s (> the 30s pg-boss cron monitor interval).
+# Nothing may execute and the scheduler heartbeat may not advance — api
+# replicas run no job machinery.
 say "Phase 5b — 45s with the worker stopped: api replicas run no jobs, no scheduler"
 dc stop worker >/dev/null
 cron_before=$(psqlq "SELECT COALESCE(cron_on::text,'') FROM pgboss.version")
@@ -460,8 +473,9 @@ completed_before=$(psqlq "SELECT count(*) FROM pgboss.job WHERE name='usage-even
 code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -X POST 'http://localhost:3812/api/v1/files?name=job-b.txt' \
   -H 'content-type: text/plain' --data-binary "usage probe B $(date +%s)")
 [ "$code" = "201" ] || fail "upload via api2 answered $code (worker stopped — api replicas must still serve)"
+probe_job 0B
 queued=$(psqlq "SELECT count(*) FROM pgboss.job WHERE name='usage-events' AND state IN ('created','retry','active')")
-[ "$queued" -ge 1 ] || fail "the api-enqueued probe job is missing from pgboss.job"
+[ "$queued" -ge 1 ] || fail "the probe job is missing from pgboss.job"
 note "waiting 45s (cron monitor interval is 30s)…"
 sleep 45
 cron_after=$(psqlq "SELECT COALESCE(cron_on::text,'') FROM pgboss.version")
