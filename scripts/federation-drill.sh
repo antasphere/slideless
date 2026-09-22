@@ -27,6 +27,13 @@
 #      the user and projects it (owner, hubOrigin), the hub's audit row names
 #      the tool client, an slk_ key is refused; and the deploy-order fact:
 #      the hub refuses a sign-in that requests a scope it does not list.
+##   7. The billing rail, phase 1 (PRDCT-2625 + PRDCT-2626, Phase 8) — one
+#      metered action per surface (the dashboard session, an slk_ key, an
+#      OAuth bearer over MCP) lands in the hub's usage_events exactly once:
+#      the projected organization, the hub user, the channel, the action and
+#      the size; the same batch posted again by hand with the tool's own
+#      client-credentials token answers duplicate for every id; the owner
+#      reads the consumption per person on GET /billing/usage.
 #
 # Usage: ./scripts/federation-drill.sh
 #   FEDERATION_HUB_DIR=<path>  hub checkout to build (default ../../../hub, see the compose file)
@@ -39,6 +46,10 @@
 #   FEDERATION_PROJECT=slideless-federation         compose project name
 #   FEDERATION_HUB_PORT=3300                        hub port (host = PORT = hostname port)
 #   FEDERATION_SL_PORT=3310                         Slideless port (same rule)
+#     Neither port may be on the Fetch standard's blocked-port list (6000,
+#     6566, 6665-6669, 6697, 10080, ...): Node's fetch refuses every URL on
+#     one with "bad port", and Slideless's own discovery call to the hub
+#     dies before the SSO leg (found on the billing-pair run, hub on 6000).
 #   FEDERATION_HOP_PORT=8474                        the delay hop's admin port
 #   FEDERATION_MAIL_PORT=8030                       Mailpit UI host port
 #   FEDERATION_SUBNET_PREFIX=172.30.250             the /24's first three octets
@@ -421,3 +432,119 @@ n=$(hubdb "SELECT count(*) FROM audit_log WHERE action = 'oidc.token' AND metada
 n=$(hubdb "SELECT count(*) FROM audit_log WHERE action = 'oidc.token' AND (metadata->>'rotationGrace')::boolean")
 [ "$n" = 1 ] || fail "expected exactly one audited rotation grace, saw $n"
 pass "audit rows: oidc.authorize + oidc.token present, instance-attributed; the refusals and the grace are on the record"
+
+# ── Phase 8 — the billing rail, phase 1 (PRDCT-2625 + PRDCT-2626) ──────────
+say "Phase 8 — one metered action per surface lands in the hub's usage_events, exactly once"
+# The drill's Phase 5 left the person's Slideless grant dead on purpose
+# (hub_grant_expired); a browser re-login heals it, so sign in again through
+# the hub session that is still alive. Same dance as Phase 3.
+initiate=$("${CURL[@]}" -c "$SL_JAR" -X POST "$SL/api/v1/auth/sign-in/oauth2" -H 'content-type: application/json' \
+  -d '{"providerId":"antasphere","callbackURL":"/"}')
+AUTHZ_URL=$(echo "$initiate" | jq -r '.url // empty')
+[ -n "$AUTHZ_URL" ] || fail "re-login: Slideless did not answer an authorize URL: $initiate"
+location=$("${CURL[@]}" -b "$HUB_JAR" -o /dev/null -w '%{redirect_url}' "$AUTHZ_URL")
+cb_status=$("${CURL[@]}" -b "$SL_JAR" -c "$SL_JAR" -o /dev/null -w '%{http_code}' "$location")
+[ "$cb_status" = 302 ] || fail "re-login: Slideless callback answered $cb_status"
+"${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/me8.json" -f "$SL/api/v1/me" || fail "re-login: no Slideless session"
+jq -e --arg id "$WS_ID" '.workspaces[] | select(.id == $id)' "$SCRATCH/me8.json" >/dev/null \
+  || fail "re-login: the drill workspace $WS_ID is not listed"
+pass "the person is signed in again after Phase 5 (a browser re-login heals hub_grant_expired)"
+
+before_rows=$(hubdb "SELECT count(*) FROM usage_events")
+metered() { # label file-content → uploads one asset in the drill workspace with the given curl auth args; prints sizeBytes
+  local label=$1 content=$2; shift 2
+  printf '%s' "$content" > "$SCRATCH/asset-$label.txt"
+  local sha; sha=$(openssl dgst -sha256 "$SCRATCH/asset-$label.txt" | sed 's/.*= //')
+  local status
+  status=$("${CURL[@]}" "$@" -o "$SCRATCH/asset-$label.json" -w '%{http_code}' -X POST "$SL/api/v1/presentations/assets" \
+    -H "X-Workspace-Id: $WS_ID" -F "file=@$SCRATCH/asset-$label.txt;type=text/plain" -F "sha256=$sha")
+  [ "$status" = 201 ] || fail "asset upload ($label) answered $status: $(cat "$SCRATCH/asset-$label.json")"
+  jq -r '.sizeBytes' "$SCRATCH/asset-$label.json"
+}
+# 1. the dashboard: the browser session.
+SESSION_BYTES=$(metered session "drill: uploaded from the dashboard session" -b "$SL_JAR" -H "Origin: $SL")
+# 2. the CLI: the slk_ key Phase 3b minted in the drill workspace.
+KEY_BYTES=$(metered api_key "drill: uploaded with an slk_ key, the CLI's credential" -H "Authorization: Bearer $SLK")
+# 3. an agent: an OAuth bearer from Slideless's OWN authorization server
+#    (dynamic registration + PKCE + consent, the MCP connector's dance), then
+#    the MCP endpoint itself creates a deck (one upload + one commit).
+mcp_redirect='http://127.0.0.1:19999/callback'
+register=$("${CURL[@]}" -X POST "$SL/api/v1/auth/oauth2/register" -H 'content-type: application/json' \
+  -d "{\"client_name\":\"drill-mcp\",\"redirect_uris\":[\"$mcp_redirect\"],\"token_endpoint_auth_method\":\"none\",\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"response_types\":[\"code\"]}")
+MCP_CLIENT=$(echo "$register" | jq -r '.client_id // empty')
+[ -n "$MCP_CLIENT" ] || fail "dynamic registration at Slideless failed: $register"
+mcp_verifier=$(openssl rand -hex 32)
+mcp_challenge=$(printf '%s' "$mcp_verifier" | openssl dgst -sha256 -binary | b64url)
+mcp_scope=$("${CURL[@]}" "$SL/.well-known/oauth-authorization-server" | jq -r '.scopes_supported | join(" ")')
+mcp_authz="$SL/api/v1/auth/oauth2/authorize?response_type=code&client_id=$MCP_CLIENT&redirect_uri=$(printf '%s' "$mcp_redirect" | jq -sRr @uri)&scope=$(printf '%s' "$mcp_scope" | jq -sRr @uri)&state=drill-mcp&code_challenge=$mcp_challenge&code_challenge_method=S256&resource=$(printf '%s' "$SL/mcp" | jq -sRr @uri)"
+consent_url=$("${CURL[@]}" -b "$SL_JAR" -o /dev/null -w '%{redirect_url}' "$mcp_authz")
+case "$consent_url" in
+  *"/oauth/consent?"*)
+    consent=$("${CURL[@]}" -b "$SL_JAR" -X POST "$SL/api/v1/auth/oauth2/consent" -H 'content-type: application/json' -H "Origin: $SL" \
+      -d "{\"accept\":true,\"oauth_query\":\"${consent_url#*consent?}\"}")
+    code_url=$(echo "$consent" | jq -r '.url // .redirect_uri // empty') ;;
+  *) code_url=$consent_url ;;
+esac
+mcp_code=$(printf '%s' "$code_url" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
+[ -n "$mcp_code" ] || fail "no authorization code for the MCP client: $consent_url"
+"${CURL[@]}" -o "$SCRATCH/mcp-token.json" -f -X POST "$SL/api/v1/auth/oauth2/token" -H 'content-type: application/x-www-form-urlencoded' \
+  --data-urlencode grant_type=authorization_code --data-urlencode "code=$mcp_code" --data-urlencode "redirect_uri=$mcp_redirect" \
+  --data-urlencode "client_id=$MCP_CLIENT" --data-urlencode "code_verifier=$mcp_verifier" --data-urlencode "resource=$SL/mcp" \
+  || fail "the MCP client's token exchange failed"
+MCP_BEARER=$(jq -r '.access_token' "$SCRATCH/mcp-token.json")
+mcp_html='<!doctype html><html><head><title>Drill MCP deck</title></head><body><h1>Drill</h1></body></html>'
+mcp_call=$(jq -nc --arg ws "$WS_ID" --arg html "$mcp_html" \
+  '{jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"slideless_upload_html_presentation",arguments:{workspace:$ws,title:"Drill MCP deck",html:$html}}}')
+mcp_answer=$("${CURL[@]}" -X POST "$SL/mcp" -H "Authorization: Bearer $MCP_BEARER" -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' -d "$mcp_call")
+echo "$mcp_answer" | jq -e '.result.isError != true and (.result.content[0].text | test("\"presentation\""))' >/dev/null \
+  || fail "the MCP deck creation failed: $(echo "$mcp_answer" | head -c 400)"
+MCP_BYTES=$(printf '%s' "$mcp_html" | wc -c | tr -d ' ')
+pass "one metered action per surface: the dashboard session ($SESSION_BYTES bytes), the slk_ key ($KEY_BYTES bytes), an OAuth bearer over MCP ($MCP_BYTES bytes + one commit)"
+
+# What the gate queued, verbatim (the poster drains this queue to the hub).
+queued=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events'")
+[ "$queued" -ge 4 ] || fail "expected at least 4 queued usage events (3 uploads + 1 commit), the queue holds $queued"
+for i in $(seq 1 60); do
+  pending=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed', 'failed', 'cancelled')")
+  [ "$pending" = 0 ] && break
+  sleep 1
+done
+[ "$pending" = 0 ] || fail "the usage queue did not drain in 60 s ($pending pending); is the poster reaching the hub?"
+failed=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state = 'failed'")
+[ "$failed" = 0 ] || fail "$failed usage job(s) FAILED at the poster: $(applogs app | grep -i 'usage poster' | tail -3)"
+pass "the poster drained the queue to the hub ($queued events, none failed)"
+
+# The hub's side: every event landed, attributed to the projected
+# organization, the hub user, the right channel, the right action and size.
+landed=$(hubdb "SELECT count(*) FROM usage_events WHERE account_id = (SELECT central_account_id FROM workspaces WHERE id = '$HUB_ORG_ID')")
+[ "$landed" = "$((before_rows + queued))" ] \
+  || fail "the hub holds $landed events for the organization, expected $((before_rows + queued)); the poster's log: $(applogs app | grep -i 'usage poster' | tail -3 | cut -c1-300); the hub's: $(hubdb "SELECT metadata::text FROM audit_log WHERE action = 'usage.ingest' ORDER BY created_at DESC LIMIT 2")"
+row() { hubdb "SELECT count(*) FROM usage_events WHERE via = '$1' AND action_key = '$2' AND quantity = $3 AND user_id = '$HUB_USER_ID' AND tool_slug = '$(hubdb "SELECT metadata->'tool'->>'slug' FROM oauth_client WHERE client_id = '$SL_CLIENT_ID'")' AND workspace_id = '$WS_ID'"; }
+[ "$(row session files.upload "$SESSION_BYTES")" = 1 ] || fail "no session row for files.upload of $SESSION_BYTES bytes by $HUB_USER_ID"
+[ "$(row api_key files.upload "$KEY_BYTES")" = 1 ] || fail "no api_key row for files.upload of $KEY_BYTES bytes by $HUB_USER_ID"
+[ "$(row oauth files.upload "$MCP_BYTES")" = 1 ] || fail "no oauth row for files.upload of $MCP_BYTES bytes by $HUB_USER_ID"
+[ "$(row oauth presentations.commit 1)" = 1 ] || fail "no oauth row for presentations.commit by $HUB_USER_ID"
+pass "usage_events: session / api_key / oauth, files.upload $SESSION_BYTES / $KEY_BYTES / $MCP_BYTES bytes + presentations.commit 1 call, user $HUB_USER_ID, the org's account, the registry slug"
+
+# At-least-once from the tool, exactly once at the hub: the same batch again,
+# by hand, with the tool's own machine token, answers duplicate for every id.
+machine=$("${CURL[@]}" -o "$SCRATCH/machine.json" -w '%{http_code}' -X POST "$HUB/api/v1/auth/oauth2/token" \
+  -u "$SL_CLIENT_ID:$SL_CLIENT_SECRET" -H 'content-type: application/x-www-form-urlencoded' \
+  --data-urlencode grant_type=client_credentials --data-urlencode scope=usage:write --data-urlencode "resource=$HUB/mcp")
+[ "$machine" = 200 ] || fail "the tool's client_credentials mint answered $machine: $(cat "$SCRATCH/machine.json")"
+MACHINE_TOKEN=$(jq -r '.access_token' "$SCRATCH/machine.json")
+sldb "SELECT json_agg(data)::text FROM pgboss.job WHERE name = 'usage-events'" | jq '{events: .}' > "$SCRATCH/replay.json"
+"${CURL[@]}" -o "$SCRATCH/replay-answer.json" -f -X POST "$HUB/api/v1/usage/events" -H "Authorization: Bearer $MACHINE_TOKEN" \
+  -H 'content-type: application/json' -d @"$SCRATCH/replay.json" || fail "the hand replay of the batch failed: $(cat "$SCRATCH/replay-answer.json")"
+jq -e --argjson n "$queued" '.duplicate == $n and .accepted == 0 and .rejected == 0' "$SCRATCH/replay-answer.json" >/dev/null \
+  || fail "the replay should answer duplicate for all $queued: $(cat "$SCRATCH/replay-answer.json")"
+[ "$(hubdb "SELECT count(*) FROM usage_events")" = "$landed" ] || fail "the replay wrote rows"
+pass "the same batch posted again with the tool's machine token: $queued duplicate, 0 accepted, no new row"
+
+# The organization's owner reads the consumption per person.
+usage=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/billing-usage.json" -w '%{http_code}' -H "X-Workspace-Id: $HUB_ORG_ID" "$HUB/api/v1/billing/usage")
+[ "$usage" = 200 ] || fail "GET /billing/usage as the owner answered $usage: $(cat "$SCRATCH/billing-usage.json")"
+jq -e --arg u "$HUB_USER_ID" --argjson n "$queued" '.byUser | length == 1 and .[0].userId == $u and .[0].events == $n' "$SCRATCH/billing-usage.json" >/dev/null \
+  || fail "the per-person view does not show $queued events for $HUB_USER_ID: $(jq -c '.byUser' "$SCRATCH/billing-usage.json")"
+pass "GET /billing/usage as the owner: one person, $HUB_USER_ID, $queued events"
