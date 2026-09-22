@@ -1301,3 +1301,57 @@ migrate` on an unchanged schema):
   `packages/chassis-sdk/test/route-coverage.test.ts`) and the export's reserved-entry list test do
   the same for a new route and a new bundle entry: expect all three to go red on a route, and
   read them as the checklist they are.
+
+## The billing rail, phase 1 (PRDCT-2626, 2026-09-22, lane B of the billing-rail wave)
+
+- **A price is a declaration on the route, and the chassis knows no key.** The two hand-written
+  metering sites (`registry.entitlements.check` + `registry.usage.emit` in `chassis-server/api/files.ts`
+  and `apps/server/api/presentations.ts`) were byte-for-byte twins that drifted the moment one
+  learned a field; now a route carries `meter` / `limit` / `feature` ONCE in the tool's contract
+  (`DECK_ROUTE_ENTITLEMENTS`, `@slideless/contract/routes`, built from the route objects so a
+  typo throws at module load) and ONE gate in `create-api.ts` enforces it after the scope gate and
+  emits after a 2xx. The chassis' own `/files` route is priced by the TOOL's declaration too:
+  `git grep -i 'files.maxBytes\|presentations.commit' -- 'packages/chassis-*'` stays empty. A
+  handler that checks or emits by hand is the regression.
+- **The gate reads what the handler recorded for its audit row.** `c.set('audit', { …, metadata:
+{ sizeBytes } })` is where the stored size and the created resource live; the declaration's
+  `quantity` runs twice, before the handler on the declared Content-Length (the check) and after it
+  with `ctx.audit` set (the emit, `auditedSizeBytes`). A multipart body's Content-Length is the
+  framing, not the file: an emit on it would over-bill by a few hundred bytes per asset.
+- **The event's `userId` is the HUB user, never the tool's local id.** The hub refuses a local id
+  as `unknown_user`; the SSO link stores the hub's `sub` as `account.account_id` under the
+  `antasphere` provider, and `hubSubjectResolver` reads it (cached five minutes). The operator,
+  who has no hub link, reports null.
+- **On oss the credit check runs BEFORE the declared limit; on cloud the order is feature → limit →
+  credits.** Both editions refuse an upload over the cap at the same threshold in phase 1 (the
+  free value IS `MAX_FILE_SIZE_MB` by construction, `entitlements: (env) => …`), but oss keeps
+  413 `entitlement_denied` with the message `file exceeds MAX_FILE_SIZE_MB (100MB)` byte for byte
+  because the local check answers first, while a cloud account gets 403 `plan_required` with the
+  upgrade link, as the spec orders. Flipping the oss order changes the message every self-hosted
+  CLI already prints.
+- **A failed entitlements read keeps the last known plan for fifteen minutes, then free.** The
+  first cut said "any failure = free", which would refuse a pro account above the free cap on every
+  hub blip once pro exists (the federation gate's `hub_unavailable` posture is the precedent).
+  A miss is cached for the TTL like an answer, so a request storm never becomes a hub storm.
+- **The queue's retry budget must outlive a hub deploy.** `PgBossUsageSink` sent with `retryLimit:
+5, retryBackoff: true` and NO `retryDelay` (pg-boss's default is seconds, tiny): five attempts
+  in about a minute, then the event was archived as failed. The hub deploys first and answers 404
+  until it has; ten retries from thirty seconds (about eight hours) is `DEFAULT_USAGE_RETRY`, and
+  the poster treats 404 as an outage, never as data loss. `BootOverrides.usageRetry` shrinks it
+  for a test that watches a retried batch land.
+- **The machine token is minted single-flight and the hub pins its shape** (PRDCT-2625): the
+  mint carries `resource=<hub>/mcp` and EXACTLY `scope=usage:write`; a 400 `invalid_scope`,
+  `invalid_target`, `unauthorized_client` or `invalid_client` is a configuration error logged at
+  error level and never retried into a loop (`HubMachineTokenError.kind = 'invalid_client'`).
+  The fake hub (`testing/fake-hub.ts`) refuses a mint without the resource, so a poster that
+  drops it fails the suite before it fails production.
+- **The app's integration suite reads the chassis from its BUILD, not its source.**
+  `apps/server/vitest.integration.config.ts` carries no source alias for `@antasphere/chassis-server`
+  (the chassis package's own config does), so a chassis edit is invisible to the Slideless run
+  until `pnpm turbo build` has run — the first metering run reported the tool's local user id in
+  the event because `dist/entitlements/gate.js` was the hour-old copy. CI builds first
+  (`test:integration` depends on `^build`); a lane running one file by hand must too.
+- **`FakeHub`'s `usage_events` judges per element like the real hub**: `unknown_account` for an
+  accountRef no seeded org holds, `unknown_user` for a userId no fixture minted, `invalid_event`
+  with `id: null` for an element that does not parse, `duplicate` for a re-post. A test that
+  seeds a person through `ssoLogin` gets its org known; a hand-written accountRef is rejected.
