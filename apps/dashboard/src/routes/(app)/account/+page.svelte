@@ -642,6 +642,8 @@
     <Card.Content>
       {#if deleteReauthed}
         <p class="mb-4 text-sm font-medium">{t('account.deleteReauthed')}</p>
+      {:else if deleteNeedsHubTrip}
+        <p class="mb-4 text-sm text-muted-foreground">{t('account.deleteVerifyHint')}</p>
       {/if}
       <form
         class="grid gap-4 md:items-end {hasPassword

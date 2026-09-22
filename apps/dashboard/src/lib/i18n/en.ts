@@ -465,7 +465,9 @@ export const en = {
     'Your decks stay in their workspaces and their share links keep working; they just no longer have an owner. Delete them first if you want them gone.',
   'account.dangerHubNote':
     'Your Antasphere account itself is not affected: you can sign in again later, and a new, empty account is created here.',
-  'account.deleteContinueHub': 'Continue with Antasphere to delete',
+  'account.deleteContinueHub': 'Verify with Antasphere',
+  'account.deleteVerifyHint':
+    'Deleting needs a fresh sign-in. This takes you to Antasphere and brings you back here to confirm — nothing is deleted yet.',
   'account.deleteReauthed':
     'You just signed in with Antasphere again. Type DELETE to confirm — this is the final step.',
   'account.deleteConfirmPrefix': 'Type',
