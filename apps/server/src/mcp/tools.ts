@@ -259,7 +259,20 @@ async function pushInlineDeck(
         type: file.contentType
       })
     );
-    await fetchApiRaw(c, '/api/v1/presentations/assets', { method: 'POST', body: form });
+    // Serialized here so the in-process request carries the body's
+    // Content-Length like a client on the wire would: the chassis' entitlement
+    // gate (the billing rail) checks the DECLARED size before the handler,
+    // and a bodiless-length request would sail past the plan's upload cap.
+    const encoded = new Response(form);
+    const body = await encoded.arrayBuffer();
+    await fetchApiRaw(c, '/api/v1/presentations/assets', {
+      method: 'POST',
+      headers: {
+        'content-type': encoded.headers.get('content-type') ?? 'multipart/form-data',
+        'content-length': String(body.byteLength)
+      },
+      body
+    });
   }
 
   // Step 3 — commit: a new version on an existing deck, or session + deck.

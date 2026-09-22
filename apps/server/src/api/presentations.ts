@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { Context as HonoContext } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { ulid } from 'ulid';
 import {
   agentDocGetRoute,
   annotationCreateRoute,
@@ -154,10 +153,9 @@ export interface PresentationRouteDeps {
   fileService: FileService;
   storage: StorageDriver;
   registry: DeckRegistry;
-  env: Pick<Env, 'MAX_FILE_SIZE_MB' | 'EDITION' | 'APP_VERSION' | 'PUBLIC_BASE_URL' | 'VIEWER_BASE_URL'>;
+  env: Pick<Env, 'MAX_FILE_SIZE_MB' | 'PUBLIC_BASE_URL' | 'VIEWER_BASE_URL'>;
   email: EmailDriver;
   logger: Logger;
-  instanceId: () => Promise<string>;
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
@@ -234,18 +232,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
   api.openapi(assetUploadRoute, async (c) => {
     const principal = c.get('principal')!;
 
-    // Entitlement gate on the declared size first; the true size is enforced
-    // after parse (and the multipart body limit bounds the parse itself).
-    const declared = Number(c.req.header('content-length') ?? '0');
-    const decision = await registry.entitlements.check(principal, {
-      key: 'files.upload',
-      quantity: declared,
-      unit: 'bytes'
-    });
-    if (!decision.allowed) {
-      return c.json(err('entitlement_denied', decision.reason), 413);
-    }
-
+    // The declared-size check and the usage event are the chassis entitlement
+    // gate's (DECK_ROUTE_ENTITLEMENTS in @slideless/contract/routes, the
+    // billing rail §7); the true size is still enforced after parse below
+    // (and the multipart body limit bounds the parse itself).
     const form = c.req.valid('form');
     const file = form.file as unknown;
     // Hono's parseBody yields string | File per part; the bytes MUST be a
@@ -278,21 +268,13 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         maxBytes
       });
 
+      // `sizeBytes` here is what the gate meters (auditedSizeBytes): the
+      // bytes kept, not the multipart body's declared length.
       c.set('audit', {
         action: 'presentation.asset_upload',
         resourceType: 'file',
         resourceId: row.id,
         metadata: { sha256: row.sha256, sizeBytes: row.sizeBytes, deduplicated }
-      });
-      void registry.usage.emit({
-        id: ulid(),
-        meter: 'files.upload',
-        quantity: row.sizeBytes,
-        unit: 'bytes',
-        occurredAt: new Date().toISOString(),
-        workspaceId: principal.workspaceId,
-        ...(principal.accountRef ? { accountRef: principal.accountRef } : {}),
-        source: { instanceId: await deps.instanceId(), edition: env.EDITION, version: env.APP_VERSION }
       });
 
       return c.json({ sha256: row.sha256, sizeBytes: row.sizeBytes, deduplicated }, 201);

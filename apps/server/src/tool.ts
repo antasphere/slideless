@@ -7,6 +7,10 @@ import {
   apiKeyRevokeRoute,
   apiKeysListRoute,
   cliAuthCompleteRoute,
+  DECK_ACTIONS,
+  DECK_FEATURES,
+  DECK_LIMITS,
+  DECK_ROUTE_ENTITLEMENTS,
   fileDeleteRoute,
   meRoute,
   ssoCliConnectRoute,
@@ -251,7 +255,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       }),
 
       routes: (api, ctx, deps) => {
-        const { db, env, auth, email, audit, registry, logger, limiters, clientIp, instanceId, hubSso } = ctx;
+        const { db, env, auth, email, audit, registry, logger, limiters, clientIp, hubSso } = ctx;
         const presentationService = deps.presentations;
         const annotationService = deps.annotations;
         registerPresentationRoutes(api, {
@@ -266,8 +270,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           registry,
           env,
           email,
-          logger,
-          instanceId
+          logger
         });
         // Collaborator routes AFTER registerPresentationRoutes: the /presentations
         // requireAuth gates registered there must precede these handlers.
@@ -372,6 +375,48 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
     },
 
     mcp: slidelessMcp,
+
+    // The billing rail (slot 22, PRDCT-2626): what Slideless prices, its
+    // limits and its features per tier, beside the routes that declare them
+    // (@slideless/contract/routes, DECK_ROUTE_ENTITLEMENTS). DATA, reviewed
+    // with Romain before phase 2 prices anything: in phase 1 every cloud
+    // account is `free` and the free values are today's caps, so nothing
+    // changes for anyone. The upload cap's oss AND free values are the
+    // operator's MAX_FILE_SIZE_MB by construction (100 MB on the cloud
+    // instance), never a second copy of the number. null = unlimited.
+    entitlements: (env) => {
+      const MB = 1024 * 1024;
+      const capBytes = env.MAX_FILE_SIZE_MB * MB;
+      return {
+        actions: [
+          { key: DECK_ACTIONS.commit, creditsPerUnit: 50, unit: 'call', label: 'Publish a deck' },
+          {
+            key: DECK_ACTIONS.upload,
+            creditsPerUnit: 5,
+            unit: 'bytes',
+            label: 'Upload deck files (per byte; the price book prices the MB)'
+          },
+          { key: DECK_ACTIONS.shareToken, creditsPerUnit: 20, unit: 'call', label: 'Create a share link' },
+          { key: DECK_ACTIONS.export, creditsPerUnit: 100, unit: 'call', label: 'Export the workspace' },
+          {
+            key: DECK_ACTIONS.invite,
+            creditsPerUnit: 10,
+            unit: 'call',
+            label: 'Invite a collaborator on a deck'
+          }
+        ],
+        limits: {
+          [DECK_LIMITS.fileBytes]: { oss: capBytes, free: capBytes, pro: 500 * MB },
+          [DECK_LIMITS.workspaceMembers]: { oss: null, free: 3, pro: null },
+          [DECK_LIMITS.linksPerDeck]: { oss: null, free: 10, pro: null }
+        },
+        features: {
+          [DECK_FEATURES.customDomain]: { free: false, pro: true },
+          [DECK_FEATURES.deckPassword]: { free: false, pro: true }
+        },
+        routes: DECK_ROUTE_ENTITLEMENTS
+      };
+    },
 
     // The chassis refusals that name the tool's domain, in Slideless's words (decks, presentations).
     copy: {

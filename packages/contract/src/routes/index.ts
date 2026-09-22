@@ -1,8 +1,15 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { apiErrorSchema, cursorPageQuerySchema } from '@antasphere/chassis-contract';
+import {
+  apiErrorSchema,
+  auditedSizeBytes,
+  cursorPageQuerySchema,
+  declaredContentLength,
+  declareRouteEntitlements
+} from '@antasphere/chassis-contract';
 import {
   defineChassisRoutes,
   errorResponses,
+  fileUploadRoute,
   idempotencyHeaders,
   jsonBody,
   jsonRequestBody,
@@ -941,3 +948,57 @@ export const presentationDuplicateRoute = createRoute({
     409: jsonBody(apiErrorSchema, 'Idempotency conflict')
   }
 });
+
+// ═══ The billing rail: a price on the route (PRDCT-2626) ═══════════════════
+//
+// What Slideless meters, which limit a route checks and which feature it
+// needs, declared ONCE here beside the routes and enforced by the chassis'
+// one entitlement gate for the dashboard, the CLI and the MCP tools alike
+// (the pay-per-use billing rail spec, §7). The action keys and the limit
+// keys are named here; their credits and their per-tier values are the
+// tool's `entitlements` slot (apps/server/src/tool.ts), shown on
+// GET /instance. A route absent from this list is free and unmetered.
+//
+// Phase 1 prices nothing yet (credits are a no-op); every metered action
+// lands in the hub per user and per organization, which is what the data
+// compounds on before a price exists. The anonymous surfaces (a form
+// response through a share link) are NOT wired: no view is priced, and the
+// owner attribution of `forms.response` waits for its `actor` hook.
+export const DECK_ACTIONS = {
+  commit: 'presentations.commit',
+  upload: 'files.upload',
+  shareToken: 'share_tokens.create',
+  export: 'workspace.export',
+  invite: 'collaborators.invite'
+} as const;
+
+/** The upload cap, one key for both upload doors (the deck asset route and the generic files route). */
+export const DECK_LIMITS = {
+  fileBytes: 'files.maxBytes',
+  workspaceMembers: 'workspace.members',
+  linksPerDeck: 'links.perDeck'
+} as const;
+
+export const DECK_FEATURES = {
+  customDomain: 'custom_domain',
+  deckPassword: 'deck.password'
+} as const;
+
+export const DECK_ROUTE_ENTITLEMENTS = declareRouteEntitlements([
+  // The two upload doors: the declared Content-Length is checked against the
+  // cap before a byte is read, the bytes actually kept are what is metered.
+  {
+    route: assetUploadRoute,
+    meter: { key: DECK_ACTIONS.upload, unit: 'bytes', quantity: auditedSizeBytes },
+    limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
+  },
+  {
+    route: fileUploadRoute,
+    meter: { key: DECK_ACTIONS.upload, unit: 'bytes', quantity: auditedSizeBytes },
+    limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
+  },
+  { route: uploadSessionCommitRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+  { route: shareTokenCreateRoute, meter: { key: DECK_ACTIONS.shareToken, unit: 'call' } },
+  { route: workspaceExportRoute, meter: { key: DECK_ACTIONS.export, unit: 'call' } },
+  { route: collaboratorInviteRoute, meter: { key: DECK_ACTIONS.invite, unit: 'call' } }
+]);

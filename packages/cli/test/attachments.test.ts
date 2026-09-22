@@ -190,10 +190,16 @@ describe('push says what travels', () => {
 });
 
 describe('the cap refusal, before any write', () => {
-  it('refuses a file over the cap discovery exposes, naming the file and the cap, and touches nothing', async () => {
+  it('refuses a file over the cap discovery declares (files.maxBytes, the oss value), naming the file and the cap, and touches nothing', async () => {
     const dir = await makeDeckWithDownloads();
     await truncate(join(dir, 'downloads', 'sub', 'annex.pdf'), 1024 * 1024 + 1);
-    const { routes, uploaded } = pushRoutes({ missing: [], instance: { limits: { maxFileSizeMb: 1 } } });
+    const { routes, uploaded } = pushRoutes({
+      missing: [],
+      instance: {
+        edition: 'oss',
+        entitlements: { limits: { 'files.maxBytes': { oss: 1024 * 1024, free: 1024 * 1024, pro: null } } }
+      }
+    });
     const h = routedHarness(routes);
     expect(await run(PUSH(dir), h.io)).toBe(1);
     expect(h.err()).toContain('downloads/sub/annex.pdf');
@@ -210,7 +216,13 @@ describe('the cap refusal, before any write', () => {
     await writeFile(join(dir, 'index.html'), HTML);
     await writeFile(join(dir, 'exact.bin'), '');
     await truncate(join(dir, 'exact.bin'), 1024 * 1024);
-    const { routes } = pushRoutes({ missing: [], instance: { limits: { maxFileSizeMb: 1 } } });
+    const { routes } = pushRoutes({
+      missing: [],
+      instance: {
+        edition: 'oss',
+        entitlements: { limits: { 'files.maxBytes': { oss: 1024 * 1024, free: 1024 * 1024, pro: null } } }
+      }
+    });
     const h = routedHarness(routes);
     expect(await run(PUSH(dir), h.io)).toBe(0);
     expect(h.err()).toBe('');
@@ -220,7 +232,13 @@ describe('the cap refusal, before any write', () => {
   it('refuses under --json the same way, with nothing on stdout and no write', async () => {
     const dir = await makeDeckWithDownloads();
     await truncate(join(dir, 'downloads', 'figures.csv'), 5 * 1024 * 1024);
-    const { routes, uploaded } = pushRoutes({ missing: [], instance: { limits: { maxFileSizeMb: 1 } } });
+    const { routes, uploaded } = pushRoutes({
+      missing: [],
+      instance: {
+        edition: 'oss',
+        entitlements: { limits: { 'files.maxBytes': { oss: 1024 * 1024, free: 1024 * 1024, pro: null } } }
+      }
+    });
     const h = routedHarness(routes);
     expect(await run(PUSH(dir, '--json'), h.io)).toBe(1);
     expect(h.out()).toBe('');
@@ -234,7 +252,13 @@ describe('the cap refusal, before any write', () => {
     await writeFile(join(dir, 'index.html'), HTML);
     await writeFile(join(dir, 'video.mp4'), '');
     await truncate(join(dir, 'video.mp4'), 2 * 1024 * 1024);
-    const { routes, uploaded } = pushRoutes({ missing: [], instance: { limits: { maxFileSizeMb: 1 } } });
+    const { routes, uploaded } = pushRoutes({
+      missing: [],
+      instance: {
+        edition: 'oss',
+        entitlements: { limits: { 'files.maxBytes': { oss: 1024 * 1024, free: 1024 * 1024, pro: null } } }
+      }
+    });
     const h = routedHarness(routes);
     expect(await run(PUSH(dir), h.io)).toBe(1);
     expect(h.err()).toContain('video.mp4 is 2.0 MB');
