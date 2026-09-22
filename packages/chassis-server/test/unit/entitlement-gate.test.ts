@@ -157,6 +157,17 @@ function fixture(opts: {
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
+/** The wire's error body, typed for the assertions. */
+const errorOf = (res: Response) =>
+  res.json() as Promise<{ error: { code: string; message: string; details?: unknown } }>;
+
+/** A principal of a cloud-LOCAL (or oss) workspace: no account behind it. */
+function localPrincipal(over: Partial<Principal> = {}): Principal {
+  const p = principal({ origin: 'local', ...over });
+  delete (p as Partial<Principal>).accountRef;
+  return p;
+}
+
 describe('honoPath', () => {
   it('spells the OpenAPI path the way Hono registers it', () => {
     expect(honoPath('/things/{id}/versions/{version}')).toBe('/things/:id/versions/:version');
@@ -203,7 +214,7 @@ describe('the gate on cloud, a hub-projected workspace', () => {
       body: 'x'.repeat(60)
     });
     expect(res.status).toBe(403);
-    const body = await res.json();
+    const body = await errorOf(res);
     expect(body.error.code).toBe('plan_required');
     expect(body.error.details).toEqual({
       key: 'files.maxBytes',
@@ -220,14 +231,14 @@ describe('the gate on cloud, a hub-projected workspace', () => {
     const f = fixture({ cloud: true, principal: principal() });
     const premium = await f.app.request('/things/9/premium', { method: 'POST' });
     expect(premium.status).toBe(403);
-    expect((await premium.json()).error.details).toMatchObject({
+    expect((await errorOf(premium)).error.details).toMatchObject({
       key: 'premium',
       plan: 'free',
       requiredPlan: 'pro'
     });
     const nowhere = await f.app.request('/things/9/nowhere', { method: 'POST' });
     expect(nowhere.status).toBe(403);
-    expect((await nowhere.json()).error.details).toMatchObject({ key: 'nowhere', requiredPlan: null });
+    expect((await errorOf(nowhere)).error.details).toMatchObject({ key: 'nowhere', requiredPlan: null });
   });
 
   it('the hub’s plan and overrides decide: a pro account passes the feature and the wider limit', async () => {
@@ -266,7 +277,7 @@ describe('the gate on cloud, a hub-projected workspace', () => {
     });
     const res = await f.app.request('/things', { method: 'POST' });
     expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({ error: { code: 'entitlement_denied', message: 'no credits' } });
+    expect(await errorOf(res)).toEqual({ error: { code: 'entitlement_denied', message: 'no credits' } });
     await tick();
     expect(f.emitted).toEqual([]);
   });
@@ -279,7 +290,7 @@ describe('the gate on cloud, a hub-projected workspace', () => {
   });
 
   it('a cloud-LOCAL workspace (no account) is unmetered: no plan, no hub read, no event, the oss value applies', async () => {
-    const f = fixture({ cloud: true, principal: principal({ accountRef: undefined, origin: 'local' }) });
+    const f = fixture({ cloud: true, principal: localPrincipal() });
     expect(
       (
         await f.app.request('/files', {
@@ -298,7 +309,7 @@ describe('the gate on cloud, a hub-projected workspace', () => {
       body: 'x'.repeat(101)
     });
     expect(over.status).toBe(413);
-    expect((await over.json()).error.code).toBe('entitlement_denied');
+    expect((await errorOf(over)).error.code).toBe('entitlement_denied');
   });
 
   it('a user with no hub link reports null, and the actor hook resolves the owner’s workspace and account', async () => {
@@ -331,7 +342,7 @@ describe('the gate on oss', () => {
   it('runs the credit check first (today’s refusal byte for byte), then the oss value, and emits nothing', async () => {
     const refused = fixture({
       cloud: false,
-      principal: principal({ accountRef: undefined, origin: 'local' }),
+      principal: localPrincipal(),
       decision: { allowed: false, reason: 'file exceeds MAX_FILE_SIZE_MB (1MB)' }
     });
     const res = await refused.app.request('/files', {
@@ -340,11 +351,11 @@ describe('the gate on oss', () => {
       body: 'x'.repeat(60)
     });
     expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({
+    expect(await errorOf(res)).toEqual({
       error: { code: 'entitlement_denied', message: 'file exceeds MAX_FILE_SIZE_MB (1MB)' }
     });
 
-    const f = fixture({ cloud: false, principal: principal({ accountRef: undefined, origin: 'local' }) });
+    const f = fixture({ cloud: false, principal: localPrincipal() });
     expect(
       (
         await f.app.request('/files', {
@@ -360,7 +371,7 @@ describe('the gate on oss', () => {
       body: 'x'.repeat(101)
     });
     expect(over.status).toBe(413);
-    expect((await over.json()).error).toEqual({
+    expect((await errorOf(over)).error).toEqual({
       code: 'entitlement_denied',
       message: 'files.maxBytes: 101 exceeds the instance limit (100)'
     });
