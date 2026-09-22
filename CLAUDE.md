@@ -235,6 +235,26 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   (minted before this shipped, or replaced by a CLI connect, whose hub-minted grant carries no
   `orgs:create`) gets 403 `insufficient_scope` from the hub, mapped to 401 `hub_reauth_required`:
   a browser sign-in heals it. `/me.canCreateWorkspace` stays true for such a person, on purpose.
+- **A price is a declaration on the route, and the chassis names no key (PRDCT-2626, the billing
+  rail spec §7)**: a route that meters an action, checks a limit or needs a feature says so ONCE in
+  `DECK_ROUTE_ENTITLEMENTS` (`packages/contract/src/routes/index.ts`, built from the route objects;
+  a duplicate throws) and the tool's `entitlements` slot (`apps/server/src/tool.ts`) carries the
+  credits, the per-tier limits and the features, shown on `GET /instance`. ONE gate
+  (`packages/chassis-server/src/entitlements/gate.ts`, registered in `create-api.ts` after the scope
+  gate, the idempotency claim and the audit middleware, before every handler) enforces it for the
+  dashboard, the CLI and the MCP tools alike and emits the usage event after a 2xx; no handler checks
+  or emits by hand, and `git grep -i 'files.maxBytes\|presentations.commit\|slideless' --
+'packages/chassis-*/src'` stays empty. Cloud order: feature → limit (403 `plan_required` + `details:
+{ key, plan, requiredPlan, upgradeUrl }`, the hub's organization page) → the credit check; oss:
+  the credit check first (413 `entitlement_denied`, today's message byte for byte), then the
+  `oss` value, and NO event (unmetered by construction). The event's `userId` is the hub's `sub`,
+  never the local id. The poster (`entitlements/poster.ts`, cloud only) posts whole batches to
+  `POST <hub>/api/v1/usage/events` with a `client_credentials` token (`scope=usage:write`,
+  `resource=<hub>/mcp`) minted single-flight on `HUB_CLIENT_ID`/`SECRET`; a 404 from an older hub
+  is an outage the queue retries for about eight hours (`DEFAULT_USAGE_RETRY`), never data loss;
+  the plan read (`GET /usage/entitlements`) keeps the last known plan fifteen minutes on failure,
+  then free. Phase 1: every account is `free`, the free upload cap IS `MAX_FILE_SIZE_MB` by
+  construction, credits are a no-op; the seed values are data to review before phase 2.
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

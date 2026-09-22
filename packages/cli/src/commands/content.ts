@@ -63,35 +63,50 @@ const UPLOAD_CONCURRENCY = 4;
 const collectOption = (value: string, all: string[] | undefined): string[] => [...(all ?? []), value];
 
 /**
- * The per-blob cap the instance documents (`MAX_FILE_SIZE_MB`, 100 by
- * default). Discovery (`GET /api/v1/instance`) does not carry the value on
- * the wire today; when it does, the CLI reads it from `limits.maxFileSizeMb`
- * and this constant is the fallback for older instances.
+ * The per-file cap the instance documents (`MAX_FILE_SIZE_MB`, 100 by
+ * default): the fallback for an instance from before the billing rail,
+ * whose discovery carries no `entitlements`.
  */
 const DEFAULT_MAX_FILE_SIZE_MB = 100;
 
-/** The instance's per-file cap in bytes: discovery's `limits.maxFileSizeMb` when present, else the documented default. */
-async function resolveFileCapBytes(ctx: CliContext): Promise<number> {
+/**
+ * The instance's per-file cap in bytes, read from discovery's declared
+ * limit `files.maxBytes` (the billing rail, PRDCT-2282's ask: the upfront
+ * refusal with the right number): the `oss` value on a self-hosted instance
+ * (the operator's cap), the `free` value on the cloud (every account is on
+ * the free plan in phase 1; the plan of THIS account is what the instance
+ * answers to a refused upload, `plan_required`). null = unlimited. An older
+ * instance, or an unreachable one, gets the documented default.
+ */
+async function resolveFileCapBytes(ctx: CliContext): Promise<number | null> {
   const info = (await ctx.client.instance().catch(() => null)) as {
-    limits?: { maxFileSizeMb?: unknown };
+    edition?: unknown;
+    entitlements?: { limits?: Record<string, { oss?: unknown; free?: unknown }> };
   } | null;
-  const mb = info?.limits?.maxFileSizeMb;
-  const capMb = typeof mb === 'number' && Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_MAX_FILE_SIZE_MB;
-  return capMb * 1024 * 1024;
+  const limit = info?.entitlements?.limits?.['files.maxBytes'];
+  if (limit) {
+    const value = info?.edition === 'cloud' ? limit.free : limit.oss;
+    if (value === null) return null;
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  }
+  return DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
 }
 
 /**
  * Refuse a file over the instance cap BEFORE the upload session, the
- * precheck or any upload: the instance answers 413 to the oversized blob,
- * but only after its bytes have travelled, and after the smaller files of
- * the same push were already stored. Names the file and the cap.
+ * precheck or any upload: the instance answers a refusal to the oversized
+ * blob (413 `entitlement_denied` under the operator's cap, 403
+ * `plan_required` under the plan's), but only after its bytes have
+ * travelled, and after the smaller files of the same push were already
+ * stored. Names the file and the cap.
  */
-function refuseOverCap(scan: DeckScan, capBytes: number): void {
+function refuseOverCap(scan: DeckScan, capBytes: number | null): void {
+  if (capBytes === null) return;
   const over = scan.files.find((f) => f.sizeBytes > capBytes);
   if (!over) return;
   throw new CliUsageError(
     `${over.path} is ${fmtBytes(over.sizeBytes)}, over this instance's ${fmtBytes(capBytes)} per-file cap ` +
-      '(MAX_FILE_SIZE_MB) — nothing was uploaded. Shrink or drop the file and push again.'
+      '— nothing was uploaded. Shrink or drop the file and push again.'
   );
 }
 

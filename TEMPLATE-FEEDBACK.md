@@ -1125,3 +1125,18 @@ calls for Romain, not template bugs. Nothing here is silently fixed.
    order (`packages/cli/src/workspace.ts`, PRDCT-2419, 2026-09-19). A `tool` option on the two
    helpers, and a shared flag → env → profile resolver beside `resolveApiKey`, would let the next
    tool CLI take it from the library.
+
+## 29. The billing rail's phase 1 is chassis code to re-copy (PRDCT-2626)
+
+The chassis packages gained the billing rail's declaration layer and gate on 2026-09-22 (the
+pay-per-use billing rail spec, §7): `chassis-contract/src/entitlements.ts` (the route declaration
+registry, the tier enum mirrored from the hub, the `entitlements` shape `GET /instance` shows, the
+hub's wire schemas), `chassis-server/src/entitlements/` (the gate, the machine token, the usage
+poster, the profile cache, the hub-subject resolver, the slot guard), slot 22 `entitlements` on
+`ToolDefinition`, `BootOverrides.usageRetry` / `entitlementDials`, the queue worker handing whole
+batches to a downstream that takes them, `PgBossUsageSink`'s retry budget, the fake hub's
+`client_credentials` grant and `/api/v1/usage/*`, and the CLI's `plan_required` sentence plus its
+cap read from the declared limit. The tool template must take the copy whole; a template tool then
+declares its priced routes in its contract and fills the slot (the chassis `/files` route is priced
+by the tool's declaration, so the template's default tool.ts should carry `files.upload` on it).
+Nothing under `packages/chassis-*` names a price, a limit key or a product word.
