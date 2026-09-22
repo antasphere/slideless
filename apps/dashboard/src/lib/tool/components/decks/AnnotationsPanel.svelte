@@ -1,5 +1,6 @@
 <script lang="ts">
   import TableSkeleton from '$lib/components/shared/TableSkeleton.svelte';
+  import { docsPage } from '$lib/docs';
   import TableToolbar from '$lib/components/shared/TableToolbar.svelte';
   import { rowCount } from '$lib/components/shared/DataTable.svelte';
   import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
@@ -81,7 +82,7 @@
   }
 
   /** Where the overlay's annotations page lives on the public docs site. */
-  const ANNOTATIONS_DOCS_URL = 'https://docs.antasphere.com/slideless/sharing/annotations';
+  const ANNOTATIONS_DOCS_URL = docsPage('sharing/annotations');
 
   interface AnchorSummary {
     label: string;

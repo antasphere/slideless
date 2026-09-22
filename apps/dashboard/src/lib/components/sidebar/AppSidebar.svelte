@@ -2,6 +2,7 @@
   import { page, navigating } from '$app/state';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import NavUser from './NavUser.svelte';
+  import DocsCard from './DocsCard.svelte';
   import { buildNav, isActive as navActive } from '$lib/nav';
   import { t } from '$lib/i18n';
   import BrandTile from './BrandTile.svelte';
@@ -109,6 +110,7 @@
     {/each}
   </Sidebar.Content>
   <Sidebar.Footer>
+    <DocsCard />
     <NavUser {user} {role} {workspaceName} />
   </Sidebar.Footer>
 </Sidebar.Root>

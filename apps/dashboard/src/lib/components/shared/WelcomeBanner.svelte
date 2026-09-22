@@ -5,6 +5,7 @@
   import { reveal } from '$lib/components/ui/reveal/index.js';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
+  import { DOCS_URL } from '$lib/docs';
 
   /**
    * SL-6 first-run welcome — the SEAM, not the copy (content is a minimal
@@ -18,9 +19,6 @@
    * user permanently loses their welcome.
    */
   let { instanceName }: { instanceName: string } = $props();
-
-  /** Placeholder docs target — the product docs home (content pass owns it). */
-  const DOCS_URL = 'https://github.com/antasphere/slideless/tree/prod/docs';
 
   let dismissed = $state(false);
 

@@ -247,6 +247,15 @@ export const fr: Record<keyof typeof en, string> = {
   'welcome.docs': 'Lire la documentation',
   'welcome.dismiss': 'Fermer',
 
+  // ── The docs card at the foot of the sidebar ──────────────────────────
+  'docsCard.eyebrow': 'Docs',
+  'docsCard.title': 'Lire la documentation',
+  'docsCard.body': 'Les concepts, le CLI, le connecteur MCP, et un prompt pour votre agent.',
+  'docsCard.read': 'Ouvrir la doc',
+  'docsCard.copyPrompt': 'Copier le prompt agent',
+  'docsCard.copiedShort': 'Copié',
+  'docsCard.copied': 'Le prompt agent est dans votre presse-papiers : collez-le dans votre agent.',
+
   // ── Setup wizard ─────────────────────────────────────────────────────
   'setup.title': 'Configurez votre instance',
   'setup.description':
