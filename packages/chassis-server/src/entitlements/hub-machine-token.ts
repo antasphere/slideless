@@ -27,6 +27,8 @@ export interface HubMachineTokenOptions {
   timeoutMs?: number | undefined;
   /** Re-mint this many ms before the hub's `expires_in` runs out. */
   refreshSkewMs?: number | undefined;
+  /** How long a failed mint is held before the hub is asked again (the negative cache). */
+  failureHoldMs?: number | undefined;
   fetchImpl?: typeof fetch | undefined;
   now?: (() => number) | undefined;
 }
@@ -48,8 +50,17 @@ export class HubMachineToken {
   private readonly now: () => number;
   private readonly timeoutMs: number;
   private readonly refreshSkewMs: number;
+  private readonly failureHoldMs: number;
   private cached: { token: string; expiresAtMs: number } | null = null;
   private inflight: Promise<string> | null = null;
+  /**
+   * The negative cache: after a mint fails, `get()` throws at once until this
+   * moment instead of re-asking the hub. During an outage the first metered
+   * request of every account per TTL would otherwise pay the token timeout
+   * again; with it, one attempt per `failureHoldMs` for the whole instance.
+   */
+  private failedUntilMs = 0;
+  private lastFailure: HubMachineTokenError | null = null;
   /** How many mints reached the hub — a test seam (single-flight, refresh). */
   mints = 0;
 
@@ -59,22 +70,40 @@ export class HubMachineToken {
     this.now = opts.now ?? Date.now;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
     this.refreshSkewMs = opts.refreshSkewMs ?? 60_000;
+    this.failureHoldMs = opts.failureHoldMs ?? 5_000;
   }
 
   /** The current token, minted or refreshed as needed. Throws `HubMachineTokenError`. */
   async get(): Promise<string> {
     if (this.cached && this.cached.expiresAtMs - this.refreshSkewMs > this.now()) return this.cached.token;
+    if (this.lastFailure && this.failedUntilMs > this.now()) throw this.lastFailure;
     if (!this.inflight) {
-      this.inflight = this.mint().finally(() => {
-        this.inflight = null;
-      });
+      this.inflight = this.mint()
+        .then((token) => {
+          this.lastFailure = null;
+          return token;
+        })
+        .catch((cause: unknown) => {
+          const failure =
+            cause instanceof HubMachineTokenError
+              ? cause
+              : new HubMachineTokenError(String(cause), 'transient');
+          this.lastFailure = failure;
+          this.failedUntilMs = this.now() + this.failureHoldMs;
+          throw failure;
+        })
+        .finally(() => {
+          this.inflight = null;
+        });
     }
     return this.inflight;
   }
 
-  /** Forget the cached token (the hub answered 401 to it). */
+  /** Forget the cached token (the hub answered 401 to it) and the held failure. */
   invalidate(): void {
     this.cached = null;
+    this.lastFailure = null;
+    this.failedUntilMs = 0;
   }
 
   private async mint(): Promise<string> {

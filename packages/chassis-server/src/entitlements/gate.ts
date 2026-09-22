@@ -145,6 +145,13 @@ function planRefusal(c: Context, message: string, details: PlanRequiredDetails):
 /**
  * The plan checks (feature, then limit) of one request on the cloud edition.
  * Returns the refusal, or null when the plan allows the action.
+ *
+ * A limit is judged on what the request DECLARES before the handler (an
+ * upload's Content-Length): a client that sends none is not held to the plan's
+ * value here, only to the instance's hard caps (the body limits and the
+ * services' mid-stream ceilings). Accepted for phase 1, where every plan
+ * value equals the env cap; the day a tier value sits below the cap, the
+ * handler's stored size must be judged too (verifier round 1, PRDCT-2626).
  */
 function planCheck(
   c: Context,

@@ -7,7 +7,6 @@ import {
   createDatabase,
   createTestApp,
   extractCookie,
-  readJson,
   startPostgres,
   type TestApp,
   host
@@ -28,6 +27,9 @@ let container: StartedPostgreSqlContainer;
 let app: TestApp;
 let cookie: string;
 const receivedUsage: UsageEvent[] = [];
+/** What the worker handed the downstream: whole batches, and how many single emits (expected none). */
+const batches: UsageEvent[][] = [];
+let singles = 0;
 
 const json = (body: unknown) => ({
   method: 'POST',
@@ -43,7 +45,12 @@ beforeAll(async () => {
     {
       usageDownstream: {
         async emit(event) {
+          singles += 1;
           receivedUsage.push(event);
+        },
+        async emitBatch(events) {
+          batches.push([...events]);
+          receivedUsage.push(...events);
         }
       }
     }
@@ -148,7 +155,9 @@ describe('usage pipeline end-to-end (seam proof)', () => {
     expect(receivedUsage).toEqual([]);
 
     // ...while the durable pipeline itself (the sink → pg-boss → the
-    // downstream, what the cloud poster rides) stays proven from the seam.
+    // downstream, what the cloud poster rides) stays proven from the seam:
+    // the worker hands the drained batch WHOLE to a downstream that takes
+    // batches (one hub post per batch, never one per event).
     const event: UsageEvent = {
       id: '01JZZZZZZZZZZZZZZZZZZZZZZ0',
       meter: 'files.upload',
@@ -169,5 +178,7 @@ describe('usage pipeline end-to-end (seam proof)', () => {
       await new Promise((r) => setTimeout(r, 250));
     }
     expect(receivedUsage).toEqual([event]);
+    expect(batches).toEqual([[event]]);
+    expect(singles).toBe(0);
   }, 30_000);
 });

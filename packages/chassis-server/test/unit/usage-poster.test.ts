@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UsageEvent } from '@antasphere/chassis-contract';
 import { HubMachineToken, HubUsagePoster } from '@antasphere/chassis-server';
+import { DEFAULT_USAGE_RETRY, PgBossUsageSink } from '../../src/jobs/index.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
 
 /**
@@ -222,5 +223,62 @@ describe('HubMachineToken', () => {
     expect(mints).toBe(2);
     token.invalidate();
     expect(await token.get()).toBe('mach_3');
+  });
+
+  it('holds a failed mint for the negative-cache window, then asks again; invalidate clears the hold', async () => {
+    let now = 1_000_000;
+    let attempts = 0;
+    let mode: 'down' | 'ok' = 'down';
+    const fetchImpl = (async () => {
+      attempts += 1;
+      if (mode === 'down') throw new TypeError('fetch failed');
+      return Response.json({ access_token: `mach_${attempts}`, expires_in: 900 });
+    }) as unknown as typeof fetch;
+    const token = new HubMachineToken({
+      issuerUrl: ISSUER,
+      clientId: 'tool-things',
+      clientSecret: 's'.repeat(20),
+      resource: `${ISSUER}/mcp`,
+      logger,
+      fetchImpl,
+      now: () => now,
+      failureHoldMs: 5_000
+    });
+    await expect(token.get()).rejects.toThrow(/unreachable/);
+    await expect(token.get()).rejects.toThrow(/unreachable/);
+    expect(attempts).toBe(1); // the second get did not ask the hub
+    now += 5_001;
+    await expect(token.get()).rejects.toThrow(/unreachable/);
+    expect(attempts).toBe(2);
+    token.invalidate();
+    mode = 'ok';
+    expect(await token.get()).toBe('mach_3');
+  });
+});
+
+describe('PgBossUsageSink', () => {
+  it('sends with the ULID as singleton key and the default retry budget of ten retries from thirty seconds, backing off', async () => {
+    const sends: Array<{ queue: string; data: unknown; options: Record<string, unknown> }> = [];
+    const boss = {
+      send: async (queue: string, data: unknown, options: Record<string, unknown>) => {
+        sends.push({ queue, data, options });
+        return 'job-1';
+      }
+    };
+    const sink = new PgBossUsageSink(boss as never, logger);
+    const e = event('01JZZZZZZZZZZZZZZZZZZZZZZ9');
+    await sink.emit(e);
+    expect(DEFAULT_USAGE_RETRY).toEqual({ limit: 10, delaySeconds: 30 });
+    expect(sends).toEqual([
+      {
+        queue: 'usage-events',
+        data: e,
+        options: { singletonKey: e.id, retryLimit: 10, retryDelay: 30, retryBackoff: true }
+      }
+    ]);
+    // A shrunk budget (a test seam) is passed through as given.
+    const fast = new PgBossUsageSink(boss as never, logger, { limit: 2, delaySeconds: 1 });
+    await fast.emit(e);
+    expect(sends[1]!.options).toMatchObject({ retryLimit: 2, retryDelay: 1 });
   });
 });

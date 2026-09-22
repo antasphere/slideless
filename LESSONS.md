@@ -1311,7 +1311,7 @@ migrate` on an unchanged schema):
   (`DECK_ROUTE_ENTITLEMENTS`, `@slideless/contract/routes`, built from the route objects so a
   typo throws at module load) and ONE gate in `create-api.ts` enforces it after the scope gate and
   emits after a 2xx. The chassis' own `/files` route is priced by the TOOL's declaration too:
-  `git grep -i 'files.maxBytes\|presentations.commit' -- 'packages/chassis-*'` stays empty. A
+  `git grep -i 'files.maxBytes\|presentations.commit' -- 'packages/chassis-*/src'` stays empty. A
   handler that checks or emits by hand is the regression.
 - **The gate reads what the handler recorded for its audit row.** `c.set('audit', { …, metadata:
 { sizeBytes } })` is where the stored size and the created resource live; the declaration's

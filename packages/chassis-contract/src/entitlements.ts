@@ -107,7 +107,7 @@ export interface ActorRef {
 }
 
 export interface MeterDeclaration {
-  /** The action key, namespaced by the tool's price book (`presentations.commit`). */
+  /** The action key, namespaced by the tool's price book (`things.publish`). */
   key: string;
   /** The unit the price is per (`call`, `bytes`, `items`). */
   unit: string;
@@ -118,7 +118,7 @@ export interface MeterDeclaration {
 }
 
 export interface LimitDeclaration {
-  /** The limit key (`files.maxBytes`), declared with its per-tier values in the tool's `entitlements` slot. */
+  /** The limit key (`things.maxBytes`), declared with its per-tier values in the tool's `entitlements` slot. */
   key: string;
   /** The value this request observes, compared against the tier's value; over it is a plan refusal. */
   value: (ctx: EntitlementRequest) => number;
@@ -127,7 +127,7 @@ export interface LimitDeclaration {
 export interface RouteEntitlement {
   meter?: MeterDeclaration | undefined;
   limit?: LimitDeclaration | undefined;
-  /** A feature key (`custom_domain`), declared with its per-tier switch in the tool's `entitlements` slot. */
+  /** A feature key (`things.premium`), declared with its per-tier switch in the tool's `entitlements` slot. */
   feature?: string | undefined;
 }
 

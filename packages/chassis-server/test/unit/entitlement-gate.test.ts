@@ -47,6 +47,11 @@ const ROUTES = declareRouteEntitlements([
     limit: { key: 'files.maxBytes', value: declaredContentLength }
   },
   { route: { method: 'post', path: '/things/{id}/premium' }, feature: 'premium' },
+  {
+    route: { method: 'post', path: '/premium-files' },
+    feature: 'premium',
+    limit: { key: 'files.maxBytes', value: declaredContentLength }
+  },
   { route: { method: 'post', path: '/things/{id}/nowhere' }, feature: 'nowhere' },
   {
     route: { method: 'post', path: '/owned/{id}' },
@@ -150,6 +155,7 @@ function fixture(opts: {
   app.post('/things', handler);
   app.post('/files', handler);
   app.post('/things/:id/premium', handler);
+  app.post('/premium-files', handler);
   app.post('/things/:id/nowhere', handler);
   app.post('/owned/:id', handler);
   return { app, emitted, checks, hub };
@@ -225,6 +231,29 @@ describe('the gate on cloud, a hub-projected workspace', () => {
     expect(f.checks).toEqual([]);
     await tick();
     expect(f.emitted).toEqual([]);
+  });
+
+  it('the feature is judged before the limit: a request refused on both names the feature', async () => {
+    const f = fixture({ cloud: true, principal: principal() });
+    const res = await f.app.request('/premium-files', {
+      method: 'POST',
+      headers: { 'content-length': '60' },
+      body: 'x'.repeat(60)
+    });
+    expect(res.status).toBe(403);
+    expect((await errorOf(res)).error.details).toMatchObject({ key: 'premium', requiredPlan: 'pro' });
+    // A pro account passes the feature and is then held to the pro limit.
+    const pro = fixture({ cloud: true, principal: principal(), hubProfile: { plan: 'pro' } });
+    const over = await pro.app.request('/premium-files', {
+      method: 'POST',
+      headers: { 'content-length': '600' },
+      body: 'x'.repeat(600)
+    });
+    expect((await errorOf(over)).error.details).toMatchObject({
+      key: 'files.maxBytes',
+      plan: 'pro',
+      requiredPlan: null
+    });
   });
 
   it('a feature the plan lacks is 403 plan_required naming the plan that has it; one no plan has says so', async () => {

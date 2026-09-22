@@ -275,6 +275,54 @@ describe('one metered route, three surfaces, every event in the hub', () => {
   });
 });
 
+describe('an idempotency replay is metered once', () => {
+  it('the same share link created twice under one Idempotency-Key lands one event', async () => {
+    const person = await hubPerson({
+      sub: 'hub-meter-idem',
+      email: 'idem@meter.test',
+      name: 'Meter Idem',
+      workspaceId: '77777777-aaaa-4bbb-8ccc-00000000ab03',
+      role: 'owner',
+      workspaceName: 'Org Idem'
+    });
+    const result = await mcpTool(person.key, 'slideless_upload_html_presentation', {
+      html: HTML + '<!-- idem -->'
+    });
+    expect(result.isError, result.text).toBe(false);
+    const list = await app.app.request('/api/v1/presentations', {
+      headers: { authorization: `Bearer ${person.key}`, 'x-forwarded-for': sso.nextIp() }
+    });
+    const deckId = (await readJson(list)).presentations[0].id as string;
+    await until(
+      () => events().filter((e) => e.accountRef === '77777777-aaaa-4bbb-8ccc-00000000ab03').length,
+      (n) => n >= 2
+    );
+    const before = events().length;
+    const key = `meter-idem-${Date.now()}`;
+    const first = await app.app.request(
+      `/api/v1/presentations/${deckId}/tokens`,
+      json({ name: 'idem' }, { authorization: `Bearer ${person.key}`, 'idempotency-key': key })
+    );
+    expect(first.status, await first.clone().text()).toBe(201);
+    const replay = await app.app.request(
+      `/api/v1/presentations/${deckId}/tokens`,
+      json({ name: 'idem' }, { authorization: `Bearer ${person.key}`, 'idempotency-key': key })
+    );
+    expect(replay.status).toBe(201);
+    expect(replay.headers.get('idempotency-replayed')).toBe('true');
+    await until(
+      () => events().length,
+      (n) => n >= before + 1
+    );
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(
+      events()
+        .slice(before)
+        .map((e) => e.actionKey)
+    ).toEqual(['share_tokens.create']);
+  });
+});
+
 describe('a plan refusal carries the upgrade link on the three surfaces', () => {
   let tight: Person;
 
