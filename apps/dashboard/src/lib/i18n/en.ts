@@ -244,6 +244,15 @@ export const en = {
   'welcome.docs': 'Read the docs',
   'welcome.dismiss': 'Dismiss',
 
+  // ── The docs card at the foot of the sidebar ──────────────────────────
+  'docsCard.eyebrow': 'Docs',
+  'docsCard.title': 'Read the docs',
+  'docsCard.body': 'The concepts, the CLI, the MCP connector, and a prompt for your agent.',
+  'docsCard.read': 'Open the docs',
+  'docsCard.copyPrompt': 'Copy agent prompt',
+  'docsCard.copiedShort': 'Copied',
+  'docsCard.copied': 'The agent prompt is on your clipboard — paste it into your agent.',
+
   // ── Setup wizard ─────────────────────────────────────────────────────
   'setup.title': 'Set up your instance',
   'setup.description':
