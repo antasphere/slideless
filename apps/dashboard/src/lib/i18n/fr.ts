@@ -472,6 +472,8 @@ export const fr: Record<keyof typeof en, string> = {
     'La suppression de votre compte est définitive : votre compte et vos sessions sont supprimés et vos clés API cessent de fonctionner. Les fichiers que vous avez téléversés restent dans l’espace de travail ; l’historique d’audit est conservé anonymisé.',
   'account.dangerScope':
     'Elle vous retire de tous les espaces de travail de cette instance, pas seulement de celui où vous êtes, et elle est irréversible.',
+  'account.dangerDecksNote':
+    'Vos présentations restent dans leurs espaces de travail et leurs liens de partage continuent de fonctionner ; elles n’ont simplement plus de propriétaire. Supprimez-les d’abord si vous voulez qu’elles disparaissent.',
   'account.dangerHubNote':
     'Votre compte Antasphere lui-même n’est pas concerné : vous pourrez vous reconnecter plus tard, et un nouveau compte vide sera créé ici.',
   'account.deleteContinueHub': 'Continuer avec Antasphere pour supprimer',

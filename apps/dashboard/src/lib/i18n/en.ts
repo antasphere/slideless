@@ -461,6 +461,8 @@ export const en = {
     'Deleting your account is permanent: your account and sessions are removed and your API keys stop working. Files you uploaded remain with the workspace; audit history is kept anonymized.',
   'account.dangerScope':
     'It removes you from every workspace on this instance, not only the one you are in, and it cannot be undone.',
+  'account.dangerDecksNote':
+    'Your decks stay in their workspaces and their share links keep working; they just no longer have an owner. Delete them first if you want them gone.',
   'account.dangerHubNote':
     'Your Antasphere account itself is not affected: you can sign in again later, and a new, empty account is created here.',
   'account.deleteContinueHub': 'Continue with Antasphere to delete',

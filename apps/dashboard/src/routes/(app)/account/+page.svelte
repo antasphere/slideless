@@ -631,6 +631,9 @@
              identity survives — deletion here is never a cross-tool act. -->
         {t('account.dangerDescription')}
         {t('account.dangerScope')}
+        <!-- Slideless's own word: decks are workspace data (owner_user_id set
+             null on erasure), so they outlive the account. -->
+        {t('account.dangerDecksNote')}
         {#if hubSignIn}
           {t('account.dangerHubNote')}
         {/if}
