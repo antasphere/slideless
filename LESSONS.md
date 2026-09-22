@@ -1376,7 +1376,8 @@ migrate` on an unchanged schema):
   slot now declares DATA (`BodyCap`), the chassis builds the middleware, and when the matched
   route carries a limit-judging gate (`isDeferringGate`, keyed on the gate handler itself, never on
   a re-reading of the path) the refusal is parked on the context (`bodyRefusal`) for the gate to
-  fire after the plan check, with the request's body DROPPED (`new Request(raw, { body: null })`)
+  fire after the plan check, with the request's body DROPPED (rebuilt from the URL, the method and
+  the headers: `new Request(raw, { body: null })` KEEPS the input's body, the Fetch spec's rule)
   so no middleware between the cap and the gate can read a byte of it, whatever the order (the
   first cut asked two body readers to step aside; /code-review pointed at the third). Test a plan
   refusal on the phase-1 profile with a declared size over the REAL cap

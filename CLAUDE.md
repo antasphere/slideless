@@ -260,7 +260,8 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   (`DEFAULT_USAGE_RETRY`), and the budget's END is a hold, never a loss (PRDCT-2635): the batch
   moves to `usage-events-held` (the usage QUEUE's dead letter, set by the worker boot, never
   named on a send: an api-role replica must be able to send before the worker of a release has
-  booted; the dead-letter copy carries the original retry limit and no delay, pg-boss 10's rule),
+  booted; pg-boss stamps it on each job row at insert, so a job sent before that worker's install
+  carries none; the dead-letter copy carries the original retry limit and no delay, pg-boss 10's rule),
   is logged at error level and counted (`usage_events_held_total`),
   and comes back through the queue every hour until the hub accepts it; the poster's per-event
   and per-batch outcomes are on `/metrics` (`usage_poster_events_total`, `usage_poster_batches_total`).
