@@ -630,6 +630,7 @@ export const en = {
   'billing.upgradeTitle': 'This needs a higher plan',
   'billing.upgradeDescription': 'The {requiredPlan} plan allows it.',
   'billing.upgradeDescriptionNoPlan': 'No plan allows it on this instance.',
+  'billing.noPlanTitle': 'Not allowed on any plan here',
   'billing.upgradeAction': 'Upgrade the plan',
   'billing.topUpTitle': 'Not enough credits',
   'billing.topUpDescription': 'This needs {credits} credits; your organization holds {balance}.',

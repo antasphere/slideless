@@ -45,11 +45,16 @@ describe('refusalCard', () => {
     expect(card?.description).toContain('pro');
   });
 
-  it('403 plan_required with no plan that allows it: the no-plan sentence', () => {
+  it('403 plan_required with no plan that allows it: the no-plan card, no button to a page that cannot help', () => {
     const card = refusalCard(planRequired(null));
-    expect(card?.kind).toBe('upgrade');
-    expect(card?.description).toBe(en['billing.upgradeDescriptionNoPlan']);
-    expect(card?.url).toBe(UPGRADE_URL);
+    expect(card).toEqual({
+      kind: 'upgrade',
+      title: en['billing.noPlanTitle'],
+      description: en['billing.upgradeDescriptionNoPlan'],
+      action: null,
+      url: null
+    });
+    expect(card?.title).not.toBe(en['billing.upgradeTitle']);
   });
 
   it('402 entitlement_denied: the top-up card, with the price, the balance and the link', () => {
@@ -101,6 +106,18 @@ describe('toastApiError', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('the no-plan card is a toast with its sentence and NO action', () => {
+    toastApiError(planRequired(null), 'Upload failed');
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+    const [title, options] = toastMock.error.mock.calls[0] as [
+      string,
+      { description: string; action?: unknown }
+    ];
+    expect(title).toBe(en['billing.noPlanTitle']);
+    expect(options.description).toBe(en['billing.upgradeDescriptionNoPlan']);
+    expect(options.action).toBeUndefined();
   });
 
   it('anything else is the error message, as before', () => {

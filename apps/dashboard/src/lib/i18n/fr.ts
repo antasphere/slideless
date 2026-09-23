@@ -644,6 +644,7 @@ export const fr: Record<keyof typeof en, string> = {
   'billing.upgradeTitle': 'Il faut un forfait supérieur',
   'billing.upgradeDescription': 'Le forfait {requiredPlan} le permet.',
   'billing.upgradeDescriptionNoPlan': 'Aucun forfait ne le permet sur cette instance.',
+  'billing.noPlanTitle': 'Aucun forfait ne le permet ici',
   'billing.upgradeAction': 'Changer de forfait',
   'billing.topUpTitle': 'Crédits insuffisants',
   'billing.topUpDescription': 'Il faut {credits} crédits ; votre organisation en a {balance}.',

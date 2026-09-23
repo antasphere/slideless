@@ -19,8 +19,9 @@ export interface RefusalCard {
   kind: 'upgrade' | 'top-up';
   title: string;
   description: string;
-  action: string;
-  url: string;
+  /** The button's label and its link; null when no page can help (no plan allows the action). */
+  action: string | null;
+  url: string | null;
 }
 
 function detailsOf(e: PlatformApiError): Record<string, unknown> | null {
@@ -36,13 +37,22 @@ export function refusalCard(e: unknown): RefusalCard | null {
   const details = detailsOf(e);
   if (!details) return null;
   if (e.code === 'plan_required' && typeof details.upgradeUrl === 'string') {
+    if (typeof details.requiredPlan !== 'string') {
+      // No tier allows it (today's cloud, where the paid cap equals the free
+      // one): a button to a plan page would send the person to buy what will
+      // not help (verifier round 1), so the card says so and offers nothing.
+      return {
+        kind: 'upgrade',
+        title: t('billing.noPlanTitle'),
+        description: t('billing.upgradeDescriptionNoPlan'),
+        action: null,
+        url: null
+      };
+    }
     return {
       kind: 'upgrade',
       title: t('billing.upgradeTitle'),
-      description:
-        typeof details.requiredPlan === 'string'
-          ? t('billing.upgradeDescription', { requiredPlan: details.requiredPlan })
-          : t('billing.upgradeDescriptionNoPlan'),
+      description: t('billing.upgradeDescription', { requiredPlan: details.requiredPlan }),
       action: t('billing.upgradeAction'),
       url: details.upgradeUrl
     };
@@ -70,12 +80,12 @@ export function refusalCard(e: unknown): RefusalCard | null {
 export function toastApiError(e: unknown, fallback: string): void {
   const card = refusalCard(e);
   if (card) {
+    const { action, url } = card;
     toast.error(card.title, {
       description: card.description,
-      action: {
-        label: card.action,
-        onClick: () => window.open(card.url, '_blank', 'noopener,noreferrer')
-      }
+      ...(action && url
+        ? { action: { label: action, onClick: () => window.open(url, '_blank', 'noopener,noreferrer') } }
+        : {})
     });
     return;
   }
