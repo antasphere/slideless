@@ -157,7 +157,7 @@
   }
   .acts {
     position: relative;
-    padding: 10px 12px 12px;
+    padding: 14px 12px 12px;
   }
   .acts :global(button) {
     width: 100%;
