@@ -35,7 +35,7 @@
   import DeckBannerDrawing from './drawings/DeckBannerDrawing.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { kindLabel, PREVIEW_SANDBOX } from '$lib/tool/decks';
+  import { isPreviewToken, kindLabel, PREVIEW_SANDBOX } from '$lib/tool/decks';
   import { canPreviewDeck, createPreviewController } from '$lib/tool/decks/preview.svelte';
   import { formatDateTime, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
@@ -176,8 +176,11 @@
   let collaboratorsCount = $state<number | undefined>(undefined);
   let notesCount = $state<number | undefined>(undefined);
   let responsesCount = $state<number | undefined>(undefined);
+  // the links the table shows: the page's own preview tokens are plumbing, not shares
   const linksCount = $derived(
-    tokensList.loading || tokensList.nextCursor || tokensList.error ? undefined : tokensList.items.length
+    tokensList.loading || tokensList.nextCursor || tokensList.error
+      ? undefined
+      : tokensList.items.filter((token) => !isPreviewToken(token)).length
   );
 
   const tabs = $derived.by((): DeckTab[] => [
