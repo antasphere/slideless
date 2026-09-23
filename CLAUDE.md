@@ -290,7 +290,8 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   (`packages/contract/wire/hub-tool-messages.json` of the hub); `packages/chassis-contract/src/entitlements.ts`
   mirrors them, and `pnpm --filter @antasphere/chassis-contract wire:check` (the `hub-wire` CI job,
   against the hub's `dev`) fails on any difference. The check's `unpriceable` reason is a 413
-  `entitlement_denied` refusal, never an outage.
+  `entitlement_denied` refusal with the price and the balance and no top-up link (a link would draw
+  the dashboard's and the CLI's top-up card), never an outage.
 - **The chassis asks the hub before a priced action, and refuses on its answer (PRDCT-2664, phase 2
   of the billing rail, spec §7 steps 3 and 4)**: on a metered account (cloud, an `accountRef`) the
   gate's third step is `HubCreditCheck` (`packages/chassis-server/src/entitlements/check.ts`), one

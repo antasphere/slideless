@@ -475,7 +475,7 @@ describe('the gate on cloud, a hub-projected workspace', () => {
     expect(closed.emitted).toEqual([]);
   });
 
-  it('a quantity the hub cannot price is 413 entitlement_denied with the price, the balance and the top-up link, and emits nothing (PRDCT-2677)', async () => {
+  it('a quantity the hub cannot price is 413 entitlement_denied with the price and the balance, no top-up link, and emits nothing (PRDCT-2677)', async () => {
     const topUpUrl = 'https://hub.test/billing/top-up?org=acct-1&credits=9007199254740991&balance=3';
     const f = fixture({
       cloud: true,
@@ -506,7 +506,8 @@ describe('the gate on cloud, a hub-projected workspace', () => {
         code: 'entitlement_denied',
         message:
           'This quantity cannot be priced (9007199254740991 credits or more, the organization holds 3); nothing was charged',
-        details: { credits: Number.MAX_SAFE_INTEGER, balance: 3, topUpUrl }
+        // No link: a top-up cannot cover it, and a link would draw the top-up card (verifier round 1).
+        details: { credits: Number.MAX_SAFE_INTEGER, balance: 3 }
       }
     });
     await tick();

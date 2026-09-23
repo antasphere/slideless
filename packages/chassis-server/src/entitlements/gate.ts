@@ -49,10 +49,10 @@ import { defaultProfile, type EntitlementProfiles, type ResolvedProfile } from '
  *   5. the credit check at the hub (`cloud.credits`, `POST /usage/check`,
  *      the price of THIS quantity against the organization's balance):
  *      402 `entitlement_denied` + `details: { credits, balance, topUpUrl }`
- *      when the balance is short, 413 `entitlement_denied` with the same
- *      details for a quantity the hub cannot price (`unpriceable`: past
- *      `Number.MAX_SAFE_INTEGER` credits, beside the instance-limit 413;
- *      PRDCT-2677), 403 `account_suspended` for a suspended
+ *      when the balance is short, 413 `entitlement_denied` with the price
+ *      and the balance but no top-up link for a quantity the hub cannot
+ *      price (`unpriceable`: past `Number.MAX_SAFE_INTEGER` credits, beside
+ *      the instance-limit 413; PRDCT-2677), 403 `account_suspended` for a suspended
  *      organization, 403 `hub_unavailable` once an outage has outlasted the
  *      fail-open window (the live gate's own codes and wording). The LOCAL
  *      `entitlements.check` is NOT asked here: the plan limit is the cap of
@@ -409,14 +409,21 @@ async function creditRefusal(
     topUpUrl: verdict.check?.topUpUrl ?? cloud.upgradeUrl
   };
   // A price past `Number.MAX_SAFE_INTEGER` (the hub clamps `credits` to it):
-  // a refusal of the quantity, never an outage, and no top-up would cover it
-  // (PRDCT-2677). The instance-limit 413's code, with the figures.
+  // a refusal of the quantity, never an outage (PRDCT-2677). The
+  // instance-limit 413's code, with the price and the balance and NO top-up
+  // link: no top-up covers it, and the dashboard's and the CLI's readers
+  // present a top-up card on any `entitlement_denied` whose details carry
+  // `topUpUrl` (verifier round 1).
   if (verdict.reason === 'unpriceable') {
+    const figures: Pick<EntitlementDeniedDetails, 'credits' | 'balance'> = {
+      credits: details.credits,
+      balance: details.balance
+    };
     return c.json(
       err(
         ENTITLEMENT_DENIED,
-        `This quantity cannot be priced (${details.credits} credits or more, the organization holds ${details.balance}); nothing was charged`,
-        details
+        `This quantity cannot be priced (${figures.credits} credits or more, the organization holds ${figures.balance}); nothing was charged`,
+        figures
       ),
       413
     );

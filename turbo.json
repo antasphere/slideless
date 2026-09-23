@@ -29,6 +29,10 @@
     "test:e2e": {
       "cache": false,
       "passThroughEnv": ["PW_SMOKE_PORT", "PW_SMOKE_PG_PASSWORD"]
+    },
+    "@antasphere/chassis-contract#test": {
+      "dependsOn": ["^build"],
+      "cache": false
     }
   },
   "globalPassThroughEnv": ["HUB_WIRE_SNAPSHOT"]
