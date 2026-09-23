@@ -20,6 +20,7 @@
   import { page } from '$app/state';
   import { copyText } from '$lib/clipboard';
   import { refreshSession } from '$lib/session';
+  import { clearHintCookieClientSide, ssoDiscovery } from '$lib/sso';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
 
@@ -243,6 +244,17 @@
           // e.g. the last-owner guard — surface the server's message verbatim.
           deleteError = err.message || t('account.deleteFailed');
         }
+        return;
+      }
+      // The account is gone; the hub session is not. On cloud the login page
+      // would silently re-connect off the hub hint and mint a new, empty
+      // account within seconds, so land the way a sign-out lands: the hint
+      // cleared and the signed-out marker set, which is what keeps the
+      // silent auto-connect from running (lib/sso.ts, gates B and C).
+      const sso = ssoDiscovery();
+      if (sso) {
+        clearHintCookieClientSide(sso);
+        window.location.assign('/login?signed_out=1');
         return;
       }
       window.location.href = '/login';
