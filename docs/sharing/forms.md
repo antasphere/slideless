@@ -278,7 +278,7 @@ Two embed rules carry over:
 
 - An answer is capped at 128 fields, 128 characters per field name, and 32 KiB serialized.
 - A deck holds at most **10,000 responses** across all its forms; past that, new submissions are refused until you delete some.
-- Submissions are rate-limited per visitor and link (30 per 10 minutes); edit-link emails are limited harder (5 per 15 minutes, also per target address).
+- Submissions are rate-limited per visitor and link (30 per 10 minutes); edit-link emails are limited harder (5 per 15 minutes, also per target address). On the Antasphere cloud, one visitor's submissions and file uploads across every link are also capped at 90 per 10 minutes, whatever the links; a link's audience is never capped as a whole.
 - Uploaded files have their own limits, set by the instance: the size of one file, the number of files on a response, and the total weight per deck. See [Who enforces what](#who-enforces-what).
 
 ## What is stored, and what is never stored

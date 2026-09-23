@@ -318,9 +318,11 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   value. The CLI's upfront refusal on the cloud reads the highest tier (it cannot know the account's
   plan; the instance refuses the plan on the declared size before reading a byte).
 - **A metered upload declares its size (PRDCT-2652)**: on a metered account, a POST/PUT/PATCH with no
-  `Content-Length` on a route that declares a plan limit answers 411 `length_required` before the
+  `Content-Length` on a route whose limit READS the declared length (`limit.value ===
+declaredContentLength`) or whose meter is in bytes answers 411 `length_required` before the
   handler, since a body judged as 0 bytes passed the plan limit whatever its size and a stored blob
-  is content-addressed (a rollback could delete what another deck references). Every first-party
+  is content-addressed (a rollback could delete what another deck references); a count limit on a
+  JSON route demands no size. Every first-party
   caller (the SDKs, the MCP kit's in-process call) declares it; oss and cloud-local workspaces are
   untouched.
 - **An anonymous surface pays through the resource's owner, and the viewer learns nothing
@@ -338,7 +340,13 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   `DECK_ROUTE_ENTITLEMENTS` carries no hooks (a client's read); the server always builds its own.
   The upload handler records `audit.metadata.sizeBytes` so the emit meters the bytes kept. A
   deduplicated upload is billed at the bytes RECEIVED (PRDCT-2655, the same ruling), and the
-  price label says so.
+  price label says so. **A route that declares an `actor` hook is a viewer's surface whatever the
+  credential**: a person signed in to any workspace who holds the link is a viewer there, the hook
+  alone names the payer, and a null or throwing hook leaves the route with nothing metered, never a
+  fallback to the signed-in person. In front of the two doors, on cloud only, a wall of 90 requests
+  per ten minutes PER ADDRESS (`viewerFormGate`, the tool's `rateLimits` slot) bounds what one holder
+  can make the instance ask the hub; never key it on the share secret, which caps a link's whole
+  audience (verifier round 5), and never install it on oss, where the gate asks nothing.
 - **The poster never posts what the hub would refuse on its date (PRDCT-2644)**: the hub's window
   (`USAGE_EVENT_MAX_PAST_MS` seven days, `USAGE_EVENT_MAX_FUTURE_MS` five minutes,
   `usageEventOccurrenceIssue`, mirrored with the hub's names and messages in `chassis-contract`,

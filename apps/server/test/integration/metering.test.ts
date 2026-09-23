@@ -862,14 +862,14 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
   const ownerKey = () => ({ authorization: `Bearer ${owner.key}` });
 
   /** The viewer's requests: no cookie, no bearer, only what the forms runtime sends. */
-  const respond = (secret: string, who: string) =>
+  const respond = (secret: string, who: string, ip = sso.nextIp()) =>
     app.app.request(`/api/v1/viewer/${secret}/forms/${FORM}/responses`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': sso.nextIp() },
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': ip },
       body: JSON.stringify({ payload: { who } })
     });
   /** `declare: false` sends NO Content-Length (`app.request` adds none for a buffer body). */
-  const uploadFile = (secret: string, bytes: Uint8Array, declare = true) => {
+  const uploadFile = (secret: string, bytes: Uint8Array, declare = true, ip = sso.nextIp()) => {
     const qs = new URLSearchParams({ field: 'docs', name: 'doc.txt', type: 'text/plain' });
     return app.app.request(`/api/v1/viewer/${secret}/forms/${FORM}/uploads?${qs.toString()}`, {
       method: 'POST',
@@ -877,7 +877,7 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
         'content-type': 'application/octet-stream',
         ...(declare ? { 'content-length': String(bytes.length) } : {}),
         origin: 'null',
-        'x-forwarded-for': sso.nextIp()
+        'x-forwarded-for': ip
       },
       body: bytes
     });
@@ -1259,27 +1259,35 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
     }
   });
 
-  it('the wall in front of the doors: the 91st request in ten minutes on one share link is 429 rate_limited before any check, on either door', async () => {
-    // A fresh secret: its bucket starts full at 90.
+  it('the wall in front of the doors is per visitor, never per link: one address’s 91st request is 429 before any check, another visitor on the same link still passes', async () => {
     const wall = await mintLink('wall');
+    const other = await mintLink('wall-2');
     hub.setBalance(ORG_FORMS, 0);
     try {
-      // Each from a fresh address: only the per-secret key drains.
+      // One visitor, one address: every allowed-through request is a 402 after a check, nothing lands.
+      const visitor = sso.nextIp();
       const statuses: number[] = [];
-      for (let i = 0; i < 90; i++) statuses.push((await respond(wall.secret, `Wall ${i}`)).status);
+      for (let i = 0; i < 90; i++) statuses.push((await respond(wall.secret, `Wall ${i}`, visitor)).status);
       expect(statuses.filter((s) => s !== 402)).toEqual([]);
 
       const checks = hub.checkRequests.length;
       const posted = eventsOf().length;
-      // The 91st on the OTHER door: one bucket per secret across both doors.
-      const upload = await uploadFile(wall.secret, new TextEncoder().encode('walled'));
+      // The 91st from the same address, on the OTHER door: one bucket per address across both doors.
+      const upload = await uploadFile(wall.secret, new TextEncoder().encode('walled'), true, visitor);
       expect(upload.status, await upload.clone().text()).toBe(429);
       expect((await readJson(upload)).error.code).toBe('rate_limited');
       expect(hub.checkRequests).toHaveLength(checks);
-      const res = await respond(wall.secret, 'Walled');
-      expect(res.status, await res.clone().text()).toBe(429);
-      expect((await readJson(res)).error.code).toBe('rate_limited');
+      // The 92nd from the same address on ANOTHER link: the key is the address, across links.
+      const elsewhere = await respond(other.secret, 'Walled elsewhere', visitor);
+      expect(elsewhere.status, await elsewhere.clone().text()).toBe(429);
+      expect((await readJson(elsewhere)).error.code).toBe('rate_limited');
       expect(hub.checkRequests).toHaveLength(checks);
+
+      // Another visitor on the same link: the audience is not capped, the check runs for them.
+      const stranger = await respond(wall.secret, 'Another visitor', sso.nextIp());
+      expect(stranger.status, await stranger.clone().text()).toBe(402);
+      expect(hub.checkRequests).toHaveLength(checks + 1);
+
       await expectNothingPosted(posted);
       expect(hub.balanceOf(ORG_FORMS)).toBe(0);
     } finally {

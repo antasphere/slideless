@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import type { Context } from 'hono';
 import { createDb } from '@slideless/db';
 import { IDENTITY } from '@slideless/contract';
 import {
@@ -246,22 +245,21 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
 
       // Collaborator claims are invitation acceptances in per-deck clothing —
       // the same public token-redemption surface, the same wall.
-      rateLimits: (api, { limiters, clientIp }) => {
+      rateLimits: (api, { limiters, clientIp, hubSso }) => {
         api.use('/collaborators/claim', rateLimit(limiters.invitationAccept, clientIp));
         api.use('/collaborators/lookup', rateLimit(limiters.invitationAccept, clientIp));
-        // The two priced viewer doors (PRDCT-2634): a per-address, per-secret
-        // wall runs here, BEFORE the billing gate's owner lookup and hub
-        // check, so a share-link holder cannot make the instance ask the hub
-        // on every request unchecked (the code review).
-        const bySecret = async (c: Context) => [c.req.param('secret') ?? ''];
-        api.use(
-          '/viewer/:secret/forms/:form/responses',
-          rateLimit(limiters.viewerFormGate, clientIp, bySecret)
-        );
-        api.use(
-          '/viewer/:secret/forms/:form/uploads',
-          rateLimit(limiters.viewerFormGate, clientIp, bySecret)
-        );
+        // The two priced viewer doors (PRDCT-2634): a per-ADDRESS wall runs
+        // here, BEFORE the billing gate's owner lookup and hub check, so one
+        // share-link holder cannot make the instance ask the hub on every
+        // request unchecked (the code review). The address alone is the key:
+        // a key on the share secret would cap a link's whole audience
+        // (verifier round 5), and the handlers' own walls behind the gate are
+        // already per address AND link. Cloud only, where the gate asks the
+        // hub: on oss the doors keep their handler walls and nothing else.
+        if (hubSso) {
+          api.use('/viewer/:secret/forms/:form/responses', rateLimit(limiters.viewerFormGate, clientIp));
+          api.use('/viewer/:secret/forms/:form/uploads', rateLimit(limiters.viewerFormGate, clientIp));
+        }
       },
 
       filePolicy: ({ presentations: presentationService }) => ({

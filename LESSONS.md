@@ -1475,3 +1475,11 @@ migrate` on an unchanged schema):
   anonymous doors are `{ method, path }` objects in the routes module; `route-coverage.test.ts`
   walks every such object. The guard now skips `/viewer/` paths by design (a token recipient is not
   an SDK caller); a new anonymous route needs no method, a new principal route still does.
+- **A wall in front of a public door is keyed on the caller, never on the resource.** The code
+  review asked for a limiter ahead of the billing gate on the two form doors; the first shape
+  consumed a point per address AND per share secret, and the per-secret half capped a link's whole
+  audience at 90 respondents per ten minutes, on oss too, against the docs' "per visitor and link"
+  (verifier round 5). A key on the resource is a ceiling on its legitimate use; the address is
+  what bounds one holder. The wall is per address, cloud only (`hubSso` in the slot's context is
+  the chassis' cloud-presence switch), and its test spends ONE address on a fresh link, then proves
+  a second address on the same link still passes.
