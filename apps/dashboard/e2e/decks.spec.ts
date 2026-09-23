@@ -29,6 +29,14 @@ const entryOf = (path: string, text: string) => ({
   contentType: 'text/html'
 });
 
+// The deck page's sections sit behind one sticky tab bar (PRDCT-2686); only
+// the chosen tab's section is shown, so each step opens its tab first.
+async function openDeckTab(page: Page, name: RegExp): Promise<void> {
+  const tab = page.locator('nav[data-section-bar]').getByRole('link', { name });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-current', 'page');
+}
+
 async function uploadAsset(page: Page, text: string): Promise<void> {
   const res = await page.request.post('/api/v1/presentations/assets', {
     multipart: {
@@ -131,10 +139,15 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     expect(await iframe.getAttribute('referrerpolicy')).toBe('no-referrer');
     expect(await iframe.getAttribute('allow')).toBe('fullscreen');
     expect(await iframe.getAttribute('src')).toMatch(/\/v\/[A-Za-z0-9_-]{20,}/);
+    // PRDCT-2687: the preview is a picture, the page scrolls over it; its one
+    // action opens the deck itself.
+    expect(await iframe.getAttribute('tabindex')).toBe('-1');
+    await expect(page.getByTestId('deck-preview-open')).toHaveAttribute('href', `/decks/${deckId}/present`);
   });
 
   let viewerUrl = '';
   await test.step('create a share link via the UI — viewer URL shown once, then live', async () => {
+    await openDeckTab(page, /^Links/);
     await page.getByRole('button', { name: 'New share link' }).click();
     const dialog = page.getByRole('dialog').filter({ hasText: 'Create a share link' });
     // getByLabel substring-matches the "…the recipient can leave notes"
@@ -172,6 +185,7 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
 
   let claimUrl = '';
   await test.step('invite a collaborator via the UI — claim link produced, row listed', async () => {
+    await openDeckTab(page, /^Collaborators/);
     await page.getByRole('button', { name: 'Invite collaborator' }).click();
     const dialog = page.getByRole('dialog').filter({ hasText: 'Invite a collaborator' });
     await dialog.getByLabel('Email').fill('collab@example.com');
@@ -201,6 +215,7 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
   });
 
   await test.step('KEY SECURITY ASSERTION: hostile annotation renders as escaped text, never executes', async () => {
+    await openDeckTab(page, /^Notes/);
     const panel = page.getByTestId('annotations-panel');
     // The literal payloads are visible as TEXT…
     await expect(panel.getByText(XSS_BODY)).toBeVisible();
@@ -220,12 +235,16 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
   });
 
   await test.step('version history lists both versions; selecting one re-targets the preview', async () => {
+    await openDeckTab(page, /^Versions/);
     await expect(page.getByRole('cell', { name: 'v2 · Current' })).toBeVisible();
     const v1Row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'v1', exact: true }) });
     await expect(v1Row).toBeVisible();
 
     await v1Row.getByRole('button', { name: 'Preview' }).click();
     await expect(v1Row.getByText('Previewing')).toBeVisible();
+
+    // The preview lives on the overview tab.
+    await openDeckTab(page, /^Overview/);
     await expect(page.getByText('Previewing v1')).toBeVisible();
 
     // The remounted iframe still carries the exact sandbox set.

@@ -596,6 +596,9 @@ slideless share <id> --no-uploads                         # viewers of this link
                                                           # the deck's form file fields; the rest of the
                                                           # form still submits (default: they can; also
                                                           # on share-email)
+slideless share <id> --no-pdf                             # viewers of this link get no Export PDF action
+                                                          # in the bar (default: they can print the deck
+                                                          # to PDF from their browser; also on share-email)
 slideless share <id> --embed                              # also print the website embed snippets
 slideless share <id> --embed --placement pricing-footer   # bake a per-spot analytics label in
 slideless unshare <id> --token <tokenId>                  # revoke one link
@@ -603,18 +606,22 @@ slideless unshare <id>                                    # revoke ALL active li
 slideless share-email <id> --to a@x.com b@x.com [--message "…"]  # one personal token per address, emailed;
                                                           # takes every share flag (--to-version, --annotator,
                                                           # --no-forms, --no-download, --no-bar, --no-uploads,
-                                                          # --no-remember,
+                                                          # --no-pdf, --no-remember,
                                                           # --badge-position, --expires, --password,
                                                           # --password-stdin) except --embed and --placement;
                                                           # each link remembers its recipient's answers
 slideless pin <id> <tokenId> --to-version 1               # freeze a recipient on v1
 slideless pin <id> <tokenId> --latest                     # follow the latest again
 slideless tokens <id> [--all]                             # list links + access stats (opens, last opened,
-                                                          # downloads or "no downloads", "no forms",
-                                                          # "no uploads", "remembers answers")
+                                                          # downloads or "no downloads", agent reads,
+                                                          # "no forms", "no uploads", "no pdf",
+                                                          # "remembers answers")
 slideless uploads <id> <tokenId> [--on|--off]             # show or switch file uploads on an EXISTING
                                                           # link (a link minted before file fields
                                                           # existed has them off)
+slideless pdf <id> <tokenId> [--on|--off]                 # show or switch the Export PDF action on an
+                                                          # EXISTING link (a link minted before the
+                                                          # switch existed has it off)
 slideless views <id> [tokenId] [--all]                    # per-view events of one link: when, referring
                                                           # site, ?p= label, browser family (no IPs, no
                                                           # full URLs — never stored)

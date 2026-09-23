@@ -11,6 +11,9 @@ import {
   type TestApp
 } from './helpers.js';
 
+/** An HTML Accept: the deck, not the agent index (PRDCT-2670). */
+const DOC_NAV = { accept: 'text/html' };
+
 /**
  * Per-version views and downloads on the version list (PRDCT-2308): the
  * deck page's version popover reads, beside each version, how many times a
@@ -57,7 +60,12 @@ const json = (body: unknown, headers: Record<string, string> = {}) => ({
 /** A recipient's browser navigation: counted as a view, one event on the served version. */
 const open = (secret: string) =>
   app.app.request(`/v/${secret}/`, {
-    headers: { 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp(), 'sec-fetch-dest': 'document' }
+    headers: {
+      ...DOC_NAV,
+      'user-agent': CHROME_UA,
+      'x-forwarded-for': nextIp(),
+      'sec-fetch-dest': 'document'
+    }
   });
 
 async function uploadAsset(bytes: Buffer, contentType: string, name: string): Promise<void> {

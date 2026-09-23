@@ -30,6 +30,8 @@ interface FakeEl {
   href: string;
   children: FakeEl[];
   attrs: Map<string, string>;
+  /** Listeners the runtime added on this element, by event type. */
+  handlers: Map<string, Array<(e: unknown) => void>>;
   style: {
     props: Map<string, string>;
     setProperty: (k: string, v: string, p?: string) => void;
@@ -70,6 +72,7 @@ function makeEl(tag: string, shadowRoots: FakeRoot[]): FakeEl {
     href: '',
     children: [],
     attrs: new Map(),
+    handlers: new Map(),
     style: {
       props: new Map(),
       display: '',
@@ -97,7 +100,11 @@ function makeEl(tag: string, shadowRoots: FakeRoot[]): FakeEl {
     hasAttribute(k) {
       return el.attrs.has(k);
     },
-    addEventListener() {},
+    addEventListener(t, fn) {
+      const list = el.handlers.get(t) ?? [];
+      list.push(fn as (e: unknown) => void);
+      el.handlers.set(t, list);
+    },
     querySelector() {
       return null;
     },
@@ -132,6 +139,7 @@ function makeEl(tag: string, shadowRoots: FakeRoot[]): FakeEl {
 interface Run {
   win: Record<string, unknown>;
   root: FakeEl;
+  head: FakeEl;
   body: FakeEl;
   shadowRoots: FakeRoot[];
   fetches: Array<{ url: string; init: Record<string, unknown> }>;
@@ -160,6 +168,7 @@ function run(
   const dispatched: Run['dispatched'] = [];
   const root = makeEl('html', shadowRoots);
   const body = makeEl('body', shadowRoots);
+  const head = makeEl('head', shadowRoots);
   class FakeCustomEvent {
     type: string;
     detail: unknown;
@@ -170,6 +179,7 @@ function run(
   }
   const document = {
     documentElement: root,
+    head,
     body,
     readyState: 'complete',
     activeElement: null,
@@ -216,7 +226,7 @@ function run(
   win['self'] = win;
   win['top'] = opts.top ? win : { other: true };
   runInNewContext(src, win);
-  return { win, root, body, shadowRoots, fetches, listeners, dispatched, fire };
+  return { win, root, head, body, shadowRoots, fetches, listeners, dispatched, fire };
 }
 
 const CFG = { title: 'Quarterly review', version: 3, unlock: null, downloads: true, pdf: true };
@@ -425,7 +435,8 @@ describe('the runtime, executed', () => {
   it('builds the two controls under the overlay ids, before Download and Hide, hidden until the overlay speaks', () => {
     const r = run(CFG);
     const order = strip(r).children.map((c) => c.className);
-    expect(order).toEqual(['mark', 'title', 'tools', 'dl', 'ico hide']);
+    // CFG allows the PDF export: its button sits just before Download.
+    expect(order).toEqual(['mark', 'title', 'tools', 'out pdf', 'dl', 'ico hide']);
     expect(notesBtn(r).getAttribute('aria-label')).toBe('Annotations');
     expect(pinBtn(r).getAttribute('aria-label')).toBe('Add a pin');
     // The group is display:none until the host carries data-annotations,
@@ -488,5 +499,70 @@ describe('the runtime, executed', () => {
       (c) => c.className === 'mark'
     )!;
     expect(mark.innerHTML).toContain(ANTASPHERE_MARK_PATH);
+  });
+});
+
+describe('the Export PDF action (PRDCT-2668)', () => {
+  const bar = (r: Run) => r.shadowRoots[0]!.children.find((c) => c.className === 'bar')!;
+  const pdfButton = (r: Run) =>
+    bar(r).children.find((c) => c.tag === 'button' && c.children.some((s) => s.textContent === 'Export PDF'));
+  const stylesheet = (r: Run) => r.shadowRoots[0]!.children.find((c) => c.tag === 'style')!.textContent;
+  const printStyles = (r: Run) =>
+    r.head.children.filter((c) => c.tag === 'style' && c.getAttribute('media') === 'print');
+
+  it('pdf on: a button reading Export PDF sits just before Download, and the head holds one print sheet', () => {
+    const r = run({ ...CFG, pdf: true });
+    const btn = pdfButton(r);
+    expect(btn).toBeDefined();
+    expect(btn!.type).toBe('button');
+    expect(btn!.children.map((c) => c.textContent).join('')).toBe('Export PDF');
+    const kids = bar(r).children;
+    expect(kids.indexOf(btn!) + 1).toBe(kids.findIndex((c) => c.className === 'dl'));
+    const sheets = printStyles(r);
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]!.hasAttribute('data-slideless-print')).toBe(true);
+    const text = sheets[0]!.textContent;
+    expect(text).toContain('#__slideless_topbar,#__slideless_annotate{display:none!important}');
+    expect(text).toContain('html{overflow:visible!important;height:auto!important}');
+    expect(text).toContain('body{margin-top:0!important;height:auto!important;overflow:visible!important}');
+    expect(text).toContain('[data-slide]{break-after:page;page-break-after:always}');
+  });
+
+  it('pdf off: no button, no print sheet', () => {
+    const r = run({ ...CFG, pdf: false });
+    expect(pdfButton(r)).toBeUndefined();
+    expect(bar(r).children.map((c) => c.className)).not.toContain('out pdf');
+    expect(printStyles(r)).toHaveLength(0);
+    expect(r.head.children).toHaveLength(0);
+  });
+
+  it('the button wears the download button’s outline and folds to its icon on a phone', () => {
+    const css = stylesheet(run({ ...CFG, pdf: true }));
+    expect(css).toContain(
+      '.out{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;flex:none;'
+    );
+    expect(css).toContain('.out:hover{border-color:var(--hover-edge);background:var(--hover-fill);}');
+    expect(css).toContain(
+      '@media (max-width:640px){.bar{padding:0 10px;gap:8px;}.dl>button span,.out span{display:none;}'
+    );
+  });
+
+  it('a click on the button prints the page from the browser, and a throwing print stays inside the bar', () => {
+    let prints = 0;
+    const r = run({ ...CFG, pdf: true }, { top: true }, { print: () => prints++ });
+    const click = pdfButton(r)!.handlers.get('click') ?? [];
+    expect(click).toHaveLength(1);
+    click[0]!({});
+    expect(prints).toBe(1);
+    const throwing = run(
+      { ...CFG, pdf: true },
+      { top: true },
+      {
+        print: () => {
+          throw new Error('blocked');
+        }
+      }
+    );
+    expect(() => pdfButton(throwing)!.handlers.get('click')![0]!({})).not.toThrow();
   });
 });

@@ -69,6 +69,8 @@ function shareOptionsOf(opts: {
   bar: boolean;
   /** Commander --no-uploads negation: true by default, false when passed (PRDCT-2403). */
   uploads: boolean;
+  /** Commander --no-pdf negation: true by default, false when passed (PRDCT-2668). */
+  pdf: boolean;
   /**
    * Tri-state (PRDCT-2328): `--remember` true, `--no-remember` false,
    * neither = derived from the name. A link minted FOR someone (a name
@@ -94,6 +96,7 @@ function shareOptionsOf(opts: {
     canDownload: opts.download,
     showBar: opts.bar,
     canUploadFiles: opts.uploads,
+    canExportPdf: opts.pdf,
     remembersResponses: opts.remember ?? opts.name !== undefined,
     ...(opts.badgePosition !== undefined ? { badgePosition: opts.badgePosition } : {}),
     ...(opts.expires ? { expiresAt: new Date(opts.expires).toISOString() } : {}),
@@ -129,6 +132,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
       '--no-uploads',
       "disallow uploading files into the deck's form file fields through this link (the rest of the form still submits)"
     )
+    .option('--no-pdf', 'disallow exporting the deck to PDF from the viewer through this link')
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -154,6 +158,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           download: boolean;
           bar: boolean;
           uploads: boolean;
+          pdf: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -193,6 +198,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             `${created.shareToken.showBar === false ? ', no bar' : ''}` +
             `${created.shareToken.canSubmitForms === false ? ', no forms' : ''}` +
             `${created.shareToken.canUploadFiles === false ? ', no uploads' : ''}` +
+            `${created.shareToken.canExportPdf === false ? ', no pdf' : ''}` +
             // Strict true: the state is printed so it is never unverifiable (PRDCT-1337's lesson).
             `${created.shareToken.remembersResponses === true ? ', remembers answers' : ''})\n` +
             '  The URL is shown once — copy it now.\n' +
@@ -257,6 +263,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
     .option('--no-download', "disallow downloading the version's attachments through these links")
     .option('--no-bar', 'hand out bare decks: no recipient bar over them')
     .option('--no-uploads', "disallow uploading files into the deck's form file fields through these links")
+    .option('--no-pdf', 'disallow exporting the deck to PDF from the viewer through these links')
     .option(
       '--badge-position <slot>',
       `annotation badge slot (${BADGE_POSITIONS}); remembered as the deck default`,
@@ -278,6 +285,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           download: boolean;
           bar: boolean;
           uploads: boolean;
+          pdf: boolean;
           badgePosition?: BadgePositionValue;
           expires?: string;
           password?: string;
@@ -373,6 +381,12 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
             // Downloads: the per-link switch and the count of files taken
             // through the link (one per file, one per zip; never a view).
             t.canDownload ? `${t.downloadCount} download${t.downloadCount === 1 ? '' : 's'}` : 'no downloads',
+            // Agent reads (PRDCT-2670): how many times an agent read the
+            // link's index, never a view. A server from before the counter
+            // answers without it.
+            t.agentReadCount === undefined
+              ? '-'
+              : `${t.agentReadCount} agent read${t.agentReadCount === 1 ? '' : 's'}`,
             // Every switch whose state matters is SHOWN (PRDCT-1337: --no-forms
             // used to be unverifiable from the CLI). Strict compares: a server
             // from before a switch answers without its field.
@@ -381,6 +395,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
               t.hasPassword ? 'password' : null,
               t.canSubmitForms === false ? 'no forms' : null,
               t.canUploadFiles === false ? 'no uploads' : null,
+              t.canExportPdf === false ? 'no pdf' : null,
               t.remembersResponses === true ? 'remembers answers' : null
             ]
               .filter(Boolean)
@@ -700,6 +715,42 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
           (token.canUploadFiles && token.canSubmitForms === false
             ? '  Forms are off on this link, so no file can be uploaded through it until they are on.\n'
             : '')
+      );
+    });
+
+  program
+    .command('pdf <id> <tokenId>')
+    .description(
+      'Show or switch the PDF export on one EXISTING share link (PRDCT-2668): whether its recipient ' +
+        "sees an Export PDF action in the viewer's bar, printed by their browser. A new link has it " +
+        'on; a link minted before the switch existed has it off until its owner turns it on here.'
+    )
+    .option('--on', 'let the recipient export the deck to PDF from the viewer', false)
+    .option('--off', 'remove the Export PDF action from this link', false)
+    .action(async (id: string, tokenId: string, opts: { on: boolean; off: boolean }, cmd: Command) => {
+      const ctx = resolveContext(cmd, io);
+      await requireApiKey(ctx);
+      if (opts.on && opts.off) throw new CliUsageError('Pass either --on or --off, not both.');
+      let token: ShareToken | undefined;
+      if (opts.on || opts.off) {
+        token = await ctx.client.updateShareToken(id, tokenId, { canExportPdf: opts.on });
+      } else {
+        // No single-token read on the API: find it in the deck's list.
+        let cursor: string | null = null;
+        do {
+          const page = await ctx.client.shareTokens(id, { limit: 100, ...(cursor ? { cursor } : {}) });
+          token = page.shareTokens.find((t) => t.id === tokenId);
+          cursor = token ? null : page.nextCursor;
+        } while (cursor);
+        if (!token) throw new CliUsageError(`No share token ${tokenId} on this deck.`);
+      }
+      if (ctx.json) {
+        return printJson(io, { id: token.id, canExportPdf: token.canExportPdf });
+      }
+      io.out.write(
+        token.canExportPdf
+          ? `PDF export is ON for link ${token.id} ("${token.name}").\n`
+          : `PDF export is OFF for link ${token.id} ("${token.name}").\n`
       );
     });
 

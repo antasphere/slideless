@@ -59,6 +59,8 @@ The bar is part of the viewer's isolation, not an exception to it: it runs insid
 
 Where it never appears: inside an [embed](embedding.md) or any iframe (the deck stays bare there), on the password gate, and on the error pages. With downloads off, the bar shows the title and the version without a Download button.
 
+On a link that allows it, the bar also carries an **Export PDF** button just before Download: it opens the recipient's own browser print dialog, so the PDF is printed by their browser and nothing is rendered on the server, with the bar and the annotation layer left off the paper and one page per `data-slide` block when the deck marks its slides that way.
+
 Two shapes of deck defeat the bar, by the deck's own choice: a body fixed to the viewport (`position: fixed; inset: 0`) ignores the push-down and sits under the bar, and a script that sets the bar's own loaded flag (`window.__slidelessTopbarLoaded = true`) before the page ends suppresses it. Neither weakens anything: the bar was already the deck's to cover or hide from inside its sandbox.
 
 Every share link carries `showBar`, **on by default**. Switch it off per link to hand out a bare deck, nothing but the presentation itself:

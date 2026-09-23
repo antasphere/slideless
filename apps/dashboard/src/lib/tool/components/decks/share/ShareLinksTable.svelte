@@ -28,6 +28,7 @@
   import Activity from '@lucide/svelte/icons/activity';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import Paperclip from '@lucide/svelte/icons/paperclip';
+  import FileDown from '@lucide/svelte/icons/file-down';
   import Ban from '@lucide/svelte/icons/ban';
   import type { PresentationVersion, ShareToken } from '@slideless/contract';
 
@@ -35,7 +36,8 @@
    * The deck's share links as a table (rebuilt with PRDCT-2308: the
    * recipient on one line, the version as a tag, one check column per
    * capability, copy and open on every row) with their per-row actions
-   * (copy, open, activity, change version, file uploads on/off, revoke) and
+   * (copy, open, activity, change version, file uploads on/off, PDF export
+   * on/off, revoke) and
    * the dialogs those open. A row opens the link's panel (ShareLinkPanel):
    * the same facts and the same acts, with the link's activity. Which
    * columns show is the reader's choice, kept in this browser (LinkColumns).
@@ -129,6 +131,26 @@
     }
   }
 
+  // ── PDF export on an existing link (PRDCT-2668) ────────────────────────
+  // A link minted before the switch existed has it OFF: this is where its
+  // owner turns the Export PDF action on, and off again. One PATCH, no
+  // dialog; the check in the table is the read-back.
+  let pdfSaving = $state(false);
+
+  async function setPdf(token: ShareToken, value: boolean) {
+    if (pdfSaving) return;
+    pdfSaving = true;
+    try {
+      await api.updateShareToken(deckId, token.id, { canExportPdf: value });
+      toast.success(t(value ? 'tokens.pdfOnToast' : 'tokens.pdfOffToast', { name: token.name }));
+      await list.refresh();
+    } catch (e) {
+      toast.error(errorMessage(e, t('tokens.updateFailed')));
+    } finally {
+      pdfSaving = false;
+    }
+  }
+
   // ── The link's panel ───────────────────────────────────────────────────
   // A row opens it, and so does the menu's "View activity": the link's
   // facts, its counted views (PRDCT-1313) and its acts. The panel follows
@@ -185,6 +207,12 @@
           ]
         : []),
       {
+        key: 'pdf',
+        label: token.canExportPdf ? t('tokens.actionPdfOff') : t('tokens.actionPdfOn'),
+        icon: FileDown,
+        onclick: () => void setPdf(token, !token.canExportPdf)
+      },
+      {
         key: 'revoke',
         label: t('tokens.actionRevoke'),
         icon: Ban,
@@ -210,9 +238,15 @@
 
   // One capability, one column: a check or nothing (PRDCT-2308).
   const capability = (
-    key: 'downloads' | 'bar' | 'notes' | 'forms' | 'uploads' | 'remembers',
+    key: 'downloads' | 'pdf' | 'bar' | 'notes' | 'forms' | 'uploads' | 'remembers',
     field:
-      'canDownload' | 'showBar' | 'canAnnotate' | 'canSubmitForms' | 'canUploadFiles' | 'remembersResponses',
+      | 'canDownload'
+      | 'canExportPdf'
+      | 'showBar'
+      | 'canAnnotate'
+      | 'canSubmitForms'
+      | 'canUploadFiles'
+      | 'remembersResponses',
     label: string
   ): ColumnDef<ShareToken, unknown> => ({
     accessorKey: field,
@@ -253,6 +287,8 @@
       meta: { title: t('tokens.colVersion'), width: '88px' }
     },
     capability('downloads', 'canDownload', t('tokens.colDownloads')),
+    // PRDCT-2668: the Export PDF action in the recipient's bar.
+    capability('pdf', 'canExportPdf', t('tokens.colPdf')),
     capability('bar', 'showBar', t('tokens.colBar')),
     capability('notes', 'canAnnotate', t('tokens.colNotes')),
     capability('forms', 'canSubmitForms', t('tokens.colForms')),

@@ -33,9 +33,11 @@
     deckTitle: string;
     /** The reader administers the deck: its owner, a workspace admin or owner. */
     canManage: boolean;
+    /** The section's size for the deck page's tab bar, `undefined` while unknown. */
+    oncount?: (n: number | undefined) => void;
   }
 
-  let { deckId, deckTitle, canManage }: Props = $props();
+  let { deckId, deckTitle, canManage, oncount }: Props = $props();
 
   let refs = $state<DeckProjectRef[]>([]);
   let readable = $state<Project[]>([]);
@@ -57,6 +59,11 @@
   }
   $effect(() => {
     void load();
+  });
+
+  // the deck page's tab bar: the projects the deck sits in, once read
+  $effect(() => {
+    oncount?.(loaded && error === null ? refs.length : undefined);
   });
 
   const addable = $derived(canManage ? projectsToAddTo(readable, refs) : []);

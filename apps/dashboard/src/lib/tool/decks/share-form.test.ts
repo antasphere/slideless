@@ -27,7 +27,8 @@ describe('buildShareTokenCreate', () => {
       canDownload: true,
       showBar: true,
       remembersResponses: true,
-      canUploadFiles: true
+      canUploadFiles: true,
+      canExportPdf: true
     });
     expect(body).not.toHaveProperty('pinnedVersion');
     expect(body).not.toHaveProperty('expiresAt');
@@ -70,6 +71,16 @@ describe('buildShareTokenCreate', () => {
     const formsOff = buildShareTokenCreate({ ...defaultShareLinkForm(3), canSubmitForms: false });
     expect(formsOff.canUploadFiles).toBe(false);
     expect('canUploadFiles' in formsOff).toBe(true);
+  });
+
+  it('carries the PDF export switched OFF explicitly, and keeps it ON with forms off (PRDCT-2668)', () => {
+    const off = buildShareTokenCreate({ ...defaultShareLinkForm(3), canExportPdf: false });
+    expect(off.canExportPdf).toBe(false);
+    // Omitted, the server would default the action back ON.
+    expect('canExportPdf' in off).toBe(true);
+    // Printing does not ride a form: forms off leaves the switch as set.
+    const formsOff = buildShareTokenCreate({ ...defaultShareLinkForm(3), canSubmitForms: false });
+    expect(formsOff.canExportPdf).toBe(true);
   });
 
   it('pins a version as a number only when pinned, and the badge slot only with annotations on', () => {

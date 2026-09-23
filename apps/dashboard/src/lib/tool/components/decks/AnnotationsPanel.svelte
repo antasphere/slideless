@@ -34,9 +34,11 @@
     versions: PresentationVersion[];
     /** Resolves a user id to a display label (member email) — page-provided. */
     resolveUser: (userId: string) => string;
+    /** The section's size for the deck page's tab bar, `undefined` while unknown. */
+    oncount?: (n: number | undefined) => void;
   }
 
-  let { deckId, versions, resolveUser }: Props = $props();
+  let { deckId, versions, resolveUser, oncount }: Props = $props();
 
   let filterVersion = $state('all');
   let filterStatus = $state<'all' | AnnotationStatus>('all');
@@ -57,6 +59,11 @@
       ? undefined
       : rowCount('annotations.countOne', 'annotations.count')(list.items.length, list.items.length)
   );
+
+  // the deck page's tab bar: the notes the list holds, once they are all here
+  $effect(() => {
+    oncount?.(list.loading || list.nextCursor || list.error ? undefined : list.items.length);
+  });
 
   $effect(() => {
     // Track the filters so changing either re-fetches page 1.

@@ -245,7 +245,7 @@ export const fr: Record<keyof typeof en, string> = {
   'deck.previewEmpty': 'Rien à prévisualiser pour l’instant — poussez une première version avec la CLI.',
   'deck.previewFailed': 'Aperçu indisponible : {error}',
   'deck.previewOwnerOnly':
-    'L’aperçu est réservé au propriétaire du deck et aux admins de l’espace. Créez un lien de partage ci-dessous pour voir ce deck.',
+    'L’aperçu est réservé au propriétaire du deck et aux admins de l’espace. Créez un lien de partage sous Liens pour voir ce deck.',
   'deck.selfDescTitle': 'Détails du deck',
   'deck.selfDescDescription': 'Métadonnées définies par le propriétaire et briefing AGENT.md du bundle.',
   'deck.metadataHeading': 'Métadonnées',
@@ -254,6 +254,15 @@ export const fr: Record<keyof typeof en, string> = {
   'deck.agentDocHide': 'Masquer le briefing',
   'deck.agentDocLoadFailed': 'Impossible de charger le briefing : {error}',
   'deck.openMaster': 'Ouvrir la page du deck',
+  'deck.previewOpenLive': 'Ouvrir le deck',
+  'deck.tabsAria': 'Sections de ce deck',
+  'deck.tabOverview': 'Vue d’ensemble',
+  'deck.tabLinks': 'Liens',
+  'deck.tabProjects': 'Projets',
+  'deck.tabCollaborators': 'Collaborateurs',
+  'deck.tabNotes': 'Notes',
+  'deck.tabResponses': 'Réponses',
+  'deck.tabVersions': 'Versions',
 
   // ── La page du deck (PRDCT-2279) ─────────────────────────────────────
   'master.artifactBy': 'Artefact de {owner}',
@@ -347,6 +356,15 @@ export const fr: Record<keyof typeof en, string> = {
   'tokens.actionUploadsOff': 'Ne plus accepter de fichiers',
   'tokens.uploadsOnToast': 'Le dépôt de fichiers est activé pour « {name} »',
   'tokens.uploadsOffToast': 'Le dépôt de fichiers est désactivé pour « {name} »',
+  'tokens.pdfLabel': "Autoriser l'export PDF",
+  'tokens.pdfHint':
+    'Le destinataire peut enregistrer le deck en PDF depuis la barre, imprimé par son navigateur.',
+  'tokens.colPdf': 'PDF',
+  'tokens.actionPdfOn': "Activer l'export PDF",
+  'tokens.actionPdfOff': "Désactiver l'export PDF",
+  'tokens.pdfOnToast': "L'export PDF est activé pour « {name} »",
+  'tokens.pdfOffToast': "L'export PDF est désactivé pour « {name} »",
+  'tokens.agentReads': 'Lectures par des agents',
   'tokens.downloadsLabel': 'Autoriser les téléchargements',
   'tokens.downloadsHint':
     'Les lecteurs de ce lien peuvent télécharger les fichiers de la version (son dossier downloads/).',

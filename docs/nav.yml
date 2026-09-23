@@ -20,6 +20,7 @@ groups:
       - agents/cli
       - agents/mcp-connector
       - agents/deck-self-description
+      - agents/share-links-for-agents
   - title: Sharing & review
     pages:
       - sharing/annotations
