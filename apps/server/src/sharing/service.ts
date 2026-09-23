@@ -105,6 +105,12 @@ export class ShareTokenService {
      * passes false, and the upload route refuses previews by purpose too.
      */
     canUploadFiles: boolean;
+    /**
+     * The recipient may export the deck to PDF from the viewer (PRDCT-2668).
+     * The share route passes the contract default (true); the preview mint
+     * passes true too (the owner prints their own deck).
+     */
+    canExportPdf: boolean;
     /** Explicit badge slot for this link, or null = inherit the deck default. */
     badgePosition: BadgePosition | null;
     expiresAt: Date | null;
@@ -126,6 +132,7 @@ export class ShareTokenService {
         showBar: opts.showBar,
         remembersResponses: opts.remembersResponses,
         canUploadFiles: opts.canUploadFiles,
+        canExportPdf: opts.canExportPdf,
         badgePosition: opts.badgePosition,
         expiresAt: opts.expiresAt,
         passwordHash: opts.passwordHash,
@@ -242,6 +249,19 @@ export class ShareTokenService {
         .where(eq(presentations.id, presentationId));
     });
   }
+
+  /**
+   * One agent read of the link's index (PRDCT-2670): its own counter, so a
+   * machine reading the deck's description never reads as a person opening
+   * it. The caller keys the exclusions (GET only, never a preview token)
+   * exactly as the entry view does.
+   */
+  async recordAgentRead(tokenId: string): Promise<void> {
+    await this.db
+      .update(shareTokens)
+      .set({ agentReadCount: sql`${shareTokens.agentReadCount} + 1` })
+      .where(eq(shareTokens.id, tokenId));
+  }
 }
 
 /** Wire mapping shared by the API handlers (never the secret, never a hash). */
@@ -265,6 +285,8 @@ export function shareTokenToWire(t: ShareTokenRow): {
   accessCount: number;
   lastAccessedAt: string | null;
   downloadCount: number;
+  canExportPdf: boolean;
+  agentReadCount: number;
   createdAt: string;
 } {
   return {
@@ -287,6 +309,8 @@ export function shareTokenToWire(t: ShareTokenRow): {
     accessCount: t.accessCount,
     lastAccessedAt: t.lastAccessedAt?.toISOString() ?? null,
     downloadCount: t.downloadCount,
+    canExportPdf: t.canExportPdf,
+    agentReadCount: t.agentReadCount,
     createdAt: t.createdAt.toISOString()
   };
 }

@@ -1145,6 +1145,9 @@ function placeComposer() {
   pop.style.visibility = '';
 }
 
+// A draft the reader typed and then clicked away from (PRDCT-2671): kept
+// until the next composer opens, so a stray click never loses a written note.
+var keptDraft = '';
 function openComposer() {
   popQuote.style.display = 'none';
   popQuote.textContent = '';
@@ -1158,7 +1161,9 @@ function openComposer() {
     popCap.textContent = 'New annotation · pin';
   }
   popName.value = savedName;
-  popText.value = '';
+  // The draft a stray click closed comes back in the next composer (PRDCT-2671).
+  popText.value = keptDraft;
+  keptDraft = '';
   popErr.style.display = 'none';
   placeComposer();
   popText.focus();
@@ -1312,6 +1317,15 @@ doc.addEventListener('keydown', function (e) {
 var dragStart = null;
 layer.addEventListener('pointerdown', function (e) {
   if (e.button !== 0) return;
+  // PRDCT-2671: while the composer is open, a click on the deck closes it,
+  // the way a click outside a dialog leaves it, and places nothing. The
+  // next click places a new note as usual.
+  if (pop.style.display === 'block') {
+    keptDraft = popText.value;
+    closeComposer();
+    e.preventDefault();
+    return;
+  }
   dragStart = { x: e.clientX, y: e.clientY };
   try { layer.setPointerCapture(e.pointerId); } catch (e2) {}
   e.preventDefault();

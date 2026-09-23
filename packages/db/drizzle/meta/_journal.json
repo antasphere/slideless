@@ -337,6 +337,13 @@
       "when": 1789930389436,
       "tag": "0047_presentation_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1790195820523,
+      "tag": "0048_share_token_pdf_and_agent_reads",
+      "breakpoints": true
     }
   ]
 }

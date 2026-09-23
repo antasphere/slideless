@@ -144,13 +144,13 @@ interface Run {
 
 /** Execute the injected tag in a fake window; `top` decides the browsing context. */
 function run(
-  cfg: { title: string; version: number; unlock: string | null; downloads: boolean },
+  cfg: { title: string; version: number; unlock: string | null; downloads: boolean; pdf?: boolean },
   opts: { top: boolean; tag?: string; attachments?: Array<{ name: string; sizeBytes: number }> } = {
     top: true
   },
   extraWindow: Record<string, unknown> = {}
 ): Run {
-  const tag = opts.tag ?? topbarScriptTag(cfg);
+  const tag = opts.tag ?? topbarScriptTag({ pdf: false, ...cfg });
   const src = /<script[^>]*>([\s\S]*)<\/script>/.exec(tag)?.[1];
   if (!src) throw new Error('no script body in the tag');
 
@@ -219,7 +219,7 @@ function run(
   return { win, root, body, shadowRoots, fetches, listeners, dispatched, fire };
 }
 
-const CFG = { title: 'Quarterly review', version: 3, unlock: null, downloads: true };
+const CFG = { title: 'Quarterly review', version: 3, unlock: null, downloads: true, pdf: true };
 
 describe('the runtime, executed', () => {
   it('in the top browsing context: mounts once, in an open shadow root, and pushes the deck down', () => {

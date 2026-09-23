@@ -79,6 +79,7 @@ export interface EntryTransformContext {
     | 'showBar'
     | 'remembersResponses'
     | 'canUploadFiles'
+    | 'canExportPdf'
     | 'createdAt'
     | 'expiresAt'
   >;
@@ -178,7 +179,8 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
       title: ctx.deckTitle,
       version: ctx.version,
       unlock: ctx.mintUnlockProof(),
-      downloads: ctx.token.canDownload && ctx.versionHasDownloads
+      downloads: ctx.token.canDownload && ctx.versionHasDownloads,
+      pdf: ctx.token.canExportPdf
     });
   }
   if (ctx.token.canAnnotate && ctx.browserEntry) {

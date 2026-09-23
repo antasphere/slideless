@@ -225,8 +225,8 @@ describe('the bar rides top-level document navigations', () => {
     // convenience — this assertion is what makes it deliberate.
     const cfg = configOf(html);
     expect(cfg).not.toBeNull();
-    expect(Object.keys(cfg!).sort()).toEqual(['downloads', 'title', 'unlock', 'version']);
-    expect(cfg).toEqual({ title: 'Quarterly review', version: 1, unlock: null, downloads: true });
+    expect(Object.keys(cfg!).sort()).toEqual(['downloads', 'pdf', 'title', 'unlock', 'version']);
+    expect(cfg).toEqual({ title: 'Quarterly review', version: 1, unlock: null, downloads: true, pdf: true });
   });
 
   it('an HTML sub-page opened as a document carries it too; older engines ride the Accept heuristic', async () => {
@@ -381,11 +381,17 @@ describe('what the bar is told', () => {
   it('a plain deck and a link with downloads off both get downloads:false, so no list is fetched', async () => {
     const plain = await createToken(plainDeckId, { name: 'plain' });
     const plainCfg = configOf(await (await get(`/v/${plain.secret}/`, NAV)).text());
-    expect(plainCfg).toEqual({ title: 'Plain deck', version: 1, unlock: null, downloads: false });
+    expect(plainCfg).toEqual({ title: 'Plain deck', version: 1, unlock: null, downloads: false, pdf: true });
 
     const noDl = await createToken(deckId, { name: 'no downloads', canDownload: false });
     const noDlCfg = configOf(await (await get(`/v/${noDl.secret}/`, NAV)).text());
-    expect(noDlCfg).toEqual({ title: 'Quarterly review', version: 1, unlock: null, downloads: false });
+    expect(noDlCfg).toEqual({
+      title: 'Quarterly review',
+      version: 1,
+      unlock: null,
+      downloads: false,
+      pdf: true
+    });
     // And were it to ask anyway, the list would be empty, never a 403.
     const list = await readJson(await get(`/api/v1/viewer/${noDl.secret}/attachments`));
     expect(list.attachments).toEqual([]);

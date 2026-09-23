@@ -28,6 +28,7 @@ function ctx(over: Partial<EntryTransformContext> = {}): EntryTransformContext {
       showBar: true,
       remembersResponses: false,
       canUploadFiles: false,
+      canExportPdf: true,
       createdAt: new Date('2026-09-13T10:00:00Z'),
       expiresAt: null
     },
@@ -65,7 +66,8 @@ describe('the recipient bar rides top-level document navigations of show_bar lin
       title: 'Quarterly review',
       version: 3,
       unlock: null,
-      downloads: true
+      downloads: true,
+      pdf: true
     });
   });
 
@@ -120,14 +122,15 @@ describe('the recipient bar rides top-level document navigations of show_bar lin
 });
 
 describe('the injected script keeps its guards (mutation tripwires)', () => {
-  const tag = topbarScriptTag({ title: 'T', version: 1, unlock: null, downloads: false });
+  const tag = topbarScriptTag({ title: 'T', version: 1, unlock: null, downloads: false, pdf: false });
 
   it('escapes `<` in the config so a deck title can never close the script tag', () => {
     const hostile = topbarScriptTag({
       title: '</script><script>alert(1)</script>',
       version: 1,
       unlock: null,
-      downloads: false
+      downloads: false,
+      pdf: false
     });
     expect(hostile).not.toContain('</script><script>alert');
     expect(hostile).toContain('\\u003c/script>\\u003cscript>alert(1)');

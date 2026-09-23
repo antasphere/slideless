@@ -145,6 +145,13 @@ export interface TopbarConfig {
    * answers an empty list on a link with downloads off.
    */
   downloads: boolean;
+  /**
+   * True when the link lets the recipient export the deck to PDF
+   * (PRDCT-2668): the bar shows an Export PDF action that prints the page
+   * from the browser. False = no action. Context, not capability: printing
+   * is the browser's, so the switch decides the bar alone.
+   */
+  pdf: boolean;
 }
 
 /** Attribute marking the injected script — tests and humans grep for it. */
@@ -709,7 +716,8 @@ export function topbarScriptTag(cfg: TopbarConfig): string {
     title: cfg.title,
     version: cfg.version,
     unlock: cfg.unlock,
-    downloads: cfg.downloads
+    downloads: cfg.downloads,
+    pdf: cfg.pdf
   }).replace(/</g, '\\u003c');
   return `\n<script ${TOPBAR_MARKER}>\n(function(){\n"use strict";\ntry{\nvar CFG=${json};\n${TOPBAR_JS}\n}catch(e){}\n})();\n</script>\n`;
 }
