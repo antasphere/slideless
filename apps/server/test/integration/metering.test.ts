@@ -868,13 +868,14 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
       headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': sso.nextIp() },
       body: JSON.stringify({ payload: { who } })
     });
-  const uploadFile = (secret: string, bytes: Uint8Array) => {
+  /** `declare: false` sends NO Content-Length (`app.request` adds none for a buffer body). */
+  const uploadFile = (secret: string, bytes: Uint8Array, declare = true) => {
     const qs = new URLSearchParams({ field: 'docs', name: 'doc.txt', type: 'text/plain' });
     return app.app.request(`/api/v1/viewer/${secret}/forms/${FORM}/uploads?${qs.toString()}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/octet-stream',
-        'content-length': String(bytes.length),
+        ...(declare ? { 'content-length': String(bytes.length) } : {}),
         origin: 'null',
         'x-forwarded-for': sso.nextIp()
       },
@@ -1075,6 +1076,106 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
     const upload = await uploadFile(link.secret, new TextEncoder().encode('late'));
     expect(upload.status).toBe(403);
     expect((await readJson(upload)).error.code).toBe('revoked');
+    expect(hub.checkRequests).toHaveLength(checks);
+    await expectNothingPosted(posted);
+  });
+
+  /** A fresh live link on the owner's deck (the first one was revoked above). */
+  const mintLink = async (name: string, extra: Record<string, unknown> = {}) => {
+    // Minting is itself metered (share_tokens.create): its event must land
+    // before a case counts what is posted, or it reads as a leak.
+    const before = eventsOf().length;
+    const res = await app.app.request(
+      `/api/v1/presentations/${deckId}/tokens`,
+      json({ name, remembersResponses: false, canUploadFiles: true, ...extra }, ownerKey())
+    );
+    expect(res.status, await res.clone().text()).toBe(201);
+    const minted = await readJson(res);
+    await until(
+      () => eventsOf().length,
+      (n) => n >= before + 1
+    );
+    return { id: minted.shareToken.id as string, secret: minted.secret as string };
+  };
+
+  it('a viewer’s file with no declared size is refused 411 before any check: nothing stored, nothing debited', async () => {
+    const live = await mintLink('no length');
+    hub.setBalance(ORG_FORMS, 0);
+    try {
+      const checks = hub.checkRequests.length;
+      const ledger = hub.ledger.length;
+      const posted = eventsOf().length;
+      const res = await uploadFile(live.secret, new TextEncoder().encode('undeclared'), false);
+      expect(res.status).toBe(411);
+      expect((await readJson(res)).error.code).toBe('length_required');
+      expect(hub.checkRequests).toHaveLength(checks);
+      await expectNothingPosted(posted);
+      expect(hub.balanceOf(ORG_FORMS)).toBe(0);
+      expect(hub.ledger).toHaveLength(ledger);
+    } finally {
+      hub.setBalance(ORG_FORMS, 5_000);
+    }
+  });
+
+  it('a suspended owner: the viewer reads the same neutral 402, never the status', async () => {
+    const live = await mintLink('suspended');
+    hub.setUserOrg(owner.sub, ORG_FORMS, { name: 'Org Forms', role: 'owner', status: 'suspended' });
+    try {
+      const posted = eventsOf().length;
+      const res = await respond(live.secret, 'Suspended');
+      expect(res.status, await res.clone().text()).toBe(402);
+      const body = await readJson(res);
+      expect(body.error.code).toBe('entitlement_denied');
+      expect(body.error.details).toBeUndefined();
+      const message: string = body.error.message;
+      expect(message.toLowerCase()).not.toContain('suspend');
+      expect(message).not.toContain('Antasphere');
+      expect(message.toLowerCase()).not.toContain('hub');
+      await expectNothingPosted(posted);
+    } finally {
+      hub.setUserOrg(owner.sub, ORG_FORMS, { name: 'Org Forms', role: 'owner', status: 'active' });
+    }
+  });
+
+  it('an expired link is the route’s own 410 on both doors: no check made', async () => {
+    const expiring = await mintLink('expired', { expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    // Moved into the past by the owner, as forms.test.ts does.
+    const patched = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${expiring.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        cookie: owner.cookie,
+        'x-workspace-id': owner.workspaceId,
+        'x-forwarded-for': sso.nextIp()
+      },
+      body: JSON.stringify({ expiresAt: new Date(Date.now() - 1000).toISOString() })
+    });
+    expect(patched.status, await patched.clone().text()).toBe(200);
+    const checks = hub.checkRequests.length;
+    const posted = eventsOf().length;
+    const res = await respond(expiring.secret, 'Too late');
+    expect(res.status).toBe(410);
+    expect((await readJson(res)).error.code).toBe('expired');
+    const upload = await uploadFile(expiring.secret, new TextEncoder().encode('too late'));
+    expect(upload.status).toBe(410);
+    expect((await readJson(upload)).error.code).toBe('expired');
+    expect(hub.checkRequests).toHaveLength(checks);
+    await expectNothingPosted(posted);
+  });
+
+  it('a deck deleted behind a live link is the route’s own 404 on both doors: no check made', async () => {
+    const live = await mintLink('orphaned');
+    const deleted = await app.app.request(`/api/v1/presentations/${deckId}`, {
+      method: 'DELETE',
+      headers: { cookie: owner.cookie, 'x-workspace-id': owner.workspaceId, 'x-forwarded-for': sso.nextIp() }
+    });
+    expect(deleted.status, await deleted.clone().text()).toBe(200);
+    const checks = hub.checkRequests.length;
+    const posted = eventsOf().length;
+    const res = await respond(live.secret, 'Orphan');
+    expect(res.status).toBe(404);
+    const upload = await uploadFile(live.secret, new TextEncoder().encode('orphan'));
+    expect(upload.status).toBe(404);
     expect(hub.checkRequests).toHaveLength(checks);
     await expectNothingPosted(posted);
   });

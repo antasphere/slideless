@@ -1461,3 +1461,17 @@ migrate` on an unchanged schema):
   chassis build the typecheck was reading. Run the gates when the tree is quiet, keep the whole
   log (a `tail` loses the one real failure), and expect a 50 MiB upload test to need more than
   vitest's five seconds on a loaded machine.
+- **A meter in bytes needs the declared size whether or not a plan limit sits beside it.** The 411
+  rule was keyed on `entry.limit`, so the anonymous form-upload door (a meter, no limit) priced a
+  chunked upload at 0 bytes, allowed it at an empty balance, and debited the stored size: the
+  verifier's round 3 put an owner at −5 through a share link. The rule now keys on the meter's
+  unit too. Every door that meters bytes must refuse a body with no declared size before storing.
+- **A viewer learns nothing from any refusal, not just the credit one.** The neutral 402 covered
+  `insufficient_credits`; `account_suspended` and `hub_unavailable` still carried the live gate's
+  wording to a principal-less request, and a plan refusal would have carried the upgrade link. On an
+  anonymous surface every refusal of the gate is one code and one neutral sentence; the branch sits
+  BEFORE any reason-specific answer.
+- **A contract route object the SDK does not call fails the SDK's drift guard.** The two
+  anonymous doors are `{ method, path }` objects in the routes module; `route-coverage.test.ts`
+  walks every such object. The guard now skips `/viewer/` paths by design (a token recipient is not
+  an SDK caller); a new anonymous route needs no method, a new principal route still does.
