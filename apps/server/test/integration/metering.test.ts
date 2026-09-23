@@ -889,6 +889,19 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
     expect(eventsOf()).toHaveLength(posted);
   };
 
+  /** The one neutral refusal a viewer reads: no details, no figure, no link, no organization. */
+  const expectNeutral = async (res: Response) => {
+    expect(res.status).toBe(402);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('entitlement_denied');
+    expect(body.error.details).toBeUndefined();
+    const message: string = body.error.message;
+    expect(message).toBe('The owner of this content cannot take this action right now');
+    expect(message).not.toContain('billing/top-up');
+    expect(message).not.toContain(ORG_FORMS);
+    expect(message).not.toMatch(/\d/);
+  };
+
   beforeAll(async () => {
     hub.setPrice('forms.response', { creditsPerUnit: 5, unit: 'call' });
     hub.setPrice('forms.upload', { creditsPerUnit: 5, unit: 'bytes', per: 1024 * 1024 });
@@ -1012,17 +1025,6 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
   it('the owner’s balance at 0: both doors answer 402 entitlement_denied with a neutral message and no details, nothing posted', async () => {
     hub.setBalance(ORG_FORMS, 0);
     const posted = eventsOf().length;
-    const expectNeutral = async (res: Response) => {
-      expect(res.status).toBe(402);
-      const body = await readJson(res);
-      expect(body.error.code).toBe('entitlement_denied');
-      expect(body.error.details).toBeUndefined();
-      const message: string = body.error.message;
-      expect(message).toBe('The owner of this content cannot take this action right now');
-      expect(message).not.toContain('billing/top-up');
-      expect(message).not.toContain(ORG_FORMS);
-      expect(message).not.toMatch(/\d/);
-    };
     const checks = hub.checkRequests.length;
     await expectNeutral(await respond(link.secret, 'Broke'));
     await expectNeutral(await uploadFile(link.secret, new TextEncoder().encode('refused')));
@@ -1162,6 +1164,128 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
     expect(hub.checkRequests).toHaveLength(checks);
     await expectNothingPosted(posted);
   });
+
+  it('a signed-in person of another organization holding the link is a viewer: the owner pays and reads nothing, the person is never billed', async () => {
+    const ORG_STRANGER = '77777777-aaaa-4bbb-8ccc-00000000ab09';
+    hub.setBalance(ORG_STRANGER, 5_000);
+    const stranger = await hubPerson({
+      sub: 'hub-meter-stranger',
+      email: 'stranger@meter.test',
+      name: 'Meter Stranger',
+      workspaceId: ORG_STRANGER,
+      role: 'owner',
+      workspaceName: 'Org Stranger'
+    });
+    // The first link was revoked above: a live one on the owner's deck.
+    const live = await mintLink('stranger');
+    hub.setBalance(ORG_FORMS, 5_000);
+    const strangerEvents = () => events().filter((e) => e.accountRef === ORG_STRANGER);
+    /** The viewer's doors as a signed-in person reaches them: the session cookie, no origin header. */
+    const signedInRespond = (who: string) =>
+      app.app.request(`/api/v1/viewer/${live.secret}/forms/${FORM}/responses`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: stranger.cookie,
+          'x-forwarded-for': sso.nextIp()
+        },
+        body: JSON.stringify({ payload: { who } })
+      });
+    const signedInUpload = (bytes: Uint8Array) => {
+      const qs = new URLSearchParams({ field: 'docs', name: 'doc.txt', type: 'text/plain' });
+      return app.app.request(`/api/v1/viewer/${live.secret}/forms/${FORM}/uploads?${qs.toString()}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/octet-stream',
+          'content-length': String(bytes.length),
+          cookie: stranger.cookie,
+          'x-forwarded-for': sso.nextIp()
+        },
+        body: bytes
+      });
+    };
+    try {
+      const checks = hub.checkRequests.length;
+      const ownerResponses = () => eventsOf().filter((e) => e.actionKey === 'forms.response');
+      const responsesBefore = ownerResponses().length;
+      const strangerPosted = strangerEvents().length;
+      const strangerBalance = hub.balanceOf(ORG_STRANGER);
+      const known = new Set(hub.usageEvents.keys());
+
+      const res = await signedInRespond('Stranger');
+      expect(res.status, await res.clone().text()).toBe(201);
+      expect(hub.checkRequests).toHaveLength(checks + 1);
+      expect(hub.checkRequests.at(-1)!.body).toEqual({
+        accountRef: ORG_FORMS,
+        actionKey: 'forms.response',
+        quantity: 1,
+        unit: 'call'
+      });
+      await until(
+        () => ownerResponses().length,
+        (n) => n >= responsesBefore + 1
+      );
+      expect(ownerResponses()).toHaveLength(responsesBefore + 1);
+      const [eventId, event] = [...hub.usageEvents.entries()].find(
+        ([id, e]) => !known.has(id) && e.accountRef === ORG_FORMS && e.actionKey === 'forms.response'
+      )!;
+      expect(event).toMatchObject({
+        accountRef: ORG_FORMS,
+        workspaceId: owner.workspaceId,
+        userId: owner.sub,
+        via: 'session'
+      });
+      await until(
+        () => hub.ledger.filter((l) => l.sourceRef === eventId),
+        (l) => l.length >= 1
+      );
+      expect(hub.ledger.filter((l) => l.sourceRef === eventId)).toEqual([
+        { accountRef: ORG_FORMS, kind: 'debit', amount: -5, sourceRef: eventId }
+      ]);
+      expect(strangerEvents()).toHaveLength(strangerPosted);
+      expect(hub.balanceOf(ORG_STRANGER)).toBe(strangerBalance);
+
+      // The owner broke: the signed-in person reads the viewer's neutral sentence on both doors.
+      hub.setBalance(ORG_FORMS, 0);
+      const posted = eventsOf().length;
+      await expectNeutral(await signedInRespond('Stranger broke'));
+      await expectNeutral(await signedInUpload(new TextEncoder().encode('refused')));
+      await expectNothingPosted(posted);
+      expect(strangerEvents()).toHaveLength(strangerPosted);
+      expect(hub.balanceOf(ORG_FORMS)).toBe(0);
+      expect(hub.balanceOf(ORG_STRANGER)).toBe(strangerBalance);
+    } finally {
+      hub.setBalance(ORG_FORMS, 5_000);
+    }
+  });
+
+  it('the wall in front of the doors: the 91st request in ten minutes on one share link is 429 rate_limited before any check, on either door', async () => {
+    // A fresh secret: its bucket starts full at 90.
+    const wall = await mintLink('wall');
+    hub.setBalance(ORG_FORMS, 0);
+    try {
+      // Each from a fresh address: only the per-secret key drains.
+      const statuses: number[] = [];
+      for (let i = 0; i < 90; i++) statuses.push((await respond(wall.secret, `Wall ${i}`)).status);
+      expect(statuses.filter((s) => s !== 402)).toEqual([]);
+
+      const checks = hub.checkRequests.length;
+      const posted = eventsOf().length;
+      // The 91st on the OTHER door: one bucket per secret across both doors.
+      const upload = await uploadFile(wall.secret, new TextEncoder().encode('walled'));
+      expect(upload.status, await upload.clone().text()).toBe(429);
+      expect((await readJson(upload)).error.code).toBe('rate_limited');
+      expect(hub.checkRequests).toHaveLength(checks);
+      const res = await respond(wall.secret, 'Walled');
+      expect(res.status, await res.clone().text()).toBe(429);
+      expect((await readJson(res)).error.code).toBe('rate_limited');
+      expect(hub.checkRequests).toHaveLength(checks);
+      await expectNothingPosted(posted);
+      expect(hub.balanceOf(ORG_FORMS)).toBe(0);
+    } finally {
+      hub.setBalance(ORG_FORMS, 5_000);
+    }
+  }, 90_000);
 
   it('a deck deleted behind a live link is the route’s own 404 on both doors: no check made', async () => {
     const live = await mintLink('orphaned');
