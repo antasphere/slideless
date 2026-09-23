@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { Context } from 'hono';
 import { createDb } from '@slideless/db';
 import { IDENTITY } from '@slideless/contract';
 import {
@@ -248,6 +249,19 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       rateLimits: (api, { limiters, clientIp }) => {
         api.use('/collaborators/claim', rateLimit(limiters.invitationAccept, clientIp));
         api.use('/collaborators/lookup', rateLimit(limiters.invitationAccept, clientIp));
+        // The two priced viewer doors (PRDCT-2634): a per-address, per-secret
+        // wall runs here, BEFORE the billing gate's owner lookup and hub
+        // check, so a share-link holder cannot make the instance ask the hub
+        // on every request unchecked (the code review).
+        const bySecret = async (c: Context) => [c.req.param('secret') ?? ''];
+        api.use(
+          '/viewer/:secret/forms/:form/responses',
+          rateLimit(limiters.viewerFormGate, clientIp, bySecret)
+        );
+        api.use(
+          '/viewer/:secret/forms/:form/uploads',
+          rateLimit(limiters.viewerFormGate, clientIp, bySecret)
+        );
       },
 
       filePolicy: ({ presentations: presentationService }) => ({
