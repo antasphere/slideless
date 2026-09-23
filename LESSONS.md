@@ -1413,3 +1413,51 @@ migrate` on an unchanged schema):
   20 MB deck is a hundred million credits. `per` on the action (`5 per 1,048,576 bytes`) keeps
   the meter exact, the boot already refuses a route whose meter unit differs from the action's,
   and `declaredCredits()` lets a test pin the seed values from the declaration.
+
+## The chassis charges (PRDCT-2664, 2652, 2653, 2654, 2644, 2645, 2026-09-23, lane B of the phase 2 wave)
+
+- **A cache of a quantity-priced answer is sound only through monotonicity.** The check's answer
+  depends on the quantity, so "cache the answer per account per action" would either miss on
+  every upload (each size a new key) or lie. The price never DECREASES with the quantity
+  (`ceil(max(0, q − free) / per) × credits`), so a fresh allowed answer is good for any smaller
+  or equal quantity and a fresh denial for any larger or equal one; everything else asks the
+  hub. Store the LARGER quantity when an allowed answer replaces a fresh allowed one, or a burst
+  of small uploads keeps evicting the one that served them (`entitlements/check.ts`).
+- **A fail-open posture without a hold is a timeout per request.** Failing open is the right
+  verdict for a hub that does not answer, but a hub that times out costs the full budget (five
+  seconds) on EVERY metered request for fifteen minutes unless the hub is left alone between
+  probes. The machine token already had the shape (its negative cache); the check now has
+  `outageHoldMs` (five seconds, one probe per window for the instance), and a held request
+  never re-arms the window (only a real failed call does), or the hold would extend itself
+  under load. A test suite that wants every request to reach the fake sets the hold to zero in
+  the dials, as it already did for the two TTLs; the drill sleeps past the hold before the
+  healing upload.
+- **What discovery advertises must be what the instance serves.** A `pro: 500 MB` beside a
+  handler that cuts the stream at `MAX_FILE_SIZE_MB` (100) advertised a value nobody could use,
+  and the hub would have seeded it as truth. The paid tier IS the operator's cap, the free value
+  a number of its own (`min(100 MB, cap)`), and the boot refuses any tier above a numeric oss
+  ceiling; the cloud cap must be raised (infra) BEFORE staff seeds the hub from discovery.
+- **A body with no Content-Length is a plan limit passed at 0 bytes.** Refusing it before the
+  handler (411) is safer than storing and rolling back: the blob is content-addressed and may be
+  another deck's. Node's fetch and the browser declare the length for a buffer, a blob or a form;
+  the in-process MCP calls encode the form first; `app.request` with a body and no header sends
+  NONE, which is how a test reproduces the case.
+- **A stale event held is a loop by design, and the held worker must not count it twice.**
+  An event older than the hub's window goes to the held queue and comes back hourly forever
+  (only an operator ends it), so the reason label on `usage_events_held_total` and the marker
+  singleton key on the held job are what keep it out of the `retry_budget` count and the
+  "exhausted the retry budget" error log. Count a held event only once its batch has settled:
+  a post that throws re-queues the whole batch, held events included.
+- **`*.localhost` hostnames bite twice in a real browser.** A sign-in started on
+  `localhost:<port>` ends on `slideless.localhost:<port>/login?error=state_mismatch` because the
+  state cookie lives on the host the flow started on and the registered callback is the other
+  (PRDCT-2645, reproduced with a driven Chromium). And the hub's hint cookie domain defaults to
+  the issuer host minus its first label, `localhost` on a pair, a domain browsers refuse, so the
+  dashboard's hint-watch (single logout) signs a fresh browser session out within a second. The
+  headless legs never carry the hint; a browser demo on a pair needs `HUB_HINT_COOKIE_DOMAIN`
+  set to a parent the browser accepts.
+- **Never run turbo while a subagent builds `dist` in the same worktree.** Half the packages
+  failed with no error of their own on the first CI run: another process was rewriting the
+  chassis build the typecheck was reading. Run the gates when the tree is quiet, keep the whole
+  log (a `tail` loses the one real failure), and expect a 50 MiB upload test to need more than
+  vitest's five seconds on a loaded machine.
