@@ -49,7 +49,10 @@ export const DECK_ERROR_HINTS: ErrorHints = {
   token_revoked: 'This share token was revoked — mint a new one with slideless_add_share_token.',
   token_expired: 'This share token expired — extend it or mint a new one with slideless_add_share_token.',
   already_owner: 'The deck owner does not need a collaborator grant — nothing to do.',
-  entitlement_denied: 'The workspace quota refused this upload — free space or raise the plan limits.',
+  entitlement_denied:
+    'This upload was refused by the instance: on a self-hosted instance the file exceeds the operator\u2019s ' +
+    'cap; on the cloud the organization lacks the credits — the top-up link in this message is where a ' +
+    'human adds them.',
   file_too_large: 'One file exceeds the instance upload limit — use the slideless CLI or shrink the file.',
   payload_too_large: 'The request exceeds the 1 MiB MCP body cap — push large decks with the slideless CLI.',
   validation_error: 'The request shape was rejected — fix the listed fields and retry.'

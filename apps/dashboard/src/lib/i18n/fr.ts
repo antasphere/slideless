@@ -640,6 +640,15 @@ export const fr: Record<keyof typeof en, string> = {
   'files.deleteConfirmTitle': 'Supprimer le fichier ?',
   'files.deleteConfirmDescription': '« {name} » sera définitivement supprimé.',
 
+  // ── Billing refusals ($lib/billing-refusal, PRDCT-2664) ───────────────
+  'billing.upgradeTitle': 'Il faut un forfait supérieur',
+  'billing.upgradeDescription': 'Le forfait {requiredPlan} le permet.',
+  'billing.upgradeDescriptionNoPlan': 'Aucun forfait ne le permet sur cette instance.',
+  'billing.upgradeAction': 'Changer de forfait',
+  'billing.topUpTitle': 'Crédits insuffisants',
+  'billing.topUpDescription': 'Il faut {credits} crédits ; votre organisation en a {balance}.',
+  'billing.topUpAction': 'Recharger',
+
   // ── Audit log ────────────────────────────────────────────────────────
   'audit.title': 'Journal d’audit',
   'audit.description': 'Chaque action privilégiée, qui l’a faite et comment elle s’est authentifiée.',

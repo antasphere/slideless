@@ -265,29 +265,55 @@ describe('the cap refusal, before any write', () => {
     expect(uploaded).toEqual([]);
   });
 
-  it('on the cloud edition the cap is the free value, not the oss value (the operator\u2019s knob)', async () => {
+  it('on the cloud edition the cap is the highest tier\u2019s value, never free alone (PRDCT-2653)', async () => {
     const dir = await makeDeckWithDownloads();
-    await truncate(join(dir, 'downloads', 'figures.csv'), 2 * 1024 * 1024);
-    const cloud = (freeBytes: number) => ({
+    await truncate(join(dir, 'downloads', 'figures.csv'), 50 * 1024 * 1024);
+    const MiB = 1024 * 1024;
+    const cloud = (limits: Record<string, number | null>) => ({
       edition: 'cloud',
-      entitlements: { limits: { 'files.maxBytes': { oss: 1024 * 1024, free: freeBytes, pro: null } } }
+      entitlements: { limits: { 'files.maxBytes': limits } }
     });
-    // free 10 MiB: a 2 MiB file passes, though the oss value is 1 MiB.
-    const wide = pushRoutes({ missing: [], instance: cloud(10 * 1024 * 1024) });
-    const ok = routedHarness(wide.routes);
+    // { oss 100, free 20, pro 100 }: a 50 MiB file passes, though the free
+    // value is 20 MiB. The CLI cannot know the plan; the instance answers
+    // plan_required on the declared size itself.
+    const paid = pushRoutes({
+      missing: [],
+      instance: cloud({ oss: 100 * MiB, free: 20 * MiB, pro: 100 * MiB })
+    });
+    const ok = routedHarness(paid.routes);
     expect(await run(PUSH(dir), ok.io), ok.err()).toBe(0);
     expect(ok.err()).not.toContain('per-file cap');
-    // free 1 MiB: refused, naming the free cap.
-    const tight = pushRoutes({ missing: [], instance: cloud(1024 * 1024) });
-    const refused = routedHarness(tight.routes);
+    // Over the pro value: refused upfront, naming the pro cap (100 MB), not
+    // the free one. (The first push linked the folder: a later push now.)
+    await truncate(join(dir, 'downloads', 'figures.csv'), 100 * MiB + 1);
+    const over = pushRoutes({
+      missing: [],
+      existingDeck: true,
+      instance: cloud({ oss: 100 * MiB, free: 20 * MiB, pro: 100 * MiB })
+    });
+    const refused = routedHarness(over.routes);
     expect(await run(PUSH(dir), refused.io)).toBe(1);
-    expect(refused.err()).toContain('1.0 MB per-file cap');
-    expect(tight.uploaded).toEqual([]);
-    // free null (unlimited) on cloud: nothing is refused upfront (the first
-    // push linked the folder, so this one is a new version of that deck).
-    const open = pushRoutes({ missing: [], existingDeck: true, instance: cloud(null as unknown as number) });
+    expect(refused.err()).toContain('100.0 MB per-file cap');
+    expect(over.uploaded).toEqual([]);
+    // pro null (unlimited) on cloud: nothing is refused upfront, whatever free says.
+    const open = pushRoutes({
+      missing: [],
+      existingDeck: true,
+      instance: cloud({ oss: MiB, free: MiB, pro: null })
+    });
     const free = routedHarness(open.routes);
-    expect(await run(PUSH(dir), free.io)).toBe(0);
+    expect(await run(PUSH(dir), free.io), free.err()).toBe(0);
+    expect(free.err()).not.toContain('per-file cap');
+    // pro absent: the free value is the cap.
+    const noPro = pushRoutes({
+      missing: [],
+      existingDeck: true,
+      instance: cloud({ oss: 200 * MiB, free: MiB })
+    });
+    const tight = routedHarness(noPro.routes);
+    expect(await run(PUSH(dir), tight.io)).toBe(1);
+    expect(tight.err()).toContain('1.0 MB per-file cap');
+    expect(noPro.uploaded).toEqual([]);
   });
 
   it('falls back to the documented 100 MB when discovery carries no cap, and when it is unreachable', async () => {

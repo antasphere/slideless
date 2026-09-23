@@ -15,6 +15,7 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, PlatformApiError, errorMessage } from '$lib/api';
+  import { refusalCard, toastApiError } from '$lib/billing-refusal';
   import { formatBytes, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { download } from '$lib/download';
@@ -54,10 +55,14 @@
       );
       await list.refresh();
     } catch (e) {
-      if (e instanceof PlatformApiError && e.status === 413) {
+      // A billing refusal (402 top-up, 403 plan_required upgrade) is its
+      // card first; the self-hosted 413 without details keeps its sentence.
+      if (refusalCard(e)) {
+        toastApiError(e, t('files.uploadFailed'));
+      } else if (e instanceof PlatformApiError && e.status === 413) {
         toast.error(t('files.tooLarge', { message: e.message }));
       } else {
-        toast.error(errorMessage(e, t('files.uploadFailed')));
+        toastApiError(e, t('files.uploadFailed'));
       }
     } finally {
       uploading = false;

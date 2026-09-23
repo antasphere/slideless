@@ -72,20 +72,25 @@ const DEFAULT_MAX_FILE_SIZE_MB = 100;
 /**
  * The instance's per-file cap in bytes, read from discovery's declared
  * limit `files.maxBytes` (the billing rail, PRDCT-2282's ask: the upfront
- * refusal with the right number): the `oss` value on a self-hosted instance
- * (the operator's cap), the `free` value on the cloud (every account is on
- * the free plan in phase 1; the plan of THIS account is what the instance
- * answers to a refused upload, `plan_required`). null = unlimited. An older
- * instance, or an unreachable one, gets the documented default.
+ * refusal with the right number). On a self-hosted instance, the `oss`
+ * value: the operator's cap, the same for everyone. On the cloud, the
+ * HIGHEST tier's value, `pro` (`free` when `pro` is absent), never `free`
+ * alone (PRDCT-2653): since phase 2 the free value can sit below the paid
+ * tier's, and the CLI cannot know the plan of THIS account, so refusing at
+ * the free value would stop a file the account's plan allows. What the
+ * plan does not allow, the instance refuses itself (403 `plan_required`
+ * with the upgrade link) on the declared size, before it reads a byte, so
+ * nothing is wasted. null = unlimited. An older instance, or an
+ * unreachable one, gets the documented default.
  */
 async function resolveFileCapBytes(ctx: CliContext): Promise<number | null> {
   const info = (await ctx.client.instance().catch(() => null)) as {
     edition?: unknown;
-    entitlements?: { limits?: Record<string, { oss?: unknown; free?: unknown }> };
+    entitlements?: { limits?: Record<string, { oss?: unknown; free?: unknown; pro?: unknown }> };
   } | null;
   const limit = info?.entitlements?.limits?.['files.maxBytes'];
   if (limit) {
-    const value = info?.edition === 'cloud' ? limit.free : limit.oss;
+    const value = info?.edition === 'cloud' ? (limit.pro !== undefined ? limit.pro : limit.free) : limit.oss;
     if (value === null) return null;
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
   }
