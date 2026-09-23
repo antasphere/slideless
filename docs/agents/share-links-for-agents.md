@@ -37,7 +37,7 @@ curl -H 'x-viewer-password: the-password' https://slides.example.com/v/SECRET/
 An expired link answers `410` and a revoked one `403`, the same as for a person.
 
 The deck's HTML also points at the index. When the viewer adds its bar, notes or forms to a page,
-it adds in the page's `<head>` a `<link rel="alternate" type="text/markdown" href="?format=agent">`
+it adds in the page's `<head>` a `<link rel="alternate" type="text/markdown" href="/v/<secret>/?format=agent">`
 and a comment naming `?format=agent` and `?format=json`, so an agent that received the HTML anyway
 finds its way.
 
@@ -55,15 +55,16 @@ finds its way.
 - The URLs of the markdown and JSON forms of the index.
 
 The JSON form carries the same facts as fields: `deck`, `version`, `link`, `agentDoc`, `entry`,
-`files`, `downloads` (null when the link does not allow them) and `zipUrl`, plus `index` with the
+`files`, `downloads` (null when the link does not allow them or the version has none) and `zipUrl`, plus `index` with the
 two URLs.
 
 ## What it never holds
 
 The index says nothing the link does not already hand out. Every URL in it is one the same link
-opens anyway. A link with downloads off has no downloads section at all and never names the
-files. The index never shows the deck's owner, the workspace, the other links, or the other
-versions.
+opens anyway. A link with downloads off has no downloads section at all and no download address;
+the deck's own AGENT.md is inlined as written, so whatever it says about its files is what the
+author wrote. The index never shows the deck's owner, the workspace, the other links, or the
+other versions.
 
 ## Counting and search engines
 

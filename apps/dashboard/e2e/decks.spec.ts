@@ -242,16 +242,21 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     await expect(v1Row).toBeVisible();
 
     await v1Row.getByRole('button', { name: 'Preview' }).click();
-    await expect(v1Row.getByText('Previewing')).toBeVisible();
 
-    // The preview lives on the overview tab.
-    await openDeckTab(page, /^Overview/);
+    // The preview lives on the overview tab: choosing a version takes the
+    // reader there, where the frame now shows v1.
+    const overview = page.locator('nav[data-section-bar]').getByRole('link', { name: /^Overview/ });
+    await expect(overview).toHaveAttribute('aria-current', 'page');
     await expect(page.getByText('Previewing v1')).toBeVisible();
 
     // The remounted iframe still carries the exact sandbox set.
     const iframe = page.getByTestId('deck-preview');
     await expect(iframe).toBeVisible();
     expect(await iframe.getAttribute('sandbox')).toBe(SANDBOX);
+
+    // Back under Versions, the row says which version the frame shows.
+    await openDeckTab(page, /^Versions/);
+    await expect(v1Row.getByText('Previewing')).toBeVisible();
   });
 
   await test.step('clean up: delete the deck; the list shows the empty state again', async () => {

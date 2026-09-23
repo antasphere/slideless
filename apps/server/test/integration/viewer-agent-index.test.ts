@@ -464,6 +464,28 @@ describe('an index read is an agent read, never a view', () => {
 
 // ═══ Discovery ═══════════════════════════════════════════════════════════════
 
+describe('the PDF switch on the row itself', () => {
+  it('the column defaults to FALSE and the counter to 0: a row written without them reads off (verifier round 1, mutation 4)', async () => {
+    // The API always sends the schema default (true), so only a raw insert
+    // exercises the migration's DEFAULT: the value every link minted before
+    // the switch existed received. A link in circulation must never gain
+    // the Export PDF action without its owner's word.
+    const inserted = await app.db.db.execute(sql`
+      INSERT INTO share_tokens (workspace_id, presentation_id, name, token_hash)
+      SELECT workspace_id, id, 'raw insert', 'raw-insert-hash-' || gen_random_uuid()::text
+      FROM presentations WHERE id = ${deckId}
+      RETURNING can_export_pdf, agent_read_count`);
+    const row = (inserted.rows as Array<{ can_export_pdf: boolean; agent_read_count: number }>)[0];
+    expect(row?.can_export_pdf).toBe(false);
+    expect(row?.agent_read_count).toBe(0);
+    // And such a row reads off on the wire and tells the bar so.
+    const listed = await readJson(await get(`/api/v1/presentations/${deckId}/tokens`, { cookie }));
+    const raw = listed.shareTokens.find((t: { name: string }) => t.name === 'raw insert');
+    expect(raw?.canExportPdf).toBe(false);
+    expect(raw?.agentReadCount).toBe(0);
+  });
+});
+
 describe('the deck HTML points agents at the index', () => {
   it('a default link carries the discovery link in <head>; a showBar:false link stays byte-exact', async () => {
     const def = await createToken(deckId, { name: 'discover' });

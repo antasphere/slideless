@@ -1277,7 +1277,10 @@ doc.addEventListener('mouseup', function () {
 doc.addEventListener('mousedown', function (e) {
   if (root.contains(e.target)) return;
   hideAdd();
-  if (pop.style.display === 'block') closeComposer();
+  // A click on the deck closes an open composer (a highlight note in browse
+  // mode lands here; a pin's click lands on the layer below): the typed draft
+  // is kept for the next composer either way (PRDCT-2671).
+  if (pop.style.display === 'block') { keptDraft = popText.value; closeComposer(); }
 });
 
 // ---- Annotate mode (point / region pins) -------------------------------

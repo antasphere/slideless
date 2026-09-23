@@ -430,7 +430,7 @@
     color: var(--muted);
   }
 
-  /* three figures on one line, a hairline between them */
+  /* four figures on one line, a hairline between them */
   .figures {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

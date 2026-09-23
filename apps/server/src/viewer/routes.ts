@@ -211,7 +211,8 @@ function viewerError(
   }
   return c.json({ error: { code: failure.code, message: failure.message } }, failure.status, {
     'cache-control': 'no-store',
-    vary: 'accept, user-agent'
+    vary: 'accept, user-agent',
+    'x-robots-tag': 'noindex, nofollow'
   });
 }
 
@@ -371,7 +372,7 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
         }
       },
       401,
-      { 'cache-control': 'no-store', vary: 'accept, user-agent' }
+      { 'cache-control': 'no-store', vary: 'accept, user-agent', 'x-robots-tag': 'noindex, nofollow' }
     );
   }
 
