@@ -382,15 +382,20 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
 
     // The billing rail (slot 22, PRDCT-2626): what Slideless prices, its
     // limits and its features per tier, beside the routes that declare them
-    // (@slideless/contract/routes, DECK_ROUTE_ENTITLEMENTS). DATA, reviewed
-    // with Romain before phase 2 prices anything: in phase 1 every cloud
-    // account is `free` and the free values are today's caps, so nothing
-    // changes for anyone. The upload cap's oss AND free values are the
-    // operator's MAX_FILE_SIZE_MB by construction (100 MB on the cloud
-    // instance), never a second copy of the number. null = unlimited.
+    // (@slideless/contract/routes, DECK_ROUTE_ENTITLEMENTS). DATA: the seed
+    // Romain ruled on 22 September 2026 (the hub seeds its price book and
+    // its plan entitlements from this on discovery, then its rows win).
+    // The upload cap (PRDCT-2653): the PAID tier's value IS the operator's
+    // MAX_FILE_SIZE_MB, the ceiling the handlers enforce mid-stream, so what
+    // discovery advertises is what the instance serves by construction; the
+    // free value is 100 MB, or the cap when the cap is smaller (an instance
+    // capped at 100 MB, today's cloud, serves free and pro alike until the
+    // operator raises the cap to the 500 MB the seed intends). The oss
+    // value is the operator's own knob. null = unlimited.
     entitlements: (env) => {
       const MB = 1024 * 1024;
       const capBytes = env.MAX_FILE_SIZE_MB * MB;
+      const freeUploadBytes = Math.min(100 * MB, capBytes);
       return {
         actions: [
           { key: DECK_ACTIONS.commit, creditsPerUnit: 50, unit: 'call', label: 'Publish a deck' },
@@ -415,7 +420,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           }
         ],
         limits: {
-          [DECK_LIMITS.fileBytes]: { oss: capBytes, free: capBytes, pro: 500 * MB },
+          [DECK_LIMITS.fileBytes]: { oss: capBytes, free: freeUploadBytes, pro: capBytes },
           [DECK_LIMITS.workspaceMembers]: { oss: null, free: 3, pro: null },
           [DECK_LIMITS.linksPerDeck]: { oss: null, free: 10, pro: null }
         },
