@@ -23,6 +23,7 @@
   import { page } from '$app/state';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
+  import { toastApiError } from '$lib/billing-refusal';
   import { formatDate } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { roleTag } from '$lib/tags';
@@ -150,7 +151,7 @@
       showClaimDialog = true;
       await list.refresh();
     } catch (e) {
-      toast.error(errorMessage(e, t('collaborators.inviteFailed')));
+      toastApiError(e, t('collaborators.inviteFailed'));
     } finally {
       inviteLoading = false;
     }

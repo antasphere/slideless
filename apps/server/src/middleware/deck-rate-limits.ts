@@ -37,7 +37,19 @@ export const deckBuckets = {
    * covers a respondent filling several file fields; the byte bounds are the
    * per-file, per-response and per-deck ceilings, not this bucket.
    */
-  viewerFormUpload: { prefix: 'viewer-form-upload', points: 60, durationSec: 10 * 60 }
+  viewerFormUpload: { prefix: 'viewer-form-upload', points: 60, durationSec: 10 * 60 },
+  /**
+   * The wall in FRONT of the billing gate on the two priced viewer doors
+   * (PRDCT-2634, the code review): a share-link holder must not drive a hub
+   * credit check and three lookups per request without any limiter first.
+   * Per ADDRESS only, across every link, consumed on arrival before the gate,
+   * on the cloud edition only (the tool's `rateLimits` slot). Never key it on
+   * the share secret: that caps a link's whole audience, 90 respondents per
+   * ten minutes whatever their addresses (verifier round 5). The handlers'
+   * own walls behind the gate are per address AND link (30 submissions, 60
+   * uploads per ten minutes), so this wall's 90 per address sits above them.
+   */
+  viewerFormGate: { prefix: 'viewer-form-gate', points: 90, durationSec: 10 * 60 }
 } satisfies Record<string, BucketDeclaration>;
 
 /** What boot hands around: the chassis buckets plus the five above. */

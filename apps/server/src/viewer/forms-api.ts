@@ -657,6 +657,15 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
         contentType,
         body: Readable.fromWeb(c.req.raw.body as WebReadableStream)
       });
+      // What the entitlement gate meters after the 2xx (PRDCT-2634): the
+      // bytes kept, on the owner's account; the viewer route is audit-exempt,
+      // so nothing else reads this.
+      c.set('audit', {
+        action: 'form.upload',
+        resourceType: 'form_upload',
+        resourceId: row.id,
+        metadata: { sizeBytes: row.sizeBytes }
+      });
       deps.logger.info(
         { presentationId, shareTokenId: token.id, uploadId: row.id, sizeBytes: row.sizeBytes },
         'viewer form file uploaded'

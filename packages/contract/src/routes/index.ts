@@ -4,7 +4,9 @@ import {
   auditedSizeBytes,
   cursorPageQuerySchema,
   declaredContentLength,
-  declareRouteEntitlements
+  declareRouteEntitlements,
+  type ActorRef,
+  type EntitlementRequest
 } from '@antasphere/chassis-contract';
 import {
   defineChassisRoutes,
@@ -969,8 +971,33 @@ export const DECK_ACTIONS = {
   upload: 'files.upload',
   shareToken: 'share_tokens.create',
   export: 'workspace.export',
-  invite: 'collaborators.invite'
+  invite: 'collaborators.invite',
+  /** A form response through a share link (PRDCT-2634): the deck's owner pays, per response. */
+  formResponse: 'forms.response',
+  /** A file uploaded into a form response through a share link (PRDCT-2634): the owner pays, per MB received. */
+  formUpload: 'forms.upload'
 } as const;
+
+/**
+ * The two anonymous surfaces the price book carries (PRDCT-2634, spec §8): a
+ * viewer's form response and a viewer's form file upload, both through a
+ * share link, both with no principal. The route's `actor` hook resolves the
+ * share secret to the deck's owner, the owner's workspace and account; the
+ * owner pays and is reported, the viewer is never identified. The hook needs
+ * the server's own services, so the server supplies it (`deckRouteEntitlements`);
+ * the plain routes carry none and a client reading them sees the declaration
+ * alone.
+ */
+export const FORM_RESPONSE_ROUTE = {
+  method: 'post',
+  path: '/viewer/{secret}/forms/{form}/responses'
+} as const;
+export const FORM_UPLOAD_ROUTE = { method: 'post', path: '/viewer/{secret}/forms/{form}/uploads' } as const;
+
+export interface DeckActorHooks {
+  /** The owner of the deck behind `ctx.params.secret`, or null when the secret resolves to nothing. */
+  formOwner: (ctx: EntitlementRequest) => Promise<ActorRef | null>;
+}
 
 /** The upload cap, one key for both upload doors (the deck asset route and the generic files route). */
 export const DECK_LIMITS = {
@@ -984,21 +1011,46 @@ export const DECK_FEATURES = {
   deckPassword: 'deck.password'
 } as const;
 
-export const DECK_ROUTE_ENTITLEMENTS = declareRouteEntitlements([
-  // The two upload doors: the declared Content-Length is checked against the
-  // cap before a byte is read, the bytes actually kept are what is metered.
-  {
-    route: assetUploadRoute,
-    meter: { key: DECK_ACTIONS.upload, unit: 'bytes', quantity: auditedSizeBytes },
-    limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
-  },
-  {
-    route: fileUploadRoute,
-    meter: { key: DECK_ACTIONS.upload, unit: 'bytes', quantity: auditedSizeBytes },
-    limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
-  },
-  { route: uploadSessionCommitRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
-  { route: shareTokenCreateRoute, meter: { key: DECK_ACTIONS.shareToken, unit: 'call' } },
-  { route: workspaceExportRoute, meter: { key: DECK_ACTIONS.export, unit: 'call' } },
-  { route: collaboratorInviteRoute, meter: { key: DECK_ACTIONS.invite, unit: 'call' } }
-]);
+/**
+ * The route declarations, with the actor hooks the server supplies for the
+ * two anonymous surfaces. A hook that resolves nothing leaves the surface
+ * unmetered (the route's own handling answers).
+ */
+export function deckRouteEntitlements(actors: DeckActorHooks) {
+  return declareRouteEntitlements([
+    // The two upload doors: the declared Content-Length is checked against the
+    // cap before a byte is read, the bytes actually kept are what is metered.
+    {
+      route: assetUploadRoute,
+      meter: { key: DECK_ACTIONS.upload, unit: 'bytes', quantity: auditedSizeBytes },
+      limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
+    },
+    {
+      route: fileUploadRoute,
+      meter: { key: DECK_ACTIONS.upload, unit: 'bytes', quantity: auditedSizeBytes },
+      limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
+    },
+    { route: uploadSessionCommitRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    { route: shareTokenCreateRoute, meter: { key: DECK_ACTIONS.shareToken, unit: 'call' } },
+    { route: workspaceExportRoute, meter: { key: DECK_ACTIONS.export, unit: 'call' } },
+    { route: collaboratorInviteRoute, meter: { key: DECK_ACTIONS.invite, unit: 'call' } },
+    // The anonymous surfaces (PRDCT-2634): no principal, the owner resolved
+    // from the share secret pays. The upload meters the bytes kept.
+    {
+      route: FORM_RESPONSE_ROUTE,
+      meter: { key: DECK_ACTIONS.formResponse, unit: 'call', actor: actors.formOwner }
+    },
+    {
+      route: FORM_UPLOAD_ROUTE,
+      meter: {
+        key: DECK_ACTIONS.formUpload,
+        unit: 'bytes',
+        quantity: auditedSizeBytes,
+        actor: actors.formOwner
+      }
+    }
+  ]);
+}
+
+/** The declarations with no actor hooks: what a client reads; the server builds its own with `deckRouteEntitlements`. */
+export const DECK_ROUTE_ENTITLEMENTS = deckRouteEntitlements({ formOwner: async () => null });

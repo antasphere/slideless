@@ -285,6 +285,78 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   construction, credits are a no-op; the seed values are data to review before phase 2. The
   federation drill's seventh leg (`scripts/federation-drill.sh`, Phase 8) is the regression test
   of the pair: one metered action per surface read back from the hub's `usage_events`.
+- **The chassis asks the hub before a priced action, and refuses on its answer (PRDCT-2664, phase 2
+  of the billing rail, spec §7 steps 3 and 4)**: on a metered account (cloud, an `accountRef`) the
+  gate's third step is `HubCreditCheck` (`packages/chassis-server/src/entitlements/check.ts`), one
+  `POST <hub>/api/v1/usage/check` `{ accountRef, actionKey, quantity, unit }` with the machine token,
+  the answer mirrored verbatim (`usageCheckSchema`). The LOCAL credit service (`AllowAllEntitlements`,
+  the env cap) is never consulted on a metered account: the plan limit is its cap there. A denial is
+  **402 `entitlement_denied`** with `details: { credits, balance, topUpUrl }`, read straight off the
+  hub's answer; `account_suspended` from the check is 403 `account_suspended` (the live gate's code).
+  The cache is per account per action and SOUND although the price depends on the quantity, because
+  the price never decreases with it: a fresh allowed answer (30 s) serves any smaller or equal
+  quantity, a fresh denial (5 s, so a top-up is felt quickly) refuses any larger or equal one, every
+  other case asks the hub. A hub that does not answer (network, timeout, 5xx, 403, a 404 that is not
+  `unknown_account`, no machine token) FAILS OPEN for fifteen minutes from the first failure, then
+  every priced action answers 403 `hub_unavailable` (the federation gate's posture and code); a
+  success clears the clock. The posture, the first failure's second and the cache size are on
+  `/metrics` (`usage_check_posture` 0/1/2, `usage_check_failing_since_seconds`,
+  `usage_check_cache_entries`, `usage_check_total{outcome}`). A 404 `unknown_account` and a 400 are the
+  hub's judgement, not an outage: allowed, logged (error level for the 400, a bug a retry never heals),
+  nothing charged. Never re-present the local env cap to a metered account, never cache a fail-open
+  answer, and never make the closure a readiness flag. The dashboard shows the TOP-UP card on a 402
+  and the UPGRADE card on a 403 `plan_required` (`$lib/billing-refusal.ts`, distinct, the decision on
+  the details never on the edition), the CLI prints the price, the balance and the link, the MCP
+  tool result carries them as text: a self-hosted 413 `entitlement_denied` without details keeps its
+  sentence everywhere.
+- **What discovery advertises is what the instance serves (PRDCT-2653)**: the paid tier's upload
+  size IS `MAX_FILE_SIZE_MB` (the ceiling the handlers cut the stream at) and the free value is 100 MB
+  or the cap when smaller (`apps/server/src/tool.ts`); `assertToolEntitlements` parses the slot
+  through `toolEntitlementsSchema` (a missing tier stops the boot) and refuses any tier value, or
+  unlimited, above a numeric `oss` ceiling. The cloud instance's cap must be raised to 500 MB by infra
+  before staff seeds the hub's plan entitlements from discovery, or the seed carries the smaller
+  value. The CLI's upfront refusal on the cloud reads the highest tier (it cannot know the account's
+  plan; the instance refuses the plan on the declared size before reading a byte).
+- **A metered upload declares its size (PRDCT-2652)**: on a metered account, a POST/PUT/PATCH with no
+  `Content-Length` on a route whose limit READS the declared length (`limit.value ===
+declaredContentLength`) or whose meter is in bytes answers 411 `length_required` before the
+  handler, since a body judged as 0 bytes passed the plan limit whatever its size and a stored blob
+  is content-addressed (a rollback could delete what another deck references); a count limit on a
+  JSON route demands no size. Every first-party
+  caller (the SDKs, the MCP kit's in-process call) declares it; oss and cloud-local workspaces are
+  untouched.
+- **An anonymous surface pays through the resource's owner, and the viewer learns nothing
+  (PRDCT-2634, spec §8, Romain's ruling of 2026-09-23)**: when a route declares `meter.actor`, the
+  gate runs the hook WITHOUT a principal and meters on the actor it resolves (the owner's user id,
+  workspace and account; `via` reads `session`, the hub's enum having no value for a share link);
+  a hook that resolves nothing or throws leaves the route to its own handling and meters nothing.
+  Slideless declares two: the form response (`forms.response`, per call) and the form file upload
+  (`forms.upload`, bytes per MB received, its own key so the report tells it from the owner's
+  uploads), both through `deckRouteEntitlements({ formOwner })` in `apps/server/src/tool.ts`, the
+  hook `presentations/form-owner-actor.ts` resolving the share secret through the late-bound domain
+  (`EntitlementsContext.getTool`, the jobs slot's shape; the slot runs before `services`). A credit
+  refusal on an anonymous surface is `402 entitlement_denied` with ONE neutral sentence and NO
+  `details`: the owner's balance, price and top-up page are never shown to a viewer. The plain
+  `DECK_ROUTE_ENTITLEMENTS` carries no hooks (a client's read); the server always builds its own.
+  The upload handler records `audit.metadata.sizeBytes` so the emit meters the bytes kept. A
+  deduplicated upload is billed at the bytes RECEIVED (PRDCT-2655, the same ruling), and the
+  price label says so. **A route that declares an `actor` hook is a viewer's surface whatever the
+  credential**: a person signed in to any workspace who holds the link is a viewer there, the hook
+  alone names the payer, and a null or throwing hook leaves the route with nothing metered, never a
+  fallback to the signed-in person. In front of the two doors, on cloud only, a wall of 90 requests
+  per ten minutes PER ADDRESS (`viewerFormGate`, the tool's `rateLimits` slot) bounds what one holder
+  can make the instance ask the hub; never key it on the share secret, which caps a link's whole
+  audience (verifier round 5), and never install it on oss, where the gate asks nothing.
+- **The poster never posts what the hub would refuse on its date (PRDCT-2644)**: the hub's window
+  (`USAGE_EVENT_MAX_PAST_MS` seven days, `USAGE_EVENT_MAX_FUTURE_MS` five minutes,
+  `usageEventOccurrenceIssue`, mirrored with the hub's names and messages in `chassis-contract`,
+  pinned by `usage-window.test.ts` which also reads the hub's file when the checkout is beside this
+  one) is judged before posting; an event outside it is named in the batch outcome, sent to
+  `usage-events-held` by the usage worker with the `occurred_at_window:<id>` marker key (so the held
+  worker never counts or logs it as a retry-budget hold), and re-driven after the hold forever: a
+  future-dated event lands once its time comes, a stale one waits for an operator.
+  `usage_events_held_total` now carries `{reason}`. Boot logs a warning when the hub's `Date` header
+  disagrees with the instance clock by more than the forward bound (`entitlements/clock-skew.ts`).
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

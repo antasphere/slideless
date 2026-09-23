@@ -27,13 +27,46 @@
 #      the user and projects it (owner, hubOrigin), the hub's audit row names
 #      the tool client, an slk_ key is refused; and the deploy-order fact:
 #      the hub refuses a sign-in that requests a scope it does not list.
-##   7. The billing rail, phase 1 (PRDCT-2625 + PRDCT-2626, Phase 8) — one
+#   7. The billing rail, phase 1 (PRDCT-2625 + PRDCT-2626, Phase 8) — one
 #      metered action per surface (the dashboard session, an slk_ key, an
 #      OAuth bearer over MCP) lands in the hub's usage_events exactly once:
 #      the projected organization, the hub user, the channel, the action and
 #      the size; the same batch posted again by hand with the tool's own
 #      client-credentials token answers duplicate for every id; the owner
 #      reads the consumption per person on GET /billing/usage.
+#   8. The billing rail, phase 2 (PRDCT-2663 + PRDCT-2664, Phase 8's second
+#      leg) — staff seeds the hub's price book from Slideless's own discovery
+#      (a second seed inserts nothing); the organization holds the 5,000
+#      sign-up grant; POST /usage/check with the machine token prices a 1 MiB
+#      upload at 5 credits with the top-up link; a staff grant drives the
+#      balance to zero and one action per surface answers 402
+#      entitlement_denied carrying the top-up link (the MCP tool's text
+#      included); the balance restored, the same action lands, the hub
+#      prices it, its debit is on GET /billing/ledger and the balance moved;
+#      the hub slow beyond the check's budget still lets the action land
+#      (fail-open) with the posture on /metrics, healed by the next answer.
+#
+# The browser sign-in on this pair starts on http://slideless.localhost:<port>,
+# never on http://localhost:<port> (PRDCT-2645): the hub sends the browser back
+# to slideless.localhost, so the state cookie set on one host cannot be read
+# on the other and a sign-in started on localhost ends on
+# /login?error=state_mismatch. Browsers resolve *.localhost to the loopback on
+# their own; curl and Node do not, which is why every curl below pins both
+# names with --resolve. Not a defect of the sign-in: a driven browser opened
+# on the wrong host. Reproduced on the pair on 23 September 2026 with a
+# driven Chromium: started on localhost:6710 the flow ends on
+# slideless.localhost:6710/login?error=state_mismatch; started on
+# slideless.localhost:6710 it lands on the dashboard.
+#
+# A second artefact of the same hostnames: the hub's SSO hint cookie domain
+# defaults to the issuer host minus its first label, here `localhost`, a
+# domain browsers refuse for a cookie, so the dashboard on slideless.localhost
+# never sees the hint and its hint-watch (single logout) signs a fresh browser
+# session out within a second (POST /sso/logout in the app log). Production
+# hostnames share a real parent (antasphere.com). A browser demo on this pair
+# needs HUB_HINT_COOKIE_DOMAIN set to a shared parent the browser accepts, or
+# the watch will sign the session out; the headless legs below never carry
+# the hint and are untouched.
 #
 # Usage: ./scripts/federation-drill.sh
 #   FEDERATION_HUB_DIR=<path>  hub checkout to build (default ../../../hub, see the compose file)
@@ -548,3 +581,133 @@ usage=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/billing-usage.json" -w '%{http_c
 jq -e --arg u "$HUB_USER_ID" --argjson n "$queued" '.byUser | length == 1 and .[0].userId == $u and .[0].events == $n' "$SCRATCH/billing-usage.json" >/dev/null \
   || fail "the per-person view does not show $queued events for $HUB_USER_ID: $(jq -c '.byUser' "$SCRATCH/billing-usage.json")"
 pass "GET /billing/usage as the owner: one person, $HUB_USER_ID, $queued events"
+
+# ── Phase 8, second leg — the billing rail, phase 2 (PRDCT-2663 + PRDCT-2664) ──
+say "Phase 8 — phase 2: the hub prices, the chassis asks before an action and refuses on the balance, the debit lands"
+SL_METRICS_TOKEN=federation-dev-metrics-token-0001 # the drill overlay's
+idem() { printf 'Idempotency-Key: drill-%s' "$(openssl rand -hex 8)"; }
+metrics() { "${CURL[@]}" -f -H "Authorization: Bearer $SL_METRICS_TOKEN" "$SL/metrics"; }
+
+# Staff seeds the price book and the plan entitlements from Slideless's own
+# discovery. The hub owner is on SUPERADMIN_EMAILS in the drill overlay, and
+# the price book was EMPTY until now, as on production (BILLING_SEED_TOOLS_AT_BOOT
+# off): the first leg's events were priced 0 and debited nothing.
+seed_status=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/seed.json" -w '%{http_code}' -X POST "$HUB/api/v1/admin/billing/prices/seed" \
+  -H "Origin: $HUB" -H "$(idem)" -H 'content-type: application/json' -d '{"toolSlug":"slideless-cloud"}')
+if [ "$seed_status" = 404 ]; then
+  # A hub without phase 2 (hub 0.10.0 and before) has no price book: the
+  # chassis fails open on its 404 and meters as phase 1 did. The leg needs
+  # the hub of PRDCT-2663; the hub deploys first, and this run says so.
+  note "the hub answers 404 on POST /admin/billing/prices/seed: no phase 2 on this hub — the second leg is skipped"
+  pass "second leg skipped: this hub carries no price book (deploy the hub of PRDCT-2663 first)"
+else
+[ "$seed_status" = 200 ] || fail "POST /admin/billing/prices/seed as the hub owner (staff) answered $seed_status: $(cat "$SCRATCH/seed.json")"
+jq -e '.tools[] | select(.toolSlug == "slideless-cloud") | .ok == true' "$SCRATCH/seed.json" >/dev/null \
+  || fail "the seed did not read Slideless's discovery: $(cat "$SCRATCH/seed.json")"
+prices_status=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/prices.json" -w '%{http_code}' "$HUB/api/v1/admin/billing/prices?toolSlug=slideless-cloud")
+[ "$prices_status" = 200 ] || fail "GET /admin/billing/prices answered $prices_status: $(cat "$SCRATCH/prices.json")"
+jq -e '[.prices[] | select(.actionKey == "files.upload")] | length == 1 and .[0].creditsPerUnit == 5 and .[0].per == 1048576' "$SCRATCH/prices.json" >/dev/null \
+  || fail "the price book does not carry files.upload at 5 credits per 1,048,576 bytes: $(jq -c '.prices' "$SCRATCH/prices.json")"
+n_prices=$(jq -r '.prices | length' "$SCRATCH/prices.json")
+[ "$n_prices" -ge 5 ] || fail "expected at least the five declared prices, the book holds $n_prices"
+seed2=$("${CURL[@]}" -b "$HUB_JAR" -X POST "$HUB/api/v1/admin/billing/prices/seed" -H "Origin: $HUB" -H "$(idem)" \
+  -H 'content-type: application/json' -d '{"toolSlug":"slideless-cloud"}')
+echo "$seed2" | jq -e '.inserted == 0' >/dev/null || fail "a second seed inserted rows: $seed2"
+pass "staff seeded the price book from Slideless's discovery ($n_prices prices; files.upload 5 credits per 1,048,576 bytes); a second seed inserted nothing"
+
+# The organization's account holds the sign-up grant.
+acct=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/account.json" -w '%{http_code}' -H "X-Workspace-Id: $HUB_ORG_ID" "$HUB/api/v1/billing/account")
+[ "$acct" = 200 ] || fail "GET /billing/account as the owner answered $acct: $(cat "$SCRATCH/account.json")"
+ACCOUNT_ID=$(jq -r '.accountId // empty' "$SCRATCH/account.json")
+[ -n "$ACCOUNT_ID" ] && jq -e '.balance == 5000 and .plan == "free"' "$SCRATCH/account.json" >/dev/null \
+  || fail "the account should hold the 5,000 sign-up grant on the free plan: $(cat "$SCRATCH/account.json")"
+pass "GET /billing/account: account $ACCOUNT_ID, balance 5000 (the sign-up grant), plan free"
+
+# The check by hand, with the tool's machine token: priced, allowed, the top-up link on the answer.
+check=$("${CURL[@]}" -o "$SCRATCH/check.json" -w '%{http_code}' -X POST "$HUB/api/v1/usage/check" -H "Authorization: Bearer $MACHINE_TOKEN" \
+  -H 'content-type: application/json' -d "{\"accountRef\":\"$HUB_ORG_ID\",\"actionKey\":\"files.upload\",\"quantity\":1048576}")
+[ "$check" = 200 ] || fail "POST /usage/check answered $check: $(cat "$SCRATCH/check.json")"
+jq -e --arg top "$HUB/billing/top-up?org=$HUB_ORG_ID" \
+  '.allowed == true and .credits == 5 and .balance == 5000 and .priced == true and .reason == null and (.topUpUrl | startswith($top))' "$SCRATCH/check.json" >/dev/null \
+  || fail "the check's answer is not the contract's: $(cat "$SCRATCH/check.json")"
+pass "POST /usage/check with the machine token: a 1 MiB upload is 5 credits, allowed, balance 5000, the top-up link names the organization"
+
+# Staff drives the balance to zero: a negative manual grant, the reason on the ledger.
+grant=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/grant.json" -w '%{http_code}' -X POST "$HUB/api/v1/admin/billing/accounts/$ACCOUNT_ID/grant" \
+  -H "Origin: $HUB" -H "$(idem)" -H 'content-type: application/json' -d '{"credits":-5000,"reason":"drill: exhaust the balance"}')
+[ "$grant" = 201 ] && jq -e '.balance == 0' "$SCRATCH/grant.json" >/dev/null || fail "the negative grant answered $grant: $(cat "$SCRATCH/grant.json")"
+pass "staff grant of -5000 with a reason: balance 0"
+
+# One action per surface refused 402 with the top-up link. The chassis
+# caches an ALLOWED answer for 30 s and serves it to any smaller or equal
+# quantity of the same action, so these uploads are LARGER than the first
+# leg's (2 KiB against a few dozen bytes): a larger quantity asks the hub.
+BIG=$(head -c 2048 /dev/zero | tr '\0' 'x')
+refused() { # label content curl-auth-args → asserts 402 entitlement_denied with the details
+  local label=$1 content=$2; shift 2
+  printf '%s' "$content" > "$SCRATCH/refused-$label.txt"
+  local sha; sha=$(openssl dgst -sha256 "$SCRATCH/refused-$label.txt" | sed 's/.*= //')
+  local status
+  status=$("${CURL[@]}" "$@" -o "$SCRATCH/refused-$label.json" -w '%{http_code}' -X POST "$SL/api/v1/presentations/assets" \
+    -H "X-Workspace-Id: $WS_ID" -F "file=@$SCRATCH/refused-$label.txt;type=text/plain" -F "sha256=$sha")
+  [ "$status" = 402 ] || fail "asset upload ($label) with an empty balance answered $status, expected 402: $(cat "$SCRATCH/refused-$label.json")"
+  jq -e --arg top "$HUB/billing/top-up?org=$HUB_ORG_ID" \
+    '.error.code == "entitlement_denied" and .error.details.credits == 5 and .error.details.balance == 0 and (.error.details.topUpUrl | startswith($top))' \
+    "$SCRATCH/refused-$label.json" >/dev/null || fail "the 402 ($label) does not carry the details: $(cat "$SCRATCH/refused-$label.json")"
+}
+refused session "$BIG" -b "$SL_JAR" -H "Origin: $SL"
+refused api_key "$BIG" -H "Authorization: Bearer $SLK"
+mcp_big=$(jq -nc --arg ws "$WS_ID" --arg html "<!doctype html><html><head><title>Drill refused</title></head><body>$BIG</body></html>" \
+  '{jsonrpc:"2.0",id:2,method:"tools/call",params:{name:"slideless_upload_html_presentation",arguments:{workspace:$ws,title:"Drill refused deck",html:$html}}}')
+mcp_refused=$("${CURL[@]}" -X POST "$SL/mcp" -H "Authorization: Bearer $MCP_BEARER" -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' -d "$mcp_big")
+# The gate's own message carries the link ("top up at <url>"); the MCP text adds
+# no second sentence (verifier round 1), so the link is there exactly once.
+echo "$mcp_refused" | jq -e --arg top "top up at $HUB/billing/top-up?org=$HUB_ORG_ID" \
+  '.result.isError == true and (.result.content[0].text | (test("entitlement_denied") and contains($top)))' >/dev/null \
+  || fail "the MCP tool result does not carry the refusal and the top-up link: $(echo "$mcp_refused" | head -c 500)"
+pass "with the balance at 0, one action per surface answers 402 entitlement_denied with the top-up link: the dashboard session, the slk_ key, the MCP tool's text"
+before_refused=$(hubdb "SELECT count(*) FROM usage_events")
+
+# The balance restored: a denial is cached five seconds, so the same action
+# lands after the hold, the hub prices it, and its debit is on the ledger.
+grant=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/grant2.json" -w '%{http_code}' -X POST "$HUB/api/v1/admin/billing/accounts/$ACCOUNT_ID/grant" \
+  -H "Origin: $HUB" -H "$(idem)" -H 'content-type: application/json' -d '{"credits":5000,"reason":"drill: restore the balance"}')
+[ "$grant" = 201 ] && jq -e '.balance == 5000' "$SCRATCH/grant2.json" >/dev/null || fail "the restoring grant answered $grant: $(cat "$SCRATCH/grant2.json")"
+sleep 6
+LANDED_BYTES=$(metered landed "$BIG" -b "$SL_JAR" -H "Origin: $SL")
+for i in $(seq 1 60); do
+  pending=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed', 'failed', 'cancelled')")
+  [ "$pending" = 0 ] && break
+  sleep 1
+done
+[ "$pending" = 0 ] || fail "the usage queue did not drain after the restored upload ($pending pending)"
+LANDED_EVENT=$(sldb "SELECT data->>'id' FROM pgboss.job WHERE name = 'usage-events' AND (data->>'quantity')::int = $LANDED_BYTES AND data->>'via' = 'session' ORDER BY created_on DESC LIMIT 1")
+[ -n "$LANDED_EVENT" ] || fail "no queued event of $LANDED_BYTES bytes via session"
+[ "$(hubdb "SELECT count(*) FROM usage_events")" = "$((before_refused + 1))" ] \
+  || fail "the refused actions must write no event and the landed one exactly one (before $before_refused, now $(hubdb "SELECT count(*) FROM usage_events"))"
+[ "$(hubdb "SELECT credits FROM usage_events WHERE id = '$LANDED_EVENT'")" = 5 ] || fail "the landed event was not priced 5 credits at the hub"
+ledger=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/ledger.json" -w '%{http_code}' -H "X-Workspace-Id: $HUB_ORG_ID" "$HUB/api/v1/billing/ledger?kind=debit")
+[ "$ledger" = 200 ] || fail "GET /billing/ledger answered $ledger: $(cat "$SCRATCH/ledger.json")"
+jq -e --arg id "$LANDED_EVENT" '[.entries[] | select(.sourceRef == $id)] | length == 1 and .[0].amount == -5 and .[0].kind == "debit"' "$SCRATCH/ledger.json" >/dev/null \
+  || fail "the ledger holds no debit of 5 for event $LANDED_EVENT: $(jq -c '.entries' "$SCRATCH/ledger.json")"
+"${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/account2.json" -f -H "X-Workspace-Id: $HUB_ORG_ID" "$HUB/api/v1/billing/account" || fail "GET /billing/account failed after the debit"
+jq -e '.balance == 4995' "$SCRATCH/account2.json" >/dev/null || fail "the balance should read 4995 after one 5-credit debit: $(cat "$SCRATCH/account2.json")"
+pass "balance restored: the same upload lands ($LANDED_BYTES bytes, event $LANDED_EVENT), priced 5 credits at the hub, its debit on GET /billing/ledger, the balance 4995; the refusals wrote nothing"
+
+# The hub slow beyond the check's budget: the action still lands (fail-open),
+# the posture reads 1 on /metrics, and a check the hub answers heals it.
+"${CURL[@]}" -f -o /dev/null -X POST "$HOP/latency" -H 'content-type: application/json' -d '{"ms":7000}' || fail "could not set the hop's latency"
+BIGGER=$(head -c 3072 /dev/zero | tr '\0' 'y')
+SLOW_BYTES=$(metered slow "$BIGGER" -b "$SL_JAR" -H "Origin: $SL")
+"${CURL[@]}" -f -o /dev/null -X DELETE "$HOP/latency" || fail "could not clear the hop's latency"
+metrics | grep -q '^usage_check_posture 1' || fail "usage_check_posture should read 1 (failing open) after a check the hub did not answer in time: $(metrics | grep usage_check)"
+metrics | grep -Eq '^usage_check_total\{outcome="fail_open"\} [1-9]' || fail "no fail_open outcome counted: $(metrics | grep usage_check_total)"
+# The check leaves the hub alone for five seconds after a failed call
+# (every request in that window takes the outage's verdict at once), so the
+# healing check is asked once the hold has passed.
+sleep 6
+HEALED_BYTES=$(metered healed "${BIGGER}z" -b "$SL_JAR" -H "Origin: $SL")
+metrics | grep -q '^usage_check_posture 0' || fail "usage_check_posture should read 0 once the hub answers again: $(metrics | grep usage_check_posture)"
+pass "hub slow beyond the check's budget: the upload ($SLOW_BYTES bytes) still lands, usage_check_posture 1 on /metrics; the next answered check ($HEALED_BYTES bytes) heals it to 0"
+fi # the second leg

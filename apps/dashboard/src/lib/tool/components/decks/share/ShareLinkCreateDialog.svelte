@@ -11,7 +11,8 @@
   import DialogDrawing from '$lib/components/brand/DialogDrawing.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-  import { api, errorMessage } from '$lib/api';
+  import { api } from '$lib/api';
+  import { toastApiError } from '$lib/billing-refusal';
   import { rememberLinkUrl } from '$lib/tool/decks/link-urls.svelte';
   import {
     buildShareTokenCreate,
@@ -19,7 +20,6 @@
     isNamedLink,
     willRememberResponses
   } from '$lib/tool/decks/share-form';
-  import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import type { PresentationVersion } from '@slideless/contract';
   import { badgePositionSchema, buildEmbedSnippets } from '@slideless/contract';
@@ -122,7 +122,7 @@
       showCreatedDialog = true;
       await onCreated();
     } catch (e) {
-      toast.error(errorMessage(e, t('tokens.createFailed')));
+      toastApiError(e, t('tokens.createFailed'));
     } finally {
       createLoading = false;
     }

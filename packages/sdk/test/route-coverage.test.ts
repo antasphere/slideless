@@ -161,19 +161,25 @@ interface ContractRoute {
 function contractRoutes(): Array<{ key: string; method: string; path: string }> {
   // Both route sets: the static generic routes of the chassis, then the deck
   // routes together with the generic routes instantiated with the tool's scopes.
-  return [
-    ...Object.values(chassisRoutes as Record<string, unknown>),
-    ...Object.values(deckRoutes as Record<string, unknown>)
-  ]
-    .filter((r): r is ContractRoute => {
-      const o = r as Partial<ContractRoute>;
-      return typeof o?.method === 'string' && typeof o?.path === 'string';
-    })
-    .map((r) => ({
-      key: `${r.method.toUpperCase()} ${r.path}`,
-      method: r.method.toUpperCase(),
-      path: r.path
-    }));
+  return (
+    [
+      ...Object.values(chassisRoutes as Record<string, unknown>),
+      ...Object.values(deckRoutes as Record<string, unknown>)
+    ]
+      .filter((r): r is ContractRoute => {
+        const o = r as Partial<ContractRoute>;
+        return typeof o?.method === 'string' && typeof o?.path === 'string';
+      })
+      // The viewer's anonymous doors (`/viewer/{secret}/...`, PRDCT-2634) are
+      // declared in the contract for the billing rail's gate, never for a
+      // principal: a token recipient is not an SDK caller, so no method maps them.
+      .filter((r) => !r.path.startsWith('/viewer/'))
+      .map((r) => ({
+        key: `${r.method.toUpperCase()} ${r.path}`,
+        method: r.method.toUpperCase(),
+        path: r.path
+      }))
+  );
 }
 
 /** Records the (method, pathname) of the single request an SDK call makes. */

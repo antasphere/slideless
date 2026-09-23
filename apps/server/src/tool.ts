@@ -9,7 +9,7 @@ import {
   DECK_ACTIONS,
   DECK_FEATURES,
   DECK_LIMITS,
-  DECK_ROUTE_ENTITLEMENTS,
+  deckRouteEntitlements,
   fileDeleteRoute,
   meRoute,
   ssoCliConnectRoute,
@@ -32,6 +32,7 @@ import type { DeckEvents } from './platform/deck-events.js';
 import { registerPresentationRoutes } from './api/presentations.js';
 import { registerCollaboratorRoutes } from './api/collaborators.js';
 import { blobReadScope, PresentationService } from './presentations/service.js';
+import { formOwnerActor } from './presentations/form-owner-actor.js';
 import { AnnotationService } from './annotations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { ShareTokenService } from './sharing/service.js';
@@ -244,9 +245,21 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
 
       // Collaborator claims are invitation acceptances in per-deck clothing —
       // the same public token-redemption surface, the same wall.
-      rateLimits: (api, { limiters, clientIp }) => {
+      rateLimits: (api, { limiters, clientIp, hubSso }) => {
         api.use('/collaborators/claim', rateLimit(limiters.invitationAccept, clientIp));
         api.use('/collaborators/lookup', rateLimit(limiters.invitationAccept, clientIp));
+        // The two priced viewer doors (PRDCT-2634): a per-ADDRESS wall runs
+        // here, BEFORE the billing gate's owner lookup and hub check, so one
+        // share-link holder cannot make the instance ask the hub on every
+        // request unchecked (the code review). The address alone is the key:
+        // a key on the share secret would cap a link's whole audience
+        // (verifier round 5), and the handlers' own walls behind the gate are
+        // already per address AND link. Cloud only, where the gate asks the
+        // hub: on oss the doors keep their handler walls and nothing else.
+        if (hubSso) {
+          api.use('/viewer/:secret/forms/:form/responses', rateLimit(limiters.viewerFormGate, clientIp));
+          api.use('/viewer/:secret/forms/:form/uploads', rateLimit(limiters.viewerFormGate, clientIp));
+        }
       },
 
       filePolicy: ({ presentations: presentationService }) => ({
@@ -382,15 +395,20 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
 
     // The billing rail (slot 22, PRDCT-2626): what Slideless prices, its
     // limits and its features per tier, beside the routes that declare them
-    // (@slideless/contract/routes, DECK_ROUTE_ENTITLEMENTS). DATA, reviewed
-    // with Romain before phase 2 prices anything: in phase 1 every cloud
-    // account is `free` and the free values are today's caps, so nothing
-    // changes for anyone. The upload cap's oss AND free values are the
-    // operator's MAX_FILE_SIZE_MB by construction (100 MB on the cloud
-    // instance), never a second copy of the number. null = unlimited.
-    entitlements: (env) => {
+    // (@slideless/contract/routes, DECK_ROUTE_ENTITLEMENTS). DATA: the seed
+    // Romain ruled on 22 September 2026 (the hub seeds its price book and
+    // its plan entitlements from this on discovery, then its rows win).
+    // The upload cap (PRDCT-2653): the PAID tier's value IS the operator's
+    // MAX_FILE_SIZE_MB, the ceiling the handlers enforce mid-stream, so what
+    // discovery advertises is what the instance serves by construction; the
+    // free value is 100 MB, or the cap when the cap is smaller (an instance
+    // capped at 100 MB, today's cloud, serves free and pro alike until the
+    // operator raises the cap to the 500 MB the seed intends). The oss
+    // value is the operator's own knob. null = unlimited.
+    entitlements: (env, { db, getTool }) => {
       const MB = 1024 * 1024;
       const capBytes = env.MAX_FILE_SIZE_MB * MB;
+      const freeUploadBytes = Math.min(100 * MB, capBytes);
       return {
         actions: [
           { key: DECK_ACTIONS.commit, creditsPerUnit: 50, unit: 'call', label: 'Publish a deck' },
@@ -403,7 +421,10 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
             creditsPerUnit: 5,
             unit: 'bytes',
             per: MB,
-            label: 'Upload deck files (5 credits per MB)'
+            // The bytes RECEIVED are metered, a deduplicated upload included:
+            // dedupe is the instance's saving, not the account's (Romain's
+            // ruling on PRDCT-2655, 23 September 2026); the label says so.
+            label: 'Upload deck files (5 credits per MB received)'
           },
           { key: DECK_ACTIONS.shareToken, creditsPerUnit: 20, unit: 'call', label: 'Create a share link' },
           { key: DECK_ACTIONS.export, creditsPerUnit: 100, unit: 'call', label: 'Export the workspace' },
@@ -412,10 +433,30 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
             creditsPerUnit: 10,
             unit: 'call',
             label: 'Invite a collaborator on a deck'
+          },
+          // The anonymous surfaces (PRDCT-2634, Romain's ruling of 23 September
+          // 2026): a viewer's form response and a viewer's file uploaded into
+          // one, both through a share link, both paid by the deck's owner. The
+          // response's 5 is the 22 September seed (Romain floated 1: data for
+          // the seed review); the upload is the same 5 per MB received as the
+          // owner's own uploads, under its own key so the usage report tells
+          // the two apart.
+          {
+            key: DECK_ACTIONS.formResponse,
+            creditsPerUnit: 5,
+            unit: 'call',
+            label: 'Receive a form response'
+          },
+          {
+            key: DECK_ACTIONS.formUpload,
+            creditsPerUnit: 5,
+            unit: 'bytes',
+            per: MB,
+            label: 'Receive a file in a form response (5 credits per MB received)'
           }
         ],
         limits: {
-          [DECK_LIMITS.fileBytes]: { oss: capBytes, free: capBytes, pro: 500 * MB },
+          [DECK_LIMITS.fileBytes]: { oss: capBytes, free: freeUploadBytes, pro: capBytes },
           [DECK_LIMITS.workspaceMembers]: { oss: null, free: 3, pro: null },
           [DECK_LIMITS.linksPerDeck]: { oss: null, free: 10, pro: null }
         },
@@ -423,7 +464,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           [DECK_FEATURES.customDomain]: { free: false, pro: true },
           [DECK_FEATURES.deckPassword]: { free: false, pro: true }
         },
-        routes: DECK_ROUTE_ENTITLEMENTS
+        routes: deckRouteEntitlements({ formOwner: formOwnerActor(db, getTool) })
       };
     },
 

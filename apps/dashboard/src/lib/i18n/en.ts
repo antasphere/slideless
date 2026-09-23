@@ -625,6 +625,17 @@ export const en = {
   'files.deleteConfirmTitle': 'Delete file?',
   'files.deleteConfirmDescription': '"{name}" will be permanently removed.',
 
+  // ── Billing refusals ($lib/billing-refusal, PRDCT-2664) ───────────────
+  // 403 plan_required → the upgrade card; 402 entitlement_denied → top-up.
+  'billing.upgradeTitle': 'This needs a higher plan',
+  'billing.upgradeDescription': 'The {requiredPlan} plan allows it.',
+  'billing.upgradeDescriptionNoPlan': 'No plan allows it on this instance.',
+  'billing.noPlanTitle': 'Not allowed on any plan here',
+  'billing.upgradeAction': 'Upgrade the plan',
+  'billing.topUpTitle': 'Not enough credits',
+  'billing.topUpDescription': 'This needs {credits} credits; your organization holds {balance}.',
+  'billing.topUpAction': 'Top up',
+
   // ── Audit log ────────────────────────────────────────────────────────
   'audit.title': 'Audit log',
   'audit.description': 'Every privileged action, who did it, and how they authenticated.',
