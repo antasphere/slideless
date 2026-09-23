@@ -56,11 +56,19 @@ services:
     environment:
       # The claim credential POST /setup requires (PRDCT-1347).
       - SETUP_TOKEN=${FEDERATION_DRILL_SETUP_TOKEN:?set by scripts/federation-drill.sh}
+      # /metrics is closed without a token (ADR 005); the drill reads the
+      # credit check's posture there (Phase 8, the billing rail's phase 2).
+      - METRICS_TOKEN=federation-dev-metrics-token-0001
     extra_hosts:
       - 'hub.localhost:${FEDERATION_SUBNET_PREFIX:-172.30.250}.250'
 
   hub:
     environment:
+      # The drill's hub owner is platform staff (the break-glass allowlist):
+      # Phase 8 seeds the price book and grants credits as them (the billing
+      # rail's phase 2). The price book stays empty until that seed, as on
+      # production (BILLING_SEED_TOOLS_AT_BOOT off, Romain's ruling).
+      - SUPERADMIN_EMAILS=drill-owner@drill.test
       - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/mcp","redirectUris":["http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"},{"slug":"drill-second","name":"Second tool (drill)","resourceUrl":"http://second.localhost:3320/mcp","redirectUris":["http://second.localhost:3320/callback"],"clientId":"tool-drill-second","clientSecret":"federation-dev-client-secret-0002"}]'
 
 networks:

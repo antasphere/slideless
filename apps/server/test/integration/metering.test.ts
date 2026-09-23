@@ -27,12 +27,20 @@ import * as sso from './sso-helpers.js';
  * profile with a declared size over the real cap, the body limit deferred
  * behind the gate (PRDCT-2632); the upload price is pinned from the
  * declaration (PRDCT-2627).
+ *
+ * Phase 2 (PRDCT-2664, PRDCT-2652, PRDCT-2653): the app boots with no reuse
+ * of a credit-check answer, so every metered request asks the hub; the plan
+ * refusal links the hub's upgrade page with the key and the required plan
+ * appended; the pro upload value is the operator's cap; the last two
+ * describes price the actions at the fake hub and pin the check, the debit,
+ * the 402 on the three surfaces, the fail-open and the 411.
  */
 
 const OPERATOR = { email: 'operator@meter.test', name: 'Operator', password: 'operator-meter-pass-1' };
 const ORG_OK = '77777777-aaaa-4bbb-8ccc-00000000ab01';
 const ORG_TIGHT = '77777777-aaaa-4bbb-8ccc-00000000ab02';
 const HUB_SECRET = 'integration-test-hub-secret-meter';
+const METRICS_TOKEN = 'integration-metrics-token-meter';
 const HTML = '<!doctype html><html><head><title>Metered</title></head><body><h1>Hello</h1></body></html>';
 
 let container: StartedPostgreSqlContainer;
@@ -71,6 +79,37 @@ async function hubPerson(fixture: HubUserFixture): Promise<Person> {
   return { cookie, workspaceId: me.activeWorkspaceId, key: minted.key, sub: fixture.sub };
 }
 
+/** The multipart encoding of one deck asset, as a client builds it before it sends. */
+async function encodeAsset(bytes: Buffer): Promise<{ body: ArrayBuffer; contentType: string }> {
+  const form = new FormData();
+  form.set('sha256', createHash('sha256').update(bytes).digest('hex'));
+  form.set('file', new Blob([new Uint8Array(bytes)], { type: 'text/html' }), 'index.html');
+  const encoded = new Response(form);
+  return { body: await encoded.arrayBuffer(), contentType: encoded.headers.get('content-type')! };
+}
+
+/**
+ * Send an encoded asset. `contentLength` is the declared size; null sends NO
+ * Content-Length at all (`app.request` builds a Request, which carries no
+ * such header for a buffer body: the gate sees none).
+ */
+function postAsset(
+  headers: Record<string, string>,
+  asset: { body: ArrayBuffer; contentType: string },
+  contentLength: number | null
+) {
+  return app.app.request('/api/v1/presentations/assets', {
+    method: 'POST',
+    headers: {
+      'x-forwarded-for': sso.nextIp(),
+      'content-type': asset.contentType,
+      ...(contentLength === null ? {} : { 'content-length': String(contentLength) }),
+      ...headers
+    },
+    body: asset.body
+  });
+}
+
 /**
  * A multipart upload as a client sends it on the wire: the encoded bytes
  * with their Content-Length. `declaredLength` overrides the header: a size
@@ -78,21 +117,24 @@ async function hubPerson(fixture: HubUserFixture): Promise<Person> {
  * alone proves it without a 200 MB body in memory.
  */
 async function uploadAsset(headers: Record<string, string>, bytes: Buffer, declaredLength?: number) {
-  const form = new FormData();
-  form.set('sha256', createHash('sha256').update(bytes).digest('hex'));
-  form.set('file', new Blob([new Uint8Array(bytes)], { type: 'text/html' }), 'index.html');
-  const encoded = new Response(form);
-  const body = await encoded.arrayBuffer();
-  return app.app.request('/api/v1/presentations/assets', {
-    method: 'POST',
-    headers: {
-      'x-forwarded-for': sso.nextIp(),
-      'content-type': encoded.headers.get('content-type')!,
-      'content-length': String(declaredLength ?? body.byteLength),
-      ...headers
-    },
-    body
-  });
+  const asset = await encodeAsset(bytes);
+  return postAsset(headers, asset, declaredLength ?? asset.body.byteLength);
+}
+
+/**
+ * The upgrade link of a plan refusal: the hub's upgrade page for the
+ * organization (`org`, `tool`, `plan`, as the fake hub's entitlements answer
+ * spells it), the refused `key` and the `requiredPlan` appended by the gate
+ * (no `requiredPlan` when no tier allows the value).
+ */
+function expectedUpgradeUrl(org: string, plan: string, key: string, requiredPlan: string | null): string {
+  const url = new URL(`${hub.issuer}/billing/upgrade`);
+  url.searchParams.set('org', org);
+  url.searchParams.set('tool', hub.toolSlug);
+  url.searchParams.set('plan', plan);
+  url.searchParams.set('key', key);
+  if (requiredPlan !== null) url.searchParams.set('requiredPlan', requiredPlan);
+  return url.toString();
 }
 
 const MB = 1024 * 1024;
@@ -143,9 +185,15 @@ beforeAll(async () => {
       EDITION: 'cloud',
       HUB_ISSUER_URL: hub.issuer,
       HUB_CLIENT_ID: 'tool-slideless-cloud',
-      HUB_CLIENT_SECRET: HUB_SECRET
+      HUB_CLIENT_SECRET: HUB_SECRET,
+      METRICS_TOKEN
     },
-    { usageRetry: { limit: 3, delaySeconds: 1 } }
+    {
+      usageRetry: { limit: 3, delaySeconds: 1 },
+      // Every metered request asks the hub's credit check (no reuse of an
+      // answer), so each test sees its own check at the fake (PRDCT-2664).
+      entitlementCheckDials: { allowTtlMs: 0, denyTtlMs: 0 }
+    }
   );
   const setup = await app.app.request(
     '/api/v1/setup',
@@ -160,7 +208,7 @@ afterAll(async () => {
 });
 
 describe('discovery carries the Slideless seed', () => {
-  it('the five actions, the three limits with the cap as the free value, the two features', async () => {
+  it('the five actions, the three limits with the cap as the free and the pro value, the two features', async () => {
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.entitlements.actions.map((a: { key: string }) => a.key).sort()).toEqual(
       [
@@ -172,7 +220,9 @@ describe('discovery carries the Slideless seed', () => {
       ].sort()
     );
     expect(info.entitlements.limits).toEqual({
-      'files.maxBytes': { oss: 100 * 1024 * 1024, free: 100 * 1024 * 1024, pro: 500 * 1024 * 1024 },
+      // What discovery advertises is what the instance serves (PRDCT-2653):
+      // the pro value IS the operator's cap (100 MB by default here).
+      'files.maxBytes': { oss: 100 * 1024 * 1024, free: 100 * 1024 * 1024, pro: 100 * 1024 * 1024 },
       'workspace.members': { oss: null, free: 3, pro: null },
       'links.perDeck': { oss: null, free: 10, pro: null }
     });
@@ -389,15 +439,22 @@ describe('a plan refusal on the phase-1 profile: the gate sees the declared size
     });
   });
 
-  const expectPlanRequired = async (res: Response) => {
+  // On this host pro = the cap = 100 MB (PRDCT-2653), so no tier allows a
+  // size above 100 MB: the refusal names no required plan.
+  const expectPlanRequired = async (
+    res: Response,
+    org: string,
+    plan: 'free' | 'pro',
+    requiredPlan: 'pro' | null
+  ) => {
     expect(res.status).toBe(403);
     const body = await readJson(res);
     expect(body.error.code).toBe('plan_required');
     expect(body.error.details).toEqual({
       key: 'files.maxBytes',
-      plan: 'free',
-      requiredPlan: 'pro',
-      upgradeUrl: hub.issuer
+      plan,
+      requiredPlan,
+      upgradeUrl: expectedUpgradeUrl(org, plan, 'files.maxBytes', requiredPlan)
     });
   };
 
@@ -407,23 +464,35 @@ describe('a plan refusal on the phase-1 profile: the gate sees the declared size
         { cookie: free.cookie, 'x-workspace-id': free.workspaceId },
         Buffer.from(HTML),
         200 * MB
-      )
+      ),
+      ORG_FREE,
+      'free',
+      null
     );
   });
 
   it('the CLI (an API key): the same at 200 MB, and at 100.5 MB', async () => {
     await expectPlanRequired(
-      await uploadAsset({ authorization: `Bearer ${free.key}` }, Buffer.from(HTML), 200 * MB)
+      await uploadAsset({ authorization: `Bearer ${free.key}` }, Buffer.from(HTML), 200 * MB),
+      ORG_FREE,
+      'free',
+      null
     );
     await expectPlanRequired(
-      await uploadAsset({ authorization: `Bearer ${free.key}` }, Buffer.from(HTML), 100 * MB + MB / 2)
+      await uploadAsset({ authorization: `Bearer ${free.key}` }, Buffer.from(HTML), 100 * MB + MB / 2),
+      ORG_FREE,
+      'free',
+      null
     );
   });
 
-  it('a pro account (500 MB allowed) meets the instance’s hard ceiling behind the gate: 413 file_too_large', async () => {
-    const res = await uploadAsset({ authorization: `Bearer ${pro.key}` }, Buffer.from(HTML), 200 * MB);
-    expect(res.status).toBe(413);
-    expect((await readJson(res)).error.code).toBe('file_too_large');
+  it('a pro account (pro = the instance cap, 100 MB) meets its own plan limit at 200 MB: 403 plan_required, no tier allows it', async () => {
+    await expectPlanRequired(
+      await uploadAsset({ authorization: `Bearer ${pro.key}` }, Buffer.from(HTML), 200 * MB),
+      ORG_PRO,
+      'pro',
+      null
+    );
   });
 
   it('nothing was posted for any refusal, and a small upload still lands', async () => {
@@ -466,7 +535,7 @@ describe('a plan refusal carries the upgrade link on the three surfaces', () => 
       key: 'files.maxBytes',
       plan: 'free',
       requiredPlan: 'pro',
-      upgradeUrl: hub.issuer
+      upgradeUrl: expectedUpgradeUrl(ORG_TIGHT, 'free', 'files.maxBytes', 'pro')
     });
   };
 
@@ -485,7 +554,9 @@ describe('a plan refusal carries the upgrade link on the three surfaces', () => 
     const result = await mcpTool(tight.key, 'slideless_upload_html_presentation', { html: HTML });
     expect(result.isError).toBe(true);
     expect(result.text).toContain('code: plan_required');
-    expect(result.text).toContain(`Upgrade: ${hub.issuer}`);
+    expect(result.text).toContain(
+      `Upgrade: ${expectedUpgradeUrl(ORG_TIGHT, 'free', 'files.maxBytes', 'pro')}`
+    );
     await new Promise((r) => setTimeout(r, 2_500));
     expect(hub.usageEvents.size).toBe(posted);
   });
@@ -520,7 +591,244 @@ describe('the pair’s finding, pinned on the stub (PRDCT-2629)', () => {
     const answer = (await res.json()) as { results: Array<{ id: string; status: string; reason?: string }> };
     expect(answer.results).toEqual([
       { id: stamped.id, status: 'rejected', reason: 'tool_mismatch' },
-      { id: unstamped.id, status: 'accepted' }
+      // An accepted result carries its credits (phase 2); no price is set yet here.
+      { id: unstamped.id, status: 'accepted', credits: 0 }
     ]);
   });
+});
+
+const metric = async (name: string): Promise<number> => {
+  const res = await app.app.request('/metrics', { headers: { authorization: `Bearer ${METRICS_TOKEN}` } });
+  expect(res.status).toBe(200);
+  const line = (await res.text())
+    .split('\n')
+    .find((l) => l.startsWith(`${name} `) || l.startsWith(`${name}{`));
+  return line ? Number(line.split(' ').at(-1)) : 0;
+};
+
+const debitsOf = (org: string) => hub.ledger.filter((l) => l.kind === 'debit' && l.accountRef === org);
+
+describe('the check goes live: the hub is asked before a priced action (PRDCT-2664)', () => {
+  // Runs after every phase-1 case above: the prices set here are the hub's
+  // price book for the rest of the file.
+  const ORG_CHECK = '77777777-aaaa-4bbb-8ccc-00000000ab06';
+  let person: Person;
+  const eventsOf = () => events().filter((e) => e.accountRef === ORG_CHECK);
+  const dashboard = () => ({ cookie: person.cookie, 'x-workspace-id': person.workspaceId });
+  const topUpUrl = (credits: number, balance: number) =>
+    `${hub.issuer}/billing/top-up?org=${ORG_CHECK}&credits=${credits}&balance=${balance}&tool=${hub.toolSlug}&action=files.upload`;
+
+  beforeAll(async () => {
+    hub.setPrice('files.upload', { creditsPerUnit: 5, unit: 'bytes', per: 1024 * 1024 });
+    hub.setPrice('presentations.commit', { creditsPerUnit: 50, unit: 'call' });
+    person = await hubPerson({
+      sub: 'hub-meter-check',
+      email: 'check@meter.test',
+      name: 'Meter Check',
+      workspaceId: ORG_CHECK,
+      role: 'owner',
+      workspaceName: 'Org Check'
+    });
+  });
+
+  const expectShort = async (res: Response) => {
+    expect(res.status).toBe(402);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('entitlement_denied');
+    expect(body.error.details).toEqual({ credits: 5, balance: 0, topUpUrl: topUpUrl(5, 0) });
+    expect(body.error.details.topUpUrl.startsWith(`${hub.issuer}/billing/top-up?org=${ORG_CHECK}`)).toBe(
+      true
+    );
+    expect(body.error.message).toContain(topUpUrl(5, 0));
+  };
+
+  it('the dashboard uploads: the hub is asked with the machine token and the declared size, then debits the stored size at ingest', async () => {
+    const balance = hub.balanceOf(ORG_CHECK);
+    const checks = hub.checkRequests.length;
+    const asset = await encodeAsset(Buffer.from(HTML + '<!-- check -->'));
+    const res = await postAsset(dashboard(), asset, asset.body.byteLength);
+    expect(res.status).toBe(201);
+    const { sizeBytes } = await readJson(res);
+    expect(hub.checkRequests).toHaveLength(checks + 1);
+    expect(hub.checkRequests.at(-1)).toEqual({
+      auth: expect.stringMatching(/^Bearer mach_/),
+      // What the gate asks with: the declared Content-Length of the multipart body.
+      body: {
+        accountRef: ORG_CHECK,
+        actionKey: 'files.upload',
+        quantity: asset.body.byteLength,
+        unit: 'bytes'
+      }
+    });
+    await until(
+      () => eventsOf().length,
+      (n) => n >= 1
+    );
+    const [eventId, event] = [...hub.usageEvents.entries()].find(([, e]) => e.accountRef === ORG_CHECK)!;
+    expect(event).toMatchObject({ actionKey: 'files.upload', quantity: sizeBytes, unit: 'bytes' });
+    // The STORED size, at 5 credits per MiB rounded up to the MiB.
+    const credits = Math.ceil(sizeBytes / MB) * 5;
+    expect(credits).toBe(5);
+    expect(hub.balanceOf(ORG_CHECK)).toBe(balance - credits);
+    expect(debitsOf(ORG_CHECK)).toEqual([
+      { accountRef: ORG_CHECK, kind: 'debit', amount: -credits, sourceRef: eventId }
+    ]);
+  });
+
+  it('a balance below the price: the dashboard meets 402 entitlement_denied with the top-up link, and nothing is posted', async () => {
+    hub.setBalance(ORG_CHECK, 0);
+    const posted = hub.usageEvents.size;
+    await expectShort(await uploadAsset(dashboard(), Buffer.from(HTML + '<!-- check -->')));
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(hub.usageEvents.size).toBe(posted);
+    expect(hub.balanceOf(ORG_CHECK)).toBe(0);
+  });
+
+  it('the CLI (an API key): the same 402 with the same details', async () => {
+    await expectShort(
+      await uploadAsset({ authorization: `Bearer ${person.key}` }, Buffer.from(HTML + '<!-- check -->'))
+    );
+  });
+
+  it('an agent (the MCP tool): the text names the code, the top-up link, the price and the balance, and nothing is posted', async () => {
+    const posted = hub.usageEvents.size;
+    const result = await mcpTool(person.key, 'slideless_upload_html_presentation', {
+      html: HTML + '<!-- check mcp -->'
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('code: entitlement_denied');
+    expect(result.text).toContain(`Top up: ${hub.issuer}/billing/top-up?org=${ORG_CHECK}`);
+    expect(result.text).toContain('this needs 5 credits, the organization holds 0');
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(hub.usageEvents.size).toBe(posted);
+  });
+
+  it('the balance restored, the dashboard upload lands and is debited once more', async () => {
+    hub.setBalance(ORG_CHECK, 5_000);
+    const debits = debitsOf(ORG_CHECK).length;
+    const res = await uploadAsset(dashboard(), Buffer.from(HTML + '<!-- check restored -->'));
+    expect(res.status).toBe(201);
+    await until(
+      () => debitsOf(ORG_CHECK).length,
+      (n) => n >= debits + 1
+    );
+    expect(debitsOf(ORG_CHECK)).toHaveLength(debits + 1);
+    expect(hub.balanceOf(ORG_CHECK)).toBe(5_000 - 5);
+  });
+
+  it('a share link with no price row is checked and allowed at 0 credits: no debit, the balance unmoved', async () => {
+    // A deck to share: the agent publishes one (an upload and a commit, both priced).
+    const before = eventsOf().length;
+    const published = await mcpTool(person.key, 'slideless_upload_html_presentation', {
+      html: HTML + '<!-- check share -->'
+    });
+    expect(published.isError, published.text).toBe(false);
+    await until(
+      () => eventsOf().length,
+      (n) => n >= before + 2
+    );
+    const list = await app.app.request('/api/v1/presentations', {
+      headers: { authorization: `Bearer ${person.key}`, 'x-forwarded-for': sso.nextIp() }
+    });
+    const deckId = (await readJson(list)).presentations[0].id as string;
+    const balance = hub.balanceOf(ORG_CHECK);
+    const debits = debitsOf(ORG_CHECK).length;
+    const checks = hub.checkRequests.length;
+    const token = await app.app.request(
+      `/api/v1/presentations/${deckId}/tokens`,
+      json({ name: 'check' }, { authorization: `Bearer ${person.key}` })
+    );
+    expect(token.status, await token.clone().text()).toBe(201);
+    expect(hub.checkRequests).toHaveLength(checks + 1);
+    expect(hub.checkRequests.at(-1)).toEqual({
+      auth: expect.stringMatching(/^Bearer mach_/),
+      body: { accountRef: ORG_CHECK, actionKey: 'share_tokens.create', quantity: 1, unit: 'call' }
+    });
+    await until(
+      () => eventsOf().some((e) => e.actionKey === 'share_tokens.create'),
+      (landed) => landed
+    );
+    const [shareId] = [...hub.usageEvents.entries()].find(
+      ([, e]) => e.accountRef === ORG_CHECK && e.actionKey === 'share_tokens.create'
+    )!;
+    // Accepted at 0 credits: no debit carries its id and the balance did not move.
+    expect(hub.ledger.some((l) => l.sourceRef === shareId)).toBe(false);
+    expect(debitsOf(ORG_CHECK)).toHaveLength(debits);
+    expect(hub.balanceOf(ORG_CHECK)).toBe(balance);
+  });
+
+  it('a hub that does not answer the check fails open, on /metrics; once it answers again the posture heals', async () => {
+    hub.checkMode = 'network';
+    try {
+      const down = await uploadAsset(dashboard(), Buffer.from(HTML + '<!-- check down -->'));
+      expect(down.status).toBe(201);
+      expect(await metric('usage_check_posture')).toBe(1);
+      expect(await metric('usage_check_total{outcome="fail_open"}')).toBeGreaterThanOrEqual(1);
+    } finally {
+      hub.checkMode = 'ok';
+    }
+    // Past the outage hold (5 s from the failed call), the next request asks the hub again.
+    await new Promise((r) => setTimeout(r, 5_100));
+    const up = await uploadAsset(dashboard(), Buffer.from(HTML + '<!-- check up -->'));
+    expect(up.status).toBe(201);
+    expect(await metric('usage_check_posture')).toBe(0);
+  });
+});
+
+describe('a metered upload declares its size (PRDCT-2652)', () => {
+  const ORG_LENGTH = '77777777-aaaa-4bbb-8ccc-00000000ab07';
+  let person: Person;
+  const dashboard = () => ({ cookie: person.cookie, 'x-workspace-id': person.workspaceId });
+  const fileCount = async () => {
+    const res = await app.app.request('/api/v1/files', {
+      headers: { ...dashboard(), 'x-forwarded-for': sso.nextIp() }
+    });
+    expect(res.status).toBe(200);
+    return ((await readJson(res)).files as unknown[]).length;
+  };
+
+  beforeAll(async () => {
+    person = await hubPerson({
+      sub: 'hub-meter-length',
+      email: 'length@meter.test',
+      name: 'Meter Length',
+      workspaceId: ORG_LENGTH,
+      role: 'owner',
+      workspaceName: 'Org Length'
+    });
+  });
+
+  it('an asset upload with no Content-Length is 411 length_required: no file, no check, no event', async () => {
+    const files = await fileCount();
+    const checks = hub.checkRequests.length;
+    // Scoped to this organization: an earlier describe's last event may still be in flight.
+    const posted = () => events().filter((e) => e.accountRef === ORG_LENGTH).length;
+    expect(posted()).toBe(0);
+    const asset = await encodeAsset(Buffer.from(HTML + '<!-- silent -->'));
+    const res = await postAsset(dashboard(), asset, null);
+    expect(res.status).toBe(411);
+    expect((await readJson(res)).error.code).toBe('length_required');
+    expect(await fileCount()).toBe(files);
+    expect(hub.checkRequests).toHaveLength(checks);
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(posted()).toBe(0);
+  });
+
+  it('a free account at exactly the free value passes the plan check and lands (201)', async () => {
+    const info = await readJson(await app.app.request('/api/v1/instance'));
+    const freeBytes = info.entitlements.limits['files.maxBytes'].free as number;
+    // The encoding's overhead is fixed for a given file name and type: size
+    // the file so the multipart body is EXACTLY the free value.
+    const probe = await encodeAsset(Buffer.from('x'));
+    const overhead = probe.body.byteLength - 1;
+    const asset = await encodeAsset(Buffer.alloc(freeBytes - overhead, 0x61));
+    expect(asset.body.byteLength).toBe(freeBytes);
+    const res = await postAsset(dashboard(), asset, asset.body.byteLength);
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(hub.checkRequests.at(-1)!.body).toMatchObject({
+      accountRef: ORG_LENGTH,
+      actionKey: 'files.upload',
+      quantity: freeBytes
+    });
+  }, 120_000);
 });
