@@ -22,6 +22,47 @@ jobs:
       - run: pnpm format:check
       - run: pnpm --filter @slideless/server drift:check
 
+  # The hub–tool wire check (PRDCT-2677): the hub owns the messages the tools
+  # exchange with it (the usage event and batch, the ingest result, the
+  # entitlements answer, the check request and answer) and publishes them as
+  # ONE generated snapshot, packages/contract/wire/hub-tool-messages.json.
+  # This job reads that file from the hub's dev, rebuilds the same snapshot
+  # from the chassis's copies (packages/chassis-contract/src/wire.ts, the
+  # hub's builder copied verbatim) on the hub's own probe inputs, and fails
+  # on any difference, each named by its path. It runs ONE way: a hub change
+  # lands first, this job goes red until the chassis follows, in
+  # packages/chassis-contract/src/entitlements.ts. The hub is private: the
+  # token is minted from the same GitHub App as the federation drill's
+  # (contents:read on antasphere/hub), and only the one file is checked out.
+  hub-wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/create-github-app-token@v1
+        id: hub-checkout
+        with:
+          app-id: ${{ secrets.FEDERATION_DRILL_APP_ID }}
+          private-key: ${{ secrets.FEDERATION_DRILL_APP_KEY }}
+          owner: antasphere
+          repositories: hub
+      - uses: actions/checkout@v4
+        with:
+          repository: antasphere/hub
+          ref: dev
+          token: ${{ steps.hub-checkout.outputs.token }}
+          path: .hub-wire
+          sparse-checkout: packages/contract/wire/hub-tool-messages.json
+          sparse-checkout-cone-mode: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @antasphere/chassis-contract build
+      - name: Compare the chassis's copies with the hub's wire snapshot
+        run: HUB_WIRE_SNAPSHOT=$GITHUB_WORKSPACE/.hub-wire/packages/contract/wire/hub-tool-messages.json pnpm --filter @antasphere/chassis-contract wire:check
+
   integration:
     runs-on: ubuntu-latest
     steps:

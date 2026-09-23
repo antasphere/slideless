@@ -30,5 +30,6 @@
       "cache": false,
       "passThroughEnv": ["PW_SMOKE_PORT", "PW_SMOKE_PG_PASSWORD"]
     }
-  }
+  },
+  "globalPassThroughEnv": ["HUB_WIRE_SNAPSHOT"]
 }
