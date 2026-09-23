@@ -36,6 +36,11 @@ export function agentIndexRequested(c: Context): 'md' | 'json' | null {
   if (format === 'html') return null;
   if (format === 'agent' || format === 'md' || format === 'markdown') return 'md';
   if (format === 'json') return 'json';
+  // A navigation is a person's browser whatever it says it accepts: the
+  // fetch metadata a browser sets on a top-level or framed document load
+  // (and an embed's frame) keeps the deck.
+  const dest = (c.req.header('sec-fetch-dest') ?? '').toLowerCase();
+  if (dest === 'document' || dest === 'iframe' || dest === 'frame') return null;
   const accept = (c.req.header('accept') ?? '').toLowerCase();
   if (accept.includes('text/html')) return null;
   if (accept.includes('application/json') && !accept.includes('text/markdown')) return 'json';

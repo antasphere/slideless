@@ -10,14 +10,15 @@ link: every share link answers both ways.
 
 The link answers by what the request asks for:
 
-| The request                                                 | The answer                                |
-| ----------------------------------------------------------- | ----------------------------------------- |
-| an `Accept` that includes `text/html` (a browser)           | the deck                                  |
-| no `Accept`, `*/*`, `text/markdown`, `text/plain`           | the index, as markdown                    |
-| an `Accept` of `application/json` (without `text/markdown`) | the index, as JSON                        |
-| `?format=agent` (or `?format=md`, `?format=markdown`)       | the index, as markdown, whatever `Accept` |
-| `?format=json`                                              | the index, as JSON, whatever `Accept`     |
-| `?raw` or `?format=html`                                    | the entry document, byte for byte         |
+| The request                                                                                         | The answer                                |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| an `Accept` that includes `text/html` (a browser)                                                   | the deck                                  |
+| a document or frame navigation (`Sec-Fetch-Dest: document`, `iframe`, `frame`), whatever it accepts | the deck                                  |
+| no `Accept`, `*/*`, `text/markdown`, `text/plain`                                                   | the index, as markdown                    |
+| an `Accept` of `application/json` (without `text/markdown`)                                         | the index, as JSON                        |
+| `?format=agent` (or `?format=md`, `?format=markdown`)                                               | the index, as markdown, whatever `Accept` |
+| `?format=json`                                                                                      | the index, as JSON, whatever `Accept`     |
+| `?raw` or `?format=html`                                                                            | the entry document, byte for byte         |
 
 ```bash
 curl https://slides.example.com/v/SECRET/                 # the markdown index

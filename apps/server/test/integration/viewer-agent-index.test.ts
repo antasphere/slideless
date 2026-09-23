@@ -267,6 +267,16 @@ describe('one URL, two readers', () => {
     expect(await res.text()).toContain('Quarterly review</h1>');
   });
 
+  it('a document navigation keeps the deck whatever it accepts (the fetch metadata is the browser)', async () => {
+    const { secret } = await createToken(deckId, { name: 'nav' });
+    const doc = await get(`/v/${secret}/`, { 'sec-fetch-dest': 'document' });
+    expect(doc.status).toBe(200);
+    expect(doc.headers.get('content-type')).toContain('text/html');
+    expect(await doc.text()).toContain('<!doctype html>');
+    const frame = await get(`/v/${secret}/`, { 'sec-fetch-dest': 'iframe', accept: '*/*' });
+    expect(frame.headers.get('content-type')).toContain('text/html');
+  });
+
   it('?format=agent and ?format=json win over a browser Accept', async () => {
     const { secret } = await createToken(deckId, { name: 'format' });
     const md = await get(`/v/${secret}/?format=agent`, NAV);

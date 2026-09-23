@@ -166,7 +166,8 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
 
     // The row appears, and the URL actually serves the deck to an anonymous GET.
     await expect(page.getByRole('cell', { name: 'reviewer-alice' })).toBeVisible();
-    const served = await page.request.get(viewerUrl);
+    // A browser asks for HTML; a caller that does not gets the link's index (PRDCT-2670).
+    const served = await page.request.get(viewerUrl, { headers: { accept: 'text/html' } });
     expect(served.status()).toBe(200);
     expect(await served.text()).toContain('E2E deck body v2');
   });

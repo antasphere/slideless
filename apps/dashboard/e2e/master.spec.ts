@@ -418,8 +418,9 @@ test('master page: full-page deck under the bar — rename, version history with
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
 
-    // The link follows the latest version and serves the deck to an anonymous GET.
-    const served = await page.request.get(viewerUrl);
+    // The link follows the latest version and serves the deck to an anonymous
+    // browser GET (a caller that does not ask for HTML gets the index, PRDCT-2670).
+    const served = await page.request.get(viewerUrl, { headers: { accept: 'text/html' } });
     expect(served.status()).toBe(200);
     expect(await served.text()).toContain('Quarterly review v3');
   });

@@ -311,7 +311,8 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
   });
 
   await test.step('form responses: one file, one response’s zip, the whole deck’s zip', async () => {
-    await page.goto(`/decks/${deckId}`);
+    // The responses live under their own tab of the deck page (PRDCT-2686).
+    await page.goto(`/decks/${deckId}?tab=responses`);
     const panel = page.getByTestId('form-responses-panel');
     await expect(panel.getByTestId('response-file')).toHaveCount(1, { timeout: 15_000 });
 
@@ -350,7 +351,8 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
   });
 
   await test.step('a refused download is said on screen, never a click that does nothing', async () => {
-    await page.goto(`/decks/${deckId}`);
+    // The responses live under their own tab of the deck page (PRDCT-2686).
+    await page.goto(`/decks/${deckId}?tab=responses`);
     const panel = page.getByTestId('form-responses-panel');
     await expect(panel.getByTestId('response-file')).toHaveCount(1, { timeout: 15_000 });
     // The response goes away behind the page's back (another tab, a colleague).
