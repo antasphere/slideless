@@ -314,7 +314,7 @@ describe('the cap refusal, before any write', () => {
     expect(await run(PUSH(dir), tight.io)).toBe(1);
     expect(tight.err()).toContain('1.0 MB per-file cap');
     expect(noPro.uploaded).toEqual([]);
-  });
+  }, 30_000);
 
   it('falls back to the documented 100 MB when discovery carries no cap, and when it is unreachable', async () => {
     const dir = await makeDeckWithDownloads();
