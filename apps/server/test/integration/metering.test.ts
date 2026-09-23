@@ -16,7 +16,7 @@ import * as sso from './sso-helpers.js';
  * /api/v1) — each landing its event in the hub's usage_events with its
  * `via`; a plan refusal carrying the upgrade link on the three surfaces
  * (the MCP tool's text included); and discovery showing the Slideless
- * seed (the five actions, the three limits, the two features). The chassis
+ * seed (the seven actions, the three limits, the two features). The chassis
  * suite (entitlements.test.ts, run under this host too) pins the oss half
  * and the poster's retries.
  *
@@ -33,7 +33,10 @@ import * as sso from './sso-helpers.js';
  * refusal links the hub's upgrade page with the key and the required plan
  * appended; the pro upload value is the operator's cap; the last two
  * describes price the actions at the fake hub and pin the check, the debit,
- * the 402 on the three surfaces, the fail-open and the 411.
+ * the 402 on the three surfaces, the fail-open and the 411. The last one
+ * (PRDCT-2634) pins the anonymous form surfaces: a viewer with no credential
+ * responds or uploads through a share link, and the deck's owner is checked,
+ * reported and debited; the viewer's refusal names nothing of the owner's.
  */
 
 const OPERATOR = { email: 'operator@meter.test', name: 'Operator', password: 'operator-meter-pass-1' };
@@ -208,17 +211,25 @@ afterAll(async () => {
 });
 
 describe('discovery carries the Slideless seed', () => {
-  it('the five actions, the three limits with the cap as the free and the pro value, the two features', async () => {
+  it('the seven actions, the three limits with the cap as the free and the pro value, the two features', async () => {
     const info = await readJson(await app.app.request('/api/v1/instance'));
     expect(info.entitlements.actions.map((a: { key: string }) => a.key).sort()).toEqual(
       [
         'collaborators.invite',
         'files.upload',
+        'forms.response',
+        'forms.upload',
         'presentations.commit',
         'share_tokens.create',
         'workspace.export'
       ].sort()
     );
+    // The two anonymous surfaces (PRDCT-2634): a response per call, a received file per MB.
+    const action = (key: string) => info.entitlements.actions.find((a: { key: string }) => a.key === key);
+    expect(action('forms.response')).toMatchObject({ creditsPerUnit: 5, unit: 'call' });
+    expect(action('forms.response').per ?? 1).toBe(1);
+    expect(action('forms.upload')).toMatchObject({ creditsPerUnit: 5, unit: 'bytes', per: 1048576 });
+    expect(action('files.upload').label).toBe('Upload deck files (5 credits per MB received)');
     expect(info.entitlements.limits).toEqual({
       // What discovery advertises is what the instance serves (PRDCT-2653):
       // the pro value IS the operator's cap (100 MB by default here).
@@ -239,7 +250,7 @@ describe('discovery carries the Slideless seed', () => {
       creditsPerUnit: 5,
       unit: 'bytes',
       per: MB,
-      label: 'Upload deck files (5 credits per MB)'
+      label: 'Upload deck files (5 credits per MB received)'
     });
     const credits = declaredCredits(upload, 20 * MB);
     expect(credits).toBe(100);
@@ -697,8 +708,11 @@ describe('the check goes live: the hub is asked before a priced action (PRDCT-26
     });
     expect(result.isError).toBe(true);
     expect(result.text).toContain('code: entitlement_denied');
-    expect(result.text).toContain(`Top up: ${hub.issuer}/billing/top-up?org=${ORG_CHECK}`);
-    expect(result.text).toContain('this needs 5 credits, the organization holds 0');
+    // The gate's own message carries the link and the numbers; the MCP text adds no second sentence
+    // (verifier round 1), so the URL appears exactly once.
+    expect(result.text).toContain(`top up at ${hub.issuer}/billing/top-up?org=${ORG_CHECK}`);
+    expect(result.text.split(`${hub.issuer}/billing/top-up`).length - 1).toBe(1);
+    expect(result.text).toContain('This needs 5 credits and the organization holds 0');
     await new Promise((r) => setTimeout(r, 2_500));
     expect(hub.usageEvents.size).toBe(posted);
   });
@@ -831,4 +845,237 @@ describe('a metered upload declares its size (PRDCT-2652)', () => {
       quantity: freeBytes
     });
   }, 120_000);
+});
+
+describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', () => {
+  const ORG_FORMS = '77777777-aaaa-4bbb-8ccc-00000000ab08';
+  const FORM = 'intake';
+  // The smallest deck the forms detector recognises with a file field (form-uploads.test.ts's shape).
+  const FORM_HTML =
+    '<!doctype html><html><head><title>Intake</title></head><body>' +
+    `<form data-slideless-form="${FORM}"><input name="who"><input type="file" name="docs"></form>` +
+    '</body></html>';
+  let owner: Person;
+  let deckId: string;
+  let link: { id: string; secret: string };
+  const eventsOf = () => events().filter((e) => e.accountRef === ORG_FORMS);
+  const ownerKey = () => ({ authorization: `Bearer ${owner.key}` });
+
+  /** The viewer's requests: no cookie, no bearer, only what the forms runtime sends. */
+  const respond = (secret: string, who: string) =>
+    app.app.request(`/api/v1/viewer/${secret}/forms/${FORM}/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'null', 'x-forwarded-for': sso.nextIp() },
+      body: JSON.stringify({ payload: { who } })
+    });
+  const uploadFile = (secret: string, bytes: Uint8Array) => {
+    const qs = new URLSearchParams({ field: 'docs', name: 'doc.txt', type: 'text/plain' });
+    return app.app.request(`/api/v1/viewer/${secret}/forms/${FORM}/uploads?${qs.toString()}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'content-length': String(bytes.length),
+        origin: 'null',
+        'x-forwarded-for': sso.nextIp()
+      },
+      body: bytes
+    });
+  };
+
+  /** Nothing reaches the hub's usage_events for this organization within the poster's window. */
+  const expectNothingPosted = async (posted: number) => {
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(eventsOf()).toHaveLength(posted);
+  };
+
+  beforeAll(async () => {
+    hub.setPrice('forms.response', { creditsPerUnit: 5, unit: 'call' });
+    hub.setPrice('forms.upload', { creditsPerUnit: 5, unit: 'bytes', per: 1024 * 1024 });
+    owner = await hubPerson({
+      sub: 'hub-meter-forms',
+      email: 'forms@meter.test',
+      name: 'Meter Forms',
+      workspaceId: ORG_FORMS,
+      role: 'owner',
+      workspaceName: 'Org Forms'
+    });
+    // The owner pushes the deck with their key: the asset, the upload session, the commit.
+    const html = Buffer.from(FORM_HTML);
+    const asset = await uploadAsset(ownerKey(), html);
+    expect(asset.status, await asset.clone().text()).toBe(201);
+    const reserve = await readJson(
+      await app.app.request('/api/v1/presentations/uploads', json({}, ownerKey()))
+    );
+    const commit = await app.app.request(
+      `/api/v1/presentations/uploads/${reserve.uploadSession.id}/commit`,
+      json(
+        {
+          title: 'Intake',
+          entryPath: 'index.html',
+          manifest: [
+            {
+              path: 'index.html',
+              sha256: createHash('sha256').update(html).digest('hex'),
+              sizeBytes: html.length,
+              contentType: 'text/html'
+            }
+          ]
+        },
+        ownerKey()
+      )
+    );
+    expect(commit.status, await commit.clone().text()).toBe(201);
+    deckId = reserve.uploadSession.presentationId;
+    const token = await app.app.request(
+      `/api/v1/presentations/${deckId}/tokens`,
+      json({ name: 'intake', remembersResponses: false, canUploadFiles: true }, ownerKey())
+    );
+    expect(token.status, await token.clone().text()).toBe(201);
+    const minted = await readJson(token);
+    expect(minted.shareToken.canUploadFiles).toBe(true);
+    link = { id: minted.shareToken.id, secret: minted.secret };
+  });
+
+  it('a viewer’s response: the owner’s organization is checked, the event names the owner’s sub via session, and 5 credits are debited', async () => {
+    const checks = hub.checkRequests.length;
+    const before = eventsOf().length;
+    const res = await respond(link.secret, 'Alice');
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(hub.checkRequests).toHaveLength(checks + 1);
+    expect(hub.checkRequests.at(-1)).toEqual({
+      auth: expect.stringMatching(/^Bearer mach_/),
+      body: { accountRef: ORG_FORMS, actionKey: 'forms.response', quantity: 1, unit: 'call' }
+    });
+    const landed = () =>
+      [...hub.usageEvents.entries()].find(
+        ([, e]) => e.accountRef === ORG_FORMS && e.actionKey === 'forms.response'
+      );
+    await until(landed, (e) => Boolean(e));
+    expect(eventsOf().length).toBeGreaterThan(before);
+    const [eventId, event] = landed()!;
+    expect(event).toMatchObject({
+      actionKey: 'forms.response',
+      quantity: 1,
+      unit: 'call',
+      accountRef: ORG_FORMS,
+      workspaceId: owner.workspaceId,
+      userId: owner.sub,
+      via: 'session'
+    });
+    await until(
+      () => hub.ledger.filter((l) => l.sourceRef === eventId),
+      (l) => l.length >= 1
+    );
+    expect(hub.ledger.filter((l) => l.sourceRef === eventId)).toEqual([
+      { accountRef: ORG_FORMS, kind: 'debit', amount: -5, sourceRef: eventId }
+    ]);
+  });
+
+  it('a viewer’s file: checked at the declared size, reported at the stored size on the owner, one MB block debited', async () => {
+    const bytes = new TextEncoder().encode('the viewer’s document');
+    const checks = hub.checkRequests.length;
+    const res = await uploadFile(link.secret, bytes);
+    expect(res.status, await res.clone().text()).toBe(201);
+    const { file } = await readJson(res);
+    expect(file.sizeBytes).toBe(bytes.length);
+    expect(hub.checkRequests).toHaveLength(checks + 1);
+    expect(hub.checkRequests.at(-1)).toEqual({
+      auth: expect.stringMatching(/^Bearer mach_/),
+      body: { accountRef: ORG_FORMS, actionKey: 'forms.upload', quantity: bytes.length, unit: 'bytes' }
+    });
+    const landed = () =>
+      [...hub.usageEvents.entries()].find(
+        ([, e]) => e.accountRef === ORG_FORMS && e.actionKey === 'forms.upload'
+      );
+    await until(landed, (e) => Boolean(e));
+    const [eventId, event] = landed()!;
+    expect(event).toMatchObject({
+      actionKey: 'forms.upload',
+      quantity: file.sizeBytes,
+      unit: 'bytes',
+      accountRef: ORG_FORMS,
+      userId: owner.sub,
+      via: 'session',
+      resourceType: 'form_upload',
+      resourceId: file.id
+    });
+    await until(
+      () => hub.ledger.filter((l) => l.sourceRef === eventId),
+      (l) => l.length >= 1
+    );
+    expect(hub.ledger.filter((l) => l.sourceRef === eventId)).toEqual([
+      { accountRef: ORG_FORMS, kind: 'debit', amount: -5, sourceRef: eventId }
+    ]);
+  });
+
+  it('the owner’s balance at 0: both doors answer 402 entitlement_denied with a neutral message and no details, nothing posted', async () => {
+    hub.setBalance(ORG_FORMS, 0);
+    const posted = eventsOf().length;
+    const expectNeutral = async (res: Response) => {
+      expect(res.status).toBe(402);
+      const body = await readJson(res);
+      expect(body.error.code).toBe('entitlement_denied');
+      expect(body.error.details).toBeUndefined();
+      const message: string = body.error.message;
+      expect(message).toBe('The owner of this content cannot take this action right now');
+      expect(message).not.toContain('billing/top-up');
+      expect(message).not.toContain(ORG_FORMS);
+      expect(message).not.toMatch(/\d/);
+    };
+    const checks = hub.checkRequests.length;
+    await expectNeutral(await respond(link.secret, 'Broke'));
+    await expectNeutral(await uploadFile(link.secret, new TextEncoder().encode('refused')));
+    // Both refusals were the hub's answer to a check on the owner's organization.
+    expect(hub.checkRequests.slice(checks).map((r) => (r.body as { actionKey: string }).actionKey)).toEqual([
+      'forms.response',
+      'forms.upload'
+    ]);
+    await expectNothingPosted(posted);
+    expect(hub.balanceOf(ORG_FORMS)).toBe(0);
+  });
+
+  it('the balance restored: a response lands again (no denial is reused in this boot)', async () => {
+    hub.setBalance(ORG_FORMS, 5_000);
+    const responses = eventsOf().filter((e) => e.actionKey === 'forms.response').length;
+    const res = await respond(link.secret, 'Bob');
+    expect(res.status, await res.clone().text()).toBe(201);
+    await until(
+      () => eventsOf().filter((e) => e.actionKey === 'forms.response').length,
+      (n) => n >= responses + 1
+    );
+    await until(
+      () => hub.balanceOf(ORG_FORMS),
+      (b) => b === 5_000 - 5
+    );
+    expect(hub.balanceOf(ORG_FORMS)).toBe(5_000 - 5);
+  });
+
+  it('a bogus secret: the route’s own 404 on both doors, no check made, nothing posted', async () => {
+    const checks = hub.checkRequests.length;
+    const posted = eventsOf().length;
+    const res = await respond('not-a-secret', 'Nobody');
+    expect(res.status).toBe(404);
+    const upload = await uploadFile('not-a-secret', new TextEncoder().encode('nobody'));
+    expect(upload.status).toBe(404);
+    expect(hub.checkRequests).toHaveLength(checks);
+    await expectNothingPosted(posted);
+  });
+
+  it('a revoked link: the route’s own 403 revoked on both doors, no check made, nothing posted', async () => {
+    const revoked = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${link.id}`, {
+      method: 'DELETE',
+      headers: { cookie: owner.cookie, 'x-workspace-id': owner.workspaceId, 'x-forwarded-for': sso.nextIp() }
+    });
+    expect(revoked.status, await revoked.clone().text()).toBeLessThan(300);
+    const checks = hub.checkRequests.length;
+    const posted = eventsOf().length;
+    const res = await respond(link.secret, 'Late');
+    expect(res.status).toBe(403);
+    expect((await readJson(res)).error.code).toBe('revoked');
+    const upload = await uploadFile(link.secret, new TextEncoder().encode('late'));
+    expect(upload.status).toBe(403);
+    expect((await readJson(upload)).error.code).toBe('revoked');
+    expect(hub.checkRequests).toHaveLength(checks);
+    await expectNothingPosted(posted);
+  });
 });
