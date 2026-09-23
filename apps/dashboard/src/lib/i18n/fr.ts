@@ -248,7 +248,6 @@ export const fr: Record<keyof typeof en, string> = {
   'welcome.dismiss': 'Fermer',
 
   // ── The docs card at the foot of the sidebar ──────────────────────────
-  'docsCard.eyebrow': 'Docs',
   'docsCard.title': 'Lire la documentation',
   'docsCard.body': 'Les concepts, le CLI, le connecteur MCP, et un prompt pour votre agent.',
   'docsCard.read': 'Ouvrir la doc',

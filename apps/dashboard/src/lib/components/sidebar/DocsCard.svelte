@@ -37,27 +37,26 @@
 </script>
 
 <div class="docs-card sheet group-data-[collapsible=icon]:hidden" data-docs-card>
-  <div class="drawing-box" aria-hidden="true">
-    <svg viewBox="0 0 96 96" class="drawing">
-      <!-- the docs: two pages behind, one in front carrying the lines, and
+  <div class="head">
+    <div class="drawing-box" aria-hidden="true">
+      <svg viewBox="0 0 96 96" class="drawing">
+        <!-- the docs: two pages behind, one in front carrying the lines, and
            the ringed dot on the line a reader is on -->
-      <rect class="bx page page-l" x="24" y="30" width="46" height="40" rx="4" />
-      <rect class="bx page page-r" x="24" y="30" width="46" height="40" rx="4" />
-      <g class="front">
-        <rect class="bx bx--front" x="24" y="30" width="46" height="40" rx="4" />
-        <line class="ln ln--thin" x1="32" y1="41" x2="56" y2="41" />
-        <line class="ln ln--c" x1="32" y1="49" x2="48" y2="49" />
-        <line class="ln ln--thin" x1="32" y1="57" x2="60" y2="57" />
-        <circle class="ring ring--c" cx="61" cy="49" r="4" />
-        <circle class="dot dot--c" cx="61" cy="49" r="1.6" />
-      </g>
-    </svg>
-  </div>
-  <div class="words">
-    <p class="eyebrow">{t('docsCard.eyebrow')}</p>
+        <rect class="bx page page-l" x="24" y="30" width="46" height="40" rx="4" />
+        <rect class="bx page page-r" x="24" y="30" width="46" height="40" rx="4" />
+        <g class="front">
+          <rect class="bx bx--front" x="24" y="30" width="46" height="40" rx="4" />
+          <line class="ln ln--thin" x1="32" y1="41" x2="56" y2="41" />
+          <line class="ln ln--c" x1="32" y1="49" x2="48" y2="49" />
+          <line class="ln ln--thin" x1="32" y1="57" x2="60" y2="57" />
+          <circle class="ring ring--c" cx="61" cy="49" r="4" />
+          <circle class="dot dot--c" cx="61" cy="49" r="1.6" />
+        </g>
+      </svg>
+    </div>
     <p class="title">{t('docsCard.title')}</p>
-    <p class="body">{t('docsCard.body')}</p>
   </div>
+  <p class="body">{t('docsCard.body')}</p>
   <div class="acts">
     <Button variant="outline" size="xs" href={DOCS_URL} target="_blank" rel="noreferrer">
       <BookOpen />
@@ -72,59 +71,50 @@
 
 <style>
   .docs-card {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
-    grid-template-areas:
-      'drawing words'
-      'acts acts';
-    gap: 4px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     margin: 0 4px 6px;
-    padding: 10px 10px 8px;
+    padding: 12px;
     border-radius: 10px;
   }
+  /* the drawing and the title on one line: the mark of the thing, then its
+     name, the way every other card in the app opens */
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
   .drawing-box {
-    grid-area: drawing;
-    width: 48px;
-    height: 48px;
-    margin: -3px 0 0 -5px;
+    flex: none;
+    width: 30px;
+    height: 30px;
     /* the drawing's one colour: the accent, as on the overview's tiles */
     --c: var(--accent);
   }
-  .words {
-    grid-area: words;
-    min-width: 0;
-  }
-  .words p {
-    margin: 0;
-  }
   .title {
+    margin: 0;
     font-family: var(--display);
-    font-size: 14.5px;
+    font-size: 15px;
     font-weight: 400;
     letter-spacing: -0.005em;
     line-height: 1.2;
     color: var(--ink);
   }
   .body {
-    margin-top: 2px !important;
+    margin: 0;
     font-size: 12px;
-    line-height: 1.4;
+    line-height: 1.45;
     color: var(--muted);
     text-wrap: pretty;
   }
-  /* The words breathe before the actions: the pair sits apart from the
-     text it acts on, so the outline button and the ghost beside it read as
-     one row of actions rather than a third line of the paragraph. */
   .acts {
-    grid-area: acts;
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     gap: 4px;
-    margin-top: 12px;
   }
   .acts :global(a),
   .acts :global(button) {
-    flex: 1 1 auto;
+    width: 100%;
     height: 28px;
     padding-inline: 8px;
     font-size: 12.5px;

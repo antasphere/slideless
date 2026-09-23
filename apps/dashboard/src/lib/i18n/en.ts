@@ -245,7 +245,6 @@ export const en = {
   'welcome.dismiss': 'Dismiss',
 
   // ── The docs card at the foot of the sidebar ──────────────────────────
-  'docsCard.eyebrow': 'Docs',
   'docsCard.title': 'Read the docs',
   'docsCard.body': 'The concepts, the CLI, the MCP connector, and a prompt for your agent.',
   'docsCard.read': 'Open the docs',
