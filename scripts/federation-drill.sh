@@ -661,7 +661,9 @@ mcp_big=$(jq -nc --arg ws "$WS_ID" --arg html "<!doctype html><html><head><title
   '{jsonrpc:"2.0",id:2,method:"tools/call",params:{name:"slideless_upload_html_presentation",arguments:{workspace:$ws,title:"Drill refused deck",html:$html}}}')
 mcp_refused=$("${CURL[@]}" -X POST "$SL/mcp" -H "Authorization: Bearer $MCP_BEARER" -H 'content-type: application/json' \
   -H 'accept: application/json, text/event-stream' -d "$mcp_big")
-echo "$mcp_refused" | jq -e --arg top "Top up: $HUB/billing/top-up?org=$HUB_ORG_ID" \
+# The gate's own message carries the link ("top up at <url>"); the MCP text adds
+# no second sentence (verifier round 1), so the link is there exactly once.
+echo "$mcp_refused" | jq -e --arg top "top up at $HUB/billing/top-up?org=$HUB_ORG_ID" \
   '.result.isError == true and (.result.content[0].text | (test("entitlement_denied") and contains($top)))' >/dev/null \
   || fail "the MCP tool result does not carry the refusal and the top-up link: $(echo "$mcp_refused" | head -c 500)"
 pass "with the balance at 0, one action per surface answers 402 entitlement_denied with the top-up link: the dashboard session, the slk_ key, the MCP tool's text"

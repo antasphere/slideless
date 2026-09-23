@@ -9,7 +9,7 @@ import {
   DECK_ACTIONS,
   DECK_FEATURES,
   DECK_LIMITS,
-  DECK_ROUTE_ENTITLEMENTS,
+  deckRouteEntitlements,
   fileDeleteRoute,
   meRoute,
   ssoCliConnectRoute,
@@ -32,6 +32,7 @@ import type { DeckEvents } from './platform/deck-events.js';
 import { registerPresentationRoutes } from './api/presentations.js';
 import { registerCollaboratorRoutes } from './api/collaborators.js';
 import { blobReadScope, PresentationService } from './presentations/service.js';
+import { formOwnerActor } from './presentations/form-owner-actor.js';
 import { AnnotationService } from './annotations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { ShareTokenService } from './sharing/service.js';
@@ -392,7 +393,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
     // capped at 100 MB, today's cloud, serves free and pro alike until the
     // operator raises the cap to the 500 MB the seed intends). The oss
     // value is the operator's own knob. null = unlimited.
-    entitlements: (env) => {
+    entitlements: (env, { db, getTool }) => {
       const MB = 1024 * 1024;
       const capBytes = env.MAX_FILE_SIZE_MB * MB;
       const freeUploadBytes = Math.min(100 * MB, capBytes);
@@ -408,7 +409,10 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
             creditsPerUnit: 5,
             unit: 'bytes',
             per: MB,
-            label: 'Upload deck files (5 credits per MB)'
+            // The bytes RECEIVED are metered, a deduplicated upload included:
+            // dedupe is the instance's saving, not the account's (Romain's
+            // ruling on PRDCT-2655, 23 September 2026); the label says so.
+            label: 'Upload deck files (5 credits per MB received)'
           },
           { key: DECK_ACTIONS.shareToken, creditsPerUnit: 20, unit: 'call', label: 'Create a share link' },
           { key: DECK_ACTIONS.export, creditsPerUnit: 100, unit: 'call', label: 'Export the workspace' },
@@ -417,6 +421,26 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
             creditsPerUnit: 10,
             unit: 'call',
             label: 'Invite a collaborator on a deck'
+          },
+          // The anonymous surfaces (PRDCT-2634, Romain's ruling of 23 September
+          // 2026): a viewer's form response and a viewer's file uploaded into
+          // one, both through a share link, both paid by the deck's owner. The
+          // response's 5 is the 22 September seed (Romain floated 1: data for
+          // the seed review); the upload is the same 5 per MB received as the
+          // owner's own uploads, under its own key so the usage report tells
+          // the two apart.
+          {
+            key: DECK_ACTIONS.formResponse,
+            creditsPerUnit: 5,
+            unit: 'call',
+            label: 'Receive a form response'
+          },
+          {
+            key: DECK_ACTIONS.formUpload,
+            creditsPerUnit: 5,
+            unit: 'bytes',
+            per: MB,
+            label: 'Receive a file in a form response (5 credits per MB received)'
           }
         ],
         limits: {
@@ -428,7 +452,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           [DECK_FEATURES.customDomain]: { free: false, pro: true },
           [DECK_FEATURES.deckPassword]: { free: false, pro: true }
         },
-        routes: DECK_ROUTE_ENTITLEMENTS
+        routes: deckRouteEntitlements({ formOwner: formOwnerActor(db, getTool) })
       };
     },
 

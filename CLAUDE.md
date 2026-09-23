@@ -323,6 +323,22 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   is content-addressed (a rollback could delete what another deck references). Every first-party
   caller (the SDKs, the MCP kit's in-process call) declares it; oss and cloud-local workspaces are
   untouched.
+- **An anonymous surface pays through the resource's owner, and the viewer learns nothing
+  (PRDCT-2634, spec §8, Romain's ruling of 2026-09-23)**: when a route declares `meter.actor`, the
+  gate runs the hook WITHOUT a principal and meters on the actor it resolves (the owner's user id,
+  workspace and account; `via` reads `session`, the hub's enum having no value for a share link);
+  a hook that resolves nothing or throws leaves the route to its own handling and meters nothing.
+  Slideless declares two: the form response (`forms.response`, per call) and the form file upload
+  (`forms.upload`, bytes per MB received, its own key so the report tells it from the owner's
+  uploads), both through `deckRouteEntitlements({ formOwner })` in `apps/server/src/tool.ts`, the
+  hook `presentations/form-owner-actor.ts` resolving the share secret through the late-bound domain
+  (`EntitlementsContext.getTool`, the jobs slot's shape; the slot runs before `services`). A credit
+  refusal on an anonymous surface is `402 entitlement_denied` with ONE neutral sentence and NO
+  `details`: the owner's balance, price and top-up page are never shown to a viewer. The plain
+  `DECK_ROUTE_ENTITLEMENTS` carries no hooks (a client's read); the server always builds its own.
+  The upload handler records `audit.metadata.sizeBytes` so the emit meters the bytes kept. A
+  deduplicated upload is billed at the bytes RECEIVED (PRDCT-2655, the same ruling), and the
+  price label says so.
 - **The poster never posts what the hub would refuse on its date (PRDCT-2644)**: the hub's window
   (`USAGE_EVENT_MAX_PAST_MS` seven days, `USAGE_EVENT_MAX_FUTURE_MS` five minutes,
   `usageEventOccurrenceIssue`, mirrored with the hub's names and messages in `chassis-contract`,

@@ -12,7 +12,12 @@ import { slidelessTool } from '../../src/tool.js';
 const MB = 1024 * 1024;
 
 function declaredAt(maxFileSizeMb: number) {
-  const declared = slidelessTool.entitlements!({ MAX_FILE_SIZE_MB: maxFileSizeMb } as never);
+  // The slot's context (the database and the late-bound domain) feeds the
+  // actor hooks alone, which this test never calls.
+  const declared = slidelessTool.entitlements!({ MAX_FILE_SIZE_MB: maxFileSizeMb } as never, {
+    db: null as never,
+    getTool: () => null
+  });
   return declared.limits['files.maxBytes']!;
 }
 
