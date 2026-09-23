@@ -431,6 +431,13 @@ export const fr: Record<keyof typeof en, string> = {
   'account.passwordChanged': 'Mot de passe changé. Vos autres sessions ont été déconnectées.',
   'account.errorNewPasswordLength': 'Le nouveau mot de passe doit contenir au moins 12 caractères.',
   'account.errorCurrentPassword': 'Le mot de passe actuel est incorrect.',
+  'account.errorNoPasswordYet':
+    'Ce compte n’a pas encore de mot de passe. Utilisez « Mot de passe oublié » sur la page de connexion pour en définir un.',
+  'account.signInTitle': 'Votre mode de connexion',
+  'account.signInWithHub':
+    'Vous vous connectez avec Antasphere. Il n’y a pas de mot de passe sur cette instance : votre mot de passe, votre e-mail et votre second facteur se gèrent dans votre compte Antasphere.',
+  'account.signInNoPassword': 'Cette instance n’utilise pas de mot de passe.',
+  'account.manageHubAccount': 'Gérer mon compte Antasphere',
   'account.passwordChangeFailed': 'Échec du changement de mot de passe. Réessayez.',
   'account.twoFactorTitle': 'Authentification à deux facteurs',
   'account.twoFactorDescription':
@@ -463,6 +470,17 @@ export const fr: Record<keyof typeof en, string> = {
   'account.dangerTitle': 'Zone de danger',
   'account.dangerDescription':
     'La suppression de votre compte est définitive : votre compte et vos sessions sont supprimés et vos clés API cessent de fonctionner. Les fichiers que vous avez téléversés restent dans l’espace de travail ; l’historique d’audit est conservé anonymisé.',
+  'account.dangerScope':
+    'Elle vous retire de tous les espaces de travail de cette instance, pas seulement de celui où vous êtes, et elle est irréversible.',
+  'account.dangerDecksNote':
+    'Vos présentations restent dans leurs espaces de travail et leurs liens de partage continuent de fonctionner ; elles n’ont simplement plus de propriétaire. Supprimez-les d’abord si vous voulez qu’elles disparaissent.',
+  'account.dangerHubNote':
+    'Votre compte Antasphere lui-même n’est pas concerné : vous pourrez vous reconnecter plus tard, et un nouveau compte vide sera créé ici.',
+  'account.deleteContinueHub': 'Vérifier avec Antasphere',
+  'account.deleteVerifyHint':
+    'La suppression exige une connexion récente. Vous allez être redirigé vers Antasphere puis ramené ici pour confirmer : rien n’est supprimé à ce stade.',
+  'account.deleteReauthed':
+    'Vous venez de vous reconnecter avec Antasphere. Saisissez DELETE pour confirmer : c’est la dernière étape.',
   'account.deleteConfirmPrefix': 'Saisissez',
   'account.deleteConfirmSuffix': 'pour confirmer',
   'account.deleting': 'Suppression…',
@@ -757,6 +775,7 @@ export const fr: Record<keyof typeof en, string> = {
   'account.modeDark': 'Sombre',
   'account.securityTitle': 'Sécurité',
   'account.securityDescription': 'Votre mot de passe et le second facteur.',
+  'account.securityDescriptionSso': 'Comment vous vous connectez à cette instance.',
   'account.signedInVia': 'Connecté via {via}',
   // ── Nouvel espace : trois étapes et une porte ────────────────────────
   'workspace.stepOf': 'Étape {n} sur {total}',

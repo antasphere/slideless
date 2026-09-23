@@ -422,7 +422,14 @@ export const en = {
   'account.passwordChanged': 'Password changed. Other sessions were signed out.',
   'account.errorNewPasswordLength': 'The new password must be at least 12 characters.',
   'account.errorCurrentPassword': 'Current password is incorrect.',
+  'account.errorNoPasswordYet':
+    'This account has no password yet. Use “Forgot password” on the sign-in page to set one.',
   'account.passwordChangeFailed': 'Password change failed. Try again.',
+  'account.signInTitle': 'How you sign in',
+  'account.signInWithHub':
+    'You sign in with Antasphere. There is no password on this instance: your password, email and second factor are managed in your Antasphere account.',
+  'account.signInNoPassword': 'This instance does not use passwords.',
+  'account.manageHubAccount': 'Manage your Antasphere account',
   'account.twoFactorTitle': 'Two-factor authentication',
   'account.twoFactorDescription':
     'Optional: require a code from your authenticator app at sign-in, in addition to your password.',
@@ -452,6 +459,17 @@ export const en = {
   'account.dangerTitle': 'Danger zone',
   'account.dangerDescription':
     'Deleting your account is permanent: your account and sessions are removed and your API keys stop working. Files you uploaded remain with the workspace; audit history is kept anonymized.',
+  'account.dangerScope':
+    'It removes you from every workspace on this instance, not only the one you are in, and it cannot be undone.',
+  'account.dangerDecksNote':
+    'Your decks stay in their workspaces and their share links keep working; they just no longer have an owner. Delete them first if you want them gone.',
+  'account.dangerHubNote':
+    'Your Antasphere account itself is not affected: you can sign in again later, and a new, empty account is created here.',
+  'account.deleteContinueHub': 'Verify with Antasphere',
+  'account.deleteVerifyHint':
+    'Deleting needs a fresh sign-in. This takes you to Antasphere and brings you back here to confirm — nothing is deleted yet.',
+  'account.deleteReauthed':
+    'You just signed in with Antasphere again. Type DELETE to confirm — this is the final step.',
   'account.deleteConfirmPrefix': 'Type',
   'account.deleteConfirmSuffix': 'to confirm',
   'account.deleting': 'Deleting…',
@@ -741,6 +759,7 @@ export const en = {
   'account.modeDark': 'Dark',
   'account.securityTitle': 'Security',
   'account.securityDescription': 'Your password and the second factor.',
+  'account.securityDescriptionSso': 'How you sign in to this instance.',
   'account.signedInVia': 'Signed in via {via}',
   // ── New workspace: three steps and a door ─────────────────────────────
   'workspace.stepOf': 'Step {n} of {total}',
