@@ -112,12 +112,15 @@
     color: var(--muted);
     text-wrap: pretty;
   }
+  /* The words breathe before the actions: the pair sits apart from the
+     text it acts on, so the outline button and the ghost beside it read as
+     one row of actions rather than a third line of the paragraph. */
   .acts {
     grid-area: acts;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    margin-top: 4px;
+    margin-top: 12px;
   }
   .acts :global(a),
   .acts :global(button) {
