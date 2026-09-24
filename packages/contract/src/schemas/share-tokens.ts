@@ -155,6 +155,13 @@ const pinnedVersionConsistent = (v: {
   pinnedVersion?: number | null | undefined;
 }) => v.versionMode !== 'pinned' || typeof v.pinnedVersion === 'number';
 
+/**
+ * The shortest viewer password a link takes: the schemas' rule, and the one
+ * the plan gate's password condition reads (`sharePasswordSet` in routes),
+ * so a body the validator refuses is never a plan refusal (PRDCT-2702).
+ */
+export const SHARE_PASSWORD_MIN = 4;
+
 export const shareTokenCreateSchema = z
   .object({
     name: plainText(1, 200),
@@ -211,7 +218,7 @@ export const shareTokenCreateSchema = z
     badgePosition: badgePositionSchema.optional(),
     expiresAt: z.iso.datetime().optional(),
     /** Optional viewer password (stored hashed, shown as hasPassword). */
-    password: z.string().min(4).max(256).optional()
+    password: z.string().min(SHARE_PASSWORD_MIN).max(256).optional()
   })
   .refine(pinnedVersionConsistent, {
     message: 'pinnedVersion is required when versionMode is "pinned"'
@@ -270,7 +277,7 @@ export const shareTokenUpdateSchema = z
      */
     badgePosition: badgePositionSchema.nullable().optional(),
     expiresAt: z.iso.datetime().nullable().optional(),
-    password: z.string().min(4).max(256).nullable().optional()
+    password: z.string().min(SHARE_PASSWORD_MIN).max(256).nullable().optional()
   })
   .refine(pinnedVersionConsistent, {
     message: 'pinnedVersion is required when versionMode is "pinned"'

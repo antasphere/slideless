@@ -224,9 +224,10 @@ describe('discovery carries the Slideless seed', () => {
         'workspace.export'
       ].sort()
     );
-    // The two anonymous surfaces (PRDCT-2634): a response per call, a received file per MB.
+    // The two anonymous surfaces (PRDCT-2634): a response per call (1 credit,
+    // Romain's seed ruling of 24 September 2026, PRDCT-2702), a received file per MB.
     const action = (key: string) => info.entitlements.actions.find((a: { key: string }) => a.key === key);
-    expect(action('forms.response')).toMatchObject({ creditsPerUnit: 5, unit: 'call' });
+    expect(action('forms.response')).toMatchObject({ creditsPerUnit: 1, unit: 'call' });
     expect(action('forms.response').per ?? 1).toBe(1);
     expect(action('forms.upload')).toMatchObject({ creditsPerUnit: 5, unit: 'bytes', per: 1048576 });
     expect(action('files.upload').label).toBe('Upload deck files (5 credits per MB received)');
@@ -903,6 +904,9 @@ describe('an anonymous surface pays through the deck’s owner (PRDCT-2634)', ()
   };
 
   beforeAll(async () => {
+    // The fake's price book is the HUB's, not the declaration's: a hub that
+    // seeded 5 before the declaration moved to 1 (PRDCT-2702) keeps 5 until
+    // staff edits the row, and the chassis charges what the hub answers.
     hub.setPrice('forms.response', { creditsPerUnit: 5, unit: 'call' });
     hub.setPrice('forms.upload', { creditsPerUnit: 5, unit: 'bytes', per: 1024 * 1024 });
     owner = await hubPerson({

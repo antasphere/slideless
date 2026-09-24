@@ -5,6 +5,7 @@ import {
   cursorPageQuerySchema,
   declaredContentLength,
   declareRouteEntitlements,
+  type ActorHook,
   type ActorRef,
   type EntitlementRequest
 } from '@antasphere/chassis-contract';
@@ -50,7 +51,8 @@ import {
   shareTokenSentSchema,
   shareTokensListSchema,
   shareTokenViewsListSchema,
-  shareTokenUpdateSchema
+  shareTokenUpdateSchema,
+  SHARE_PASSWORD_MIN
 } from '../schemas/share-tokens.js';
 import {
   collaboratorClaimedSchema,
@@ -994,9 +996,49 @@ export const FORM_RESPONSE_ROUTE = {
 } as const;
 export const FORM_UPLOAD_ROUTE = { method: 'post', path: '/viewer/{secret}/forms/{form}/uploads' } as const;
 
+/** A count limit's hook: the count AFTER this action, or null when there is nothing to judge. */
+export type CountHook = (ctx: EntitlementRequest) => Promise<number | null>;
+
+/**
+ * The hooks the server supplies to the declarations (PRDCT-2634, PRDCT-2702):
+ * every one of them reads the tool's own tables at request time, so the
+ * contract names them and `apps/server/src/tool.ts` fills them in. A hook
+ * that resolves nothing (null) leaves the route to its own handling.
+ */
 export interface DeckActorHooks {
   /** The owner of the deck behind `ctx.params.secret`, or null when the secret resolves to nothing. */
   formOwner: (ctx: EntitlementRequest) => Promise<ActorRef | null>;
+  /**
+   * The member cap at Slideless's two doors, the collaborator invite and the
+   * collaborator claim (PRDCT-2702): the seats of a workspace are its active
+   * members of every origin (guests included) plus the addresses that hold
+   * a seat without a membership yet (a live pending collaborator grant, an
+   * active grant not yet claimed into a membership, an open workspace
+   * invitation). Each hook returns the seats AFTER the door's act. The
+   * workspace invitation doors are the hub's on every workspace that has a
+   * plan (`hub_managed`), so they carry no declaration here.
+   */
+  /** The collaborator invite: the caller's workspace's seats after inviting the body's email; null for a caller who may not invite on that deck. */
+  collaboratorInviteSeats: CountHook;
+  /** The collaborator claim: the workspace the grant behind the body's token opens (nothing is metered here; its plan is judged). */
+  collaboratorClaimActor: ActorHook;
+  /** The collaborator claim: that workspace's seats after the invitee joins. */
+  collaboratorClaimSeats: CountHook;
+  /** The links of the deck `ctx.params.id` that are not revoked (previews excluded), plus this one; null for a caller who may not see the deck. */
+  linksOfDeck: CountHook;
+}
+
+/**
+ * Whether a share link body SETS a password (PRDCT-2702): a string the
+ * schemas would accept, on the mint or the update. `null` on the update is
+ * a removal, `undefined` no change, and a string shorter than the schemas'
+ * minimum is the validator's 400; none of these is the act the
+ * `deck.password` feature sells. A set password is a fact: a link locked
+ * before a downgrade keeps its lock.
+ */
+export async function sharePasswordSet(ctx: EntitlementRequest): Promise<boolean> {
+  const body = (await ctx.body()) as { password?: unknown } | undefined;
+  return typeof body?.password === 'string' && body.password.length >= SHARE_PASSWORD_MIN;
 }
 
 /** The upload cap, one key for both upload doors (the deck asset route and the generic files route). */
@@ -1031,9 +1073,37 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
       limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
     },
     { route: uploadSessionCommitRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
-    { route: shareTokenCreateRoute, meter: { key: DECK_ACTIONS.shareToken, unit: 'call' } },
+    // A share link (PRDCT-2702): the mint counts against the deck's links
+    // and, when the body sets a password, needs the feature; the update
+    // needs the feature for the same act alone. Feature, then limit, then
+    // the price (the gate's order).
+    {
+      route: shareTokenCreateRoute,
+      meter: { key: DECK_ACTIONS.shareToken, unit: 'call' },
+      limit: { key: DECK_LIMITS.linksPerDeck, value: actors.linksOfDeck },
+      feature: { key: DECK_FEATURES.deckPassword, when: sharePasswordSet }
+    },
+    { route: shareTokenUpdateRoute, feature: { key: DECK_FEATURES.deckPassword, when: sharePasswordSet } },
     { route: workspaceExportRoute, meter: { key: DECK_ACTIONS.export, unit: 'call' } },
-    { route: collaboratorInviteRoute, meter: { key: DECK_ACTIONS.invite, unit: 'call' } },
+    // The member cap at Slideless's two doors (PRDCT-2702, the wave's ruling
+    // 2): the collaborator invite and claim, the guest door. The workspace
+    // invitation create and accept carry NO declaration: on every workspace
+    // that has a plan they answer `hub_managed` and the hub enforces the
+    // same cap at its own doors, and a workspace without a plan has nothing
+    // to judge (a declaration that could never refuse is a false guarantee;
+    // the code review of PRDCT-2702). The claim is a public door: the
+    // entry-level actor names the workspace it opens, and the invitee reads
+    // the neutral refusal.
+    {
+      route: collaboratorInviteRoute,
+      meter: { key: DECK_ACTIONS.invite, unit: 'call' },
+      limit: { key: DECK_LIMITS.workspaceMembers, value: actors.collaboratorInviteSeats }
+    },
+    {
+      route: collaboratorClaimRoute,
+      actor: actors.collaboratorClaimActor,
+      limit: { key: DECK_LIMITS.workspaceMembers, value: actors.collaboratorClaimSeats }
+    },
     // The anonymous surfaces (PRDCT-2634): no principal, the owner resolved
     // from the share secret pays. The upload meters the bytes kept.
     {
@@ -1052,5 +1122,11 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
   ]);
 }
 
-/** The declarations with no actor hooks: what a client reads; the server builds its own with `deckRouteEntitlements`. */
-export const DECK_ROUTE_ENTITLEMENTS = deckRouteEntitlements({ formOwner: async () => null });
+/** The declarations with hooks that resolve nothing: what a client reads; the server builds its own with `deckRouteEntitlements`. */
+export const DECK_ROUTE_ENTITLEMENTS = deckRouteEntitlements({
+  formOwner: async () => null,
+  collaboratorInviteSeats: async () => null,
+  collaboratorClaimActor: async () => null,
+  collaboratorClaimSeats: async () => null,
+  linksOfDeck: async () => null
+});
