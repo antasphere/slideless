@@ -253,7 +253,6 @@ export const fr: Record<keyof typeof en, string> = {
   'deck.aboutAgentDocNone':
     'Pas encore de briefing. Placez un AGENT.md à la racine du dossier que vous poussez : les agents le lisent en premier.',
   'deck.aboutAgentDocShow': 'Lire',
-  'deck.aboutAgentDocCopy': 'Copier le briefing',
   'deck.aboutCopyCommand': 'Copier la commande',
   'deck.aboutMetadataNone': 'Pas encore de métadonnées. Étiquetez le deck en ligne de commande :',
   'deck.selfDescDescription': 'Métadonnées définies par le propriétaire et briefing AGENT.md du bundle.',

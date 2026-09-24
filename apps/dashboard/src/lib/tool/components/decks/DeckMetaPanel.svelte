@@ -160,11 +160,6 @@
           <Skeleton class="h-3.5 w-3/5" />
         </div>
       {:else}
-        <div class="flex justify-end">
-          <Button variant="outline" size="sm" class="h-8" onclick={() => void copyText(agentDoc ?? '')}>
-            {t('deck.aboutAgentDocCopy')}
-          </Button>
-        </div>
         <!-- the briefing is user-authored: CodeBlock renders it as text -->
         <div in:appear>
           <CodeBlock code={agentDoc} ariaLabel={t('deck.agentDocHeading')} class="[--code-max-h:none]" />

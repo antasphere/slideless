@@ -236,7 +236,6 @@ export const en = {
   'deck.aboutAgentDocNone':
     'No briefing yet. Put an AGENT.md at the root of the folder you push, and agents read it first.',
   'deck.aboutAgentDocShow': 'Read',
-  'deck.aboutAgentDocCopy': 'Copy the briefing',
   'deck.aboutCopyCommand': 'Copy the command',
   'deck.aboutMetadataNone': 'No metadata yet. Label the deck from the command line:',
   'deck.selfDescDescription': 'Owner-defined metadata and the bundle’s AGENT.md agent briefing.',
