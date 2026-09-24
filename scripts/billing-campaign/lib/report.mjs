@@ -58,7 +58,8 @@ export class Report {
     const lines = [];
     lines.push(`# The confidence campaign, run ${this.runNumber}`);
     lines.push('');
-    lines.push(`Started ${this.startedAt.toISOString()}, finished ${finishedAt.toISOString()} (${Math.round(ms / 60000)} min). Hub ${this.heads.hub}, Slideless ${this.heads.slideless}, pair ${this.heads.pair}. The Stripe sandbox only; nothing charged to a real person.`);
+    const img = (w) => (w ? `image ${w.image} ${w.id}${w.created ? `, built ${w.created.slice(0, 16)}Z` : ''}` : 'image unknown');
+    lines.push(`Started ${this.startedAt.toISOString()}, finished ${finishedAt.toISOString()} (${Math.round(ms / 60000)} min). Pair ${this.heads.pair}: hub worktree ${this.heads.hub} (${img(this.heads.images?.hub)}), Slideless worktree ${this.heads.slideless} (${img(this.heads.images?.app)}). The worktree head is what was checked out; the image is what answered. The Stripe sandbox only; nothing charged to a real person.`);
     lines.push('');
     lines.push(`**${t.green} green · ${t.red} red · ${t.unrun} unrun** over ${this.rows.length} scenarios.`);
     lines.push('');

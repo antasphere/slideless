@@ -51,6 +51,37 @@ async function heads() {
   return { hub: await git(hubDir), slideless: await git(config.repo), pair: config.project };
 }
 
+/**
+ * The images the pair's hub and Slideless containers RUN, read from Docker:
+ * the worktree heads above say what was checked out, the image ids say what
+ * answered the scenarios (an image built before a worktree moved is the older
+ * code, whatever the head reads).
+ */
+async function runningImages(hub) {
+  const out = { hub: null, app: null };
+  try {
+    const { stdout } = await hub.compose(['images', '--format', 'json']);
+    for (const row of JSON.parse(stdout)) {
+      const which = row.ContainerName.endsWith('-hub-1') ? 'hub' : row.ContainerName.endsWith('-app-1') ? 'app' : null;
+      if (!which) continue;
+      let created = null;
+      try {
+        const { execFile } = await import('node:child_process');
+        const { promisify } = await import('node:util');
+        const env = { ...process.env, ...(config.compose.dockerConfig ? { DOCKER_CONFIG: config.compose.dockerConfig } : {}) };
+        const { stdout: created0 } = await promisify(execFile)('docker', ['image', 'inspect', row.ID, '--format', '{{.Created}}'], { env });
+        created = created0.trim();
+      } catch {
+        created = null;
+      }
+      out[which] = { image: `${row.Repository}:${row.Tag}`, id: row.ID.replace('sha256:', '').slice(0, 12), created };
+    }
+  } catch {
+    /* the pair is not up through compose (a foreign pair): no image facts */
+  }
+  return out;
+}
+
 async function main() {
   const opts = args();
   const mail = new Mailpit(config.mailPort);
@@ -58,7 +89,7 @@ async function main() {
   const sl = new Slideless({ hub, log });
   const stripe = new Stripe();
   const relay = new Relay();
-  const report = new Report({ bundleDir: config.bundleDir, runNumber: opts.run, heads: await heads() });
+  const report = new Report({ bundleDir: config.bundleDir, runNumber: opts.run, heads: { ...(await heads()), images: await runningImages(hub) } });
   log(`run ${report.runNumber} → ${report.dir}`);
 
   // ── preflight: the pair answers, the owner is signed in, the price book is seeded ──
