@@ -390,8 +390,25 @@ describe('the cap never says more than the handler would (ADR 013)', () => {
   });
 
   it('a member who cannot read the deck gets the handler’s 404 at the link mint, never the deck’s link count', async () => {
-    const res = await mint(member, seatsDeck, { name: 'probe' });
+    // The owner's second deck holds ten links, so the count alone would
+    // refuse: the member must meet the handler's 404 before any count.
+    for (let n = 1; n <= 10; n++) {
+      const res = await mint(seatsOwner, seatsDeck2, { name: `probe-${n}` });
+      expect(res.status, await res.clone().text()).toBe(201);
+    }
+    expect(await liveShareLinks(seatsOwner, seatsDeck2)).toBe(10);
+    const res = await mint(member, seatsDeck2, { name: 'probe' });
     expect(res.status, await res.clone().text()).toBe(404);
+    expect(await liveShareLinks(seatsOwner, seatsDeck2)).toBe(10);
+  });
+
+  it('a plain member inviting an outsider on their own deck at the cap reads the handler’s refusal, never the cap', async () => {
+    const own = await makeDeck(member);
+    const res = await invite(member, own, 'stranger@seats.test');
+    expect(res.status).toBe(403);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('external_invite_forbidden');
+    expect(body.error.details).toBeUndefined();
   });
 
   it('a colleague invited as a collaborator holds one seat, not two: an outsider still gets in beside them', async () => {
