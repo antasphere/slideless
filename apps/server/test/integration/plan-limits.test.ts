@@ -584,6 +584,185 @@ describe('the member cap at the claim (the public door)', () => {
   });
 });
 
+// The seat pool's edges (PRDCT-2702): each describe stands on its own
+// organization, on the free plan unless it says otherwise.
+const ORG_JOIN = '88888888-aaaa-4bbb-8ccc-0000000000e1';
+const ORG_INACTIVE = '88888888-aaaa-4bbb-8ccc-0000000000e2';
+const ORG_EXPIRED = '88888888-aaaa-4bbb-8ccc-0000000000e3';
+const ORG_SEATED = '88888888-aaaa-4bbb-8ccc-0000000000e4';
+
+interface Invited {
+  grantId: string;
+  token: string;
+}
+
+async function invited(p: Person, deckId: string, email: string): Promise<Invited> {
+  const res = await invite(p, deckId, email);
+  expect(res.status, await res.clone().text()).toBe(201);
+  const body = await readJson(res);
+  return { grantId: body.collaborator.id, token: (body.claimUrl as string).split('/').pop()! };
+}
+
+/** A guest signs in through the hub on their own personal org; the JIT sweep flips the grant to active. */
+async function guestSignIn(
+  sub: string,
+  email: string,
+  personalOrg: string,
+  grantId: string
+): Promise<string> {
+  const cookie = await sso.ssoLogin(app, hub, {
+    sub,
+    email,
+    name: sub,
+    workspaceId: personalOrg,
+    role: 'owner',
+    workspaceName: `Personal ${sub}`
+  });
+  let status = 'pending';
+  for (let i = 0; i < 40 && status !== 'active'; i++) {
+    const { rows } = await app.db.pool.query(`SELECT status FROM collaborators WHERE id = $1`, [grantId]);
+    status = rows[0].status;
+    if (status !== 'active') await sleep(50);
+  }
+  expect(status).toBe('active');
+  return cookie;
+}
+
+const claimWith = (token: string, cookie: string) =>
+  app.app.request('/api/v1/collaborators/claim', json({ token }, { cookie }));
+
+describe('a claim judges the members alone', () => {
+  it('a claim on a workspace under the cap in members and over it in grants seats the person: the other reservations never block a join', async () => {
+    // Four grants made under pro leave five seats reserved on free with one
+    // member: the claims seat people until the MEMBERS reach the cap.
+    const joinOwner = await hubPerson(owner('hub-plan-join', ORG_JOIN, 'join@planlimits.test'));
+    const deckId = await makeDeck(joinOwner);
+    await setPlan(joinOwner, 'pro');
+    const grants: Invited[] = [];
+    for (const n of [1, 2, 3, 4]) grants.push(await invited(joinOwner, deckId, `g${n}@join.test`));
+    await setPlan(joinOwner, 'free');
+    const personal = [
+      '88888888-aaaa-4bbb-8ccc-0000000000e5',
+      '88888888-aaaa-4bbb-8ccc-0000000000e6',
+      '88888888-aaaa-4bbb-8ccc-0000000000e7'
+    ];
+    const claimAs = async (n: number) => {
+      const cookie = await guestSignIn(
+        `hub-plan-join-g${n}`,
+        `g${n}@join.test`,
+        personal[n - 1]!,
+        grants[n - 1]!.grantId
+      );
+      return claimWith(grants[n - 1]!.token, cookie);
+    };
+    const first = await claimAs(1);
+    expect(first.status, await first.clone().text()).toBe(200);
+    const second = await claimAs(2);
+    expect(second.status, await second.clone().text()).toBe(200);
+    const third = await claimAs(3);
+    expect(third.status).toBe(403);
+    const body = await readJson(third);
+    expect(body.error.code).toBe('plan_required');
+    expect(body.error.message).toBe('The owner of this content cannot take this action right now');
+    expect(body.error.details).toBeUndefined();
+  });
+});
+
+describe('only active members hold a seat', () => {
+  it('a member the hub sweep deactivated holds no seat', async () => {
+    // Two members, one deactivated: the owner alone is seated, so two
+    // outsiders fit and the third is refused.
+    const inactiveOwner = await hubPerson(
+      owner('hub-plan-inactive', ORG_INACTIVE, 'inactive@planlimits.test')
+    );
+    const member = await hubPerson({
+      sub: 'hub-plan-inactive-member',
+      email: 'member@inactive.test',
+      name: 'Inactive Member',
+      workspaceId: ORG_INACTIVE,
+      role: 'member',
+      workspaceName: 'Org hub-plan-inactive'
+    });
+    expect(member.workspaceId).toBe(inactiveOwner.workspaceId);
+    const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [
+      'member@inactive.test'
+    ]);
+    const updated = await app.db.pool.query(
+      `UPDATE workspace_members SET is_active = false WHERE user_id = $1 AND workspace_id = $2`,
+      [rows[0].id, inactiveOwner.workspaceId]
+    );
+    expect(updated.rowCount).toBe(1);
+    const deckId = await makeDeck(inactiveOwner);
+    const a = await invite(inactiveOwner, deckId, 'a@inactive.test');
+    expect(a.status, await a.clone().text()).toBe(201);
+    const b = await invite(inactiveOwner, deckId, 'b@inactive.test');
+    expect(b.status, await b.clone().text()).toBe(201);
+    await expectPlanRequired(
+      await invite(inactiveOwner, deckId, 'c@inactive.test'),
+      ORG_INACTIVE,
+      'workspace.members',
+      MEMBERS_MESSAGE
+    );
+  });
+});
+
+describe('only a live pending grant holds a seat', () => {
+  it('an expired pending grant frees its seat', async () => {
+    // Two pending grants fill the three seats beside the owner; once one
+    // expires, its seat is free again and the next address gets in.
+    const expiredOwner = await hubPerson(owner('hub-plan-expired', ORG_EXPIRED, 'expired@planlimits.test'));
+    const deckId = await makeDeck(expiredOwner);
+    const a = await invited(expiredOwner, deckId, 'a@expired.test');
+    await invited(expiredOwner, deckId, 'b@expired.test');
+    const updated = await app.db.pool.query(
+      `UPDATE collaborators SET claim_expires_at = now() - interval '1 minute' WHERE id = $1`,
+      [a.grantId]
+    );
+    expect(updated.rowCount).toBe(1);
+    const c = await invite(expiredOwner, deckId, 'c@expired.test');
+    expect(c.status, await c.clone().text()).toBe(201);
+  });
+});
+
+describe('a seated guest adds no seat', () => {
+  it('a guest already seated claims a second deck at the cap without a plan refusal', async () => {
+    // At three members, a guest already seated is invited and claims on a
+    // second deck: neither act adds a seat, while an outsider is refused.
+    const seatedOwner = await hubPerson(owner('hub-plan-seated', ORG_SEATED, 'seated@planlimits.test'));
+    const deckOne = await makeDeck(seatedOwner);
+    await setPlan(seatedOwner, 'pro');
+    const h1 = await invited(seatedOwner, deckOne, 'h1@seated.test');
+    const h2 = await invited(seatedOwner, deckOne, 'h2@seated.test');
+    const h1Cookie = await guestSignIn(
+      'hub-plan-seated-h1',
+      'h1@seated.test',
+      '88888888-aaaa-4bbb-8ccc-0000000000e8',
+      h1.grantId
+    );
+    const h1Claim = await claimWith(h1.token, h1Cookie);
+    expect(h1Claim.status, await h1Claim.clone().text()).toBe(200);
+    const h2Cookie = await guestSignIn(
+      'hub-plan-seated-h2',
+      'h2@seated.test',
+      '88888888-aaaa-4bbb-8ccc-0000000000e9',
+      h2.grantId
+    );
+    const h2Claim = await claimWith(h2.token, h2Cookie);
+    expect(h2Claim.status, await h2Claim.clone().text()).toBe(200);
+    await setPlan(seatedOwner, 'free');
+    const deckTwo = await makeDeck(seatedOwner);
+    const again = await invited(seatedOwner, deckTwo, 'h1@seated.test');
+    await expectPlanRequired(
+      await invite(seatedOwner, deckTwo, 'z@seated.test'),
+      ORG_SEATED,
+      'workspace.members',
+      MEMBERS_MESSAGE
+    );
+    const second = await claimWith(again.token, h1Cookie);
+    expect(second.status, await second.clone().text()).toBe(200);
+  });
+});
+
 describe('the links per deck', () => {
   let person: Person;
   let deckId: string;
