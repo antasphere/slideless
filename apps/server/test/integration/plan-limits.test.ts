@@ -220,8 +220,12 @@ const cli = (p: Person) => ({ authorization: `Bearer ${p.key}` });
 const invite = (p: Person, deckId: string, email: string) =>
   app.app.request(`/api/v1/presentations/${deckId}/collaborators`, json({ email }, dashboard(p)));
 
-const mint = (p: Person, deckId: string, body: Record<string, unknown>, headers = cli(p)) =>
-  app.app.request(`/api/v1/presentations/${deckId}/tokens`, json(body, headers));
+const mint = (
+  p: Person,
+  deckId: string,
+  body: Record<string, unknown>,
+  headers: Record<string, string> = cli(p)
+) => app.app.request(`/api/v1/presentations/${deckId}/tokens`, json(body, headers));
 
 const patchToken = (p: Person, deckId: string, tokenId: string, body: Record<string, unknown>) =>
   app.app.request(`/api/v1/presentations/${deckId}/tokens/${tokenId}`, json(body, cli(p), 'PATCH'));
