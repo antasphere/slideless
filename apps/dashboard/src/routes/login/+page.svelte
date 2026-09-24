@@ -24,6 +24,7 @@
     writePendingNext
   } from '$lib/sso';
   import { safeNext } from '$lib/utils';
+  import { IDENTITY } from '@slideless/contract';
   import { t } from '$lib/i18n';
 
   let { data } = $props();
@@ -139,8 +140,12 @@
   }
 
   async function afterSignIn() {
+    // Read the target BEFORE the refresh: the refresh re-runs this page's
+    // load, which sees the session and already navigates to `next` (the
+    // query then carries no `next`), so reading it afterwards answered `/`.
+    const target = safeNext(page.url.searchParams.get('next'));
     await refreshSession();
-    await goto(safeNext(page.url.searchParams.get('next')));
+    await goto(target);
   }
 
   async function signInPassword() {
@@ -291,8 +296,15 @@
   <GateShell eyebrow={t('login.gateEyebrow')}>
     <Card.Root>
       <Card.Header>
-        <Card.Title>{t('login.welcome')}</Card.Title>
-        <Card.Description>{t('login.subtitle')}</Card.Description>
+        <!-- On cloud the first sign-in creates the person's account here, so
+             the card cannot greet them as a returning visitor. -->
+        {#if hasAntasphere}
+          <Card.Title>{t('login.cloudTitle', { name: IDENTITY.displayName })}</Card.Title>
+          <Card.Description>{t('login.cloudSubtitle', { name: IDENTITY.displayName })}</Card.Description>
+        {:else}
+          <Card.Title>{t('login.welcome')}</Card.Title>
+          <Card.Description>{t('login.subtitle')}</Card.Description>
+        {/if}
       </Card.Header>
       <Card.Content class="space-y-4">
         <!-- Quiet post-logout notice (?signed_out=1) — informational, never

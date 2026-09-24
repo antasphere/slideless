@@ -199,6 +199,8 @@ export const en = {
 
   // ── Login ────────────────────────────────────────────────────────────
   'login.subtitle': 'Sign in to your workspace',
+  'login.cloudTitle': 'Sign in to {name}',
+  'login.cloudSubtitle': 'Use your Antasphere account. Your first sign-in sets up your {name} space.',
   'login.tabPassword': 'Password',
   'login.tabOtp': 'Email code',
   'login.email': 'Email',

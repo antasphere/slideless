@@ -119,6 +119,33 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 20_000 });
   });
 
+  await test.step('a sign-in from a deep link lands on that page, not the Overview (PRDCT-2693)', async () => {
+    await page.getByRole('button', { name: OWNER.name }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+
+    await page.goto('/account');
+    await expect(page).toHaveURL(/\/login\?next=%2Faccount$/);
+    // The oss card keeps its greeting (PRDCT-2696 changes the cloud card only).
+    await expect(page.getByText('Welcome back')).toBeVisible();
+    await page.getByLabel('Email').fill(OWNER.email);
+    await page.getByLabel('Password').fill(OWNER.password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    // The previous step signed in seconds ago: wait the sign-in throttle out
+    // once and retry, as signInAsOwner does, rather than fail on the harness.
+    const throttled = await page
+      .getByText('Too many attempts')
+      .waitFor({ state: 'visible', timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (throttled) {
+      await page.waitForTimeout(12_000);
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    }
+    await expect(page).toHaveURL(/\/account$/, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: 'My account' })).toBeVisible();
+  });
+
   await test.step('consent page rejects a garbage authorize query', async () => {
     // Cold deep link with an unsigned/expired query — must show the
     // invalid-request card, never an approvable consent screen.

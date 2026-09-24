@@ -202,6 +202,9 @@ export const fr: Record<keyof typeof en, string> = {
 
   // ── Login ────────────────────────────────────────────────────────────
   'login.subtitle': 'Connectez-vous à votre espace de travail',
+  'login.cloudTitle': 'Connectez-vous à {name}',
+  'login.cloudSubtitle':
+    'Utilisez votre compte Antasphere. Votre première connexion crée votre espace {name}.',
   'login.tabPassword': 'Mot de passe',
   'login.tabOtp': 'Code par e-mail',
   'login.email': 'E-mail',
