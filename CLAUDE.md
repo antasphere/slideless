@@ -381,11 +381,14 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   (`billing/member-cap.ts` there, the smallest numeric `workspace.members` among the tools that
   declare it), and a declaration that could never refuse is a false guarantee. `links.perDeck`
   counts the deck's share links not revoked (expired ones count, previews never;
-  `ShareTokenService.countLive`). Both count hooks judge ONLY a caller the handler would let act
-  (one who can read the deck, and for the invite administer it, a plain member only for a
-  colleague's address): anyone else gets the handler's own 404 or 403, never a plan refusal that
-  says more (ADR 013). The count is read outside any lock: concurrent acts at the cap may
-  overshoot it by the concurrency (accepted; the next act re-reads). `deck.password` is gated on
+  `ShareTokenService.countLive`). Both count hooks judge ONLY a caller the handler would let act (one who can write the deck for the
+  links, read and administer it for the invite, a plain member only for a colleague's address):
+  anyone else gets the handler's own 404 or 403, never a plan refusal that says more (ADR 013).
+  The pool is read in ONE statement (one snapshot), the claim judges the MEMBERS alone plus this
+  one (a join converts a reservation and adds no seat; counting the other reservations deadlocked
+  a downgraded workspace: first come, first seated), and the count is read outside any lock:
+  concurrent invites at the cap may overshoot it by the concurrency (accepted; the next act
+  re-reads). `deck.password` is gated on
   the ACT: setting a password the schema accepts, at the mint or on an existing link, is pro;
   removing one is never refused, a too-short one is the validator's 400, and a password set before
   a downgrade keeps protecting the link. A public door (the claim) reads the neutral sentence with

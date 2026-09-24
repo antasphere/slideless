@@ -1,13 +1,6 @@
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { ActorRef, EntitlementRequest } from '@antasphere/chassis-contract';
-import {
-  invitations,
-  user as userTable,
-  workspaceMembers,
-  workspaces,
-  type Db
-} from '@antasphere/chassis-db';
-import { collaborators } from '@slideless/db';
+import { workspaces, type Db } from '@antasphere/chassis-db';
 import { canAdministerDeck } from './service.js';
 import type { DeckDomain } from '../tool.js';
 
@@ -51,46 +44,38 @@ interface SeatPool {
   reserved: Set<string>;
 }
 
+/**
+ * The pool, read in ONE statement (one snapshot): three statements let a
+ * claim commit between them, so an invite's count saw the person neither as
+ * a grant nor as a member and let one seat too many in.
+ */
 async function seatPool(db: Db, workspaceId: string): Promise<SeatPool> {
   const now = new Date();
-  const [memberRows, grantRows, invitationRows] = await Promise.all([
-    db
-      .select({ email: userTable.email })
-      .from(workspaceMembers)
-      .innerJoin(userTable, eq(workspaceMembers.userId, userTable.id))
-      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.isActive, true))),
-    db
-      .select({ email: collaborators.email })
-      .from(collaborators)
-      .where(
-        and(
-          eq(collaborators.workspaceId, workspaceId),
-          isNull(collaborators.revokedAt),
-          or(
-            and(eq(collaborators.status, 'pending'), gt(collaborators.claimExpiresAt, now)),
-            eq(collaborators.status, 'active')
-          )
-        )
-      ),
-    db
-      .select({ email: invitations.email })
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.workspaceId, workspaceId),
-          isNull(invitations.acceptedAt),
-          isNull(invitations.revokedAt),
-          gt(invitations.expiresAt, now)
-        )
-      )
-  ]);
-  const memberEmails = new Set(memberRows.map((r) => r.email.toLowerCase()));
+  const result = await db.execute(sql`
+    SELECT u.email AS email, 'member' AS kind
+      FROM workspace_members wm
+      JOIN "user" u ON u.id = wm.user_id
+     WHERE wm.workspace_id = ${workspaceId} AND wm.is_active
+    UNION ALL
+    SELECT c.email AS email, 'grant' AS kind
+      FROM collaborators c
+     WHERE c.workspace_id = ${workspaceId} AND c.revoked_at IS NULL
+       AND ((c.status = 'pending' AND c.claim_expires_at > ${now}) OR c.status = 'active')
+    UNION ALL
+    SELECT i.email AS email, 'invitation' AS kind
+      FROM invitations i
+     WHERE i.workspace_id = ${workspaceId}
+       AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > ${now}
+  `);
+  const rows = result.rows as Array<{ email: string; kind: 'member' | 'grant' | 'invitation' }>;
+  const memberEmails = new Set(rows.filter((r) => r.kind === 'member').map((r) => r.email.toLowerCase()));
   const reserved = new Set<string>();
-  for (const row of [...grantRows, ...invitationRows]) {
+  for (const row of rows) {
+    if (row.kind === 'member') continue;
     const email = row.email.toLowerCase();
     if (!memberEmails.has(email)) reserved.add(email);
   }
-  return { members: memberRows.length, memberEmails, reserved };
+  return { members: memberEmails.size, memberEmails, reserved };
 }
 
 /** The seats after inviting `email` into the pool: one more unless the address already holds a seat. */
@@ -99,10 +84,17 @@ function seatsAfterInvite(pool: SeatPool, email: string): number {
   return pool.members + pool.reserved.size + (held ? 0 : 1);
 }
 
-/** The seats after `email` joins on its own grant: its reservation becomes a membership. */
+/**
+ * The seats after `email` joins on its own grant: the MEMBERS alone, plus
+ * this one unless already a member. A join adds no seat (a reservation
+ * becomes a membership), so the other reservations are not counted against
+ * it: counting them refused every claim of a workspace whose grants
+ * exceeded a lowered cap while its members were under it, with nobody told
+ * why (the hub diff's review). First come, first seated; the invite keeps
+ * counting reservations.
+ */
 function seatsAfterJoin(pool: SeatPool, email: string): number {
-  const reservedOthers = pool.reserved.size - (pool.reserved.has(email) ? 1 : 0);
-  return pool.members + reservedOthers + (pool.memberEmails.has(email) ? 0 : 1);
+  return pool.members + (pool.memberEmails.has(email) ? 0 : 1);
 }
 
 async function emailOf(ctx: EntitlementRequest): Promise<string | null> {

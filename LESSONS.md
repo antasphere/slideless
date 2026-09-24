@@ -1536,8 +1536,12 @@ migrate` on an unchanged schema):
   keyed on `limit.value === declaredContentLength`, the same predicate the 411 rule uses.
 - **One seat pool, two doors, counted AFTER the act, and a swept grant holds its seat.** The gate
   refuses `observed > max`, so a door reports the seats it would leave behind: the invite adds one
-  unless the address already holds a seat, the join converts a reservation into a membership and
-  adds nothing. On cloud the JIT login flips a grant to ACTIVE before the claim mints the
+  unless the address already holds a seat; the join judges the MEMBERS alone plus this one, since it
+  converts a reservation and adds nothing (counting the other reservations against it deadlocked a
+  workspace whose grants exceeded a lowered cap while its members were under it, with nobody told
+  why: first come, first seated, the hub diff's review). The pool is read in ONE statement: three
+  statements let a claim commit between them and counted the person neither as a grant nor as a
+  member. On cloud the JIT login flips a grant to ACTIVE before the claim mints the
   membership; a pool counting only pending grants let that person vanish for a moment and lose the
   seat to the next invitee. An active grant whose holder is not a member is a reserved seat.
   Counting only members would let a workspace at the cap invite without limit and refuse every

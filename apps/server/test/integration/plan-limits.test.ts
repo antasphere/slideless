@@ -28,7 +28,6 @@ const ORG_LINKS = '88888888-aaaa-4bbb-8ccc-0000000000c2';
 const ORG_PASSWORD = '88888888-aaaa-4bbb-8ccc-0000000000c3';
 const ORG_SURFACES = '88888888-aaaa-4bbb-8ccc-0000000000c4';
 const ORG_PRO = '88888888-aaaa-4bbb-8ccc-0000000000c5';
-const ORG_GUEST = '88888888-aaaa-4bbb-8ccc-0000000000d1';
 const ORG_SWEPT = '88888888-aaaa-4bbb-8ccc-0000000000c6';
 const ORG_TEAM = '88888888-aaaa-4bbb-8ccc-0000000000c7';
 const ORG_SWEPT_GUEST = '88888888-aaaa-4bbb-8ccc-0000000000d2';
@@ -474,48 +473,45 @@ describe('an active grant not yet claimed still holds its seat (the swept state)
 });
 
 describe('the member cap at the claim (the public door)', () => {
-  const GUEST_EMAIL = 'd@seats.test';
-  let claimToken: string;
-  let grantId: string;
-  let guestCookie: string;
-  let guestUserId: string;
+  // Under pro the owner invites d, e and f; d and e sign in and claim (the
+  // members reach the free cap of 3 beside the owner and the plain member,
+  // 4 in all, above it); back on free, f's claim is a join on a workspace
+  // above its cap and is refused. A claim judges the members alone: the
+  // other reservations never block it (first come, first seated).
+  const guests = {
+    d: { email: 'd@seats.test', sub: 'hub-plan-guest-d', org: '88888888-aaaa-4bbb-8ccc-0000000000d1' },
+    e: { email: 'e@seats.test', sub: 'hub-plan-guest-e', org: '88888888-aaaa-4bbb-8ccc-0000000000d3' },
+    f: { email: 'f@seats.test', sub: 'hub-plan-guest-f', org: '88888888-aaaa-4bbb-8ccc-0000000000d4' }
+  } as const;
+  type Guest = keyof typeof guests;
+  const tokens: Record<string, string> = {};
+  const cookies: Record<string, string> = {};
+  const userIds: Record<string, string> = {};
 
-  const guestRows = async () =>
+  const guestRows = async (who: Guest) =>
     (
       await app.db.pool.query(
         `SELECT role, origin, is_active FROM workspace_members WHERE user_id = $1 AND workspace_id = $2`,
-        [guestUserId, seatsOwner.workspaceId]
+        [userIds[who], seatsOwner.workspaceId]
       )
     ).rows;
 
-  const claim = () =>
-    app.app.request('/api/v1/collaborators/claim', json({ token: claimToken }, { cookie: guestCookie }));
+  const claim = (who: Guest) =>
+    app.app.request('/api/v1/collaborators/claim', json({ token: tokens[who] }, { cookie: cookies[who]! }));
 
-  beforeAll(async () => {
-    // A downgrade puts the org above its cap: two more addresses under pro
-    // (1 member + a, c, d, e reserved), then back to free.
-    await setPlan(seatsOwner, 'pro');
-    const d = await invite(seatsOwner, seatsDeck, GUEST_EMAIL);
-    expect(d.status, await d.clone().text()).toBe(201);
-    const invited = await readJson(d);
-    grantId = invited.collaborator.id;
-    claimToken = (invited.claimUrl as string).split('/').pop()!;
-    const e = await invite(seatsOwner, seatsDeck, 'e@seats.test');
-    expect(e.status, await e.clone().text()).toBe(201);
-    await setPlan(seatsOwner, 'free');
-
-    guestCookie = await sso.ssoLogin(app, hub, {
-      sub: 'hub-plan-guest',
-      email: GUEST_EMAIL,
-      name: 'Plan Guest',
-      workspaceId: ORG_GUEST,
+  /** The guest signs in through the hub: the JIT sweep flips the grant to active (the G1 sequence). */
+  async function signIn(who: Guest, grantId: string) {
+    cookies[who] = await sso.ssoLogin(app, hub, {
+      sub: guests[who].sub,
+      email: guests[who].email,
+      name: `Plan Guest ${who}`,
+      workspaceId: guests[who].org,
       role: 'owner',
-      workspaceName: 'Guest Personal'
+      workspaceName: `Guest ${who}`
     });
-    const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [GUEST_EMAIL]);
+    const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [guests[who].email]);
     expect(rows).toHaveLength(1);
-    guestUserId = rows[0].id;
-    // The JIT sweep flips the grant (the G1 sequence, collaborators-cloud.test.ts).
+    userIds[who] = rows[0].id;
     let status = 'pending';
     for (let i = 0; i < 40 && status !== 'active'; i++) {
       const { rows: grants } = await app.db.pool.query(`SELECT status FROM collaborators WHERE id = $1`, [
@@ -525,29 +521,49 @@ describe('the member cap at the claim (the public door)', () => {
       if (status !== 'active') await sleep(50);
     }
     expect(status).toBe('active');
+  }
+
+  beforeAll(async () => {
+    await setPlan(seatsOwner, 'pro');
+    const grantIds: Record<string, string> = {};
+    for (const who of ['d', 'e', 'f'] as const) {
+      const res = await invite(seatsOwner, seatsDeck, guests[who].email);
+      expect(res.status, await res.clone().text()).toBe(201);
+      const invited = await readJson(res);
+      grantIds[who] = invited.collaborator.id;
+      tokens[who] = (invited.claimUrl as string).split('/').pop()!;
+    }
+    for (const who of ['d', 'e'] as const) {
+      await signIn(who, grantIds[who]!);
+      const res = await claim(who);
+      expect(res.status, await res.clone().text()).toBe(200);
+    }
+    await setPlan(seatsOwner, 'free');
+    await signIn('f', grantIds.f!);
   });
 
-  it('a workspace above its cap takes nobody in: the neutral refusal, and no guest row', async () => {
-    const res = await claim();
+  it('a workspace whose members are above the cap takes nobody in: the neutral refusal, and no guest row', async () => {
+    const res = await claim('f');
     expect(res.status).toBe(403);
     const body = await readJson(res);
     expect(body.error.code).toBe('plan_required');
     expect(body.error.message).toBe('The owner of this content cannot take this action right now');
     expect(body.error.details).toBeUndefined();
-    expect(await guestRows()).toHaveLength(0);
+    expect(await guestRows('f')).toHaveLength(0);
   });
 
   it('back on pro, the same claim answers 200 and mints the guest row', async () => {
     await setPlan(seatsOwner, 'pro');
-    const res = await claim();
+    const res = await claim('f');
     expect(res.status, await res.clone().text()).toBe(200);
     const body = await readJson(res);
     expect(body.workspaceId).toBe(seatsOwner.workspaceId);
-    expect(body.userId).toBe(guestUserId);
+    expect(body.userId).toBe(userIds.f);
     expect(body.collaborator.status).toBe('active');
-    const rows = await guestRows();
+    const rows = await guestRows('f');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ role: 'member', origin: 'guest', is_active: true });
+    await setPlan(seatsOwner, 'free');
   });
 });
 
