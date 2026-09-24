@@ -824,6 +824,49 @@ export const uploadSessions = pgTable(
   ]
 );
 
+/**
+ * The still image of a deck version (PRDCT-2725): one row per version asked
+ * for, the work queue and the record at once. `pending` waits for a capture
+ * (claimed by setting `lease_until`, so one replica renders it), `ready`
+ * names the WebP in storage at `storage_key`, `failed` gave up after the
+ * capture's attempts. A version's content is immutable, so a ready image
+ * never changes. Deleting the version, the deck or the workspace deletes
+ * the row; the bytes stay in storage like a deck's own blobs do.
+ */
+export const thumbnailStates = ['pending', 'ready', 'failed'] as const;
+export type ThumbnailState = (typeof thumbnailStates)[number];
+
+export const presentationVersionThumbnails = pgTable(
+  'presentation_version_thumbnails',
+  {
+    versionId: uuid('version_id')
+      .primaryKey()
+      .references(() => presentationVersions.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    presentationId: uuid('presentation_id')
+      .notNull()
+      .references(() => presentations.id, { onDelete: 'cascade' }),
+    state: text('state', { enum: thumbnailStates }).notNull().default('pending'),
+    /** Claims made so far; a capture that crashes its process still counts. */
+    attempts: integer('attempts').notNull().default(0),
+    /** A claim holds the row until this moment; a pending row past it is claimable again. */
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    storageKey: text('storage_key'),
+    sizeBytes: integer('size_bytes'),
+    /** Why the last attempt failed, one line, for the operator. */
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    // Serves the claim: the oldest pending row whose lease is free.
+    index('presentation_version_thumbnails_state_idx').on(t.state, t.createdAt),
+    check('presentation_version_thumbnails_state_check', sql`${t.state} IN ('pending', 'ready', 'failed')`)
+  ]
+);
+
 export type PresentationRow = typeof presentations.$inferSelect;
 export type PresentationVersionRow = typeof presentationVersions.$inferSelect;
 export type ShareTokenRow = typeof shareTokens.$inferSelect;
@@ -837,3 +880,4 @@ export type FormResponseMailStateRow = typeof formResponseMailState.$inferSelect
 export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
 export type ShareTokenDownloadRow = typeof shareTokenDownloads.$inferSelect;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;
+export type PresentationVersionThumbnailRow = typeof presentationVersionThumbnails.$inferSelect;

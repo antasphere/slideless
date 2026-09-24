@@ -251,9 +251,21 @@ async function encodeWebp(browser: Browser, png: Buffer): Promise<Buffer> {
     await context.route('**/*', (route) => route.abort('blockedbyclient'));
     const page = await context.newPage();
     const b64 = await page.evaluate(async (pngB64: string) => {
+      // Runs in the page: the server's typings carry no DOM, so the two
+      // browser globals it needs are typed here.
+      const g = globalThis as unknown as {
+        createImageBitmap(b: Blob): Promise<{ width: number; height: number }>;
+        OffscreenCanvas: new (
+          w: number,
+          h: number
+        ) => {
+          getContext(k: '2d'): { drawImage(img: unknown, x: number, y: number): void } | null;
+          convertToBlob(o: { type: string; quality: number }): Promise<Blob>;
+        };
+      };
       const bytes = Uint8Array.from(atob(pngB64), (ch) => ch.charCodeAt(0));
-      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const bitmap = await g.createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+      const canvas = new g.OffscreenCanvas(bitmap.width, bitmap.height);
       canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
       const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
       if (blob.type !== 'image/webp') throw new Error(`encoder produced ${blob.type}`);
