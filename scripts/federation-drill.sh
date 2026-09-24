@@ -63,10 +63,11 @@
 # domain browsers refuse for a cookie, so the dashboard on slideless.localhost
 # never sees the hint and its hint-watch (single logout) signs a fresh browser
 # session out within a second (POST /sso/logout in the app log). Production
-# hostnames share a real parent (antasphere.com). A browser demo on this pair
-# needs HUB_HINT_COOKIE_DOMAIN set to a shared parent the browser accepts, or
-# the watch will sign the session out; the headless legs below never carry
-# the hint and are untouched.
+# hostnames share a real parent (antasphere.com). A browser on this pair goes
+# through docker-compose.federation.seamless.yml (hub.ant.localhost and
+# slideless.ant.localhost, the hint on .ant.localhost), which
+# scripts/federation-browser-check.sh boots and signs in on (PRDCT-2694); the
+# headless legs below never carry the hint and are untouched.
 #
 # Usage: ./scripts/federation-drill.sh
 #   FEDERATION_HUB_DIR=<path>  hub checkout to build (default ../../../hub, see the compose file)
