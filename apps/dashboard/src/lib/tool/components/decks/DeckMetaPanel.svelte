@@ -2,7 +2,9 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
-  import { Reveal, appear } from '$lib/components/ui/reveal/index.js';
+  import { appear } from '$lib/components/ui/reveal/index.js';
+  import * as Sheet from '$lib/components/ui/sheet/index.js';
+  import { Skeleton } from '$lib/components/ui/skeleton/index.js';
   import FormError from '$lib/components/shared/FormError.svelte';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
   import Bot from '@lucide/svelte/icons/bot';
@@ -32,20 +34,23 @@
 
   const metadataEntries = $derived(Object.entries(deck.metadata));
 
+  // The briefing opens in a sheet at the side (Romain, 24 September): a
+  // briefing can be long, a sheet gives it the page's height and it loads
+  // inside, so nothing in the card jumps when it arrives.
   let agentDocOpen = $state(false);
   let agentDoc = $state<string | null>(null);
   let agentDocError = $state<string | null>(null);
   let agentDocLoading = $state(false);
 
-  async function toggleAgentDoc() {
-    agentDocOpen = !agentDocOpen;
-    if (!agentDocOpen || agentDoc !== null || agentDocLoading) return;
+  async function openAgentDoc() {
+    agentDocOpen = true;
+    if (agentDoc !== null || agentDocLoading) return;
     agentDocLoading = true;
+    agentDocError = null;
     try {
       agentDoc = await api.agentDoc(deck.id);
     } catch (e) {
       agentDocError = errorMessage(e, t('common.genericError'));
-      agentDocOpen = false;
     } finally {
       agentDocLoading = false;
     }
@@ -76,22 +81,17 @@
           </p>
         </div>
         {#if deck.hasAgentDoc}
-          <Button variant="outline" size="sm" class="h-8 flex-none" onclick={() => void toggleAgentDoc()}>
-            {agentDocOpen ? t('deck.aboutAgentDocHide') : t('deck.aboutAgentDocShow')}
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-8 flex-none"
+            onclick={() => void openAgentDoc()}
+            data-testid="deck-agent-doc-open"
+          >
+            {t('deck.aboutAgentDocShow')}
           </Button>
         {/if}
       </div>
-      <FormError message={agentDocError ? t('deck.agentDocLoadFailed', { error: agentDocError }) : null} />
-      <Reveal open={agentDocOpen && !agentDocError}>
-        {#if agentDocLoading}
-          <p class="pt-3 text-sm text-muted-foreground">{t('common.loading')}</p>
-        {:else if agentDoc !== null}
-          <!-- the briefing is user-authored: CodeBlock renders it as text -->
-          <div class="pt-3" in:appear>
-            <CodeBlock code={agentDoc} ariaLabel={t('deck.agentDocHeading')} class="[--code-max-h:24rem]" />
-          </div>
-        {/if}
-      </Reveal>
     </section>
 
     <!-- the owner's labels, one line per key -->
@@ -135,6 +135,44 @@
     </section>
   </Card.Content>
 </Card.Root>
+
+<Sheet.Root bind:open={agentDocOpen}>
+  <Sheet.Content
+    side="right"
+    class="flex w-full flex-col gap-4 overflow-y-auto sm:max-w-2xl"
+    data-testid="deck-agent-doc-sheet"
+  >
+    <Sheet.Header>
+      <Sheet.Title>AGENT.md</Sheet.Title>
+      <Sheet.Description>{t('deck.aboutAgentDocHint')}</Sheet.Description>
+    </Sheet.Header>
+    <div class="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-6">
+      {#if agentDocError}
+        <FormError message={t('deck.agentDocLoadFailed', { error: agentDocError })} />
+      {:else if agentDoc === null}
+        <!-- the room the briefing will take, while it comes -->
+        <div class="space-y-2.5" aria-busy="true" aria-label={t('common.loading')}>
+          <Skeleton class="h-4 w-2/5" />
+          <Skeleton class="h-3.5 w-full" />
+          <Skeleton class="h-3.5 w-11/12" />
+          <Skeleton class="h-3.5 w-4/5" />
+          <Skeleton class="h-3.5 w-full" />
+          <Skeleton class="h-3.5 w-3/5" />
+        </div>
+      {:else}
+        <div class="flex justify-end">
+          <Button variant="outline" size="sm" class="h-8" onclick={() => void copyText(agentDoc ?? '')}>
+            {t('deck.aboutAgentDocCopy')}
+          </Button>
+        </div>
+        <!-- the briefing is user-authored: CodeBlock renders it as text -->
+        <div in:appear>
+          <CodeBlock code={agentDoc} ariaLabel={t('deck.agentDocHeading')} class="[--code-max-h:none]" />
+        </div>
+      {/if}
+    </div>
+  </Sheet.Content>
+</Sheet.Root>
 
 <style>
   .item {
