@@ -27,11 +27,7 @@
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { PREVIEW_SANDBOX } from '$lib/tool/decks';
-  import {
-    canPreviewDeck,
-    createPreviewController,
-    createThumbnailController
-  } from '$lib/tool/decks/preview.svelte';
+  import { canPreviewDeck, createPreviewController } from '$lib/tool/decks/preview.svelte';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { download } from '$lib/download';
@@ -56,7 +52,8 @@
    *
    * The version history (PRDCT-2308) is two popovers and a sheet: hovering
    * [[Version history]] in the title menu opens the versions beside it,
-   * newest first, each with a live thumbnail, its files, its views and its
+   * newest first, each with a still thumbnail (captured on the server
+   * at its push, PRDCT-2725), its files, its views and its
    * downloads; hovering the version badge on the right opens the same list;
    * picking a version shows it in the frame. The sheet, opened from the
    * sub-menu's last item, is the long form with each version's files, and
@@ -141,13 +138,7 @@
     canPreview: () => canPreview,
     onSelectError: (message) => toast.error(message)
   });
-  // The version popovers' and the sheet's thumbnails: one preview token per
-  // version, minted when a row comes into view, all revoked with the page.
-  const thumbs = createThumbnailController(deckId, { canPreview: () => canPreview });
-  onDestroy(() => {
-    preview.destroy();
-    thumbs.destroy();
-  });
+  onDestroy(() => preview.destroy());
   // The hover card on the version badge (bits-ui LinkPreview: hover intent
   // both ways, focus opens it too); a pick closes it.
   let badgeOpen = $state(false);
@@ -379,7 +370,7 @@
               <DropdownMenu.SubContent class="w-auto p-1" data-testid="master-history-popover">
                 <VersionList
                   list={versionsList}
-                  {thumbs}
+                  {deckId}
                   currentVersion={deck.currentVersion}
                   {shownVersion}
                   menu
@@ -490,7 +481,7 @@
             >
               <VersionList
                 list={versionsList}
-                {thumbs}
+                {deckId}
                 currentVersion={deck.currentVersion}
                 {shownVersion}
                 onPick={(version) => {
@@ -582,7 +573,6 @@
     {deckId}
     bind:open={historyOpen}
     list={versionsList}
-    {thumbs}
     currentVersion={deck.currentVersion}
     {shownVersion}
     onShow={(version) => void preview.select(version)}
