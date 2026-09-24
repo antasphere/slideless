@@ -68,7 +68,10 @@ slideless pull "$id" ./out          # byte-exact round-trip
 
 A push answers with the deck's own page on the instance (the owner's view,
 where links are made); a share link is minted only when a recipient needs
-one. The model is in the Concepts pages, starting with
+one. An agent handed a share link reads it with a plain fetch: the link
+answers with an index of the deck (its files and sizes, its downloads, its
+`AGENT.md`), from which the agent fetches only what it needs; see
+[Share links, read by agents](../agents/share-links-for-agents.md). The model is in the Concepts pages, starting with
 [The deck is the artifact](../concepts/artifact.md).
 
 `push` is content-addressed (only missing blobs upload; a re-push of the

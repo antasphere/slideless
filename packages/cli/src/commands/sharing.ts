@@ -721,7 +721,7 @@ export function registerSharingCommands(program: Command, io: CliIo): void {
   program
     .command('pdf <id> <tokenId>')
     .description(
-      'Show or switch the PDF export on one EXISTING share link (PRDCT-2668): whether its recipient ' +
+      'Show or switch the PDF export on one EXISTING share link: whether its recipient ' +
         "sees an Export PDF action in the viewer's bar, printed by their browser. A new link has it " +
         'on; a link minted before the switch existed has it off until its owner turns it on here.'
     )

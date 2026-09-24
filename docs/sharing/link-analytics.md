@@ -45,7 +45,7 @@ The same link can carry different labels in different places — the label is pa
 
 ## Reading the stats
 
-- **Dashboard** — on the deck's page, open a link's menu and pick _View activity_. Revoked links keep their history.
+- **Dashboard** — on the deck's dashboard page, under the _Links_ tab, open a link's menu and pick _View activity_; the link's panel also shows its agent reads. Revoked links keep their history.
 - **CLI** — `slideless views DECK_ID TOKEN_ID` (omit the token id to list the deck's links first; `--all` follows pagination, `--json` for scripts).
 - **API** — `GET /api/v1/presentations/{id}/tokens/{tokenId}/views`, cursor-paginated, newest first. Reading a link's views takes the same permission as listing the deck's links.
 - **MCP** — the `slideless_list_token_views` tool.

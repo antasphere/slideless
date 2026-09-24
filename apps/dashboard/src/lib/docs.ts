@@ -29,6 +29,9 @@ export function agentPrompt(origin: string): string {
     '',
     'Then: `slideless push ./deck --title "…" --json` pushes a folder of HTML as a deck and answers',
     'with its page; `slideless share <id>` mints a recipient link; every push is a new immutable',
-    'version, and `slideless pull <id> ./out` brings one back byte-exact.'
+    'version, and `slideless pull <id> ./out` brings one back byte-exact.',
+    '',
+    'A share link you are handed reads with a plain fetch (curl, no HTML Accept): it answers an index',
+    `of the deck (files, sizes, downloads, AGENT.md) to fetch only what you need; see ${docsPage('agents/share-links-for-agents')}.`
   ].join('\n');
 }

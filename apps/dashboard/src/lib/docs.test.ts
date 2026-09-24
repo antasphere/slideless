@@ -14,6 +14,7 @@ describe('the docs address and the agent prompt', () => {
     expect(prompt).toContain('https://slides.example.com/mcp');
     expect(prompt).toContain('slideless login --api-url https://slides.example.com');
     expect(prompt).toContain(docsPage('getting-started/connect-an-agent'));
+    expect(prompt).toContain(docsPage('agents/share-links-for-agents'));
     // the prompt never carries a credential of its own: the key is the person's to paste
     expect(prompt).not.toMatch(/slk_[A-Za-z0-9]{8,}/);
     expect(prompt).not.toContain('github.com');

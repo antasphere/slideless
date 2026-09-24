@@ -36,7 +36,7 @@ const deckEnvShape = {
    * real origin boundary. Must differ from PUBLIC_BASE_URL's origin.
    */
   VIEWER_BASE_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
-  /** De-dupe window (minutes) for share-link view counting: repeat opens of the same link from one browser inside this window count once, so browser prefetch/prerender, reloads, and mail-scanner hits no longer inflate a token's accessCount. Enforced with a signed, token-scoped HttpOnly cookie; cookie-less clients (SDKs, curl) count every fetch. Large values shift the metric toward "unique browsers" rather than "opens". 0 disables de-dupe: every entry GET counts and no cookie is set. */
+  /** De-dupe window (minutes) for share-link view counting: repeat opens of the same link from one browser inside this window count once, so browser prefetch/prerender, reloads, and mail-scanner hits no longer inflate a token's accessCount. Enforced with a signed, token-scoped HttpOnly cookie; cookie-less clients that fetch the deck's HTML count every fetch; a fetch that does not ask for HTML gets the link's index and counts as an agent read, never a view. Large values shift the metric toward "unique browsers" rather than "opens". 0 disables de-dupe: every entry GET counts and no cookie is set. */
   VIEW_DEDUPE_WINDOW_MINUTES: numeric(z.coerce.number().int().min(0).default(10)),
   /** Size ceiling, in MB, of ONE file a respondent uploads into a form's file field (PRDCT-2403) — an anonymous write path, so it has its own knob. Never above MAX_FILE_SIZE_MB (the lower of the two applies). 0 switches form file uploads off instance-wide: file fields show as unavailable and the rest of the form still submits. */
   FORMS_MAX_UPLOAD_MB: numeric(z.coerce.number().int().min(0).default(100)),

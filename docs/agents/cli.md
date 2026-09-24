@@ -668,7 +668,10 @@ included: rows named `Dashboard preview` that expire within the hour and
 count nothing; the dashboard hides them, the CLI and the API do not. The human table has no column for the
 bar: `--json` carries `showBar` on every token, which is how a bare link is told apart from the
 others. Access stats count entry loads only, de-duplicated per browser within a short window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 min) — so one human
-open is one count, while cookie-less fetches (CLI, curl) count each time.
+open is one count, while cookie-less fetches of the deck's HTML (`?raw`, a script asking for
+`text/html`) count each time. A fetch that does not ask for HTML (plain curl, an agent) gets the
+link's index instead and counts as an **agent read**, never as an open: the `agent reads` column
+([Share links, read by agents](share-links-for-agents.md)).
 "Last opened" is the last counted open. The downloads column is the link's
 `downloadCount` (one per attachment taken through the link, one per zip,
 never a view) when the link allows downloads, and `no downloads` when it was
