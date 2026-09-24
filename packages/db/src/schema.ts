@@ -329,6 +329,22 @@ export const shareTokens = pgTable(
      * download, and the `slvd_` de-dupe cookie plays no part.
      */
     downloadCount: integer('download_count').notNull().default(0),
+    /**
+     * Whether the recipient may export the deck to PDF from the viewer
+     * (PRDCT-2668): the bar shows an Export PDF action that prints the page
+     * from the browser. The contract default is TRUE on every new mint (like
+     * downloads: what a link hands out); the COLUMN default is FALSE so every
+     * link minted before the switch existed gains nothing without its
+     * owner's word (the PRDCT-1335 item 6 rule).
+     */
+    canExportPdf: boolean('can_export_pdf').notNull().default(false),
+    /**
+     * How many times an agent read the link's index (PRDCT-2670): the
+     * machine-readable description of the deck served on the entry URL to a
+     * caller that did not ask for HTML. Never a view (`access_count` is
+     * untouched by an index read), never counted on a preview token.
+     */
+    agentReadCount: integer('agent_read_count').notNull().default(0),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },

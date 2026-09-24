@@ -80,11 +80,16 @@ the MCP tool `slideless_delete_presentation`.
 
 ## The dashboard
 
-**Open in dashboard** leads to the same deck in the dashboard's layout, at `/decks/<id>`: a preview
-card, the deck's details (its metadata and its `AGENT.md` briefing, see
-[Deck self-description](../agents/deck-self-description.md)), and the panels for share links,
-collaborators, annotations, form responses and versions. **Open the deck page** there leads back
-to the deck's page.
+**Open in dashboard** leads to the same deck in the dashboard's layout, at `/decks/<id>`: the deck's
+banner and its facts (kind, version, owner, views, last update), then a bar of tabs that stays at
+the top as the page scrolls: **Overview**, **Links**, **Projects**, **Collaborators**, **Notes**,
+**Responses** and **Versions**, each with its count once it is known. Each tab has its own address
+(`/decks/<id>?tab=links`), so a reload or a shared address lands on the same tab. **Overview** holds
+the preview and the deck's details (its metadata and its `AGENT.md` briefing, see
+[Deck self-description](../agents/deck-self-description.md)). The preview is a picture of the
+deck: the page scrolls over it, and **Open the deck** on it leads to the deck's page, as does
+**Open the deck page** on the banner. Choosing **Preview** on a version under **Versions** shows
+that version in the preview, on **Overview**.
 
 The list of your decks is at `/decks`. It shows the decks you own and the decks you were invited
 to; a workspace admin or owner sees every deck of the workspace.

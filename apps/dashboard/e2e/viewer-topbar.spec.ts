@@ -16,7 +16,9 @@ import { signInAsOwner } from './accounts';
  * navigation, deck CSS cannot restyle it (shadow root), a link with
  * downloads off shows the bar without a menu, a `showBar:false` link is
  * bare, an iframe embed is bare, an HTML sub-page opened top-level keeps
- * the bar, and the annotation badge sits below the bar when both mount.
+ * the bar, the annotation badge sits below the bar when both mount, and
+ * the Export PDF action (PRDCT-2668) shows on a default link and not on a
+ * `canExportPdf:false` one.
  */
 
 const BAR = '#__slideless_topbar';
@@ -145,6 +147,7 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
   const secret = await mintLink(page, deckId, { name: 'e2e-bar' });
   const noDownloads = await mintLink(page, deckId, { name: 'e2e-bar-no-downloads', canDownload: false });
   const bare = await mintLink(page, deckId, { name: 'e2e-bare', showBar: false });
+  const noPdf = await mintLink(page, deckId, { name: 'e2e-bar-no-pdf', canExportPdf: false });
   const annotator = await mintLink(page, deckId, {
     name: 'e2e-bar-annotator',
     canAnnotate: true,
@@ -455,6 +458,20 @@ test('the recipient bar: title, version, downloads, push-down, collapse, isolati
       await expect(recipient.locator(`${BAR} .bar`)).toBeVisible();
       await expect(recipient.locator(`${BAR} .version`)).toHaveText('v1');
       await expect(recipient.locator(`${BAR} .dl > button`)).toBeHidden();
+    });
+
+    await test.step('Export PDF (PRDCT-2668): on a default link, off on a canExportPdf:false one', async () => {
+      await recipient.goto(`${origin}/v/${secret}/`);
+      const pdf = recipient.locator(`${BAR} .bar button`, { hasText: 'Export PDF' });
+      await expect(pdf).toBeVisible();
+      // The print sheet rides the same flag, one per page.
+      await expect(recipient.locator('head style[data-slideless-print]')).toHaveCount(1);
+      expect(await recipient.locator('head style[data-slideless-print]').getAttribute('media')).toBe('print');
+
+      await recipient.goto(`${origin}/v/${noPdf}/`);
+      await expect(recipient.locator(`${BAR} .bar`)).toBeVisible();
+      await expect(recipient.locator(`${BAR} .bar button`, { hasText: 'Export PDF' })).toHaveCount(0);
+      await expect(recipient.locator('head style[data-slideless-print]')).toHaveCount(0);
     });
 
     await test.step('a showBar:false link is bare', async () => {

@@ -17,6 +17,9 @@ import {
   type TestApp
 } from './helpers.js';
 
+/** An HTML Accept: the deck, not the agent index (PRDCT-2670). */
+const DOC_NAV = { accept: 'text/html' };
+
 /**
  * Phase 4 — sharing + the public viewer (ADR 012), end-to-end:
  *
@@ -283,7 +286,7 @@ describe('share-token management API', () => {
 describe('public viewer (ADR 012)', () => {
   it('serves the entry HTML anonymously, inline, under the exact sandbox header set', async () => {
     const { secret } = await createToken({ name: 'Viewer' });
-    const res = await app.app.request(`/v/${secret}/`); // NO auth of any kind
+    const res = await app.app.request(`/v/${secret}/`, { headers: DOC_NAV }); // NO auth of any kind
     expect(res.status).toBe(200);
     expectViewerContentHeaders(res);
     expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
@@ -350,11 +353,11 @@ describe('public viewer (ADR 012)', () => {
     const created = await createToken({ name: 'Counter' });
     const before = await totalViewsOf(deckId);
 
-    await app.app.request(`/v/${created.secret}/`);
-    await app.app.request(`/v/${created.secret}/`);
+    await app.app.request(`/v/${created.secret}/`, { headers: DOC_NAV });
+    await app.app.request(`/v/${created.secret}/`, { headers: DOC_NAV });
     await app.app.request(`/v/${created.secret}/assets/logo.png`);
     await app.app.request(`/v/${created.secret}/pages/two.html`);
-    await app.app.request(`/v/${created.secret}/`, { method: 'HEAD' });
+    await app.app.request(`/v/${created.secret}/`, { headers: DOC_NAV, method: 'HEAD' });
 
     const listed = await listTokens();
     const row = listed.shareTokens.find((t: { id: string }) => t.id === created.shareToken.id);
@@ -374,7 +377,7 @@ describe('public viewer (ADR 012)', () => {
     const created = await createToken({ name: 'Deduped' });
     const before = await totalViewsOf(deckId);
 
-    const first = await app.app.request(`/v/${created.secret}/`);
+    const first = await app.app.request(`/v/${created.secret}/`, { headers: DOC_NAV });
     expect(first.status).toBe(200);
     const setCookie = first.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain(`slvd_${created.shareToken.id}=`);
@@ -384,7 +387,9 @@ describe('public viewer (ADR 012)', () => {
     expectViewerContentHeaders(first);
     const viewedCookie = setCookie.split(';')[0]!;
 
-    const second = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: viewedCookie } });
+    const second = await app.app.request(`/v/${created.secret}/`, {
+      headers: { ...DOC_NAV, cookie: viewedCookie }
+    });
     expect(second.status).toBe(200); // served in full…
     expect(await second.text()).toContain('marker');
 
@@ -398,22 +403,22 @@ describe('public viewer (ADR 012)', () => {
     const a = await createToken({ name: 'Dedupe A' });
     const b = await createToken({ name: 'Dedupe B' });
 
-    const first = await app.app.request(`/v/${a.secret}/`); // counts 1, hands out A's cookie
+    const first = await app.app.request(`/v/${a.secret}/`, { headers: DOC_NAV }); // counts 1, hands out A's cookie
     const aPair = (first.headers.get('set-cookie') ?? '').split(';')[0]!;
     const aValue = aPair.slice(aPair.indexOf('=') + 1);
 
     // Garbage under the right name.
     await app.app.request(`/v/${a.secret}/`, {
-      headers: { cookie: `slvd_${a.shareToken.id}=garbage` }
+      headers: { ...DOC_NAV, cookie: `slvd_${a.shareToken.id}=garbage` }
     });
     // Well-signed but expired (minted with a negative TTL under the real key).
     const expired = mintViewedValue(app.authSecret, a.shareToken.id, -1000);
     await app.app.request(`/v/${a.secret}/`, {
-      headers: { cookie: `slvd_${a.shareToken.id}=${expired}` }
+      headers: { ...DOC_NAV, cookie: `slvd_${a.shareToken.id}=${expired}` }
     });
     // Token A's genuine value smuggled under token B's cookie name.
     await app.app.request(`/v/${b.secret}/`, {
-      headers: { cookie: `slvd_${b.shareToken.id}=${aValue}` }
+      headers: { ...DOC_NAV, cookie: `slvd_${b.shareToken.id}=${aValue}` }
     });
 
     const listed = await listTokens();
@@ -425,7 +430,7 @@ describe('public viewer (ADR 012)', () => {
 
   it('HEAD and preview responses never carry the viewed cookie', async () => {
     const created = await createToken({ name: 'No cookie on HEAD' });
-    const head = await app.app.request(`/v/${created.secret}/`, { method: 'HEAD' });
+    const head = await app.app.request(`/v/${created.secret}/`, { headers: DOC_NAV, method: 'HEAD' });
     expect(head.status).toBe(200);
     expect(head.headers.get('set-cookie')).toBeNull();
 
@@ -435,7 +440,7 @@ describe('public viewer (ADR 012)', () => {
     );
     expect(previewRes.status).toBe(201);
     const preview = await readJson(previewRes);
-    const served = await app.app.request(`/v/${preview.secret}/`);
+    const served = await app.app.request(`/v/${preview.secret}/`, { headers: DOC_NAV });
     expect(served.status).toBe(200);
     expect(served.headers.get('set-cookie')).toBeNull(); // never counted → never marked
   });
@@ -473,7 +478,7 @@ describe('public viewer (ADR 012)', () => {
     expect(preview.shareToken.purpose).toBe('preview');
     const before = await totalViewsOf(deckId);
 
-    const served = await app.app.request(`/v/${preview.secret}/`);
+    const served = await app.app.request(`/v/${preview.secret}/`, { headers: DOC_NAV });
     expect(served.status).toBe(200); // the preview still renders…
     const after = await totalViewsOf(deckId);
     expect(after.totalViews).toBe(before.totalViews); // …but never counts
@@ -500,7 +505,7 @@ describe('public viewer (ADR 012)', () => {
     expect(spoofed.shareToken.purpose).toBe('share');
     const before = await totalViewsOf(deckId);
 
-    expect((await app.app.request(`/v/${spoofed.secret}/`)).status).toBe(200);
+    expect((await app.app.request(`/v/${spoofed.secret}/`, { headers: DOC_NAV })).status).toBe(200);
     const after = await totalViewsOf(deckId);
     expect(after.totalViews).toBe(before.totalViews + 1); // counted like any token
 
@@ -512,18 +517,18 @@ describe('public viewer (ADR 012)', () => {
   });
 
   it('unknown → 404, revoked → 403, expired → 410', async () => {
-    const unknown = await app.app.request(`/v/${'A'.repeat(64)}/`);
+    const unknown = await app.app.request(`/v/${'A'.repeat(64)}/`, { headers: DOC_NAV });
     expect(unknown.status).toBe(404);
 
     const revokable = await createToken({ name: 'Revoke me' });
-    expect((await app.app.request(`/v/${revokable.secret}/`)).status).toBe(200);
+    expect((await app.app.request(`/v/${revokable.secret}/`, { headers: DOC_NAV })).status).toBe(200);
     const revoke = await app.app.request(
       `/api/v1/presentations/${deckId}/tokens/${revokable.shareToken.id}`,
       { method: 'DELETE', headers: { cookie } }
     );
     expect(revoke.status).toBe(200);
     expect((await readJson(revoke)).revokedAt).not.toBeNull();
-    const afterRevoke = await app.app.request(`/v/${revokable.secret}/`);
+    const afterRevoke = await app.app.request(`/v/${revokable.secret}/`, { headers: DOC_NAV });
     expect(afterRevoke.status).toBe(403);
     // Assets die with the token too.
     expect((await app.app.request(`/v/${revokable.secret}/assets/logo.png`)).status).toBe(403);
@@ -532,7 +537,7 @@ describe('public viewer (ADR 012)', () => {
       name: 'Expired',
       expiresAt: new Date(Date.now() - 60_000).toISOString()
     });
-    expect((await app.app.request(`/v/${expired.secret}/`)).status).toBe(410);
+    expect((await app.app.request(`/v/${expired.secret}/`, { headers: DOC_NAV })).status).toBe(410);
   });
 
   it('rejects traversal-shaped asset paths without touching the manifest', async () => {
@@ -575,9 +580,9 @@ describe('public viewer (ADR 012)', () => {
     );
     expect(commit.status).toBe(201);
 
-    const pinnedRes = await app.app.request(`/v/${pinned.secret}/`);
+    const pinnedRes = await app.app.request(`/v/${pinned.secret}/`, { headers: DOC_NAV });
     expect(await pinnedRes.text()).toContain('Deck v1 marker');
-    const latestRes = await app.app.request(`/v/${latest.secret}/`);
+    const latestRes = await app.app.request(`/v/${latest.secret}/`, { headers: DOC_NAV });
     expect(await latestRes.text()).toContain('Deck v2 marker');
     expectViewerContentHeaders(pinnedRes);
     expectViewerContentHeaders(latestRes);
@@ -589,14 +594,18 @@ describe('public viewer (ADR 012)', () => {
     });
     expect(pin.status).toBe(200);
     expect((await readJson(pin)).versionMode).toBe('pinned');
-    expect(await (await app.app.request(`/v/${latest.secret}/`)).text()).toContain('Deck v1 marker');
+    expect(await (await app.app.request(`/v/${latest.secret}/`, { headers: DOC_NAV })).text()).toContain(
+      'Deck v1 marker'
+    );
 
     const unpin = await app.app.request(`/api/v1/presentations/${deckId}/tokens/${latest.shareToken.id}`, {
       ...json({ versionMode: 'latest' }, { cookie }),
       method: 'PATCH'
     });
     expect(unpin.status).toBe(200);
-    expect(await (await app.app.request(`/v/${latest.secret}/`)).text()).toContain('Deck v2 marker');
+    expect(await (await app.app.request(`/v/${latest.secret}/`, { headers: DOC_NAV })).text()).toContain(
+      'Deck v2 marker'
+    );
   });
 
   it('soft-deleting the deck makes its tokens stop resolving (404)', async () => {
@@ -617,9 +626,9 @@ describe('public viewer (ADR 012)', () => {
       json({ name: 'D' }, { cookie })
     );
     const { secret } = await readJson(res);
-    expect((await app.app.request(`/v/${secret}/`)).status).toBe(200);
+    expect((await app.app.request(`/v/${secret}/`, { headers: DOC_NAV })).status).toBe(200);
     await app.app.request(`/api/v1/presentations/${doomedId}`, { method: 'DELETE', headers: { cookie } });
-    expect((await app.app.request(`/v/${secret}/`)).status).toBe(404);
+    expect((await app.app.request(`/v/${secret}/`, { headers: DOC_NAV })).status).toBe(404);
   });
 });
 
@@ -663,7 +672,7 @@ describe('password gate', () => {
     expect((await readJson(wrong)).error.code).toBe('password_invalid');
 
     const right = await app.app.request(`/v/${created.secret}/`, {
-      headers: { 'x-viewer-password': PASSWORD }
+      headers: { ...DOC_NAV, 'x-viewer-password': PASSWORD }
     });
     expect(right.status).toBe(200);
     expectViewerContentHeaders(right);
@@ -708,7 +717,7 @@ describe('password gate', () => {
 
     const post = await app.app.request(`/v/${created.secret}/`, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { ...DOC_NAV, 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ password: PASSWORD }).toString()
     });
     expect(post.status).toBe(303);
@@ -719,7 +728,9 @@ describe('password gate', () => {
     expect(setCookie).toContain('HttpOnly');
     const unlockCookie = setCookie.split(';')[0]!;
 
-    const entry = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: unlockCookie } });
+    const entry = await app.app.request(`/v/${created.secret}/`, {
+      headers: { ...DOC_NAV, cookie: unlockCookie }
+    });
     expect(entry.status).toBe(200);
     expectViewerContentHeaders(entry);
     const asset = await app.app.request(`/v/${created.secret}/assets/logo.png`, {
@@ -742,7 +753,9 @@ describe('password gate', () => {
       method: 'PATCH'
     });
     expect(patch.status).toBe(200);
-    const stale = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: unlockCookie } });
+    const stale = await app.app.request(`/v/${created.secret}/`, {
+      headers: { ...DOC_NAV, cookie: unlockCookie }
+    });
     expect(stale.status).toBe(401);
 
     // Clearing the password re-opens the link.
@@ -750,7 +763,7 @@ describe('password gate', () => {
       ...json({ password: null }, { cookie }),
       method: 'PATCH'
     });
-    expect((await app.app.request(`/v/${created.secret}/`)).status).toBe(200);
+    expect((await app.app.request(`/v/${created.secret}/`, { headers: DOC_NAV })).status).toBe(200);
   });
 
   it('the unlock flow counts exactly once: challenge never counts, unlocked GET counts + de-dupes', async () => {
@@ -762,7 +775,7 @@ describe('password gate', () => {
     expect(challenge.headers.get('set-cookie')).toBeNull();
     const post = await app.app.request(`/v/${created.secret}/`, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { ...DOC_NAV, 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ password: PASSWORD }).toString()
     });
     expect(post.status).toBe(303);
@@ -770,13 +783,15 @@ describe('password gate', () => {
     const unlockCookie = (post.headers.get('set-cookie') ?? '').split(';')[0]!;
 
     // The unlocked GET is the view: counted once, viewed cookie minted.
-    const entry = await app.app.request(`/v/${created.secret}/`, { headers: { cookie: unlockCookie } });
+    const entry = await app.app.request(`/v/${created.secret}/`, {
+      headers: { ...DOC_NAV, cookie: unlockCookie }
+    });
     expect(entry.status).toBe(200);
     const viewedCookie = (entry.headers.get('set-cookie') ?? '').split(';')[0]!;
     expect(viewedCookie).toContain(`slvd_${created.shareToken.id}=`);
 
     const again = await app.app.request(`/v/${created.secret}/`, {
-      headers: { cookie: `${unlockCookie}; ${viewedCookie}` }
+      headers: { ...DOC_NAV, cookie: `${unlockCookie}; ${viewedCookie}` }
     });
     expect(again.status).toBe(200);
 
@@ -791,12 +806,12 @@ describe('password gate', () => {
     // so all attempts share the 'unknown' IP + this token's bucket.
     for (let i = 0; i < 10; i++) {
       const res = await app.app.request(`/v/${created.secret}/`, {
-        headers: { 'x-viewer-password': `guess-${i}` }
+        headers: { ...DOC_NAV, 'x-viewer-password': `guess-${i}` }
       });
       expect(res.status).toBe(401);
     }
     const blocked = await app.app.request(`/v/${created.secret}/`, {
-      headers: { 'x-viewer-password': PASSWORD } // even the right one is walled now
+      headers: { ...DOC_NAV, 'x-viewer-password': PASSWORD } // even the right one is walled now
     });
     expect(blocked.status).toBe(429);
   });
@@ -868,7 +883,7 @@ describe('view counting with de-dupe disabled', () => {
     const created = await readJson(createRes);
 
     for (let i = 0; i < 3; i++) {
-      const res = await offApp.app.request(`/v/${created.secret}/`);
+      const res = await offApp.app.request(`/v/${created.secret}/`, { headers: DOC_NAV });
       expect(res.status).toBe(200);
       expect(res.headers.get('set-cookie')).toBeNull();
     }
@@ -915,8 +930,8 @@ describe('share via email', () => {
 
     // The emailed (rotated) secret works; the create-time secret is retired.
     for (const [i, t] of [alice, bob].entries()) {
-      expect((await app.app.request(`/v/${urls[i]}/`)).status).toBe(200);
-      expect((await app.app.request(`/v/${t.secret}/`)).status).toBe(404);
+      expect((await app.app.request(`/v/${urls[i]}/`, { headers: DOC_NAV })).status).toBe(200);
+      expect((await app.app.request(`/v/${t.secret}/`, { headers: DOC_NAV })).status).toBe(404);
     }
 
     // Personal note travels escaped into the mail body.

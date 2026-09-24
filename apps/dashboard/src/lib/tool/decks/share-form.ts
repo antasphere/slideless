@@ -25,6 +25,8 @@ export interface ShareLinkForm {
   remembersResponses: boolean;
   /** Respondents may add files to the form's file fields (PRDCT-2403); moot with forms off. */
   canUploadFiles: boolean;
+  /** The recipient may export the deck to PDF from the viewer's bar (PRDCT-2668). */
+  canExportPdf: boolean;
   /** A badge slot, or 'default' for the deck's own; sent only with annotations on. */
   badgePosition: string;
   /** 'never' or a number of days as a string. */
@@ -56,6 +58,10 @@ export function defaultShareLinkForm(firstVersion: number | null): ShareLinkForm
     // interaction, like the form around it; the toggle is the per-link
     // opt-out.
     canUploadFiles: true,
+    // ON by default (PRDCT-2668): printing the deck is the recipient's
+    // browser, nothing leaves the server; the toggle is the per-link
+    // opt-out.
+    canExportPdf: true,
     badgePosition: 'default',
     expiresIn: 'never',
     password: ''
@@ -105,6 +111,8 @@ export function buildShareTokenCreate(
     // off never carries an uploads check, and never opens the public write
     // by a server default the person did not choose.
     canUploadFiles: form.canSubmitForms && form.canUploadFiles,
+    // Carried explicitly (PRDCT-2668): the Export PDF action in the bar.
+    canExportPdf: form.canExportPdf,
     ...(form.canAnnotate && form.badgePosition !== 'default'
       ? { badgePosition: form.badgePosition as ShareTokenCreate['badgePosition'] }
       : {}),

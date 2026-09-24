@@ -62,7 +62,7 @@ Two current limits are worth knowing:
 
 Reviewer notes land with the deck, tagged with the version they were made on and an `open` or `resolved` status:
 
-- **Dashboard** — the deck page's _Annotations_ panel lists notes with their anchors, filterable by version and status, with _Resolve_, _Reopen_, and _Delete_ per note.
+- **Dashboard** — the _Notes_ tab of the deck's dashboard page lists notes with their anchors, filterable by version and status, with _Resolve_, _Reopen_, and _Delete_ per note.
 - **CLI** —
 
   ```bash

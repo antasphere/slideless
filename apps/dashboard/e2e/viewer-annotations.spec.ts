@@ -284,6 +284,39 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     expect(pin.selection.point.nx).toBeLessThanOrEqual(1);
   });
 
+  await test.step('PRDCT-2671: a click beside the open composer closes it and places nothing; the draft comes back', async () => {
+    const pinsBefore = await reviewer.locator('.__sl-pin').count();
+    await reviewer.locator('#__sl-badge').click();
+    await reviewer.locator('#__sl-mode').click(); // enter annotate mode
+    await expect(reviewer.locator('#__sl-layer')).toHaveClass(/on/);
+
+    // One click places a pin and opens the composer.
+    await reviewer.locator('#__sl-layer').click({ position: { x: 300, y: 300 } });
+    await expect(reviewer.locator('#__sl-pop')).toBeVisible();
+    await reviewer.locator('#__sl-pop textarea').fill('A draft the click must not lose');
+
+    // A click elsewhere on the deck closes it, the way a click outside a
+    // dialog leaves it: no new composer, no pin, nothing saved.
+    await reviewer.locator('#__sl-layer').click({ position: { x: 120, y: 640 } });
+    await expect(reviewer.locator('#__sl-pop')).toBeHidden();
+    await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toHaveCount(0);
+
+    // The next click places a new note as usual, with the typed draft back.
+    await reviewer.locator('#__sl-layer').click({ position: { x: 300, y: 300 } });
+    await expect(reviewer.locator('#__sl-pop')).toBeVisible();
+    await expect(reviewer.locator('#__sl-pop textarea')).toHaveValue('A draft the click must not lose');
+    await reviewer.keyboard.press('Escape'); // discard it for good
+    await expect(reviewer.locator('#__sl-pop')).toBeHidden();
+
+    await reviewer.locator('#__sl-banner .__sl-btn').click(); // Done — exit mode
+    await expect(reviewer.locator('#__sl-layer')).not.toHaveClass(/on/);
+    // Saved pins show again out of annotate mode: none was added.
+    await expect(reviewer.locator('.__sl-pin')).toHaveCount(pinsBefore);
+    const listed = await page.request.get(`/api/v1/presentations/${deckId}/annotations`);
+    const { annotations } = await listed.json();
+    expect(annotations.some((a: { body: string }) => a.body.includes('must not lose'))).toBe(false);
+  });
+
   await test.step('annotate mode: a region drag previews its box + contour and saves rect fractions', async () => {
     await reviewer.locator('#__sl-badge').click();
     await reviewer.locator('#__sl-mode').click();

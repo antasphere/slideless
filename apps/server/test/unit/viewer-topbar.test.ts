@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { entryInjectionFor, type EntryTransformContext } from '../../src/viewer/inject.js';
+import {
+  agentDiscoveryTags,
+  entryInjectionFor,
+  type EntryTransformContext
+} from '../../src/viewer/inject.js';
 import { OVERLAY_MARKER } from '../../src/viewer/overlay.js';
 import {
   TOPBAR_HEIGHT_PX,
@@ -28,6 +32,7 @@ function ctx(over: Partial<EntryTransformContext> = {}): EntryTransformContext {
       showBar: true,
       remembersResponses: false,
       canUploadFiles: false,
+      canExportPdf: true,
       createdAt: new Date('2026-09-13T10:00:00Z'),
       expiresAt: null
     },
@@ -37,6 +42,7 @@ function ctx(over: Partial<EntryTransformContext> = {}): EntryTransformContext {
     version: 3,
     entryPath: 'index.html',
     deckTitle: 'Quarterly review',
+    linkEntryPath: '/v/s3cret/',
     versionHasDownloads: true,
     badgePosition: null,
     placement: null,
@@ -58,14 +64,15 @@ describe('the recipient bar rides top-level document navigations of show_bar lin
   it('a default link on a browser navigation gets the bar, and nothing else', () => {
     const plan = entryInjectionFor(ctx());
     expect(plan).not.toBeNull();
-    expect(plan!.head).toBe('');
+    expect(plan!.head).toBe(agentDiscoveryTags('/v/s3cret/'));
     expect(plan!.body).toContain(TOPBAR_MARKER);
     expect(plan!.body).not.toContain(OVERLAY_MARKER);
     expect(configOf(plan!.body)).toEqual({
       title: 'Quarterly review',
       version: 3,
       unlock: null,
-      downloads: true
+      downloads: true,
+      pdf: true
     });
   });
 
@@ -120,14 +127,15 @@ describe('the recipient bar rides top-level document navigations of show_bar lin
 });
 
 describe('the injected script keeps its guards (mutation tripwires)', () => {
-  const tag = topbarScriptTag({ title: 'T', version: 1, unlock: null, downloads: false });
+  const tag = topbarScriptTag({ title: 'T', version: 1, unlock: null, downloads: false, pdf: false });
 
   it('escapes `<` in the config so a deck title can never close the script tag', () => {
     const hostile = topbarScriptTag({
       title: '</script><script>alert(1)</script>',
       version: 1,
       unlock: null,
-      downloads: false
+      downloads: false,
+      pdf: false
     });
     expect(hostile).not.toContain('</script><script>alert');
     expect(hostile).toContain('\\u003c/script>\\u003cscript>alert(1)');
@@ -162,5 +170,22 @@ describe('the injected script keeps its guards (mutation tripwires)', () => {
   it('is one IIFE under a try so a runtime error never reaches the deck', () => {
     expect(tag.startsWith(`\n<script ${TOPBAR_MARKER}>\n(function(){\n"use strict";\ntry{`)).toBe(true);
     expect(tag.trimEnd().endsWith('}catch(e){}\n})();\n</script>')).toBe(true);
+  });
+});
+
+describe('the Export PDF action rides the flag (PRDCT-2668)', () => {
+  const on = topbarScriptTag({ title: 'T', version: 1, unlock: null, downloads: false, pdf: true });
+
+  it('carries the print sheet and the print call in the source, gated on CFG.pdf', () => {
+    expect(on).toContain('"pdf":true');
+    expect(on).toContain("printStyle.setAttribute('media', 'print');");
+    expect(on).toContain("printStyle.setAttribute('data-slideless-print', '');");
+    expect(on).toContain('#__slideless_topbar,#__slideless_annotate{display:none!important}');
+    expect(on).toContain('[data-slide]{break-after:page;page-break-after:always}');
+    expect(on).toContain('try { window.print(); } catch (e) {}');
+    expect(on).toContain('if (CFG.pdf) {');
+    // Printing is the browser's: still the one fetch, and no URL of its own.
+    expect(on.match(/fetchFn\(/g)).toHaveLength(1);
+    expect(on).not.toMatch(/https?:\/\//);
   });
 });

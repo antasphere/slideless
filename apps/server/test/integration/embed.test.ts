@@ -139,7 +139,10 @@ describe('GET /embed.js (the official embed loader)', () => {
 
 describe('framing policy (ADR 021)', () => {
   it('deck bytes stay frameable: no frame-ancestors, no X-Frame-Options on the entry', async () => {
-    const res = await app.app.request(`/v/${secret}/`);
+    // A frame navigation: the deck, not the agent index (PRDCT-2670).
+    const res = await app.app.request(`/v/${secret}/`, {
+      headers: { accept: 'text/html', 'sec-fetch-dest': 'iframe' }
+    });
     expect(res.status).toBe(200);
     const csp = res.headers.get('content-security-policy') ?? '';
     expect(csp).toContain('sandbox'); // the ADR 012 regime is still on…

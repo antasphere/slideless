@@ -32,13 +32,15 @@ Each link decides, on its own, what the recipient gets:
 | **Allow file uploads**     | on      | The recipient can add files to the file fields of the deck's forms. Needs form submissions on. Whoever holds the link can then write files to the instance, inside the instance's size limits. A link created before file fields existed is off until you turn it on. `canUploadFiles` on the API and the MCP tool, `--no-uploads` on the CLI, `slideless uploads <id> <tokenId> --on` for an existing link; see [File fields](../sharing/forms.md#file-fields) |
 | **Allow downloads**        | on      | The recipient can download the version's files, its `downloads/` folder, one by one or as a zip; see [Attachments](attachments.md)                                                                                                                                                                                                                                                                                                                              |
 | **Bar**                    | on      | A slim bar over the deck on the link: the deck's title, the version, and the files to download. Off hands out a bare deck. `showBar` on the API and the MCP tool, `--no-bar` on the CLI; never shown inside an embed, whatever the link says                                                                                                                                                                                                                    |
+| **Allow PDF export**       | on      | An **Export PDF** action in the bar prints the deck from the recipient's browser. `canExportPdf` on the API and the MCP tool, `--no-pdf` on the CLI, `slideless pdf <id> <tokenId> --on` for an existing link; a link created before the switch existed is off until you turn it on                                                                                                                                                                             |
 | **Expiry**                 | none    | `No expiry`, or a date after which the link answers `410`; `7`, `30` or `90 days` from the form, any ISO datetime from the CLI or the API                                                                                                                                                                                                                                                                                                                       |
 | **Password**               | none    | At least 4 characters; the recipient types it before the deck opens. Password-protected links do not render inside an [embed](../sharing/embedding.md)                                                                                                                                                                                                                                                                                                          |
 
 The switches can be changed after creation (the version, the capabilities, the expiry and the
 password are all editable on the API with a `PATCH`; the version from the page and the CLI too).
 Each link also counts: its views (entry loads, one per browser within a short window), when it was
-last opened, and its downloads. [Link analytics](../sharing/link-analytics.md) keeps one event per
+last opened, its downloads, and its agent reads (fetches of the link's index by an agent, counted
+apart from views). [Link analytics](../sharing/link-analytics.md) keeps one event per
 view, with the referring site and a placement label and without any IP address.
 
 ## Where links are made
@@ -60,7 +62,8 @@ top of the deck`, with **New share link**, which opens the form in a dialog over
 The deck, whole, at the version the link resolves to, under a slim bar: the `Slideless` mark, the
 deck's title, the version (`v3`) and, when the version carries files and the link allows
 downloads, a **Download** button whose menu lists each file with its size and **Download all** for
-the zip. The bar collapses to a thin handle at the top (its **Hide this bar** button, or Esc while it has
+the zip, and, when the link allows it, an **Export PDF** button that prints the deck from the
+browser. The bar collapses to a thin handle at the top (its **Hide this bar** button, or Esc while it has
 focus) and stays collapsed on that link for the rest of the browser tab; the handle, **Show the
 presentation bar**, brings it back. The
 deck sits under the bar, pushed down by its height, never covered. With the bar off, the recipient
@@ -71,6 +74,13 @@ unless they were switched off, file fields that take files unless uploads were s
 files unless downloads were switched off. What the recipient
 never gets: the deck's page, the version history, the other links, the owner's name, the
 workspace.
+
+### What an agent gets
+
+The same URL, fetched by an agent rather than opened in a browser, answers with a short index of
+the link instead of the deck: the title, the version, what the link allows, every file with its
+URL, and the deck's AGENT.md. [Share links, read by agents](../agents/share-links-for-agents.md)
+explains how an agent asks for it and what it holds.
 
 A link answers for itself:
 

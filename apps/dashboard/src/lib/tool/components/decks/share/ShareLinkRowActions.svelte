@@ -11,7 +11,7 @@
   /**
    * A links row's actions (PRDCT-2308): copy the link, open it in a new
    * tab, then the row menu (activity, which opens the link's panel, change
-   * version, file uploads, revoke). The URL of a
+   * version, file uploads, PDF export, revoke). The URL of a
    * link exists once, at creation, and is never stored — so copy and open
    * are live for the links made in this page session (link-urls.svelte.ts)
    * and disabled, with the reason on hover, for every older row.

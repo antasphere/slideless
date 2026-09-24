@@ -1,6 +1,6 @@
 <script lang="ts" module>
   export type DeckDrawingKind =
-    'preview' | 'links' | 'projects' | 'collaborators' | 'annotations' | 'forms' | 'versions';
+    'preview' | 'details' | 'links' | 'projects' | 'collaborators' | 'annotations' | 'forms' | 'versions';
 </script>
 
 <script lang="ts">
@@ -29,6 +29,23 @@
     <circle class="ring" cx="48" cy="50" r="11.5" />
     <g class="shift shift-x">
       <path class="ln ln--c draw" pathLength="1" d="M44.5,43.8 L55,50 L44.5,56.2 Z" />
+    </g>
+  {:else if kind === 'details'}
+    <!-- the deck's own words about itself: a sheet with its folded corner
+         (the briefing an agent reads), and the label tied to it (the
+         metadata), the tag the one accent -->
+    <path class="bx" d="M14,12 H52 L64,24 V84 H14 Z" />
+    <path class="ln ln--thin" d="M52,12 V24 H64" />
+    <line class="ln" x1="22" y1="32" x2="44" y2="32" />
+    <line class="ln ln--thin" x1="22" y1="41" x2="54" y2="41" />
+    <line class="ln ln--thin" x1="22" y1="48" x2="50" y2="48" />
+    <line class="ln ln--thin" x1="22" y1="55" x2="54" y2="55" />
+    <line class="ln ln--soft" x1="22" y1="66" x2="42" y2="66" />
+    <path class="ln ln--thin" d="M58,62 C64,62 66,58 70,54" />
+    <g class="shift shift-y">
+      <path class="bx bx--front" d="M66,44 H84 Q88,44 88,48 V58 Q88,62 84,62 H66 L60,53 Z" />
+      <circle class="ring" cx="68" cy="53" r="2.2" />
+      <line class="ln ln--c draw" pathLength="1" x1="74" y1="53" x2="83" y2="53" />
     </g>
   {:else if kind === 'links'}
     <!-- a slide and the readers its links reach: one reading now, one who

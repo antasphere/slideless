@@ -232,7 +232,7 @@ The deck owner is mailed when a response arrives and, in a **different mail**, w
 
 ## Collecting responses
 
-- **Dashboard**: the deck page's _Responses_ panel shows a summary of what came in from where (per form, per link, per source and placement), plus the rows themselves, filterable and downloadable as CSV.
+- **Dashboard**: the _Responses_ tab of the deck's dashboard page shows a summary of what came in from where (per form, per link, per source and placement), plus the rows themselves, filterable and downloadable as CSV.
 - **CLI**:
 
   ```bash

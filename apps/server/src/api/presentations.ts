@@ -1109,6 +1109,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // minted before the switch existed.
       remembersResponses: body.remembersResponses,
       canUploadFiles: body.canUploadFiles,
+      canExportPdf: body.canExportPdf,
       badgePosition: body.badgePosition ?? null,
       expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
       passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
@@ -1135,6 +1136,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         showBar: row.showBar,
         remembersResponses: row.remembersResponses,
         canUploadFiles: row.canUploadFiles,
+        canExportPdf: row.canExportPdf,
         badgePosition: row.badgePosition,
         hasPassword: row.passwordHash !== null,
         expiresAt: row.expiresAt?.toISOString() ?? null
@@ -1197,6 +1199,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       remembersResponses: false,
       // …nor take a file from the owner's own preview (PRDCT-2403).
       canUploadFiles: false,
+      // PDF export ON: the owner prints their own deck from the preview as a
+      // default link's recipient would (PRDCT-2668); nothing is counted.
+      canExportPdf: true,
       // Downloads ON: the preview shows what a default link shows (the
       // recipient bar's download button included). Preview downloads are
       // never counted — the viewer keys the exclusion on `purpose`, like
@@ -1264,6 +1269,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (patch.showBar !== undefined) set.showBar = patch.showBar;
     if (patch.remembersResponses !== undefined) set.remembersResponses = patch.remembersResponses;
     if (patch.canUploadFiles !== undefined) set.canUploadFiles = patch.canUploadFiles;
+    if (patch.canExportPdf !== undefined) set.canExportPdf = patch.canExportPdf;
     if (patch.badgePosition !== undefined) {
       set.badgePosition = patch.badgePosition;
       // Explicit slot → new deck default (explicit null just falls back),

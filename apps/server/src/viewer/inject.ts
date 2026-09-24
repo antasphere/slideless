@@ -65,6 +65,20 @@ import { topbarScriptTag } from './topbar.js';
  */
 export const FRAGMENT_CAPTURE_MARKER = 'data-slideless-frag';
 
+/**
+ * The agent-index discovery tags (PRDCT-2670): a `<link rel="alternate">` and
+ * a comment naming the markdown and JSON forms of the link's index. The href
+ * is the link's ENTRY path (`/v/{secret}/?format=agent`), never a relative
+ * query: an HTML sub-page of a multi-file deck carries the tags too, and a
+ * relative `?format=agent` there would point at the sub-page, which serves
+ * the page again rather than the index.
+ */
+export const AGENT_INDEX_MARKER = 'data-slideless-agent-index';
+
+export const agentDiscoveryTags = (entryPath: string): string =>
+  `<link rel="alternate" type="text/markdown" href="${entryPath}?format=agent" ${AGENT_INDEX_MARKER}>` +
+  `<!-- Agents: this deck's index is at ${entryPath}?format=agent (markdown) or ${entryPath}?format=json -->`;
+
 export const fragmentCaptureTag = (): string =>
   `<script ${FRAGMENT_CAPTURE_MARKER}>window.__slidelessArrivalHash=location.hash||'';</script>`;
 
@@ -79,6 +93,7 @@ export interface EntryTransformContext {
     | 'showBar'
     | 'remembersResponses'
     | 'canUploadFiles'
+    | 'canExportPdf'
     | 'createdAt'
     | 'expiresAt'
   >;
@@ -94,6 +109,8 @@ export interface EntryTransformContext {
   entryPath: string;
   /** The deck's title — what the recipient bar names (PRDCT-2281). */
   deckTitle: string;
+  /** The link's entry path, `/v/{secret}/`: where the discovery tags point (PRDCT-2670). */
+  linkEntryPath: string;
   /**
    * True when the resolved VERSION carries attachments
    * (`presentation_versions.has_downloads`, PRDCT-2278). With the link's
@@ -178,7 +195,8 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
       title: ctx.deckTitle,
       version: ctx.version,
       unlock: ctx.mintUnlockProof(),
-      downloads: ctx.token.canDownload && ctx.versionHasDownloads
+      downloads: ctx.token.canDownload && ctx.versionHasDownloads,
+      pdf: ctx.token.canExportPdf
     });
   }
   if (ctx.token.canAnnotate && ctx.browserEntry) {
@@ -221,5 +239,8 @@ export function entryInjectionFor(ctx: EntryTransformContext): InjectionPlan | n
     });
   }
   if (body === '') return null;
-  return { head, body };
+  // PRDCT-2670: a document that carries a runtime also tells an agent where
+  // the link's index is, first in <head> (before the fragment stub). A plan
+  // without a body stays null, so a bare link keeps its byte-exact serve.
+  return { head: agentDiscoveryTags(ctx.linkEntryPath) + head, body };
 }

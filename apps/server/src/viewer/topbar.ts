@@ -114,6 +114,16 @@
  *    the two buttons (`__sl-badge`, `__sl-fab-pin`) so the browser suite
  *    finds them where it always did; the overlay creates its floating
  *    fallback under those ids only when no bar is mounted.
+ *  - EXPORT PDF (PRDCT-2668): on a link with `canExportPdf`, an Export PDF
+ *    button sits before Download and calls `window.print()`: the PDF is the
+ *    recipient's browser printing the page, no server render, no request.
+ *    The same flag appends ONE `<style media="print" data-slideless-print>`
+ *    to the head that hides the bar and the overlay on paper and undoes the
+ *    inline `!important` pins of the scroll container (the root's height
+ *    and overflow, the body's margin, height and overflow), so the whole
+ *    deck prints instead of one window's worth; a deck that marks its
+ *    slides with `data-slide` gets one page per slide. Off, neither the
+ *    button nor the style exists.
  *  - Event isolation as the overlay does it: pointer, key and wheel events
  *    stop at the host so a click on Download never advances a deck that
  *    navigates on document clicks.
@@ -145,6 +155,13 @@ export interface TopbarConfig {
    * answers an empty list on a link with downloads off.
    */
   downloads: boolean;
+  /**
+   * True when the link lets the recipient export the deck to PDF
+   * (PRDCT-2668): the bar shows an Export PDF action that prints the page
+   * from the browser. False = no action. Context, not capability: printing
+   * is the browser's, so the switch decides the bar alone.
+   */
+  pdf: boolean;
 }
 
 /** Attribute marking the injected script — tests and humans grep for it. */
@@ -319,6 +336,11 @@ var css = [
   '  border:1px solid var(--hairline);background:var(--plate-strong);color:var(--ink);font-weight:500;font-size:13px;}',
   '.dl>button:hover{border-color:var(--hover-edge);background:var(--hover-fill);}',
   '.dl>button svg{width:16px;height:16px;}',
+  // The Export PDF button wears the same outline, the same size.
+  '.out{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;flex:none;',
+  '  border:1px solid var(--hairline);background:var(--plate-strong);color:var(--ink);font-weight:500;font-size:13px;}',
+  '.out:hover{border-color:var(--hover-edge);background:var(--hover-fill);}',
+  '.out svg{width:16px;height:16px;}',
   // The menu opens like the dashboard's own popovers: a fade with a small
   // rise and scale, the same duration and easing; closed, it is hidden to
   // the accessibility tree after the motion. Cut from the .float
@@ -381,7 +403,7 @@ var css = [
   'button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}',
   '.handle:focus-visible{outline-offset:-3px;}',
   // A phone: the title gives way first, the controls keep their size.
-  '@media (max-width:640px){.bar{padding:0 10px;gap:8px;}.dl>button span{display:none;}.dl>button{padding:0 8px;}}',
+  '@media (max-width:640px){.bar{padding:0 10px;gap:8px;}.dl>button span,.out span{display:none;}.dl>button,.out{padding:0 8px;}}',
   '@media (prefers-reduced-motion: reduce){.bar,.menu,.handle{transition:none !important;animation:none !important;}',
   '  button,.menu a{transition:none !important;}}'
 ].join('\n');
@@ -389,6 +411,8 @@ var css = [
 var ICONS = {
   mark: '<svg viewBox="${ANTASPHERE_MARK_VIEWBOX}" fill="currentColor" aria-hidden="true"><path d="${ANTASPHERE_MARK_PATH}"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>',
+  // A page with a folded corner and two lines, the download's stroke.
+  pdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>',
   // The overlay's two entrances, drawn in the bar's own stroke.
   notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5a2 2 0 0 1-2 2H8l-4 3.5v-14a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z"/></svg>',
@@ -450,6 +474,24 @@ dl.appendChild(dlBtn);
 dl.appendChild(menu);
 dl.style.display = 'none';
 
+// Export PDF (PRDCT-2668): the browser prints the page; the print sheet
+// below turns the scroll container back into a document for paper.
+var pdfBtn = null;
+if (CFG.pdf) {
+  pdfBtn = el('button', 'out pdf');
+  pdfBtn.type = 'button';
+  pdfBtn.title = 'Export PDF';
+  pdfBtn.innerHTML = ICONS.pdf;
+  pdfBtn.appendChild(el('span', null, 'Export PDF'));
+  pdfBtn.addEventListener('click', function () {
+    try { window.print(); } catch (e) {}
+  });
+}
+var PRINT_CSS = '#__slideless_topbar,#__slideless_annotate{display:none!important}' +
+  'html{overflow:visible!important;height:auto!important}' +
+  'body{margin-top:0!important;height:auto!important;overflow:visible!important}' +
+  '[data-slide]{break-after:page;page-break-after:always}';
+
 // The annotation controls: the overlay's ids (see the header note), the
 // bar's look. Shown once the overlay has announced itself.
 var tools = el('span', 'tools');
@@ -488,6 +530,7 @@ handle.innerHTML = ICONS.down;
 bar.appendChild(mark);
 bar.appendChild(title);
 bar.appendChild(tools);
+if (pdfBtn) bar.appendChild(pdfBtn);
 bar.appendChild(dl);
 bar.appendChild(hideBtn);
 shadow.appendChild(style);
@@ -681,6 +724,13 @@ function mount() {
   collapsed = memory.read();
   doc.body.appendChild(host);
   applyLayout();
+  if (CFG.pdf) {
+    var printStyle = doc.createElement('style');
+    printStyle.setAttribute('media', 'print');
+    printStyle.setAttribute('data-slideless-print', '');
+    printStyle.textContent = PRINT_CSS;
+    (doc.head || doc.documentElement).appendChild(printStyle);
+  }
   loadAttachments();
   // An overlay that mounted first answers with its state; one that mounts
   // later announces itself unasked.
@@ -709,7 +759,8 @@ export function topbarScriptTag(cfg: TopbarConfig): string {
     title: cfg.title,
     version: cfg.version,
     unlock: cfg.unlock,
-    downloads: cfg.downloads
+    downloads: cfg.downloads,
+    pdf: cfg.pdf
   }).replace(/</g, '\\u003c');
   return `\n<script ${TOPBAR_MARKER}>\n(function(){\n"use strict";\ntry{\nvar CFG=${json};\n${TOPBAR_JS}\n}catch(e){}\n})();\n</script>\n`;
 }

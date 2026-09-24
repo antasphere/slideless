@@ -1036,7 +1036,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
         'holds the link can read and change them, so set false for a link many people will open), ' +
         "and whether the recipient may upload files into the deck's form file fields " +
         '(canUploadFiles, default true; needs canSubmitForms — whoever holds the link can then ' +
-        "write files to the instance, within the instance's size ceilings). " +
+        "write files to the instance, within the instance's size ceilings), " +
+        'and whether the recipient may export the deck to PDF from the viewer (canExportPdf, ' +
+        'default true: an Export PDF action in the bar prints it from their browser). ' +
         'Always confirm with the user before calling.',
       inputSchema: {
         workspace: workspaceInput,
@@ -1093,6 +1095,14 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
               'canSubmitForms). false = the file field shows as unavailable, uploads answer 403 ' +
               'uploads_disabled, and the rest of the form still submits.'
           ),
+        canExportPdf: z
+          .boolean()
+          .optional()
+          .describe(
+            'Let the recipient export the deck to PDF from the viewer (default true): an Export PDF ' +
+              'action in the bar prints it from their browser. false = no action. A link minted ' +
+              'before the switch existed is off until its owner turns it on.'
+          ),
         badgePosition: badgePositionSchema
           .optional()
           .describe(
@@ -1115,6 +1125,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       canSubmitForms,
       remembersResponses,
       canUploadFiles,
+      canExportPdf,
       badgePosition,
       expiresAt,
       password
@@ -1134,6 +1145,7 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
               ...(canSubmitForms !== undefined ? { canSubmitForms } : {}),
               ...(remembersResponses !== undefined ? { remembersResponses } : {}),
               ...(canUploadFiles !== undefined ? { canUploadFiles } : {}),
+              ...(canExportPdf !== undefined ? { canExportPdf } : {}),
               ...(badgePosition !== undefined ? { badgePosition } : {}),
               ...(expiresAt !== undefined ? { expiresAt } : {}),
               ...(password !== undefined ? { password } : {})
@@ -1149,10 +1161,12 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
       description:
         "A deck's share tokens with access stats (name, versionMode, pinnedVersion, expiry, " +
         'hasPassword, revokedAt, accessCount, canDownload, showBar, canSubmitForms, ' +
-        'remembersResponses, canUploadFiles, downloadCount). accessCount is ' +
+        'remembersResponses, canUploadFiles, canExportPdf, downloadCount, agentReadCount). ' +
+        'accessCount is ' +
         'de-duplicated opens — repeat opens from one browser within the configured window count ' +
         'once, not raw request hits. downloadCount is attachment downloads through the link (one ' +
-        'per file taken, one per whole-set zip; never a view). Secrets are never retrievable — only ' +
+        'per file taken, one per whole-set zip; never a view). agentReadCount is how many times an ' +
+        "agent read the link's index, never a view. Secrets are never retrievable — only " +
         'creation returns them. Returns { shareTokens: [...], nextCursor }.',
       inputSchema: {
         workspace: workspaceInput,

@@ -2,15 +2,25 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { CodeBlock } from '$lib/components/ui/code-block/index.js';
-  import { Reveal, appear } from '$lib/components/ui/reveal/index.js';
+  import { appear } from '$lib/components/ui/reveal/index.js';
+  import * as Sheet from '$lib/components/ui/sheet/index.js';
+  import { Skeleton } from '$lib/components/ui/skeleton/index.js';
   import FormError from '$lib/components/shared/FormError.svelte';
+  import DeckSectionHeading from './DeckSectionHeading.svelte';
+  import Bot from '@lucide/svelte/icons/bot';
+  import Tags from '@lucide/svelte/icons/tags';
+  import Copy from '@lucide/svelte/icons/copy';
+  import { copyText } from '$lib/clipboard';
   import { api, errorMessage } from '$lib/api';
   import { t } from '$lib/i18n';
   import type { Presentation } from '@slideless/contract';
 
   /**
-   * The deck's self-description: the owner-defined metadata object and the
-   * bundle's AGENT.md briefing. Rendered only when either exists.
+   * "About this deck": what the deck says about itself, for people and for
+   * agents. Two rows, always shown so a reader learns what is missing and how
+   * to add it: the AGENT.md briefing (read in place) and the owner-defined
+   * metadata (one line per key). It sits on the Overview tab beside the
+   * deck's projects, half the width each on a desk.
    *
    * SECURITY: both are USER-AUTHORED content — metadata keys/values and the
    * briefing render exclusively through Svelte's escaped {…} interpolation.
@@ -24,75 +34,241 @@
 
   const metadataEntries = $derived(Object.entries(deck.metadata));
 
+  // The briefing opens in a sheet at the side (Romain, 24 September): a
+  // briefing can be long, a sheet gives it the page's height and it loads
+  // inside, so nothing in the card jumps when it arrives.
   let agentDocOpen = $state(false);
   let agentDoc = $state<string | null>(null);
   let agentDocError = $state<string | null>(null);
   let agentDocLoading = $state(false);
 
-  async function toggleAgentDoc() {
-    agentDocOpen = !agentDocOpen;
-    if (!agentDocOpen || agentDoc !== null || agentDocLoading) return;
+  async function openAgentDoc() {
+    agentDocOpen = true;
+    if (agentDoc !== null || agentDocLoading) return;
     agentDocLoading = true;
+    agentDocError = null;
     try {
       agentDoc = await api.agentDoc(deck.id);
     } catch (e) {
       agentDocError = errorMessage(e, t('common.genericError'));
-      agentDocOpen = false;
     } finally {
       agentDocLoading = false;
     }
   }
+
+  const metaCommand = $derived(`slideless meta ${deck.id} --set client=Acme`);
 
   function displayValue(value: unknown): string {
     return typeof value === 'string' ? value : JSON.stringify(value);
   }
 </script>
 
-{#if metadataEntries.length > 0 || deck.hasAgentDoc}
-  <Card.Root>
-    <Card.Header>
-      <Card.Title class="text-[19px]">{t('deck.selfDescTitle')}</Card.Title>
-      <Card.Description>{t('deck.selfDescDescription')}</Card.Description>
-    </Card.Header>
-    <Card.Content class="space-y-4">
-      {#if metadataEntries.length > 0}
-        <div>
-          <h4 class="eyebrow mb-2">{t('deck.metadataHeading')}</h4>
-          <dl class="grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1.5 text-[13px]">
-            {#each metadataEntries as [key, value] (key)}
-              <dt class="font-mono text-muted-foreground break-all">{key}</dt>
-              <dd class="font-mono break-all">{displayValue(value)}</dd>
-            {/each}
-          </dl>
+<Card.Root class="deck-section h-full gap-3" data-testid="deck-about">
+  <DeckSectionHeading
+    drawing="details"
+    title={t('deck.aboutTitle')}
+    description={t('deck.aboutDescription')}
+  />
+  <Card.Content class="space-y-0">
+    <!-- the briefing an agent reads first -->
+    <section class="item">
+      <div class="head">
+        <span class="icon" aria-hidden="true"><Bot class="size-4" strokeWidth={1.6} /></span>
+        <div class="words">
+          <h4 class="title">AGENT.md</h4>
+          <p class="hint">
+            {deck.hasAgentDoc ? t('deck.aboutAgentDocHint') : t('deck.aboutAgentDocNone')}
+          </p>
+        </div>
+        {#if deck.hasAgentDoc}
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-8 flex-none"
+            onclick={() => void openAgentDoc()}
+            data-testid="deck-agent-doc-open"
+          >
+            {t('deck.aboutAgentDocShow')}
+          </Button>
+        {/if}
+      </div>
+    </section>
+
+    <!-- the owner's labels, one line per key -->
+    <section class="item">
+      <div class="head">
+        <span class="icon" aria-hidden="true"><Tags class="size-4" strokeWidth={1.6} /></span>
+        <div class="words">
+          <h4 class="title">
+            {t('deck.metadataHeading')}
+            {#if metadataEntries.length}<span class="count">{metadataEntries.length}</span>{/if}
+          </h4>
+          {#if !metadataEntries.length}
+            <p class="hint">{t('deck.aboutMetadataNone')}</p>
+            <div class="cmd-row">
+              <code class="cmd" title={metaCommand}>{metaCommand}</code>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-7 flex-none"
+                aria-label={t('deck.aboutCopyCommand')}
+                title={t('deck.aboutCopyCommand')}
+                onclick={() => void copyText(metaCommand)}
+                data-testid="deck-meta-copy"
+              >
+                <Copy class="size-3.5" />
+              </Button>
+            </div>
+          {/if}
+        </div>
+      </div>
+      {#if metadataEntries.length}
+        <dl class="pairs">
+          {#each metadataEntries as [key, value] (key)}
+            <div class="pair">
+              <dt>{key}</dt>
+              <dd>{displayValue(value)}</dd>
+            </div>
+          {/each}
+        </dl>
+      {/if}
+    </section>
+  </Card.Content>
+</Card.Root>
+
+<Sheet.Root bind:open={agentDocOpen}>
+  <Sheet.Content
+    side="right"
+    class="flex w-full flex-col gap-4 overflow-y-auto sm:max-w-2xl"
+    data-testid="deck-agent-doc-sheet"
+  >
+    <Sheet.Header>
+      <Sheet.Title>AGENT.md</Sheet.Title>
+      <Sheet.Description>{t('deck.aboutAgentDocHint')}</Sheet.Description>
+    </Sheet.Header>
+    <div class="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-6">
+      {#if agentDocError}
+        <FormError message={t('deck.agentDocLoadFailed', { error: agentDocError })} />
+      {:else if agentDoc === null}
+        <!-- the room the briefing will take, while it comes -->
+        <div class="space-y-2.5" aria-busy="true" aria-label={t('common.loading')}>
+          <Skeleton class="h-4 w-2/5" />
+          <Skeleton class="h-3.5 w-full" />
+          <Skeleton class="h-3.5 w-11/12" />
+          <Skeleton class="h-3.5 w-4/5" />
+          <Skeleton class="h-3.5 w-full" />
+          <Skeleton class="h-3.5 w-3/5" />
+        </div>
+      {:else}
+        <!-- the briefing is user-authored: CodeBlock renders it as text -->
+        <div in:appear>
+          <CodeBlock code={agentDoc} ariaLabel={t('deck.agentDocHeading')} class="[--code-max-h:none]" />
         </div>
       {/if}
-      {#if deck.hasAgentDoc}
-        <div>
-          <div class="mb-2 flex items-center gap-3">
-            <h4 class="eyebrow">{t('deck.agentDocHeading')}</h4>
-            <Button variant="outline" size="sm" onclick={() => void toggleAgentDoc()}>
-              {agentDocOpen ? t('deck.agentDocHide') : t('deck.agentDocShow')}
-            </Button>
-          </div>
-          <FormError
-            message={agentDocError ? t('deck.agentDocLoadFailed', { error: agentDocError }) : null}
-          />
-          <Reveal open={agentDocOpen && !agentDocError}>
-            {#if agentDocLoading}
-              <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-            {:else if agentDoc !== null}
-              <!-- the briefing is user-authored: CodeBlock renders it as text -->
-              <div in:appear>
-                <CodeBlock
-                  code={agentDoc}
-                  ariaLabel={t('deck.agentDocHeading')}
-                  class="[--code-max-h:24rem]"
-                />
-              </div>
-            {/if}
-          </Reveal>
-        </div>
-      {/if}
-    </Card.Content>
-  </Card.Root>
-{/if}
+    </div>
+  </Sheet.Content>
+</Sheet.Root>
+
+<style>
+  .item {
+    padding: 14px 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .item:first-child {
+    border-top: 0;
+    padding-top: 2px;
+  }
+  .head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: var(--plate-strong);
+    color: var(--muted);
+  }
+  .words {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-top: 1px;
+  }
+  .title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .count {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .hint {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .cmd-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin-top: 4px;
+  }
+  .cmd {
+    min-width: 0;
+    padding: 2px 8px;
+    border-radius: 7px;
+    border: 1px solid var(--hairline);
+    background: var(--plate-strong);
+    font:
+      400 12px/1.6 ui-monospace,
+      'SF Mono',
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .pairs {
+    margin: 10px 0 0 44px;
+    display: flex;
+    flex-direction: column;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: minmax(6rem, 40%) minmax(0, 1fr);
+    gap: 12px;
+    padding: 7px 0;
+    border-top: 1px dashed var(--hairline);
+    font-size: 13px;
+  }
+  .pair:first-child {
+    border-top: 0;
+  }
+  .pair dt {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .pair dd {
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+</style>

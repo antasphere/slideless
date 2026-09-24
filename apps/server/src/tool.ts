@@ -387,7 +387,10 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           // identity into the deck document, which deck JS could lift
           // (PRDCT-1331). Never reintroduce a session read on this path.
           emailDelivers: email.delivers,
-          formUploadCaps: formUploads.caps
+          formUploadCaps: formUploads.caps,
+          // The agent index's absolute URLs (PRDCT-2670): the same base
+          // buildViewerUrl builds share links on, never the request Host.
+          viewerBaseUrl: env.VIEWER_BASE_URL ?? env.PUBLIC_BASE_URL
         })
     },
 

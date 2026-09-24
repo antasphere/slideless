@@ -35,9 +35,12 @@ without re-counting. That collapses browser prefetch/prerender, reloads,
 and second tabs into one open. The window is
 [`VIEW_DEDUPE_WINDOW_MINUTES`](../reference/env-reference.md) (default 10
 minutes; `0` disables de-duplication and counts every entry load). Two
-consequences worth knowing: cookie-less clients (CLIs, SDKs, mail-provider
-link scanners) count on every fetch, and a very large window shifts the
-metric toward "unique browsers" rather than "opens".
+consequences worth knowing: cookie-less clients that ask for the deck's HTML
+(mail-provider link scanners, a `?raw` pull) count on every fetch, and a very
+large window shifts the metric toward "unique browsers" rather than "opens".
+A read of the link's agent index (a fetch that does not ask for HTML, or
+`?format=agent`, `?format=json`) counts as an agent read, never as a view,
+and sets no cookie ([Share links, read by agents](../agents/share-links-for-agents.md)).
 
 ## How untrusted HTML is contained
 

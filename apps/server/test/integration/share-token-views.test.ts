@@ -13,6 +13,9 @@ import {
   type TestApp
 } from './helpers.js';
 
+/** An HTML Accept: the deck, not the agent index (PRDCT-2670). */
+const DOC_NAV = { accept: 'text/html' };
+
 /**
  * Per-view share-link analytics (PRDCT-1313).
  *
@@ -145,6 +148,7 @@ describe('the counted gate writes exactly one event', () => {
     const token = await mintToken('Event fields');
     const res = await app.app.request(`/v/${token.secret}/?p=newsletter`, {
       headers: {
+        ...DOC_NAV,
         referer: 'https://docs.example.com/some/page?q=secret-path-must-not-survive',
         'user-agent': CHROME_UA,
         'x-forwarded-for': nextIp()
@@ -181,14 +185,14 @@ describe('the counted gate writes exactly one event', () => {
   it('a dedupe-cookie repeat serves 200 but writes NO second row (counter also unchanged)', async () => {
     const token = await mintToken('Dedupe');
     const first = await app.app.request(`/v/${token.secret}/`, {
-      headers: { 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
     });
     expect(first.status).toBe(200);
     const viewedCookie = extractCookie(first);
     expect(viewedCookie).toContain(`slvd_${token.id}`);
 
     const repeat = await app.app.request(`/v/${token.secret}/`, {
-      headers: { cookie: viewedCookie, 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, cookie: viewedCookie, 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
     });
     expect(repeat.status).toBe(200);
 
@@ -205,7 +209,7 @@ describe('the counted gate writes exactly one event', () => {
     expect(res.status).toBe(201);
     const created = await readJson(res);
     const served = await app.app.request(`/v/${created.secret}/`, {
-      headers: { 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
     });
     expect(served.status).toBe(200);
     expect(await rowsOfToken(created.shareToken.id)).toHaveLength(0);
@@ -223,7 +227,7 @@ describe('the counted gate writes exactly one event', () => {
 
     const head = await app.app.request(`/v/${token.secret}/`, {
       method: 'HEAD',
-      headers: { 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, 'user-agent': CHROME_UA, 'x-forwarded-for': nextIp() }
     });
     expect(head.status).toBe(200);
     expect(await rowsOfToken(token.id)).toHaveLength(0);
@@ -232,7 +236,7 @@ describe('the counted gate writes exactly one event', () => {
   it('garbage/absent Referer and an illegal `p` value store nulls (view still counted)', async () => {
     const token = await mintToken('Nulls');
     const res = await app.app.request(`/v/${token.secret}/?p=${encodeURIComponent('bad label!')}`, {
-      headers: { referer: 'not a url at all', 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, referer: 'not a url at all', 'x-forwarded-for': nextIp() }
     });
     expect(res.status).toBe(200);
     const rows = await rowsOfToken(token.id);
@@ -243,7 +247,7 @@ describe('the counted gate writes exactly one event', () => {
 
     // Over-long placement (65 chars) is equally refused.
     const long = await app.app.request(`/v/${token.secret}/?p=${'a'.repeat(65)}`, {
-      headers: { 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, 'x-forwarded-for': nextIp() }
     });
     expect(long.status).toBe(200);
     const after = await rowsOfToken(token.id);
@@ -258,6 +262,7 @@ describe('the counted gate writes exactly one event', () => {
     const token = await mintToken('Long host');
     const res = await app.app.request(`/v/${token.secret}/`, {
       headers: {
+        ...DOC_NAV,
         referer: `https://${'a'.repeat(4000)}.example.com/p`,
         'x-forwarded-for': nextIp()
       }
@@ -269,7 +274,7 @@ describe('the counted gate writes exactly one event', () => {
 
     // A real-world host of legal length is untouched.
     const ok = await app.app.request(`/v/${token.secret}/`, {
-      headers: { referer: 'https://docs.example.com/a/b?c=d', 'x-forwarded-for': nextIp() }
+      headers: { ...DOC_NAV, referer: 'https://docs.example.com/a/b?c=d', 'x-forwarded-for': nextIp() }
     });
     expect(ok.status).toBe(200);
     const after = await rowsOfToken(token.id);
@@ -293,8 +298,11 @@ describe('history and retention', () => {
   it('token deletion keeps the rows: share_token_id is nulled, nothing cascades', async () => {
     const token = await mintToken('Deleted token');
     expect(
-      (await app.app.request(`/v/${token.secret}/?p=kept`, { headers: { 'x-forwarded-for': nextIp() } }))
-        .status
+      (
+        await app.app.request(`/v/${token.secret}/?p=kept`, {
+          headers: { ...DOC_NAV, 'x-forwarded-for': nextIp() }
+        })
+      ).status
     ).toBe(200);
     const before = await rowsOfToken(token.id);
     expect(before).toHaveLength(1);
@@ -313,7 +321,11 @@ describe('history and retention', () => {
     // Two counted views (no dedupe cookie presented → both count).
     for (let i = 0; i < 2; i++) {
       expect(
-        (await app.app.request(`/v/${token.secret}/`, { headers: { 'x-forwarded-for': nextIp() } })).status
+        (
+          await app.app.request(`/v/${token.secret}/`, {
+            headers: { ...DOC_NAV, 'x-forwarded-for': nextIp() }
+          })
+        ).status
       ).toBe(200);
     }
     const rows = await rowsOfToken(token.id);
@@ -343,7 +355,7 @@ describe('the read endpoint', () => {
       expect(
         (
           await app.app.request(`/v/${token.secret}/?p=${p}`, {
-            headers: { 'x-forwarded-for': nextIp() }
+            headers: { ...DOC_NAV, 'x-forwarded-for': nextIp() }
           })
         ).status
       ).toBe(200);

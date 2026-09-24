@@ -226,6 +226,7 @@ const COMMANDS = [
   'responses',
   'response',
   'uploads',
+  'pdf',
   'notify',
   'invite',
   'uninvite',

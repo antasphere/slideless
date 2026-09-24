@@ -303,6 +303,13 @@
         (v) => (form.canDownload = v)
       )}
       {@render option(
+        'token-pdf',
+        t('tokens.pdfLabel'),
+        t('tokens.pdfHint'),
+        form.canExportPdf,
+        (v) => (form.canExportPdf = v)
+      )}
+      {@render option(
         'token-bar',
         t('tokens.barLabel'),
         t('tokens.barHint'),

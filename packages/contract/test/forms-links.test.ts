@@ -36,6 +36,20 @@ describe('share tokens: remembersResponses', () => {
   });
 });
 
+describe('share tokens: canExportPdf (PRDCT-2668)', () => {
+  it('a new link lets its recipient export to PDF unless told otherwise', () => {
+    expect(shareTokenCreateSchema.parse({ name: 'x' }).canExportPdf).toBe(true);
+    expect(shareTokenCreateSchema.parse({ name: 'x', canExportPdf: false }).canExportPdf).toBe(false);
+  });
+
+  it('a patch may carry the switch alone, and a non-boolean is refused', () => {
+    expect(shareTokenUpdateSchema.parse({ canExportPdf: false })).toEqual({ canExportPdf: false });
+    expect(shareTokenUpdateSchema.parse({ canExportPdf: true })).toEqual({ canExportPdf: true });
+    expect(shareTokenCreateSchema.safeParse({ name: 'x', canExportPdf: 'yes' }).success).toBe(false);
+    expect(shareTokenUpdateSchema.safeParse({ canExportPdf: 1 }).success).toBe(false);
+  });
+});
+
 describe('form responses: revisions on the owner wire', () => {
   const base = {
     id: '11111111-1111-1111-1111-111111111111',

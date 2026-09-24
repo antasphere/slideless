@@ -31,6 +31,7 @@ const TOKEN = {
   accessCount: 2,
   lastAccessedAt: null,
   downloadCount: 0,
+  agentReadCount: 0,
   createdAt: '2026-01-01T00:00:00.000Z'
 };
 
@@ -130,9 +131,11 @@ describe('tokens shows the forms and remembering states', () => {
     ]);
     expect(await run(['tokens', DECK.id, ...AUTH], h.io)).toBe(0);
     const lines = h.out().split('\n');
-    expect(lines[0]).toMatch(/cli\s+2 opens\s+never\s+latest\s+0 downloads\s+-\s/);
-    expect(lines[1]).toMatch(/alice\s+2 opens\s+never\s+latest\s+0 downloads\s+remembers answers/);
-    expect(lines[2]).toMatch(/ro\s+2 opens\s+never\s+latest\s+0 downloads\s+no forms/);
+    expect(lines[0]).toMatch(/cli\s+2 opens\s+never\s+latest\s+0 downloads\s+0 agent reads\s+-\s/);
+    expect(lines[1]).toMatch(
+      /alice\s+2 opens\s+never\s+latest\s+0 downloads\s+0 agent reads\s+remembers answers/
+    );
+    expect(lines[2]).toMatch(/ro\s+2 opens\s+never\s+latest\s+0 downloads\s+0 agent reads\s+no forms/);
   });
 });
 

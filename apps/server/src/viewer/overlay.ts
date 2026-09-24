@@ -1145,6 +1145,9 @@ function placeComposer() {
   pop.style.visibility = '';
 }
 
+// A draft the reader typed and then clicked away from (PRDCT-2671): kept
+// until the next composer opens, so a stray click never loses a written note.
+var keptDraft = '';
 function openComposer() {
   popQuote.style.display = 'none';
   popQuote.textContent = '';
@@ -1158,7 +1161,9 @@ function openComposer() {
     popCap.textContent = 'New annotation · pin';
   }
   popName.value = savedName;
-  popText.value = '';
+  // The draft a stray click closed comes back in the next composer (PRDCT-2671).
+  popText.value = keptDraft;
+  keptDraft = '';
   popErr.style.display = 'none';
   placeComposer();
   popText.focus();
@@ -1238,6 +1243,7 @@ popSave.addEventListener('click', function () {
   apiCreate(payload).then(function (created) {
     // The pin of the note just saved pulses once when it lands (renderPins).
     placedId = created && typeof created.id === 'string' ? created.id : null;
+    keptDraft = ''; // a saved note is never a draft
     closeComposer();
     try { window.getSelection().removeAllRanges(); } catch (e) {}
     return refresh();
@@ -1272,7 +1278,12 @@ doc.addEventListener('mouseup', function () {
 doc.addEventListener('mousedown', function (e) {
   if (root.contains(e.target)) return;
   hideAdd();
-  if (pop.style.display === 'block') closeComposer();
+  // A click on the deck closes an open composer (a highlight note in browse
+  // mode lands here; a pin's click lands on the layer below): the typed draft
+  // is kept for the next composer either way (PRDCT-2671).
+  // While a note is being saved the save owns the composer: a click then
+  // neither closes it nor keeps its text as a draft (verifier round 2, F1).
+  if (pop.style.display === 'block' && !isSaving) { keptDraft = popText.value; closeComposer(); }
 });
 
 // ---- Annotate mode (point / region pins) -------------------------------
@@ -1312,6 +1323,17 @@ doc.addEventListener('keydown', function (e) {
 var dragStart = null;
 layer.addEventListener('pointerdown', function (e) {
   if (e.button !== 0) return;
+  // PRDCT-2671: while the composer is open, a click on the deck closes it,
+  // the way a click outside a dialog leaves it, and places nothing. The
+  // next click places a new note as usual.
+  if (pop.style.display === 'block') {
+    if (!isSaving) {
+      keptDraft = popText.value;
+      closeComposer();
+    }
+    e.preventDefault();
+    return;
+  }
   dragStart = { x: e.clientX, y: e.clientY };
   try { layer.setPointerCapture(e.pointerId); } catch (e2) {}
   e.preventDefault();

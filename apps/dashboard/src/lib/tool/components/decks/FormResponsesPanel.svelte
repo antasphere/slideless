@@ -52,9 +52,11 @@
 
   interface Props {
     deckId: string;
+    /** The section's size for the deck page's tab bar, `undefined` while unknown. */
+    oncount?: (n: number | undefined) => void;
   }
 
-  let { deckId }: Props = $props();
+  let { deckId, oncount }: Props = $props();
 
   let filterForm = $state('all');
   let filterSource = $state<'all' | FormResponseSourceValue>('all');
@@ -101,6 +103,14 @@
       summaryLoading = false;
     }
   }
+
+  // the deck page's tab bar: every response on the deck (the summary's total),
+  // else the list once it is all here
+  $effect(() => {
+    if (noAccess) oncount?.(undefined);
+    else if (summary) oncount?.(summary.total);
+    else oncount?.(list.loading || list.nextCursor || list.error ? undefined : list.items.length);
+  });
 
   const hasFilters = $derived(filterForm !== 'all' || filterSource !== 'all');
   // the toolbar's quiet line: every response on the deck (the summary's

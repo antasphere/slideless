@@ -15,6 +15,7 @@ import { t, type MessageKey } from '$lib/i18n';
 export type LinkColumnId =
   | 'pinnedVersion'
   | 'canDownload'
+  | 'canExportPdf'
   | 'showBar'
   | 'canAnnotate'
   | 'canSubmitForms'
@@ -28,6 +29,7 @@ export type LinkColumnId =
 const CHOICES: { id: LinkColumnId; title: MessageKey }[] = [
   { id: 'pinnedVersion', title: 'tokens.colVersion' },
   { id: 'canDownload', title: 'tokens.colDownloads' },
+  { id: 'canExportPdf', title: 'tokens.colPdf' },
   { id: 'showBar', title: 'tokens.colBar' },
   { id: 'canAnnotate', title: 'tokens.colNotes' },
   { id: 'canSubmitForms', title: 'tokens.colForms' },
@@ -40,6 +42,7 @@ const CHOICES: { id: LinkColumnId; title: MessageKey }[] = [
 
 const LEAN_HIDDEN: LinkColumnId[] = [
   'canDownload',
+  'canExportPdf',
   'showBar',
   'canUploadFiles',
   'remembersResponses',

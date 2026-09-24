@@ -3,7 +3,7 @@
 
   /** One act on a link. The table builds the list once; the row menu and this panel both call it. */
   export interface LinkAction {
-    key: 'activity' | 'version' | 'uploads' | 'revoke';
+    key: 'activity' | 'version' | 'uploads' | 'pdf' | 'revoke';
     label: string;
     onclick: () => void;
     variant?: 'default' | 'destructive';
@@ -87,6 +87,7 @@
           },
           { key: 'remembers', label: t('tokens.colRemembers'), on: token.remembersResponses },
           { key: 'downloads', label: t('tokens.colDownloads'), on: token.canDownload },
+          { key: 'pdf', label: t('tokens.colPdf'), on: token.canExportPdf },
           { key: 'bar', label: t('tokens.colBar'), on: token.showBar }
         ]
       : []
@@ -236,6 +237,11 @@
           <div>
             <dd class="figure">{token.accessCount}</dd>
             <dt>{t('tokens.colViews')}</dt>
+          </div>
+          <!-- PRDCT-2670: an agent reading the link's index, never a view -->
+          <div data-testid="panel-agent-reads">
+            <dd class="figure">{token.agentReadCount}</dd>
+            <dt>{t('tokens.agentReads')}</dt>
           </div>
           <div>
             <dd class="figure">{token.downloadCount}</dd>
@@ -424,10 +430,10 @@
     color: var(--muted);
   }
 
-  /* three figures on one line, a hairline between them */
+  /* four figures on one line, a hairline between them */
   .figures {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     margin-top: 20px;
   }
   .figures > div {

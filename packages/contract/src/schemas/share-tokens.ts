@@ -127,6 +127,20 @@ export const shareTokenSchema = z.object({
    * HEAD requests never count.
    */
   downloadCount: z.number().int().min(0),
+  /**
+   * Whether the recipient may export the deck to PDF from the viewer
+   * (PRDCT-2668): the recipient bar shows an Export PDF action that prints
+   * the page from the browser. Off = no action in the bar. A link minted
+   * before the switch existed is off until its owner turns it on.
+   */
+  canExportPdf: z.boolean(),
+  /**
+   * How many times an agent read this link's index (PRDCT-2670): the
+   * machine-readable description of the deck the entry URL serves to a
+   * caller that did not ask for HTML. Counted apart from views: an index
+   * read never moves `accessCount`; owner previews never count.
+   */
+  agentReadCount: z.number().int().min(0),
   createdAt: z.string()
 });
 export type ShareToken = z.infer<typeof shareTokenSchema>;
@@ -183,6 +197,12 @@ export const shareTokenCreateSchema = z
      * public write capability by itself.
      */
     canUploadFiles: z.boolean().default(true),
+    /**
+     * PDF export ON by default for a NEW link (PRDCT-2668): like downloads,
+     * it is part of what a link hands out. Opt out per link. Links minted
+     * before the switch existed stay OFF until their owner turns them on.
+     */
+    canExportPdf: z.boolean().default(true),
     /**
      * Explicit badge slot for this link. Also becomes the deck's remembered
      * default for future links. Omitted = inherit the deck's remembered
@@ -243,6 +263,7 @@ export const shareTokenUpdateSchema = z
     showBar: z.boolean().optional(),
     remembersResponses: z.boolean().optional(),
     canUploadFiles: z.boolean().optional(),
+    canExportPdf: z.boolean().optional(),
     /**
      * Explicit slot (also updates the deck's remembered default) or null to
      * fall back to the deck default again.

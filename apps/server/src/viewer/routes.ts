@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import {
+  AGENT_DOC_PATH,
   attachmentPathOf,
   attachmentsOf,
   isAttachmentPath,
@@ -29,6 +30,7 @@ import {
 import { verifyViewerPassword } from '../sharing/password.js';
 import type { ClientIpFn } from '@antasphere/chassis-server/middleware';
 import { embedRoutes } from './embed.js';
+import { AGENT_DOC_INLINE_CAP, agentIndexRequested, buildAgentIndex, capUtf8 } from './agent-index.js';
 import { docNavigation, entryInjectionFor, frameNavigation, type InjectionPlan } from './inject.js';
 import { injectIntoStream } from './inject-stream.js';
 import { mintUnlockValue, unlockCookieName, UNLOCK_TTL_MS, verifyUnlockValue } from './unlock.js';
@@ -92,7 +94,9 @@ export const VIEWER_CSP =
 export const VIEWER_CONTENT_HEADERS: Readonly<Record<string, string>> = {
   'content-security-policy': VIEWER_CSP,
   'x-content-type-options': 'nosniff',
-  'referrer-policy': 'no-referrer'
+  'referrer-policy': 'no-referrer',
+  // No viewer response is indexable (PRDCT-2670): a share link is a secret.
+  'x-robots-tag': 'noindex, nofollow'
 };
 
 export interface ViewerDeps {
@@ -122,6 +126,12 @@ export interface ViewerDeps {
   emailDelivers: boolean;
   /** The instance's form-upload ceilings (PRDCT-2403): the two numbers the runtime's drop panel states. */
   formUploadCaps: { maxFileBytes: number; maxFilesPerResponse: number };
+  /**
+   * The configured origin share links are built on (`VIEWER_BASE_URL ??
+   * PUBLIC_BASE_URL`, the base `buildViewerUrl` uses) — the agent index's
+   * absolute URLs (PRDCT-2670). Unset = the request's own origin.
+   */
+  viewerBaseUrl?: string;
 }
 
 /** Everything resolved about one viewer request before bytes are served. */
@@ -169,6 +179,7 @@ function shellHeaders(): Record<string, string> {
     'content-security-policy': SHELL_CSP,
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
+    'x-robots-tag': 'noindex, nofollow',
     'cache-control': 'no-store',
     // The gate/errors vary between the HTML shell and the JSON wire shape.
     vary: 'accept, user-agent'
@@ -200,7 +211,8 @@ function viewerError(
   }
   return c.json({ error: { code: failure.code, message: failure.message } }, failure.status, {
     'cache-control': 'no-store',
-    vary: 'accept, user-agent'
+    vary: 'accept, user-agent',
+    'x-robots-tag': 'noindex, nofollow'
   });
 }
 
@@ -356,11 +368,11 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
           code: wrong ? 'password_invalid' : 'password_required',
           message: wrong
             ? 'The x-viewer-password value is not correct.'
-            : 'This share link is password protected — resend with the password in the x-viewer-password header.'
+            : 'This share link is password-protected. Send the password in the x-viewer-password header.'
         }
       },
       401,
-      { 'cache-control': 'no-store', vary: 'accept, user-agent' }
+      { 'cache-control': 'no-store', vary: 'accept, user-agent', 'x-robots-tag': 'noindex, nofollow' }
     );
   }
 
@@ -431,6 +443,7 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       // The recipient bar's content (PRDCT-2281): the deck's title and
       // whether the version has anything to hand out.
       deckTitle: deck.title,
+      linkEntryPath: canonicalEntryPath(c),
       versionHasDownloads: version.hasDownloads,
       // Badge slot resolution: per-link override → the deck's remembered
       // default (last explicit choice) → the overlay's own bottom-right.
@@ -484,6 +497,77 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
     return c.body(web, 200, headers);
   }
 
+  /** AGENT.md's text for the index, capped at AGENT_DOC_INLINE_CAP; null when absent or unreadable. */
+  async function readAgentDoc(
+    workspaceId: string,
+    manifest: ManifestEntry[]
+  ): Promise<{ text: string; truncated: boolean } | null> {
+    const entry = manifest.find((e) => e.path === AGENT_DOC_PATH);
+    if (!entry) return null;
+    try {
+      const stream = await storage.getStream(blobKey(workspaceId, entry.sha256));
+      const chunks: Buffer[] = [];
+      let total = 0;
+      try {
+        for await (const chunk of stream) {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+          chunks.push(buf);
+          total += buf.length;
+          // One byte past the cap is enough to know the file was cut.
+          if (total > AGENT_DOC_INLINE_CAP) break;
+        }
+      } finally {
+        stream.destroy();
+      }
+      return capUtf8(Buffer.concat(chunks), AGENT_DOC_INLINE_CAP);
+    } catch (e) {
+      logger.warn({ err: e }, 'viewer: AGENT.md unreadable for the agent index');
+      return null;
+    }
+  }
+
+  /** The link's absolute base URL, `https://host/v/<secret>/` (the buildViewerUrl shape). */
+  function linkBaseUrl(c: Context, rawSecretSegment: string): string {
+    const origin = (deps.viewerBaseUrl ?? new URL(c.req.url).origin).replace(/\/$/, '');
+    return `${origin}${VIEWER_PATH_PREFIX}/${rawSecretSegment}/`;
+  }
+
+  async function serveAgentIndex(c: Context, view: ResolvedView, format: 'md' | 'json'): Promise<Response> {
+    const { token, deck, version, manifest, rawSecretSegment } = view;
+    const agentDoc = await readAgentDoc(token.workspaceId, manifest);
+    const index = buildAgentIndex({
+      deck: { title: deck.title, kind: deck.kind },
+      version: { number: version.version, mode: token.pinnedVersion === null ? 'latest' : 'pinned' },
+      link: {
+        canDownload: token.canDownload,
+        canAnnotate: token.canAnnotate,
+        canSubmitForms: token.canSubmitForms,
+        canExportPdf: token.canExportPdf,
+        expiresAt: token.expiresAt
+      },
+      manifest,
+      entryPath: version.entryPath,
+      agentDoc: agentDoc?.text ?? null,
+      agentDocTruncated: agentDoc?.truncated ?? false,
+      baseUrl: linkBaseUrl(c, rawSecretSegment)
+    });
+    // Owner previews never count, HEAD never counts (the view posture).
+    if (c.req.method === 'GET' && token.purpose !== 'preview') {
+      await sharing.recordAgentRead(token.id);
+    }
+    const headers: Record<string, string> = {
+      'content-type': format === 'md' ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      vary: 'accept',
+      'x-robots-tag': 'noindex, nofollow',
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer'
+    };
+    if (c.req.method === 'HEAD') return c.body(null, 200, headers);
+    const body = format === 'md' ? index.markdown : JSON.stringify(index.json);
+    return c.body(body, 200, headers);
+  }
+
   // ── Entry URL canonicalization ─────────────────────────────────────────────
   // The entry is served at the TRAILING-SLASH URL so a deck's RELATIVE
   // references (styles, images, links to other pages of a multi-file deck)
@@ -507,6 +591,14 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
 
     const gate = await passwordSatisfied(c, token);
     if (!gate.ok) return gate.response;
+
+    // The agent index (PRDCT-2670): anything but a browser asking for HTML
+    // (or ?raw / ?format=html) gets the link's self-describing index instead
+    // of the deck. Past the password gate, so a locked link hands it only to
+    // a caller holding the password. Counted as an AGENT read, never as a
+    // view: no recordEntryView, no view event, no de-dupe cookie.
+    const indexFormat = agentIndexRequested(c);
+    if (indexFormat !== null) return serveAgentIndex(c, resolved.view, indexFormat);
 
     const entry = manifest.find((e) => e.path === version.entryPath);
     if (!entry) {

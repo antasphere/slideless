@@ -339,13 +339,18 @@
             {/snippet}
           </DropdownMenu.Trigger>
           <DropdownMenu.Content align="start" class="w-64">
-            <DropdownMenu.Label class="font-normal">
-              <!-- ownerLabel may be a member email (user text) — escaped only. -->
-              <p class="truncate text-sm">{t('master.artifactBy', { owner: ownerLabel })}</p>
+            <!-- The menu's head is two quiet lines, not a Label: the Label's
+                 small-caps float style would shout them (PRDCT-2685). -->
+            <div class="px-2 py-1.5">
+              <!-- SECURITY: ownerLabel may be a member email (user text) — escaped
+                   {…} interpolation only, never {@html}. -->
+              <p class="truncate font-display text-sm text-foreground">
+                {t('master.artifactBy', { owner: ownerLabel })}
+              </p>
               <p class="text-xs text-muted-foreground">
                 {t('master.updated', { when: formatTimeAgo(deck.updatedAt) })}
               </p>
-            </DropdownMenu.Label>
+            </div>
             <DropdownMenu.Separator />
             {#if canAdminister}
               <DropdownMenu.Item onSelect={startRename}>

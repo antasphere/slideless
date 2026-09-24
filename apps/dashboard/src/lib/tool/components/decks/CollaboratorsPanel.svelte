@@ -35,9 +35,11 @@
     deckId: string;
     /** Invite/remove are owner-level (deck owner or workspace admin/owner). */
     canManage: boolean;
+    /** The section's size for the deck page's tab bar, `undefined` while unknown. */
+    oncount?: (n: number | undefined) => void;
   }
 
-  let { deckId, canManage }: Props = $props();
+  let { deckId, canManage, oncount }: Props = $props();
 
   const list = createPagedList<Collaborator>(async (p) => {
     const { collaborators, nextCursor } = await api.collaborators(deckId, p);
@@ -123,6 +125,12 @@
   const peopleCount = $derived(
     list.nextCursor || !rows.length ? undefined : rowCount('collaborators.countOne', 'collaborators.count')
   );
+
+  // the deck page's tab bar: everyone on the deck, the owner included, once
+  // every grant is here
+  $effect(() => {
+    oncount?.(list.loading || list.nextCursor || list.error ? undefined : rows.length);
+  });
 
   // ── Invite dialog ──────────────────────────────────────────────────────
   let showInviteDialog = $state(false);

@@ -74,7 +74,9 @@ reminder when a bundle ships none.
 Because `AGENT.md` is an ordinary bundle file, every share link also serves
 it publicly at `/v/{secret}/AGENT.md` — an agent handed only a viewer URL
 can fetch the briefing directly. Do not put anything in it you would not
-put in the deck itself.
+put in the deck itself. The link's agent index also inlines it, so an agent
+fetching the share URL itself reads the briefing first
+([Share links, read by agents](share-links-for-agents.md)).
 
 ### The frontmatter
 

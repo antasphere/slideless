@@ -13,6 +13,16 @@
   import AppWindow from '@lucide/svelte/icons/app-window';
   import FileText from '@lucide/svelte/icons/file-text';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+  import Lock from '@lucide/svelte/icons/lock';
+  import Eye from '@lucide/svelte/icons/eye';
+  import Link2 from '@lucide/svelte/icons/link-2';
+  import Users from '@lucide/svelte/icons/users';
+  import MessageSquare from '@lucide/svelte/icons/message-square';
+  import Inbox from '@lucide/svelte/icons/inbox';
+  import History from '@lucide/svelte/icons/history';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import DeckTabs, { type DeckTab } from './DeckTabs.svelte';
   import ShareTokensPanel from './ShareTokensPanel.svelte';
   import CollaboratorsPanel from './CollaboratorsPanel.svelte';
   import DeckProjectsPanel from '$lib/tool/components/projects/DeckProjectsPanel.svelte';
@@ -25,7 +35,7 @@
   import DeckBannerDrawing from './drawings/DeckBannerDrawing.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { kindLabel, PREVIEW_SANDBOX } from '$lib/tool/decks';
+  import { isPreviewToken, kindLabel, PREVIEW_SANDBOX } from '$lib/tool/decks';
   import { canPreviewDeck, createPreviewController } from '$lib/tool/decks/preview.svelte';
   import { formatDateTime, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
@@ -116,6 +126,26 @@
 
   onDestroy(() => preview.destroy());
 
+  // The veil over the preview (PRDCT-2687): off until the reader clicks it,
+  // back on when the frame leaves the view, the tab changes or the version
+  // in the frame changes, so a live deck never catches the page's scroll by
+  // surprise.
+  let previewLive = $state(false);
+  let previewBox = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (!previewBox || !previewLive || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.every((e) => !e.isIntersecting)) previewLive = false;
+    });
+    io.observe(previewBox);
+    return () => io.disconnect();
+  });
+  $effect(() => {
+    void preview.key;
+    void activeTab;
+    previewLive = false;
+  });
+
   // ── Derived display state ──────────────────────────────────────────────
   const canManageCollaborators = $derived(
     me.role === 'owner' || me.role === 'admin' || deck?.ownerUserId === me.user.id
@@ -157,6 +187,39 @@
     app: { tone: 'indigo', icon: AppWindow },
     plan: { tone: 'green', icon: FileText }
   };
+
+  // ── The sections, one tab each (PRDCT-2686) ─────────────────────────────
+  // Every panel stays mounted (their loads are unchanged); the tab only says
+  // which one is shown, so a switch is instant and `?tab=` survives a reload.
+  // A panel reports its size once it knows it; `undefined` while it does not.
+  let collaboratorsCount = $state<number | undefined>(undefined);
+  let notesCount = $state<number | undefined>(undefined);
+  let responsesCount = $state<number | undefined>(undefined);
+  // the links the table shows: the page's own preview tokens are plumbing, not shares
+  const linksCount = $derived(
+    tokensList.loading || tokensList.nextCursor || tokensList.error
+      ? undefined
+      : tokensList.items.filter((token) => !isPreviewToken(token)).length
+  );
+
+  const tabs = $derived.by((): DeckTab[] => [
+    { id: 'overview', label: t('deck.tabOverview'), icon: Eye },
+    { id: 'links', label: t('deck.tabLinks'), icon: Link2, count: linksCount },
+    { id: 'collaborators', label: t('deck.tabCollaborators'), icon: Users, count: collaboratorsCount },
+    { id: 'notes', label: t('deck.tabNotes'), icon: MessageSquare, count: notesCount },
+    { id: 'responses', label: t('deck.tabResponses'), icon: Inbox, count: responsesCount },
+    {
+      id: 'versions',
+      label: t('deck.tabVersions'),
+      icon: History,
+      count: deck && deck.currentVersion > 0 ? deck.currentVersion : undefined
+    }
+  ]);
+  // an unknown `?tab=` (or one not open to this reader) lands on the overview
+  const activeTab = $derived.by(() => {
+    const asked = page.url.searchParams.get('tab') ?? 'overview';
+    return tabs.some((tab) => tab.id === asked) ? asked : 'overview';
+  });
 
   // The shell's path bar reads `Decks / <title>` once the banner has scrolled
   // away. The title is user-authored: the bar renders it as text.
@@ -242,70 +305,157 @@
       </div>
     </div>
 
-    <Card.Root>
-      <DeckSectionHeading drawing="preview" title={t('deck.previewTitle')} description={previewDescription} />
-      <Card.Content>
-        {#if deck.currentVersion < 1}
-          <p class="text-sm text-muted-foreground">{t('deck.previewEmpty')}</p>
-        {:else if !canPreview}
-          <!-- Preview tokens are hidden + stat-excluded, so minting them is
+    <DeckTabs {tabs} label={t('deck.tabsAria')} active={activeTab} />
+
+    <div class="space-y-6" hidden={activeTab !== 'overview'}>
+      <Card.Root>
+        <DeckSectionHeading
+          drawing="preview"
+          title={t('deck.previewTitle')}
+          description={previewDescription}
+        />
+        <Card.Content>
+          {#if deck.currentVersion < 1}
+            <p class="text-sm text-muted-foreground">{t('deck.previewEmpty')}</p>
+          {:else if !canPreview}
+            <!-- Preview tokens are hidden + stat-excluded, so minting them is
                owner/admin only (never a dev collaborator) — see ADR 012. -->
-          <p class="text-sm text-muted-foreground">{t('deck.previewOwnerOnly')}</p>
-        {:else if preview.error}
-          <p class="text-sm text-destructive" in:appear>
-            {t('deck.previewFailed', { error: preview.error })}
-          </p>
-        {:else if !preview.url}
-          <div
-            class="flex h-[320px] w-full items-center justify-center rounded-[8px] border border-dashed border-[var(--hairline)] md:h-[480px]"
-          >
-            <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-          </div>
-        {:else}
-          {#key preview.key}
-            <!-- SECURITY (ADR 012 Surface D): user-authored deck HTML renders
-                 ONLY inside this sandboxed iframe. The sandbox attribute must
-                 NEVER gain `allow-same-origin` (that single token re-opens
-                 full session theft, ADR 012 Surface C) and never
-                 `allow-top-navigation*`. Deck HTML must never be rendered
-                 into the dashboard DOM directly ({@html}, srcdoc, etc.). -->
-            <iframe
-              src={preview.url}
-              title={t('deck.previewTitle')}
-              sandbox={PREVIEW_SANDBOX}
-              referrerpolicy="no-referrer"
-              allow="fullscreen"
-              class="h-[320px] w-full rounded-[8px] border border-[var(--hairline)] bg-background md:h-[480px]"
-              data-testid="deck-preview"
-            ></iframe>
-          {/key}
+            <p class="text-sm text-muted-foreground">{t('deck.previewOwnerOnly')}</p>
+          {:else if preview.error}
+            <p class="text-sm text-destructive" in:appear>
+              {t('deck.previewFailed', { error: preview.error })}
+            </p>
+          {:else if !preview.url}
+            <div
+              class="flex h-[320px] w-full items-center justify-center rounded-[8px] border border-dashed border-[var(--hairline)] md:h-[480px]"
+            >
+              <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
+            </div>
+          {:else}
+            <!-- The preview starts as a picture (PRDCT-2687): a veil over it
+               takes the wheel and the touch, so the page scrolls over it on a
+               desk and on a phone alike. A click on the veil lifts it and the
+               deck becomes live in place; Esc, Lock or scrolling it out of
+               view puts the veil back. Open the deck leads to the deck page. -->
+            <div
+              class="relative"
+              data-testid="deck-preview-box"
+              data-live={previewLive ? '' : undefined}
+              bind:this={previewBox}
+              onkeydown={(e) => {
+                if (e.key === 'Escape' && previewLive) previewLive = false;
+              }}
+              role="presentation"
+            >
+              {#key preview.key}
+                <!-- SECURITY (ADR 012 Surface D): user-authored deck HTML renders
+                   ONLY inside this sandboxed iframe. The sandbox attribute must
+                   NEVER gain `allow-same-origin` (that single token re-opens
+                   full session theft, ADR 012 Surface C) and never
+                   `allow-top-navigation*`. Deck HTML must never be rendered
+                   into the dashboard DOM directly ({@html}, srcdoc, etc.). -->
+                <!-- an iframe is interactive content: the tabindex only ever
+                     takes it OUT of the tab order while the veil is on -->
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <iframe
+                  src={preview.url}
+                  title={t('deck.previewTitle')}
+                  sandbox={PREVIEW_SANDBOX}
+                  referrerpolicy="no-referrer"
+                  allow="fullscreen"
+                  tabindex={previewLive ? undefined : -1}
+                  aria-hidden={previewLive ? undefined : 'true'}
+                  class="h-[320px] w-full rounded-[8px] border border-[var(--hairline)] bg-background md:h-[480px] {previewLive
+                    ? ''
+                    : 'pointer-events-none'}"
+                  data-testid="deck-preview"
+                ></iframe>
+              {/key}
+              {#if !previewLive}
+                <button
+                  type="button"
+                  class="veil"
+                  onclick={() => (previewLive = true)}
+                  data-testid="deck-preview-veil"
+                  aria-label={t('deck.previewVeilAria')}
+                >
+                  <span class="veil-cue">
+                    <span class="veil-ring" aria-hidden="true"></span>
+                    <MousePointerClick class="h-4 w-4" />
+                    {t('deck.previewVeil')}
+                  </span>
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  class="chip preview-lock"
+                  onclick={() => (previewLive = false)}
+                  data-testid="deck-preview-lock"
+                >
+                  <Lock class="h-3.5 w-3.5" />
+                  {t('deck.previewLock')}
+                </button>
+              {/if}
+              <a href={deckMasterPath(deck.id)} class="chip preview-open" data-testid="deck-preview-open">
+                <Presentation class="h-4 w-4" />
+                {t('deck.previewOpenLive')}
+              </a>
+            </div>
+          {/if}
+        </Card.Content>
+      </Card.Root>
+
+      <!-- What the deck says about itself, and the projects it sits in: half
+           the width each on a desk, one under the other on a phone. A guest
+           is never a project's member (the design of 20 September 2026), so
+           the details take the whole width for them. -->
+      <div class="grid items-stretch gap-6 {me.origin !== 'guest' ? 'md:grid-cols-2' : ''}">
+        <DeckMetaPanel {deck} />
+        {#if me.origin !== 'guest'}
+          <!-- Adding the deck to a project widens who reads it, so it takes
+               what managing its collaborators takes. -->
+          <DeckProjectsPanel {deckId} deckTitle={deck.title} canManage={canManageCollaborators} />
         {/if}
-      </Card.Content>
-    </Card.Root>
+      </div>
+    </div>
 
-    <DeckMetaPanel {deck} />
+    <div hidden={activeTab !== 'links'}>
+      <ShareTokensPanel {deckId} list={tokensList} versions={versionsList.items} />
+    </div>
 
-    <ShareTokensPanel {deckId} list={tokensList} versions={versionsList.items} />
+    <div hidden={activeTab !== 'collaborators'}>
+      <CollaboratorsPanel
+        {deckId}
+        canManage={canManageCollaborators}
+        oncount={(n) => (collaboratorsCount = n)}
+      />
+    </div>
 
-    <!-- A guest is never a project's member (the design of 20 September 2026):
-         the block is not theirs. Adding the deck to a project widens who reads
-         it, so it takes what managing its collaborators takes. -->
-    {#if me.origin !== 'guest'}
-      <DeckProjectsPanel {deckId} deckTitle={deck.title} canManage={canManageCollaborators} />
-    {/if}
+    <div hidden={activeTab !== 'notes'}>
+      <AnnotationsPanel
+        {deckId}
+        versions={versionsList.items}
+        {resolveUser}
+        oncount={(n) => (notesCount = n)}
+      />
+    </div>
 
-    <CollaboratorsPanel {deckId} canManage={canManageCollaborators} />
+    <div hidden={activeTab !== 'responses'}>
+      <FormResponsesPanel {deckId} oncount={(n) => (responsesCount = n)} />
+    </div>
 
-    <AnnotationsPanel {deckId} versions={versionsList.items} {resolveUser} />
-
-    <FormResponsesPanel {deckId} />
-
-    <VersionsPanel
-      list={versionsList}
-      currentVersion={deck.currentVersion}
-      previewedVersion={preview.version}
-      onPreview={(version) => void preview.select(version)}
-    />
+    <div hidden={activeTab !== 'versions'}>
+      <VersionsPanel
+        list={versionsList}
+        currentVersion={deck.currentVersion}
+        previewedVersion={preview.version}
+        onPreview={(version) => {
+          void preview.select(version);
+          // the frame lives on the overview: a chosen version takes the reader there
+          if (activeTab !== 'overview') void goto(page.url.pathname, { noScroll: true });
+        }}
+      />
+    </div>
 
     <!-- Room at the foot, so the last section can scroll up under the bars,
          closed by the deck's own drawing set very light. -->
@@ -412,5 +562,84 @@
   .chip:hover {
     background: var(--ground);
     color: var(--ink);
+  }
+  /* the preview's one action, over its bottom-right corner */
+  .preview-open {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+  }
+  .preview-lock {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 2;
+  }
+  /* the veil: a breath of the page's ground over the deck, the deck still
+     readable under it, and one cue in the middle that breathes */
+  .veil {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--ground) 18%, transparent);
+    cursor: pointer;
+    transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  .veil:hover {
+    background: color-mix(in oklab, var(--ground) 32%, transparent);
+  }
+  .veil:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .veil-cue {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--control-h-sm);
+    padding: 0 14px;
+    border-radius: 999px;
+    background: var(--plate-strong);
+    border: 1px solid var(--plate-edge);
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
+    color: var(--ink-soft);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
+  .veil:hover .veil-cue {
+    transform: translateY(-1px);
+    color: var(--ink);
+  }
+  .veil-ring {
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 1px solid var(--accent);
+    opacity: 0;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .veil-ring {
+      animation: veil-breathe 2400ms var(--motion-ease) infinite;
+    }
+  }
+  @keyframes veil-breathe {
+    0% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(1.18, 1.45);
+    }
   }
 </style>

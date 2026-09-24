@@ -21,8 +21,8 @@ import {
  *    surfaces and on the wire shape;
  *  - injection on browser DOCUMENT navigations only — the entry and an HTML
  *    sub-page opened top-level — with the sandbox header set intact and no
- *    ETag; a frame navigation, ?raw, an agent fetch and an agent password
- *    unlock stay byte-exact; a `showBar:false` link streams byte-exact with
+ *    ETag; a frame navigation, ?raw and an agent password unlock stay
+ *    byte-exact, an agent fetch gets the link's index (PRDCT-2670); a `showBar:false` link streams byte-exact with
  *    its ETag;
  *  - the password gate and the error shells (404, 403, 410) never carry it;
  *  - the injected config is a CLOSED set (title, version, unlock,
@@ -225,8 +225,8 @@ describe('the bar rides top-level document navigations', () => {
     // convenience — this assertion is what makes it deliberate.
     const cfg = configOf(html);
     expect(cfg).not.toBeNull();
-    expect(Object.keys(cfg!).sort()).toEqual(['downloads', 'title', 'unlock', 'version']);
-    expect(cfg).toEqual({ title: 'Quarterly review', version: 1, unlock: null, downloads: true });
+    expect(Object.keys(cfg!).sort()).toEqual(['downloads', 'pdf', 'title', 'unlock', 'version']);
+    expect(cfg).toEqual({ title: 'Quarterly review', version: 1, unlock: null, downloads: true, pdf: true });
   });
 
   it('an HTML sub-page opened as a document carries it too; older engines ride the Accept heuristic', async () => {
@@ -264,21 +264,31 @@ describe('the bar rides top-level document navigations', () => {
     }
   });
 
-  it('?raw, agent fetches and agent password unlocks stay byte-exact', async () => {
+  it('?raw and ?format=html stay byte-exact; agent fetches and agent password unlocks get the index (PRDCT-2670)', async () => {
     const { secret } = await createToken(deckId, { name: 'agents' });
     const raw = await get(`/v/${secret}/?raw`, NAV);
     expect(Buffer.from(await raw.arrayBuffer()).equals(HTML)).toBe(true);
     const format = await get(`/v/${secret}/?format=html`, NAV);
     expect(Buffer.from(await format.arrayBuffer()).equals(HTML)).toBe(true);
-    // No HTML Accept, no fetch metadata: an SDK or curl.
+    // No HTML Accept, no fetch metadata: an SDK or curl gets the link's index.
     const agent = await get(`/v/${secret}/`);
-    expect(Buffer.from(await agent.arrayBuffer()).equals(HTML)).toBe(true);
-    expect(agent.headers.get('etag')).toBe(`"${shaOf(HTML)}"`);
+    expect(agent.status).toBe(200);
+    expect(agent.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+    expect(agent.headers.get('etag')).toBeNull();
+    const md = await agent.text();
+    expect(md).toContain('# Quarterly review');
+    expect(md).not.toContain(TOPBAR_MARKER);
 
+    // A header-unlocked fetch of a locked link (no HTML Accept) gets the index too.
     const locked = await createToken(deckId, { name: 'agent-locked', password: 'open-sesame' });
-    const viaHeader = await get(`/v/${locked.secret}/`, { ...NAV, 'x-viewer-password': 'open-sesame' });
+    const viaHeader = await get(`/v/${locked.secret}/`, { 'x-viewer-password': 'open-sesame' });
     expect(viaHeader.status).toBe(200);
-    expect(Buffer.from(await viaHeader.arrayBuffer()).equals(HTML)).toBe(true);
+    expect(viaHeader.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+    expect(await viaHeader.text()).toContain('# Quarterly review');
+    // With a browser Accept and the header, the deck stays byte-exact (no runtime).
+    const navHeader = await get(`/v/${locked.secret}/`, { ...NAV, 'x-viewer-password': 'open-sesame' });
+    expect(navHeader.status).toBe(200);
+    expect(Buffer.from(await navHeader.arrayBuffer()).equals(HTML)).toBe(true);
   });
 
   it('a showBar:false link streams byte-exact with its ETag on a browser navigation', async () => {
@@ -381,11 +391,17 @@ describe('what the bar is told', () => {
   it('a plain deck and a link with downloads off both get downloads:false, so no list is fetched', async () => {
     const plain = await createToken(plainDeckId, { name: 'plain' });
     const plainCfg = configOf(await (await get(`/v/${plain.secret}/`, NAV)).text());
-    expect(plainCfg).toEqual({ title: 'Plain deck', version: 1, unlock: null, downloads: false });
+    expect(plainCfg).toEqual({ title: 'Plain deck', version: 1, unlock: null, downloads: false, pdf: true });
 
     const noDl = await createToken(deckId, { name: 'no downloads', canDownload: false });
     const noDlCfg = configOf(await (await get(`/v/${noDl.secret}/`, NAV)).text());
-    expect(noDlCfg).toEqual({ title: 'Quarterly review', version: 1, unlock: null, downloads: false });
+    expect(noDlCfg).toEqual({
+      title: 'Quarterly review',
+      version: 1,
+      unlock: null,
+      downloads: false,
+      pdf: true
+    });
     // And were it to ask anyway, the list would be empty, never a 403.
     const list = await readJson(await get(`/api/v1/viewer/${noDl.secret}/attachments`));
     expect(list.attachments).toEqual([]);

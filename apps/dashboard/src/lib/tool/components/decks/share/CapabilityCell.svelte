@@ -4,13 +4,14 @@
 
   /**
    * One capability of a link as a check or a faint dash (PRDCT-2308): downloads,
-   * the bar, notes, forms, file uploads (PRDCT-2403) and remembers
-   * (PRDCT-2328) each get a column of their own, read at a glance.
+   * the PDF export (PRDCT-2668), the bar, notes, forms, file uploads
+   * (PRDCT-2403) and remembers (PRDCT-2328) each get a column of their own,
+   * read at a glance.
    * The stable `data-capability` key is for the browser suite; the label is
    * the column's, for the screen reader.
    */
   interface Props {
-    key: 'downloads' | 'bar' | 'notes' | 'forms' | 'uploads' | 'remembers';
+    key: 'downloads' | 'pdf' | 'bar' | 'notes' | 'forms' | 'uploads' | 'remembers';
     on: boolean;
     label: string;
   }

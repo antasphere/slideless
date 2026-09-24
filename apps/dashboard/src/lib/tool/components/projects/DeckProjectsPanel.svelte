@@ -17,6 +17,9 @@
   import FormError from '$lib/components/shared/FormError.svelte';
   import DeckSectionHeading from '$lib/tool/components/decks/DeckSectionHeading.svelte';
   import PickList from './PickList.svelte';
+  import ProjectFields from '$lib/components/projects/ProjectFields.svelte';
+  import { projects } from '$lib/projects/client';
+  import { Reveal } from '$lib/components/ui/reveal/index.js';
   import { appear } from '$lib/components/ui/reveal/index.js';
   import Plus from '@lucide/svelte/icons/plus';
   import Folder from '@lucide/svelte/icons/folder';
@@ -33,9 +36,11 @@
     deckTitle: string;
     /** The reader administers the deck: its owner, a workspace admin or owner. */
     canManage: boolean;
+    /** The section's size for the deck page's tab bar, `undefined` while unknown. */
+    oncount?: (n: number | undefined) => void;
   }
 
-  let { deckId, deckTitle, canManage }: Props = $props();
+  let { deckId, deckTitle, canManage, oncount }: Props = $props();
 
   let refs = $state<DeckProjectRef[]>([]);
   let readable = $state<Project[]>([]);
@@ -59,22 +64,50 @@
     void load();
   });
 
-  const addable = $derived(canManage ? projectsToAddTo(readable, refs) : []);
-  // a deck in no project the reader reads, and nothing the reader can do: no block at all
-  const shown = $derived(loaded && (refs.length > 0 || addable.length > 0 || error !== null));
+  // the deck page's tab bar: the projects the deck sits in, once read
+  $effect(() => {
+    oncount?.(loaded && error === null ? refs.length : undefined);
+  });
 
+  const addable = $derived(canManage ? projectsToAddTo(readable, refs) : []);
+  // the card sits on the deck's Overview, beside "About this deck": it is always
+  // there once read, and an empty one says what a project is for and how to
+  // add the deck to one
+  const shown = $derived(loaded);
+
+  // The dialog offers the reader's projects the deck is not in yet, and a new
+  // project made on the spot: its creator manages it, so the link that
+  // follows is allowed by construction.
+  const NEW_PROJECT = '__new__';
   let showAddDialog = $state(false);
   let addChoice = $state<string | null>(null);
   let adding = $state(false);
+  let newName = $state('');
+  let newDescription = $state('');
+  const pickItems = $derived([
+    ...addable.map((p) => ({ id: p.id, title: p.name, detail: p.description ?? undefined })),
+    { id: NEW_PROJECT, title: t('deckProjects.newProject'), detail: t('deckProjects.newProjectDetail') }
+  ]);
   function openAddDialog() {
-    addChoice = addable.length === 1 ? addable[0].id : null;
+    addChoice = addable.length === 1 ? addable[0].id : addable.length === 0 ? NEW_PROJECT : null;
+    newName = '';
+    newDescription = '';
     showAddDialog = true;
   }
   async function add() {
     if (!addChoice || adding) return;
+    if (addChoice === NEW_PROJECT && !newName.trim()) return;
     adding = true;
     try {
-      await deckProjects.link(deckId, addChoice);
+      let projectId = addChoice;
+      if (addChoice === NEW_PROJECT) {
+        const created = await projects.create({
+          name: newName.trim(),
+          ...(newDescription.trim() ? { description: newDescription.trim() } : {})
+        });
+        projectId = created.id;
+      }
+      await deckProjects.link(deckId, projectId);
       showAddDialog = false;
       toast.success(t('deckProjects.linked'));
       await load();
@@ -107,7 +140,7 @@
 </script>
 
 {#snippet addButton()}
-  {#if addable.length}
+  {#if canManage && loaded && !error}
     <Button size="sm" class="h-8 gap-1.5" onclick={openAddDialog} data-testid="deck-add-to-project">
       <Plus class="h-4 w-4" />
       {t('deckProjects.addToProject')}
@@ -116,8 +149,8 @@
 {/snippet}
 
 {#if shown}
-  <div in:appear>
-    <Card.Root class="deck-section gap-3" data-testid="deck-projects-panel">
+  <div class="h-full" in:appear>
+    <Card.Root class="deck-section h-full gap-3" data-testid="deck-projects-panel">
       <DeckSectionHeading
         drawing="projects"
         title={t('deckProjects.panelTitle')}
@@ -127,7 +160,21 @@
       <Card.Content>
         <FormError message={error ? t('deckProjects.panelLoadFailed', { error }) : null} />
         {#if !error && !refs.length}
-          <p class="text-sm text-muted-foreground">{t('deckProjects.panelEmpty')}</p>
+          <div class="empty" data-testid="deck-projects-empty">
+            <span class="empty-icon" aria-hidden="true">
+              <Folder class="size-4" strokeWidth={1.6} />
+            </span>
+            <div class="empty-words">
+              <p class="empty-title">{t('deckProjects.panelEmpty')}</p>
+              <p class="empty-hint">
+                {#if canManage}
+                  {t('deckProjects.emptyHintAdd')}
+                {:else}
+                  {t('deckProjects.emptyHintRead')}
+                {/if}
+              </p>
+            </div>
+          </div>
         {:else if refs.length}
           <ul class="rows">
             {#each refs as ref (ref.id)}
@@ -171,11 +218,12 @@
   loading={adding}
   submitLabel={t('deckProjects.addSubmit')}
 >
-  <PickList
-    bind:value={addChoice}
-    label={t('deckProjects.addToProjectTitle')}
-    items={addable.map((p) => ({ id: p.id, title: p.name, detail: p.description ?? undefined }))}
-  />
+  <PickList bind:value={addChoice} label={t('deckProjects.addToProjectTitle')} items={pickItems} />
+  <Reveal open={addChoice === NEW_PROJECT}>
+    <div class="space-y-4 pt-4" data-testid="deck-new-project">
+      <ProjectFields bind:name={newName} bind:description={newDescription} idPrefix="deck-new-project" />
+    </div>
+  </Reveal>
 </FormDialog>
 
 <ConfirmDialog
@@ -189,6 +237,42 @@
 />
 
 <style>
+  .empty {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border: 1px dashed var(--hairline);
+    border-radius: var(--r-md, 12px);
+  }
+  .empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: var(--plate-strong);
+    color: var(--muted);
+  }
+  .empty-words {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .empty-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .empty-hint {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
   .rows {
     display: flex;
     flex-direction: column;

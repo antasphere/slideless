@@ -7,8 +7,9 @@ Every [share link](../concepts/links.md) already counts its opens (the _Views_ c
 An event is recorded under exactly the same rule that increments a link's view counter, so the event list and the counter always agree:
 
 - Only the deck's **entry load** counts — asset fetches (images, styles, sub-pages of a multi-file deck) never do, and neither do `HEAD` requests or password-gate challenges.
-- Repeat opens from the same browser inside the de-dupe window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 minutes) collapse into one view: reloads, second tabs, and browser prefetching don't inflate the list. Cookie-less clients (curl, SDKs) count every fetch.
+- Repeat opens from the same browser inside the de-dupe window (`VIEW_DEDUPE_WINDOW_MINUTES`, default 10 minutes) collapse into one view: reloads, second tabs, and browser prefetching don't inflate the list. Cookie-less clients that fetch the deck's HTML count every fetch.
 - Your own dashboard previews are excluded — previewing your deck never shows up in its stats.
+- An agent reading the link's index (curl, an SDK, a model fetching the URL) is counted as an agent read on the link (`agentReadCount`), never as a view, and records no event; see [Share links, read by agents](../agents/share-links-for-agents.md).
 
 ## What each event stores — and what it never stores
 
@@ -44,7 +45,7 @@ The same link can carry different labels in different places — the label is pa
 
 ## Reading the stats
 
-- **Dashboard** — on the deck's page, open a link's menu and pick _View activity_. Revoked links keep their history.
+- **Dashboard** — on the deck's dashboard page, under the _Links_ tab, open a link's menu and pick _View activity_; the link's panel also shows its agent reads. Revoked links keep their history.
 - **CLI** — `slideless views DECK_ID TOKEN_ID` (omit the token id to list the deck's links first; `--all` follows pagination, `--json` for scripts).
 - **API** — `GET /api/v1/presentations/{id}/tokens/{tokenId}/views`, cursor-paginated, newest first. Reading a link's views takes the same permission as listing the deck's links.
 - **MCP** — the `slideless_list_token_views` tool.
