@@ -47,8 +47,14 @@ export interface ThumbnailServiceOptions {
   db: Db;
   storage: StorageDriver;
   logger: Logger;
-  /** null = capture is off on this process (switched off, no Chromium, or an api-only replica). */
+  /** null = this process captures nothing (switched off, no Chromium, or an api-only replica). */
   renderer: ThumbnailRenderer | null;
+  /**
+   * True on an api-only replica of an instance whose worker captures: a
+   * version without an image is then `pending` here, not `off`, since the
+   * worker's sweep will make it.
+   */
+  capturedElsewhere?: boolean;
 }
 
 export function thumbnailStorageKey(workspaceId: string, presentationId: string, versionId: string): string {
@@ -63,6 +69,7 @@ export class ThumbnailService {
   private readonly storage: StorageDriver;
   private readonly logger: Logger;
   private readonly renderer: ThumbnailRenderer | null;
+  private readonly capturedElsewhere: boolean;
   /** Set once Chromium refused to start sandboxed: capture stays off until the process restarts. */
   private sandboxDown = false;
   private draining: Promise<number> | null = null;
@@ -73,6 +80,7 @@ export class ThumbnailService {
     this.storage = opts.storage;
     this.logger = opts.logger;
     this.renderer = opts.renderer;
+    this.capturedElsewhere = opts.capturedElsewhere ?? false;
   }
 
   /** Whether this process captures at all. */
@@ -118,7 +126,9 @@ export class ThumbnailService {
         .onConflictDoNothing();
       this.kick();
     }
-    return { state: this.capturing ? 'pending' : 'off' };
+    return {
+      state: this.capturing || (this.capturedElsewhere && this.renderer === null) ? 'pending' : 'off'
+    };
   }
 
   /** Start a drain now in this process, unless one is running (then it runs again once it ends). */

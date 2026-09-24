@@ -374,6 +374,31 @@ export class PlatformClient extends ChassisClient<Scope> {
     return this.rawDownload(this.versionAttachmentUrl(id, version, name));
   }
 
+  /** URL of a version's still image (WebP). */
+  versionThumbnailUrl(id: string, version: number): string {
+    return `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/versions/${version}/thumbnail`;
+  }
+
+  /**
+   * A version's still image. Raw Response; a non-2xx throws PlatformApiError
+   * (404 thumbnail_pending | thumbnail_failed | thumbnail_unavailable | not_found).
+   * Unlike the downloads, the browser's HTTP cache is allowed: the image is immutable.
+   */
+  async versionThumbnail(id: string, version: number): Promise<Response> {
+    const res = await this.fetchImpl(this.versionThumbnailUrl(id, version), {
+      method: 'GET',
+      headers: this.baseHeaders(),
+      credentials: 'same-origin',
+      signal: this.signal('download'),
+      // Browser-only field; cast keeps this isomorphic under a Node lib.
+      cache: 'default'
+    } as RequestInit);
+    if (!res.ok) {
+      await this.parse(res); // throws PlatformApiError with the wire shape
+    }
+    return res;
+  }
+
   /** URL of the streamed AGENT.md briefing endpoint. */
   agentDocUrl(id: string, version?: number): string {
     const base = `${this.baseUrl}/api/v1/presentations/${encodeURIComponent(id)}/agent-doc`;

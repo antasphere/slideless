@@ -15,6 +15,17 @@ describe('env schema', () => {
     expect(env.NODE_ENV).toBe('production');
   });
 
+  it("defaults the still-image capture on, with the image's Chromium, and reads blank as the default (PRDCT-2725)", () => {
+    const env = envSchema.parse(minimal);
+    expect(env.SLIDELESS_THUMBNAILS).toBe('on');
+    expect(env.SLIDELESS_CHROMIUM_PATH).toBe('/usr/bin/chromium-browser');
+    const blank = envSchema.parse({ ...minimal, SLIDELESS_THUMBNAILS: '', SLIDELESS_CHROMIUM_PATH: ' ' });
+    expect(blank.SLIDELESS_THUMBNAILS).toBe('on');
+    expect(blank.SLIDELESS_CHROMIUM_PATH).toBe('/usr/bin/chromium-browser');
+    expect(envSchema.parse({ ...minimal, SLIDELESS_THUMBNAILS: 'off' }).SLIDELESS_THUMBNAILS).toBe('off');
+    expect(envSchema.safeParse({ ...minimal, SLIDELESS_THUMBNAILS: 'true' }).success).toBe(false);
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     const result = envSchema.safeParse({});
     expect(result.success).toBe(false);

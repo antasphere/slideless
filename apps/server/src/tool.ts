@@ -47,6 +47,9 @@ import { isViewerFormUploadPath, registerViewerFormRoutes } from './viewer/forms
 import { registerViewerAttachmentRoutes } from './viewer/attachments-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from './viewer/annotations-api.js';
 import { viewerRoutes } from './viewer/routes.js';
+import { ThumbnailService } from './thumbnails/service.js';
+import type { ThumbnailRenderer } from './thumbnails/renderer.js';
+import { thumbnailRendererFor } from './thumbnails/boot.js';
 
 /**
  * The Slideless tool definition: what the deck domain plugs into the chassis
@@ -71,6 +74,8 @@ export interface DeckDomain {
   collaborators: CollaboratorService;
   presentations: PresentationService;
   annotations: AnnotationService;
+  /** The still image of each deck version (PRDCT-2725). Test seams: `idle()`, `sweep()`. */
+  thumbnails: ThumbnailService;
 }
 
 /** The deck domain's test seams (`BootOverrides.tool`). */
@@ -81,6 +86,11 @@ export interface DeckOverrides {
    * runs the fixed default.
    */
   formsMailCooldownMs?: number;
+  /**
+   * The still-image renderer (PRDCT-2725): a fake that records its calls, or
+   * null for "capture off". Undefined = production (thumbnails/boot.ts).
+   */
+  thumbnailRenderer?: ThumbnailRenderer | null;
 }
 
 type DeckBucket = keyof typeof deckBuckets;
@@ -161,6 +171,22 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       const presentationService = new PresentationService(db);
       const annotationService = new AnnotationService(db);
 
+      // The still image of each deck version (PRDCT-2725): captured by a
+      // sandboxed headless Chromium in the processes that run jobs; null
+      // renderer = this process captures nothing (thumbnails/boot.ts).
+      const renderer =
+        overrides?.thumbnailRenderer !== undefined
+          ? overrides.thumbnailRenderer
+          : thumbnailRendererFor(env, logger);
+      const thumbnails = new ThumbnailService({
+        db,
+        storage,
+        logger,
+        renderer,
+        // An api-only replica captures nothing itself, but the worker does.
+        capturedElsewhere: env.SERVICE_ROLE === 'api' && env.SLIDELESS_THUMBNAILS === 'on'
+      });
+
       return {
         sharing,
         forms,
@@ -168,7 +194,8 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         formsNotifier,
         collaborators: collaboratorService,
         presentations: presentationService,
-        annotations: annotationService
+        annotations: annotationService,
+        thumbnails
       };
     },
 
@@ -179,7 +206,10 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         env,
         db,
         logger,
-        purgeFormUploads: async () => (await getTool()?.formUploads.purgeUnattached()) ?? 0
+        purgeFormUploads: async () => (await getTool()?.formUploads.purgeUnattached()) ?? 0,
+        sweepThumbnails: async () => {
+          await getTool()?.thumbnails.sweep();
+        }
       }),
 
     rateLimiters: deckBuckets,
@@ -284,6 +314,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           annotations: annotationService,
           forms: deps.forms,
           formUploads: deps.formUploads,
+          thumbnails: deps.thumbnails,
           fileService: ctx.fileService,
           storage: ctx.storage,
           registry,
