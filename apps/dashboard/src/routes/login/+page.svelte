@@ -139,8 +139,12 @@
   }
 
   async function afterSignIn() {
+    // Read the target BEFORE the refresh: the refresh re-runs this page's
+    // load, which sees the session and already navigates to `next` (the
+    // query then carries no `next`), so reading it afterwards answered `/`.
+    const target = safeNext(page.url.searchParams.get('next'));
     await refreshSession();
-    await goto(safeNext(page.url.searchParams.get('next')));
+    await goto(target);
   }
 
   async function signInPassword() {
