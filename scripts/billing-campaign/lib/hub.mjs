@@ -279,12 +279,12 @@ export class Hub {
   }
   /** One SQL statement on the hub's database; the rows as `|`-separated lines (psql -Atc). */
   async sql(statement) {
-    const { stdout } = await this.compose(['exec', '-T', 'hub-db', 'psql', '-U', 'antasphere', '-d', 'antasphere', '-v', 'ON_ERROR_STOP=1', '-Atc', statement]);
+    const { stdout } = await this.compose(['exec', '-T', 'hub-db', 'psql', '-U', 'antasphere', '-d', 'antasphere', '-q', '-v', 'ON_ERROR_STOP=1', '-Atc', statement]);
     return stdout.trim();
   }
   /** The same on Slideless's database. */
   async slSql(statement) {
-    const { stdout } = await this.compose(['exec', '-T', 'db', 'psql', '-U', 'slideless', '-d', 'slideless', '-v', 'ON_ERROR_STOP=1', '-Atc', statement]);
+    const { stdout } = await this.compose(['exec', '-T', 'db', 'psql', '-U', 'slideless', '-d', 'slideless', '-q', '-v', 'ON_ERROR_STOP=1', '-Atc', statement]);
     return stdout.trim();
   }
   async accountIdOf(org) {

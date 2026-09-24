@@ -53,10 +53,11 @@ export class Slideless {
     this.jar.clear();
     const initiate = await this.must(null, 'POST', '/auth/sign-in/oauth2', { providerId: 'antasphere', callbackURL: '/' }, 200, 'sign-in/oauth2');
     const authz = new URL(initiate.url);
-    const hop = await request(this.hub.target, { path: `${authz.pathname}${authz.search}`, jar: this.hub.jar, headers: { origin: this.cfg.hub.base } });
-    const location = hop.headers.location ?? '';
+    // A browser gets a 302; a caller accepting JSON gets 200 `{ redirect: true, url }`. Both are read.
+    const hop = await request(this.hub.target, { path: `${authz.pathname}${authz.search}`, jar: this.hub.jar, headers: { origin: this.cfg.hub.base, accept: 'text/html' } });
+    const location = hop.headers.location ?? (hop.json?.redirect ? hop.json.url : '') ?? '';
     if (!location.startsWith(`${this.cfg.sl.base}/api/v1/auth/oauth2/callback/antasphere?`) || !location.includes('code=')) {
-      throw new CampaignError('the hub did not redirect to the Slideless callback with a code', { status: hop.status, location });
+      throw new CampaignError('the hub did not redirect to the Slideless callback with a code', { status: hop.status, location: location.replace(/code=[^&]*/, 'code=…'), body: hop.text.slice(0, 300).replace(/code=[^&"]*/g, 'code=…') });
     }
     const cb = new URL(location);
     const done = await request(this.target, { path: `${cb.pathname}${cb.search}`, jar: this.jar });

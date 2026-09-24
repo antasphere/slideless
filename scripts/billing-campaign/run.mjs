@@ -139,5 +139,6 @@ async function main() {
 
 main().catch((err) => {
   console.error(`campaign: ${err?.stack ?? err}`);
+  if (err instanceof CampaignError && err.evidence) console.error(`campaign: evidence ${JSON.stringify(err.evidence).slice(0, 2000)}`);
   process.exit(2);
 });
