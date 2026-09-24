@@ -377,7 +377,11 @@ export const scenarios = [
       const pushed = await ctx.sl.push(folder, { key, ws, title: 'Campaign loop intake' });
       const deckId = pushed?.presentation?.id;
       if (!deckId) throw new CampaignError('the CLI push of the intake deck answered no presentation id', { keys: Object.keys(pushed ?? {}) });
-      const minted = await ctx.sl.mintLink(ws, deckId, { name: 'intake', key });
+      // A link remembers its viewer's one response per form by default, and a
+      // second submission through it EDITS that row (200) instead of creating
+      // one. The loop wants three separate responses, so the link is minted
+      // without remembering; the evidence says so.
+      const minted = await ctx.sl.mintLink(ws, deckId, { name: 'intake', key, remembersResponses: false });
       expectStatus(minted, 201, 'the share link mint on the intake deck');
       const secret = secretOf(minted.json);
       if (!secret) throw new CampaignError('the mint answer carries neither a secret nor a /v/ url', { tokenId: minted.json?.shareToken?.id, fields: Object.keys(minted.json?.shareToken ?? {}) });
@@ -439,6 +443,7 @@ export const scenarios = [
         workspaceId: ws,
         deckId,
         linkId,
+        linkRemembersResponses: minted.json?.shareToken?.remembersResponses ?? null,
         balanceAtStart: start.balance,
         balanceAfterDeckAndLink: afterSetup.balance,
         firstResponse: { status: first.status, ...firstFacts, ownerUserId: userId },

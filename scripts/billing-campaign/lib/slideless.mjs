@@ -98,9 +98,13 @@ export class Slideless {
   async presentations(ws) {
     return (await this.must(ws, 'GET', '/presentations')).presentations;
   }
-  /** Mint a share link on a deck; `password` makes it the pro feature's act. Answers the response. */
-  mintLink(ws, deckId, { name = 'campaign link', password, key } = {}) {
-    const body = { name, ...(password ? { password } : {}) };
+  /**
+   * Mint a share link on a deck; `password` makes it the pro feature's act;
+   * any other field (`remembersResponses`, `expiresAt`, …) goes into the body
+   * as the contract's `shareTokenCreate` takes it. Answers the response.
+   */
+  mintLink(ws, deckId, { name = 'campaign link', password, key, ...rest } = {}) {
+    const body = { name, ...(password ? { password } : {}), ...rest };
     if (key) return this.withKey(key, ws, 'POST', `/presentations/${deckId}/tokens`, body);
     return this.as(ws, 'POST', `/presentations/${deckId}/tokens`, body);
   }
