@@ -24,6 +24,7 @@
     writePendingNext
   } from '$lib/sso';
   import { safeNext } from '$lib/utils';
+  import { IDENTITY } from '@slideless/contract';
   import { t } from '$lib/i18n';
 
   let { data } = $props();
@@ -295,8 +296,15 @@
   <GateShell eyebrow={t('login.gateEyebrow')}>
     <Card.Root>
       <Card.Header>
-        <Card.Title>{t('login.welcome')}</Card.Title>
-        <Card.Description>{t('login.subtitle')}</Card.Description>
+        <!-- On cloud the first sign-in creates the person's account here, so
+             the card cannot greet them as a returning visitor. -->
+        {#if hasAntasphere}
+          <Card.Title>{t('login.cloudTitle', { name: IDENTITY.displayName })}</Card.Title>
+          <Card.Description>{t('login.cloudSubtitle', { name: IDENTITY.displayName })}</Card.Description>
+        {:else}
+          <Card.Title>{t('login.welcome')}</Card.Title>
+          <Card.Description>{t('login.subtitle')}</Card.Description>
+        {/if}
       </Card.Header>
       <Card.Content class="space-y-4">
         <!-- Quiet post-logout notice (?signed_out=1) — informational, never
