@@ -732,6 +732,15 @@ plan_refused() { # file key → asserts a 403 plan_required body on the key, fre
     "$file" >/dev/null || fail "not a 403 plan_required on $key with the upgrade link: $(cat "$file")"
 }
 # A password on a share link is pro: the free workspace is refused at the mint, on the three surfaces, and nothing is charged.
+# The legs before this one end on metered actions whose events the poster may
+# still be delivering: drain the usage queue before the baseline, or a late
+# event of the previous leg reads as one the refusals wrote.
+for i in $(seq 1 60); do
+  pending=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed', 'failed', 'cancelled')")
+  [ "$pending" = 0 ] && break
+  sleep 1
+done
+[ "$pending" = 0 ] || fail "the usage queue did not drain before the phase 3 leg ($pending pending)"
 before_locked=$(hubdb "SELECT count(*) FROM usage_events")
 status=$(locked session -b "$SL_JAR" -H "Origin: $SL")
 [ "$status" = 403 ] || fail "a locked link on the free plan (session) answered $status, expected 403: $(cat "$SCRATCH/locked-session.json")"
