@@ -354,6 +354,9 @@
                    full session theft, ADR 012 Surface C) and never
                    `allow-top-navigation*`. Deck HTML must never be rendered
                    into the dashboard DOM directly ({@html}, srcdoc, etc.). -->
+                <!-- an iframe is interactive content: the tabindex only ever
+                     takes it OUT of the tab order while the veil is on -->
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                 <iframe
                   src={preview.url}
                   title={t('deck.previewTitle')}
