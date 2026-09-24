@@ -119,8 +119,30 @@
   .on::after {
     transform: scaleX(1);
   }
+  /* the count as a small pill on the label's centre line: its own box with
+     a fixed height and line-height 1, so it sits level with the icon and the
+     label whatever the face's metrics */
   .count {
-    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--plate-strong);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
     color: var(--muted);
+    transition:
+      color var(--motion-duration) var(--motion-ease),
+      border-color var(--motion-duration) var(--motion-ease);
+  }
+  .on .count {
+    color: var(--ink);
+    border-color: color-mix(in oklab, var(--accent) 35%, var(--hairline));
   }
 </style>
