@@ -220,7 +220,7 @@
 >
   <PickList bind:value={addChoice} label={t('deckProjects.addToProjectTitle')} items={pickItems} />
   <Reveal open={addChoice === NEW_PROJECT}>
-    <div class="mt-4 space-y-4" data-testid="deck-new-project">
+    <div class="space-y-4 pt-4" data-testid="deck-new-project">
       <ProjectFields bind:name={newName} bind:description={newDescription} idPrefix="deck-new-project" />
     </div>
   </Reveal>
