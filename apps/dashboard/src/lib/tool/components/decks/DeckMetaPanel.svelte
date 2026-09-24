@@ -84,10 +84,10 @@
       <FormError message={agentDocError ? t('deck.agentDocLoadFailed', { error: agentDocError }) : null} />
       <Reveal open={agentDocOpen && !agentDocError}>
         {#if agentDocLoading}
-          <p class="mt-3 text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p class="pt-3 text-sm text-muted-foreground">{t('common.loading')}</p>
         {:else if agentDoc !== null}
           <!-- the briefing is user-authored: CodeBlock renders it as text -->
-          <div class="mt-3" in:appear>
+          <div class="pt-3" in:appear>
             <CodeBlock code={agentDoc} ariaLabel={t('deck.agentDocHeading')} class="[--code-max-h:24rem]" />
           </div>
         {/if}
