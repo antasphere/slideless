@@ -464,6 +464,24 @@ describe('an index read is an agent read, never a view', () => {
 
 // ═══ Discovery ═══════════════════════════════════════════════════════════════
 
+describe('no viewer refusal is indexable', () => {
+  it('the JSON refusals carry x-robots-tag: unknown, locked, wrong password (verifier round 2, F2)', async () => {
+    const unknown = await get('/v/not-a-real-secret-at-all-0000000000000000000000000000000000000000/');
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.get('content-type')).toContain('application/json');
+    expect(unknown.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+
+    const locked = await createToken(deckId, { name: 'robots-locked', password: 'open-sesame' });
+    const challenge = await get(`/v/${locked.secret}/`);
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get('content-type')).toContain('application/json');
+    expect(challenge.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    const wrong = await get(`/v/${locked.secret}/`, { 'x-viewer-password': 'not-it' });
+    expect(wrong.status).toBe(401);
+    expect(wrong.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+  });
+});
+
 describe('the PDF switch on the row itself', () => {
   it('the column defaults to FALSE and the counter to 0: a row written without them reads off (verifier round 1, mutation 4)', async () => {
     // The API always sends the schema default (true), so only a raw insert

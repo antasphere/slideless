@@ -1243,6 +1243,7 @@ popSave.addEventListener('click', function () {
   apiCreate(payload).then(function (created) {
     // The pin of the note just saved pulses once when it lands (renderPins).
     placedId = created && typeof created.id === 'string' ? created.id : null;
+    keptDraft = ''; // a saved note is never a draft
     closeComposer();
     try { window.getSelection().removeAllRanges(); } catch (e) {}
     return refresh();
@@ -1280,7 +1281,9 @@ doc.addEventListener('mousedown', function (e) {
   // A click on the deck closes an open composer (a highlight note in browse
   // mode lands here; a pin's click lands on the layer below): the typed draft
   // is kept for the next composer either way (PRDCT-2671).
-  if (pop.style.display === 'block') { keptDraft = popText.value; closeComposer(); }
+  // While a note is being saved the save owns the composer: a click then
+  // neither closes it nor keeps its text as a draft (verifier round 2, F1).
+  if (pop.style.display === 'block' && !isSaving) { keptDraft = popText.value; closeComposer(); }
 });
 
 // ---- Annotate mode (point / region pins) -------------------------------
@@ -1324,8 +1327,10 @@ layer.addEventListener('pointerdown', function (e) {
   // the way a click outside a dialog leaves it, and places nothing. The
   // next click places a new note as usual.
   if (pop.style.display === 'block') {
-    keptDraft = popText.value;
-    closeComposer();
+    if (!isSaving) {
+      keptDraft = popText.value;
+      closeComposer();
+    }
     e.preventDefault();
     return;
   }

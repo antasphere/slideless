@@ -27,6 +27,7 @@ describe('a click beside the open composer closes it instead of placing a note',
     expect(guard).toBeGreaterThan(-1);
     expect(drag).toBeGreaterThan(guard);
     const body = handler.slice(guard, drag);
+    expect(body).toContain('if (!isSaving) {');
     expect(body).toContain('keptDraft = popText.value;');
     expect(body).toContain('closeComposer();');
     expect(body).toContain('e.preventDefault();');
@@ -35,10 +36,17 @@ describe('a click beside the open composer closes it instead of placing a note',
 
   it('a click on the deck in browse mode keeps the draft too, and the next composer restores it', () => {
     expect(tag).toContain(
-      "if (pop.style.display === 'block') { keptDraft = popText.value; closeComposer(); }"
+      "if (pop.style.display === 'block' && !isSaving) { keptDraft = popText.value; closeComposer(); }"
     );
     const open = tag.slice(tag.indexOf('function openComposer()'), tag.indexOf('function closeComposer()'));
     expect(open).toContain('popText.value = keptDraft;');
     expect(open).toContain("keptDraft = '';");
+  });
+
+  it('a note being saved is never kept as a draft, and a saved one clears it (verifier round 2, F1)', () => {
+    const save = tag.slice(tag.indexOf("popSave.addEventListener('click'"));
+    const success = save.slice(save.indexOf('apiCreate(payload).then('), save.indexOf('.catch('));
+    expect(success).toContain("keptDraft = '';");
+    expect(success.indexOf("keptDraft = '';")).toBeLessThan(success.indexOf('closeComposer();'));
   });
 });
