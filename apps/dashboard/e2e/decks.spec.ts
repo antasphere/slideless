@@ -142,6 +142,12 @@ test('decks: list, sandboxed preview, share links, collaborators, XSS-escaped an
     // PRDCT-2687: the preview is a picture, the page scrolls over it; its one
     // action opens the deck itself.
     expect(await iframe.getAttribute('tabindex')).toBe('-1');
+    // One click on the veil makes it live in place; Lock puts the veil back.
+    await page.getByTestId('deck-preview-veil').click();
+    await expect(iframe).not.toHaveAttribute('tabindex');
+    await page.getByTestId('deck-preview-lock').click();
+    await expect(iframe).toHaveAttribute('tabindex', '-1');
+    await expect(page.getByTestId('deck-preview-veil')).toBeVisible();
     await expect(page.getByTestId('deck-preview-open')).toHaveAttribute('href', `/decks/${deckId}/present`);
   });
 

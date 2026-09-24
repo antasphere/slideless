@@ -13,6 +13,7 @@
   import AppWindow from '@lucide/svelte/icons/app-window';
   import FileText from '@lucide/svelte/icons/file-text';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+  import Lock from '@lucide/svelte/icons/lock';
   import Eye from '@lucide/svelte/icons/eye';
   import Link2 from '@lucide/svelte/icons/link-2';
   import Users from '@lucide/svelte/icons/users';
@@ -124,6 +125,26 @@
   }
 
   onDestroy(() => preview.destroy());
+
+  // The veil over the preview (PRDCT-2687): off until the reader clicks it,
+  // back on when the frame leaves the view, the tab changes or the version
+  // in the frame changes, so a live deck never catches the page's scroll by
+  // surprise.
+  let previewLive = $state(false);
+  let previewBox = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (!previewBox || !previewLive || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.every((e) => !e.isIntersecting)) previewLive = false;
+    });
+    io.observe(previewBox);
+    return () => io.disconnect();
+  });
+  $effect(() => {
+    void preview.key;
+    void activeTab;
+    previewLive = false;
+  });
 
   // ── Derived display state ──────────────────────────────────────────────
   const canManageCollaborators = $derived(
@@ -311,10 +332,21 @@
               <p class="text-sm text-muted-foreground">{t('common.loading')}</p>
             </div>
           {:else}
-            <!-- The preview is a picture (PRDCT-2687): it takes no wheel, no
-               touch and no focus, so the page scrolls over it on a desk and
-               on a phone alike; the one action on it opens the deck itself. -->
-            <div class="relative">
+            <!-- The preview starts as a picture (PRDCT-2687): a veil over it
+               takes the wheel and the touch, so the page scrolls over it on a
+               desk and on a phone alike. A click on the veil lifts it and the
+               deck becomes live in place; Esc, Lock or scrolling it out of
+               view puts the veil back. Open the deck leads to the deck page. -->
+            <div
+              class="relative"
+              data-testid="deck-preview-box"
+              data-live={previewLive ? '' : undefined}
+              bind:this={previewBox}
+              onkeydown={(e) => {
+                if (e.key === 'Escape' && previewLive) previewLive = false;
+              }}
+              role="presentation"
+            >
               {#key preview.key}
                 <!-- SECURITY (ADR 012 Surface D): user-authored deck HTML renders
                    ONLY inside this sandboxed iframe. The sandbox attribute must
@@ -328,12 +360,39 @@
                   sandbox={PREVIEW_SANDBOX}
                   referrerpolicy="no-referrer"
                   allow="fullscreen"
-                  tabindex="-1"
-                  aria-hidden="true"
-                  class="pointer-events-none h-[320px] w-full rounded-[8px] border border-[var(--hairline)] bg-background md:h-[480px]"
+                  tabindex={previewLive ? undefined : -1}
+                  aria-hidden={previewLive ? undefined : 'true'}
+                  class="h-[320px] w-full rounded-[8px] border border-[var(--hairline)] bg-background md:h-[480px] {previewLive
+                    ? ''
+                    : 'pointer-events-none'}"
                   data-testid="deck-preview"
                 ></iframe>
               {/key}
+              {#if !previewLive}
+                <button
+                  type="button"
+                  class="veil"
+                  onclick={() => (previewLive = true)}
+                  data-testid="deck-preview-veil"
+                  aria-label={t('deck.previewVeilAria')}
+                >
+                  <span class="veil-cue">
+                    <span class="veil-ring" aria-hidden="true"></span>
+                    <MousePointerClick class="h-4 w-4" />
+                    {t('deck.previewVeil')}
+                  </span>
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  class="chip preview-lock"
+                  onclick={() => (previewLive = false)}
+                  data-testid="deck-preview-lock"
+                >
+                  <Lock class="h-3.5 w-3.5" />
+                  {t('deck.previewLock')}
+                </button>
+              {/if}
               <a href={deckMasterPath(deck.id)} class="chip preview-open" data-testid="deck-preview-open">
                 <Presentation class="h-4 w-4" />
                 {t('deck.previewOpenLive')}
@@ -506,5 +565,78 @@
     position: absolute;
     right: 12px;
     bottom: 12px;
+    z-index: 2;
+  }
+  .preview-lock {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 2;
+  }
+  /* the veil: a breath of the page's ground over the deck, the deck still
+     readable under it, and one cue in the middle that breathes */
+  .veil {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--ground) 18%, transparent);
+    cursor: pointer;
+    transition: background-color var(--motion-duration) var(--motion-ease);
+  }
+  .veil:hover {
+    background: color-mix(in oklab, var(--ground) 32%, transparent);
+  }
+  .veil:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .veil-cue {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--control-h-sm);
+    padding: 0 14px;
+    border-radius: 999px;
+    background: var(--plate-strong);
+    border: 1px solid var(--plate-edge);
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
+    color: var(--ink-soft);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
+  .veil:hover .veil-cue {
+    transform: translateY(-1px);
+    color: var(--ink);
+  }
+  .veil-ring {
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 1px solid var(--accent);
+    opacity: 0;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .veil-ring {
+      animation: veil-breathe 2400ms var(--motion-ease) infinite;
+    }
+  }
+  @keyframes veil-breathe {
+    0% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(1.18, 1.45);
+    }
   }
 </style>
