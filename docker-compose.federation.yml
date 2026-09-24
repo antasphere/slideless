@@ -51,6 +51,7 @@
 #   FEDERATION_MAIL_PORT Mailpit UI host port       8030
 #   FEDERATION_HUB_IMAGE hub image tag              antasphere-hub:federation-dev
 #   FEDERATION_SL_IMAGE  Slideless image tag        slideless:federation-dev
+#   STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET / STRIPE_TEST_CLOCKS   the hub's Stripe sandbox (phase 3), empty = no provider
 # (the drill overlay adds FEDERATION_HOP_PORT and FEDERATION_SUBNET_PREFIX).
 # The ports are also the *.localhost hostnames' ports, so PUBLIC_BASE_URL,
 # HUB_ISSUER_URL and the TOOL_REGISTRY entry follow them.
@@ -80,6 +81,10 @@ services:
       - SMTP_URL=smtp://mailpit:1025
       - EMAIL_FROM=Antasphere Federation Dev <dev@antasphere.local>
       - LOG_LEVEL=info
+      # Phase 3 of the billing rail (hub ADR 023): the Stripe sandbox variables, empty by default (the boolean false: a blank boolean is refused by the hub) so the drill runs unchanged without them.
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_TEST_CLOCKS=${STRIPE_TEST_CLOCKS:-false}
       # Seeds the Slideless cloud tool client at boot (idempotent upsert).
       # Dev twin of the production recipe in internal/federation.md.
       - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/mcp","redirectUris":["http://slideless.localhost:${FEDERATION_SL_PORT:-3310}/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001"}]'
