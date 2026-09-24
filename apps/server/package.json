@@ -36,6 +36,7 @@
     "jose": "^6.2.3",
     "pg": "^8.22.0",
     "pino": "^9.7.0",
+    "playwright-core": "1.61.1",
     "rate-limiter-flexible": "^7.4.0",
     "ulid": "^3.0.2",
     "yaml": "^2.9.0",
@@ -43,8 +44,8 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
-    "@better-auth/cli": "1.4.21",
     "@antasphere/slideless": "workspace:*",
+    "@better-auth/cli": "1.4.21",
     "@testcontainers/postgresql": "^11.0.0",
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.15.0",
