@@ -17,6 +17,9 @@
   import FormError from '$lib/components/shared/FormError.svelte';
   import DeckSectionHeading from '$lib/tool/components/decks/DeckSectionHeading.svelte';
   import PickList from './PickList.svelte';
+  import ProjectFields from '$lib/components/projects/ProjectFields.svelte';
+  import { projects } from '$lib/projects/client';
+  import { Reveal } from '$lib/components/ui/reveal/index.js';
   import { appear } from '$lib/components/ui/reveal/index.js';
   import Plus from '@lucide/svelte/icons/plus';
   import Folder from '@lucide/svelte/icons/folder';
@@ -72,18 +75,39 @@
   // add the deck to one
   const shown = $derived(loaded);
 
+  // The dialog offers the reader's projects the deck is not in yet, and a new
+  // project made on the spot: its creator manages it, so the link that
+  // follows is allowed by construction.
+  const NEW_PROJECT = '__new__';
   let showAddDialog = $state(false);
   let addChoice = $state<string | null>(null);
   let adding = $state(false);
+  let newName = $state('');
+  let newDescription = $state('');
+  const pickItems = $derived([
+    ...addable.map((p) => ({ id: p.id, title: p.name, detail: p.description ?? undefined })),
+    { id: NEW_PROJECT, title: t('deckProjects.newProject'), detail: t('deckProjects.newProjectDetail') }
+  ]);
   function openAddDialog() {
-    addChoice = addable.length === 1 ? addable[0].id : null;
+    addChoice = addable.length === 1 ? addable[0].id : addable.length === 0 ? NEW_PROJECT : null;
+    newName = '';
+    newDescription = '';
     showAddDialog = true;
   }
   async function add() {
     if (!addChoice || adding) return;
+    if (addChoice === NEW_PROJECT && !newName.trim()) return;
     adding = true;
     try {
-      await deckProjects.link(deckId, addChoice);
+      let projectId = addChoice;
+      if (addChoice === NEW_PROJECT) {
+        const created = await projects.create({
+          name: newName.trim(),
+          ...(newDescription.trim() ? { description: newDescription.trim() } : {})
+        });
+        projectId = created.id;
+      }
+      await deckProjects.link(deckId, projectId);
       showAddDialog = false;
       toast.success(t('deckProjects.linked'));
       await load();
@@ -116,7 +140,7 @@
 </script>
 
 {#snippet addButton()}
-  {#if addable.length}
+  {#if canManage && loaded && !error}
     <Button size="sm" class="h-8 gap-1.5" onclick={openAddDialog} data-testid="deck-add-to-project">
       <Plus class="h-4 w-4" />
       {t('deckProjects.addToProject')}
@@ -143,11 +167,8 @@
             <div class="empty-words">
               <p class="empty-title">{t('deckProjects.panelEmpty')}</p>
               <p class="empty-hint">
-                {#if addable.length}
+                {#if canManage}
                   {t('deckProjects.emptyHintAdd')}
-                {:else if canManage}
-                  {t('deckProjects.emptyHintCreate')}
-                  <a href="/projects" class="empty-link">{t('deckProjects.emptyGoProjects')}</a>
                 {:else}
                   {t('deckProjects.emptyHintRead')}
                 {/if}
@@ -197,11 +218,12 @@
   loading={adding}
   submitLabel={t('deckProjects.addSubmit')}
 >
-  <PickList
-    bind:value={addChoice}
-    label={t('deckProjects.addToProjectTitle')}
-    items={addable.map((p) => ({ id: p.id, title: p.name, detail: p.description ?? undefined }))}
-  />
+  <PickList bind:value={addChoice} label={t('deckProjects.addToProjectTitle')} items={pickItems} />
+  <Reveal open={addChoice === NEW_PROJECT}>
+    <div class="mt-4 space-y-4" data-testid="deck-new-project">
+      <ProjectFields bind:name={newName} bind:description={newDescription} idPrefix="deck-new-project" />
+    </div>
+  </Reveal>
 </FormDialog>
 
 <ConfirmDialog
@@ -250,11 +272,6 @@
     font-size: 13px;
     line-height: 1.45;
     color: var(--muted);
-  }
-  .empty-link {
-    color: var(--ink);
-    text-decoration: underline;
-    text-underline-offset: 3px;
   }
   .rows {
     display: flex;

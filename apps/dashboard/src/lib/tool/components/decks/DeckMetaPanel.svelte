@@ -7,6 +7,8 @@
   import DeckSectionHeading from './DeckSectionHeading.svelte';
   import Bot from '@lucide/svelte/icons/bot';
   import Tags from '@lucide/svelte/icons/tags';
+  import Copy from '@lucide/svelte/icons/copy';
+  import { copyText } from '$lib/clipboard';
   import { api, errorMessage } from '$lib/api';
   import { t } from '$lib/i18n';
   import type { Presentation } from '@slideless/contract';
@@ -48,6 +50,8 @@
       agentDocLoading = false;
     }
   }
+
+  const metaCommand = $derived(`slideless meta ${deck.id} --set client=Acme`);
 
   function displayValue(value: unknown): string {
     return typeof value === 'string' ? value : JSON.stringify(value);
@@ -101,9 +105,20 @@
           </h4>
           {#if !metadataEntries.length}
             <p class="hint">{t('deck.aboutMetadataNone')}</p>
-            <code class="cmd" title="slideless meta {deck.id} --set client=Acme"
-              >slideless meta {deck.id} --set client=Acme</code
-            >
+            <div class="cmd-row">
+              <code class="cmd" title={metaCommand}>{metaCommand}</code>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-7 flex-none"
+                aria-label={t('deck.aboutCopyCommand')}
+                title={t('deck.aboutCopyCommand')}
+                onclick={() => void copyText(metaCommand)}
+                data-testid="deck-meta-copy"
+              >
+                <Copy class="size-3.5" />
+              </Button>
+            </div>
           {/if}
         </div>
       </div>
@@ -173,9 +188,15 @@
     line-height: 1.45;
     color: var(--muted);
   }
-  .cmd {
-    align-self: flex-start;
+  .cmd-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
     margin-top: 4px;
+  }
+  .cmd {
+    min-width: 0;
     padding: 2px 8px;
     border-radius: 7px;
     border: 1px solid var(--hairline);
