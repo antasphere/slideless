@@ -94,17 +94,21 @@ export class Relay {
   }
 
   /**
-   * Deliver one record to the hub. `resign` forces a fresh signature (a late
-   * delivery; also used when the original is past the tolerance), `tamper`
-   * sends a signature that does not verify, `body` replaces the bytes (a
-   * body that differs from what was signed). Answers `{ status, answer }` and
-   * records the outcome on the record.
+   * Deliver one record to the hub. `resign` left undefined re-signs the body
+   * only when the original signature is near the door's tolerance (the way
+   * Stripe signs a retry); `true` forces a fresh signature; `false` sends the
+   * ORIGINAL signature whatever its age (the stale-signature proof). `tamper`
+   * sends a signature that does not verify, `body` replaces the bytes (a body
+   * that differs from what was signed; with `resign: false` the original
+   * signature no longer covers it). Answers `{ status, answer }` and records
+   * the outcome on the record.
    */
-  async deliver(record, { resign = false, tamper = false, body } = {}) {
+  async deliver(record, { resign, tamper = false, body } = {}) {
     const bytes = body ?? record.body;
     const age = Math.floor(Date.now() / 1000) - Number((record.signature.match(/t=(\d+)/) ?? [])[1] ?? 0);
     let signature = record.signature;
-    if (resign || body !== undefined || age > SIGNATURE_TOLERANCE_S - 30) signature = sign(bytes);
+    const fresh = resign === true || (resign === undefined && (body !== undefined || age > SIGNATURE_TOLERANCE_S - 30));
+    if (fresh) signature = sign(bytes);
     if (tamper) signature = `t=${Math.floor(Date.now() / 1000)},v1=${'0'.repeat(64)}`;
     const res = await request(this.hub, {
       method: 'POST',
