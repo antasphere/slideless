@@ -310,13 +310,25 @@ export const scenarios = [
     }
   },
   {
-    name: 'an expired saved card: the first charge is declined and parked for one retry, the retry declines and switches it off',
+    name: 'an expired card cannot even be saved; a saved card that declines is parked for one retry, the retry declines and switches it off',
     path: 'Stripe API (test payment method) + hub routes',
     async run(ctx) {
       const orgB = need(ctx, 'orgB', 'the two organizations');
       const earlierRuns = need(ctx, 'runIds', '3-D Secure required off session');
       const s = state(ctx);
-      const pmId = await swapCard(ctx, 'pm_card_chargeDeclinedExpiredCard');
+      const customerB = need(ctx, 'customerB', 'a card saved through the setup session');
+      // Stripe checks a card when it is attached, so an expired card never
+      // becomes a card on file: the sandbox refuses pm_card_chargeDeclinedExpiredCard
+      // at the attach. That refusal is the first fact; the decline path is then
+      // driven with the card Stripe attaches and declines on every charge.
+      let expiredRefusal = null;
+      try {
+        await ctx.stripe.attachTestCard(customerB, 'pm_card_chargeDeclinedExpiredCard');
+      } catch (err) {
+        expiredRefusal = { status: err.status ?? null, code: err.code ?? null, declineCode: err.declineCode ?? null, message: err.message };
+      }
+      if (!expiredRefusal) throw new CampaignError('Stripe attached the expired test card: the scenario expected the attach to be refused', { customerB });
+      const pmId = await swapCard(ctx, 'pm_card_chargeCustomerFail');
       await enable(ctx, orgB, { enabled: true });
       const t0 = Date.now();
       const row = await debit(ctx, orgB, 5);
@@ -335,7 +347,7 @@ export const scenarios = [
           runs: await ctx.hub.runs(orgB)
         });
       }
-      if (parked.run.reason !== 'expired_card') throw new CampaignError('the parked run does not say expired_card', { run: parked.run });
+      if (!parked.run.reason) throw new CampaignError('the parked run carries no reason', { run: parked.run });
       const retryAtMs = pgTime(parked.run.retryAt);
       const hoursAway = (retryAtMs - Date.now()) / HOUR_MS;
       if (!Number.isFinite(hoursAway) || hoursAway < 23 || hoursAway > 25) {
@@ -353,17 +365,19 @@ export const scenarios = [
       if (!off) throw new CampaignError('the declined retry did not switch auto-recharge off with declined', { autoRecharge: (await ctx.hub.account(orgB)).autoRecharge, runs: await ctx.hub.runs(orgB) });
       const runs = await ctx.hub.runs(orgB);
       const run = runs.find((r) => r.id === parked.run.id);
-      if (run?.state !== 'failed' || run?.reason !== 'expired_card') throw new CampaignError('the parked run did not end failed with expired_card', { run, runs });
-      await noPurchase(ctx, orgB, 'after two declines of an expired card');
+      if (run?.state !== 'failed' || !run?.reason) throw new CampaignError('the parked run did not end failed with a reason', { run, runs });
+      await noPurchase(ctx, orgB, 'after two declines of the saved card');
       const offSubject = `Auto-recharge is off for ${ORG_B_NAME}`;
       const offMail = await ctx.mail.waitFor({ to: EMAIL_B, subject: offSubject, after: t0 }, 60_000);
       if (!offMail) throw new CampaignError('no switch-off mail to org B after the retry', { subject: offSubject, after: t0 });
       const mails = await ctx.mail.find({ to: EMAIL_B, subject: 'Auto-recharge', after: t0 });
-      if (mails.length !== 2) throw new CampaignError('org B did not receive exactly two auto-recharge mails for the expired card', { subjects: mails.map((m) => m.Subject) });
+      if (mails.length !== 2) throw new CampaignError('org B did not receive exactly two auto-recharge mails for the declining card', { subjects: mails.map((m) => m.Subject) });
       s.runIds = runs.map((r) => r.id);
       return {
         org: orgB,
+        expiredCardAttach: expiredRefusal,
         paymentMethod: pmId,
+        runReason: run.reason,
         eventId: row.id,
         runId: run.id,
         retryAt: parked.run.retryAt,

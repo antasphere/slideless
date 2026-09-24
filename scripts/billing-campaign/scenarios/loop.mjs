@@ -258,8 +258,10 @@ export const scenarios = [
       const d = err.details ?? {};
       const refusal = { status: refused.status, code: err.code, credits: d.credits, balance: d.balance, topUpUrlStartsRight: typeof d.topUpUrl === 'string' && d.topUpUrl.startsWith(`${ctx.config.hub.base}/billing/top-up?org=${org}`) };
       if (refused.status !== 402 || err.code !== 'entitlement_denied') throw new CampaignError('the third upload was not refused 402 entitlement_denied', { ...refusal, body: refused.json ?? refused.text.slice(0, 400) });
-      if (d.credits !== 5 || d.balance !== 2) throw new CampaignError('the refusal does not carry the price 5 and the balance 2', refusal);
+      if (d.balance !== 2) throw new CampaignError('the refusal does not carry the balance 2', refusal);
       if (!refusal.topUpUrlStartsRight) throw new CampaignError('the refusal top-up URL is not the hub top-up page of the organization', { ...refusal, topUpUrl: d.topUpUrl });
+      // The price the refusal names is judged by the next scenario, on its own row.
+      s.refusal = refusal;
       await ctx.sl.waitUsageDrained();
       const after = await ctx.hub.account(org);
       const ledgerAfter = (await ctx.hub.ledger(org, 'debit')).filter((e) => !beforeUploads.has(e.id));
@@ -267,6 +269,7 @@ export const scenarios = [
 
       s.deckId = deckId;
       s.refusedBytes = refusedBytes;
+      s.uploadDebits = uploadDebits;
       return {
         org,
         workspaceId: ws,
@@ -284,6 +287,21 @@ export const scenarios = [
         cacheHandling: `the refused upload is the same size as the accepted ones and was sent 31 s after the last one (waited ${Math.round(cacheWaitMs / 1000)} s)`,
         refusal
       };
+    }
+  },
+  {
+    name: 'the refusal names the price the same upload was charged',
+    path: 'Slideless + hub',
+    async run(ctx) {
+      const s = state(ctx, 'refusal', 'uploadDebits');
+      // The two accepted uploads of the same size were charged 5 each on the
+      // ledger; the refusal of the third must name that price, not the price
+      // of the multipart request's Content-Length rounded up to the next MiB.
+      const charged = s.uploadDebits.map((d) => -d.amount);
+      const facts = { refusalCredits: s.refusal.credits, chargedForTheSameUpload: charged, uploadBytes: MIB };
+      if (!charged.every((c) => c === 5)) throw new CampaignError('the accepted uploads were not charged 5 each', facts);
+      if (s.refusal.credits !== 5) throw new CampaignError(`the refusal says the upload costs ${s.refusal.credits} credits, the ledger charged 5 for the same upload`, facts);
+      return facts;
     }
   },
   {

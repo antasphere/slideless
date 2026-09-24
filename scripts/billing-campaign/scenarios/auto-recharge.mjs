@@ -347,7 +347,8 @@ export const scenarios = [
       if (!Number.isFinite(hours) || hours < 23 || hours > 25) throw new CampaignError('the retry is not set between 23 and 25 hours from now', { retryAt: run.retryAt, hours });
       const mail = await ctx.mail.waitFor({ to: ORGS.decline.email, subject: 'Auto-recharge', after: declineT0 }, 60_000);
       if (!mail) throw new CampaignError('no auto-recharge mail reached the billing email', { to: ORGS.decline.email });
-      if (!/retry|try again/i.test(mail.Text ?? '')) throw new CampaignError('the auto-recharge mail does not name a retry', { mailId: mail.ID, subject: mail.Subject, text: (mail.Text ?? '').slice(0, 400) });
+      // The hub's words: "one more try tomorrow" in the subject, "We try once more on <date>" in the text.
+      if (!/one more try|try once more|retry|try again/i.test(`${mail.Subject}\n${mail.Text ?? ''}`)) throw new CampaignError('the auto-recharge mail does not name a retry', { mailId: mail.ID, subject: mail.Subject, text: (mail.Text ?? '').slice(0, 400) });
       const purchases = await ctx.hub.ledger(org, 'purchase');
       if (purchases.length) throw new CampaignError('the ledger holds a purchase although the card was declined', { purchases });
       let intentStatus = null;
