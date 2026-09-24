@@ -75,6 +75,19 @@ describe('refusalCard', () => {
     expect(refusalCard(new PlatformApiError(413, 'entitlement_denied', 'File exceeds 100 MB'))).toBeNull();
   });
 
+  it('413 entitlement_denied with the price and the balance but no link (an unpriceable quantity, PRDCT-2677) is no card', () => {
+    expect(
+      refusalCard(
+        new PlatformApiError(
+          413,
+          'entitlement_denied',
+          'This quantity cannot be priced (9007199254740991 credits or more, the organization holds 3); nothing was charged',
+          { credits: 9007199254740991, balance: 3 }
+        )
+      )
+    ).toBeNull();
+  });
+
   it('a 404 is no card', () => {
     expect(refusalCard(new PlatformApiError(404, 'not_found', 'Not found'))).toBeNull();
   });

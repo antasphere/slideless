@@ -1483,3 +1483,20 @@ migrate` on an unchanged schema):
   what bounds one holder. The wall is per address, cloud only (`hubSso` in the slot's context is
   the chassis' cloud-presence switch), and its test spends ONE address on a fresh link, then proves
   a second address on the same link still passes.
+
+## The hub owns the wire (PRDCT-2677, 2026-09-23)
+
+- **A copy labelled "mirrored verbatim" is a promise nothing keeps.** The chassis's copy of the
+  hub's check answer had drifted within a day of the hub's change: the hub added a third refusal
+  reason (`unpriceable`), the copy knew two and carried a `.min(0)` the hub never had. The only
+  guard was a unit test that read the hub's source text when the two checkouts sat side by side
+  on one machine, and skipped everywhere else, CI included. And `HubCreditCheck` parses the
+  answer strictly, so an answer it did not know read as a hub OUTAGE: fail open for fifteen
+  minutes, then 403 `hub_unavailable`, for what the hub meant as a plain refusal. The rule: the
+  owner publishes its definitions as one generated artefact (the hub's wire snapshot: JSON Schema
+  of the six shapes, the constants, the occurrence table, a probe table the refinements show in),
+  the follower rebuilds the same artefact from its copies with the owner's builder copied
+  verbatim and compares STRUCTURALLY, in CI, against the owner's integration branch
+  (`wire:check`, the `hub-wire` job). Never compare source text, and never let a strict parse of
+  the peer's answer decide that the peer is down: the fake hub now sends every answer through
+  the chassis's own schema, so a fake that drifts throws in the test that used it.

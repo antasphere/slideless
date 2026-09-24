@@ -251,7 +251,7 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   never the local id. **The event never names the tool (PRDCT-2629)**: the hub takes the tool
   from the machine token's registry entry (`slideless-cloud`, not `IDENTITY.slug`) and refuses a
   body slug that differs as `tool_mismatch`, so `UsageEvent` has no slug field and the fake hub
-  (`testing/fake-hub.ts`) judges every element with the hub's schema mirrored verbatim
+  (`testing/fake-hub.ts`) judges every element with the hub's schema (the contract's copy, checked by the wire check)
   (`usageEventSchema`) and refuses a stamped body exactly as the real hub does. The poster
   (`entitlements/poster.ts`, cloud only) posts whole batches to `POST <hub>/api/v1/usage/events`
   with a `client_credentials` token (`scope=usage:write`, `resource=<hub>/mcp`) minted
@@ -267,8 +267,8 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   and per-batch outcomes are on `/metrics` (`usage_poster_events_total`, `usage_poster_batches_total`).
   A mint the hub refuses as a configuration error (`invalid_client` and its kin) is held five
   minutes, a transient failure five seconds (PRDCT-2637: the hub's token wall is the one
-  people's sign-ins share). The plan read (`GET /usage/entitlements`, the hub's answer mirrored
-  verbatim, a boolean limit = unlimited or nothing, PRDCT-2636) is OFF the request path
+  people's sign-ins share). The plan read (`GET /usage/entitlements`, the hub's answer as the
+  contract copies it, a boolean limit = unlimited or nothing, PRDCT-2636) is OFF the request path
   (PRDCT-2633): a cached plan is served at once and refreshed behind the request, a cold account
   waits at most 1.5 s, and the last known plan is kept fifteen minutes on failure, then free.
   **The plan gate sees a declared size before any body limit refuses it (PRDCT-2632)**: the
@@ -285,11 +285,18 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   construction, credits are a no-op; the seed values are data to review before phase 2. The
   federation drill's seventh leg (`scripts/federation-drill.sh`, Phase 8) is the regression test
   of the pair: one metered action per surface read back from the hub's `usage_events`.
+- **The hub owns the wire, the chassis's copies are checked against it (PRDCT-2677)**: the shapes the
+  tools exchange with the hub live in the hub's contract and are published as its wire snapshot
+  (`packages/contract/wire/hub-tool-messages.json` of the hub); `packages/chassis-contract/src/entitlements.ts`
+  mirrors them, and `pnpm --filter @antasphere/chassis-contract wire:check` (the `hub-wire` CI job,
+  against the hub's `dev`) fails on any difference. The check's `unpriceable` reason is a 413
+  `entitlement_denied` refusal with the price and the balance and no top-up link (a link would draw
+  the dashboard's and the CLI's top-up card), never an outage.
 - **The chassis asks the hub before a priced action, and refuses on its answer (PRDCT-2664, phase 2
   of the billing rail, spec §7 steps 3 and 4)**: on a metered account (cloud, an `accountRef`) the
   gate's third step is `HubCreditCheck` (`packages/chassis-server/src/entitlements/check.ts`), one
   `POST <hub>/api/v1/usage/check` `{ accountRef, actionKey, quantity, unit }` with the machine token,
-  the answer mirrored verbatim (`usageCheckSchema`). The LOCAL credit service (`AllowAllEntitlements`,
+  the answer read with the contract's copy (`usageCheckSchema`). The LOCAL credit service (`AllowAllEntitlements`,
   the env cap) is never consulted on a metered account: the plan limit is its cap there. A denial is
   **402 `entitlement_denied`** with `details: { credits, balance, topUpUrl }`, read straight off the
   hub's answer; `account_suspended` from the check is 403 `account_suspended` (the live gate's code).
@@ -349,9 +356,8 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   audience (verifier round 5), and never install it on oss, where the gate asks nothing.
 - **The poster never posts what the hub would refuse on its date (PRDCT-2644)**: the hub's window
   (`USAGE_EVENT_MAX_PAST_MS` seven days, `USAGE_EVENT_MAX_FUTURE_MS` five minutes,
-  `usageEventOccurrenceIssue`, mirrored with the hub's names and messages in `chassis-contract`,
-  pinned by `usage-window.test.ts` which also reads the hub's file when the checkout is beside this
-  one) is judged before posting; an event outside it is named in the batch outcome, sent to
+  `usageEventOccurrenceIssue`, copied with the hub's names and messages in `chassis-contract`,
+  pinned by `usage-window.test.ts` and checked against the hub by the wire check) is judged before posting; an event outside it is named in the batch outcome, sent to
   `usage-events-held` by the usage worker with the `occurred_at_window:<id>` marker key (so the held
   worker never counts or logs it as a retry-budget hold), and re-driven after the hold forever: a
   future-dated event lands once its time comes, a stale one waits for an operator.

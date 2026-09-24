@@ -1149,3 +1149,20 @@ path (`coldWaitMs`, `settle()`); the held queue (`USAGE_HELD_QUEUE`, `usageSendO
 `UsageRetry.heldDelaySeconds`) and the counters boot registers from the jobs and the poster; the
 two mint holds; the hub's entitlements answer mirrored verbatim. A template tool's `bodyLimit`
 slot must return `BodyCap` objects, not hono middlewares.
+
+## 30. The hub–tool wire check is chassis code to re-copy (PRDCT-2677, for PRDCT-2667)
+
+The chassis's copies of the hub's messages drifted within a day (the check's third reason,
+`unpriceable`, read as an outage). The guard is now structural and in CI, and the tool template's
+re-copy (PRDCT-2667) must carry all of it: `packages/chassis-contract/src/wire.ts` (the hub's
+`buildWireSnapshot` copied verbatim, `CHASSIS_WIRE_DEFINITIONS`, `wireInputsOf`,
+`compareWireSnapshots`), `packages/chassis-contract/scripts/hub-wire-check.mjs` and the
+`wire:check` script, `packages/chassis-contract/test/hub-wire.test.ts`, the copies in
+`entitlements.ts` made identical in effect (three check reasons, no lower bound on the check's
+`quantity`/`credits`, the batch schema and cap, the closed reject reasons, the ingest counts
+required, `upgradeUrl` required, `USAGE_ROUTE_ERRORS`), the `unpriceable` 413 in the gate and the
+check, the fake hub passing every usage answer through the chassis's schemas, and the `hub-wire`
+job in `.github/workflows/ci.yml`. The job needs the two App secrets in the tool's repository
+(`FEDERATION_DRILL_APP_ID`, `FEDERATION_DRILL_APP_KEY`; the App must be installed with
+contents:read on `antasphere/hub`), or it fails at the token mint. The template's
+`usage-window.test.ts` cross-read of the hub's source text goes (the wire check replaces it).
