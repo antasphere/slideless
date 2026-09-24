@@ -121,15 +121,20 @@ export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mod
       return { outcome: 'declined', url: page.url(), text, shots };
     }
     let done = false;
+    let challengeShown = false;
     for (let attempt = 1; attempt <= 3 && !done; attempt += 1) {
       await pay.scrollIntoViewIfNeeded().catch(() => {});
-      await pay.click();
+      // A Pay button already busy ("Processing", disabled) refuses the click; that is not a failure of the page.
+      await pay.click({ timeout: 10_000 }).catch(() => {});
       if (expect === '3ds') {
-        // Stripe's test challenge is an iframe with a Complete button.
+        // Stripe's test challenge is an iframe with a Complete button, shown
+        // after a card-brand splash: wait for the button to be visible.
         const frame = await waitForChallengeFrame(page, 30_000);
         if (frame) {
-          await shot(`challenge-${attempt}`);
+          challengeShown = true;
           const complete = frame.getByRole('button', { name: /complete|authorize|confirm/i }).first();
+          await complete.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {});
+          await shot(`challenge-${attempt}`);
           await complete.click({ timeout: 15_000 }).catch(() => {});
         }
       }
@@ -145,7 +150,7 @@ export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mod
     }
     if (!done) throw new Error(`the page did not reach ${returned} after three attempts and showed no error`);
     await shot('done');
-    return { outcome: 'paid', url: page.url(), text: '', shots };
+    return { outcome: 'paid', url: page.url(), text: '', shots, challengeShown };
   } catch (err) {
     await shot('failed');
     throw new Error(`Checkout (${label}): ${err?.message ?? err}; screenshots ${shots.join(', ')}`);

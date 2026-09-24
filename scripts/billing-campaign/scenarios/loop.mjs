@@ -80,13 +80,19 @@ async function newDebits(ctx, org, known, count, timeoutMs = 60_000) {
   return out;
 }
 
-/** The share secret of a mint answer: `shareToken.secret`, else the path segment after `/v/` in `shareToken.url`. Never logged. */
+/**
+ * The share secret of a mint answer. The contract's `shareTokenCreated` is
+ * `{ shareToken, secret, url }`: the secret beside the token, shown once. The
+ * nested shape is read too, and the `/v/<secret>` path of the url as the last
+ * resort. Never logged.
+ */
 function secretOf(minted) {
-  const t = minted?.shareToken ?? {};
-  if (typeof t.secret === 'string' && t.secret) return t.secret;
-  if (typeof t.url === 'string') {
-    const m = t.url.match(/\/v\/([^/?#]+)/);
-    if (m) return m[1];
+  for (const holder of [minted, minted?.shareToken]) {
+    if (typeof holder?.secret === 'string' && holder.secret) return holder.secret;
+    if (typeof holder?.url === 'string') {
+      const m = holder.url.match(/\/v\/([^/?#]+)/);
+      if (m) return m[1];
+    }
   }
   return null;
 }

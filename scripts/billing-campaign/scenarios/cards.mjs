@@ -224,8 +224,7 @@ export const scenarios = [
       const checkout = await openCheckout(ctx, orgA, 'the 3-D Secure card');
       const paid = await ctx.payCheckout(checkout.url, { card: CARDS.authenticationRequired, expect: '3ds', mode: 'payment', email: EMAIL_A, label: 'cards-3ds' });
       if (paid.outcome !== 'paid') throw new CampaignError('the 3-D Secure Checkout was not paid', { sessionId: checkout.sessionId, outcome: paid.outcome, text: paid.text });
-      // payCheckout screenshots the challenge as `<label>-challenge-<n>.png` when it saw one.
-      const challengeShown = paid.shots.some((f) => /-challenge-\d+\.png$/.test(f));
+      const challengeShown = paid.challengeShown === true;
       const session = await ctx.stripe.checkoutSession(checkout.sessionId);
       const intentId = intentOf(session);
       if (!intentId) throw new CampaignError('the paid session carries no payment intent', { sessionId: checkout.sessionId, paymentStatus: session.payment_status });

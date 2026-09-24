@@ -5,7 +5,7 @@
 // a Checkout's intent carries. The hub writes the purchase from it through its
 // own `payment_intent.succeeded` handler. The debits are usage events posted on
 // the tool's machine channel, the way Slideless posts them.
-import { CampaignError, ulid, waitFor } from '../lib/http.mjs';
+import { CampaignError, stats, ulid, waitFor } from '../lib/http.mjs';
 
 export const group = 'load';
 
@@ -162,6 +162,7 @@ export const scenarios = [
         N,
         concurrency: C,
         elapsedMs: Date.now() - t0,
+        rateLimitRetries: stats.rateLimitRetries,
         orgsMs,
         customersMs,
         customerPath: byHub === N ? 'the hub made every customer on the PATCH' : byHub === 0 ? 'made by the campaign and written on the row' : `mixed: ${byHub} by the hub, ${N - byHub} by the campaign`,
@@ -309,6 +310,7 @@ export const scenarios = [
       const evidence = {
         N,
         concurrency: C,
+        rateLimitRetries: stats.rateLimitRetries,
         burstMs,
         webhooksMs,
         judgeMs,

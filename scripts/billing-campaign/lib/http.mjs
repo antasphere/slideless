@@ -37,7 +37,31 @@ export class CookieJar {
  * json }`, `json` parsed when the body is JSON, else null. Never throws on a
  * status: the scenarios judge it.
  */
-export function request(target, opts) {
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** How many 429 answers `request` waited out and retried, for a scenario's evidence. */
+export const stats = { rateLimitRetries: 0 };
+
+/**
+ * One request, retried on a 429 the way a well-behaved client does: the
+ * instance's Retry-After (else one second, doubling) up to five times. The
+ * campaign drives a hundred organizations as ONE principal, which the hub's
+ * per-principal quota rightly slows down; pass `retry429: false` to see the
+ * 429 itself.
+ */
+export async function request(target, opts) {
+  const { retry429 = true } = opts;
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await requestOnce(target, opts);
+    if (res.status !== 429 || !retry429 || attempt > 5) return res;
+    const after = Number(res.headers['retry-after']);
+    const waitMs = Number.isFinite(after) && after > 0 ? after * 1000 : 1000 * 2 ** (attempt - 1);
+    stats.rateLimitRetries += 1;
+    await sleep(Math.min(waitMs, 30_000));
+  }
+}
+
+function requestOnce(target, opts) {
   const { method = 'GET', path, headers = {}, body, jar, timeoutMs = 60_000, socketHost = '127.0.0.1' } = opts;
   const h = { host: `${target.host}:${target.port}`, accept: 'application/json, text/plain, */*', ...headers };
   let payload = body;
@@ -119,7 +143,6 @@ export function expectStatus(res, statuses, what) {
   return res;
 }
 
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Poll `probe` until it answers a truthy value or the deadline passes; the
