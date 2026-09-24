@@ -300,7 +300,6 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
     await reviewer.locator('#__sl-layer').click({ position: { x: 120, y: 640 } });
     await expect(reviewer.locator('#__sl-pop')).toBeHidden();
     await expect(reviewer.locator('#__sl-preview .__sl-ghost')).toHaveCount(0);
-    await expect(reviewer.locator('.__sl-pin')).toHaveCount(pinsBefore);
 
     // The next click places a new note as usual, with the typed draft back.
     await reviewer.locator('#__sl-layer').click({ position: { x: 300, y: 300 } });
@@ -311,6 +310,8 @@ test('viewer overlay: sheet, frozen anchors, pins, annotate mode, multi-page jum
 
     await reviewer.locator('#__sl-banner .__sl-btn').click(); // Done — exit mode
     await expect(reviewer.locator('#__sl-layer')).not.toHaveClass(/on/);
+    // Saved pins show again out of annotate mode: none was added.
+    await expect(reviewer.locator('.__sl-pin')).toHaveCount(pinsBefore);
     const listed = await page.request.get(`/api/v1/presentations/${deckId}/annotations`);
     const { annotations } = await listed.json();
     expect(annotations.some((a: { body: string }) => a.body.includes('must not lose'))).toBe(false);
