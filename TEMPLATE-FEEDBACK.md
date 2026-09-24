@@ -1166,3 +1166,17 @@ job in `.github/workflows/ci.yml`. The job needs the two App secrets in the tool
 (`FEDERATION_DRILL_APP_ID`, `FEDERATION_DRILL_APP_KEY`; the App must be installed with
 contents:read on `antasphere/hub`), or it fails at the token mint. The template's
 `usage-window.test.ts` cross-read of the hub's source text goes (the wire check replaces it).
+
+## 31. Count limits and conditional features are chassis code to re-copy (PRDCT-2702, for PRDCT-2667)
+
+Phase 3 of the billing rail moved the chassis again, and the tool template's re-copy (PRDCT-2667,
+out of that wave) must carry it: `packages/chassis-contract/src/entitlements.ts` (`EntitlementRequest.body()`,
+`LimitDeclaration.value` async and nullable, `FeatureDeclaration { key, when }`, an entry-level
+`RouteEntitlement.actor`, `ActorHook`, `featureKeyOf`, `actorHookOf`), the gate
+(`packages/chassis-server/src/entitlements/gate.ts`: `requestOf` memoizing `c.req.json()`,
+`observedOf`, `featureApplies`, `planCheckDetailed` and `ossLimitCheck` async, `viewerSurface` reading
+either hook), the slot guard reading `featureKeyOf`, and the unit cases under "a count limit and a
+conditional feature" in `test/unit/entitlement-gate.test.ts`. A template tool then declares a count
+limit as `{ key, value: async (ctx) => count + 1 | null }` and a premium option on a common route as
+`feature: { key, when }`. Nothing else in the chassis changed; `chassis-source.json` on the template
+still points at the phase 2 copy.

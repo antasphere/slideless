@@ -710,4 +710,91 @@ sleep 6
 HEALED_BYTES=$(metered healed "${BIGGER}z" -b "$SL_JAR" -H "Origin: $SL")
 metrics | grep -q '^usage_check_posture 0' || fail "usage_check_posture should read 0 once the hub answers again: $(metrics | grep usage_check_posture)"
 pass "hub slow beyond the check's budget: the upload ($SLOW_BYTES bytes) still lands, usage_check_posture 1 on /metrics; the next answered check ($HEALED_BYTES bytes) heals it to 0"
+
+# ── Phase 8, third leg — the billing rail, phase 3: free is limited (PRDCT-2702) ──
+say "Phase 8 — phase 3: the free workspace is refused what pro unlocks, at Slideless's door and at the hub's"
+# The plan entitlements were seeded from Slideless's discovery with the price
+# book above (workspace.members 3, links.perDeck 10, deck.password off on
+# free), so the Drill Workspace is a free workspace with every limit declared.
+"${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/decks.json" -f -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations" || fail "GET /presentations as the owner failed"
+DECK_ID=$(jq -r '.presentations[0].id // empty' "$SCRATCH/decks.json")
+[ -n "$DECK_ID" ] || fail "no deck in the drill workspace to mint a link on: $(cat "$SCRATCH/decks.json")"
+locked() { # label curl-auth-args → mints a link WITH a password on the deck; prints the status, the body in $SCRATCH/locked-<label>.json
+  local label=$1; shift
+  "${CURL[@]}" "$@" -o "$SCRATCH/locked-$label.json" -w '%{http_code}' -X POST "$SL/api/v1/presentations/$DECK_ID/tokens" \
+    -H "X-Workspace-Id: $WS_ID" -H "$(idem)" -H 'content-type: application/json' -d '{"name":"drill locked","password":"drill-pass-1"}'
+}
+plan_refused() { # file key → asserts a 403 plan_required body on the key, free → pro, with the hub's upgrade page carrying both
+  local file=$1 key=$2
+  jq -e --arg key "$key" --arg up "$HUB/billing/upgrade?org=$HUB_ORG_ID" \
+    '.error.code == "plan_required" and .error.details.key == $key and .error.details.plan == "free" and .error.details.requiredPlan == "pro"
+     and (.error.details.upgradeUrl | startswith($up)) and (.error.details.upgradeUrl | contains("key=" + $key)) and (.error.details.upgradeUrl | contains("requiredPlan=pro"))' \
+    "$file" >/dev/null || fail "not a 403 plan_required on $key with the upgrade link: $(cat "$file")"
+}
+# A password on a share link is pro: the free workspace is refused at the mint, on the three surfaces, and nothing is charged.
+status=$(locked session -b "$SL_JAR" -H "Origin: $SL")
+[ "$status" = 403 ] || fail "a locked link on the free plan (session) answered $status, expected 403: $(cat "$SCRATCH/locked-session.json")"
+plan_refused "$SCRATCH/locked-session.json" deck.password
+status=$(locked api_key -H "Authorization: Bearer $SLK")
+[ "$status" = 403 ] || fail "a locked link on the free plan (slk_ key) answered $status, expected 403: $(cat "$SCRATCH/locked-api_key.json")"
+plan_refused "$SCRATCH/locked-api_key.json" deck.password
+mcp_locked=$(jq -nc --arg ws "$WS_ID" --arg id "$DECK_ID" \
+  '{jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"slideless_add_share_token",arguments:{workspace:$ws,presentationId:$id,name:"drill locked",password:"drill-pass-1"}}}')
+mcp_locked_answer=$("${CURL[@]}" -X POST "$SL/mcp" -H "Authorization: Bearer $MCP_BEARER" -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' -d "$mcp_locked")
+echo "$mcp_locked_answer" | jq -e --arg up "Upgrade: $HUB/billing/upgrade?org=$HUB_ORG_ID" \
+  '.result.isError == true and (.result.content[0].text | (test("plan_required") and contains($up) and contains("key=deck.password")))' >/dev/null \
+  || fail "the MCP tool result does not carry the plan refusal and the upgrade link: $(echo "$mcp_locked_answer" | head -c 500)"
+before_locked=$(hubdb "SELECT count(*) FROM usage_events")
+pass "a share link with a password on the free plan: 403 plan_required (deck.password, free → pro) with the hub's upgrade page on the dashboard session, the slk_ key and the MCP tool's text"
+
+# The hub's own door: the member cap on the Drill Workspace (one member, Drill Owner).
+hub_invite() { # email label → POST /invitations at the hub as the owner; prints the status, the body in $SCRATCH/hub-invite-<label>.json
+  local email=$1 label=$2
+  "${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/hub-invite-$label.json" -w '%{http_code}' -X POST "$HUB/api/v1/invitations" \
+    -H "Origin: $HUB" -H "X-Workspace-Id: $HUB_ORG_ID" -H "$(idem)" -H 'content-type: application/json' -d "{\"email\":\"$email\",\"role\":\"member\"}"
+}
+status=$(hub_invite drill-m2@drill.test m2); [ "$status" = 201 ] || fail "the second seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m2.json")"
+status=$(hub_invite drill-m3@drill.test m3); [ "$status" = 201 ] || fail "the third seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m3.json")"
+status=$(hub_invite drill-m4@drill.test m4); [ "$status" = 403 ] || fail "the fourth seat's invitation answered $status, expected 403: $(cat "$SCRATCH/hub-invite-m4.json")"
+plan_refused "$SCRATCH/hub-invite-m4.json" workspace.members
+jq -e '.error.details.upgradeUrl | contains("tool=slideless-cloud")' "$SCRATCH/hub-invite-m4.json" >/dev/null \
+  || fail "the hub's upgrade page does not name the tool whose cap bound the account: $(cat "$SCRATCH/hub-invite-m4.json")"
+pass "at the hub, two invitations seat the free workspace at its cap of 3 (one member, two open invitations); the fourth answers 403 plan_required (workspace.members, free → pro) with the upgrade page naming slideless-cloud"
+
+# Staff lifts the account above free: an override of the cap to unlimited
+# and of the password feature to on, the way an enterprise deal is served.
+override() { # body → PUT /admin/billing/entitlements as staff; prints the row id
+  local body=$1
+  local st
+  st=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/override.json" -w '%{http_code}' -X PUT "$HUB/api/v1/admin/billing/entitlements" \
+    -H "Origin: $HUB" -H "$(idem)" -H 'content-type: application/json' -d "$body")
+  [ "$st" = 201 ] || fail "PUT /admin/billing/entitlements answered $st: $(cat "$SCRATCH/override.json")"
+  jq -r '.id' "$SCRATCH/override.json"
+}
+CAP_OVERRIDE=$(override "{\"toolSlug\":\"slideless-cloud\",\"accountId\":\"$ACCOUNT_ID\",\"key\":\"workspace.members\",\"kind\":\"limit\",\"value\":null}")
+PASSWORD_OVERRIDE=$(override "{\"toolSlug\":\"slideless-cloud\",\"accountId\":\"$ACCOUNT_ID\",\"key\":\"deck.password\",\"kind\":\"feature\",\"value\":true}")
+status=$(hub_invite drill-m4@drill.test m4b); [ "$status" = 201 ] || fail "with the cap lifted, the fourth seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m4b.json")"
+pass "staff override of workspace.members to unlimited for the account: the fourth invitation passes at the hub"
+# Slideless serves an account's plan from a thirty-second cache and refreshes it
+# behind the request once stale, so the lifted account is felt on the mint
+# after the window; every refused attempt costs nothing (the plan answers
+# before the credit check), the one that lands costs the link's 20 credits.
+status=0
+for i in $(seq 1 20); do
+  status=$(locked lifted -b "$SL_JAR" -H "Origin: $SL")
+  [ "$status" = 201 ] && break
+  [ "$status" = 403 ] || fail "the locked mint on the lifted account answered $status: $(cat "$SCRATCH/locked-lifted.json")"
+  sleep 3
+done
+[ "$status" = 201 ] || fail "the locked mint still answers 403 a minute after the override: $(cat "$SCRATCH/locked-lifted.json")"
+jq -e '.shareToken.hasPassword == true' "$SCRATCH/locked-lifted.json" >/dev/null || fail "the minted link does not carry its password: $(cat "$SCRATCH/locked-lifted.json")"
+[ "$(hubdb "SELECT count(*) FROM usage_events")" -ge "$before_locked" ] || fail "usage_events shrank"
+pass "the account lifted by staff mints the locked link on Slideless (201, hasPassword true) once its plan cache has turned over; the three refusals wrote nothing"
+# The overrides removed: the account is back on free (the invitations it already holds stay).
+for id in "$CAP_OVERRIDE" "$PASSWORD_OVERRIDE"; do
+  "${CURL[@]}" -b "$HUB_JAR" -o /dev/null -f -X DELETE "$HUB/api/v1/admin/billing/entitlements/$id" -H "Origin: $HUB" -H "$(idem)" \
+    || fail "DELETE /admin/billing/entitlements/$id failed"
+done
+pass "the two overrides removed: the account is on free again"
 fi # the second leg

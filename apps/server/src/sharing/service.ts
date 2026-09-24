@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@antasphere/chassis-db';
 import {
   presentations,
@@ -177,6 +177,26 @@ export class ShareTokenService {
       .limit(opts.limit + 1);
     const { page, nextCursor } = pageOf(rows, opts.limit);
     return { tokens: page, nextCursor };
+  }
+
+  /**
+   * The deck's share links that count against `links.perDeck` (PRDCT-2702):
+   * purpose `share` and not revoked. An expired link still counts (the ruling
+   * names revocation as what frees a slot); a preview never does.
+   */
+  async countLive(workspaceId: string, presentationId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(shareTokens)
+      .where(
+        and(
+          eq(shareTokens.workspaceId, workspaceId),
+          eq(shareTokens.presentationId, presentationId),
+          eq(shareTokens.purpose, 'share'),
+          isNull(shareTokens.revokedAt)
+        )
+      );
+    return row?.n ?? 0;
   }
 
   async get(workspaceId: string, presentationId: string, tokenId: string): Promise<ShareTokenRow | null> {

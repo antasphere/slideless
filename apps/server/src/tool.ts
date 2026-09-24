@@ -33,6 +33,8 @@ import { registerPresentationRoutes } from './api/presentations.js';
 import { registerCollaboratorRoutes } from './api/collaborators.js';
 import { blobReadScope, PresentationService } from './presentations/service.js';
 import { formOwnerActor } from './presentations/form-owner-actor.js';
+import { linksOfDeck } from './presentations/links-of-deck.js';
+import { memberSeatHooks } from './presentations/member-seats.js';
 import { AnnotationService } from './annotations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { ShareTokenService } from './sharing/service.js';
@@ -440,13 +442,14 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           // The anonymous surfaces (PRDCT-2634, Romain's ruling of 23 September
           // 2026): a viewer's form response and a viewer's file uploaded into
           // one, both through a share link, both paid by the deck's owner. The
-          // response's 5 is the 22 September seed (Romain floated 1: data for
-          // the seed review); the upload is the same 5 per MB received as the
-          // owner's own uploads, under its own key so the usage report tells
-          // the two apart.
+          // response is 1 credit per call (Romain's seed ruling of 24
+          // September 2026, PRDCT-2702; the 22 September seed said 5, and a
+          // hub that already seeded 5 keeps it until staff edits the row); the
+          // upload is the same 5 per MB received as the owner's own uploads,
+          // under its own key so the usage report tells the two apart.
           {
             key: DECK_ACTIONS.formResponse,
-            creditsPerUnit: 5,
+            creditsPerUnit: 1,
             unit: 'call',
             label: 'Receive a form response'
           },
@@ -467,7 +470,14 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           [DECK_FEATURES.customDomain]: { free: false, pro: true },
           [DECK_FEATURES.deckPassword]: { free: false, pro: true }
         },
-        routes: deckRouteEntitlements({ formOwner: formOwnerActor(db, getTool) })
+        // The hooks the declarations need (PRDCT-2702): the member seats at
+        // the four doors, the deck's live links, the form owner. Each reads
+        // the domain late, at request time.
+        routes: deckRouteEntitlements({
+          formOwner: formOwnerActor(db, getTool),
+          ...memberSeatHooks(db, getTool),
+          linksOfDeck: linksOfDeck(getTool)
+        })
       };
     },
 

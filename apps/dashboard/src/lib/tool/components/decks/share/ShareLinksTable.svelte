@@ -21,6 +21,7 @@
   import type { Snippet } from 'svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
+  import { toastApiError } from '$lib/billing-refusal';
   import { isPreviewToken, tokenStatus } from '$lib/tool/decks';
   import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
@@ -104,7 +105,8 @@
       versionTarget = null;
       await list.refresh();
     } catch (e) {
-      toast.error(errorMessage(e, t('tokens.updateFailed')));
+      // A plan refusal on a link change is its upgrade card (PRDCT-2702).
+      toastApiError(e, t('tokens.updateFailed'));
     } finally {
       versionLoading = false;
     }
@@ -125,7 +127,8 @@
       toast.success(t(value ? 'tokens.uploadsOnToast' : 'tokens.uploadsOffToast', { name: token.name }));
       await list.refresh();
     } catch (e) {
-      toast.error(errorMessage(e, t('tokens.updateFailed')));
+      // A plan refusal on a link change is its upgrade card (PRDCT-2702).
+      toastApiError(e, t('tokens.updateFailed'));
     } finally {
       uploadsSaving = false;
     }
@@ -145,7 +148,8 @@
       toast.success(t(value ? 'tokens.pdfOnToast' : 'tokens.pdfOffToast', { name: token.name }));
       await list.refresh();
     } catch (e) {
-      toast.error(errorMessage(e, t('tokens.updateFailed')));
+      // A plan refusal on a link change is its upgrade card (PRDCT-2702).
+      toastApiError(e, t('tokens.updateFailed'));
     } finally {
       pdfSaving = false;
     }

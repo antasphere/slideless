@@ -1500,3 +1500,50 @@ migrate` on an unchanged schema):
   (`wire:check`, the `hub-wire` job). Never compare source text, and never let a strict parse of
   the peer's answer decide that the peer is down: the fake hub now sends every answer through
   the chassis's own schema, so a fake that drifts throws in the test that used it.
+
+## Free is limited (PRDCT-2702, 2026-09-24, lane E of the phase 3 wave)
+
+- **A count limit is a lookup, and a lookup that fails must never become a plan refusal.** The gate's
+  `limit.value` was synchronous and saw no body and no database because the one limit that existed
+  read a header. A count reads the tool's tables and the body (the address invited, the deck the
+  link is minted on), so the hook is async and answers `null` for "nothing to judge": a token the
+  instance does not know, a caller with no principal, a lookup that throws. The gate then lets the
+  route answer its own 404 or 409. Refusing `plan_required` on a lookup error would sell a plan for
+  a bug.
+- **The body is read once, by whoever reads it first, and Hono keeps the parse.** `c.req.json()` in
+  the gate and `c.req.valid('json')` in the handler read the same cached parse (`HonoRequest.bodyCache`),
+  so a middleware may read the body before the validator without consuming it. A body that is not
+  JSON throws in the gate and reads as `undefined`; the validator's own 400 follows. Never buffer
+  the body a second way.
+- **A feature is sold on the act, not on the route.** `feature: 'deck.password'` on the mint would
+  have refused every free share link; `{ key, when }` with `typeof body.password === 'string'`
+  refuses only the mint or the update that SETS one. `null` on the update is a removal and passes;
+  a password set before a downgrade stays (a fact, not an act). The same shape is what a
+  "premium option on a common route" needs anywhere.
+- **One seat pool, four doors, counted AFTER the act.** The gate refuses `observed > max`, so a
+  door reports the seats it would leave behind: the invite adds one unless the address already
+  holds a seat (a member's or an open invitation's), the join converts a reservation into a
+  membership and adds nothing. Counting only members would let a workspace at the cap invite
+  without limit and refuse every claim; counting invitations twice (as reservation and as the
+  join) would refuse the very claim the invite reserved.
+- **A public door judged on a plan is a viewer surface.** The claim and the accept have no
+  principal; the entry-level `actor` names the workspace they open and the gate treats the caller
+  as a viewer: the neutral sentence, no key, no plan, no upgrade page. The invitee is not the
+  payer and must not learn the workspace's plan.
+- **The plan gate is registered before the `hub_managed` gate.** `registerEntitlementGate` runs at
+  `create-api.ts:653`, the invitation routes with their hub-managed gate at 1109, so on a projected
+  workspace a count over the cap would have answered `plan_required` (and drawn the upgrade card)
+  where `hub_managed` is the true answer. The two invitation hooks resolve nothing when the
+  principal carries an account, and the declaration is inert on every workspace that has a plan
+  today (a cloud-local one has none); it is kept for that shape.
+- **The hub's cap is the smallest among the tools that declare it, and the door names the tool.**
+  Two tools may declare `workspace.members` with different values for one organization; the hub
+  takes the smallest numeric one (a `null` value bounds nothing) and its upgrade page carries that
+  tool, so the person lands on the page of the product that limited them. `requiredPlan` is
+  resolved by re-running the same resolution on the pro tier: an account override wins on every
+  tier, so it may say no plan helps, and the card then offers nothing.
+- **The fake hub's price book is the hub's, not the declaration's.** The declaration moved
+  `forms.response` from 5 to 1; the fake's `setPrice` in `metering.test.ts` stays at 5 on purpose,
+  because a hub that seeded 5 keeps it until staff edits the row and the chassis charges what the
+  hub answers. Pin the declaration on discovery, pin the charge on the fake's row, never conflate
+  the two.

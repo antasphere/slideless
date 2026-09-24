@@ -24,6 +24,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
+  import { toastApiError } from '$lib/billing-refusal';
   import { formatDate, formatDateTime } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
@@ -93,7 +94,9 @@
       showLinkDialog = true;
       await list.refresh();
     } catch (e) {
-      toast.error(errorMessage(e, t('invitations.createFailed')));
+      // A plan refusal (the member cap, PRDCT-2702) is its upgrade card;
+      // anything else the plain sentence.
+      toastApiError(e, t('invitations.createFailed'));
     } finally {
       createLoading = false;
     }

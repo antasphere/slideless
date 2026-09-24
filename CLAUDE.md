@@ -363,6 +363,30 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   future-dated event lands once its time comes, a stale one waits for an operator.
   `usage_events_held_total` now carries `{reason}`. Boot logs a warning when the hub's `Date` header
   disagrees with the instance clock by more than the forward bound (`entitlements/clock-skew.ts`).
+- **What pro unlocks is locked on free, at the door where the act happens (PRDCT-2702, phase 3 of
+  the billing rail)**: every limit and feature the `entitlements` slot declares is enforced by the one
+  gate, and the chassis learned what a count needs (a limit's `value` may be async, read the parsed
+  body through `ctx.body()` and answer `null` for "nothing to judge"; a `feature` may be
+  `{ key, when }`; an entry-level `actor` makes a limit-only PUBLIC door a viewer surface). The
+  member cap is ONE seat pool at four doors (`presentations/member-seats.ts`: active members of
+  every origin, guests included, plus the addresses with an open invitation of either kind that are
+  not members yet), each door reporting the seats AFTER its act: the collaborator invite and the
+  workspace invitation refuse the seat over the cap, the collaborator claim and the invitation
+  accept refuse the join on a workspace above it (a downgrade seats nobody until it is under).
+  On a hub-projected workspace the two invitation hooks resolve nothing so `hub_managed` keeps
+  answering first, and the hub enforces the same cap at ITS doors (`billing/member-cap.ts` there,
+  the smallest numeric `workspace.members` among the tools that declare it). `links.perDeck` counts
+  the deck's share links not revoked (expired ones count, previews never; `ShareTokenService.countLive`).
+  `deck.password` is gated on the ACT: setting a password at the mint or on an existing link is pro,
+  removing one is never refused, and a password set before a downgrade keeps protecting the link.
+  A public door (the claim, the accept) reads the neutral sentence with no details; the signed-in
+  doors carry the full refusal with the upgrade link on the three surfaces (`toastApiError` on the
+  invitations page and the links table too). `custom_domain` stays declared and ungated because
+  nothing exists to attach a domain to: the day it is built, the route carries `feature:
+'custom_domain'` from its first commit. The form response is priced 1 credit per call (Romain's
+  seed ruling of 24 September 2026); a hub that already seeded 5 keeps it until staff edits the row.
+  The drill's third leg (Phase 8) is the regression test on a real pair: the locked mint refused on
+  the three surfaces, the hub's fourth invitation refused, a staff override felt on both sides.
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
