@@ -732,6 +732,7 @@ plan_refused() { # file key → asserts a 403 plan_required body on the key, fre
     "$file" >/dev/null || fail "not a 403 plan_required on $key with the upgrade link: $(cat "$file")"
 }
 # A password on a share link is pro: the free workspace is refused at the mint, on the three surfaces, and nothing is charged.
+before_locked=$(hubdb "SELECT count(*) FROM usage_events")
 status=$(locked session -b "$SL_JAR" -H "Origin: $SL")
 [ "$status" = 403 ] || fail "a locked link on the free plan (session) answered $status, expected 403: $(cat "$SCRATCH/locked-session.json")"
 plan_refused "$SCRATCH/locked-session.json" deck.password
@@ -745,8 +746,11 @@ mcp_locked_answer=$("${CURL[@]}" -X POST "$SL/mcp" -H "Authorization: Bearer $MC
 echo "$mcp_locked_answer" | jq -e --arg up "Upgrade: $HUB/billing/upgrade?org=$HUB_ORG_ID" \
   '.result.isError == true and (.result.content[0].text | (test("plan_required") and contains($up) and contains("key=deck.password")))' >/dev/null \
   || fail "the MCP tool result does not carry the plan refusal and the upgrade link: $(echo "$mcp_locked_answer" | head -c 500)"
-before_locked=$(hubdb "SELECT count(*) FROM usage_events")
-pass "a share link with a password on the free plan: 403 plan_required (deck.password, free → pro) with the hub's upgrade page on the dashboard session, the slk_ key and the MCP tool's text"
+# The plan answers before the credit check and before the handler: no event is queued, none lands.
+[ "$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND data->>'actionKey' = 'share_tokens.create'")" = 0 ] \
+  || fail "a refused locked mint queued a share_tokens.create event"
+[ "$(hubdb "SELECT count(*) FROM usage_events")" = "$before_locked" ] || fail "the three refusals wrote usage_events at the hub (before $before_locked, now $(hubdb "SELECT count(*) FROM usage_events"))"
+pass "a share link with a password on the free plan: 403 plan_required (deck.password, free → pro) with the hub's upgrade page on the dashboard session, the slk_ key and the MCP tool's text; nothing queued, nothing landed"
 
 # The hub's own door: the member cap on the Drill Workspace (one member, Drill Owner).
 hub_invite() { # email label → POST /invitations at the hub as the owner; prints the status, the body in $SCRATCH/hub-invite-<label>.json
@@ -789,8 +793,19 @@ for i in $(seq 1 20); do
 done
 [ "$status" = 201 ] || fail "the locked mint still answers 403 a minute after the override: $(cat "$SCRATCH/locked-lifted.json")"
 jq -e '.shareToken.hasPassword == true' "$SCRATCH/locked-lifted.json" >/dev/null || fail "the minted link does not carry its password: $(cat "$SCRATCH/locked-lifted.json")"
-[ "$(hubdb "SELECT count(*) FROM usage_events")" -ge "$before_locked" ] || fail "usage_events shrank"
-pass "the account lifted by staff mints the locked link on Slideless (201, hasPassword true) once its plan cache has turned over; the three refusals wrote nothing"
+# The one mint that landed is the one event: queued as share_tokens.create, drained to the hub, priced 20.
+for i in $(seq 1 60); do
+  pending=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed', 'failed', 'cancelled')")
+  [ "$pending" = 0 ] && break
+  sleep 1
+done
+[ "$pending" = 0 ] || fail "the usage queue did not drain after the locked mint ($pending pending)"
+LOCKED_EVENT=$(sldb "SELECT data->>'id' FROM pgboss.job WHERE name = 'usage-events' AND data->>'actionKey' = 'share_tokens.create' ORDER BY created_on DESC LIMIT 1")
+[ -n "$LOCKED_EVENT" ] || fail "no queued share_tokens.create event for the locked mint"
+[ "$(hubdb "SELECT count(*) FROM usage_events")" = "$((before_locked + 1))" ] \
+  || fail "the locked mint must land exactly one event (before $before_locked, now $(hubdb "SELECT count(*) FROM usage_events"))"
+[ "$(hubdb "SELECT credits FROM usage_events WHERE id = '$LOCKED_EVENT'")" = 20 ] || fail "the locked mint was not priced 20 credits at the hub"
+pass "the account lifted by staff mints the locked link on Slideless (201, hasPassword true) once its plan cache has turned over; one event landed for it (priced 20), none for the three refusals"
 # The overrides removed: the account is back on free (the invitations it already holds stay).
 for id in "$CAP_OVERRIDE" "$PASSWORD_OVERRIDE"; do
   "${CURL[@]}" -b "$HUB_JAR" -o /dev/null -f -X DELETE "$HUB/api/v1/admin/billing/entitlements/$id" -H "Origin: $HUB" -H "$(idem)" \

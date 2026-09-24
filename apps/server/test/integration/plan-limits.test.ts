@@ -29,6 +29,9 @@ const ORG_PASSWORD = '88888888-aaaa-4bbb-8ccc-0000000000c3';
 const ORG_SURFACES = '88888888-aaaa-4bbb-8ccc-0000000000c4';
 const ORG_PRO = '88888888-aaaa-4bbb-8ccc-0000000000c5';
 const ORG_GUEST = '88888888-aaaa-4bbb-8ccc-0000000000d1';
+const ORG_SWEPT = '88888888-aaaa-4bbb-8ccc-0000000000c6';
+const ORG_TEAM = '88888888-aaaa-4bbb-8ccc-0000000000c7';
+const ORG_SWEPT_GUEST = '88888888-aaaa-4bbb-8ccc-0000000000d2';
 
 let container: StartedPostgreSqlContainer;
 let hub: FakeHub;
@@ -367,6 +370,109 @@ describe('the member cap at the collaborator invite', () => {
   });
 });
 
+describe('the cap never says more than the handler would (ADR 013)', () => {
+  let member: Person;
+
+  beforeAll(async () => {
+    // A plain member of the seats org, with no grant on the owner's decks.
+    member = await hubPerson({
+      sub: 'hub-plan-seats-member',
+      email: 'member@seats.test',
+      name: 'Seats Member',
+      workspaceId: ORG_SEATS,
+      role: 'member',
+      workspaceName: 'Org hub-plan-seats'
+    });
+  });
+
+  it('a member who cannot read the deck gets the handler’s 404 at the invite, never a plan refusal, on a workspace at its cap', async () => {
+    const res = await invite(member, seatsDeck, 'outsider@seats.test');
+    expect(res.status, await res.clone().text()).toBe(404);
+  });
+
+  it('a member who cannot read the deck gets the handler’s 404 at the link mint, never the deck’s link count', async () => {
+    const res = await mint(member, seatsDeck, { name: 'probe' });
+    expect(res.status, await res.clone().text()).toBe(404);
+  });
+
+  it('a colleague invited as a collaborator holds one seat, not two: an outsider still gets in beside them', async () => {
+    // A fresh org of two members (the owner, a member): the member's own
+    // address as a collaborator adds no seat, a first outsider is the third
+    // seat and lands, a second outsider is the fourth and is refused.
+    const teamOwner = await hubPerson(owner('hub-plan-team', ORG_TEAM, 'team@planlimits.test'));
+    await hubPerson({
+      sub: 'hub-plan-team-member',
+      email: 'teammate@team.test',
+      name: 'Team Member',
+      workspaceId: ORG_TEAM,
+      role: 'member',
+      workspaceName: 'Org hub-plan-team'
+    });
+    const teamDeck = await makeDeck(teamOwner);
+    const colleague = await invite(teamOwner, teamDeck, 'teammate@team.test');
+    expect(colleague.status, await colleague.clone().text()).toBe(201);
+    const third = await invite(teamOwner, teamDeck, 'third@team.test');
+    expect(third.status, await third.clone().text()).toBe(201);
+    await expectPlanRequired(
+      await invite(teamOwner, teamDeck, 'fourth@team.test'),
+      ORG_TEAM,
+      'workspace.members',
+      MEMBERS_MESSAGE
+    );
+  });
+
+  it('a hub-projected workspace above its cap still answers hub_managed on its own invitation door, never a plan refusal', async () => {
+    const res = await app.app.request(
+      '/api/v1/invitations',
+      json({ email: 'anyone@seats.test', role: 'member' }, dashboard(seatsOwner))
+    );
+    expect(res.status).toBe(403);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('hub_managed');
+    expect(body.error.details.manageUrl).toBeTruthy();
+  });
+});
+
+describe('an active grant not yet claimed still holds its seat (the swept state)', () => {
+  let owner2: Person;
+  let deck: string;
+
+  beforeAll(async () => {
+    owner2 = await hubPerson(owner('hub-plan-swept', ORG_SWEPT, 'swept@planlimits.test'));
+    deck = await makeDeck(owner2);
+  });
+
+  it('the person invited first keeps the seat after signing in, so the third address is refused', async () => {
+    const x = await invite(owner2, deck, 'x@swept.test');
+    expect(x.status, await x.clone().text()).toBe(201);
+    const grantId = (await readJson(x)).collaborator.id;
+    // x signs in through the hub: the JIT sweep flips the grant to active with no membership yet.
+    await sso.ssoLogin(app, hub, {
+      sub: 'hub-plan-swept-x',
+      email: 'x@swept.test',
+      name: 'Swept X',
+      workspaceId: ORG_SWEPT_GUEST,
+      role: 'owner',
+      workspaceName: 'Swept Personal'
+    });
+    let status = 'pending';
+    for (let i = 0; i < 40 && status !== 'active'; i++) {
+      const { rows } = await app.db.pool.query(`SELECT status FROM collaborators WHERE id = $1`, [grantId]);
+      status = rows[0].status;
+      if (status !== 'active') await sleep(50);
+    }
+    expect(status).toBe('active');
+    const y = await invite(owner2, deck, 'y@swept.test');
+    expect(y.status, await y.clone().text()).toBe(201);
+    await expectPlanRequired(
+      await invite(owner2, deck, 'z@swept.test'),
+      ORG_SWEPT,
+      'workspace.members',
+      MEMBERS_MESSAGE
+    );
+  });
+});
+
 describe('the member cap at the claim (the public door)', () => {
   const GUEST_EMAIL = 'd@seats.test';
   let claimToken: string;
@@ -530,6 +636,11 @@ describe('the password is pro, gated on the act of setting one', () => {
   beforeAll(async () => {
     person = await hubPerson(owner('hub-plan-password', ORG_PASSWORD, 'password@planlimits.test'));
     deckId = await makeDeck(person);
+  });
+
+  it('a password the schema refuses is the validator’s 400, never a plan refusal', async () => {
+    const res = await mint(person, deckId, { name: 'short', password: 'abc' });
+    expect(res.status, await res.clone().text()).toBe(400);
   });
 
   it('a mint that sets a password is refused on free, and nothing is posted for it', async () => {

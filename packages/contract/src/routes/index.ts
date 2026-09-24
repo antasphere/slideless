@@ -14,8 +14,6 @@ import {
   errorResponses,
   fileUploadRoute,
   idempotencyHeaders,
-  invitationAcceptRoute,
-  invitationCreateRoute,
   jsonBody,
   jsonRequestBody,
   uuidParams
@@ -53,7 +51,8 @@ import {
   shareTokenSentSchema,
   shareTokensListSchema,
   shareTokenViewsListSchema,
-  shareTokenUpdateSchema
+  shareTokenUpdateSchema,
+  SHARE_PASSWORD_MIN
 } from '../schemas/share-tokens.js';
 import {
   collaboratorClaimedSchema,
@@ -1010,37 +1009,36 @@ export interface DeckActorHooks {
   /** The owner of the deck behind `ctx.params.secret`, or null when the secret resolves to nothing. */
   formOwner: (ctx: EntitlementRequest) => Promise<ActorRef | null>;
   /**
-   * The member cap, one seat pool at four doors (PRDCT-2702): the seats of
-   * a workspace are its active members of every origin (guests included)
-   * plus the addresses with an open invitation of either kind (a live
-   * pending collaborator grant, an open workspace invitation) that are not
-   * members yet. Each hook returns the seats AFTER the door's act.
+   * The member cap at Slideless's two doors, the collaborator invite and the
+   * collaborator claim (PRDCT-2702): the seats of a workspace are its active
+   * members of every origin (guests included) plus the addresses that hold
+   * a seat without a membership yet (a live pending collaborator grant, an
+   * active grant not yet claimed into a membership, an open workspace
+   * invitation). Each hook returns the seats AFTER the door's act. The
+   * workspace invitation doors are the hub's on every workspace that has a
+   * plan (`hub_managed`), so they carry no declaration here.
    */
-  /** The collaborator invite: the caller's workspace's seats after inviting the body's email. */
+  /** The collaborator invite: the caller's workspace's seats after inviting the body's email; null for a caller who may not invite on that deck. */
   collaboratorInviteSeats: CountHook;
-  /** The collaborator claim: the workspace the grant behind the body's token opens (its account pays nothing here, it is judged). */
+  /** The collaborator claim: the workspace the grant behind the body's token opens (nothing is metered here; its plan is judged). */
   collaboratorClaimActor: ActorHook;
   /** The collaborator claim: that workspace's seats after the invitee joins. */
   collaboratorClaimSeats: CountHook;
-  /** The workspace invitation: the caller's workspace's seats after inviting the body's email; null on a hub-projected workspace (the hub's pointer answers). */
-  invitationCreateSeats: CountHook;
-  /** The invitation accept: the workspace the invitation behind the body's token opens; null on a hub-projected one. */
-  invitationAcceptActor: ActorHook;
-  /** The invitation accept: that workspace's seats after the invitee joins. */
-  invitationAcceptSeats: CountHook;
-  /** The links of the deck `ctx.params.id` that are not revoked (previews excluded), plus this one. */
+  /** The links of the deck `ctx.params.id` that are not revoked (previews excluded), plus this one; null for a caller who may not see the deck. */
   linksOfDeck: CountHook;
 }
 
 /**
- * Whether a share link body SETS a password (PRDCT-2702): a string on the
- * mint or the update. `null` on the update is a removal, `undefined` no
- * change; neither is the act the `deck.password` feature sells. A set
- * password is a fact: a link locked before a downgrade keeps its lock.
+ * Whether a share link body SETS a password (PRDCT-2702): a string the
+ * schemas would accept, on the mint or the update. `null` on the update is
+ * a removal, `undefined` no change, and a string shorter than the schemas'
+ * minimum is the validator's 400; none of these is the act the
+ * `deck.password` feature sells. A set password is a fact: a link locked
+ * before a downgrade keeps its lock.
  */
 export async function sharePasswordSet(ctx: EntitlementRequest): Promise<boolean> {
   const body = (await ctx.body()) as { password?: unknown } | undefined;
-  return typeof body?.password === 'string';
+  return typeof body?.password === 'string' && body.password.length >= SHARE_PASSWORD_MIN;
 }
 
 /** The upload cap, one key for both upload doors (the deck asset route and the generic files route). */
@@ -1087,12 +1085,14 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
     },
     { route: shareTokenUpdateRoute, feature: { key: DECK_FEATURES.deckPassword, when: sharePasswordSet } },
     { route: workspaceExportRoute, meter: { key: DECK_ACTIONS.export, unit: 'call' } },
-    // The member cap at both of Slideless's doors (PRDCT-2702, the wave's
-    // ruling 2): the collaborator invite and claim (the guest door), and the
-    // workspace invitation create and accept (the cloud-local shape; on a
-    // hub-projected workspace the hooks resolve nothing so `hub_managed`
-    // answers as before). The claim and the accept are public doors: the
-    // entry-level actor names the workspace they open, and the invitee reads
+    // The member cap at Slideless's two doors (PRDCT-2702, the wave's ruling
+    // 2): the collaborator invite and claim, the guest door. The workspace
+    // invitation create and accept carry NO declaration: on every workspace
+    // that has a plan they answer `hub_managed` and the hub enforces the
+    // same cap at its own doors, and a workspace without a plan has nothing
+    // to judge (a declaration that could never refuse is a false guarantee;
+    // the code review of PRDCT-2702). The claim is a public door: the
+    // entry-level actor names the workspace it opens, and the invitee reads
     // the neutral refusal.
     {
       route: collaboratorInviteRoute,
@@ -1103,15 +1103,6 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
       route: collaboratorClaimRoute,
       actor: actors.collaboratorClaimActor,
       limit: { key: DECK_LIMITS.workspaceMembers, value: actors.collaboratorClaimSeats }
-    },
-    {
-      route: invitationCreateRoute,
-      limit: { key: DECK_LIMITS.workspaceMembers, value: actors.invitationCreateSeats }
-    },
-    {
-      route: invitationAcceptRoute,
-      actor: actors.invitationAcceptActor,
-      limit: { key: DECK_LIMITS.workspaceMembers, value: actors.invitationAcceptSeats }
     },
     // The anonymous surfaces (PRDCT-2634): no principal, the owner resolved
     // from the share secret pays. The upload meters the bytes kept.
@@ -1137,8 +1128,5 @@ export const DECK_ROUTE_ENTITLEMENTS = deckRouteEntitlements({
   collaboratorInviteSeats: async () => null,
   collaboratorClaimActor: async () => null,
   collaboratorClaimSeats: async () => null,
-  invitationCreateSeats: async () => null,
-  invitationAcceptActor: async () => null,
-  invitationAcceptSeats: async () => null,
   linksOfDeck: async () => null
 });

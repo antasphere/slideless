@@ -1507,35 +1507,71 @@ migrate` on an unchanged schema):
   `limit.value` was synchronous and saw no body and no database because the one limit that existed
   read a header. A count reads the tool's tables and the body (the address invited, the deck the
   link is minted on), so the hook is async and answers `null` for "nothing to judge": a token the
-  instance does not know, a caller with no principal, a lookup that throws. The gate then lets the
-  route answer its own 404 or 409. Refusing `plan_required` on a lookup error would sell a plan for
-  a bug.
+  instance does not know, a caller with no principal, a caller the handler would refuse. The gate
+  then lets the route answer its own 404 or 409. A hook that THROWS is caught by the gate and logged
+  at warn with the route and the key (the code review: a cap that silently stops biting is a cap an
+  operator cannot see), and judges nothing on that request. Refusing `plan_required` on a lookup
+  error would sell a plan for a bug.
+- **A count hook must judge only a caller the handler would let act.** The gate runs before the
+  handler's read check, so a count scoped by workspace and id alone answered `plan_required` with the
+  link count to a member who may not see the deck (ADR 013 says 404, never 403, and never a
+  probeable existence). The links hook and the invite hook read the deck and run `canRead` (and
+  `canAdministerDeck`, and the plain member's colleague rule) first, and answer null otherwise: a
+  plan refusal never says more than the handler would.
 - **The body is read once, by whoever reads it first, and Hono keeps the parse.** `c.req.json()` in
   the gate and `c.req.valid('json')` in the handler read the same cached parse (`HonoRequest.bodyCache`),
   so a middleware may read the body before the validator without consuming it. A body that is not
   JSON throws in the gate and reads as `undefined`; the validator's own 400 follows. Never buffer
   the body a second way.
-- **A feature is sold on the act, not on the route.** `feature: 'deck.password'` on the mint would
-  have refused every free share link; `{ key, when }` with `typeof body.password === 'string'`
-  refuses only the mint or the update that SETS one. `null` on the update is a removal and passes;
-  a password set before a downgrade stays (a fact, not an act). The same shape is what a
-  "premium option on a common route" needs anywhere.
-- **One seat pool, four doors, counted AFTER the act.** The gate refuses `observed > max`, so a
-  door reports the seats it would leave behind: the invite adds one unless the address already
-  holds a seat (a member's or an open invitation's), the join converts a reservation into a
-  membership and adds nothing. Counting only members would let a workspace at the cap invite
-  without limit and refuse every claim; counting invitations twice (as reservation and as the
-  join) would refuse the very claim the invite reserved.
-- **A public door judged on a plan is a viewer surface.** The claim and the accept have no
-  principal; the entry-level `actor` names the workspace they open and the gate treats the caller
-  as a viewer: the neutral sentence, no key, no plan, no upgrade page. The invitee is not the
-  payer and must not learn the workspace's plan.
-- **The plan gate is registered before the `hub_managed` gate.** `registerEntitlementGate` runs at
-  `create-api.ts:653`, the invitation routes with their hub-managed gate at 1109, so on a projected
-  workspace a count over the cap would have answered `plan_required` (and drawn the upgrade card)
-  where `hub_managed` is the true answer. The two invitation hooks resolve nothing when the
-  principal carries an account, and the declaration is inert on every workspace that has a plan
-  today (a cloud-local one has none); it is kept for that shape.
+- **A feature is sold on the act, not on the route, and the act is what the schema accepts.**
+  `feature: 'deck.password'` on the mint would have refused every free share link; `{ key, when }`
+  with a password the schema accepts (`SHARE_PASSWORD_MIN`) refuses only the mint or the update that
+  SETS one. `null` on the update is a removal and passes; a too-short string is the validator's 400
+  on every plan; a password set before a downgrade stays (a fact, not an act). The condition is
+  judged BEFORE the plan is read: a rename on the update route costs no hub read. The same shape is
+  what a "premium option on a common route" needs anywhere.
+- **Only a size limit defers the body cap.** The deferral (PRDCT-2632) exists so the plan sees a
+  declared size before the cap's 413; keyed on "any limit", it parked the cap on every count route,
+  dropped the body, and ran the count's lookups on a request that could only answer 413. It is
+  keyed on `limit.value === declaredContentLength`, the same predicate the 411 rule uses.
+- **One seat pool, two doors, counted AFTER the act, and a swept grant holds its seat.** The gate
+  refuses `observed > max`, so a door reports the seats it would leave behind: the invite adds one
+  unless the address already holds a seat, the join converts a reservation into a membership and
+  adds nothing. On cloud the JIT login flips a grant to ACTIVE before the claim mints the
+  membership; a pool counting only pending grants let that person vanish for a moment and lose the
+  seat to the next invitee. An active grant whose holder is not a member is a reserved seat.
+  Counting only members would let a workspace at the cap invite without limit and refuse every
+  claim; counting invitations twice would refuse the very claim the invite reserved.
+- **A declaration that could never refuse is a false guarantee.** The wave's ruling asked for the
+  cap on Slideless's own workspace-invitation routes too, "for the cloud-local shape". On a
+  hub-projected workspace those routes answer `hub_managed` (and the hub enforces the cap at its
+  doors); a cloud-local workspace has no account, so no plan, so nothing to judge; oss declares the
+  cap as null. The two entries could not bite anywhere and cost a token lookup per accept; they
+  were dropped, and the record says the cap on Slideless is at two doors.
+- **A public door judged on a plan is a viewer surface.** The claim has no principal; the
+  entry-level `actor` names the workspace it opens and the gate treats the caller as a viewer: the
+  neutral sentence, no key, no plan, no upgrade page. The invitee is not the payer and must not
+  learn the workspace's plan. The claim's actor hook and its limit hook read ONE resolution of the
+  token per request (a `WeakMap` on the request object the gate builds once), since the door is
+  public and every lookup there is paid.
+- **The check is not a lock, except where a lock already exists.** On Slideless two collaborator
+  invites at the cap that arrive together both read the same count and both pass; the overshoot is
+  bounded by the concurrency and the next act sees it (the gate has no transaction seam, the
+  collaborator service locks the (deck, email) row only; accepted at the code review). On the hub
+  the invitation service already serializes creates per workspace under an advisory lock whose
+  own comment names "a product cap COUNT at cap-1", and the first cut placed the check BEFORE it
+  (the verifier's round 1: two invites, two 201, four seats on a cap of three). The cap is now a
+  `guard` the service runs under the lock, after the duplicate checks and before the insert.
+- **`packages/contract` is read from `dist` by the app's runs too, like the chassis.** The
+  integration config resolves `@slideless/contract` through its `exports` to `dist`, so a mutation
+  (or an edit) under `packages/contract/src` stays invisible to the app-side suites until `pnpm
+turbo build --filter=@slideless/contract`; the verifier's first run of a password-condition
+  mutation stayed green on a stale `dist` and went red after the rebuild. The chassis-boundary
+  sentence above holds for the contract package as well.
+- **A hook that stands in for a handler's check reads the same credential the handler reads.**
+  The claim handler resolves the swept (active) grant through the SESSION; the claim hook first
+  used the principal, so a claim presented with the invitee's own key could be judged by the hook
+  where the handler answers 404. The hook now takes that path only when the principal is a session.
 - **The hub's cap is the smallest among the tools that declare it, and the door names the tool.**
   Two tools may declare `workspace.members` with different values for one organization; the hub
   takes the smallest numeric one (a `null` value bounds nothing) and its upgrade page carries that
@@ -1547,3 +1583,8 @@ migrate` on an unchanged schema):
   because a hub that seeded 5 keeps it until staff edits the row and the chassis charges what the
   hub answers. Pin the declaration on discovery, pin the charge on the fake's row, never conflate
   the two.
+- **A drill assertion sampled after the act cannot fail.** The first version of the third leg read
+  its usage-events baseline AFTER the three refusals and checked the count had not shrunk: a
+  refusal that posted, or a landed mint that posted nothing, both passed. The baseline is read
+  before the first refused call, equality is asserted after them, and exactly one event priced 20
+  after the landed mint (the workspace rule: a loop must be able to show its own failure).

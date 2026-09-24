@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { ActorRef, EntitlementRequest } from '@antasphere/chassis-contract';
 import {
   invitations,
@@ -7,27 +7,39 @@ import {
   workspaces,
   type Db
 } from '@antasphere/chassis-db';
-import { InvitationService } from '@antasphere/chassis-server/invitations';
 import { collaborators } from '@slideless/db';
+import { canAdministerDeck } from './service.js';
 import type { DeckDomain } from '../tool.js';
 
 /**
  * The member cap's one seat pool (PRDCT-2702, the wave's ruling 2 of 24
  * September 2026): a workspace's seats are its ACTIVE members of every
- * origin (guests included) plus the addresses that hold an open invitation
- * of either kind, a live pending collaborator grant or an open workspace
- * invitation, and are not members yet. The four doors that add a member
- * (the collaborator invite and claim, the workspace invitation create and
- * accept) each report the seats AFTER their act, and the gate refuses when
+ * origin (guests included) plus the addresses that hold a seat without a
+ * membership yet: a live pending collaborator grant, an ACTIVE grant whose
+ * holder has not claimed a membership (the cloud's swept state between the
+ * JIT login and the claim: the person invited first must not lose the seat
+ * to the one invited after), and an open workspace invitation. Slideless's
+ * two doors that add a member, the collaborator invite and the collaborator
+ * claim, each report the seats AFTER their act, and the gate refuses when
  * that exceeds `workspace.members` for the plan: a fourth seat on free is
  * refused at the invite, and a workspace downgraded above the cap takes
- * nobody in until it is under it again.
+ * nobody in until it is under it again. The workspace invitation doors
+ * carry no declaration: on every workspace that has a plan they answer
+ * `hub_managed`, and the hub enforces the same cap at its own doors.
  *
- * Every hook resolves through the late-bound domain at request time and
- * answers null on anything it cannot resolve (no principal, no body, a token
- * the instance does not know, a lookup that throws): the gate then leaves the
- * route to its own handling (its 404, 409 or 410), never a plan refusal on a
- * lookup error.
+ * The hooks resolve through the late-bound domain at request time and
+ * answer null for what they cannot or must not judge (no principal, no
+ * body, a token the instance does not know, a caller who may not act on the
+ * deck): the gate then leaves the route to its own handling (its 404, 403,
+ * 409 or 410), so a plan refusal never tells a caller more than the handler
+ * would. A hook that throws is caught and logged by the gate, which judges
+ * nothing on that request.
+ *
+ * The count is read before the handler acts, outside any lock: two
+ * concurrent acts at the cap may both pass and overshoot it by the
+ * concurrency, which the next act sees (accepted at the code review: the
+ * gate has no transaction seam, and the collaborator service's own per-deck
+ * cap keeps its lock).
  */
 
 interface SeatPool {
@@ -35,7 +47,7 @@ interface SeatPool {
   members: number;
   /** The lowercased emails of the active members. */
   memberEmails: Set<string>;
-  /** The lowercased emails holding an open invitation of either kind that are not members. */
+  /** The lowercased emails holding a seat without a membership. */
   reserved: Set<string>;
 }
 
@@ -53,9 +65,11 @@ async function seatPool(db: Db, workspaceId: string): Promise<SeatPool> {
       .where(
         and(
           eq(collaborators.workspaceId, workspaceId),
-          eq(collaborators.status, 'pending'),
           isNull(collaborators.revokedAt),
-          gt(collaborators.claimExpiresAt, now)
+          or(
+            and(eq(collaborators.status, 'pending'), gt(collaborators.claimExpiresAt, now)),
+            eq(collaborators.status, 'active')
+          )
         )
       ),
     db
@@ -81,11 +95,11 @@ async function seatPool(db: Db, workspaceId: string): Promise<SeatPool> {
 
 /** The seats after inviting `email` into the pool: one more unless the address already holds a seat. */
 function seatsAfterInvite(pool: SeatPool, email: string): number {
-  const counted = pool.memberEmails.has(email) || pool.reserved.has(email);
-  return pool.members + pool.reserved.size + (counted ? 0 : 1);
+  const held = pool.memberEmails.has(email) || pool.reserved.has(email);
+  return pool.members + pool.reserved.size + (held ? 0 : 1);
 }
 
-/** The seats after `email` joins on its own invitation: its reservation becomes a membership. */
+/** The seats after `email` joins on its own grant: its reservation becomes a membership. */
 function seatsAfterJoin(pool: SeatPool, email: string): number {
   const reservedOthers = pool.reserved.size - (pool.reserved.has(email) ? 1 : 0);
   return pool.members + reservedOthers + (pool.memberEmails.has(email) ? 0 : 1);
@@ -101,100 +115,79 @@ async function tokenOf(ctx: EntitlementRequest): Promise<string | null> {
   return typeof body?.token === 'string' && body.token ? body.token : null;
 }
 
-async function accountOf(db: Db, workspaceId: string): Promise<string | null> {
-  const [ws] = await db
-    .select({ centralAccountId: workspaces.centralAccountId })
-    .from(workspaces)
-    .where(eq(workspaces.id, workspaceId))
-    .limit(1);
-  return ws?.centralAccountId ?? null;
-}
-
-/** The live pending grant behind a claim token, or, for its signed-in owner, the active grant the JIT sweep already flipped (the G1 path). */
-async function grantOf(
-  domain: DeckDomain,
-  ctx: EntitlementRequest
-): Promise<{ workspaceId: string; email: string } | null> {
-  const token = await tokenOf(ctx);
-  if (!token) return null;
-  const live = await domain.collaborators.findLiveByClaimToken(token);
-  if (live) return { workspaceId: live.grant.workspaceId, email: live.grant.email };
-  if (!ctx.principal) return null;
-  const swept = await domain.collaborators.findActiveByClaimTokenFor(token, ctx.principal.userId);
-  return swept ? { workspaceId: swept.grant.workspaceId, email: swept.grant.email } : null;
+interface ClaimGrant {
+  workspaceId: string;
+  email: string;
 }
 
 export function memberSeatHooks(db: Db, getTool: () => DeckDomain | null) {
-  const guarded =
-    <T>(hook: (ctx: EntitlementRequest) => Promise<T | null>) =>
-    async (ctx: EntitlementRequest): Promise<T | null> => {
-      try {
-        return await hook(ctx);
-      } catch {
-        return null;
-      }
-    };
+  // The claim's grant, resolved once per request: the actor hook and the
+  // limit hook of the same request read the same resolution (the public
+  // door is rate-limited per address only; every lookup there is paid).
+  const grants = new WeakMap<EntitlementRequest, Promise<ClaimGrant | null>>();
+  const grantOf = (ctx: EntitlementRequest): Promise<ClaimGrant | null> => {
+    let resolved = grants.get(ctx);
+    if (!resolved) {
+      resolved = (async () => {
+        const domain = getTool();
+        const token = await tokenOf(ctx);
+        if (!domain || !token) return null;
+        // The live pending grant, or, for its holder signed in with a
+        // SESSION (the handler reads the session, never a key), the active
+        // grant the JIT sweep already flipped (the G1 path of the claim).
+        const live = await domain.collaborators.findLiveByClaimToken(token);
+        if (live) return { workspaceId: live.grant.workspaceId, email: live.grant.email };
+        if (!ctx.principal || ctx.principal.via !== 'session') return null;
+        const swept = await domain.collaborators.findActiveByClaimTokenFor(token, ctx.principal.userId);
+        return swept ? { workspaceId: swept.grant.workspaceId, email: swept.grant.email } : null;
+      })();
+      grants.set(ctx, resolved);
+    }
+    return resolved;
+  };
 
   return {
-    /** The collaborator invite: the caller's workspace, the body's email. */
-    collaboratorInviteSeats: guarded(async (ctx) => {
+    /**
+     * The collaborator invite: the caller's workspace, the body's email. Only
+     * a caller the handler would let invite is judged: one who can read AND
+     * administer the deck (its owner, a workspace admin or owner), and, for a
+     * plain member, only a colleague's address (the handler refuses an
+     * outsider's as `external_invite_forbidden`). Anyone else gets the
+     * handler's own answer, never a plan refusal on a deck they may not see.
+     */
+    collaboratorInviteSeats: async (ctx: EntitlementRequest): Promise<number | null> => {
+      const domain = getTool();
       const email = await emailOf(ctx);
-      if (!ctx.principal || !email) return null;
-      return seatsAfterInvite(await seatPool(db, ctx.principal.workspaceId), email);
-    }),
+      const deckId = ctx.params.id;
+      if (!domain || !ctx.principal || !email || !deckId) return null;
+      const deck = await domain.presentations.get(ctx.principal.workspaceId, deckId);
+      if (!deck || !(await domain.presentations.canRead(ctx.principal, deck))) return null;
+      if (!canAdministerDeck(ctx.principal, deck)) return null;
+      const pool = await seatPool(db, ctx.principal.workspaceId);
+      if (ctx.principal.role === 'member' && !pool.memberEmails.has(email)) return null;
+      return seatsAfterInvite(pool, email);
+    },
 
     /** The collaborator claim: the workspace the grant opens; its account is what the gate judges. */
-    collaboratorClaimActor: guarded(async (ctx): Promise<ActorRef | null> => {
-      const domain = getTool();
-      if (!domain) return null;
-      const grant = await grantOf(domain, ctx);
+    collaboratorClaimActor: async (ctx: EntitlementRequest): Promise<ActorRef | null> => {
+      const grant = await grantOf(ctx);
       if (!grant) return null;
-      const accountRef = await accountOf(db, grant.workspaceId);
-      return { userId: null, workspaceId: grant.workspaceId, ...(accountRef ? { accountRef } : {}) };
-    }),
+      const [ws] = await db
+        .select({ centralAccountId: workspaces.centralAccountId })
+        .from(workspaces)
+        .where(eq(workspaces.id, grant.workspaceId))
+        .limit(1);
+      return {
+        userId: null,
+        workspaceId: grant.workspaceId,
+        ...(ws?.centralAccountId ? { accountRef: ws.centralAccountId } : {})
+      };
+    },
 
-    collaboratorClaimSeats: guarded(async (ctx) => {
-      const domain = getTool();
-      if (!domain) return null;
-      const grant = await grantOf(domain, ctx);
+    collaboratorClaimSeats: async (ctx: EntitlementRequest): Promise<number | null> => {
+      const grant = await grantOf(ctx);
       if (!grant) return null;
       return seatsAfterJoin(await seatPool(db, grant.workspaceId), grant.email.toLowerCase());
-    }),
-
-    /**
-     * The workspace invitation: the caller's workspace, the body's email. On
-     * a hub-projected workspace (the principal carries an account) the door
-     * is the hub's: `hub_managed` answers, and this hook says nothing so the
-     * plan gate never speaks before that pointer. The declaration therefore
-     * bites only where a cloud-local workspace carries a plan, which none
-     * does today; it is kept for that shape (the ruling names it).
-     */
-    invitationCreateSeats: guarded(async (ctx) => {
-      const email = await emailOf(ctx);
-      if (!ctx.principal || !email || ctx.principal.accountRef) return null;
-      return seatsAfterInvite(await seatPool(db, ctx.principal.workspaceId), email);
-    }),
-
-    /** The invitation accept: the workspace the invitation opens; a hub-projected one answers `hub_managed` itself. */
-    invitationAcceptActor: guarded(async (ctx): Promise<ActorRef | null> => {
-      const token = await tokenOf(ctx);
-      if (!token) return null;
-      const match = await new InvitationService(db).findLiveByToken(token);
-      if (!match) return null;
-      const accountRef = await accountOf(db, match.invitation.workspaceId);
-      if (accountRef) return null;
-      return { userId: null, workspaceId: match.invitation.workspaceId };
-    }),
-
-    invitationAcceptSeats: guarded(async (ctx) => {
-      const token = await tokenOf(ctx);
-      if (!token) return null;
-      const match = await new InvitationService(db).findLiveByToken(token);
-      if (!match) return null;
-      return seatsAfterJoin(
-        await seatPool(db, match.invitation.workspaceId),
-        match.invitation.email.toLowerCase()
-      );
-    })
+    }
   };
 }
