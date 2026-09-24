@@ -25,6 +25,11 @@
 #   docker compose -f docker-compose.federation.yml \
 #                  -f docker-compose.federation.seamless.yml up -d --no-build
 #
+# The ports follow the base file's FEDERATION_HUB_PORT / FEDERATION_SL_PORT
+# (defaults 3300 / 3310), so the overlay runs on any band. The browser check
+# (scripts/federation-browser-check.sh, PRDCT-2694) boots the pair with this
+# overlay and signs in through a real Chromium; the drill never loads it.
+#
 # Runtime env + network aliases ONLY — no image/build changes; it layers on
 # the images the base file names. DEV ONLY, like the base file.
 
@@ -36,13 +41,13 @@ services:
           - hub.localhost
           - hub.ant.localhost
     environment:
-      - PUBLIC_BASE_URL=http://hub.ant.localhost:3300
+      - PUBLIC_BASE_URL=http://hub.ant.localhost:${FEDERATION_HUB_PORT:-3300}
       # Activates the shared SSO hint cookie across *.ant.localhost (WI-4).
       - SSO_HINT_COOKIE_DOMAIN=.ant.localhost
       # Twin of the base registry entry, extended with the seamless fields:
       # launchUrl (the /verified "Continue to <tool>" CTA target) and
       # postLogoutRedirectUris (RP-initiated logout landing).
-      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.ant.localhost:3310/mcp","redirectUris":["http://slideless.ant.localhost:3310/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001","launchUrl":"http://slideless.ant.localhost:3310","postLogoutRedirectUris":["http://slideless.ant.localhost:3310/login?signed_out=1"]}]'
+      - 'TOOL_REGISTRY=[{"slug":"slideless-cloud","name":"Slideless (federation dev)","resourceUrl":"http://slideless.ant.localhost:${FEDERATION_SL_PORT:-3310}/mcp","redirectUris":["http://slideless.ant.localhost:${FEDERATION_SL_PORT:-3310}/api/v1/auth/oauth2/callback/antasphere"],"clientId":"tool-slideless-cloud","clientSecret":"federation-dev-client-secret-0001","launchUrl":"http://slideless.ant.localhost:${FEDERATION_SL_PORT:-3310}","postLogoutRedirectUris":["http://slideless.ant.localhost:${FEDERATION_SL_PORT:-3310}/login?signed_out=1"]}]'
 
   app:
     networks:
@@ -51,5 +56,8 @@ services:
           - slideless.localhost
           - slideless.ant.localhost
     environment:
-      - PUBLIC_BASE_URL=http://slideless.ant.localhost:3310
-      - HUB_ISSUER_URL=http://hub.ant.localhost:3300
+      - PUBLIC_BASE_URL=http://slideless.ant.localhost:${FEDERATION_SL_PORT:-3310}
+      - HUB_ISSUER_URL=http://hub.ant.localhost:${FEDERATION_HUB_PORT:-3300}
+      # The hint domain Slideless reads and clears: the hub's, spelled out
+      # rather than derived from the issuer (the derivation gives the same).
+      - HUB_HINT_COOKIE_DOMAIN=ant.localhost
