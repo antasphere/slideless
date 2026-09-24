@@ -70,6 +70,37 @@ It changes nothing about the deck itself, which still runs without
 This is the **safe default**: with zero configuration, a share link on the
 app origin cannot be used to steal a dashboard session.
 
+### The still image: the one place the server opens a deck
+
+Everything above happens in a visitor's browser. The dashboard's deck cards
+show a still image of each version, and that image is the one place the
+**instance itself** opens deck HTML, with the deck's script running. It is
+captured by headless Chromium inside the app container, under layers that
+each hold on their own:
+
+- **Chromium's own sandbox, never disabled.** There is no setting that turns
+  it off. Where the container does not let the sandbox start, capture stays
+  off and the cards show a drawn pattern
+  ([Deck images](../self-hosting/install.md#deck-images)).
+- **Only the version's own files.** Every request the page makes is
+  intercepted: the version's files are served from its manifest, and every
+  other request is refused before it leaves, including other hosts on your
+  network, the instance itself, the cloud metadata server and the public
+  internet. Beneath that, Chromium is pointed at a proxy nothing listens on
+  and every host name resolves to nothing, so a request that ever slipped
+  past the interception still reaches no one.
+- **No service workers and no WebSockets.** Both are blocked.
+- **A process with nothing to steal.** Chromium starts with a clean
+  environment (none of the instance's secrets), a throwaway profile, a
+  capped JavaScript heap and a single renderer process.
+- **Nothing outlives a capture.** A fresh browser opens for every capture
+  and a hard timeout kills it, whatever the deck does. Captures run one at a
+  time.
+
+**Who can see the image.** Exactly the people who can read the deck
+([below](#who-can-read-a-deck-at-all)). Anyone else gets a 404, like every
+other deck read.
+
 ## The one hardening knob: `VIEWER_BASE_URL`
 
 The default's protection is one header on one route — regression-tested,

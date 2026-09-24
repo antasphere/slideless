@@ -65,6 +65,17 @@ services:
       - ALLOW_INSECURE_SETUP=${ALLOW_INSECURE_SETUP:-false}
       # OTLP/HTTP endpoint for trace export. Unset = no export (zero phone-home).
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # The still image of each deck version, captured by Chromium in the
+      # image (docs/self-hosting/install.md, "Deck images"). Empty = on; off
+      # stops capturing and the cards keep a drawn pattern.
+      - SLIDELESS_THUMBNAILS=${SLIDELESS_THUMBNAILS:-}
+      # Empty = the image's own Chromium (/usr/bin/chromium-browser).
+      - SLIDELESS_CHROMIUM_PATH=${SLIDELESS_CHROMIUM_PATH:-}
+    # Docker's default seccomp profile plus what Chromium's own sandbox needs
+    # to start (user namespaces). The capture never runs without that sandbox:
+    # without this file it stays off. Never replace it with seccomp=unconfined.
+    security_opt:
+      - seccomp=./deploy/seccomp-chromium.json
     ports:
       # LOOPBACK BY DEFAULT. Docker publishes ports by writing DNAT rules that
       # bypass ufw's INPUT chain, so a 0.0.0.0 bind here is reachable from the

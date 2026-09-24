@@ -96,6 +96,19 @@ jobs:
           tags: slideless:hostinger-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # PRDCT-2725: the image's Chromium captures each deck version's still
+      # image, always under its own sandbox. The shipped seccomp profile must
+      # let that sandbox start on a stock Docker host, and without the profile
+      # the capture must refuse (exit 3), never fall back to running unsandboxed.
+      - name: The still-image capture runs sandboxed in the image
+        run: docker run --rm --security-opt seccomp=deploy/seccomp-chromium.json slideless:hostinger-test node dist/thumbnail-selfcheck.js
+      - name: Without the profile, the capture refuses to run unsandboxed
+        run: |
+          set +e
+          docker run --rm slideless:hostinger-test node dist/thumbnail-selfcheck.js
+          code=$?
+          echo "exit code: $code"
+          test "$code" -eq 3
       - name: Exercise HTTPS installation and persistence
         env:
           HOSTINGER_TEST_IMAGE: slideless:hostinger-test

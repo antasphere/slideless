@@ -1,7 +1,9 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // The server, and the still-image self-check the image and CI run
+  // (`node dist/thumbnail-selfcheck.js`, PRDCT-2725).
+  entry: { index: 'src/index.ts', 'thumbnail-selfcheck': 'src/thumbnails/selfcheck.ts' },
   format: 'esm',
   target: 'node22',
   sourcemap: true,

@@ -64,7 +64,16 @@ FROM node:22-alpine
 # image's OS packages up to Alpine's current fixes: the Trivy HIGH gate in
 # release.yml scans this final stage, and the node:22-alpine tag lags the
 # Alpine security feed (same pattern as the hub, 2026-08-28).
+# chromium (PRDCT-2725) captures the still image of each deck version, driven
+# by playwright-core, always under its own sandbox (deploy/seccomp-chromium.json
+# lets that sandbox start). Chromium is ~290 MB and the graphics and media
+# libraries it links (LLVM, Mesa, ffmpeg, GTK) bring this layer to ~770 MB
+# unpacked (~330 MB more to pull); SLIDELESS_THUMBNAILS=off stops using it, it
+# does not remove it. The fonts make a deck that ships no web
+# font legible: Liberation (metric-compatible Arial/Times/Courier), DejaVu (wide
+# Unicode coverage), Noto Color Emoji (~10 MB).
 RUN apk upgrade --no-cache && apk add --no-cache tini wget \
+      chromium font-liberation font-dejavu font-noto-emoji \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
            /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
            /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v* \
