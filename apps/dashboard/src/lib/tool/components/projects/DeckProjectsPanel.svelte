@@ -67,8 +67,10 @@
   });
 
   const addable = $derived(canManage ? projectsToAddTo(readable, refs) : []);
-  // a deck in no project the reader reads, and nothing the reader can do: no block at all
-  const shown = $derived(loaded && (refs.length > 0 || addable.length > 0 || error !== null));
+  // the card sits on the deck's Overview, beside "About this deck": it is always
+  // there once read, and an empty one says what a project is for and how to
+  // add the deck to one
+  const shown = $derived(loaded);
 
   let showAddDialog = $state(false);
   let addChoice = $state<string | null>(null);
@@ -123,8 +125,8 @@
 {/snippet}
 
 {#if shown}
-  <div in:appear>
-    <Card.Root class="deck-section gap-3" data-testid="deck-projects-panel">
+  <div class="h-full" in:appear>
+    <Card.Root class="deck-section h-full gap-3" data-testid="deck-projects-panel">
       <DeckSectionHeading
         drawing="projects"
         title={t('deckProjects.panelTitle')}
@@ -134,7 +136,24 @@
       <Card.Content>
         <FormError message={error ? t('deckProjects.panelLoadFailed', { error }) : null} />
         {#if !error && !refs.length}
-          <p class="text-sm text-muted-foreground">{t('deckProjects.panelEmpty')}</p>
+          <div class="empty" data-testid="deck-projects-empty">
+            <span class="empty-icon" aria-hidden="true">
+              <Folder class="size-4" strokeWidth={1.6} />
+            </span>
+            <div class="empty-words">
+              <p class="empty-title">{t('deckProjects.panelEmpty')}</p>
+              <p class="empty-hint">
+                {#if addable.length}
+                  {t('deckProjects.emptyHintAdd')}
+                {:else if canManage}
+                  {t('deckProjects.emptyHintCreate')}
+                  <a href="/projects" class="empty-link">{t('deckProjects.emptyGoProjects')}</a>
+                {:else}
+                  {t('deckProjects.emptyHintRead')}
+                {/if}
+              </p>
+            </div>
+          </div>
         {:else if refs.length}
           <ul class="rows">
             {#each refs as ref (ref.id)}
@@ -196,6 +215,47 @@
 />
 
 <style>
+  .empty {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border: 1px dashed var(--hairline);
+    border-radius: var(--r-md, 12px);
+  }
+  .empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: var(--plate-strong);
+    color: var(--muted);
+  }
+  .empty-words {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .empty-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .empty-hint {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .empty-link {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
   .rows {
     display: flex;
     flex-direction: column;

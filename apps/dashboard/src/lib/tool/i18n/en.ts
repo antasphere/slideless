@@ -230,6 +230,14 @@ export const en = {
   'deck.previewOwnerOnly':
     'The preview is available to the deck owner and workspace admins. Create a share link under Links to view this deck.',
   'deck.selfDescTitle': 'Deck details',
+  'deck.aboutTitle': 'About this deck',
+  'deck.aboutDescription': 'What the deck says about itself, for people and for agents.',
+  'deck.aboutAgentDocHint': 'The briefing an agent reads before it works on this deck.',
+  'deck.aboutAgentDocNone':
+    'No briefing yet. Put an AGENT.md at the root of the folder you push, and agents read it first.',
+  'deck.aboutAgentDocShow': 'Read',
+  'deck.aboutAgentDocHide': 'Hide',
+  'deck.aboutMetadataNone': 'No metadata yet. Label the deck from the command line:',
   'deck.selfDescDescription': 'Owner-defined metadata and the bundle’s AGENT.md agent briefing.',
   'deck.metadataHeading': 'Metadata',
   'deck.agentDocHeading': 'Agent briefing (AGENT.md)',
@@ -600,6 +608,10 @@ export const en = {
   'deckProjects.panelDescription':
     'The projects this deck sits in. The members of a project can read its decks.',
   'deckProjects.panelEmpty': 'This deck is in no project.',
+  'deckProjects.emptyHintAdd': 'Add it to one and the project’s members can read it.',
+  'deckProjects.emptyHintCreate': 'A project groups decks for a team. Create one, then add this deck to it.',
+  'deckProjects.emptyGoProjects': 'Go to Projects',
+  'deckProjects.emptyHintRead': 'Its owner or a workspace admin can add it to a project.',
   'deckProjects.panelLoadFailed': 'Could not load the projects: {error}',
   'deckProjects.addToProject': 'Add to a project',
   'deckProjects.addToProjectTitle': 'Add this deck to a project',

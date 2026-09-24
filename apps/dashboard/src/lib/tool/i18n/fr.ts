@@ -247,6 +247,14 @@ export const fr: Record<keyof typeof en, string> = {
   'deck.previewOwnerOnly':
     'L’aperçu est réservé au propriétaire du deck et aux admins de l’espace. Créez un lien de partage sous Liens pour voir ce deck.',
   'deck.selfDescTitle': 'Détails du deck',
+  'deck.aboutTitle': 'À propos de ce deck',
+  'deck.aboutDescription': 'Ce que le deck dit de lui-même, aux personnes et aux agents.',
+  'deck.aboutAgentDocHint': 'Le briefing qu’un agent lit avant de travailler sur ce deck.',
+  'deck.aboutAgentDocNone':
+    'Pas encore de briefing. Placez un AGENT.md à la racine du dossier que vous poussez : les agents le lisent en premier.',
+  'deck.aboutAgentDocShow': 'Lire',
+  'deck.aboutAgentDocHide': 'Masquer',
+  'deck.aboutMetadataNone': 'Pas encore de métadonnées. Étiquetez le deck en ligne de commande :',
   'deck.selfDescDescription': 'Métadonnées définies par le propriétaire et briefing AGENT.md du bundle.',
   'deck.metadataHeading': 'Métadonnées',
   'deck.agentDocHeading': 'Briefing agent (AGENT.md)',
@@ -630,6 +638,11 @@ export const fr: Record<keyof typeof en, string> = {
   'deckProjects.panelDescription':
     'Les projets où se trouve cette présentation. Les membres d’un projet peuvent lire ses présentations.',
   'deckProjects.panelEmpty': 'Cette présentation n’est dans aucun projet.',
+  'deckProjects.emptyHintAdd': 'Ajoutez-la à un projet et ses membres pourront la lire.',
+  'deckProjects.emptyHintCreate':
+    'Un projet regroupe des présentations pour une équipe. Créez-en un, puis ajoutez-y cette présentation.',
+  'deckProjects.emptyGoProjects': 'Aller aux projets',
+  'deckProjects.emptyHintRead': 'Son propriétaire ou un admin de l’espace peut l’ajouter à un projet.',
   'deckProjects.panelLoadFailed': 'Impossible de charger les projets : {error}',
   'deckProjects.addToProject': 'Ajouter à un projet',
   'deckProjects.addToProjectTitle': 'Ajouter cette présentation à un projet',

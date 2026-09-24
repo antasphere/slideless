@@ -15,7 +15,6 @@
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import Eye from '@lucide/svelte/icons/eye';
   import Link2 from '@lucide/svelte/icons/link-2';
-  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import Users from '@lucide/svelte/icons/users';
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import Inbox from '@lucide/svelte/icons/inbox';
@@ -172,7 +171,6 @@
   // Every panel stays mounted (their loads are unchanged); the tab only says
   // which one is shown, so a switch is instant and `?tab=` survives a reload.
   // A panel reports its size once it knows it; `undefined` while it does not.
-  let projectsCount = $state<number | undefined>(undefined);
   let collaboratorsCount = $state<number | undefined>(undefined);
   let notesCount = $state<number | undefined>(undefined);
   let responsesCount = $state<number | undefined>(undefined);
@@ -186,11 +184,6 @@
   const tabs = $derived.by((): DeckTab[] => [
     { id: 'overview', label: t('deck.tabOverview'), icon: Eye },
     { id: 'links', label: t('deck.tabLinks'), icon: Link2, count: linksCount },
-    // A guest is never a project's member: no projects tab for them. A reader
-    // who cannot add the deck to a project sees the tab only when it holds one.
-    ...(me.origin !== 'guest' && (canManageCollaborators || projectsCount !== 0)
-      ? [{ id: 'projects', label: t('deck.tabProjects'), icon: FolderKanban, count: projectsCount }]
-      : []),
     { id: 'collaborators', label: t('deck.tabCollaborators'), icon: Users, count: collaboratorsCount },
     { id: 'notes', label: t('deck.tabNotes'), icon: MessageSquare, count: notesCount },
     { id: 'responses', label: t('deck.tabResponses'), icon: Inbox, count: responsesCount },
@@ -350,26 +343,23 @@
         </Card.Content>
       </Card.Root>
 
-      <DeckMetaPanel {deck} />
+      <!-- What the deck says about itself, and the projects it sits in: half
+           the width each on a desk, one under the other on a phone. A guest
+           is never a project's member (the design of 20 September 2026), so
+           the details take the whole width for them. -->
+      <div class="grid items-stretch gap-6 {me.origin !== 'guest' ? 'md:grid-cols-2' : ''}">
+        <DeckMetaPanel {deck} />
+        {#if me.origin !== 'guest'}
+          <!-- Adding the deck to a project widens who reads it, so it takes
+               what managing its collaborators takes. -->
+          <DeckProjectsPanel {deckId} deckTitle={deck.title} canManage={canManageCollaborators} />
+        {/if}
+      </div>
     </div>
 
     <div hidden={activeTab !== 'links'}>
       <ShareTokensPanel {deckId} list={tokensList} versions={versionsList.items} />
     </div>
-
-    <!-- A guest is never a project's member (the design of 20 September 2026):
-         the block is not theirs. Adding the deck to a project widens who reads
-         it, so it takes what managing its collaborators takes. -->
-    {#if me.origin !== 'guest'}
-      <div hidden={activeTab !== 'projects'}>
-        <DeckProjectsPanel
-          {deckId}
-          deckTitle={deck.title}
-          canManage={canManageCollaborators}
-          oncount={(n) => (projectsCount = n)}
-        />
-      </div>
-    {/if}
 
     <div hidden={activeTab !== 'collaborators'}>
       <CollaboratorsPanel
