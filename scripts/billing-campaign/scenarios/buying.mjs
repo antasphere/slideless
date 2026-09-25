@@ -693,13 +693,17 @@ export const scenarios = [
         throw new CampaignError(`the invoice amounts are ${amounts}, expected ${expected}`, { rows });
       const listed = new Set(rows.map((r) => r.id));
       const missing = bought.filter((p) => !listed.has(p.invoiceId)).map((p) => p.invoiceId);
-      if (missing.length) {
-        // The list may carry the hub's own ids rather than Stripe's: record it, the amounts already matched.
-        ctx.report.note(
-          `buying: the hub's invoice list ids do not match the Stripe invoice ids of the purchases (${missing.length} unmatched); the amounts matched.`
+      // The hub lists invoices by their Stripe id (proven on the pair); the right
+      // amounts under other ids would not be "every purchase with its hosted page".
+      if (missing.length)
+        throw new CampaignError(
+          `the hub's invoice list does not carry ${missing.length} of the purchases' Stripe invoice ids`,
+          {
+            missing,
+            listed: [...listed]
+          }
         );
-      }
-      return { org, invoices: rows, stripeIdsMatched: missing.length === 0 };
+      return { org, invoices: rows, stripeIdsMatched: true };
     }
   },
   {

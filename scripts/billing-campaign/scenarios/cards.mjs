@@ -367,7 +367,13 @@ export const scenarios = [
         challengeShown,
         balance: after.balance
       };
-      if (!challengeShown) evidence.note = 'the page never showed a challenge and the payment still landed';
+      // The row's name says the challenge completed: a payment that lands with no
+      // challenge shown is not that fact, whatever Stripe's test card did.
+      if (!challengeShown)
+        throw new CampaignError(
+          'the page never showed a 3-D Secure challenge and the payment still landed',
+          evidence
+        );
       return evidence;
     }
   },
@@ -500,6 +506,12 @@ export const scenarios = [
         throw new CampaignError(
           'Stripe attached the expired test card: the scenario expected the attach to be refused',
           { customerB }
+        );
+      // Any other error (a network failure, a 5xx) is not the expected refusal.
+      if (expiredRefusal.code !== 'expired_card')
+        throw new CampaignError(
+          'the attach of the expired card failed for another reason than expired_card',
+          expiredRefusal
         );
       const pmId = await swapCard(ctx, 'pm_card_chargeCustomerFail');
       await enable(ctx, orgB, { enabled: true });

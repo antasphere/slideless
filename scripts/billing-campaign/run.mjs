@@ -199,8 +199,12 @@ async function main() {
           row.reason = "needs lane A's checkout (PRDCT-2715), which this hub does not carry";
         } else {
           const evidence = await sc.run(ctx);
+          // A green row carries the facts that prove it: a scenario that returns
+          // nothing, or an empty object, proved nothing and is red.
+          if (!evidence || typeof evidence !== 'object' || Object.keys(evidence).length === 0)
+            throw new CampaignError('the scenario returned no evidence', { returned: evidence ?? null });
           row.status = 'green';
-          row.evidence = evidence ?? {};
+          row.evidence = evidence;
         }
       } catch (err) {
         row.status = 'red';

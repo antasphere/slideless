@@ -535,7 +535,7 @@ export const scenarios = [
     }
   },
   {
-    name: 'a burst of concurrent debits on ONE organization never overdraws it and every event is answered once',
+    name: 'a burst of concurrent debits on ONE organization lands every event once, the ledger agrees while the balance goes negative, and the check then refuses',
     path: 'hub routes',
     async run(ctx) {
       const { orgs } = loadState(ctx);
@@ -667,6 +667,9 @@ export const scenarios = [
       };
       if (check.allowed !== false)
         throw new CampaignError('the usage check allows a 5-credit upload on a balance under 5', evidence);
+      ctx.report.note(
+        `load: the balance of "Campaign load ${o.i}" read ${afterBig.balance} after the burst, by design: the check before the action is the gate and the ingest records what was done whatever the balance, so a tool that skips the check can drive the balance negative and the next grant pays the deficit first (the hub's ledger.ts; the wave's ruling of 25 September).`
+      );
       return { ...evidence, elapsedMs: Date.now() - t0 };
     }
   }

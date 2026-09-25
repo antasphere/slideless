@@ -69,7 +69,8 @@ case "$STRIPE_SANDBOX_SECRET_KEY" in sk_test_*) ;; *) fail "STRIPE_SANDBOX_SECRE
 export STRIPE_SECRET_KEY="$STRIPE_SANDBOX_SECRET_KEY"
 export STRIPE_TEST_CLOCKS=true
 say "The listen signing secret from the Stripe CLI"
-STRIPE_WEBHOOK_SECRET="$("$STRIPE_BIN" listen --api-key "$STRIPE_SANDBOX_SECRET_KEY" --print-secret 2>/dev/null || true)"
+# The key reaches the CLI through its environment, never on a command line `ps` can read.
+STRIPE_WEBHOOK_SECRET="$(STRIPE_API_KEY="$STRIPE_SANDBOX_SECRET_KEY" "$STRIPE_BIN" listen --print-secret 2>/dev/null || true)"
 case "$STRIPE_WEBHOOK_SECRET" in whsec_*) ;; *) fail "stripe listen --print-secret did not answer a signing secret" ;; esac
 export STRIPE_WEBHOOK_SECRET
 echo "    a whsec_ secret of ${#STRIPE_WEBHOOK_SECRET} characters"
@@ -110,10 +111,13 @@ echo "    hub up on $FEDERATION_HUB_PORT"
 # 3. the forwarder, to the relay the orchestrator opens.
 say "stripe listen → the relay on 127.0.0.1:$CAMPAIGN_RELAY_PORT"
 LISTEN_LOG="$CAMPAIGN_OUT/stripe-listen.log"
-"$STRIPE_BIN" listen --api-key "$STRIPE_SANDBOX_SECRET_KEY" \
+# The CLI's Ready line prints the signing secret: the log gets it redacted, and
+# the file is made mode 600 before the CLI writes a byte.
+(umask 077; : > "$LISTEN_LOG")
+STRIPE_API_KEY="$STRIPE_SANDBOX_SECRET_KEY" "$STRIPE_BIN" listen \
   --forward-to "http://127.0.0.1:$CAMPAIGN_RELAY_PORT/api/v1/webhooks/stripe" \
   --events checkout.session.completed,payment_intent.succeeded,payment_intent.payment_failed,invoice.paid,invoice.payment_failed,invoice.finalized,charge.refunded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted \
-  > "$LISTEN_LOG" 2>&1 &
+  > >(awk '{ gsub(/whsec_[A-Za-z0-9]+/, "whsec_<redacted>"); print; fflush() }' >> "$LISTEN_LOG") 2>&1 &
 LISTEN_PID=$!
 cleanup() {
   local status=$?

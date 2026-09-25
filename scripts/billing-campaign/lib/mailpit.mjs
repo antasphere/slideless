@@ -16,7 +16,7 @@ export class Mailpit {
   }
   /** The messages to one address whose subject contains `subject`, newest first (summaries). */
   async find({ to, subject, after = 0 }) {
-    const all = await this.list(200);
+    const all = await this.list(1000);
     return all.filter(
       (m) =>
         (!to || m.To.some((t) => t.Address === to)) &&

@@ -307,7 +307,7 @@ export const scenarios = [
     }
   },
   {
-    name: 'two tools debiting at once charge once (the advisory lock)',
+    name: 'two tools debiting at once charge once (the lock and the in-flight guard)',
     path: 'hub routes',
     async run(ctx) {
       const { org, customerId } = need('once');

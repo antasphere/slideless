@@ -714,7 +714,7 @@ export const scenarios = [
     }
   },
   {
-    name: 'a hub restart mid-delivery loses nothing',
+    name: 'an event row recorded but unprocessed before a hub restart is processed once after it, and a second delivery answers duplicate',
     path: PATH,
     async run(ctx) {
       let h = null;
