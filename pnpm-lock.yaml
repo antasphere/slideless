@@ -149,8 +149,8 @@ importers:
         specifier: 1.6.22
         version: 1.6.22(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0))(pg@8.22.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.4.3))
       '@hono/node-server':
-        specifier: ^1.14.0
-        version: 1.19.14(hono@4.12.27)
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.12.27)
       '@hono/zod-openapi':
         specifier: ^1.4.0
         version: 1.4.0(hono@4.12.27)(zod@4.4.3)
@@ -319,8 +319,8 @@ importers:
         specifier: 0.3.0
         version: 0.3.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(hono-rate-limiter@0.5.3(hono@4.12.27))(hono@4.12.27)(zod@4.4.3)
       '@hono/node-server':
-        specifier: ^1.14.0
-        version: 1.19.14(hono@4.12.27)
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.12.27)
       '@hono/zod-openapi':
         specifier: ^1.4.0
         version: 1.4.0(hono@4.12.27)(zod@4.4.3)
@@ -779,6 +779,7 @@ packages:
 
   '@better-auth/cli@1.4.21':
     resolution: {integrity: sha512-bKEa8BupnZxNjLk9ZDntvgQGm5jogeE2wHdMbYifhet3GTyxgDi6pXoOK8+aqHYQGg1C3OALi9hVVWnrv7JJWQ==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     hasBin: true
 
   '@better-auth/core@1.4.21':
@@ -968,11 +969,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -1643,9 +1644,15 @@ packages:
       hono-rate-limiter: ^0.5.3
       zod: ^3.25.0 || ^4.0.0
 
-  '@hono/node-server@1.19.14':
-    resolution: {integrity: sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==}
+  '@hono/node-server@1.19.17':
+    resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
     engines: {node: '>=18.14.1'}
+    peerDependencies:
+      hono: ^4
+
+  '@hono/node-server@2.1.1':
+    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+    engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
 
@@ -2892,6 +2899,7 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+    deprecated: v4 is no longer maintained, upgrade to v5
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -4316,6 +4324,7 @@ packages:
   prom-client@15.1.3:
     resolution: {integrity: sha512-6ZiOBfCywsD4k1BN9IX0uZhF+tJkV8q8llP64G5Hajs4JOeVLPCwpPVcpXy3BwYiUGgyJzsJJQeOIv7+hDSq8g==}
     engines: {node: ^16 || ^18 || >=20}
+    deprecated: prom-client has been replaced by @prometheus-io/client
 
   prompts@2.4.2:
     resolution: {integrity: sha512-NxNv/kLguCA7p3jE8oL2aEBsrJWgAakBpgmgK6lpPWV+WuOmY6r2/zbAVnP+T8bQlA0nzHXSJSJW0Hq7ylaD2Q==}
@@ -6331,7 +6340,11 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.4.3
 
-  '@hono/node-server@1.19.14(hono@4.12.27)':
+  '@hono/node-server@1.19.17(hono@4.12.27)':
+    dependencies:
+      hono: 4.12.27
+
+  '@hono/node-server@2.1.1(hono@4.12.27)':
     dependencies:
       hono: 4.12.27
 
@@ -6435,7 +6448,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
     dependencies:
-      '@hono/node-server': 1.19.14(hono@4.12.27)
+      '@hono/node-server': 1.19.17(hono@4.12.27)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
