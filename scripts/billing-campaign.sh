@@ -31,6 +31,12 @@
 #      left exactly as it was (its state is not the campaign's to remove).
 # The exit code is the run's: non-zero on any red or unrun scenario.
 #
+# One operator per pair: the orchestrator keeps Drill Owner's hub password in
+# $CAMPAIGN_OUT/.owner-password and resets it through the hub's mail when the
+# kept one fails, so two CAMPAIGN_OUT folders on one pair make the password
+# ping-pong until the hub's reset wall (five per address per ten minutes)
+# answers 429 and the preflight stops. Share one CAMPAIGN_OUT per pair.
+#
 # Usage: STRIPE_SANDBOX_SECRET_KEY=sk_test_… ./scripts/billing-campaign.sh [run.mjs args]
 #   FEDERATION_* as the drill (project, ports, images, hub dir, subnet)
 #   CAMPAIGN_BUNDLE=<dir>     where campaign/run-<n>/ is written (default $CAMPAIGN_OUT)
