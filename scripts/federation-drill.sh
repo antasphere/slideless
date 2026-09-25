@@ -46,6 +46,13 @@
 #      the hub slow beyond the check's budget still lets the action land
 #      (fail-open) with the posture on /metrics, healed by the next answer.
 #
+# Phase 3 of the billing rail (PRDCT-2718) is proven by the billing campaign,
+# not by a leg here: scripts/billing-campaign.sh boots this same pair through
+# this drill when it is not up, runs the 70 scenarios of scripts/billing-campaign/
+# against the Stripe sandbox (STRIPE_SANDBOX_SECRET_KEY in the environment,
+# `stripe listen` and test clocks) and writes campaign/run-<n>/results.json and
+# report.md; its header says how to run it.
+#
 # The browser sign-in on this pair starts on http://slideless.localhost:<port>,
 # never on http://localhost:<port> (PRDCT-2645): the hub sends the browser back
 # to slideless.localhost, so the state cookie set on one host cannot be read
