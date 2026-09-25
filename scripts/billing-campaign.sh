@@ -113,7 +113,7 @@ say "stripe listen → the relay on 127.0.0.1:$CAMPAIGN_RELAY_PORT"
 LISTEN_LOG="$CAMPAIGN_OUT/stripe-listen.log"
 # The CLI's Ready line prints the signing secret: the log gets it redacted, and
 # the file is made mode 600 before the CLI writes a byte.
-(umask 077; : > "$LISTEN_LOG")
+(umask 077; rm -f "$LISTEN_LOG"; : > "$LISTEN_LOG")
 STRIPE_API_KEY="$STRIPE_SANDBOX_SECRET_KEY" "$STRIPE_BIN" listen \
   --forward-to "http://127.0.0.1:$CAMPAIGN_RELAY_PORT/api/v1/webhooks/stripe" \
   --events checkout.session.completed,payment_intent.succeeded,payment_intent.payment_failed,invoice.paid,invoice.payment_failed,invoice.finalized,charge.refunded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted \
