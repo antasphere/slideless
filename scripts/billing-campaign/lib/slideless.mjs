@@ -26,7 +26,12 @@ export class Slideless {
       method,
       path: `/api/v1${path}`,
       jar: this.jar,
-      headers: { origin: this.cfg.sl.base, ...(ws ? { 'x-workspace-id': ws } : {}), ...(method !== 'GET' ? idempotency() : {}), ...extra },
+      headers: {
+        origin: this.cfg.sl.base,
+        ...(ws ? { 'x-workspace-id': ws } : {}),
+        ...(method !== 'GET' ? idempotency() : {}),
+        ...extra
+      },
       body
     });
   }
@@ -38,7 +43,12 @@ export class Slideless {
     return request(this.target, {
       method,
       path: `/api/v1${path}`,
-      headers: { authorization: `Bearer ${key}`, ...(ws ? { 'x-workspace-id': ws } : {}), ...(method !== 'GET' ? idempotency() : {}), ...extra },
+      headers: {
+        authorization: `Bearer ${key}`,
+        ...(ws ? { 'x-workspace-id': ws } : {}),
+        ...(method !== 'GET' ? idempotency() : {}),
+        ...extra
+      },
       body
     });
   }
@@ -51,19 +61,42 @@ export class Slideless {
    */
   async signInWithHub() {
     this.jar.clear();
-    const initiate = await this.must(null, 'POST', '/auth/sign-in/oauth2', { providerId: 'antasphere', callbackURL: '/' }, 200, 'sign-in/oauth2');
+    const initiate = await this.must(
+      null,
+      'POST',
+      '/auth/sign-in/oauth2',
+      { providerId: 'antasphere', callbackURL: '/' },
+      200,
+      'sign-in/oauth2'
+    );
     const authz = new URL(initiate.url);
     // A browser gets a 302; a caller accepting JSON gets 200 `{ redirect: true, url }`. Both are read.
-    const hop = await request(this.hub.target, { path: `${authz.pathname}${authz.search}`, jar: this.hub.jar, headers: { origin: this.cfg.hub.base, accept: 'text/html' } });
+    const hop = await request(this.hub.target, {
+      path: `${authz.pathname}${authz.search}`,
+      jar: this.hub.jar,
+      headers: { origin: this.cfg.hub.base, accept: 'text/html' }
+    });
     const location = hop.headers.location ?? (hop.json?.redirect ? hop.json.url : '') ?? '';
-    if (!location.startsWith(`${this.cfg.sl.base}/api/v1/auth/oauth2/callback/antasphere?`) || !location.includes('code=')) {
-      throw new CampaignError('the hub did not redirect to the Slideless callback with a code', { status: hop.status, location: location.replace(/code=[^&]*/, 'code=…'), body: hop.text.slice(0, 300).replace(/code=[^&"]*/g, 'code=…') });
+    if (
+      !location.startsWith(`${this.cfg.sl.base}/api/v1/auth/oauth2/callback/antasphere?`) ||
+      !location.includes('code=')
+    ) {
+      throw new CampaignError('the hub did not redirect to the Slideless callback with a code', {
+        status: hop.status,
+        location: location.replace(/code=[^&]*/, 'code=…'),
+        body: hop.text.slice(0, 300).replace(/code=[^&"]*/g, 'code=…')
+      });
     }
     const cb = new URL(location);
     const done = await request(this.target, { path: `${cb.pathname}${cb.search}`, jar: this.jar });
     expectStatus(done, 302, 'the Slideless callback');
     const me = await this.must(null, 'GET', '/me');
-    this.user = { id: me.user.id, email: me.user.email, workspaces: me.workspaces, canCreateWorkspace: me.canCreateWorkspace };
+    this.user = {
+      id: me.user.id,
+      email: me.user.email,
+      workspaces: me.workspaces,
+      canCreateWorkspace: me.canCreateWorkspace
+    };
     return this.user;
   }
   async me() {
@@ -82,7 +115,14 @@ export class Slideless {
     return { workspaceId, org };
   }
   async createKey(ws, name = 'campaign key') {
-    const key = await this.must(ws, 'POST', '/api-keys', { name, scopes: ['presentations:read', 'presentations:write'] }, 201, 'POST /api-keys');
+    const key = await this.must(
+      ws,
+      'POST',
+      '/api-keys',
+      { name, scopes: ['presentations:read', 'presentations:write'] },
+      201,
+      'POST /api-keys'
+    );
     return key.key;
   }
 
@@ -90,7 +130,9 @@ export class Slideless {
   async uploadAsset(ws, content, { key, label = 'asset' } = {}) {
     const data = Buffer.isBuffer(content) ? content : Buffer.from(content);
     const sha = createHash('sha256').update(data).digest('hex');
-    const { body, contentType } = multipart({ sha256: sha }, [{ name: 'file', filename: `${label}.txt`, contentType: 'text/plain', data }]);
+    const { body, contentType } = multipart({ sha256: sha }, [
+      { name: 'file', filename: `${label}.txt`, contentType: 'text/plain', data }
+    ]);
     const headers = { 'content-type': contentType, 'content-length': body.length };
     if (key) return this.withKey(key, ws, 'POST', '/presentations/assets', body, headers);
     return this.as(ws, 'POST', '/presentations/assets', body, headers);
@@ -111,13 +153,17 @@ export class Slideless {
   async links(ws, deckId) {
     return (await this.must(ws, 'GET', `/presentations/${deckId}/tokens?limit=100`)).shareTokens;
   }
-  inviteCollaborator(ws, deckId, email) {
-    return this.as(ws, 'POST', `/presentations/${deckId}/collaborators`, { email });
-  }
   /** The plan refusal's shape, judged the way the drill judges it. */
   static isPlanRefusal(res, key) {
     const d = res.json?.error?.details ?? {};
-    return res.status === 403 && res.json?.error?.code === 'plan_required' && d.key === key && d.plan === 'free' && d.requiredPlan === 'pro' && typeof d.upgradeUrl === 'string';
+    return (
+      res.status === 403 &&
+      res.json?.error?.code === 'plan_required' &&
+      d.key === key &&
+      d.plan === 'free' &&
+      d.requiredPlan === 'pro' &&
+      typeof d.upgradeUrl === 'string'
+    );
   }
 
   /**
@@ -130,7 +176,14 @@ export class Slideless {
     const { stdout } = await exec(
       process.execPath,
       [bin, '--workspace', ws, 'push', folder, '--title', title, '--no-open', '--new', '--json', ...extra],
-      { env: { ...process.env, SLIDELESS_URL: `http://127.0.0.1:${this.cfg.sl.port}`, SLIDELESS_API_KEY: key }, maxBuffer: 16 * 1024 * 1024 }
+      {
+        env: {
+          ...process.env,
+          SLIDELESS_URL: `http://127.0.0.1:${this.cfg.sl.port}`,
+          SLIDELESS_API_KEY: key
+        },
+        maxBuffer: 16 * 1024 * 1024
+      }
     );
     return JSON.parse(stdout);
   }
@@ -146,14 +199,20 @@ export class Slideless {
   }
   /** The usage queue's pending count on Slideless (the poster drains it to the hub). */
   async usagePending() {
-    return Number(await this.hub.slSql(`SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed','failed','cancelled')`));
+    return Number(
+      await this.hub.slSql(
+        `SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed','failed','cancelled')`
+      )
+    );
   }
   async waitUsageDrained(timeoutMs = 90_000) {
-    const ok = await waitFor(async () => ((await this.usagePending()) === 0 ? true : null), { every: 1000, timeoutMs });
-    if (!ok) throw new CampaignError('the usage queue did not drain to the hub', { pending: await this.usagePending() });
-  }
-  async metrics() {
-    const res = await request(this.target, { path: '/metrics', headers: { authorization: `Bearer ${this.cfg.metricsToken}` } });
-    return res.text;
+    const ok = await waitFor(async () => ((await this.usagePending()) === 0 ? true : null), {
+      every: 1000,
+      timeoutMs
+    });
+    if (!ok)
+      throw new CampaignError('the usage queue did not drain to the hub', {
+        pending: await this.usagePending()
+      });
   }
 }

@@ -12,7 +12,12 @@ export function formEncode(obj, prefix = '', out = new URLSearchParams()) {
   for (const [k, v] of Object.entries(obj ?? {})) {
     const key = prefix ? `${prefix}[${k}]` : k;
     if (v === undefined || v === null) continue;
-    if (Array.isArray(v)) v.forEach((item, i) => (typeof item === 'object' ? formEncode(item, `${key}[${i}]`, out) : out.append(`${key}[${i}]`, String(item))));
+    if (Array.isArray(v))
+      v.forEach((item, i) =>
+        typeof item === 'object'
+          ? formEncode(item, `${key}[${i}]`, out)
+          : out.append(`${key}[${i}]`, String(item))
+      );
     else if (typeof v === 'object') formEncode(v, key, out);
     else out.append(key, String(v));
   }
@@ -99,7 +104,14 @@ export class Stripe {
    * `payment_intent.succeeded` handler writes the purchase from it. Throws a
    * StripeError with the decline code on a refused card.
    */
-  purchaseIntent({ customerId, amountMinor, currency, metadata, paymentMethod = 'pm_card_visa', idempotencyKey }) {
+  purchaseIntent({
+    customerId,
+    amountMinor,
+    currency,
+    metadata,
+    paymentMethod = 'pm_card_visa',
+    idempotencyKey
+  }) {
     return this.post(
       '/v1/payment_intents',
       {
@@ -119,12 +131,20 @@ export class Stripe {
     return this.get(`/v1/payment_intents/${id}`);
   }
   refund(paymentIntentId, amountMinor) {
-    return this.post('/v1/refunds', { payment_intent: paymentIntentId, ...(amountMinor ? { amount: amountMinor } : {}), metadata: { lane: this.lane } });
+    return this.post('/v1/refunds', {
+      payment_intent: paymentIntentId,
+      ...(amountMinor ? { amount: amountMinor } : {}),
+      metadata: { lane: this.lane }
+    });
   }
 
   // ── checkout sessions, invoices, subscriptions ────────────────────────────
   checkoutSession(id) {
-    return this.get(`/v1/checkout/sessions/${id}`, { 'expand[0]': 'payment_intent', 'expand[1]': 'invoice', 'expand[2]': 'total_details.breakdown' });
+    return this.get(`/v1/checkout/sessions/${id}`, {
+      'expand[0]': 'payment_intent',
+      'expand[1]': 'invoice',
+      'expand[2]': 'total_details.breakdown'
+    });
   }
   invoice(id) {
     return this.get(`/v1/invoices/${id}`);
@@ -147,7 +167,10 @@ export class Stripe {
   async clockOf(customerId) {
     const c = await this.get(`/v1/customers/${customerId}`);
     const id = typeof c.test_clock === 'object' ? c.test_clock?.id : c.test_clock;
-    if (!id) throw new Error(`customer ${customerId} is on no test clock (was the hub booted with STRIPE_TEST_CLOCKS=true?)`);
+    if (!id)
+      throw new Error(
+        `customer ${customerId} is on no test clock (was the hub booted with STRIPE_TEST_CLOCKS=true?)`
+      );
     return this.get(`/v1/test_helpers/test_clocks/${id}`);
   }
   /**
@@ -170,11 +193,4 @@ export class Stripe {
   }
 
   // ── events ────────────────────────────────────────────────────────────────
-  /** The sandbox's recent events of one type, newest first. */
-  events({ type, limit = 100, createdAfter }) {
-    return this.get('/v1/events', { ...(type ? { type } : {}), limit, ...(createdAfter ? { 'created[gte]': Math.floor(createdAfter / 1000) } : {}) });
-  }
-  event(id) {
-    return this.get(`/v1/events/${id}`);
-  }
 }

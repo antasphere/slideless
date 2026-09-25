@@ -62,8 +62,20 @@ export async function request(target, opts) {
 }
 
 function requestOnce(target, opts) {
-  const { method = 'GET', path, headers = {}, body, jar, timeoutMs = 60_000, socketHost = '127.0.0.1' } = opts;
-  const h = { host: `${target.host}:${target.port}`, accept: 'application/json, text/plain, */*', ...headers };
+  const {
+    method = 'GET',
+    path,
+    headers = {},
+    body,
+    jar,
+    timeoutMs = 60_000,
+    socketHost = '127.0.0.1'
+  } = opts;
+  const h = {
+    host: `${target.host}:${target.port}`,
+    accept: 'application/json, text/plain, */*',
+    ...headers
+  };
   let payload = body;
   if (payload !== undefined && typeof payload !== 'string' && !Buffer.isBuffer(payload)) {
     payload = JSON.stringify(payload);
@@ -82,7 +94,11 @@ function requestOnce(target, opts) {
           if (jar) jar.take(res.headers['set-cookie']);
           let json = null;
           const ct = String(res.headers['content-type'] ?? '');
-          if (ct.includes('json') || (text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
+          if (
+            ct.includes('json') ||
+            (text.startsWith('{') && text.endsWith('}')) ||
+            (text.startsWith('[') && text.endsWith(']'))
+          ) {
             try {
               json = JSON.parse(text);
             } catch {
@@ -108,7 +124,9 @@ export function multipart(fields, files) {
   const boundary = `----campaign${randomUUID().replace(/-/g, '')}`;
   const parts = [];
   for (const [name, value] of Object.entries(fields ?? {})) {
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+    parts.push(
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`)
+    );
   }
   for (const f of files ?? []) {
     parts.push(
@@ -142,7 +160,6 @@ export function expectStatus(res, statuses, what) {
   }
   return res;
 }
-
 
 /**
  * Poll `probe` until it answers a truthy value or the deadline passes; the

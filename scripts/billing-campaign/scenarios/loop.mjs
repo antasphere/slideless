@@ -25,9 +25,13 @@ const PLAIN_PAGE =
 /** The loop's state, kept on ctx.shared.loop; a later scenario refuses to run without it. */
 function state(ctx, ...keys) {
   const s = ctx.shared.loop;
-  if (!s) throw new CampaignError('the loop state is missing: the sign-up scenario did not run or failed', {});
+  if (!s)
+    throw new CampaignError('the loop state is missing: the sign-up scenario did not run or failed', {});
   for (const k of keys) {
-    if (s[k] === undefined || s[k] === null) throw new CampaignError(`the loop state has no ${k}: an earlier loop scenario did not run or failed`, { has: Object.keys(s) });
+    if (s[k] === undefined || s[k] === null)
+      throw new CampaignError(`the loop state has no ${k}: an earlier loop scenario did not run or failed`, {
+        has: Object.keys(s)
+      });
   }
   return s;
 }
@@ -76,7 +80,14 @@ async function newDebits(ctx, org, known, count, timeoutMs = 60_000) {
     });
   }
   const out = [];
-  for (const e of found.slice().reverse()) out.push({ id: e.id, amount: e.amount, balanceAfter: e.balanceAfter, eventId: e.sourceRef, usage: await usageRow(ctx, e.sourceRef) });
+  for (const e of found.slice().reverse())
+    out.push({
+      id: e.id,
+      amount: e.amount,
+      balanceAfter: e.balanceAfter,
+      eventId: e.sourceRef,
+      usage: await usageRow(ctx, e.sourceRef)
+    });
   return out;
 }
 
@@ -103,7 +114,7 @@ async function intentOfSession(ctx, sessionId) {
     async () => {
       const s = await ctx.stripe.checkoutSession(sessionId);
       const pi = s.payment_intent;
-      return typeof pi === 'string' ? pi : pi?.id ?? null;
+      return typeof pi === 'string' ? pi : (pi?.id ?? null);
     },
     { every: 1500, timeoutMs: 30_000 }
   );
@@ -114,22 +125,39 @@ async function buyPack(ctx, org, label) {
   const res = await ctx.hub.checkout(org, { pack: 20000 });
   expectStatus(res, 200, 'POST /billing/checkout { pack: 20000 }');
   const { url, sessionId } = res.json ?? {};
-  if (!url || !sessionId) throw new CampaignError('the checkout answer carries no url or session id', { body: res.json });
+  if (!url || !sessionId)
+    throw new CampaignError('the checkout answer carries no url or session id', { body: res.json });
   const paid = await ctx.payCheckout(url, { card: CARDS.visa, expect: 'paid', mode: 'payment', label });
-  if (paid.outcome !== 'paid') throw new CampaignError('the Checkout page was not paid', { sessionId, outcome: paid.outcome, text: paid.text });
+  if (paid.outcome !== 'paid')
+    throw new CampaignError('the Checkout page was not paid', {
+      sessionId,
+      outcome: paid.outcome,
+      text: paid.text
+    });
   const intentId = await intentOfSession(ctx, sessionId);
-  if (!intentId) throw new CampaignError('the paid Checkout session carries no payment intent', { sessionId });
+  if (!intentId)
+    throw new CampaignError('the paid Checkout session carries no payment intent', { sessionId });
   const entry = await ctx.hub.waitLedger(org, { kind: 'purchase', amount: 20000, sourceRef: intentId });
   if (!entry) {
-    throw new CampaignError('no purchase of 20,000 credits for the payment intent on the ledger within 90 s', {
-      sessionId,
-      intentId,
-      purchases: (await ctx.hub.ledger(org, 'purchase')).map((e) => ({ id: e.id, amount: e.amount, sourceRef: e.sourceRef })),
-      relay: ctx.relay.ofObject(intentId).map((r) => ({ type: r.type, outcome: r.outcome, status: r.status }))
-    });
+    throw new CampaignError(
+      'no purchase of 20,000 credits for the payment intent on the ledger within 90 s',
+      {
+        sessionId,
+        intentId,
+        purchases: (await ctx.hub.ledger(org, 'purchase')).map((e) => ({
+          id: e.id,
+          amount: e.amount,
+          sourceRef: e.sourceRef
+        })),
+        relay: ctx.relay
+          .ofObject(intentId)
+          .map((r) => ({ type: r.type, outcome: r.outcome, status: r.status }))
+      }
+    );
   }
   const entries = await ctx.hub.entriesOf(org, intentId);
-  if (entries.length !== 1) throw new CampaignError('the payment intent wrote more than one ledger entry', { intentId, entries });
+  if (entries.length !== 1)
+    throw new CampaignError('the payment intent wrote more than one ledger entry', { intentId, entries });
   const customerId = await ctx.hub.customerOf(org);
   if (customerId) await ctx.stripe.tagCustomer(customerId);
   return { sessionId, intentId, entry, customerId, returnedTo: paid.url };
@@ -153,7 +181,11 @@ export const scenarios = [
     path: 'Slideless + hub',
     async run(ctx) {
       const { workspaceId, org } = await ctx.sl.createWorkspace('Campaign loop');
-      if (!workspaceId || !org) throw new CampaignError('the new workspace does not project a hub organization', { workspaceId, org });
+      if (!workspaceId || !org)
+        throw new CampaignError('the new workspace does not project a hub organization', {
+          workspaceId,
+          org
+        });
       ctx.log(`loop: workspace ${workspaceId}, organization ${org}`);
       const settings = (await ctx.hub.settings()).settings;
       const account = await ctx.hub.account(org);
@@ -164,27 +196,46 @@ export const scenarios = [
         currency: account.currency,
         currencyLocked: account.currencyLocked
       };
-      if (account.balance !== settings.signupCredits) throw new CampaignError('the new account does not hold the sign-up grant', facts);
-      if (settings.signupCredits !== 5000) throw new CampaignError('the sign-up grant is not 5,000 credits in the settings', facts);
+      if (account.balance !== settings.signupCredits)
+        throw new CampaignError('the new account does not hold the sign-up grant', facts);
+      if (settings.signupCredits !== 5000)
+        throw new CampaignError('the sign-up grant is not 5,000 credits in the settings', facts);
       if (account.plan !== 'free') throw new CampaignError('the new account is not on the free plan', facts);
       if (account.currency !== 'EUR') throw new CampaignError('the new account is not in EUR', facts);
-      if (account.currencyLocked !== false) throw new CampaignError('the new account currency is locked before any purchase', facts);
+      if (account.currencyLocked !== false)
+        throw new CampaignError('the new account currency is locked before any purchase', facts);
       const ledger = await ctx.hub.ledger(org);
       const signups = ledger.filter((e) => e.kind === 'signup');
       if (signups.length !== 1 || signups[0].amount !== settings.signupCredits) {
-        throw new CampaignError('the ledger does not carry exactly one signup entry of the grant', { ...facts, ledger: ledger.map((e) => ({ kind: e.kind, amount: e.amount })) });
+        throw new CampaignError('the ledger does not carry exactly one signup entry of the grant', {
+          ...facts,
+          ledger: ledger.map((e) => ({ kind: e.kind, amount: e.amount }))
+        });
       }
       const me = await ctx.sl.me();
       const listed = (me.workspaces ?? []).find((w) => w.id === workspaceId);
-      if (!listed) throw new CampaignError('GET /me does not list the new workspace', { workspaceId, listed: (me.workspaces ?? []).map((w) => w.id) });
+      if (!listed)
+        throw new CampaignError('GET /me does not list the new workspace', {
+          workspaceId,
+          listed: (me.workspaces ?? []).map((w) => w.id)
+        });
       if (listed.hubOrigin !== true || listed.role !== 'owner') {
-        throw new CampaignError('the new workspace is not listed as hub-origin with the owner role', { workspaceId, hubOrigin: listed.hubOrigin, role: listed.role });
+        throw new CampaignError('the new workspace is not listed as hub-origin with the owner role', {
+          workspaceId,
+          hubOrigin: listed.hubOrigin,
+          role: listed.role
+        });
       }
       const key = await ctx.sl.createKey(workspaceId, 'campaign loop key');
-      if (typeof key !== 'string' || !key.startsWith('slk_')) throw new CampaignError('the key mint did not answer an slk_ key', { prefix: String(key).slice(0, 4) });
+      if (typeof key !== 'string' || !key.startsWith('slk_'))
+        throw new CampaignError('the key mint did not answer an slk_ key', {
+          prefix: String(key).slice(0, 4)
+        });
       const patched = await ctx.hub.patchAccount(org, { billingEmail: BILLING_EMAIL });
       if (patched.billingEmail !== undefined && patched.billingEmail !== BILLING_EMAIL) {
-        throw new CampaignError('the PATCH did not keep the billing email', { billingEmail: patched.billingEmail });
+        throw new CampaignError('the PATCH did not keep the billing email', {
+          billingEmail: patched.billingEmail
+        });
       }
       const accountId = account.accountId ?? (await ctx.hub.accountIdOf(org));
       ctx.shared.loop = { org, workspaceId, accountId, key, userId: ctx.hub.user.id };
@@ -218,23 +269,45 @@ export const scenarios = [
       const folder = deckFolder(ctx, 'loop', PLAIN_PAGE);
       const pushed = await ctx.sl.push(folder, { key, ws, title: 'Campaign loop deck' });
       const deckId = pushed?.presentation?.id;
-      if (!deckId) throw new CampaignError('the CLI push answered no presentation id', { keys: Object.keys(pushed ?? {}) });
+      if (!deckId)
+        throw new CampaignError('the CLI push answered no presentation id', {
+          keys: Object.keys(pushed ?? {})
+        });
       await ctx.sl.waitUsageDrained();
       const pushDebits = await newDebits(ctx, org, known, 2);
       const commit = pushDebits.find((d) => d.usage?.actionKey === 'presentations.commit');
       const page = pushDebits.find((d) => d.usage?.actionKey === 'files.upload');
-      const pushFacts = { deckId, debits: pushDebits.map((d) => ({ amount: d.amount, eventId: d.eventId, actionKey: d.usage?.actionKey })) };
-      if (pushDebits.length !== 2 || !commit || !page) throw new CampaignError('the push did not debit one commit and one upload', pushFacts);
-      if (commit.amount !== -50) throw new CampaignError('the new deck commit did not debit 50 credits', pushFacts);
+      const pushFacts = {
+        deckId,
+        debits: pushDebits.map((d) => ({
+          amount: d.amount,
+          eventId: d.eventId,
+          actionKey: d.usage?.actionKey
+        }))
+      };
+      if (pushDebits.length !== 2 || !commit || !page)
+        throw new CampaignError('the push did not debit one commit and one upload', pushFacts);
+      if (commit.amount !== -50)
+        throw new CampaignError('the new deck commit did not debit 50 credits', pushFacts);
       if (page.amount !== -5) throw new CampaignError('the page upload did not debit 5 credits', pushFacts);
       const afterPush = await ctx.hub.account(org);
-      if (afterPush.balance !== start.balance - 55) throw new CampaignError('the balance after the push is not the start less 55', { start: start.balance, afterPush: afterPush.balance, ...pushFacts });
+      if (afterPush.balance !== start.balance - 55)
+        throw new CampaignError('the balance after the push is not the start less 55', {
+          start: start.balance,
+          afterPush: afterPush.balance,
+          ...pushFacts
+        });
 
       // A staff correction to 12 credits, so the loop takes minutes rather than a thousand uploads.
       const correction = -(afterPush.balance - 12);
       const granted = await ctx.hub.grant(accountId, correction, 'campaign: bring the balance to 12 credits');
       const at12 = await ctx.hub.account(org);
-      if (at12.balance !== 12) throw new CampaignError('the staff correction did not leave 12 credits', { correction, granted: granted?.balance, balance: at12.balance });
+      if (at12.balance !== 12)
+        throw new CampaignError('the staff correction did not leave 12 credits', {
+          correction,
+          granted: granted?.balance,
+          balance: at12.balance
+        });
 
       // Two 1 MiB uploads with the key: 12 → 7 → 2.
       const beforeUploads = await ledgerIds(ctx, org);
@@ -244,15 +317,33 @@ export const scenarios = [
         expectStatus(res, 201, `the 1 MiB upload ${i + 1} at a balance of ${12 - 5 * i}`);
         accepted.push({ status: res.status, sizeBytes: res.json?.sizeBytes, at: Date.now() });
       }
-      if (accepted.some((a) => a.sizeBytes !== MIB)) throw new CampaignError('an accepted upload does not report 1 MiB', { accepted });
+      if (accepted.some((a) => a.sizeBytes !== MIB))
+        throw new CampaignError('an accepted upload does not report 1 MiB', { accepted });
       await ctx.sl.waitUsageDrained();
       const uploadDebits = await newDebits(ctx, org, beforeUploads, 2);
-      const uploadFacts = uploadDebits.map((d) => ({ amount: d.amount, eventId: d.eventId, actionKey: d.usage?.actionKey, balanceAfter: d.balanceAfter }));
-      if (uploadDebits.length !== 2 || uploadDebits.some((d) => d.amount !== -5 || d.usage?.actionKey !== 'files.upload')) {
-        throw new CampaignError('the two uploads did not debit 5 credits each on files.upload', { uploadDebits: uploadFacts });
+      const uploadFacts = uploadDebits.map((d) => ({
+        amount: d.amount,
+        eventId: d.eventId,
+        actionKey: d.usage?.actionKey,
+        balanceAfter: d.balanceAfter
+      }));
+      if (
+        uploadDebits.length !== 2 ||
+        uploadDebits.some((d) => d.amount !== -5 || d.usage?.actionKey !== 'files.upload')
+      ) {
+        throw new CampaignError('the two uploads did not debit 5 credits each on files.upload', {
+          uploadDebits: uploadFacts
+        });
       }
-      const at2 = await waitFor(async () => ((await ctx.hub.account(org)).balance === 2 ? true : null), { every: 1500, timeoutMs: 30_000 });
-      if (!at2) throw new CampaignError('the balance does not read 2 after the two uploads', { balance: (await ctx.hub.account(org)).balance, uploadDebits: uploadFacts });
+      const at2 = await waitFor(async () => ((await ctx.hub.account(org)).balance === 2 ? true : null), {
+        every: 1500,
+        timeoutMs: 30_000
+      });
+      if (!at2)
+        throw new CampaignError('the balance does not read 2 after the two uploads', {
+          balance: (await ctx.hub.account(org)).balance,
+          uploadDebits: uploadFacts
+        });
 
       // The refused upload: exactly 1 MiB (so its price is 5), sent more than 30 s after
       // the last accepted one, so the cached allowed answer has expired and the hub is asked.
@@ -262,16 +353,36 @@ export const scenarios = [
       const refused = await ctx.sl.uploadAsset(ws, refusedBytes, { key, label: 'loop-refused' });
       const err = refused.json?.error ?? {};
       const d = err.details ?? {};
-      const refusal = { status: refused.status, code: err.code, credits: d.credits, balance: d.balance, topUpUrlStartsRight: typeof d.topUpUrl === 'string' && d.topUpUrl.startsWith(`${ctx.config.hub.base}/billing/top-up?org=${org}`) };
-      if (refused.status !== 402 || err.code !== 'entitlement_denied') throw new CampaignError('the third upload was not refused 402 entitlement_denied', { ...refusal, body: refused.json ?? refused.text.slice(0, 400) });
+      const refusal = {
+        status: refused.status,
+        code: err.code,
+        credits: d.credits,
+        balance: d.balance,
+        topUpUrlStartsRight:
+          typeof d.topUpUrl === 'string' &&
+          d.topUpUrl.startsWith(`${ctx.config.hub.base}/billing/top-up?org=${org}`)
+      };
+      if (refused.status !== 402 || err.code !== 'entitlement_denied')
+        throw new CampaignError('the third upload was not refused 402 entitlement_denied', {
+          ...refusal,
+          body: refused.json ?? refused.text.slice(0, 400)
+        });
       if (d.balance !== 2) throw new CampaignError('the refusal does not carry the balance 2', refusal);
-      if (!refusal.topUpUrlStartsRight) throw new CampaignError('the refusal top-up URL is not the hub top-up page of the organization', { ...refusal, topUpUrl: d.topUpUrl });
+      if (!refusal.topUpUrlStartsRight)
+        throw new CampaignError('the refusal top-up URL is not the hub top-up page of the organization', {
+          ...refusal,
+          topUpUrl: d.topUpUrl
+        });
       // The price the refusal names is judged by the next scenario, on its own row.
       s.refusal = refusal;
       await ctx.sl.waitUsageDrained();
       const after = await ctx.hub.account(org);
       const ledgerAfter = (await ctx.hub.ledger(org, 'debit')).filter((e) => !beforeUploads.has(e.id));
-      if (after.balance !== 2 || ledgerAfter.length !== 2) throw new CampaignError('the refused upload changed the ledger', { balance: after.balance, debitsSinceCorrection: ledgerAfter.length });
+      if (after.balance !== 2 || ledgerAfter.length !== 2)
+        throw new CampaignError('the refused upload changed the ledger', {
+          balance: after.balance,
+          debitsSinceCorrection: ledgerAfter.length
+        });
 
       s.deckId = deckId;
       s.refusedBytes = refusedBytes;
@@ -285,7 +396,8 @@ export const scenarios = [
         pageDebit: { amount: page.amount, eventId: page.eventId },
         balanceAfterPush: afterPush.balance,
         correction,
-        correctionNote: 'a staff correction brought the balance to 12 credits so the loop needs two uploads, not a thousand',
+        correctionNote:
+          'a staff correction brought the balance to 12 credits so the loop needs two uploads, not a thousand',
         balanceAfterCorrection: at12.balance,
         uploadDebits: uploadFacts,
         balanceAfterUploads: after.balance,
@@ -305,8 +417,13 @@ export const scenarios = [
       // of the multipart request's Content-Length rounded up to the next MiB.
       const charged = s.uploadDebits.map((d) => -d.amount);
       const facts = { refusalCredits: s.refusal.credits, chargedForTheSameUpload: charged, uploadBytes: MIB };
-      if (!charged.every((c) => c === 5)) throw new CampaignError('the accepted uploads were not charged 5 each', facts);
-      if (s.refusal.credits !== 5) throw new CampaignError(`the refusal says the upload costs ${s.refusal.credits} credits, the ledger charged 5 for the same upload`, facts);
+      if (!charged.every((c) => c === 5))
+        throw new CampaignError('the accepted uploads were not charged 5 each', facts);
+      if (s.refusal.credits !== 5)
+        throw new CampaignError(
+          `the refusal says the upload costs ${s.refusal.credits} credits, the ledger charged 5 for the same upload`,
+          facts
+        );
       return facts;
     }
   },
@@ -318,13 +435,25 @@ export const scenarios = [
       const s = state(ctx, 'org', 'refusedBytes');
       const { org } = s;
       const before = await ctx.hub.account(org);
-      if (before.balance !== 2) throw new CampaignError('the balance before the purchase is not 2', { balance: before.balance });
+      if (before.balance !== 2)
+        throw new CampaignError('the balance before the purchase is not 2', { balance: before.balance });
       const t0 = Date.now() - 1000;
       const bought = await buyPack(ctx, org, 'loop-pack-1');
       const agrees = await ctx.hub.balanceAgrees(org);
-      if (!agrees.agrees || agrees.balance !== 20002) throw new CampaignError('the balance after the purchase is not 20,002 or disagrees with the ledger', { agrees, intentId: bought.intentId });
-      const mail = await ctx.mail.waitFor({ to: BILLING_EMAIL, subject: 'credits added to', after: t0 }, 90_000);
-      if (!mail) throw new CampaignError('no invoice mail to the billing email within 90 s', { to: BILLING_EMAIL, intentId: bought.intentId });
+      if (!agrees.agrees || agrees.balance !== 20002)
+        throw new CampaignError('the balance after the purchase is not 20,002 or disagrees with the ledger', {
+          agrees,
+          intentId: bought.intentId
+        });
+      const mail = await ctx.mail.waitFor(
+        { to: BILLING_EMAIL, subject: 'credits added to', after: t0 },
+        90_000
+      );
+      if (!mail)
+        throw new CampaignError('no invoice mail to the billing email within 90 s', {
+          to: BILLING_EMAIL,
+          intentId: bought.intentId
+        });
       const pdf = /Download the PDF: https?:\/\/\S+/.test(mail.Text ?? '');
       s.purchase1 = bought.intentId;
       return {
@@ -351,16 +480,42 @@ export const scenarios = [
       const s = state(ctx, 'org', 'workspaceId', 'key', 'refusedBytes', 'purchase1');
       const { org, workspaceId: ws, key, refusedBytes } = s;
       const known = await ledgerIds(ctx, org);
-      const { res, statuses } = await until201(() => ctx.sl.uploadAsset(ws, refusedBytes, { key, label: 'loop-refused' }));
-      if (res.status !== 201) throw new CampaignError('the upload refused before the purchase still does not go through after 40 s', { statuses, body: res.json ?? res.text.slice(0, 400) });
-      if (res.json?.sizeBytes !== MIB) throw new CampaignError('the accepted upload does not report 1 MiB', { sizeBytes: res.json?.sizeBytes });
+      const { res, statuses } = await until201(() =>
+        ctx.sl.uploadAsset(ws, refusedBytes, { key, label: 'loop-refused' })
+      );
+      if (res.status !== 201)
+        throw new CampaignError(
+          'the upload refused before the purchase still does not go through after 40 s',
+          { statuses, body: res.json ?? res.text.slice(0, 400) }
+        );
+      if (res.json?.sizeBytes !== MIB)
+        throw new CampaignError('the accepted upload does not report 1 MiB', {
+          sizeBytes: res.json?.sizeBytes
+        });
       await ctx.sl.waitUsageDrained();
       const [debit, ...extra] = await newDebits(ctx, org, known, 1);
-      const facts = { amount: debit.amount, eventId: debit.eventId, actionKey: debit.usage?.actionKey, extra: extra.length };
-      if (extra.length || debit.amount !== -5 || debit.usage?.actionKey !== 'files.upload') throw new CampaignError('the upload did not debit exactly one 5-credit files.upload', facts);
+      const facts = {
+        amount: debit.amount,
+        eventId: debit.eventId,
+        actionKey: debit.usage?.actionKey,
+        extra: extra.length
+      };
+      if (extra.length || debit.amount !== -5 || debit.usage?.actionKey !== 'files.upload')
+        throw new CampaignError('the upload did not debit exactly one 5-credit files.upload', facts);
       const agrees = await ctx.hub.balanceAgrees(org);
-      if (!agrees.agrees || agrees.balance !== 19997) throw new CampaignError('the balance is not 19,997 or disagrees with the ledger', { agrees, ...facts });
-      return { org, attempts: statuses, sha256: res.json?.sha256 ?? null, debit: facts, balance: agrees.balance, ledgerSum: agrees.sum };
+      if (!agrees.agrees || agrees.balance !== 19997)
+        throw new CampaignError('the balance is not 19,997 or disagrees with the ledger', {
+          agrees,
+          ...facts
+        });
+      return {
+        org,
+        attempts: statuses,
+        sha256: res.json?.sha256 ?? null,
+        debit: facts,
+        balance: agrees.balance,
+        ledgerSum: agrees.sum
+      };
     }
   },
   {
@@ -376,7 +531,10 @@ export const scenarios = [
       const folder = deckFolder(ctx, 'loop-intake', FORM_PAGE);
       const pushed = await ctx.sl.push(folder, { key, ws, title: 'Campaign loop intake' });
       const deckId = pushed?.presentation?.id;
-      if (!deckId) throw new CampaignError('the CLI push of the intake deck answered no presentation id', { keys: Object.keys(pushed ?? {}) });
+      if (!deckId)
+        throw new CampaignError('the CLI push of the intake deck answered no presentation id', {
+          keys: Object.keys(pushed ?? {})
+        });
       // A link remembers its viewer's one response per form by default, and a
       // second submission through it EDITS that row (200) instead of creating
       // one. The loop wants three separate responses, so the link is minted
@@ -384,7 +542,11 @@ export const scenarios = [
       const minted = await ctx.sl.mintLink(ws, deckId, { name: 'intake', key, remembersResponses: false });
       expectStatus(minted, 201, 'the share link mint on the intake deck');
       const secret = secretOf(minted.json);
-      if (!secret) throw new CampaignError('the mint answer carries neither a secret nor a /v/ url', { tokenId: minted.json?.shareToken?.id, fields: Object.keys(minted.json?.shareToken ?? {}) });
+      if (!secret)
+        throw new CampaignError('the mint answer carries neither a secret nor a /v/ url', {
+          tokenId: minted.json?.shareToken?.id,
+          fields: Object.keys(minted.json?.shareToken ?? {})
+        });
       const linkId = minted.json.shareToken.id;
       await ctx.sl.waitUsageDrained();
       const afterSetup = await ctx.hub.account(org);
@@ -395,11 +557,20 @@ export const scenarios = [
       expectStatus(first, 201, 'the first form response (the owner holds credits)');
       await ctx.sl.waitUsageDrained();
       const [firstDebit, ...extra1] = await newDebits(ctx, org, known1, 1);
-      const firstFacts = { amount: firstDebit.amount, eventId: firstDebit.eventId, usage: firstDebit.usage, extra: extra1.length };
-      if (extra1.length || firstDebit.amount !== -1) throw new CampaignError('the first response did not debit exactly 1 credit', firstFacts);
+      const firstFacts = {
+        amount: firstDebit.amount,
+        eventId: firstDebit.eventId,
+        usage: firstDebit.usage,
+        extra: extra1.length
+      };
+      if (extra1.length || firstDebit.amount !== -1)
+        throw new CampaignError('the first response did not debit exactly 1 credit', firstFacts);
       const u = firstDebit.usage;
       if (!u || u.actionKey !== 'forms.response' || u.userId !== userId || u.via !== 'session') {
-        throw new CampaignError('the usage event of the response is not forms.response by the owner via session', { ...firstFacts, ownerUserId: userId });
+        throw new CampaignError(
+          'the usage event of the response is not forms.response by the owner via session',
+          { ...firstFacts, ownerUserId: userId }
+        );
       }
       const afterFirst = await ctx.hub.account(org);
 
@@ -407,36 +578,89 @@ export const scenarios = [
       const correction = -afterFirst.balance;
       await ctx.hub.grant(accountId, correction, 'campaign: bring the balance to 0 credits');
       const at0 = await ctx.hub.account(org);
-      if (at0.balance !== 0) throw new CampaignError('the staff correction did not leave 0 credits', { correction, balance: at0.balance });
+      if (at0.balance !== 0)
+        throw new CampaignError('the staff correction did not leave 0 credits', {
+          correction,
+          balance: at0.balance
+        });
       await sleep(31_000);
       const known2 = await ledgerIds(ctx, org);
       const second = await ctx.sl.formResponse(secret, 'intake', { who: 'a viewer' });
       const err = second.json?.error ?? {};
       const message = typeof err.message === 'string' ? err.message : '';
       const sentences = (message.match(/[.!?](\s|$)/g) ?? []).length;
-      const refusal = { status: second.status, code: err.code, detailsPresent: err.details !== undefined, message, sentences };
-      if (second.status !== 402 || err.code !== 'entitlement_denied') throw new CampaignError('the second response was not refused 402 entitlement_denied', { ...refusal, body: second.json ?? second.text.slice(0, 400) });
-      if (err.details !== undefined) throw new CampaignError('the viewer refusal carries details', { ...refusal, detailKeys: Object.keys(err.details ?? {}) });
-      if (!message || sentences > 1 || /https?:|\d/.test(message)) throw new CampaignError('the viewer refusal message is not one neutral sentence without numbers or links', refusal);
+      const refusal = {
+        status: second.status,
+        code: err.code,
+        detailsPresent: err.details !== undefined,
+        message,
+        sentences
+      };
+      if (second.status !== 402 || err.code !== 'entitlement_denied')
+        throw new CampaignError('the second response was not refused 402 entitlement_denied', {
+          ...refusal,
+          body: second.json ?? second.text.slice(0, 400)
+        });
+      if (err.details !== undefined)
+        throw new CampaignError('the viewer refusal carries details', {
+          ...refusal,
+          detailKeys: Object.keys(err.details ?? {})
+        });
+      if (!message || sentences > 1 || /https?:|\d/.test(message))
+        throw new CampaignError(
+          'the viewer refusal message is not one neutral sentence without numbers or links',
+          refusal
+        );
       await ctx.sl.waitUsageDrained();
       const afterRefusal = await ctx.hub.account(org);
       const debitsAfterRefusal = (await ctx.hub.ledger(org, 'debit')).filter((e) => !known2.has(e.id)).length;
-      if (afterRefusal.balance !== 0 || debitsAfterRefusal !== 0) throw new CampaignError('the refused response changed the ledger', { balance: afterRefusal.balance, debitsAfterRefusal });
+      if (afterRefusal.balance !== 0 || debitsAfterRefusal !== 0)
+        throw new CampaignError('the refused response changed the ledger', {
+          balance: afterRefusal.balance,
+          debitsAfterRefusal
+        });
 
       // The top-up, then the third response lands and costs 1.
       const bought = await buyPack(ctx, org, 'loop-pack-2');
-      if (bought.intentId === s.purchase1) throw new CampaignError('the second purchase reused the first payment intent', { intentId: bought.intentId });
+      if (bought.intentId === s.purchase1)
+        throw new CampaignError('the second purchase reused the first payment intent', {
+          intentId: bought.intentId
+        });
       const afterPack = await ctx.hub.account(org);
-      if (afterPack.balance !== 20000) throw new CampaignError('the balance after the second pack is not 20,000', { balance: afterPack.balance, intentId: bought.intentId });
+      if (afterPack.balance !== 20000)
+        throw new CampaignError('the balance after the second pack is not 20,000', {
+          balance: afterPack.balance,
+          intentId: bought.intentId
+        });
       const known3 = await ledgerIds(ctx, org);
-      const { res: third, statuses } = await until201(() => ctx.sl.formResponse(secret, 'intake', { who: 'a viewer' }));
-      if (third.status !== 201) throw new CampaignError('the third response did not land within 40 s of the top-up', { statuses, body: third.json ?? third.text.slice(0, 400) });
+      const { res: third, statuses } = await until201(() =>
+        ctx.sl.formResponse(secret, 'intake', { who: 'a viewer' })
+      );
+      if (third.status !== 201)
+        throw new CampaignError('the third response did not land within 40 s of the top-up', {
+          statuses,
+          body: third.json ?? third.text.slice(0, 400)
+        });
       await ctx.sl.waitUsageDrained();
       const [thirdDebit, ...extra3] = await newDebits(ctx, org, known3, 1);
-      const thirdFacts = { amount: thirdDebit.amount, eventId: thirdDebit.eventId, actionKey: thirdDebit.usage?.actionKey, via: thirdDebit.usage?.via, extra: extra3.length };
-      if (extra3.length || thirdDebit.amount !== -1 || thirdDebit.usage?.actionKey !== 'forms.response') throw new CampaignError('the third response did not debit exactly 1 credit on forms.response', thirdFacts);
+      const thirdFacts = {
+        amount: thirdDebit.amount,
+        eventId: thirdDebit.eventId,
+        actionKey: thirdDebit.usage?.actionKey,
+        via: thirdDebit.usage?.via,
+        extra: extra3.length
+      };
+      if (extra3.length || thirdDebit.amount !== -1 || thirdDebit.usage?.actionKey !== 'forms.response')
+        throw new CampaignError(
+          'the third response did not debit exactly 1 credit on forms.response',
+          thirdFacts
+        );
       const agrees = await ctx.hub.balanceAgrees(org);
-      if (!agrees.agrees || agrees.balance !== 19999) throw new CampaignError('the final balance is not 19,999 or disagrees with the ledger', { agrees, ...thirdFacts });
+      if (!agrees.agrees || agrees.balance !== 19999)
+        throw new CampaignError('the final balance is not 19,999 or disagrees with the ledger', {
+          agrees,
+          ...thirdFacts
+        });
 
       return {
         org,
@@ -453,7 +677,12 @@ export const scenarios = [
         cacheWaitSeconds: 31,
         secondResponse: refusal,
         balanceAfterRefusal: afterRefusal.balance,
-        topUp: { sessionId: bought.sessionId, intentId: bought.intentId, entryId: bought.entry.id, balance: afterPack.balance },
+        topUp: {
+          sessionId: bought.sessionId,
+          intentId: bought.intentId,
+          entryId: bought.entry.id,
+          balance: afterPack.balance
+        },
         thirdResponse: { attempts: statuses, ...thirdFacts },
         finalBalance: agrees.balance,
         ledgerSum: agrees.sum

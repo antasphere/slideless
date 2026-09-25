@@ -13,6 +13,7 @@
 // (scenario 3) and the body that differs from what was signed (scenario 5)
 // are sent that way, as a replaying sender would.
 import { CampaignError, sleep, waitFor } from '../lib/http.mjs';
+import { sqlId } from '../lib/hub.mjs';
 import { SIGNATURE_TOLERANCE_S, sign } from '../lib/relay.mjs';
 
 export const group = 'webhooks';
@@ -38,13 +39,6 @@ let setup = null;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-/** An id safe to put inside a single-quoted SQL literal (Stripe and hub ids only). */
-function sqlId(value) {
-  const s = String(value ?? '');
-  if (!/^[A-Za-z0-9_.:-]*$/.test(s)) throw new CampaignError('an id carries characters an SQL literal must not hold', { value: s.slice(0, 80) });
-  return s;
-}
-
 /** The `Campaign webhooks` organization, its account and its Stripe customer. */
 async function ensureOrg(ctx) {
   if (setup) return setup;
@@ -63,7 +57,9 @@ async function ensureOrg(ctx) {
       metadata: { accountId, workspaceId: org, lane: ctx.config.lane }
     });
     customerId = customer.id;
-    await ctx.hub.sql(`UPDATE billing_accounts SET stripe_customer_id = '${sqlId(customerId)}' WHERE id = '${sqlId(accountId)}'`);
+    await ctx.hub.sql(
+      `UPDATE billing_accounts SET stripe_customer_id = '${sqlId(customerId)}' WHERE id = '${sqlId(accountId)}'`
+    );
     customerPath = 'made by the campaign at Stripe and written on the account row';
   } else {
     await ctx.stripe.tagCustomer(customerId);
@@ -76,7 +72,14 @@ async function ensureOrg(ctx) {
 
 /** The metadata a Checkout's payment intent carries, for a 20,000 pack in EUR. */
 function purchaseMetadata(ctx, s) {
-  return { kind: 'purchase', accountId: s.accountId, workspaceId: s.org, userId: ctx.hub.user.id, credits: '20000', currency: 'EUR' };
+  return {
+    kind: 'purchase',
+    accountId: s.accountId,
+    workspaceId: s.org,
+    userId: ctx.hub.user.id,
+    credits: '20000',
+    currency: 'EUR'
+  };
 }
 
 /**
@@ -95,9 +98,15 @@ async function heldIntent(ctx) {
     currency: 'EUR',
     metadata: purchaseMetadata(ctx, s)
   });
-  if (intent.status !== 'succeeded') throw new CampaignError('the payment intent did not succeed at once', { intentId: intent.id, status: intent.status });
+  if (intent.status !== 'succeeded')
+    throw new CampaignError('the payment intent did not succeed at once', {
+      intentId: intent.id,
+      status: intent.status
+    });
   const record = await waitFor(
-    () => ctx.relay.heldRecords((r) => r.type === 'payment_intent.succeeded' && r.body.includes(intent.id))[0] ?? null,
+    () =>
+      ctx.relay.heldRecords((r) => r.type === 'payment_intent.succeeded' && r.body.includes(intent.id))[0] ??
+      null,
     { every: 500, timeoutMs: 90_000 }
   );
   if (!record) {
@@ -148,7 +157,12 @@ async function assertNothingWritten(ctx, org, intentId, what, evidence) {
   const rows = await ctx.hub.eventRows(intentId);
   const entries = await ctx.hub.entriesOf(org, intentId);
   if (rows.length !== 0 || entries.length !== 0) {
-    throw new CampaignError(`${what}: the hub wrote something for a refused delivery`, { ...evidence, intentId, eventRows: rows, entries });
+    throw new CampaignError(`${what}: the hub wrote something for a refused delivery`, {
+      ...evidence,
+      intentId,
+      eventRows: rows,
+      entries
+    });
   }
   return { eventRows: rows.length, entries: entries.length };
 }
@@ -156,10 +170,24 @@ async function assertNothingWritten(ctx, org, intentId, what, evidence) {
 /** Throw unless exactly one purchase of 20,000 credits carries the intent id; answers the entry. */
 async function assertOnePurchase(ctx, org, intentId, what, evidence) {
   const entry = await ctx.hub.waitLedger(org, { kind: 'purchase', sourceRef: intentId });
-  if (!entry) throw new CampaignError(`${what}: no purchase entry for the intent on the ledger`, { ...evidence, intentId });
+  if (!entry)
+    throw new CampaignError(`${what}: no purchase entry for the intent on the ledger`, {
+      ...evidence,
+      intentId
+    });
   const purchases = await purchasesOf(ctx, org, intentId);
-  if (purchases.length !== 1) throw new CampaignError(`${what}: ${purchases.length} purchase entries carry the intent, expected 1`, { ...evidence, intentId, purchases });
-  if (purchases[0].amount !== 20000) throw new CampaignError(`${what}: the purchase is not 20,000 credits`, { ...evidence, intentId, entry: purchases[0] });
+  if (purchases.length !== 1)
+    throw new CampaignError(`${what}: ${purchases.length} purchase entries carry the intent, expected 1`, {
+      ...evidence,
+      intentId,
+      purchases
+    });
+  if (purchases[0].amount !== 20000)
+    throw new CampaignError(`${what}: the purchase is not 20,000 credits`, {
+      ...evidence,
+      intentId,
+      entry: purchases[0]
+    });
   return purchases[0];
 }
 
@@ -167,11 +195,14 @@ async function assertOnePurchase(ctx, org, intentId, what, evidence) {
 function assertSignatureRefused(res, what, evidence) {
   const code = res.json?.error?.code ?? null;
   if (res.status !== 400 || code !== 'webhook_signature_invalid') {
-    throw new CampaignError(`${what}: the door answered ${res.status} ${code ?? ''}, expected 400 webhook_signature_invalid`, {
-      ...evidence,
-      status: res.status,
-      answer: res.json ?? res.text?.slice(0, 300)
-    });
+    throw new CampaignError(
+      `${what}: the door answered ${res.status} ${code ?? ''}, expected 400 webhook_signature_invalid`,
+      {
+        ...evidence,
+        status: res.status,
+        answer: res.json ?? res.text?.slice(0, 300)
+      }
+    );
   }
   return { status: res.status, code };
 }
@@ -192,7 +223,12 @@ async function accountOfRecord(ctx, record) {
   }
   if (!obj) return null;
   const metaAccount = typeof obj.metadata?.accountId === 'string' ? obj.metadata.accountId : '';
-  const customer = typeof obj.customer === 'string' ? obj.customer : typeof obj.customer?.id === 'string' ? obj.customer.id : '';
+  const customer =
+    typeof obj.customer === 'string'
+      ? obj.customer
+      : typeof obj.customer?.id === 'string'
+        ? obj.customer.id
+        : '';
   if (!metaAccount && !customer) return null;
   const clauses = [];
   if (metaAccount && /^[A-Za-z0-9_-]+$/.test(metaAccount)) clauses.push(`id::text = '${metaAccount}'`);
@@ -202,10 +238,19 @@ async function accountOfRecord(ctx, record) {
   return id || null;
 }
 
-/** The hub's state a replay must not move: the ledger's size and sum, the runs, the account row. */
+/**
+ * The hub's state a replay must not move: the ledger's size and sum, the runs,
+ * the account row. Scoped to the record's account when it is known, because
+ * the hub's own sweeps, the usage poster and the other pairs' events on the
+ * shared sandbox write rows of their own between two reads; the whole hub is
+ * counted only for a record whose account cannot be told (said in the evidence).
+ */
 async function snapshot(ctx, accountId) {
-  const ledger = await ctx.hub.sql('SELECT count(*) || \'|\' || coalesce(sum(amount), 0) FROM credit_ledger');
-  const runs = await ctx.hub.sql('SELECT count(*) FROM auto_recharge_runs');
+  const scope = accountId ? ` WHERE account_id = '${sqlId(accountId)}'` : '';
+  const ledger = await ctx.hub.sql(
+    `SELECT count(*) || '|' || coalesce(sum(amount), 0) FROM credit_ledger${scope}`
+  );
+  const runs = await ctx.hub.sql(`SELECT count(*) FROM auto_recharge_runs${scope}`);
   const account = accountId
     ? await ctx.hub.sql(
         `SELECT row_to_json(t)::text FROM (SELECT plan, plan_until, payment_method, auto_recharge_enabled, auto_recharge_disabled_reason, balance FROM billing_accounts WHERE id = '${sqlId(accountId)}') t`
@@ -258,24 +303,39 @@ export const scenarios = [
           runsAfter: after.runs
         };
         exercised.push(row);
-        const notDuplicate = [first, second].some((d) => d.status !== 200 || d.answer?.outcome !== 'duplicate');
-        if (notDuplicate) throw new CampaignError(`a replay of ${type} did not answer 200 duplicate`, { row, absent });
-        if (before.ledger !== after.ledger || before.runs !== after.runs || before.account !== after.account) {
-          throw new CampaignError(`a replay of ${type} moved the hub's state`, { row, accountBefore: before.account, accountAfter: after.account, absent });
+        const notDuplicate = [first, second].some(
+          (d) => d.status !== 200 || d.answer?.outcome !== 'duplicate'
+        );
+        if (notDuplicate)
+          throw new CampaignError(`a replay of ${type} did not answer 200 duplicate`, { row, absent });
+        if (
+          before.ledger !== after.ledger ||
+          before.runs !== after.runs ||
+          before.account !== after.account
+        ) {
+          throw new CampaignError(`a replay of ${type} moved the hub's state`, {
+            row,
+            accountBefore: before.account,
+            accountAfter: after.account,
+            absent
+          });
         }
         ctx.log(`webhooks: ${type} ${record.id} replayed twice, duplicate both times`);
       }
       if (exercised.length < 6) {
-        throw new CampaignError(`only ${exercised.length} handled types had a processed delivery in this run, at least 6 are needed (did the earlier groups run?)`, {
-          exercised: exercised.map((r) => r.type),
-          absent
-        });
+        throw new CampaignError(
+          `only ${exercised.length} handled types had a processed delivery in this run, at least 6 are needed (did the earlier groups run?)`,
+          {
+            exercised: exercised.map((r) => r.type),
+            absent
+          }
+        );
       }
       return { exercisedTypes: exercised.length, absent, exercised };
     }
   },
   {
-    name: 'a purchase\'s three events delivered in reverse order land one purchase and one mail',
+    name: "a purchase's three events delivered in reverse order land one purchase and one mail",
     path: PATH,
     async run(ctx) {
       const evidence = {};
@@ -290,26 +350,47 @@ export const scenarios = [
         const released = await ctx.relay.release(reversed);
         ctx.relay.unhold();
         const failed = released.filter((d) => d.status !== 200);
-        if (failed.length) throw new CampaignError('a delivery released in reverse order was not answered 200', { intentId: h.intent.id, released });
-        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the API path in reverse', { released });
+        if (failed.length)
+          throw new CampaignError('a delivery released in reverse order was not answered 200', {
+            intentId: h.intent.id,
+            released
+          });
+        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the API path in reverse', {
+          released
+        });
         const rows = await ctx.hub.eventRows(h.intent.id);
-        if (!rows.length || rows.some((r) => !r.processed)) throw new CampaignError('the stripe_events rows of the intent are not all processed', { intentId: h.intent.id, rows });
+        if (!rows.length || rows.some((r) => !r.processed))
+          throw new CampaignError('the stripe_events rows of the intent are not all processed', {
+            intentId: h.intent.id,
+            rows
+          });
         // No invoice exists on this path, so the hub owes no invoice mail. More
         // than one would be a defect whatever the path.
         const mails = await ctx.mail.find({ subject: 'credits added to Campaign webhooks', after: h.t0 });
-        if (mails.length > 1) throw new CampaignError('more than one purchase mail for one intent', { intentId: h.intent.id, mails: mails.map((m) => m.ID) });
+        if (mails.length > 1)
+          throw new CampaignError('more than one purchase mail for one intent', {
+            intentId: h.intent.id,
+            mails: mails.map((m) => m.ID)
+          });
         evidence.api = {
           org: h.org,
           customerId: h.customerId,
           customerPath: h.customerPath,
           intentId: h.intent.id,
           heldTypes: held.map((r) => r.type),
-          invoiceOrChargeEvents: held.filter((r) => r.type.startsWith('invoice.') || r.type.startsWith('charge.')).map((r) => r.type),
-          releasedInOrder: released.map((d) => ({ type: d.type, id: d.id, status: d.status, outcome: d.answer?.outcome ?? null })),
+          invoiceOrChargeEvents: held
+            .filter((r) => r.type.startsWith('invoice.') || r.type.startsWith('charge.'))
+            .map((r) => r.type),
+          releasedInOrder: released.map((d) => ({
+            type: d.type,
+            id: d.id,
+            status: d.status,
+            outcome: d.answer?.outcome ?? null
+          })),
           entryId: entry.id,
           eventRows: rows,
           purchaseMails: mails.length,
-          note: 'a raw API intent creates no invoice: the intent\'s events (and its charge\'s) are the whole set, and no invoice mail is owed'
+          note: "a raw API intent creates no invoice: the intent's events (and its charge's) are the whole set, and no invoice mail is owed"
         };
       } finally {
         teardown(ctx, s?.customerId ?? setup?.customerId);
@@ -318,20 +399,29 @@ export const scenarios = [
       // Part 2, a real Checkout, only when lane A is merged and the buying
       // group ran (its BE consumer organization and customer exist).
       if (!(ctx.laneA && ctx.shared.buying?.purchases?.length)) {
-        evidence.checkout = { ran: false, reason: ctx.laneA ? 'the buying group left no purchases in ctx.shared.buying' : 'lane A\'s checkout is not on this hub' };
+        evidence.checkout = {
+          ran: false,
+          reason: ctx.laneA
+            ? 'the buying group left no purchases in ctx.shared.buying'
+            : "lane A's checkout is not on this hub"
+        };
         return evidence;
       }
       // The buying group keeps its organizations at `ctx.shared.buying.orgs.be`
       // (`{ org, customerId, accountId }`); the name lookup is the fallback.
       const be = ctx.shared.buying.orgs?.be ?? ctx.shared.buying.be;
-      let beOrg = typeof be === 'string' ? be : be?.org ?? be?.id ?? null;
+      let beOrg = typeof be === 'string' ? be : (be?.org ?? be?.id ?? null);
       if (!beOrg) {
         const named = (await ctx.hub.orgs()).filter((o) => o.name === 'Campaign buying BE consumer');
         beOrg = named.length ? named[named.length - 1].id : null;
       }
-      if (!beOrg) throw new CampaignError('the buying group ran but its BE consumer organization cannot be found', { buyingKeys: Object.keys(ctx.shared.buying) });
+      if (!beOrg)
+        throw new CampaignError('the buying group ran but its BE consumer organization cannot be found', {
+          buyingKeys: Object.keys(ctx.shared.buying)
+        });
       const beCustomer = (typeof be === 'object' && be?.customerId) || (await ctx.hub.customerOf(beOrg));
-      if (!beCustomer) throw new CampaignError('the BE consumer organization has no Stripe customer', { beOrg });
+      if (!beCustomer)
+        throw new CampaignError('the BE consumer organization has no Stripe customer', { beOrg });
       const beAccount = await ctx.hub.account(beOrg);
       const beEmail = beAccount.billingEmail ?? 'campaign-be@drill.test';
       try {
@@ -339,14 +429,33 @@ export const scenarios = [
         const t0 = Date.now();
         const res = await ctx.hub.checkout(beOrg, { pack: 20000 });
         if (res.status !== 200 || !res.json?.url || !res.json?.sessionId) {
-          throw new CampaignError('the checkout of the 20,000 pack was not answered 200 with a url', { beOrg, status: res.status, body: res.json ?? res.text.slice(0, 300) });
+          throw new CampaignError('the checkout of the 20,000 pack was not answered 200 with a url', {
+            beOrg,
+            status: res.status,
+            body: res.json ?? res.text.slice(0, 300)
+          });
         }
         const sessionId = res.json.sessionId;
-        await ctx.payCheckout(res.json.url, { expect: 'paid', mode: 'payment', label: 'webhooks-reverse', country: 'BE', postalCode: '1000', line1: 'Rue de la Loi 1', city: 'Bruxelles' });
+        await ctx.payCheckout(res.json.url, {
+          expect: 'paid',
+          mode: 'payment',
+          label: 'webhooks-reverse',
+          country: 'BE',
+          postalCode: '1000',
+          line1: 'Rue de la Loi 1',
+          city: 'Bruxelles'
+        });
         const session = await ctx.stripe.checkoutSession(sessionId);
-        const intentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+        const intentId =
+          typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
         const invoiceId = typeof session.invoice === 'string' ? session.invoice : session.invoice?.id;
-        if (!intentId || !invoiceId) throw new CampaignError('the paid session carries no payment intent or no invoice', { sessionId, intentId, invoiceId, status: session.payment_status });
+        if (!intentId || !invoiceId)
+          throw new CampaignError('the paid session carries no payment intent or no invoice', {
+            sessionId,
+            intentId,
+            invoiceId,
+            status: session.payment_status
+          });
         const want = [
           ['checkout.session.completed', sessionId],
           ['payment_intent.succeeded', intentId],
@@ -354,7 +463,9 @@ export const scenarios = [
         ];
         const three = await waitFor(
           () => {
-            const found = want.map(([type, id]) => ctx.relay.heldRecords((r) => r.type === type && r.body.includes(id))[0] ?? null);
+            const found = want.map(
+              ([type, id]) => ctx.relay.heldRecords((r) => r.type === type && r.body.includes(id))[0] ?? null
+            );
             return found.every(Boolean) ? found : null;
           },
           { every: 500, timeoutMs: 90_000 }
@@ -371,24 +482,50 @@ export const scenarios = [
         const released = await ctx.relay.release(reversed);
         // The customer's other held events (invoice.created, charge.succeeded
         // and the like) are delivered after, in arrival order, so nothing is lost.
-        const rest = await ctx.relay.release(ctx.relay.heldRecords((r) => r.body.includes(beCustomer)).sort((a, b) => a.n - b.n));
+        const rest = await ctx.relay.release(
+          ctx.relay.heldRecords((r) => r.body.includes(beCustomer)).sort((a, b) => a.n - b.n)
+        );
         ctx.relay.unhold();
         const bad = released.filter((d) => d.status !== 200 || d.answer?.outcome !== 'processed');
-        if (bad.length) throw new CampaignError('one of the three events released in reverse was not processed', { sessionId, released });
+        if (bad.length)
+          throw new CampaignError('one of the three events released in reverse was not processed', {
+            sessionId,
+            released
+          });
         const purchases = await (async () => {
           await ctx.hub.waitLedger(beOrg, { kind: 'purchase', sourceRef: intentId });
           return purchasesOf(ctx, beOrg, intentId);
         })();
-        if (purchases.length !== 1 || purchases[0].amount !== 20000) throw new CampaignError('the reversed Checkout did not land exactly one purchase of 20,000', { intentId, purchases });
-        const mail = await ctx.mail.waitFor({ to: beEmail, subject: '20,000 credits added', after: t0 }, 60_000);
-        if (!mail) throw new CampaignError('no invoice mail for the reversed Checkout', { intentId, invoiceId, to: beEmail });
+        if (purchases.length !== 1 || purchases[0].amount !== 20000)
+          throw new CampaignError('the reversed Checkout did not land exactly one purchase of 20,000', {
+            intentId,
+            purchases
+          });
+        const mail = await ctx.mail.waitFor(
+          { to: beEmail, subject: '20,000 credits added', after: t0 },
+          60_000
+        );
+        if (!mail)
+          throw new CampaignError('no invoice mail for the reversed Checkout', {
+            intentId,
+            invoiceId,
+            to: beEmail
+          });
         // A second mail would arrive within seconds of the first; wait a
         // moment before counting.
         await sleep(8000);
         const mails = await ctx.mail.find({ to: beEmail, subject: '20,000 credits added', after: t0 });
-        if (mails.length !== 1) throw new CampaignError(`${mails.length} invoice mails for one reversed Checkout, expected 1`, { intentId, mails: mails.map((m) => m.ID) });
+        if (mails.length !== 1)
+          throw new CampaignError(`${mails.length} invoice mails for one reversed Checkout, expected 1`, {
+            intentId,
+            mails: mails.map((m) => m.ID)
+          });
         const rows = await ctx.hub.eventRows(intentId);
-        if (!rows.length || rows.some((r) => !r.processed)) throw new CampaignError('the stripe_events rows of the Checkout intent are not all processed', { intentId, rows });
+        if (!rows.length || rows.some((r) => !r.processed))
+          throw new CampaignError('the stripe_events rows of the Checkout intent are not all processed', {
+            intentId,
+            rows
+          });
         evidence.checkout = {
           ran: true,
           beOrg,
@@ -396,8 +533,17 @@ export const scenarios = [
           sessionId,
           intentId,
           invoiceId,
-          releasedInReverse: released.map((d) => ({ type: d.type, id: d.id, status: d.status, outcome: d.answer?.outcome ?? null })),
-          restReleased: rest.map((d) => ({ type: d.type, status: d.status, outcome: d.answer?.outcome ?? null })),
+          releasedInReverse: released.map((d) => ({
+            type: d.type,
+            id: d.id,
+            status: d.status,
+            outcome: d.answer?.outcome ?? null
+          })),
+          restReleased: rest.map((d) => ({
+            type: d.type,
+            status: d.status,
+            outcome: d.answer?.outcome ?? null
+          })),
           entryId: purchases[0].id,
           mailId: mails[0].ID,
           eventRows: rows
@@ -416,31 +562,49 @@ export const scenarios = [
       try {
         h = await heldIntent(ctx);
         const t = signedAt(h.record.signature);
-        if (!t) throw new CampaignError('the held record carries no signature timestamp', { eventId: h.record.id });
+        if (!t)
+          throw new CampaignError('the held record carries no signature timestamp', { eventId: h.record.id });
         // The one long wait of the group: until the signature is older than
         // the tolerance plus a margin.
         const waitMs = (t + SIGNATURE_TOLERANCE_S + 6) * 1000 - Date.now();
-        ctx.log(`webhooks: waiting ${Math.max(0, Math.round(waitMs / 1000))} s for the signature of ${h.record.id} to age past ${SIGNATURE_TOLERANCE_S} s`);
+        ctx.log(
+          `webhooks: waiting ${Math.max(0, Math.round(waitMs / 1000))} s for the signature of ${h.record.id} to age past ${SIGNATURE_TOLERANCE_S} s`
+        );
         if (waitMs > 0) await sleep(waitMs);
         const ageS = Math.floor(Date.now() / 1000) - t;
         // The ORIGINAL signature, past the tolerance.
         const staleAnswer = await ctx.relay.deliver(h.record, { resign: false });
         const stale = { status: staleAnswer.status, json: staleAnswer.answer, text: '' };
         if (stale.status === 200) {
-          throw new CampaignError('the door accepted a signature older than the tolerance (no timestamp tolerance)', {
-            eventId: h.record.id,
-            intentId: h.intent.id,
-            signatureAgeS: ageS,
-            answer: stale.json
-          });
+          throw new CampaignError(
+            'the door accepted a signature older than the tolerance (no timestamp tolerance)',
+            {
+              eventId: h.record.id,
+              intentId: h.intent.id,
+              signatureAgeS: ageS,
+              answer: stale.json
+            }
+          );
         }
-        const refused = assertSignatureRefused(stale, 'the stale signature', { eventId: h.record.id, intentId: h.intent.id, signatureAgeS: ageS });
-        const nothing = await assertNothingWritten(ctx, h.org, h.intent.id, 'the stale signature', { eventId: h.record.id });
+        const refused = assertSignatureRefused(stale, 'the stale signature', {
+          eventId: h.record.id,
+          intentId: h.intent.id,
+          signatureAgeS: ageS
+        });
+        const nothing = await assertNothingWritten(ctx, h.org, h.intent.id, 'the stale signature', {
+          eventId: h.record.id
+        });
         const [resigned] = await ctx.relay.release([h.record], { resign: true });
         if (resigned.status !== 200 || resigned.answer?.outcome !== 'processed') {
-          throw new CampaignError('the re-signed delivery was not processed', { eventId: h.record.id, intentId: h.intent.id, resigned });
+          throw new CampaignError('the re-signed delivery was not processed', {
+            eventId: h.record.id,
+            intentId: h.intent.id,
+            resigned
+          });
         }
-        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the re-signed delivery', { eventId: h.record.id });
+        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the re-signed delivery', {
+          eventId: h.record.id
+        });
         return {
           intentId: h.intent.id,
           eventId: h.record.id,
@@ -465,13 +629,24 @@ export const scenarios = [
       try {
         h = await heldIntent(ctx);
         const tampered = await ctx.relay.deliver(h.record, { tamper: true });
-        const refused = assertSignatureRefused({ status: tampered.status, json: tampered.answer, text: '' }, 'the tampered signature', { eventId: h.record.id, intentId: h.intent.id });
-        const nothing = await assertNothingWritten(ctx, h.org, h.intent.id, 'the tampered signature', { eventId: h.record.id });
+        const refused = assertSignatureRefused(
+          { status: tampered.status, json: tampered.answer, text: '' },
+          'the tampered signature',
+          { eventId: h.record.id, intentId: h.intent.id }
+        );
+        const nothing = await assertNothingWritten(ctx, h.org, h.intent.id, 'the tampered signature', {
+          eventId: h.record.id
+        });
         const [good] = await ctx.relay.release([h.record]);
         if (good.status !== 200 || good.answer?.outcome !== 'processed') {
-          throw new CampaignError('the untouched delivery after the tampered one was not processed', { eventId: h.record.id, good });
+          throw new CampaignError('the untouched delivery after the tampered one was not processed', {
+            eventId: h.record.id,
+            good
+          });
         }
-        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the untouched delivery', { eventId: h.record.id });
+        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the untouched delivery', {
+          eventId: h.record.id
+        });
         return {
           intentId: h.intent.id,
           eventId: h.record.id,
@@ -495,19 +670,34 @@ export const scenarios = [
         h = await heldIntent(ctx);
         const forged = h.record.body.replace('"20000"', '"99999"');
         if (forged === h.record.body) {
-          throw new CampaignError('the held body carries no "20000" to change, so the forgery would prove nothing', { eventId: h.record.id });
+          throw new CampaignError(
+            'the held body carries no "20000" to change, so the forgery would prove nothing',
+            { eventId: h.record.id }
+          );
         }
         // The original signature over a changed body.
         const forgedAnswer = await ctx.relay.deliver(h.record, { body: forged, resign: false });
-        const refused = assertSignatureRefused({ status: forgedAnswer.status, json: forgedAnswer.answer, text: '' }, 'the changed body', { eventId: h.record.id, intentId: h.intent.id });
-        const nothing = await assertNothingWritten(ctx, h.org, h.intent.id, 'the changed body', { eventId: h.record.id });
+        const refused = assertSignatureRefused(
+          { status: forgedAnswer.status, json: forgedAnswer.answer, text: '' },
+          'the changed body',
+          { eventId: h.record.id, intentId: h.intent.id }
+        );
+        const nothing = await assertNothingWritten(ctx, h.org, h.intent.id, 'the changed body', {
+          eventId: h.record.id
+        });
         const [good] = await ctx.relay.release([h.record]);
         if (good.status !== 200 || good.answer?.outcome !== 'processed') {
-          throw new CampaignError('the untouched delivery after the changed body was not processed', { eventId: h.record.id, good });
+          throw new CampaignError('the untouched delivery after the changed body was not processed', {
+            eventId: h.record.id,
+            good
+          });
         }
-        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the untouched delivery', { eventId: h.record.id });
+        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the untouched delivery', {
+          eventId: h.record.id
+        });
         const forgedAmount = (await ctx.hub.ledger(h.org, 'purchase')).filter((e) => e.amount === 99999);
-        if (forgedAmount.length) throw new CampaignError('a purchase of 99,999 credits is on the ledger', { entries: forgedAmount });
+        if (forgedAmount.length)
+          throw new CampaignError('a purchase of 99,999 credits is on the ledger', { entries: forgedAmount });
         return {
           intentId: h.intent.id,
           eventId: h.record.id,
@@ -534,33 +724,53 @@ export const scenarios = [
         // between the insert and the handler's transaction leaves behind.
         // The body goes in a dollar-quoted literal, which needs no escaping.
         const tag = '$campaign$';
-        if (h.record.body.includes(tag)) throw new CampaignError('the body carries the dollar-quote tag', { eventId: h.record.id });
+        if (h.record.body.includes(tag))
+          throw new CampaignError('the body carries the dollar-quote tag', { eventId: h.record.id });
         const q = (v) => String(v).replace(/'/g, "''");
         await ctx.hub.sql(
           `INSERT INTO stripe_events (event_id, type, received_at, payload) VALUES ('${q(h.record.id)}', '${q(h.record.type)}', now(), ${tag}${h.record.body}${tag}::jsonb) ON CONFLICT DO NOTHING`
         );
         const before = await ctx.hub.eventRows(h.intent.id);
         if (before.length !== 1 || before[0].processed || before[0].eventId !== h.record.id) {
-          throw new CampaignError('the hand-written row is not the one unprocessed row of the intent', { intentId: h.intent.id, rows: before });
+          throw new CampaignError('the hand-written row is not the one unprocessed row of the intent', {
+            intentId: h.intent.id,
+            rows: before
+          });
         }
         const purchasesBefore = await purchasesOf(ctx, h.org, h.intent.id);
-        if (purchasesBefore.length) throw new CampaignError('a purchase exists before the delivery', { purchases: purchasesBefore });
+        if (purchasesBefore.length)
+          throw new CampaignError('a purchase exists before the delivery', { purchases: purchasesBefore });
         const t0 = Date.now();
         await ctx.hub.restart();
         const restartMs = Date.now() - t0;
         const [first] = await ctx.relay.release([h.record]);
         if (first.status !== 200 || first.answer?.outcome !== 'processed') {
-          throw new CampaignError('the delivery after the restart was not processed', { eventId: h.record.id, first });
+          throw new CampaignError('the delivery after the restart was not processed', {
+            eventId: h.record.id,
+            first
+          });
         }
-        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the delivery after the restart', { eventId: h.record.id });
+        const entry = await assertOnePurchase(ctx, h.org, h.intent.id, 'the delivery after the restart', {
+          eventId: h.record.id
+        });
         const after = await ctx.hub.eventRows(h.intent.id);
-        if (after.length !== 1 || !after[0].processed) throw new CampaignError('the row is not processed after the delivery', { intentId: h.intent.id, rows: after });
+        if (after.length !== 1 || !after[0].processed)
+          throw new CampaignError('the row is not processed after the delivery', {
+            intentId: h.intent.id,
+            rows: after
+          });
         const again = await ctx.relay.deliver(h.record);
         if (again.status !== 200 || again.answer?.outcome !== 'duplicate') {
-          throw new CampaignError('the delivery once more did not answer duplicate', { eventId: h.record.id, again });
+          throw new CampaignError('the delivery once more did not answer duplicate', {
+            eventId: h.record.id,
+            again
+          });
         }
         const purchasesAfter = await purchasesOf(ctx, h.org, h.intent.id);
-        if (purchasesAfter.length !== 1) throw new CampaignError('the duplicate delivery changed the purchase count', { purchases: purchasesAfter });
+        if (purchasesAfter.length !== 1)
+          throw new CampaignError('the duplicate delivery changed the purchase count', {
+            purchases: purchasesAfter
+          });
         return {
           intentId: h.intent.id,
           eventId: h.record.id,
@@ -600,7 +810,10 @@ export const scenarios = [
       }
       const second = await ctx.relay.deliver(record);
       if (second.status !== 200 || second.answer?.outcome !== 'duplicate') {
-        throw new CampaignError('the unknown event delivered again was not answered 200 duplicate', { eventId: id, second });
+        throw new CampaignError('the unknown event delivered again was not answered 200 duplicate', {
+          eventId: id,
+          second
+        });
       }
       const rows = await ctx.hub.eventRows(objectId);
       if (rows.length !== 1 || !rows[0].processed || rows[0].eventId !== id || rows[0].type !== type) {

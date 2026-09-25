@@ -26,7 +26,9 @@
 #   4. runs the scenario groups (node scripts/billing-campaign/run.mjs),
 #      which write campaign/run-<n>/results.json and report.md under
 #      $CAMPAIGN_BUNDLE (the lane's workstream bundle) or $CAMPAIGN_OUT;
-#   5. stops the forwarder; DRILL_KEEP=1 leaves the pair up, else `down -v`.
+#   5. stops the forwarder; DRILL_KEEP=1 leaves the pair up, else `down -v` of
+#      the pair THIS script booted; a pair that was up before the campaign is
+#      left exactly as it was (its state is not the campaign's to remove).
 # The exit code is the run's: non-zero on any red or unrun scenario.
 #
 # Usage: STRIPE_SANDBOX_SECRET_KEY=sk_test_… ./scripts/billing-campaign.sh [run.mjs args]
@@ -76,7 +78,7 @@ dc() {
   FEDERATION_DRILL_SETUP_TOKEN="${FEDERATION_DRILL_SETUP_TOKEN:-claimed-already}" docker compose -p "$FEDERATION_PROJECT" \
     -f "$REPO/docker-compose.federation.yml" -f "$REPO/docker-compose.federation.drill.yml" -f "$CAMPAIGN_OUT/hub-campaign.yml" "$@"
 }
-answers() { curl -s -o /dev/null --max-time 3 "http://127.0.0.1:$1/healthz"; }
+answers() { curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:$1/healthz"; }
 
 # The hub's campaign override: the Stripe variables come through the harness's
 # own lines; this file lifts the per-person organization cap (the load group
@@ -89,11 +91,13 @@ services:
 YML
 
 # 1. the pair: booted through the drill when it is not up.
+BOOTED=""
 if answers "$FEDERATION_HUB_PORT" && answers "$FEDERATION_SL_PORT"; then
   say "The pair is up on $FEDERATION_HUB_PORT / $FEDERATION_SL_PORT (project $FEDERATION_PROJECT), used as it is"
 else
   say "The pair is not up: booting it through the federation drill (DRILL_KEEP=1, the Stripe variables set)"
   DRILL_KEEP=1 "$REPO/scripts/federation-drill.sh" || fail "the federation drill did not pass; the campaign does not run on a pair the drill refused"
+  BOOTED=1
 fi
 
 # 2. the hub with the campaign's configuration (recreated only when it differs).
@@ -117,9 +121,11 @@ cleanup() {
   kill "$LISTEN_PID" 2>/dev/null || true
   if [ "${DRILL_KEEP:-}" = "1" ]; then
     echo "    DRILL_KEEP=1: the pair stays up (project $FEDERATION_PROJECT)"
-  else
+  elif [ "$BOOTED" = "1" ]; then
     dc down -v --remove-orphans >/dev/null 2>&1 || true
     echo "    the pair is down (down -v)"
+  else
+    echo "    the pair was up before the campaign: left as it was (project $FEDERATION_PROJECT)"
   fi
   exit "$status"
 }

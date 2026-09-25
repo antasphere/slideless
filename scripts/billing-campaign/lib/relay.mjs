@@ -33,7 +33,6 @@ export class Relay {
     this.held = null; // a Set of predicates while holding, else null
     this.queue = []; // held records
     this.server = null;
-    this.listeners = new Set();
   }
 
   async start() {
@@ -79,7 +78,6 @@ export class Relay {
               res.end(JSON.stringify({ relay: String(err?.message ?? err) }));
             });
         }
-        for (const l of this.listeners) l(record);
       });
     });
     await new Promise((resolve, reject) => {
@@ -107,7 +105,8 @@ export class Relay {
     const bytes = body ?? record.body;
     const age = Math.floor(Date.now() / 1000) - Number((record.signature.match(/t=(\d+)/) ?? [])[1] ?? 0);
     let signature = record.signature;
-    const fresh = resign === true || (resign === undefined && (body !== undefined || age > SIGNATURE_TOLERANCE_S - 30));
+    const fresh =
+      resign === true || (resign === undefined && (body !== undefined || age > SIGNATURE_TOLERANCE_S - 30));
     if (fresh) signature = sign(bytes);
     if (tamper) signature = `t=${Math.floor(Date.now() / 1000)},v1=${'0'.repeat(64)}`;
     const res = await request(this.hub, {
@@ -160,16 +159,12 @@ export class Relay {
     this.queue = this.queue.filter((r) => !filter(r));
   }
 
-  /** Wait for a delivery (held or forwarded) matching `predicate`; the record or null. */
-  waitFor(predicate, timeoutMs = 90_000) {
-    return waitFor(() => this.records.find(predicate) ?? null, { every: 500, timeoutMs });
-  }
   /** Wait until a matching delivery was forwarded and the hub answered `outcome` (default `processed`). */
   async waitProcessed(predicate, { timeoutMs = 90_000, outcome = 'processed' } = {}) {
-    return waitFor(
-      () => this.records.find((r) => predicate(r) && r.outcome === outcome) ?? null,
-      { every: 500, timeoutMs }
-    );
+    return waitFor(() => this.records.find((r) => predicate(r) && r.outcome === outcome) ?? null, {
+      every: 500,
+      timeoutMs
+    });
   }
   /** The records of one Stripe object (a payment intent, an invoice, a subscription), in order. */
   ofObject(objectId) {

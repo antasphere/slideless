@@ -19,11 +19,15 @@ function readConfig() {
   const slPort = Number(env('FEDERATION_SL_PORT', '3310'));
   const stripeKey = env('STRIPE_SANDBOX_SECRET_KEY', env('STRIPE_SECRET_KEY', ''));
   if (!stripeKey.startsWith('sk_test_')) {
-    throw new Error('STRIPE_SANDBOX_SECRET_KEY must be a Stripe TEST secret key (sk_test_…); nothing else is ever used');
+    throw new Error(
+      'STRIPE_SANDBOX_SECRET_KEY must be a Stripe TEST secret key (sk_test_…); nothing else is ever used'
+    );
   }
   const webhookSecret = env('STRIPE_WEBHOOK_SECRET', '');
   if (!webhookSecret.startsWith('whsec_')) {
-    throw new Error('STRIPE_WEBHOOK_SECRET must be the listen secret (whsec_…), from `stripe listen --print-secret`');
+    throw new Error(
+      'STRIPE_WEBHOOK_SECRET must be the listen secret (whsec_…), from `stripe listen --print-secret`'
+    );
   }
   const out = env('CAMPAIGN_OUT', `/private/tmp/billing-campaign-${project}`);
   mkdirSync(out, { recursive: true, mode: 0o700 });
@@ -39,7 +43,11 @@ function readConfig() {
     hopPort: Number(env('FEDERATION_HOP_PORT', '8474')),
     relayPort: Number(env('CAMPAIGN_RELAY_PORT', '8732')),
     /** The registry client of the pair's Slideless (docker-compose.federation.yml). */
-    toolClient: { id: 'tool-slideless-cloud', secret: 'federation-dev-client-secret-0001', slug: 'slideless-cloud' },
+    toolClient: {
+      id: 'tool-slideless-cloud',
+      secret: 'federation-dev-client-secret-0001',
+      slug: 'slideless-cloud'
+    },
     metricsToken: 'federation-dev-metrics-token-0001',
     owner: { email: 'drill-owner@drill.test', name: 'Drill Owner' },
     /** The sandbox tag on every object the campaign creates itself. */
@@ -49,7 +57,10 @@ function readConfig() {
     headed: env('CAMPAIGN_HEADED', '') === '1',
     /** The compose files of the pair, for `docker compose exec` and the hub's recreate. */
     compose: {
-      files: [path.join(repo, 'docker-compose.federation.yml'), path.join(repo, 'docker-compose.federation.drill.yml')],
+      files: [
+        path.join(repo, 'docker-compose.federation.yml'),
+        path.join(repo, 'docker-compose.federation.drill.yml')
+      ],
       dockerConfig: env('DOCKER_CONFIG', '')
     },
     /** How many organizations the load group makes and how many purchases and debit batches it runs at once. */

@@ -20,14 +20,22 @@ export const scenarios = [
     async run(ctx) {
       if (!ctx.hub.user?.id) throw new CampaignError('the hub client has no signed-in user', {});
       const token = await ctx.hub.machine();
-      if (typeof token !== 'string' || token.length < 20) throw new CampaignError('the machine token is not a token', { length: token?.length });
+      if (typeof token !== 'string' || token.length < 20)
+        throw new CampaignError('the machine token is not a token', { length: token?.length });
       const check = await ctx.hub.usageCheck(ctx.drillOrg, 'files.upload', 1_048_576);
       if (typeof check.allowed !== 'boolean' || check.credits !== 5) {
         throw new CampaignError('the usage check did not price one MiB at 5 credits', { check });
       }
       const settings = await ctx.hub.settings();
-      if (!settings.settings?.packs) throw new CampaignError('the staff settings read carries no packs', { settings });
-      return { userId: ctx.hub.user.id, drillOrg: ctx.drillOrg, tokenLength: token.length, check, packs: settings.settings.packs };
+      if (!settings.settings?.packs)
+        throw new CampaignError('the staff settings read carries no packs', { settings });
+      return {
+        userId: ctx.hub.user.id,
+        drillOrg: ctx.drillOrg,
+        tokenLength: token.length,
+        check,
+        packs: settings.settings.packs
+      };
     }
   },
   {
@@ -36,12 +44,26 @@ export const scenarios = [
     async run(ctx) {
       if (!ctx.sl.user?.id) throw new CampaignError('the Slideless client has no signed-in user', {});
       const ws = await ctx.sl.workspaceOf(ctx.drillOrg);
-      if (!ws) throw new CampaignError('no local workspace projects the Drill Workspace', { drillOrg: ctx.drillOrg });
+      if (!ws)
+        throw new CampaignError('no local workspace projects the Drill Workspace', {
+          drillOrg: ctx.drillOrg
+        });
       const me = await ctx.sl.me();
       const listed = (me.workspaces ?? []).find((w) => w.id === ws);
-      if (!listed) throw new CampaignError('GET /me does not list the projected workspace', { ws, workspaces: me.workspaces?.map((w) => w.id) });
+      if (!listed)
+        throw new CampaignError('GET /me does not list the projected workspace', {
+          ws,
+          workspaces: me.workspaces?.map((w) => w.id)
+        });
       const decks = await ctx.sl.presentations(ws);
-      return { slUserId: ctx.sl.user.id, email: ctx.sl.user.email, workspaceId: ws, hubOrigin: listed.hubOrigin ?? null, role: listed.role ?? null, decks: decks.length };
+      return {
+        slUserId: ctx.sl.user.id,
+        email: ctx.sl.user.email,
+        workspaceId: ws,
+        hubOrigin: listed.hubOrigin ?? null,
+        role: listed.role ?? null,
+        decks: decks.length
+      };
     }
   },
   {
@@ -63,7 +85,9 @@ export const scenarios = [
           metadata: { accountId, workspaceId: org, lane: ctx.config.lane }
         });
         customerId = customer.id;
-        await ctx.hub.sql(`UPDATE billing_accounts SET stripe_customer_id = '${customerId}' WHERE id = '${accountId}'`);
+        await ctx.hub.sql(
+          `UPDATE billing_accounts SET stripe_customer_id = '${customerId}' WHERE id = '${accountId}'`
+        );
         customerPath = 'made by the campaign and written on the row';
       } else {
         await ctx.stripe.tagCustomer(customerId);
@@ -74,26 +98,65 @@ export const scenarios = [
         customerId,
         amountMinor: 2000,
         currency: 'EUR',
-        metadata: { kind: 'purchase', accountId, workspaceId: org, userId: ctx.hub.user.id, credits: '20000', currency: 'EUR' }
+        metadata: {
+          kind: 'purchase',
+          accountId,
+          workspaceId: org,
+          userId: ctx.hub.user.id,
+          credits: '20000',
+          currency: 'EUR'
+        }
       });
-      if (intent.status !== 'succeeded') throw new CampaignError('the payment intent did not succeed at once', { id: intent.id, status: intent.status });
-      const record = await ctx.relay.waitProcessed((r) => r.type === 'payment_intent.succeeded' && r.body.includes(intent.id) && r.receivedAt >= t0);
-      if (!record) {
-        throw new CampaignError('no processed payment_intent.succeeded for the intent reached the relay in 90 s', {
-          intentId: intent.id,
-          seen: ctx.relay.ofObject(intent.id).map((r) => ({ type: r.type, outcome: r.outcome, status: r.status }))
+      if (intent.status !== 'succeeded')
+        throw new CampaignError('the payment intent did not succeed at once', {
+          id: intent.id,
+          status: intent.status
         });
+      const record = await ctx.relay.waitProcessed(
+        (r) => r.type === 'payment_intent.succeeded' && r.body.includes(intent.id) && r.receivedAt >= t0
+      );
+      if (!record) {
+        throw new CampaignError(
+          'no processed payment_intent.succeeded for the intent reached the relay in 90 s',
+          {
+            intentId: intent.id,
+            seen: ctx.relay
+              .ofObject(intent.id)
+              .map((r) => ({ type: r.type, outcome: r.outcome, status: r.status }))
+          }
+        );
       }
       const entry = await ctx.hub.waitLedger(org, { kind: 'purchase', sourceRef: intent.id });
-      if (!entry) throw new CampaignError('no purchase entry for the intent on the ledger', { intentId: intent.id, ledger: await ctx.hub.ledger(org) });
-      if (entry.amount !== 20000) throw new CampaignError('the purchase amount is not the metadata credits', { entry });
+      if (!entry)
+        throw new CampaignError('no purchase entry for the intent on the ledger', {
+          intentId: intent.id,
+          ledger: await ctx.hub.ledger(org)
+        });
+      if (entry.amount !== 20000)
+        throw new CampaignError('the purchase amount is not the metadata credits', { entry });
       const entries = await ctx.hub.entriesOf(org, intent.id);
       if (entries.length !== 1) throw new CampaignError('more than one entry for the intent', { entries });
       const rows = await ctx.hub.eventRows(intent.id);
-      if (!rows.length || rows.some((r) => !r.processed)) throw new CampaignError('the stripe_events rows of the intent are not all processed', { rows });
+      if (!rows.length || rows.some((r) => !r.processed))
+        throw new CampaignError('the stripe_events rows of the intent are not all processed', { rows });
       const agrees = await ctx.hub.balanceAgrees(org);
-      if (!agrees.agrees || agrees.balance !== before.balance + 20000) throw new CampaignError('the balance does not read the grant plus the purchase', { before: before.balance, agrees });
-      return { org, accountId, customerId, customerPath, intentId: intent.id, eventId: record.id, webhookMs: record.lastDeliveredAt - t0, entryId: entry.id, balance: agrees.balance, eventRows: rows };
+      if (!agrees.agrees || agrees.balance !== before.balance + 20000)
+        throw new CampaignError('the balance does not read the grant plus the purchase', {
+          before: before.balance,
+          agrees
+        });
+      return {
+        org,
+        accountId,
+        customerId,
+        customerPath,
+        intentId: intent.id,
+        eventId: record.id,
+        webhookMs: record.lastDeliveredAt - t0,
+        entryId: entry.id,
+        balance: agrees.balance,
+        eventRows: rows
+      };
     }
   },
   {
@@ -102,7 +165,9 @@ export const scenarios = [
     async run(ctx) {
       const t0 = Date.now();
       const jobId = await ctx.hub.runSweep();
-      const state = await ctx.hub.sql(`SELECT state || '|' || coalesce(output::text, '') FROM pgboss.job WHERE id = '${jobId}'`);
+      const state = await ctx.hub.sql(
+        `SELECT state || '|' || coalesce(output::text, '') FROM pgboss.job WHERE id = '${jobId}'`
+      );
       return { jobId, state, sweepMs: Date.now() - t0 };
     }
   },
@@ -110,10 +175,16 @@ export const scenarios = [
     name: 'a headless setup-mode Checkout saves a card the account then shows',
     path: 'hosted Checkout (browser)',
     async run(ctx) {
-      if (!org) throw new CampaignError('the smoke organization is missing: the webhook scenario did not run', {});
+      if (!org)
+        throw new CampaignError('the smoke organization is missing: the webhook scenario did not run', {});
       const setup = await ctx.hub.paymentMethodSetup(org);
-      if (!setup.url || !setup.sessionId) throw new CampaignError('the setup session carries no url', { setup });
-      const paid = await ctx.payCheckout(setup.url, { mode: 'setup', card: CARDS.visa, label: 'smoke-setup' });
+      if (!setup.url || !setup.sessionId)
+        throw new CampaignError('the setup session carries no url', { setup });
+      const paid = await ctx.payCheckout(setup.url, {
+        mode: 'setup',
+        card: CARDS.visa,
+        label: 'smoke-setup'
+      });
       const account = await waitFor(
         async () => {
           const a = await ctx.hub.account(org);
@@ -121,10 +192,24 @@ export const scenarios = [
         },
         { every: 1500, timeoutMs: 60_000 }
       );
-      if (!account) throw new CampaignError('the account never showed the saved card', { sessionId: setup.sessionId, account: await ctx.hub.account(org), url: paid.url });
+      if (!account)
+        throw new CampaignError('the account never showed the saved card', {
+          sessionId: setup.sessionId,
+          account: await ctx.hub.account(org),
+          url: paid.url
+        });
       const session = await ctx.stripe.checkoutSession(setup.sessionId);
-      expectStatus({ status: session.status === 'complete' ? 200 : 0, json: session, text: '' }, 200, 'the setup session is complete');
-      return { sessionId: setup.sessionId, returnedTo: paid.url, paymentMethod: account.paymentMethod, shots: paid.shots.length };
+      expectStatus(
+        { status: session.status === 'complete' ? 200 : 0, json: session, text: '' },
+        200,
+        'the setup session is complete'
+      );
+      return {
+        sessionId: setup.sessionId,
+        returnedTo: paid.url,
+        paymentMethod: account.paymentMethod,
+        shots: paid.shots.length
+      };
     }
   }
 ];

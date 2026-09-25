@@ -44,8 +44,18 @@ export async function closeBrowser() {
 
 const fillIfEmpty = async (page, selector, value) => {
   const loc = page.locator(selector);
-  if (!(await loc.count()) || !(await loc.first().isVisible().catch(() => false))) return;
-  const v = await loc.first().inputValue().catch(() => '');
+  if (
+    !(await loc.count()) ||
+    !(await loc
+      .first()
+      .isVisible()
+      .catch(() => false))
+  )
+    return;
+  const v = await loc
+    .first()
+    .inputValue()
+    .catch(() => '');
   if (!v) await loc.first().fill(value);
 };
 
@@ -56,7 +66,21 @@ const fillIfEmpty = async (page, selector, value) => {
  *   completed, then the return URL).
  * Answers `{ outcome, url, text, shots }`; throws on anything else.
  */
-export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mode = 'payment', email = config.owner.email, name = config.owner.name, label = 'checkout', country = 'BE', postalCode = '1000', line1 = 'Rue de la Loi 1', city = 'Bruxelles' } = {}) {
+export async function payCheckout(
+  url,
+  {
+    card = CARDS.visa,
+    expect = 'paid',
+    mode = 'payment',
+    email = config.owner.email,
+    name = config.owner.name,
+    label = 'checkout',
+    country = 'BE',
+    postalCode = '1000',
+    line1 = 'Rue de la Loi 1',
+    city = 'Bruxelles'
+  } = {}
+) {
   const b = await launch();
   const context = await b.newContext({ viewport: { width: 1200, height: 1500 } });
   const page = await context.newPage();
@@ -72,8 +96,12 @@ export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mod
   };
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    await page.waitForSelector('#email, #cardNumber, [data-testid="card-accordion-item"]', { timeout: 60_000 });
-    const cardChoice = page.locator('[data-testid="card-accordion-item"], [data-testid="card-accordion-item-button"]').first();
+    await page.waitForSelector('#email, #cardNumber, [data-testid="card-accordion-item"]', {
+      timeout: 60_000
+    });
+    const cardChoice = page
+      .locator('[data-testid="card-accordion-item"], [data-testid="card-accordion-item-button"]')
+      .first();
     if (await cardChoice.count()) await cardChoice.click();
     else {
       const byText = page.getByText('Card', { exact: true }).first();
@@ -105,7 +133,12 @@ export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mod
       const n = await alerts.count();
       const parts = [];
       for (let i = 0; i < n; i += 1) {
-        const t = ((await alerts.nth(i).textContent().catch(() => '')) ?? '').trim();
+        const t = (
+          (await alerts
+            .nth(i)
+            .textContent()
+            .catch(() => '')) ?? ''
+        ).trim();
         if (t) parts.push(t);
       }
       return parts.join(' | ');
@@ -113,11 +146,23 @@ export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mod
     await page.waitForTimeout(1500);
     const returned = RETURNS[mode] ?? RETURNS.payment;
     if (expect === 'declined') {
-      await pay.click();
+      // The same three tries as the paid path: a click that lands before the
+      // page settled is swallowed, and a swallowed click shows no decline.
       const err = page.locator('text=/declined|refus|insufficient|expired|invalid/i').first();
-      await err.waitFor({ timeout: 60_000 });
+      let text = '';
+      for (let attempt = 1; attempt <= 3 && !text; attempt += 1) {
+        await pay.scrollIntoViewIfNeeded().catch(() => {});
+        await pay.click({ timeout: 10_000 }).catch(() => {});
+        const seen = await err.waitFor({ timeout: 20_000 }).then(
+          () => true,
+          () => false
+        );
+        if (seen) text = (await err.textContent())?.trim() ?? '';
+        if (!text && returned.test(page.url()))
+          throw new Error(`the payment LANDED (${page.url()}) where a decline was expected`);
+      }
+      if (!text) throw new Error('the page showed no decline after three attempts');
       await shot('declined');
-      const text = (await err.textContent())?.trim() ?? '';
       return { outcome: 'declined', url: page.url(), text, shots };
     }
     let done = false;
@@ -144,7 +189,8 @@ export async function payCheckout(url, { card = CARDS.visa, expect = 'paid', mod
       } catch {
         await shot(`after-pay-${attempt}`);
         const said = await alertText();
-        if (said && !/processing/i.test(said)) return { outcome: 'declined', url: page.url(), text: said, shots };
+        if (said && !/processing/i.test(said))
+          return { outcome: 'declined', url: page.url(), text: said, shots };
         await page.waitForTimeout(1500);
       }
     }
