@@ -435,10 +435,14 @@ export class ThumbnailService {
   }
 
   /**
-   * The renderer's failure for a claim. A transient one (the renderer could
-   * not start the job before its deadline, its browser would not launch)
-   * gives the attempt back with a short backoff; a real one counts, and the
-   * last one gives up. `'rejected'` when the key opens nothing.
+   * The renderer's failure for a claim. Every reported failure counts an
+   * attempt, and the last one gives up: a transient one (the renderer could
+   * not start the job before its deadline, could not read every file) only
+   * waits the short backoff instead of the retry delay. Counting it is what
+   * bounds a version the renderer can never finish; the deadline is rarely
+   * passed in practice (the renderer's queue is as deep as the in-flight
+   * cap). Only a handoff the renderer never took (`release`) costs nothing.
+   * `'rejected'` when the key opens nothing.
    */
   async fail(opts: {
     job: string;
@@ -450,35 +454,24 @@ export class ThumbnailService {
     if (!row) return 'rejected';
     const message = opts.error.split('\n')[0]!.slice(0, ERROR_MAX);
     const hash = hashToken(opts.token);
-    if (opts.transient) {
-      await this.db.execute(sql`
-        UPDATE presentation_version_thumbnails
-           SET lease_until = now() + make_interval(secs => ${this.dials.backoffSeconds}),
-               attempts = greatest(attempts - 1, 0), claim_token_hash = NULL, error = ${message}, updated_at = now()
-         WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}`);
-      this.logger.warn(
-        { versionId: row.versionId, err: message },
-        'thumbnails: the renderer could not take the version yet, will retry'
-      );
-    } else {
-      const exhausted = row.attempts >= MAX_ATTEMPTS;
-      await this.db.execute(
-        exhausted
-          ? sql`
+    const exhausted = row.attempts >= MAX_ATTEMPTS;
+    const waitSeconds = opts.transient ? this.dials.backoffSeconds : this.dials.retryDelaySeconds;
+    await this.db.execute(
+      exhausted
+        ? sql`
         UPDATE presentation_version_thumbnails
            SET state = 'failed', lease_until = NULL, claim_token_hash = NULL, error = ${message}, updated_at = now()
          WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}`
-          : sql`
+        : sql`
         UPDATE presentation_version_thumbnails
-           SET lease_until = now() + make_interval(secs => ${this.dials.retryDelaySeconds}),
+           SET lease_until = now() + make_interval(secs => ${waitSeconds}),
                claim_token_hash = NULL, error = ${message}, updated_at = now()
          WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}`
-      );
-      this.logger.warn(
-        { versionId: row.versionId, attempt: row.attempts, err: message },
-        exhausted ? 'thumbnails: capture failed, giving up' : 'thumbnails: capture failed, will retry'
-      );
-    }
+    );
+    this.logger.warn(
+      { versionId: row.versionId, attempt: row.attempts, err: message, transient: opts.transient === true },
+      exhausted ? 'thumbnails: capture failed, giving up' : 'thumbnails: capture failed, will retry'
+    );
     this.kick();
     return 'recorded';
   }

@@ -399,6 +399,11 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         env.VIEWER_BASE_URL ? hostGate({ viewerBaseUrl: env.VIEWER_BASE_URL }) : undefined,
       // The dashboard CSP may frame the viewer origin (the preview iframe).
       cspFrameSrc: (env) => (env.VIEWER_BASE_URL ? [new URL(env.VIEWER_BASE_URL).origin] : []),
+      // The still image of a deck version (PRDCT-2725) is fetched through
+      // the SDK (an <img> cannot send X-Workspace-Id) and shown from an
+      // object URL: `blob:` is the one extra image source, and a blob is
+      // bytes the page itself fetched from this origin, never a third host.
+      cspImgSrc: () => ['blob:'],
       // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in
       // the chassis app's public-route slot, serves user HTML ONLY under CSP: sandbox.
       // The renderer's callbacks (PRDCT-2725, thumbnails/routes.ts) ride the

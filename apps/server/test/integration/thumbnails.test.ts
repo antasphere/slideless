@@ -613,7 +613,7 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
     }
   });
 
-  it('a transient failure gives the attempt back', async () => {
+  it('a transient failure counts the attempt and is retried sooner', async () => {
     fake.mode = 'transient';
     try {
       const d = await c.pushDeck(ownerCookie, 'Transient', [
@@ -623,15 +623,38 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
       const vid = await c.versionId(d, 1);
       const row = await c.row(vid);
       expect(row?.state).toBe('pending');
-      expect(row?.attempts).toBe(0);
+      expect(row?.attempts).toBe(1);
       expect(row?.error).toBe('the browser would not start');
       expect(row?.claim_token_hash).toBeNull();
-      expect(row?.lease_until!.getTime()).toBeGreaterThan(Date.now());
+      const wait = row!.lease_until!.getTime() - Date.now();
+      expect(wait).toBeGreaterThan(0);
+      expect(wait).toBeLessThan(60_000);
       fake.mode = 'ok';
       await expireLease(vid);
       await app.tool.thumbnails.sweep();
       await flush();
       expect((await c.row(vid))?.state).toBe('ready');
+      expect((await c.row(vid))?.attempts).toBe(2);
+    } finally {
+      fake.mode = 'ok';
+    }
+  });
+
+  it(`transient failures alone give up after ${MAX_ATTEMPTS} attempts too`, async () => {
+    fake.mode = 'transient';
+    try {
+      const d = await c.pushDeck(ownerCookie, 'Always transient', [
+        { path: 'index.html', bytes: htmlOf('deck-always-transient'), contentType: 'text/html' }
+      ]);
+      await flush();
+      const vid = await c.versionId(d, 1);
+      for (let i = 1; i < MAX_ATTEMPTS; i++) {
+        await expireLease(vid);
+        await app.tool.thumbnails.sweep();
+        await flush();
+      }
+      expect((await c.row(vid))?.state).toBe('failed');
+      expect(fake.jobsFor('deck-always-transient')).toHaveLength(MAX_ATTEMPTS);
     } finally {
       fake.mode = 'ok';
     }
