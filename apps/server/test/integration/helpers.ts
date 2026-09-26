@@ -20,5 +20,10 @@ export {
 
 export type TestApp = ChassisTestApp<BootResult>;
 
-/** Boot the real app (real migrations, real Better Auth) against a database. */
+/**
+ * Boot the real app (real migrations, real Better Auth) against a database.
+ * No renderer is configured unless a suite passes one
+ * (`overrides.tool.rendererClient`, PRDCT-2725): the other suites make no
+ * images and never reach for a network.
+ */
 export const createTestApp = makeCreateTestApp<BootResult, BootOverrides>(boot);

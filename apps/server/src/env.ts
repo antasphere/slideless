@@ -38,6 +38,10 @@ const deckEnvShape = {
   VIEWER_BASE_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
   /** De-dupe window (minutes) for share-link view counting: repeat opens of the same link from one browser inside this window count once, so browser prefetch/prerender, reloads, and mail-scanner hits no longer inflate a token's accessCount. Enforced with a signed, token-scoped HttpOnly cookie; cookie-less clients that fetch the deck's HTML count every fetch; a fetch that does not ask for HTML gets the link's index and counts as an agent read, never a view. Large values shift the metric toward "unique browsers" rather than "opens". 0 disables de-dupe: every entry GET counts and no cookie is set. */
   VIEW_DEDUPE_WINDOW_MINUTES: numeric(z.coerce.number().int().min(0).default(10)),
+  /** Base URL of the optional renderer container that captures each deck version's still image (PRDCT-2725), reached from this instance (`http://renderer:3100` in the compose stack, under `--profile images`). Unset (default) = no images: the deck cards show their drawn pattern. Set, every pushed version is handed to the renderer right after the push, fire and forget; the app behaves the same when the renderer is down (the version waits and is handed over again). Needs SLIDELESS_RENDERER_SECRET. */
+  SLIDELESS_RENDERER_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
+  /** The shared secret the renderer requires on every job this instance hands it (16 characters or more; the same value in the renderer's environment). Required when SLIDELESS_RENDERER_URL is set. It authenticates this instance to the renderer only: the image comes back under a one-time key minted per job, never under this secret. */
+  SLIDELESS_RENDERER_SECRET: z.preprocess(blankToUndefined, z.string().min(16).optional()),
   /** Size ceiling, in MB, of ONE file a respondent uploads into a form's file field (PRDCT-2403) — an anonymous write path, so it has its own knob. Never above MAX_FILE_SIZE_MB (the lower of the two applies). 0 switches form file uploads off instance-wide: file fields show as unavailable and the rest of the form still submits. */
   FORMS_MAX_UPLOAD_MB: numeric(z.coerce.number().int().min(0).default(100)),
   /** How many files ONE form response can hold, all file fields together — the instance's ceiling behind the maximum a deck author sets on a field (an author who sets none gets this one). */
@@ -57,12 +61,24 @@ export const deckEnvExtension: EnvExtension<DeckEnvShape> = {
   after: {
     VIEWER_BASE_URL: 'PUBLIC_BASE_URL',
     VIEW_DEDUPE_WINDOW_MINUTES: 'PUBLIC_BASE_URL',
+    SLIDELESS_RENDERER_URL: 'MAX_FILE_SIZE_MB',
+    SLIDELESS_RENDERER_SECRET: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_UPLOAD_MB: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_FILES_PER_RESPONSE: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_UPLOADS_MB_PER_DECK: 'MAX_FILE_SIZE_MB',
     VIEW_EVENTS_RETENTION_DAYS: 'AUDIT_RETENTION_DAYS'
   },
   refine: (env, ctx) => {
+    // A renderer without its secret would take no job (the renderer refuses
+    // every unauthenticated call) and every version would wait forever:
+    // refuse at boot with the fix named.
+    if (env.SLIDELESS_RENDERER_URL !== undefined && env.SLIDELESS_RENDERER_SECRET === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SLIDELESS_RENDERER_SECRET'],
+        message: 'required when SLIDELESS_RENDERER_URL is set (the same value as in the renderer container)'
+      });
+    }
     // The viewer origin is a boundary only if it is a DIFFERENT origin: equal
     // to the public origin, the host gate (middleware/host-gate.ts) would put
     // every dashboard, login and API request on the viewer side and answer

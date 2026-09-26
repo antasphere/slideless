@@ -1,27 +1,23 @@
 <script lang="ts">
   /* One deck as a card (PRDCT-2437): the deck itself, the title, and the two or
      three facts a person who is not technical cares about. No id, no hash, no
-     version number. The picture is the deck's first page, rendered live the way
-     the version thumbnails are (PRDCT-2308). Under it, and in its place for a
-     deck with no version or a person who may not preview, sits the deck's own
-     drawn plate: its pattern says what kind of deck it is, its field is seeded
-     from the deck's id.
-
-     SECURITY (ADR 012 Surface D): deck HTML renders ONLY inside the sandboxed
-     iframe, never `allow-same-origin`; the frame takes no pointer events and no
-     focus, it is a picture. The token is a hidden, stat-excluded preview token,
-     asked for once the card has been in view and revoked when the card goes. */
-  import { onDestroy, untrack } from 'svelte';
-  import { page } from '$app/state';
+     version number. The picture is a still image of the deck's first page,
+     captured on the server at each push and shown to everyone who can read the
+     deck (PRDCT-2725); no deck HTML loads here. Under it, until it arrives and
+     in its place when there is none (no version yet, or no image made), sits
+     the deck's own drawn plate: its pattern says what kind of deck it is, its
+     field is seeded from the deck's id. The plate is still, never animated;
+     while the image is fetched or made a shimmering skeleton covers it, the
+     image fades in over that, and when there is none the plate shows. */
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
-  import { PREVIEW_SANDBOX } from '$lib/tool/decks';
-  import { canPreviewDeck, createThumbnailController } from '$lib/tool/decks/preview.svelte';
+  import DeckStill from './DeckStill.svelte';
   import Eye from '@lucide/svelte/icons/eye';
   import Clock from '@lucide/svelte/icons/clock-3';
   import { DECK_PALETTES, DECK_PATTERNS } from '$lib/brand/recipe.js';
   import { seedOf } from '$lib/brand/seed';
   import { kindLabel } from '$lib/tool/decks';
+  import type { StillState } from '$lib/tool/decks/stills';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
   import type { DeckWithProjects } from '$lib/tool/projects-client';
@@ -40,58 +36,16 @@
   const palette = $derived(DECK_PALETTES[seed % DECK_PALETTES.length]);
   const pattern = $derived(DECK_PATTERNS[deck.kind] ?? 'slides');
 
-  let played = $state(false);
-
-  const canThumb = $derived(deck.currentVersion > 0 && canPreviewDeck(page.data.me, deck));
-  const thumbs = createThumbnailController(
-    untrack(() => deck.id),
-    { canPreview: () => canThumb }
-  );
-  onDestroy(() => thumbs.destroy());
-
-  let box = $state<HTMLElement | null>(null);
-  let width = $state(0);
-  let loaded = $state(false);
-  $effect(() => {
-    if (!box || !canThumb) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) {
-        thumbs.request(deck.currentVersion);
-        io.disconnect();
-      }
-    });
-    io.observe(box);
-    return () => io.disconnect();
-  });
-  const url = $derived(canThumb ? thumbs.url(deck.currentVersion) : null);
+  let still = $state<StillState>('idle');
 </script>
 
 <!-- SECURITY: the title is USER-AUTHORED; it renders through text
      interpolation only, never {@html}. -->
-<a
-  href="/decks/{deck.id}"
-  class="sheet tile deck"
-  onpointerenter={() => (played = true)}
-  onpointerleave={() => (played = false)}
-  onfocus={() => (played = true)}
-  onblur={() => (played = false)}
->
-  <div class="plate-window plate" class:compact bind:this={box} bind:clientWidth={width}>
-    <PatternCanvas {pattern} {palette} {seed} active={played && !loaded} />
-    {#if url && width}
-      <iframe
-        src={url}
-        title={deck.title}
-        sandbox={PREVIEW_SANDBOX}
-        referrerpolicy="no-referrer"
-        tabindex="-1"
-        aria-hidden="true"
-        loading="lazy"
-        class="thumb"
-        class:loaded
-        style="transform: scale({width / 1280})"
-        onload={() => (loaded = true)}
-      ></iframe>
+<a href="/decks/{deck.id}" class="sheet tile deck">
+  <div class="plate-window plate" class:compact data-still={deck.currentVersion > 0 ? still : undefined}>
+    <PatternCanvas {pattern} {palette} {seed} />
+    {#if deck.currentVersion > 0}
+      <DeckStill deckId={deck.id} version={deck.currentVersion} bind:state={still} />
     {/if}
     <span class="kind">{kindLabel(deck.kind)}</span>
     {#if deck.interactive}
@@ -132,22 +86,6 @@
   }
   .plate.compact {
     aspect-ratio: 16 / 9;
-  }
-  .thumb {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 1280px;
-    height: 720px;
-    border: 0;
-    transform-origin: top left;
-    pointer-events: none;
-    background: var(--ground);
-    opacity: 0;
-    transition: opacity 320ms var(--motion-ease);
-  }
-  .thumb.loaded {
-    opacity: 1;
   }
   .kind {
     position: absolute;

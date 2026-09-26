@@ -412,6 +412,27 @@ export const versionGetRoute = createRoute({
   }
 });
 
+/**
+ * The version's still image (PRDCT-2725): one WebP the server captured of the
+ * version's entry page, readable by whoever can read the deck. 404 with
+ * `thumbnail_pending`, `thumbnail_failed` or `thumbnail_unavailable` until
+ * there is one; `not_found` for an unknown or unreadable deck or version.
+ */
+export const versionThumbnailRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/versions/{version}/thumbnail',
+  tags: ['presentations'],
+  summary: "The version's still image (WebP), once captured",
+  request: { params: versionParams },
+  responses: {
+    // No `content` key on the 200 (assetDownloadRoute's precedent): the
+    // handler returns a plain streamed Response.
+    200: { description: 'WebP image (streamed)' },
+    401: errorResponses[401],
+    404: errorResponses[404]
+  }
+});
+
 export const assetDownloadRoute = createRoute({
   method: 'get',
   path: '/presentations/{id}/assets/{sha256}',

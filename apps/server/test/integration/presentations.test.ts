@@ -270,6 +270,7 @@ describe('contract surface + fail-closed scope allowlist', () => {
       '/presentations/uploads/{id}/commit',
       '/presentations/{id}/versions',
       '/presentations/{id}/versions/{version}',
+      '/presentations/{id}/versions/{version}/thumbnail',
       '/presentations/{id}/assets/{sha256}',
       '/presentations/{id}/tokens',
       '/presentations/{id}/tokens/{tokenId}',

@@ -197,8 +197,7 @@ export const fr: Record<keyof typeof en, string> = {
 
   // ── Decks (list) ─────────────────────────────────────────────────────
   'decks.title': 'Decks',
-  'decks.description':
-    'Vos présentations. Chaque push depuis la ligne de commande ou un agent est une nouvelle version.',
+  'decks.description': 'Vos présentations, une version par push.',
   'decks.newDeck': 'Nouveau deck',
   'decks.colTitle': 'Titre',
   'decks.colKind': 'Type',

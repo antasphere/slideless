@@ -37,6 +37,10 @@ const DOWNLOADS: Record<string, [(c: PlatformClient) => Promise<Response>, strin
     (c) => c.downloadVersionAttachment(DECK, 3, 'sub/notes.md'),
     `/api/v1/presentations/${DECK}/versions/3/downloads/sub%2Fnotes.md`
   ],
+  versionThumbnail: [
+    (c) => c.versionThumbnail(DECK, 3),
+    `/api/v1/presentations/${DECK}/versions/3/thumbnail`
+  ],
   downloadFormResponseFile: [
     (c) => c.downloadFormResponseFile(DECK, RESPONSE, FILE),
     `/api/v1/presentations/${DECK}/responses/${RESPONSE}/files/${FILE}`
@@ -78,6 +82,29 @@ describe('SDK downloads carry the active workspace', () => {
     await client.downloadFileContent(FILE);
     expect((calls[0]!.init.headers as Record<string, string>)['x-workspace-id']).toBe('other');
     expect((calls[1]!.init.headers as Record<string, string>)['x-workspace-id']).toBeUndefined();
+  });
+
+  it('the still image lets the HTTP cache work, every download keeps it off (PRDCT-2725)', async () => {
+    const { client, calls } = recordingClient();
+    await client.versionThumbnail(DECK, 3);
+    await client.downloadPresentationAsset(DECK, 'a'.repeat(64));
+    expect(calls[0]!.init.cache).toBe('default');
+    expect(calls[1]!.init.cache).toBe('no-store');
+  });
+
+  it('a thumbnail refusal throws the wire error with its code', async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          error: { code: 'thumbnail_pending', message: 'The image of this version is being made.' }
+        }),
+        { status: 404, headers: { 'content-type': 'application/json' } }
+      )) as typeof globalThis.fetch;
+    const client = new PlatformClient({ baseUrl: 'http://x', fetch: fetchImpl });
+    await expect(client.versionThumbnail(DECK, 1)).rejects.toMatchObject({
+      status: 404,
+      code: 'thumbnail_pending'
+    });
   });
 
   it('a refusal throws the wire error instead of handing back a body to save', async () => {
