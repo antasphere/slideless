@@ -1592,3 +1592,43 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   refusal that posted, or a landed mint that posted nothing, both passed. The baseline is read
   before the first refused call, equality is asserted after them, and exactly one event priced 20
   after the landed mint (the workspace rule: a loop must be able to show its own failure).
+
+## The still image and the renderer container (PRDCT-2725, 2026-09-24 to 26)
+
+- **Alpine's Chromium cannot take a screenshot under its own sandbox.** With Docker's default
+  seccomp profile the namespace sandbox does not even start (`Failed to move to new namespace`);
+  with `deploy/seccomp-chromium.json` (the moby default plus `clone` with the namespace flags,
+  `unshare`, `setns`) it starts, the page loads its files, and then the GPU helper process is
+  killed by Chromium's own seccomp-bpf (`seccomp-bpf failure in syscall nr=0x11f` on arm64, likely
+  musl's `pwritev2`; the same `Browser closed` at the screenshot on amd64 in CI). `--disable-gpu`,
+  `--in-process-gpu` and `--use-gl=…` change nothing; only `--disable-gpu-sandbox` or
+  `--disable-seccomp-filter-sandbox` make it work, and those weaken a sandbox layer, so they were
+  refused. On Debian (glibc) the same self-check passes with Playwright's headless shell and with
+  Debian's own Chromium alike. Do not try Alpine again.
+- **Chromium in the app image was rejected on weight, not on principle.** 422 MB became 1.52 GB
+  (Alpine's chromium brings LLVM, Mesa, ffmpeg and GTK). The renderer is its own optional image
+  (921 MB on disk, 334 MB of it the browser), under a compose profile, so the app image stays what
+  it was. Playwright's headless shell is pinned by `playwright-core`'s version (1.61.1 → build
+  1228, Chromium 149), so the browser in CI and in the image is the same build; Debian's `chromium`
+  package moves with every rebuild.
+- **The worker must be the least trusted process, and the credential design says so.** The shared
+  secret only lets the app hand a job to the renderer; it never travels back. What travels back is
+  a one-time key minted per claim (32 random bytes, the sha256 on the row): it opens that version's
+  manifest files and accepts that version's image, only while the lease lives, and a replayed,
+  foreign or late key answers 401 with nothing else. A wrong-token oracle on a 256-bit key needs no
+  rate limit. The integration suite plays the renderer's side of the protocol over the app's own
+  routes (a fake with no Chromium), which is what pins the containment; the renderer's own suite
+  pins the browser lockdown with a real Chromium.
+- **`..` never reaches a route through a URL parser.** The WHATWG parser resolves dot segments
+  (and `%2e%2e`) before Hono sees the path, so an HTTP-level test of a traversal exercises the
+  parser, not the code; the traversal rule is tested at the service (`fileFor`), where a path
+  arrives however it was spelled. The route decodes the RAW pathname one time per segment, so a
+  file whose own name holds a percent sign resolves (Hono's `c.req.path` pre-decodes once).
+- **A fake that answers "the oldest held job" leaks state between tests.** The first version of
+  the integration fake's `finish()` shifted its held queue; a job finished by hand in an earlier
+  test stayed in that queue, the shift PUT with a dead key, 401, and three later tests saw the
+  in-flight cap full for no visible reason. A fake that holds state takes the job it must answer
+  by identity and throws on a refused answer.
+- **A URL-shaped env key is read once, at boot, in the chassis env slot.** `SLIDELESS_RENDERER_URL`
+  without `SLIDELESS_RENDERER_SECRET` refuses the boot with the fix named (the renderer would take
+  no job and every version would wait forever); blank means unset, as for every other key.

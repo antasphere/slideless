@@ -94,6 +94,26 @@ deploys) + `dev` (day-to-day work).
   (`forms/detect.ts`, PRDCT-1810): any script entry or inline `<script>` ARMS the runtime; a
   byte scan cannot see a runtime-authored marker, so "inconclusive arms" — never narrow it back
   to the literal marker alone.
+- **The still image is made by a separate, optional renderer container, and the app never
+  waits on it (PRDCT-2725)**: Chromium does NOT ship in the app image (Romain's ruling of 24
+  September 2026: 422 MB against 1.52 GB for a nice-to-have). `apps/renderer` holds a sandboxed
+  headless Chromium and nothing else (no database, no storage, no secret but
+  `SLIDELESS_RENDERER_SECRET`); Slideless (`apps/server/src/thumbnails/`) hands a claimed version to
+  it as a job the size of a line with a ONE-TIME KEY, the renderer pulls the version's files
+  through `/internal/renderer/jobs/{job}/files/{path}` with that key and puts the WebP back
+  through `…/image` (or `…/failure`). The key is the sha256 on the claimed row
+  (`claim_token_hash`): it opens one version, only while the lease lives, and dies with the
+  outcome, so a renderer that were ever taken over could write the images of the versions it was
+  handed and read nothing else. A push only queues; `kick` hands off; a reader's ask hands off
+  inside the request (what makes it work on a CPU-throttled cloud instance); a busy or
+  unreachable renderer costs no attempt; at most `MAX_IN_FLIGHT` versions are out at once. Chromium
+  ALWAYS runs under its own sandbox: the renderer refuses to boot without it (exit 3) and stops if
+  it dies later; never add `--no-sandbox`, never `seccomp=unconfined`; the compose stack applies
+  `deploy/seccomp-chromium.json` to the `renderer` service (the `images` profile), never to `app`.
+  Alpine's Chromium is out for good: its graphics helper dies under Chromium's own seccomp on musl
+  (arm64 and amd64 alike), so the renderer image is Debian with Playwright's pinned headless shell.
+  Unset `SLIDELESS_RENDERER_URL` = no images, `thumbnail_unavailable`, the still pattern on the
+  cards. The renderer's cloud deployment is its own task; until it ships, cloud shows the pattern.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **The viewer origin is a real boundary, never a trust grant (PRDCT-1352)**: with

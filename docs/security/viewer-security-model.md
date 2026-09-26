@@ -70,29 +70,37 @@ It changes nothing about the deck itself, which still runs without
 This is the **safe default**: with zero configuration, a share link on the
 app origin cannot be used to steal a dashboard session.
 
-### The still image: the one place the server opens a deck
+### The still image: the one place Slideless opens a deck itself
 
 Everything above happens in a visitor's browser. The dashboard's deck cards
-show a still image of each version, and that image is the one place the
-**instance itself** opens deck HTML, with the deck's script running. It is
-captured by headless Chromium inside the app container, under layers that
+show a still image of each version, and that image is the one place
+**Slideless itself** opens deck HTML, with the deck's script running. It
+does so in a separate, optional container, the renderer
+([Deck images](../self-hosting/install.md#deck-images)), under layers that
 each hold on their own:
 
+- **Its own container, with nothing in it.** The renderer holds a headless
+  Chromium and a small HTTP server. No database, no file storage, none of
+  the app's secrets. The app hands it a job with a one-time key; the
+  renderer pulls that version's files from the app with the key and puts the
+  image back with it. The key opens one version, only while the job lives,
+  and dies with the outcome, so a renderer that were ever taken over could
+  write the images of the versions it was handed and read nothing else. The
+  app never waits for the renderer and behaves the same without it.
 - **Chromium's own sandbox, never disabled.** There is no setting that turns
-  it off. Where the container does not let the sandbox start, capture stays
-  off and the cards show a drawn pattern
-  ([Deck images](../self-hosting/install.md#deck-images)).
+  it off. The renderer refuses to start where the sandbox cannot, and stops
+  if it fails later.
 - **Only the version's own files.** Every request the page makes is
-  intercepted: the version's files are served from its manifest, and every
-  other request is refused before it leaves, including other hosts on your
-  network, the instance itself, the cloud metadata server and the public
-  internet. Beneath that, Chromium is pointed at a proxy nothing listens on
-  and every host name resolves to nothing, so a request that ever slipped
-  past the interception still reaches no one.
+  intercepted: the version's files are served from its manifest through the
+  app, and every other request is refused before it leaves, including other
+  hosts on your network, the app's other routes, the cloud metadata server
+  and the public internet. Beneath that, Chromium is pointed at a proxy
+  nothing listens on and every host name resolves to nothing, so a request
+  that ever slipped past the interception still reaches no one.
 - **No service workers and no WebSockets.** Both are blocked.
 - **A process with nothing to steal.** Chromium starts with a clean
-  environment (none of the instance's secrets), a throwaway profile, a
-  capped JavaScript heap and a single renderer process.
+  environment, a throwaway profile, a capped JavaScript heap and a single
+  renderer process.
 - **Nothing outlives a capture.** A fresh browser opens for every capture
   and a hard timeout kills it, whatever the deck does. Captures run one at a
   time.

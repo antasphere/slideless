@@ -99,44 +99,69 @@ refuses readiness while behind).
 
 ## Deck images
 
-The dashboard shows a still image of each deck version on its card. The app
-captures it with the Chromium that ships in the image, once per version,
-shortly after the version is pushed.
+The dashboard shows a still image of each deck version on its card. The
+image is made by an **optional renderer container**, `slideless-renderer`,
+that holds a sandboxed headless Chromium and nothing else: no database, no
+file storage, no secret but the one it shares with the app. Without it, the
+cards show a drawn pattern and everything else works the same.
 
-**What it costs.** Chromium and the libraries it needs add about 760 MB to
-the unpacked image (about 330 MB more to download). Each capture takes
-about 1 to 3 seconds of CPU and 200 to 300 MB of memory while it runs, and
-captures run one at a time.
+**Turning it on.** Three lines in `.env`, then the profile:
+
+```bash
+COMPOSE_PROFILES=images
+SLIDELESS_RENDERER_URL=http://renderer:3100
+SLIDELESS_RENDERER_SECRET=$(openssl rand -hex 32)   # paste the value, 16 characters or more
+docker compose up -d
+```
+
+The renderer is reached on the compose network only (no published port).
+After a push, the app hands the new version to it with a one-time key; the
+renderer pulls the version's files from the app with that key, captures the
+first page, and puts the image back with the same key. The app never waits
+for it: a version whose image is not there yet shows the pattern, and the
+renderer can be added, stopped or upgraded at any time.
+
+**What it costs.** The renderer image is about 920 MB on disk, 334 MB of it
+the browser. Each capture takes about one second of CPU and 200 to 300 MB of
+memory while it runs, one at a time, with a queue of four.
 
 **The seccomp profile beside the compose file.** Chromium protects the
-server from a deck's script with its own sandbox, and that sandbox needs
+renderer from a deck's script with its own sandbox, and that sandbox needs
 Linux user namespaces, which Docker's default seccomp profile forbids.
 `deploy/seccomp-chromium.json` is Docker's default profile with that one
 permission added (the namespace calls, for a process without
-`CAP_SYS_ADMIN`), and `docker-compose.yml` applies it to the `app` service.
-The capture never runs without the sandbox: if the profile is missing, the
-app logs one error, capture stays off, and the cards show a drawn pattern
-instead. Never use `seccomp=unconfined` in its place.
+`CAP_SYS_ADMIN`), and `docker-compose.yml` applies it to the `renderer`
+service, never to the app. The renderer refuses to start where the sandbox
+cannot: its log says so and the container restarts until the profile is in
+place. There is no setting that runs Chromium without its sandbox. Never use
+`seccomp=unconfined` in its place.
 
-To check a host, run the image's self-check with the profile:
+To check a host, run the renderer image's self-check with the profile:
 
 ```bash
 docker run --rm --security-opt seccomp=deploy/seccomp-chromium.json \
-  ghcr.io/antasphere/slideless node dist/thumbnail-selfcheck.js
+  ghcr.io/antasphere/slideless-renderer node dist/selfcheck.js
 ```
 
-It prints one JSON line and exits 0 when capture works, or 3 when the
+It prints one JSON line and exits 0 when the capture works, or 3 when the
 sandbox cannot start.
 
-**Turning it off.** `SLIDELESS_THUMBNAILS=off` in `.env` stops capturing.
-Chromium stays in the image; it is just never started.
+**Turning it off.** Remove the three lines (or `docker compose --profile
+images down renderer`). The app answers that it makes no images and the
+cards keep their pattern; versions pushed meanwhile get their image once the
+renderer is back.
 
 **Other runtimes.**
 
-- **Kubernetes**: give the pod a seccomp profile that allows the same calls
-  (a `Localhost` profile built from `deploy/seccomp-chromium.json`).
-  `Unconfined` is not recommended: it lifts every syscall filter to allow
-  three calls.
-- **Cloud Run**: use the second-generation execution environment, which
-  allows the namespaces the sandbox needs, and keep CPU allocated between
-  requests, since the capture runs after the push has already answered.
+- **Hostinger's one-file template** ([hostinger.md](hostinger.md)) does not
+  carry the renderer: a single downloaded compose file cannot ship the
+  seccomp profile. Those instances show the pattern.
+- **Kubernetes**: run the renderer as its own deployment with a seccomp
+  profile that allows the same calls (a `Localhost` profile built from
+  `deploy/seccomp-chromium.json`), reachable from the app pods only, with
+  `SLIDELESS_URL` pointing at the app service. `Unconfined` is not
+  recommended: it lifts every syscall filter to allow three calls.
+- **Cloud Run**: a second service on the second-generation execution
+  environment (it allows the namespaces the sandbox needs), private ingress,
+  the app's service account as its only invoker; it scales to zero between
+  captures, since the app hands a job over and never polls.

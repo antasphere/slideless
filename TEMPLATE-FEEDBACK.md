@@ -1180,3 +1180,21 @@ conditional feature" in `test/unit/entitlement-gate.test.ts`. A template tool th
 limit as `{ key, value: async (ctx) => count + 1 | null }` and a premium option on a common route as
 `feature: { key, when }`. Nothing else in the chassis changed; `chassis-source.json` on the template
 still points at the phase 2 copy.
+
+## 32. An optional external worker (PRDCT-2725; the Slideless renderer is the first case)
+
+Slideless needed a process the app image must not carry (a headless Chromium: 1.1 GB more image
+for a nice-to-have) that opens untrusted content and must therefore hold nothing of the app. The
+shape that came out is general and worth a chassis slot the day a second tool needs one: an
+**optional external worker** the app hands jobs to, fire and forget, over three legs (`POST` a job
+the size of a line under a shared secret; the worker pulls what it needs from the app under a
+ONE-TIME KEY minted per claim and stored as its hash on the claim row; the worker puts the result
+back under the same key), the app behaving the same when the worker is absent, busy or down (a
+lease per claim, attempts, an in-flight cap, a backoff that costs no attempt). Today it lives in
+`apps/server/src/thumbnails/` (the claim, the lease, the key, the routes under
+`/internal/<worker>/jobs/{job}/…`) and `apps/renderer` (the worker: a bounded queue, a boot
+self-check that refuses to serve when its own precondition fails, `SLIDELESS_URL` + the secret as
+its whole configuration, a Debian image with the worker's runtime and nothing else). Romain's
+ruling: not generalised now; lift it when a second tool (or a `labs/services/` renderer shared by
+several) needs it, with the compose profile, the CI job that proves the worker's precondition in
+the image, and the release step that publishes the worker image beside the app's.
