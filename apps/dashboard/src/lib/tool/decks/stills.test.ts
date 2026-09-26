@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * The still-image loader (PRDCT-2725): one request per version however many
  * components ask, the pending answer retried on 2 / 4 / 8 / 16 s, any other
- * refusal a null without retry, and the bounded cache revoking what it drops.
+ * refusal a null without retry, an instance that makes no images remembered
+ * for the page's life, and the bounded cache revoking what it drops.
  */
 vi.mock('$lib/api', () => {
   class PlatformApiError extends Error {
@@ -94,6 +95,24 @@ describe('loadStill', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(versionThumbnail).toHaveBeenCalledTimes(1);
     expect(await loadStill('deck-4', 1)).toBeNull();
+    expect(versionThumbnail).toHaveBeenCalledTimes(1);
+  });
+
+  it('remembers an instance that makes no images: one request, then null with no fetch', async () => {
+    versionThumbnail.mockRejectedValue(refused('thumbnail_unavailable'));
+    expect(await loadStill('deck-7', 1)).toBeNull();
+    expect(versionThumbnail).toHaveBeenCalledTimes(1);
+    // another deck, another version: no request at all, settled on the next microtask
+    let answer: string | null | undefined;
+    void loadStill('deck-8', 4).then((u) => (answer = u));
+    await Promise.resolve();
+    expect(answer).toBeNull();
+    expect(versionThumbnail).toHaveBeenCalledTimes(1);
+    // a reset forgets it
+    __resetStills();
+    versionThumbnail.mockReset();
+    versionThumbnail.mockResolvedValue(ok());
+    expect(await loadStill('deck-8', 4)).toBe('blob:still-1');
     expect(versionThumbnail).toHaveBeenCalledTimes(1);
   });
 

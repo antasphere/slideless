@@ -8,12 +8,15 @@
      The picture is a still image of the reference's first page, captured on
      the server at each push and shown to everyone who can read the deck, as
      DeckCard does (PRDCT-2725); no deck HTML loads here. The drawn plate sits
-     beneath it until it arrives, and in its place when there is none. */
+     beneath it, still, never animated: while the image is fetched or made a
+     shimmering skeleton covers it, the image fades in over that, and when
+     there is none the plate shows. */
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import { Tag } from '$lib/components/ui/tag';
   import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import DeckStill from '$lib/tool/components/decks/DeckStill.svelte';
   import { descriptionOf, fontsOf, swatchesOf } from '$lib/tool/references';
+  import type { StillState } from '$lib/tool/decks/stills';
   import Crown from '@lucide/svelte/icons/crown';
   import Clock from '@lucide/svelte/icons/clock-3';
   import Lock from '@lucide/svelte/icons/lock';
@@ -39,8 +42,7 @@
   const swatches = $derived(swatchesOf(deck.reference).filter((s) => s.hex));
   const fonts = $derived([...new Set(fontsOf(deck.reference).map((f) => f.family))]);
 
-  let played = $state(false);
-  let loaded = $state(false);
+  let still = $state<StillState>('idle');
 </script>
 
 <!-- SECURITY: the title, the description and every frontmatter value are
@@ -55,20 +57,16 @@
   data-deck-id={deck.id}
   aria-pressed={selected}
   onclick={onOpen}
-  onpointerenter={() => (played = true)}
-  onpointerleave={() => (played = false)}
-  onfocus={() => (played = true)}
-  onblur={() => (played = false)}
 >
   {#if deck.defaultReference}
     <span class="crown" data-testid="reference-default"
       ><Crown class="size-3.5" strokeWidth={1.6} />{t('refs.default')}</span
     >
   {/if}
-  <div class="plate-window plate">
-    <PatternCanvas pattern="slides" {palette} {seed} active={played && !loaded} />
+  <div class="plate-window plate" data-still={deck.currentVersion > 0 ? still : undefined}>
+    <PatternCanvas pattern="slides" {palette} {seed} />
     {#if deck.currentVersion > 0}
-      <DeckStill deckId={deck.id} version={deck.currentVersion} bind:loaded />
+      <DeckStill deckId={deck.id} version={deck.currentVersion} bind:state={still} />
     {/if}
     {#if deck.currentVersion > 0}
       <span class="chip">{t('refs.version', { n: deck.currentVersion })}</span>

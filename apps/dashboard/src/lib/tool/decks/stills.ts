@@ -10,11 +10,16 @@ import { api, PlatformApiError } from '$lib/api';
  * A version whose image is still being made (`thumbnail_pending`) is asked
  * again after 2, 4, 8 and 16 seconds, since a just-pushed deck's image
  * arrives within seconds; after that the answer is null, and that null is
- * NOT kept, so a later mount asks again. Every other refusal (failed, the
- * instance does not capture, not found, the network) is a null kept for the
- * page's life. The cache holds at most MAX_ENTRIES versions; the oldest goes
- * first and its object URL is revoked.
+ * NOT kept, so a later mount asks again. Every other refusal (failed, not
+ * found, the network) is a null kept for the page's life. An instance that
+ * makes no images at all (`thumbnail_unavailable`) is remembered for the
+ * page's life too: every later load resolves null at once, with no request,
+ * so no card ever shows a skeleton there. The cache holds at most
+ * MAX_ENTRIES versions; the oldest goes first and its object URL is revoked.
  */
+
+/** Where a still stands in a component: not yet in view, being fetched or made, shown, or none to show. */
+export type StillState = 'idle' | 'loading' | 'loaded' | 'none';
 
 const MAX_ENTRIES = 300;
 const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000];
@@ -26,6 +31,9 @@ const settled = new Map<string, string | null>();
 
 const PENDING = Symbol('pending');
 
+// Set by the first `thumbnail_unavailable`: the instance has no renderer.
+let instanceMakesNoImages = false;
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -36,6 +44,7 @@ async function fetchOnce(deckId: string, version: number): Promise<string | null
     return URL.createObjectURL(await res.blob());
   } catch (e) {
     if (e instanceof PlatformApiError && e.code === 'thumbnail_pending') return PENDING;
+    if (e instanceof PlatformApiError && e.code === 'thumbnail_unavailable') instanceMakesNoImages = true;
     return null;
   }
 }
@@ -61,6 +70,7 @@ function evictOldest(): void {
 
 /** The object URL of a version's still image, or null when there is none to show. */
 export function loadStill(deckId: string, version: number): Promise<string | null> {
+  if (instanceMakesNoImages) return Promise.resolve(null);
   const key = `${deckId}:${version}`;
   const known = cache.get(key);
   if (known) return known;
@@ -79,9 +89,10 @@ export function loadStill(deckId: string, version: number): Promise<string | nul
   return promise;
 }
 
-/** Tests only: forget every entry (object URLs are revoked). */
+/** Tests only: forget every entry (object URLs are revoked) and the instance's answer. */
 export function __resetStills(): void {
   for (const url of settled.values()) if (url) URL.revokeObjectURL(url);
   cache.clear();
   settled.clear();
+  instanceMakesNoImages = false;
 }

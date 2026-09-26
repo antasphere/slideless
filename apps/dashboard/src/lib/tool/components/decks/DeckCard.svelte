@@ -6,7 +6,9 @@
      deck (PRDCT-2725); no deck HTML loads here. Under it, until it arrives and
      in its place when there is none (no version yet, or no image made), sits
      the deck's own drawn plate: its pattern says what kind of deck it is, its
-     field is seeded from the deck's id. */
+     field is seeded from the deck's id. The plate is still, never animated;
+     while the image is fetched or made a shimmering skeleton covers it, the
+     image fades in over that, and when there is none the plate shows. */
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import DeckStill from './DeckStill.svelte';
@@ -15,6 +17,7 @@
   import { DECK_PALETTES, DECK_PATTERNS } from '$lib/brand/recipe.js';
   import { seedOf } from '$lib/brand/seed';
   import { kindLabel } from '$lib/tool/decks';
+  import type { StillState } from '$lib/tool/decks/stills';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
   import type { DeckWithProjects } from '$lib/tool/projects-client';
@@ -33,24 +36,16 @@
   const palette = $derived(DECK_PALETTES[seed % DECK_PALETTES.length]);
   const pattern = $derived(DECK_PATTERNS[deck.kind] ?? 'slides');
 
-  let played = $state(false);
-  let loaded = $state(false);
+  let still = $state<StillState>('idle');
 </script>
 
 <!-- SECURITY: the title is USER-AUTHORED; it renders through text
      interpolation only, never {@html}. -->
-<a
-  href="/decks/{deck.id}"
-  class="sheet tile deck"
-  onpointerenter={() => (played = true)}
-  onpointerleave={() => (played = false)}
-  onfocus={() => (played = true)}
-  onblur={() => (played = false)}
->
-  <div class="plate-window plate" class:compact>
-    <PatternCanvas {pattern} {palette} {seed} active={played && !loaded} />
+<a href="/decks/{deck.id}" class="sheet tile deck">
+  <div class="plate-window plate" class:compact data-still={deck.currentVersion > 0 ? still : undefined}>
+    <PatternCanvas {pattern} {palette} {seed} />
     {#if deck.currentVersion > 0}
-      <DeckStill deckId={deck.id} version={deck.currentVersion} bind:loaded />
+      <DeckStill deckId={deck.id} version={deck.currentVersion} bind:state={still} />
     {/if}
     <span class="kind">{kindLabel(deck.kind)}</span>
     {#if deck.interactive}
