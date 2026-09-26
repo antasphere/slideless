@@ -36,7 +36,6 @@
     "jose": "^6.2.3",
     "pg": "^8.22.0",
     "pino": "^9.7.0",
-    "playwright-core": "1.61.1",
     "rate-limiter-flexible": "^7.4.0",
     "ulid": "^3.0.2",
     "yaml": "^2.9.0",

@@ -65,17 +65,13 @@ services:
       - ALLOW_INSECURE_SETUP=${ALLOW_INSECURE_SETUP:-false}
       # OTLP/HTTP endpoint for trace export. Unset = no export (zero phone-home).
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # The still image of each deck version, captured by Chromium in the
-      # image (docs/self-hosting/install.md, "Deck images"). Empty = on; off
-      # stops capturing and the cards keep a drawn pattern.
-      - SLIDELESS_THUMBNAILS=${SLIDELESS_THUMBNAILS:-}
-      # Empty = the image's own Chromium (/usr/bin/chromium-browser).
-      - SLIDELESS_CHROMIUM_PATH=${SLIDELESS_CHROMIUM_PATH:-}
-    # Docker's default seccomp profile plus what Chromium's own sandbox needs
-    # to start (user namespaces). The capture never runs without that sandbox:
-    # without this file it stays off. Never replace it with seccomp=unconfined.
-    security_opt:
-      - seccomp=./deploy/seccomp-chromium.json
+      # The optional renderer container that makes the still image of each
+      # deck version (docs/self-hosting/install.md, "Deck images"). Start it
+      # with `docker compose --profile images up -d` (or COMPOSE_PROFILES=images
+      # in .env) and set these two lines in .env; unset, the deck cards show
+      # a drawn pattern and nothing else changes.
+      - SLIDELESS_RENDERER_URL=${SLIDELESS_RENDERER_URL:-}
+      - SLIDELESS_RENDERER_SECRET=${SLIDELESS_RENDERER_SECRET:-}
     ports:
       # LOOPBACK BY DEFAULT. Docker publishes ports by writing DNAT rules that
       # bypass ufw's INPUT chain, so a 0.0.0.0 bind here is reachable from the
@@ -118,6 +114,41 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+
+  # The still-image renderer (PRDCT-2725): a sandboxed headless Chromium that
+  # captures each deck version's first page, in its own container, under the
+  # `images` profile. It holds no database and no storage: the app hands it a
+  # job with a one-time key, it pulls the version's files from the app with
+  # that key and puts the image back the same way, and the app behaves the
+  # same when it is absent. No published port: it is reached on the compose
+  # network only, at http://renderer:3100. Docker's default seccomp profile
+  # forbids the user namespaces Chromium's own sandbox needs, so this service
+  # runs under deploy/seccomp-chromium.json (that profile plus the namespace
+  # calls); the renderer refuses to start without a working sandbox, and
+  # never runs Chromium unsandboxed. Never replace it with seccomp=unconfined.
+  renderer:
+    image: ${RENDERER_IMAGE:-ghcr.io/antasphere/slideless-renderer:latest}
+    build:
+      context: .
+      dockerfile: apps/renderer/Dockerfile
+    profiles: ['images']
+    restart: unless-stopped
+    environment:
+      # Where the renderer reaches the app for the files and the image callback.
+      - SLIDELESS_URL=http://app:3000
+      - SLIDELESS_RENDERER_SECRET=${SLIDELESS_RENDERER_SECRET:?Set SLIDELESS_RENDERER_SECRET in .env to run the renderer}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    security_opt:
+      - seccomp=./deploy/seccomp-chromium.json
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ['CMD', 'node', 'dist/healthcheck.js']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # ── Optional services (uncomment when needed) ─────────────────────────────
   # minio:

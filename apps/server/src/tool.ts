@@ -47,9 +47,11 @@ import { isViewerFormUploadPath, registerViewerFormRoutes } from './viewer/forms
 import { registerViewerAttachmentRoutes } from './viewer/attachments-api.js';
 import { registerViewerAnnotationRoutes, viewerApiCors } from './viewer/annotations-api.js';
 import { viewerRoutes } from './viewer/routes.js';
-import { ThumbnailService } from './thumbnails/service.js';
-import type { ThumbnailRenderer } from './thumbnails/renderer.js';
-import { thumbnailRendererFor } from './thumbnails/boot.js';
+import { Hono } from 'hono';
+import { ThumbnailService, type ThumbnailDials } from './thumbnails/service.js';
+import type { RendererClient } from './thumbnails/renderer-client.js';
+import { rendererClientFor } from './thumbnails/boot.js';
+import { rendererRoutes } from './thumbnails/routes.js';
 
 /**
  * The Slideless tool definition: what the deck domain plugs into the chassis
@@ -74,7 +76,7 @@ export interface DeckDomain {
   collaborators: CollaboratorService;
   presentations: PresentationService;
   annotations: AnnotationService;
-  /** The still image of each deck version (PRDCT-2725). Test seams: `idle()`, `sweep()`. */
+  /** The still image of each deck version (PRDCT-2725): the queue, the handoff to the renderer, its callbacks. Test seams: `idle()`, `sweep()`. */
   thumbnails: ThumbnailService;
 }
 
@@ -87,10 +89,13 @@ export interface DeckOverrides {
    */
   formsMailCooldownMs?: number;
   /**
-   * The still-image renderer (PRDCT-2725): a fake that records its calls, or
-   * null for "capture off". Undefined = production (thumbnails/boot.ts).
+   * The renderer the deck versions are handed to (PRDCT-2725): a fake that
+   * plays the renderer's side of the protocol, or null for "no renderer".
+   * Undefined = production (thumbnails/boot.ts, from the env).
    */
-  thumbnailRenderer?: ThumbnailRenderer | null;
+  rendererClient?: RendererClient | null;
+  /** Shrinks the lease, retry and backoff of the image queue for the tests. Production runs the fixed defaults. */
+  thumbnailDials?: Partial<ThumbnailDials>;
 }
 
 type DeckBucket = keyof typeof deckBuckets;
@@ -171,20 +176,19 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       const presentationService = new PresentationService(db);
       const annotationService = new AnnotationService(db);
 
-      // The still image of each deck version (PRDCT-2725): captured by a
-      // sandboxed headless Chromium in the processes that run jobs; null
-      // renderer = this process captures nothing (thumbnails/boot.ts).
+      // The still image of each deck version (PRDCT-2725): handed to the
+      // optional renderer container, fire and forget; null = no renderer,
+      // this instance makes no images (thumbnails/boot.ts). Every replica
+      // hands off and every replica takes the callbacks: the table is the
+      // only state, so the api/worker split needs nothing here.
       const renderer =
-        overrides?.thumbnailRenderer !== undefined
-          ? overrides.thumbnailRenderer
-          : thumbnailRendererFor(env, logger);
+        overrides?.rendererClient !== undefined ? overrides.rendererClient : rendererClientFor(env, logger);
       const thumbnails = new ThumbnailService({
         db,
         storage,
         logger,
         renderer,
-        // An api-only replica captures nothing itself, but the worker does.
-        capturedElsewhere: env.SERVICE_ROLE === 'api' && env.SLIDELESS_THUMBNAILS === 'on'
+        ...(overrides?.thumbnailDials ? { dials: overrides.thumbnailDials } : {})
       });
 
       return {
@@ -397,34 +401,40 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       cspFrameSrc: (env) => (env.VIEWER_BASE_URL ? [new URL(env.VIEWER_BASE_URL).origin] : []),
       // The public share-link viewer (Phase 4, ADR 012): anonymous, mounted in
       // the chassis app's public-route slot, serves user HTML ONLY under CSP: sandbox.
+      // The renderer's callbacks (PRDCT-2725, thumbnails/routes.ts) ride the
+      // same slot: token-authed, cookie-less, outside /api/v1, under
+      // /internal/renderer/. A wrong key answers 401 and nothing else.
       publicRoutes: (
         { db, env, logger, storage, fileService, email, limiters, authSecret },
-        { sharing, formUploads }
+        { sharing, formUploads, thumbnails }
       ) =>
-        viewerRoutes({
-          sharing,
-          views: new ShareTokenViewService(db, logger),
-          downloads: new ShareTokenDownloadService(db, logger),
-          presentations: new PresentationService(db),
-          fileService,
-          storage,
-          logger,
-          authSecret,
-          passwordLimiter: limiters.viewerPassword,
-          clientIp: makeClientIp(env.TRUST_PROXY),
-          secureCookies: env.PUBLIC_BASE_URL.startsWith('https://'),
-          viewDedupeWindowMs: env.VIEW_DEDUPE_WINDOW_MINUTES * 60_000,
-          // The forms runtime's email opt-in flag. NOTHING identity-shaped is
-          // handed to the viewer any more: ADR 022 leg 3 read the serving
-          // request's session here and injected a signed assertion of the viewer's
-          // identity into the deck document, which deck JS could lift
-          // (PRDCT-1331). Never reintroduce a session read on this path.
-          emailDelivers: email.delivers,
-          formUploadCaps: formUploads.caps,
-          // The agent index's absolute URLs (PRDCT-2670): the same base
-          // buildViewerUrl builds share links on, never the request Host.
-          viewerBaseUrl: env.VIEWER_BASE_URL ?? env.PUBLIC_BASE_URL
-        })
+        new Hono().route('/', rendererRoutes({ thumbnails, logger })).route(
+          '/',
+          viewerRoutes({
+            sharing,
+            views: new ShareTokenViewService(db, logger),
+            downloads: new ShareTokenDownloadService(db, logger),
+            presentations: new PresentationService(db),
+            fileService,
+            storage,
+            logger,
+            authSecret,
+            passwordLimiter: limiters.viewerPassword,
+            clientIp: makeClientIp(env.TRUST_PROXY),
+            secureCookies: env.PUBLIC_BASE_URL.startsWith('https://'),
+            viewDedupeWindowMs: env.VIEW_DEDUPE_WINDOW_MINUTES * 60_000,
+            // The forms runtime's email opt-in flag. NOTHING identity-shaped is
+            // handed to the viewer any more: ADR 022 leg 3 read the serving
+            // request's session here and injected a signed assertion of the viewer's
+            // identity into the deck document, which deck JS could lift
+            // (PRDCT-1331). Never reintroduce a session read on this path.
+            emailDelivers: email.delivers,
+            formUploadCaps: formUploads.caps,
+            // The agent index's absolute URLs (PRDCT-2670): the same base
+            // buildViewerUrl builds share links on, never the request Host.
+            viewerBaseUrl: env.VIEWER_BASE_URL ?? env.PUBLIC_BASE_URL
+          })
+        )
     },
 
     mcp: slidelessMcp,

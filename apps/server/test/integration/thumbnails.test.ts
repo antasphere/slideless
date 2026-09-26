@@ -11,23 +11,21 @@ import {
   startPostgres,
   type TestApp
 } from './helpers.js';
-import {
-  SandboxUnavailableError,
-  type CaptureInput,
-  type ResolvedFile,
-  type ThumbnailRenderer
-} from '../../src/thumbnails/renderer.js';
-import { MAX_ATTEMPTS, ThumbnailService } from '../../src/thumbnails/service.js';
+import type { RendererClient, RendererJob, SubmitOutcome } from '../../src/thumbnails/renderer-client.js';
+import { MAX_ATTEMPTS, MAX_IN_FLIGHT, ThumbnailService } from '../../src/thumbnails/service.js';
+import { IMAGE_MAX_BYTES } from '../../src/thumbnails/routes.js';
 
 /**
  * The still image of each deck version (PRDCT-2725), end to end over the real
- * app with a FAKE renderer (the real Chromium one is the unit suite's,
- * thumbnail-renderer.test.ts): the push starts the capture, the read route
- * serves it under the deck's own read rule (ADR 013 + ADR 026, 404 never
- * 403), the queue retries and gives up, a sandbox that cannot start turns
- * capture off without burning attempts, an api-only process (renderer null)
- * captures nothing, the sweep backfills decks older than the feature, and two
- * drains at once never capture one version twice.
+ * app with a FAKE RENDERER that plays the renderer container's side of the
+ * protocol over the app's own routes (the real Chromium renderer is
+ * apps/renderer's suite): the push hands the version off, the renderer pulls
+ * the version's files with its one-time key and puts the image back with it,
+ * the read route serves it under the deck's own read rule (ADR 013 + ADR
+ * 026, 404 never 403), the key opens one version and dies with the outcome,
+ * the queue retries and gives up, a renderer that is busy or down costs no
+ * attempt, the sweep backfills decks older than the feature, the in-flight
+ * cap holds, and two drains at once never hand one version off twice.
  */
 
 /** A small fixed WebP-shaped body: the route serves bytes, it never decodes them. */
@@ -38,34 +36,121 @@ const FAKE_WEBP = Buffer.concat([
   Buffer.alloc(24, 0x5a)
 ]);
 
-interface FakeCall {
-  entryPath: string;
-  /** The entry document's text, as `resolve` returned it: tells the decks apart. */
-  entry: string;
-  resolve: (path: string) => Promise<ResolvedFile | null>;
-}
+type FakeJob = RendererJob & { entry: string };
+type FakeMode = 'ok' | 'fail' | 'transient' | 'busy' | 'unreachable' | 'hold';
 
-/** Records every capture and its `resolve`; `mode` switches what it does. */
-class FakeRenderer implements ThumbnailRenderer {
-  calls: FakeCall[] = [];
-  mode: 'ok' | 'throw' | 'sandbox' = 'ok';
+const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
+
+/**
+ * The renderer container as Slideless sees it, minus Chromium: takes the job,
+ * then, a moment later and on its own, pulls the entry (and the stylesheet
+ * when the page names one) through the app's internal routes with the job's
+ * key and puts the image back the same way. `mode` switches what it does;
+ * `hold` takes the job and answers nothing until `finish`.
+ */
+class FakeRenderer implements RendererClient {
+  jobs: FakeJob[] = [];
+  mode: FakeMode = 'ok';
   delayMs = 0;
+  private readonly inflight = new Set<Promise<void>>();
+  private readonly held: FakeJob[] = [];
 
-  async capture(input: CaptureInput): Promise<Buffer> {
-    const entry = await input.resolve(input.entryPath);
-    this.calls.push({
-      entryPath: input.entryPath,
-      entry: entry?.body.toString() ?? '',
-      resolve: input.resolve
-    });
-    if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
-    if (this.mode === 'sandbox') throw new SandboxUnavailableError('No usable sandbox!');
-    if (this.mode === 'throw') throw new Error('the page never loaded');
-    return FAKE_WEBP;
+  constructor(private readonly getApp: () => TestApp) {}
+
+  async submit(job: RendererJob): Promise<SubmitOutcome> {
+    if (this.mode === 'busy') return 'busy';
+    if (this.mode === 'unreachable') return 'unreachable';
+    const fake: FakeJob = { ...job, entry: '' };
+    this.jobs.push(fake);
+    if (this.mode === 'hold') {
+      this.held.push(fake);
+      // The entry is read now so the job can be told apart by its label.
+      this.track(this.readEntry(fake));
+      return 'queued';
+    }
+    this.track(
+      (async () => {
+        if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
+        await this.render(fake);
+      })()
+    );
+    return 'queued';
   }
 
-  callsFor(label: string): FakeCall[] {
-    return this.calls.filter((c) => c.entry.includes(label));
+  private track(p: Promise<void>): void {
+    const tracked = p.finally(() => this.inflight.delete(tracked));
+    this.inflight.add(tracked);
+  }
+
+  /** Wait until every render the fake started has answered. */
+  async settle(): Promise<void> {
+    while (this.inflight.size > 0) await Promise.all([...this.inflight]);
+  }
+
+  /** `hold` mode: answer one held job now. Throws when the key no longer opens the job. */
+  async finish(job: FakeJob): Promise<void> {
+    const i = this.held.indexOf(job);
+    if (i < 0) throw new Error('not a held job');
+    this.held.splice(i, 1);
+    const res = await this.put(job, FAKE_WEBP);
+    if (res.status !== 204) throw new Error(`finish: the image was refused with ${res.status}`);
+  }
+
+  isHeld(job: FakeJob): boolean {
+    return this.held.includes(job);
+  }
+
+  jobsFor(label: string): FakeJob[] {
+    return this.jobs.filter((j) => j.entry.includes(label));
+  }
+
+  private async readEntry(job: FakeJob): Promise<void> {
+    const res = await this.get(job, job.entryPath);
+    job.entry = res.status === 200 ? await res.text() : `<status ${res.status}>`;
+  }
+
+  private async render(job: FakeJob): Promise<void> {
+    await this.readEntry(job);
+    if (job.entry.includes('style.css')) await this.get(job, 'style.css');
+    if (this.mode === 'fail') {
+      await this.failure(job, { error: 'the page never loaded' });
+      return;
+    }
+    if (this.mode === 'transient') {
+      await this.failure(job, { error: 'the browser would not start', transient: true });
+      return;
+    }
+    await this.put(job, FAKE_WEBP);
+  }
+
+  async get(job: RendererJob, path: string, token = job.token): Promise<Response> {
+    return this.getApp().app.request(`/internal/renderer/jobs/${job.job}/files/${encodePath(path)}`, {
+      headers: { authorization: `Bearer ${token}` }
+    });
+  }
+
+  async put(
+    job: RendererJob,
+    bytes: Buffer,
+    opts: { token?: string; contentType?: string } = {}
+  ): Promise<Response> {
+    return this.getApp().app.request(`/internal/renderer/jobs/${job.job}/image`, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${opts.token ?? job.token}`,
+        'content-type': opts.contentType ?? 'image/webp',
+        'content-length': String(bytes.length)
+      },
+      body: new Uint8Array(bytes)
+    });
+  }
+
+  async failure(job: RendererJob, body: unknown, token = job.token): Promise<Response> {
+    return this.getApp().app.request(`/internal/renderer/jobs/${job.job}/failure`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
   }
 }
 
@@ -164,11 +249,19 @@ function client(getApp: () => TestApp) {
 
   const row = async (vid: string) => {
     const { rows } = await getApp().db.pool.query(
-      'SELECT state, attempts, lease_until, storage_key FROM presentation_version_thumbnails WHERE version_id = $1',
+      'SELECT state, attempts, lease_until, storage_key, claim_token_hash, error FROM presentation_version_thumbnails WHERE version_id = $1',
       [vid]
     );
     return rows[0] as
-      { state: string; attempts: number; lease_until: Date | null; storage_key: string | null } | undefined;
+      | {
+          state: string;
+          attempts: number;
+          lease_until: Date | null;
+          storage_key: string | null;
+          claim_token_hash: string | null;
+          error: string | null;
+        }
+      | undefined;
   };
 
   const setup = async (instanceName: string): Promise<string> => {
@@ -208,9 +301,9 @@ afterAll(async () => {
   await container?.stop();
 });
 
-describe('capture on (a fake renderer)', () => {
+describe('a renderer takes the jobs (a fake playing the protocol)', () => {
   let app: TestApp;
-  const fake = new FakeRenderer();
+  const fake = new FakeRenderer(() => app);
   const c = client(() => app);
   let ownerCookie = '';
   let plainCookie = '';
@@ -228,6 +321,20 @@ describe('capture on (a fake renderer)', () => {
     { path: 'downloads/a.csv', bytes: CSV, contentType: 'text/csv' }
   ];
 
+  /** The handoff, the fake's answer, and the drain the answer kicks. */
+  const flush = async () => {
+    for (let i = 0; i < 3; i++) {
+      await app.tool.thumbnails.idle();
+      await fake.settle();
+    }
+  };
+
+  const expireLease = (vid: string) =>
+    app.db.pool.query(
+      "UPDATE presentation_version_thumbnails SET lease_until = now() - interval '1 second' WHERE version_id = $1",
+      [vid]
+    );
+
   beforeAll(async () => {
     const mail = new RecordingEmailDriver();
     app = await createTestApp(
@@ -235,7 +342,7 @@ describe('capture on (a fake renderer)', () => {
       {},
       {
         email: mail,
-        tool: { thumbnailRenderer: fake }
+        tool: { rendererClient: fake }
       }
     );
     ownerCookie = await c.setup('Thumbnails');
@@ -261,16 +368,17 @@ describe('capture on (a fake renderer)', () => {
     viewerUserId = (await readJson(await c.send('GET', '/me', viewerCookie))).user.id;
 
     deck = await c.pushDeck(ownerCookie, 'Deck one', deckBlobs);
-    await app.tool.thumbnails.idle();
+    await flush();
   }, 240_000);
 
   afterAll(async () => {
     await app?.stop();
   });
 
-  it('a push captures the version, and the route serves the image with its cache headers; If-None-Match answers 304', async () => {
-    expect(fake.callsFor('deck-one')).toHaveLength(1);
+  it('a push hands the version off, the image lands, and the route serves it with its cache headers; If-None-Match answers 304', async () => {
+    expect(fake.jobsFor('deck-one')).toHaveLength(1);
     const vid = await c.versionId(deck, 1);
+    expect(fake.jobsFor('deck-one')[0]!.job).toBe(vid);
     const res = await c.thumb(ownerCookie, deck, 1);
     expect(res.status).toBe(200);
     expect(Buffer.from(await res.arrayBuffer())).toEqual(FAKE_WEBP);
@@ -286,33 +394,122 @@ describe('capture on (a fake renderer)', () => {
     expect(again.headers.get('etag')).toBe(`"${vid}"`);
     expect(again.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
     expect((await again.arrayBuffer()).byteLength).toBe(0);
+
+    // The key died with the image: nothing opens under it any more.
+    const [job] = fake.jobsFor('deck-one');
+    expect((await fake.get(job!, 'index.html')).status).toBe(401);
+    expect((await fake.put(job!, FAKE_WEBP)).status).toBe(401);
+    expect((await fake.failure(job!, { error: 'late' })).status).toBe(401);
+    const row = await c.row(vid);
+    expect(row?.state).toBe('ready');
+    expect(row?.claim_token_hash).toBeNull();
   });
 
-  it('resolve serves the version’s own files only: the entry as HTML, an asset with its type, nothing else', async () => {
-    const [call] = fake.callsFor('deck-one');
-    const entry = await call!.resolve('index.html');
-    // The manifest said text/plain: the entry still renders as a document.
-    expect(entry).toEqual({ contentType: 'text/html; charset=utf-8', body: DECK_HTML });
-    expect(await call!.resolve('style.css')).toEqual({ contentType: 'text/css', body: CSS });
-    expect(await call!.resolve('../x')).toBeNull();
-    expect(await call!.resolve('downloads/a.csv')).toBeNull();
-    expect(await call!.resolve('nope.css')).toBeNull();
+  describe('the files leg: the version’s own files under the job’s key, nothing else', () => {
+    let held = '';
+    let job: FakeJob;
+
+    beforeAll(async () => {
+      fake.mode = 'hold';
+      held = await c.pushDeck(
+        ownerCookie,
+        'Held',
+        deckBlobs.map((b) => ({ ...b, bytes: b.path === 'index.html' ? htmlOf('deck-held') : b.bytes }))
+      );
+      await flush();
+      job = fake.jobsFor('deck-held')[0]!;
+    });
+
+    afterAll(async () => {
+      fake.mode = 'ok';
+      await fake.finish(job);
+      await flush();
+      expect((await c.thumb(ownerCookie, held, 1)).status).toBe(200);
+    });
+
+    it('serves the entry as HTML whatever the manifest claims, and an asset with its type, no-store and nosniff', async () => {
+      const entry = await fake.get(job, 'index.html');
+      expect(entry.status).toBe(200);
+      expect(entry.headers.get('content-type')).toBe('text/html; charset=utf-8');
+      expect(entry.headers.get('cache-control')).toBe('no-store');
+      expect(entry.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(Buffer.from(await entry.arrayBuffer())).toEqual(htmlOf('deck-held'));
+      const css = await fake.get(job, 'style.css');
+      expect(css.status).toBe(200);
+      expect(css.headers.get('content-type')).toBe('text/css');
+      expect(Buffer.from(await css.arrayBuffer())).toEqual(CSS);
+    });
+
+    it('refuses a traversal, an attachment under downloads/, and a path the manifest does not hold', async () => {
+      // A `..` never survives a URL parser, so the traversal rule is met at
+      // the service, where a path arrives however it was spelled.
+      expect(await app.tool.thumbnails.fileFor({ job: job.job, token: job.token, path: '../x' })).toBeNull();
+      expect(
+        await app.tool.thumbnails.fileFor({ job: job.job, token: job.token, path: '/index.html' })
+      ).toBeNull();
+      expect((await fake.get(job, 'downloads/a.csv')).status).toBe(404);
+      expect((await fake.get(job, 'nope.css')).status).toBe(404);
+      expect(
+        (
+          await app.app.request(`/internal/renderer/jobs/${job.job}/files/%ZZ`, {
+            headers: { authorization: `Bearer ${job.token}` }
+          })
+        ).status
+      ).toBe(404);
+    });
+
+    it('a wrong key, a key on another job, or no key answers 401 with nothing else', async () => {
+      const wrong = await fake.get(job, 'index.html', 'x'.repeat(43));
+      expect(wrong.status).toBe(401);
+      expect(await readJson(wrong)).toEqual({
+        error: { code: 'unauthorized', message: 'No key for this job' }
+      });
+      const otherVersion = await c.versionId(deck, 1);
+      const foreign = await fake.get({ ...job, job: otherVersion }, 'index.html');
+      expect(foreign.status).toBe(401);
+      expect((await fake.get(job, 'index.html', '')).status).toBe(401);
+      expect((await fake.get(job, 'index.html', 'short')).status).toBe(401);
+    });
+
+    it('the image leg refuses bytes that are not a WebP, a wrong media type, an oversize body, and a foreign key; the row stays pending', async () => {
+      expect((await fake.put(job, Buffer.from('<html>not an image</html>'))).status).toBe(400);
+      expect((await fake.put(job, FAKE_WEBP, { contentType: 'image/png' })).status).toBe(415);
+      const big = Buffer.alloc(IMAGE_MAX_BYTES + 1, 0x5a);
+      big.write('RIFF', 0, 'latin1');
+      big.write('WEBP', 8, 'latin1');
+      expect((await fake.put(job, big)).status).toBe(413);
+      expect((await fake.put(job, FAKE_WEBP, { token: 'y'.repeat(43) })).status).toBe(401);
+      const otherVersion = await c.versionId(deck, 1);
+      expect((await fake.put({ ...job, job: otherVersion }, FAKE_WEBP)).status).toBe(401);
+      const row = await c.row(job.job);
+      expect(row?.state).toBe('pending');
+      expect(row?.claim_token_hash).not.toBeNull();
+      await expectError(await c.thumb(ownerCookie, held, 1), 404, 'thumbnail_pending');
+    });
+
+    it('a failure report needs a body with an error line', async () => {
+      expect((await fake.failure(job, { nope: 1 })).status).toBe(400);
+      expect((await fake.failure(job, 'not json at all')).status).toBe(400);
+      expect((await c.row(job.job))?.state).toBe('pending');
+    });
   });
 
-  it('an older version is queued when asked for: pending first, the image once the drain ran', async () => {
+  it('an older version is queued when asked for: pending first, then handed off, then the image', async () => {
     await c.pushVersion(ownerCookie, deck, 1, [
       { path: 'index.html', bytes: htmlOf('deck-one-v2'), contentType: 'text/html' },
       { path: 'style.css', bytes: CSS, contentType: 'text/css' }
     ]);
-    await app.tool.thumbnails.idle();
+    await flush();
     expect((await c.thumb(ownerCookie, deck, 2)).status).toBe(200);
 
     // Version 1 as a deck older than the feature holds it: no row at all.
     const v1 = await c.versionId(deck, 1);
     await app.db.pool.query('DELETE FROM presentation_version_thumbnails WHERE version_id = $1', [v1]);
+    const before = fake.jobsFor('deck-one').length;
     await expectError(await c.thumb(ownerCookie, deck, 1), 404, 'thumbnail_pending');
-    expect((await c.row(v1))?.state).toBeDefined();
-    await app.tool.thumbnails.idle();
+    expect((await c.row(v1))?.state).toBe('pending');
+    await flush();
+    expect(fake.jobsFor('deck-one')).toHaveLength(before + 1);
     expect((await c.row(v1))?.state).toBe('ready');
     expect((await c.thumb(ownerCookie, deck, 1)).status).toBe(200);
   });
@@ -382,28 +579,142 @@ describe('capture on (a fake renderer)', () => {
     });
   });
 
-  it(`a capture that keeps failing is given up after ${MAX_ATTEMPTS} attempts, and says so`, async () => {
-    fake.mode = 'throw';
+  it(`a capture the renderer keeps failing is given up after ${MAX_ATTEMPTS} attempts, and says so`, async () => {
+    fake.mode = 'fail';
     try {
       const failing = await c.pushDeck(ownerCookie, 'Failing', [
         { path: 'index.html', bytes: htmlOf('deck-failing'), contentType: 'text/html' }
       ]);
-      await app.tool.thumbnails.idle();
+      await flush();
       const vid = await c.versionId(failing, 1);
-      expect(fake.callsFor('deck-failing')).toHaveLength(1);
+      expect(fake.jobsFor('deck-failing')).toHaveLength(1);
       await expectError(await c.thumb(ownerCookie, failing, 1), 404, 'thumbnail_pending');
+      let row = await c.row(vid);
+      expect(row?.attempts).toBe(1);
+      expect(row?.error).toBe('the page never loaded');
+      expect(row?.claim_token_hash).toBeNull();
 
       // Each retry waits out its delay: fast-forward the lease, then sweep.
-      for (let i = 0; i < MAX_ATTEMPTS; i++) {
-        await app.db.pool.query(
-          "UPDATE presentation_version_thumbnails SET lease_until = now() - interval '1 second' WHERE version_id = $1",
-          [vid]
-        );
+      for (let i = 1; i < MAX_ATTEMPTS; i++) {
+        await expireLease(vid);
         await app.tool.thumbnails.sweep();
+        await flush();
       }
-      expect((await c.row(vid))?.state).toBe('failed');
-      expect(fake.callsFor('deck-failing')).toHaveLength(MAX_ATTEMPTS);
+      row = await c.row(vid);
+      expect(row?.state).toBe('failed');
+      expect(fake.jobsFor('deck-failing')).toHaveLength(MAX_ATTEMPTS);
       await expectError(await c.thumb(ownerCookie, failing, 1), 404, 'thumbnail_failed');
+      // Given up: a sweep hands it off no more.
+      await app.tool.thumbnails.sweep();
+      await flush();
+      expect(fake.jobsFor('deck-failing')).toHaveLength(MAX_ATTEMPTS);
+    } finally {
+      fake.mode = 'ok';
+    }
+  });
+
+  it('a transient failure gives the attempt back', async () => {
+    fake.mode = 'transient';
+    try {
+      const d = await c.pushDeck(ownerCookie, 'Transient', [
+        { path: 'index.html', bytes: htmlOf('deck-transient'), contentType: 'text/html' }
+      ]);
+      await flush();
+      const vid = await c.versionId(d, 1);
+      const row = await c.row(vid);
+      expect(row?.state).toBe('pending');
+      expect(row?.attempts).toBe(0);
+      expect(row?.error).toBe('the browser would not start');
+      expect(row?.claim_token_hash).toBeNull();
+      expect(row?.lease_until!.getTime()).toBeGreaterThan(Date.now());
+      fake.mode = 'ok';
+      await expireLease(vid);
+      await app.tool.thumbnails.sweep();
+      await flush();
+      expect((await c.row(vid))?.state).toBe('ready');
+    } finally {
+      fake.mode = 'ok';
+    }
+  });
+
+  it('a renderer that is busy or unreachable costs no attempt: the claim is given back with a backoff', async () => {
+    for (const mode of ['busy', 'unreachable'] as const) {
+      fake.mode = mode;
+      try {
+        const d = await c.pushDeck(ownerCookie, `Renderer ${mode}`, [
+          { path: 'index.html', bytes: htmlOf(`deck-${mode}`), contentType: 'text/html' }
+        ]);
+        await flush();
+        const vid = await c.versionId(d, 1);
+        const row = await c.row(vid);
+        expect(row?.state).toBe('pending');
+        expect(row?.attempts).toBe(0);
+        expect(row?.claim_token_hash).toBeNull();
+        expect(row?.lease_until!.getTime()).toBeGreaterThan(Date.now());
+        await expectError(await c.thumb(ownerCookie, d, 1), 404, 'thumbnail_pending');
+        fake.mode = 'ok';
+        await expireLease(vid);
+        await app.tool.thumbnails.sweep();
+        await flush();
+        expect((await c.row(vid))?.state).toBe('ready');
+        expect((await c.row(vid))?.attempts).toBe(1);
+      } finally {
+        fake.mode = 'ok';
+      }
+    }
+  });
+
+  it('a lease that runs out is handed off again under a NEW key, and the old key opens nothing', async () => {
+    fake.mode = 'hold';
+    try {
+      const d = await c.pushDeck(ownerCookie, 'Lost renderer', [
+        { path: 'index.html', bytes: htmlOf('deck-lost'), contentType: 'text/html' }
+      ]);
+      await flush();
+      const vid = await c.versionId(d, 1);
+      const first = fake.jobsFor('deck-lost')[0]!;
+      await expireLease(vid);
+      await app.tool.thumbnails.sweep();
+      await flush();
+      const jobs = fake.jobsFor('deck-lost');
+      expect(jobs).toHaveLength(2);
+      const second = jobs[1]!;
+      expect(second.token).not.toBe(first.token);
+      expect((await fake.put(first, FAKE_WEBP)).status).toBe(401);
+      expect((await c.row(vid))?.state).toBe('pending');
+      expect((await fake.put(second, FAKE_WEBP)).status).toBe(204);
+      expect((await c.row(vid))?.state).toBe('ready');
+      // The first (lost) renderer answering late changes nothing.
+      expect((await fake.put(first, FAKE_WEBP)).status).toBe(401);
+      expect((await fake.put(second, FAKE_WEBP)).status).toBe(401);
+    } finally {
+      fake.mode = 'ok';
+      await fake.settle();
+    }
+  });
+
+  it(`at most ${MAX_IN_FLIGHT} versions are handed off at once; an answer lets the next one through`, async () => {
+    fake.mode = 'hold';
+    try {
+      const labels = Array.from({ length: MAX_IN_FLIGHT + 2 }, (_, i) => `deck-cap-${i}`);
+      for (const label of labels) {
+        await c.pushDeck(ownerCookie, label, [
+          { path: 'index.html', bytes: htmlOf(label), contentType: 'text/html' }
+        ]);
+      }
+      await flush();
+      const handed = () => labels.filter((l) => fake.jobsFor(l).length > 0).length;
+      const heldJobs = () => labels.flatMap((l) => fake.jobsFor(l)).filter((j) => fake.isHeld(j));
+      expect(handed()).toBe(MAX_IN_FLIGHT);
+      await fake.finish(heldJobs()[0]!);
+      await flush();
+      expect(handed()).toBe(MAX_IN_FLIGHT + 1);
+      await fake.finish(heldJobs()[0]!);
+      await flush();
+      expect(handed()).toBe(MAX_IN_FLIGHT + 2);
+      for (const j of heldJobs()) await fake.finish(j);
+      await flush();
+      for (const l of labels) expect((await c.row(fake.jobsFor(l)[0]!.job))?.state).toBe('ready');
     } finally {
       fake.mode = 'ok';
     }
@@ -416,24 +727,25 @@ describe('capture on (a fake renderer)', () => {
     const gone = await c.pushDeck(ownerCookie, 'Deleted', [
       { path: 'index.html', bytes: htmlOf('deck-deleted'), contentType: 'text/html' }
     ]);
-    await app.tool.thumbnails.idle();
+    await flush();
     expect((await c.send('DELETE', `/presentations/${gone}`, ownerCookie)).status).toBe(200);
     const oldVid = await c.versionId(old, 1);
     const goneVid = await c.versionId(gone, 1);
     await app.db.pool.query('DELETE FROM presentation_version_thumbnails WHERE version_id = ANY($1)', [
       [oldVid, goneVid]
     ]);
-    const before = fake.callsFor('deck-backfill').length;
+    const before = fake.jobsFor('deck-backfill').length;
 
     await app.tool.thumbnails.sweep();
+    await flush();
 
-    expect(fake.callsFor('deck-backfill')).toHaveLength(before + 1);
+    expect(fake.jobsFor('deck-backfill')).toHaveLength(before + 1);
     expect((await c.row(oldVid))?.state).toBe('ready');
     expect(await c.row(goneVid)).toBeUndefined();
-    expect(fake.callsFor('deck-deleted')).toHaveLength(1); // its push only
+    expect(fake.jobsFor('deck-deleted')).toHaveLength(1); // its push only
   });
 
-  it('two drains at once never capture one version twice', async () => {
+  it('two drains at once never hand one version off twice', async () => {
     const labels = ['deck-race-1', 'deck-race-2', 'deck-race-3'];
     const decks: string[] = [];
     for (const label of labels) {
@@ -443,13 +755,13 @@ describe('capture on (a fake renderer)', () => {
         ])
       );
     }
-    await app.tool.thumbnails.idle();
+    await flush();
     // Back to "never captured": both drains seed and claim the same three.
     const vids = await Promise.all(decks.map((d) => c.versionId(d, 1)));
     await app.db.pool.query('DELETE FROM presentation_version_thumbnails WHERE version_id = ANY($1)', [vids]);
-    const before = labels.map((l) => fake.callsFor(l).length);
+    const before = labels.map((l) => fake.jobsFor(l).length);
 
-    const other = new FakeRenderer();
+    const other = new FakeRenderer(() => app);
     other.delayMs = 30;
     fake.delayMs = 30;
     const second = new ThumbnailService({
@@ -460,57 +772,20 @@ describe('capture on (a fake renderer)', () => {
     });
     try {
       await Promise.all([app.tool.thumbnails.sweep(), second.sweep()]);
+      await flush();
+      await other.settle();
+      await second.idle();
     } finally {
       fake.delayMs = 0;
     }
 
-    const captured = labels.map((l, i) => fake.callsFor(l).length - before[i]! + other.callsFor(l).length);
-    expect(captured).toEqual([1, 1, 1]);
+    const handed = labels.map((l, i) => fake.jobsFor(l).length - before[i]! + other.jobsFor(l).length);
+    expect(handed).toEqual([1, 1, 1]);
     for (const vid of vids) expect((await c.row(vid))?.state).toBe('ready');
   });
 });
 
-describe('Chromium’s sandbox cannot start', () => {
-  let app: TestApp;
-  const fake = new FakeRenderer();
-  fake.mode = 'sandbox';
-  const c = client(() => app);
-  let cookie = '';
-
-  beforeAll(async () => {
-    app = await createTestApp(
-      await createDatabase(container, 'thumbs_sandbox'),
-      {},
-      {
-        tool: { thumbnailRenderer: fake }
-      }
-    );
-    cookie = await c.setup('Sandbox down');
-  }, 240_000);
-
-  afterAll(async () => {
-    await app?.stop();
-  });
-
-  it('capture turns off in the process, the row keeps its attempts, and the route says unavailable', async () => {
-    const deck = await c.pushDeck(cookie, 'Sandboxed', [
-      { path: 'index.html', bytes: htmlOf('deck-sandbox'), contentType: 'text/html' }
-    ]);
-    await app.tool.thumbnails.idle();
-    expect(app.tool.thumbnails.capturing).toBe(false);
-    const vid = await c.versionId(deck, 1);
-    const r = await c.row(vid);
-    expect(r?.state).toBe('pending');
-    expect(r?.attempts).toBe(0);
-    await expectError(await c.thumb(cookie, deck, 1), 404, 'thumbnail_unavailable');
-
-    await app.tool.thumbnails.sweep();
-    await app.tool.thumbnails.sweep();
-    expect(fake.calls).toHaveLength(1);
-  });
-});
-
-describe('capture off (no renderer: switched off, or an api-only replica)', () => {
+describe('no renderer configured', () => {
   let app: TestApp;
   const c = client(() => app);
   let cookie = '';
@@ -519,46 +794,38 @@ describe('capture off (no renderer: switched off, or an api-only replica)', () =
     app = await createTestApp(
       await createDatabase(container, 'thumbs_off'),
       {},
-      {
-        tool: { thumbnailRenderer: null }
-      }
+      { tool: { rendererClient: null } }
     );
-    cookie = await c.setup('Capture off');
+    cookie = await c.setup('No renderer');
   }, 240_000);
 
   afterAll(async () => {
     await app?.stop();
   });
 
-  it('the route answers unavailable and the version waits in the queue for a process that captures', async () => {
+  it('the route answers unavailable and the version waits in the queue, untouched, for a renderer configured later', async () => {
     const deck = await c.pushDeck(cookie, 'Off', [
       { path: 'index.html', bytes: htmlOf('deck-off'), contentType: 'text/html' }
     ]);
     await app.tool.thumbnails.sweep();
-    expect(app.tool.thumbnails.capturing).toBe(false);
+    expect(app.tool.thumbnails.enabled).toBe(false);
     await expectError(await c.thumb(cookie, deck, 1), 404, 'thumbnail_unavailable');
     const r = await c.row(await c.versionId(deck, 1));
     expect(r?.state).toBe('pending');
     expect(r?.attempts).toBe(0);
     expect(r?.storage_key).toBeNull();
+    expect(r?.claim_token_hash).toBeNull();
   });
 
-  it('an api-only replica of an instance whose worker captures answers pending, never unavailable', async () => {
-    const deck = await c.pushDeck(cookie, 'Api replica', [
-      { path: 'index.html', bytes: htmlOf('deck-api-replica'), contentType: 'text/html' }
+  it('the internal routes answer 401 to any key: nothing was ever handed out', async () => {
+    const deck = await c.pushDeck(cookie, 'Off two', [
+      { path: 'index.html', bytes: htmlOf('deck-off-2'), contentType: 'text/html' }
     ]);
-    const versionId = await c.versionId(deck, 1);
-    const apiReplica = new ThumbnailService({
-      db: app.db.db,
-      storage: createStorageDriver(app.env),
-      logger: app.logger,
-      renderer: null,
-      capturedElsewhere: true
+    const vid = await c.versionId(deck, 1);
+    const res = await app.app.request(`/internal/renderer/jobs/${vid}/files/index.html`, {
+      headers: { authorization: `Bearer ${'a'.repeat(43)}` }
     });
-    const ws = (await app.db.pool.query('SELECT workspace_id FROM presentations WHERE id = $1', [deck]))
-      .rows[0].workspace_id as string;
-    expect(await apiReplica.status({ workspaceId: ws, presentationId: deck, versionId })).toEqual({
-      state: 'pending'
-    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('cache-control')).toBe('no-store');
   });
 });

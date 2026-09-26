@@ -1,30 +1,27 @@
-import { existsSync } from 'node:fs';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
-import { ChromiumRenderer, type ThumbnailRenderer } from './renderer.js';
+import { HttpRendererClient, type RendererClient } from './renderer-client.js';
 
 /**
- * The renderer this process captures deck images with (PRDCT-2725), or null
- * when it captures none: switched off, an api-only replica (the worker
- * captures; the api replica's rows wait for it), or no Chromium at the
- * configured path. A null renderer answers `thumbnail_unavailable` on the
- * read route and leaves the queued rows for a process that can capture.
+ * The renderer this instance hands deck versions to (PRDCT-2725), or null
+ * when there is none: the instance then makes no images, the read route
+ * answers `thumbnail_unavailable` and the cards keep their drawn pattern.
+ * The env schema refuses a URL without its secret at boot (env.ts).
  */
-export function thumbnailRendererFor(
-  env: Pick<Env, 'SLIDELESS_THUMBNAILS' | 'SLIDELESS_CHROMIUM_PATH' | 'SERVICE_ROLE'>,
+export function rendererClientFor(
+  env: Pick<Env, 'SLIDELESS_RENDERER_URL' | 'SLIDELESS_RENDERER_SECRET'>,
   logger: Logger
-): ThumbnailRenderer | null {
-  if (env.SLIDELESS_THUMBNAILS === 'off') {
-    logger.info('thumbnails: capture off (SLIDELESS_THUMBNAILS=off)');
-    return null;
-  }
-  if (env.SERVICE_ROLE === 'api') return null;
-  if (!existsSync(env.SLIDELESS_CHROMIUM_PATH)) {
-    logger.warn(
-      { path: env.SLIDELESS_CHROMIUM_PATH },
-      'thumbnails: capture off — no Chromium at SLIDELESS_CHROMIUM_PATH'
+): RendererClient | null {
+  if (!env.SLIDELESS_RENDERER_URL || !env.SLIDELESS_RENDERER_SECRET) {
+    logger.info(
+      'thumbnails: no renderer configured (SLIDELESS_RENDERER_URL unset) — deck cards show their pattern'
     );
     return null;
   }
-  return new ChromiumRenderer({ executablePath: env.SLIDELESS_CHROMIUM_PATH });
+  logger.info({ renderer: env.SLIDELESS_RENDERER_URL }, 'thumbnails: renderer configured');
+  return new HttpRendererClient({
+    baseUrl: env.SLIDELESS_RENDERER_URL,
+    secret: env.SLIDELESS_RENDERER_SECRET,
+    logger
+  });
 }

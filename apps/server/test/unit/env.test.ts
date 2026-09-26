@@ -15,15 +15,36 @@ describe('env schema', () => {
     expect(env.NODE_ENV).toBe('production');
   });
 
-  it("defaults the still-image capture on, with the image's Chromium, and reads blank as the default (PRDCT-2725)", () => {
+  it('has no renderer by default, reads blank as unset, and refuses a renderer URL without its secret (PRDCT-2725)', () => {
     const env = envSchema.parse(minimal);
-    expect(env.SLIDELESS_THUMBNAILS).toBe('on');
-    expect(env.SLIDELESS_CHROMIUM_PATH).toBe('/usr/bin/chromium-browser');
-    const blank = envSchema.parse({ ...minimal, SLIDELESS_THUMBNAILS: '', SLIDELESS_CHROMIUM_PATH: ' ' });
-    expect(blank.SLIDELESS_THUMBNAILS).toBe('on');
-    expect(blank.SLIDELESS_CHROMIUM_PATH).toBe('/usr/bin/chromium-browser');
-    expect(envSchema.parse({ ...minimal, SLIDELESS_THUMBNAILS: 'off' }).SLIDELESS_THUMBNAILS).toBe('off');
-    expect(envSchema.safeParse({ ...minimal, SLIDELESS_THUMBNAILS: 'true' }).success).toBe(false);
+    expect(env.SLIDELESS_RENDERER_URL).toBeUndefined();
+    expect(env.SLIDELESS_RENDERER_SECRET).toBeUndefined();
+    const blank = envSchema.parse({ ...minimal, SLIDELESS_RENDERER_URL: '', SLIDELESS_RENDERER_SECRET: ' ' });
+    expect(blank.SLIDELESS_RENDERER_URL).toBeUndefined();
+    const both = envSchema.parse({
+      ...minimal,
+      SLIDELESS_RENDERER_URL: 'http://renderer:3100',
+      SLIDELESS_RENDERER_SECRET: 'a-shared-secret-of-sixteen'
+    });
+    expect(both.SLIDELESS_RENDERER_URL).toBe('http://renderer:3100');
+    const noSecret = envSchema.safeParse({ ...minimal, SLIDELESS_RENDERER_URL: 'http://renderer:3100' });
+    expect(noSecret.success).toBe(false);
+    if (!noSecret.success) {
+      expect(noSecret.error.issues.map((i) => i.path.join('.'))).toContain('SLIDELESS_RENDERER_SECRET');
+    }
+    const short = envSchema.safeParse({
+      ...minimal,
+      SLIDELESS_RENDERER_URL: 'http://renderer:3100',
+      SLIDELESS_RENDERER_SECRET: 'short'
+    });
+    expect(short.success).toBe(false);
+    expect(
+      envSchema.safeParse({
+        ...minimal,
+        SLIDELESS_RENDERER_URL: 'ftp://renderer',
+        SLIDELESS_RENDERER_SECRET: 'a-shared-secret-of-sixteen'
+      }).success
+    ).toBe(false);
   });
 
   it('rejects a missing DATABASE_URL', () => {

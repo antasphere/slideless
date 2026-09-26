@@ -5,6 +5,7 @@ CREATE TABLE "presentation_version_thumbnails" (
 	"state" text DEFAULT 'pending' NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"lease_until" timestamp with time zone,
+	"claim_token_hash" text,
 	"storage_key" text,
 	"size_bytes" integer,
 	"error" text,

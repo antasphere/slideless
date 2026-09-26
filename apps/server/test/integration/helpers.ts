@@ -20,14 +20,10 @@ export {
 
 export type TestApp = ChassisTestApp<BootResult>;
 
-const createChassisTestApp = makeCreateTestApp<BootResult, BootOverrides>(boot);
-
 /**
  * Boot the real app (real migrations, real Better Auth) against a database.
- * The deck-image capture (PRDCT-2725) is OFF unless a suite turns it on: a
- * machine with a Chromium at the default path would otherwise launch it on
- * every push of every suite. A suite that tests the capture passes its own
- * renderer (`overrides.tool.thumbnailRenderer`), which wins over the switch.
+ * No renderer is configured unless a suite passes one
+ * (`overrides.tool.rendererClient`, PRDCT-2725): the other suites make no
+ * images and never reach for a network.
  */
-export const createTestApp: typeof createChassisTestApp = (connectionString, extraEnv = {}, overrides) =>
-  createChassisTestApp(connectionString, { SLIDELESS_THUMBNAILS: 'off', ...extraEnv }, overrides);
+export const createTestApp = makeCreateTestApp<BootResult, BootOverrides>(boot);

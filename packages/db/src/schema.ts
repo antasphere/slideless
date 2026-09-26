@@ -829,7 +829,9 @@ export const uploadSessions = pgTable(
  * for, the work queue and the record at once. `pending` waits for a capture
  * (claimed by setting `lease_until`, so one replica renders it), `ready`
  * names the WebP in storage at `storage_key`, `failed` gave up after the
- * capture's attempts. A version's content is immutable, so a ready image
+ * capture's attempts. A claimed row is handed to the renderer container with
+ * a one-time key (`claim_token_hash`), so the callback that writes the image
+ * is bound to this claim (thumbnails/routes.ts). A version's content is immutable, so a ready image
  * never changes. Deleting the version, the deck or the workspace deletes
  * the row; the bytes stay in storage like a deck's own blobs do.
  */
@@ -853,6 +855,13 @@ export const presentationVersionThumbnails = pgTable(
     attempts: integer('attempts').notNull().default(0),
     /** A claim holds the row until this moment; a pending row past it is claimable again. */
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    /**
+     * The sha256 of the one-time key the renderer holds for this claim: it
+     * opens the version's files and accepts the version's image, nothing
+     * else, and only while the lease lives. Null when no renderer holds the
+     * version. Cleared when the image lands or the attempt fails.
+     */
+    claimTokenHash: text('claim_token_hash'),
     storageKey: text('storage_key'),
     sizeBytes: integer('size_bytes'),
     /** Why the last attempt failed, one line, for the operator. */

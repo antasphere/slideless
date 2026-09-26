@@ -1,5 +1,5 @@
 {
-  "id": "ce0afe4c-a507-4ba1-8b2a-26e299c93815",
+  "id": "9f7c50f6-0fde-4098-a727-e81da47cf69b",
   "prevId": "04277488-6ac2-4823-bfa0-4a633950b01d",
   "version": "7",
   "dialect": "postgresql",
@@ -4226,6 +4226,12 @@
         "lease_until": {
           "name": "lease_until",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_token_hash": {
+          "name": "claim_token_hash",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
