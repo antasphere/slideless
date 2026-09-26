@@ -69,7 +69,7 @@ services:
       # deck version (docs/self-hosting/install.md, "Deck images"). Start it
       # with `docker compose --profile images up -d` (or COMPOSE_PROFILES=images
       # in .env) and set these two lines in .env; unset, the deck cards show
-      # a drawn pattern and nothing else changes.
+      # a plain block and nothing else changes.
       - SLIDELESS_RENDERER_URL=${SLIDELESS_RENDERER_URL:-}
       - SLIDELESS_RENDERER_SECRET=${SLIDELESS_RENDERER_SECRET:-}
     ports:

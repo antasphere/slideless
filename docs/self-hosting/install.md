@@ -103,7 +103,7 @@ The dashboard shows a still image of each deck version on its card. The
 image is made by an **optional renderer container**, `slideless-renderer`,
 that holds a sandboxed headless Chromium and nothing else: no database, no
 file storage, no secret but the one it shares with the app. Without it, the
-cards show a drawn pattern and everything else works the same.
+cards show a plain block and everything else works the same.
 
 **Turning it on.** Three lines in `.env`, then the profile:
 
@@ -123,7 +123,7 @@ The renderer is reached on the compose network only (no published port).
 After a push, the app hands the new version to it with a one-time key; the
 renderer pulls the version's files from the app with that key, captures the
 first page, and puts the image back with the same key. The app never waits
-for it: a version whose image is not there yet shows the pattern, and the
+for it: a version whose image is not there yet shows a plain block, and the
 renderer can be added, stopped or upgraded at any time.
 
 **What it costs.** The renderer image is about 920 MB on disk, 334 MB of it
@@ -172,7 +172,7 @@ renderer is back.
 
 - **Hostinger's one-file template** ([hostinger.md](hostinger.md)) does not
   carry the renderer: a single downloaded compose file cannot ship the
-  seccomp profile. Those instances show the pattern.
+  seccomp profile. Those instances show a plain block.
 - **Kubernetes**: run the renderer as its own deployment with a seccomp
   profile that allows the same calls (a `Localhost` profile built from
   `deploy/seccomp-chromium.json`), reachable from the app pods only, with

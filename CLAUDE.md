@@ -112,8 +112,9 @@ deploys) + `dev` (day-to-day work).
   `deploy/seccomp-chromium.json` to the `renderer` service (the `images` profile), never to `app`.
   Alpine's Chromium is out for good: its graphics helper dies under Chromium's own seccomp on musl
   (arm64 and amd64 alike), so the renderer image is Debian with Playwright's pinned headless shell.
-  Unset `SLIDELESS_RENDERER_URL` = no images, `thumbnail_unavailable`, the still pattern on the
-  cards. The renderer's cloud deployment is its own task; until it ships, cloud shows the pattern.
+  Unset `SLIDELESS_RENDERER_URL` = no images, `thumbnail_unavailable`, a plain block on the
+  cards (no drawn pattern on a card, Romain 26 September 2026). The renderer's cloud deployment is
+  its own task; until it ships, cloud cards show the plain block.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **The viewer origin is a real boundary, never a trust grant (PRDCT-1352)**: with

@@ -10,7 +10,7 @@
      so a fast answer never flashes it (plain, no shimmer, for a reader who
      asked for no motion). The image fades in over it (320 ms), then the
      skeleton is gone. When there is none, the skeleton fades out (200 ms) and
-     whatever the parent draws beneath (the still pattern plate) shows
+     the parent's plain block shows
      through. It is only a picture: no pointer events, hidden from assistive
      technology when it carries no alt. */
   import { loadStill, type StillState } from '$lib/tool/decks/stills';

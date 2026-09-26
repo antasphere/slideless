@@ -3,19 +3,15 @@
      three facts a person who is not technical cares about. No id, no hash, no
      version number. The picture is a still image of the deck's first page,
      captured on the server at each push and shown to everyone who can read the
-     deck (PRDCT-2725); no deck HTML loads here. Under it, until it arrives and
-     in its place when there is none (no version yet, or no image made), sits
-     the deck's own drawn plate: its pattern says what kind of deck it is, its
-     field is seeded from the deck's id. The plate is still, never animated;
-     while the image is fetched or made a shimmering skeleton covers it, the
-     image fades in over that, and when there is none the plate shows. */
-  import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
+     deck (PRDCT-2725); no deck HTML loads here. The plate is a plain neutral
+     block and nothing is drawn on it (Romain, 26 September 2026: no pattern on
+     the cards any more): while the image is fetched or made a shimmering
+     skeleton covers it, the image fades in over that, and when there is none
+     (no version yet, no renderer, no image made) the block stays plain. */
   import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import DeckStill from './DeckStill.svelte';
   import Eye from '@lucide/svelte/icons/eye';
   import Clock from '@lucide/svelte/icons/clock-3';
-  import { DECK_PALETTES, DECK_PATTERNS } from '$lib/brand/recipe.js';
-  import { seedOf } from '$lib/brand/seed';
   import { kindLabel } from '$lib/tool/decks';
   import type { StillState } from '$lib/tool/decks/stills';
   import { formatTimeAgo } from '$lib/format';
@@ -32,10 +28,6 @@
 
   let { deck, compact = false, exceptProject }: Props = $props();
 
-  const seed = $derived(seedOf(deck.id));
-  const palette = $derived(DECK_PALETTES[seed % DECK_PALETTES.length]);
-  const pattern = $derived(DECK_PATTERNS[deck.kind] ?? 'slides');
-
   let still = $state<StillState>('idle');
 </script>
 
@@ -43,7 +35,6 @@
      interpolation only, never {@html}. -->
 <a href="/decks/{deck.id}" class="sheet tile deck">
   <div class="plate-window plate" class:compact data-still={deck.currentVersion > 0 ? still : undefined}>
-    <PatternCanvas {pattern} {palette} {seed} />
     {#if deck.currentVersion > 0}
       <DeckStill deckId={deck.id} version={deck.currentVersion} bind:state={still} />
     {/if}
@@ -83,6 +74,7 @@
   }
   .plate {
     aspect-ratio: 16 / 9;
+    background: var(--ground-2);
   }
   .plate.compact {
     aspect-ratio: 16 / 9;

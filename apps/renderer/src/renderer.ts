@@ -15,7 +15,7 @@ import { chromium, type Browser, type BrowserServer, type Route } from 'playwrig
  *
  *  1. Chromium's OWN sandbox, always (`chromiumSandbox: true`). Where the
  *     sandbox cannot start (a container that forbids user namespaces), the
- *     launch fails and capture is OFF — cards keep the drawn plate. There is
+ *     launch fails and capture is OFF — cards keep a plain block. There is
  *     no `--no-sandbox` fallback and no switch that adds one: without the
  *     sandbox a renderer exploit in any deck runs as this process, next to
  *     the instance's secrets.

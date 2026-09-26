@@ -7,11 +7,10 @@
 
      The picture is a still image of the reference's first page, captured on
      the server at each push and shown to everyone who can read the deck, as
-     DeckCard does (PRDCT-2725); no deck HTML loads here. The drawn plate sits
-     beneath it, still, never animated: while the image is fetched or made a
+     DeckCard does (PRDCT-2725); no deck HTML loads here. The plate is a plain
+     neutral block, nothing drawn on it: while the image is fetched or made a
      shimmering skeleton covers it, the image fades in over that, and when
-     there is none the plate shows. */
-  import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
+     there is none the block stays plain. */
   import { Tag } from '$lib/components/ui/tag';
   import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
   import DeckStill from '$lib/tool/components/decks/DeckStill.svelte';
@@ -21,8 +20,6 @@
   import Clock from '@lucide/svelte/icons/clock-3';
   import Lock from '@lucide/svelte/icons/lock';
   import Users from '@lucide/svelte/icons/users';
-  import { DECK_PALETTES } from '$lib/brand/recipe.js';
-  import { seedOf } from '$lib/brand/seed';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
   import type { DeckWithProjects } from '$lib/tool/projects-client';
@@ -36,8 +33,6 @@
 
   let { deck, selected = false, onOpen }: Props = $props();
 
-  const seed = $derived(seedOf(deck.id));
-  const palette = $derived(DECK_PALETTES[seed % DECK_PALETTES.length]);
   const description = $derived(descriptionOf(deck.reference));
   const swatches = $derived(swatchesOf(deck.reference).filter((s) => s.hex));
   const fonts = $derived([...new Set(fontsOf(deck.reference).map((f) => f.family))]);
@@ -64,7 +59,6 @@
     >
   {/if}
   <div class="plate-window plate" data-still={deck.currentVersion > 0 ? still : undefined}>
-    <PatternCanvas pattern="slides" {palette} {seed} />
     {#if deck.currentVersion > 0}
       <DeckStill deckId={deck.id} version={deck.currentVersion} bind:state={still} />
     {/if}
@@ -151,6 +145,7 @@
   }
   .plate {
     aspect-ratio: 16 / 9;
+    background: var(--ground-2);
   }
   .chip {
     position: absolute;

@@ -5,7 +5,7 @@ import { HttpRendererClient, type RendererClient } from './renderer-client.js';
 /**
  * The renderer this instance hands deck versions to (PRDCT-2725), or null
  * when there is none: the instance then makes no images, the read route
- * answers `thumbnail_unavailable` and the cards keep their drawn pattern.
+ * answers `thumbnail_unavailable` and the cards show a plain block.
  * The env schema refuses a URL without its secret at boot (env.ts).
  */
 export function rendererClientFor(
