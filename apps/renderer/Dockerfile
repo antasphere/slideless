@@ -34,10 +34,12 @@ COPY --from=build --chown=node:node /out /app
 WORKDIR /app
 
 # The headless shell only (no full Chrome, no ffmpeg), installed as root at
-# build and linked at one fixed path; then the runtime never invokes a
+# build and linked at one fixed path (its binary is `headless_shell` under
+# chrome-linux/ on arm64 and `chrome-headless-shell` under
+# chrome-headless-shell-linux64/ on amd64); then the runtime never invokes a
 # package manager, so npm, yarn and corepack go (PLT-35 + PRDCT-1346).
 RUN node /app/node_modules/playwright-core/cli.js install chromium-headless-shell \
- && shell="$(find /opt/pw -type f -name headless_shell -perm -u+x | head -n 1)" \
+ && shell="$(find /opt/pw -type f \( -name headless_shell -o -name chrome-headless-shell \) -perm -u+x | head -n 1)" \
  && test -n "$shell" \
  && ln -s "$shell" /usr/local/bin/chromium-headless-shell \
  && rm -rf /opt/pw/ffmpeg-* /root/.npm /root/.cache \
