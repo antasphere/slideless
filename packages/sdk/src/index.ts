@@ -382,7 +382,9 @@ export class PlatformClient extends ChassisClient<Scope> {
   /**
    * A version's still image. Raw Response; a non-2xx throws PlatformApiError
    * (404 thumbnail_pending | thumbnail_failed | thumbnail_unavailable | not_found).
-   * Unlike the downloads, the browser's HTTP cache is allowed: the image is immutable.
+   * Unlike the downloads, the browser's HTTP cache is allowed: the server answers
+   * `private, no-cache` with an ETag, so the browser keeps the bytes and revalidates
+   * on each ask (a 304), and a read right that was revoked is felt at once.
    */
   async versionThumbnail(id: string, version: number): Promise<Response> {
     const res = await this.fetchImpl(this.versionThumbnailUrl(id, version), {

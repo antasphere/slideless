@@ -133,6 +133,8 @@ services:
       dockerfile: apps/renderer/Dockerfile
     profiles: ['images']
     restart: unless-stopped
+    # A capture in flight gets its 25 s to finish and answer before the kill.
+    stop_grace_period: 30s
     environment:
       # Where the renderer reaches the app for the files and the image callback.
       - SLIDELESS_URL=http://app:3000

@@ -12,7 +12,11 @@ import type { ThumbnailService } from './service.js';
  * files and accepts exactly one version's image while the claim's lease
  * lives (ThumbnailService.claimFor). The key is 256 random bits: a wrong
  * key answers 401 with nothing else, and no rate limit is needed to make
- * guessing pointless. Every answer is no-store.
+ * guessing pointless. The key is judged BEFORE a byte of body is read
+ * (verifier round 1, F1): these routes ride the public slot, where no body
+ * limit runs, so a request whose key opens nothing costs one indexed read
+ * and no buffer; the write itself checks the key again. Every answer is
+ * no-store.
  *
  *  GET  …/files/{path}   a manifest file of the version, exact path only
  *  PUT  …/image          the WebP bytes (RIFF/WEBP magic, IMAGE_MAX_BYTES cap)
@@ -100,10 +104,18 @@ export function rendererRoutes({ thumbnails, logger }: RendererRouteDeps): Hono 
     });
   });
 
+  /** 401 with the body left unread (and cancelled) when the key opens no claim. */
+  async function refuseUnlessHeld(c: Context, job: string, token: string): Promise<Response | null> {
+    if (JOB_RE.test(job) && token && (await thumbnails.holdsClaim({ job, token }))) return null;
+    await c.req.raw.body?.cancel().catch(() => {});
+    return c.json(err('unauthorized', 'No key for this job'), 401, NO_STORE);
+  }
+
   app.put(`${RENDERER_JOBS_PREFIX}/:job/image`, async (c) => {
     const job = c.req.param('job');
     const token = bearer(c);
-    if (!JOB_RE.test(job) || !token) return c.json(err('unauthorized', 'No key for this job'), 401, NO_STORE);
+    const refused = await refuseUnlessHeld(c, job, token);
+    if (refused) return refused;
     if ((c.req.header('content-type') ?? '').split(';')[0]!.trim() !== 'image/webp') {
       return c.json(err('not_webp', 'The image must be sent as image/webp'), 415, NO_STORE);
     }
@@ -124,7 +136,8 @@ export function rendererRoutes({ thumbnails, logger }: RendererRouteDeps): Hono 
   app.post(`${RENDERER_JOBS_PREFIX}/:job/failure`, async (c) => {
     const job = c.req.param('job');
     const token = bearer(c);
-    if (!JOB_RE.test(job) || !token) return c.json(err('unauthorized', 'No key for this job'), 401, NO_STORE);
+    const refused = await refuseUnlessHeld(c, job, token);
+    if (refused) return refused;
     const bytes = await readBody(c, FAILURE_MAX_BYTES);
     let parsed: unknown;
     try {

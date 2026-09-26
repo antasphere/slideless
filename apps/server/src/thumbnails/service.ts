@@ -77,11 +77,23 @@ export interface ThumbnailServiceOptions {
   dials?: Partial<ThumbnailDials>;
 }
 
-export function thumbnailStorageKey(workspaceId: string, presentationId: string, versionId: string): string {
+/**
+ * Where a claim's image lives. The claim's own mark is in the name (the first
+ * twelve hex digits of its key's hash), so two captures of one version never
+ * share an object: a slow write of a claim that was re-issued lands under its
+ * own name, and the row names the winner's (verifier round 1, F7).
+ */
+export function thumbnailStorageKey(
+  workspaceId: string,
+  presentationId: string,
+  versionId: string,
+  claim: string
+): string {
   for (const id of [workspaceId, presentationId, versionId]) {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('invalid id');
   }
-  return `thumbs/${workspaceId}/${presentationId}/${versionId}.webp`;
+  if (!/^[0-9a-f]{12}$/.test(claim)) throw new Error('invalid claim mark');
+  return `thumbs/${workspaceId}/${presentationId}/${versionId}-${claim}.webp`;
 }
 
 /** The key as the renderer presents it: base64url of 32 bytes, nothing else is looked up. */
@@ -381,6 +393,16 @@ export class ThumbnailService {
   }
 
   /**
+   * Whether a key opens a claim right now: what the renderer routes ask
+   * BEFORE reading a byte of body, so a wrong key costs one indexed read and
+   * never a buffer (verifier round 1, F1). The verbs below check again on
+   * the write itself, bound to the same key.
+   */
+  async holdsClaim(opts: { job: string; token: string }): Promise<boolean> {
+    return (await this.claimFor(opts.job, opts.token)) !== null;
+  }
+
+  /**
    * One of the version's own files for the renderer: an exact manifest path
    * (traversal-safe, never an attachment under `downloads/`), read from
    * storage and capped at the size the manifest declares. The entry document
@@ -417,7 +439,8 @@ export class ThumbnailService {
   async complete(opts: { job: string; token: string; webp: Buffer }): Promise<'stored' | 'rejected'> {
     const row = await this.claimFor(opts.job, opts.token);
     if (!row) return 'rejected';
-    const key = thumbnailStorageKey(row.workspaceId, row.presentationId, row.versionId);
+    const hash = hashToken(opts.token);
+    const key = thumbnailStorageKey(row.workspaceId, row.presentationId, row.versionId, hash.slice(0, 12));
     await this.storage.put(key, Readable.from([opts.webp]), {
       contentType: 'image/webp',
       sizeBytes: opts.webp.length
@@ -426,7 +449,7 @@ export class ThumbnailService {
       UPDATE presentation_version_thumbnails
          SET state = 'ready', storage_key = ${key}, size_bytes = ${opts.webp.length},
              lease_until = NULL, claim_token_hash = NULL, error = NULL, updated_at = now()
-       WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hashToken(opts.token)}
+       WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}
        RETURNING version_id`);
     if (res.rows.length === 0) return 'rejected';
     this.logger.info({ versionId: row.versionId, sizeBytes: opts.webp.length }, 'thumbnails: image landed');

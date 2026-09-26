@@ -213,7 +213,13 @@ describe('POST /capture and /healthz', () => {
       { v: 1, ...job({ entryPath: '' }) },
       { v: 1, ...job({ entryPath: '/etc/passwd' }) },
       { v: 1, ...job({ entryPath: 'a'.repeat(1025) }) },
-      { v: 1, ...job({ deadline: 'tomorrow' }) }
+      { v: 1, ...job({ deadline: 'tomorrow' }) },
+      // No deadline at all (verifier round 1, R2): a job the queue could never judge as late.
+      (() => {
+        const { deadline: _dropped, ...rest } = job();
+        void _dropped;
+        return { v: 1, ...rest };
+      })()
     ];
     for (const b of bad) {
       const res = await post(b);

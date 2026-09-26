@@ -1623,7 +1623,10 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   (and `%2e%2e`) before Hono sees the path, so an HTTP-level test of a traversal exercises the
   parser, not the code; the traversal rule is tested at the service (`fileFor`), where a path
   arrives however it was spelled. The route decodes the RAW pathname one time per segment, so a
-  file whose own name holds a percent sign resolves (Hono's `c.req.path` pre-decodes once).
+  file whose own name holds a percent sign resolves whatever Hono's `c.req.path` does with
+  encoded characters (it applies `decodeURI`, which turns `%20` into a space and leaves `%25`
+  and `%2F` as they are; the verifier found no request the two readings tell apart, and the raw
+  read stays the one that cannot drift).
 - **A fake that answers "the oldest held job" leaks state between tests.** The first version of
   the integration fake's `finish()` shifted its held queue; a job finished by hand in an earlier
   test stayed in that queue, the shift PUT with a dead key, 401, and three later tests saw the

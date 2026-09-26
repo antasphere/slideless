@@ -384,7 +384,7 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(FAKE_WEBP);
     expect(res.headers.get('content-type')).toBe('image/webp');
     expect(res.headers.get('content-length')).toBe(String(FAKE_WEBP.length));
-    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+    expect(res.headers.get('cache-control')).toBe('private, no-cache');
     expect(res.headers.get('etag')).toBe(`"${vid}"`);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('content-disposition')).toBe('inline; filename="v1.webp"');
@@ -392,7 +392,7 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
     const again = await c.thumb(ownerCookie, deck, 1, { 'if-none-match': `"${vid}"` });
     expect(again.status).toBe(304);
     expect(again.headers.get('etag')).toBe(`"${vid}"`);
-    expect(again.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+    expect(again.headers.get('cache-control')).toBe('private, no-cache');
     expect((await again.arrayBuffer()).byteLength).toBe(0);
 
     // The key died with the image: nothing opens under it any more.
@@ -474,10 +474,25 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
     it('the image leg refuses bytes that are not a WebP, a wrong media type, an oversize body, and a foreign key; the row stays pending', async () => {
       expect((await fake.put(job, Buffer.from('<html>not an image</html>'))).status).toBe(400);
       expect((await fake.put(job, FAKE_WEBP, { contentType: 'image/png' })).status).toBe(415);
-      const big = Buffer.alloc(IMAGE_MAX_BYTES + 1, 0x5a);
+      // The cap is 2 MiB on the wire, as a number (verifier round 1, F4): a
+      // test that derives it from the constant would follow the constant up.
+      expect(IMAGE_MAX_BYTES).toBe(2 * 1024 * 1024);
+      const big = Buffer.alloc(2 * 1024 * 1024 + 1, 0x5a);
       big.write('RIFF', 0, 'latin1');
       big.write('WEBP', 8, 'latin1');
       expect((await fake.put(job, big)).status).toBe(413);
+      const justUnder = Buffer.alloc(2 * 1024 * 1024 - 64, 0x5a);
+      justUnder.write('RIFF', 0, 'latin1');
+      justUnder.write('WEBP', 8, 'latin1');
+      // Under the cap the bytes are read and judged (a WebP-shaped body of the
+      // right type is accepted); the same body under a WRONG key is refused
+      // before a byte is read (verifier round 1, F1): 401, never 400 or 413.
+      expect((await fake.put(job, big, { token: 'y'.repeat(43) })).status).toBe(401);
+      expect((await fake.put(job, Buffer.from('<html>'), { token: 'y'.repeat(43) })).status).toBe(401);
+      expect(
+        (await fake.put(job, FAKE_WEBP, { token: 'y'.repeat(43), contentType: 'image/png' })).status
+      ).toBe(401);
+      expect((await fake.failure(job, 'not json', 'y'.repeat(43))).status).toBe(401);
       expect((await fake.put(job, FAKE_WEBP, { token: 'y'.repeat(43) })).status).toBe(401);
       const otherVersion = await c.versionId(deck, 1);
       expect((await fake.put({ ...job, job: otherVersion }, FAKE_WEBP)).status).toBe(401);
@@ -713,6 +728,87 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
     } finally {
       fake.mode = 'ok';
       await fake.settle();
+    }
+  });
+
+  it('a lease that ran out opens nothing under its key, even before anyone claims the version again', async () => {
+    fake.mode = 'hold';
+    try {
+      const d = await c.pushDeck(ownerCookie, 'Late renderer', [
+        { path: 'index.html', bytes: htmlOf('deck-late'), contentType: 'text/html' }
+      ]);
+      await flush();
+      const vid = await c.versionId(d, 1);
+      const job = fake.jobsFor('deck-late')[0]!;
+      expect((await fake.get(job, 'index.html')).status).toBe(200);
+      // The lease runs out; nobody has claimed the version again (the hash is still this key's).
+      await expireLease(vid);
+      expect((await c.row(vid))?.claim_token_hash).not.toBeNull();
+      expect((await fake.get(job, 'index.html')).status).toBe(401);
+      expect((await fake.put(job, FAKE_WEBP)).status).toBe(401);
+      expect((await fake.failure(job, { error: 'late' })).status).toBe(401);
+      const row = await c.row(vid);
+      expect(row?.state).toBe('pending');
+      expect(row?.storage_key).toBeNull();
+      // The sweep hands it off again under a new key, which works.
+      await app.tool.thumbnails.sweep();
+      await flush();
+      const again = fake.jobsFor('deck-late')[1]!;
+      expect((await fake.put(again, FAKE_WEBP)).status).toBe(204);
+      expect((await c.row(vid))?.state).toBe('ready');
+    } finally {
+      fake.mode = 'ok';
+    }
+  });
+
+  it('a claim re-issued between the read of a key and the write of its image leaves the row to the new holder', async () => {
+    fake.mode = 'hold';
+    try {
+      const d = await c.pushDeck(ownerCookie, 'Raced renderer', [
+        { path: 'index.html', bytes: htmlOf('deck-raced'), contentType: 'text/html' }
+      ]);
+      await flush();
+      const vid = await c.versionId(d, 1);
+      const first = fake.jobsFor('deck-raced')[0]!;
+      // A service whose storage write is where the race lands: while the
+      // first holder's image is being written, its lease runs out and the
+      // version is handed off again under a new key.
+      const base = createStorageDriver(app.env);
+      const other = new FakeRenderer(() => app);
+      other.mode = 'hold';
+      const second = new ThumbnailService({
+        db: app.db.db,
+        storage: base,
+        logger: app.logger,
+        renderer: other
+      });
+      const racing = new ThumbnailService({
+        db: app.db.db,
+        storage: {
+          ...base,
+          put: async (key, data, opts) => {
+            await expireLease(vid);
+            await second.sweep();
+            await other.settle();
+            return base.put(key, data, opts);
+          }
+        } as typeof base,
+        logger: app.logger,
+        renderer: fake
+      });
+      expect(await racing.complete({ job: vid, token: first.token, webp: FAKE_WEBP })).toBe('rejected');
+      const row = await c.row(vid);
+      expect(row?.state).toBe('pending');
+      const newHolder = other.jobsFor('deck-raced')[0]!;
+      expect(newHolder.token).not.toBe(first.token);
+      expect((await fake.put(newHolder, FAKE_WEBP)).status).toBe(204);
+      const ready = await c.row(vid);
+      expect(ready?.state).toBe('ready');
+      // The row names the winner's object, not the loser's late write.
+      expect(ready?.storage_key).toContain(`${vid}-`);
+      expect((await c.thumb(ownerCookie, d, 1)).status).toBe(200);
+    } finally {
+      fake.mode = 'ok';
     }
   });
 

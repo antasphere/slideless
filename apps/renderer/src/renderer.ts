@@ -126,6 +126,8 @@ export class ChromiumRenderer implements ThumbnailRenderer {
   private readonly maxServedBytes: number;
   private readonly settleMs: number;
   private busy = false;
+  /** The previous capture's browser, when its launch outlived the deadline: killed before the next starts. */
+  private settling: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: ChromiumRendererOptions) {
     this.timeoutMs = opts.timeoutMs ?? 20_000;
@@ -136,9 +138,13 @@ export class ChromiumRenderer implements ThumbnailRenderer {
   async capture(input: CaptureInput): Promise<Buffer> {
     if (this.busy) throw new Error('a capture is already running in this process');
     this.busy = true;
+    // A previous capture whose launch outlived its deadline: its browser is
+    // killed on arrival, and no new one starts beside it.
+    await this.settling;
     const profileDir = await mkdtemp(join(tmpdir(), 'slideless-capture-'));
     let server: BrowserServer | null = null;
     let timer: NodeJS.Timeout | undefined;
+    let deadlinePassed = false;
     try {
       const work = (async () => {
         try {
@@ -162,6 +168,13 @@ export class ChromiumRenderer implements ThumbnailRenderer {
           }
           throw e;
         }
+        if (deadlinePassed) {
+          // The deadline fired while Chromium was still starting (verifier
+          // round 1, F5): the browser that just arrived is killed here, on
+          // arrival, never left running beside the next capture.
+          await server.kill().catch(() => {});
+          throw new CaptureTimeoutError(this.timeoutMs);
+        }
         const browser = await chromium.connect(server.wsEndpoint(), { timeout: this.timeoutMs });
         try {
           const png = await this.screenshot(browser, input);
@@ -171,8 +184,17 @@ export class ChromiumRenderer implements ThumbnailRenderer {
         }
       })();
       const deadline = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new CaptureTimeoutError(this.timeoutMs)), this.timeoutMs);
+        timer = setTimeout(() => {
+          deadlinePassed = true;
+          reject(new CaptureTimeoutError(this.timeoutMs));
+        }, this.timeoutMs);
       });
+      // Whatever wins the race, the work chain settles on its own (the launch
+      // has its own timeout): the browser it may still produce is killed then.
+      this.settling = work.then(
+        () => undefined,
+        () => undefined
+      );
       return await Promise.race([work, deadline]);
     } finally {
       clearTimeout(timer);
@@ -180,7 +202,13 @@ export class ChromiumRenderer implements ThumbnailRenderer {
       // timeout, a thrown step. kill() is a no-op on an exited process.
       const s = server as BrowserServer | null;
       if (s) await s.kill().catch(() => {});
-      await rm(profileDir, { recursive: true, force: true }).catch(() => {});
+      this.settling = this.settling.then(async () => {
+        const late = server as BrowserServer | null;
+        if (late && late !== s) await late.kill().catch(() => {});
+        await rm(profileDir, { recursive: true, force: true }).catch(() => {});
+      });
+      if (s) await this.settling;
+      else await rm(profileDir, { recursive: true, force: true }).catch(() => {});
       this.busy = false;
     }
   }

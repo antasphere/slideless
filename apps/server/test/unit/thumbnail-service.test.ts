@@ -8,14 +8,17 @@ describe('thumbnailStorageKey', () => {
   const P = '22222222-2222-4222-8222-222222222222';
   const V = '33333333-3333-4333-8333-333333333333';
 
-  it('builds the key under thumbs/', () => {
-    expect(thumbnailStorageKey(W, P, V)).toBe(`thumbs/${W}/${P}/${V}.webp`);
+  const C = 'abcdef012345';
+
+  it('builds the key under thumbs/, marked with the claim', () => {
+    expect(thumbnailStorageKey(W, P, V, C)).toBe(`thumbs/${W}/${P}/${V}-${C}.webp`);
   });
 
-  it('refuses anything that is not a uuid', () => {
-    expect(() => thumbnailStorageKey('../../etc', P, V)).toThrow('invalid id');
-    expect(() => thumbnailStorageKey(W, 'x', V)).toThrow('invalid id');
-    expect(() => thumbnailStorageKey(W, P, `${V}/..`)).toThrow('invalid id');
+  it('refuses anything that is not a uuid, and a claim mark that is not twelve hex digits', () => {
+    expect(() => thumbnailStorageKey('../../etc', P, V, C)).toThrow('invalid id');
+    expect(() => thumbnailStorageKey(W, 'x', V, C)).toThrow('invalid id');
+    expect(() => thumbnailStorageKey(W, P, `${V}/..`, C)).toThrow('invalid id');
+    expect(() => thumbnailStorageKey(W, P, V, '../x')).toThrow('invalid claim mark');
   });
 });
 

@@ -108,11 +108,16 @@ cards show a drawn pattern and everything else works the same.
 **Turning it on.** Three lines in `.env`, then the profile:
 
 ```bash
+openssl rand -hex 32        # a secret of 16 characters or more; paste it below
+```
+
+```ini
 COMPOSE_PROFILES=images
 SLIDELESS_RENDERER_URL=http://renderer:3100
-SLIDELESS_RENDERER_SECRET=$(openssl rand -hex 32)   # paste the value, 16 characters or more
-docker compose up -d
+SLIDELESS_RENDERER_SECRET=<the value printed above>
 ```
+
+Then `docker compose up -d`.
 
 The renderer is reached on the compose network only (no published port).
 After a push, the app hands the new version to it with a one-time key; the
@@ -145,6 +150,18 @@ docker run --rm --security-opt seccomp=deploy/seccomp-chromium.json \
 
 It prints one JSON line and exits 0 when the capture works, or 3 when the
 sandbox cannot start.
+
+**The renderer's own settings.** The compose file sets what it needs
+(`SLIDELESS_URL=http://app:3000`, the shared secret, `LOG_LEVEL`). The rest
+has defaults and is rarely changed:
+
+| Variable                      | Default                    | What it does                                                                         |
+| ----------------------------- | -------------------------- | ------------------------------------------------------------------------------------ |
+| `PORT`, `HOST`                | `3100`, `0.0.0.0`          | Where the renderer listens on the compose network.                                   |
+| `RENDERER_QUEUE_DEPTH`        | `4`                        | Jobs held at once, the running one included; the app hands out at most four.         |
+| `RENDERER_CAPTURE_TIMEOUT_MS` | `20000`                    | The hard timeout of one capture, launch to image, after which the browser is killed. |
+| `RENDERER_CHROMIUM_PATH`      | the image's headless shell | The browser binary; the image sets it.                                               |
+| `LOG_LEVEL`                   | `info`                     | `debug`, `info`, `warn` or `error`; one JSON line per event on stdout.               |
 
 **Turning it off.** Remove the three lines (or `docker compose --profile
 images down renderer`). The app answers that it makes no images and the

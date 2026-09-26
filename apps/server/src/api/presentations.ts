@@ -1007,9 +1007,13 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
           noStore
         );
     }
+    // The bytes never change, but the RIGHT to read them can (a revoked
+    // collaborator, ADR 013): the browser keeps the image and asks again
+    // with its ETag on every mount, one 304 per card, never a copy that
+    // outlives the grant (verifier round 1, F6).
     const etag = `"${st.versionId}"`;
     const cacheHeaders: Record<string, string> = {
-      'cache-control': 'private, max-age=31536000, immutable',
+      'cache-control': 'private, no-cache',
       etag
     };
     if (c.req.header('if-none-match') === etag) {

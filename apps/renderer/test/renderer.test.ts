@@ -160,6 +160,10 @@ describe.skipIf(!CHROMIUM)('ChromiumRenderer (real Chromium)', () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(serverHits).toBe(0);
     expect(d.asked).not.toContain('submit');
+    // The origin wall itself (verifier round 1, R6): a request to another
+    // origin is aborted BEFORE the resolver is asked, so the page's own files
+    // are the only paths that ever reach it.
+    expect([...new Set(d.asked)].sort()).toEqual(['index.html']);
   }, 30_000);
 
   it('a modal dialog does not hold the capture', async () => {
