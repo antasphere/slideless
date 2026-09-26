@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium } from 'playwright-core';
 import {
   CAPTURE_HEIGHT,
@@ -197,6 +197,59 @@ describe.skipIf(!CHROMIUM)('ChromiumRenderer (real Chromium)', () => {
     const webp = await short.capture({ entryPath: 'index.html', resolve: fine.resolve });
     expect(webpInfo(webp).width).toBe(CAPTURE_WIDTH);
   }, 40_000);
+});
+
+describe('a launch that outlives the deadline (verifier round 1 F5, round 2 F15)', () => {
+  /** A fake browser server: `kill` is what the renderer must call on it, and `connect` must never be reached. */
+  function fakeServer(events: string[]) {
+    return {
+      wsEndpoint: () => 'ws://127.0.0.1:1/never',
+      kill: async () => {
+        events.push('kill');
+      },
+      close: async () => {
+        events.push('close');
+      }
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a browser whose launch resolves after the deadline is killed on arrival, never connected, and the next capture waits for it', async () => {
+    const events: string[] = [];
+    const launch = vi.spyOn(chromium, 'launchServer').mockImplementation(async () => {
+      events.push('launch');
+      await new Promise((r) => setTimeout(r, 400));
+      events.push('launch-resolved');
+      return fakeServer(events) as never;
+    });
+    const connect = vi.spyOn(chromium, 'connect').mockImplementation(async () => {
+      events.push('connect');
+      throw new Error('never reached');
+    });
+    const renderer = new ChromiumRenderer({ executablePath: '/nowhere/chromium', timeoutMs: 150 });
+    const files = deck({ 'index.html': { contentType: HTML, body: '<!doctype html><body>x</body>' } });
+
+    const started = Date.now();
+    await expect(
+      renderer.capture({ entryPath: 'index.html', resolve: files.resolve })
+    ).rejects.toBeInstanceOf(CaptureTimeoutError);
+    // The deadline ruled at ~150 ms; the launch is still pending.
+    expect(Date.now() - started).toBeLessThan(400);
+    expect(events).toEqual(['launch']);
+
+    // The next capture does not start beside the late browser: it waits for
+    // the launch to resolve and the kill on arrival, then launches its own.
+    const second = renderer.capture({ entryPath: 'index.html', resolve: files.resolve }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 300));
+    expect(events.slice(0, 3)).toEqual(['launch', 'launch-resolved', 'kill']);
+    expect(connect).not.toHaveBeenCalled();
+    expect(events.filter((e) => e === 'launch')).toHaveLength(2);
+    await second;
+    expect(launch).toHaveBeenCalledTimes(2);
+  }, 10_000);
 });
 
 describe('deck paths on the synthetic origin', () => {

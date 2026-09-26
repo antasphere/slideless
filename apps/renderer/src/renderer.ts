@@ -84,6 +84,9 @@ export class SandboxUnavailableError extends Error {
   }
 }
 
+/** After a kill, how long a capture waits for the browser's pending calls before it hands the turn on. */
+export const SETTLE_MAX_MS = 5_000;
+
 export class CaptureTimeoutError extends Error {
   constructor(ms: number) {
     super(`capture exceeded ${ms} ms`);
@@ -207,7 +210,11 @@ export class ChromiumRenderer implements ThumbnailRenderer {
         if (late && late !== s) await late.kill().catch(() => {});
         await rm(profileDir, { recursive: true, force: true }).catch(() => {});
       });
-      if (s) await this.settling;
+      // The killed browser's pending calls reject within milliseconds of the
+      // SIGKILL; the wait for them is bounded all the same (verifier round 2,
+      // F13), so a call that never settles cannot pin the queue.
+      if (s)
+        await Promise.race([this.settling, new Promise<void>((r) => setTimeout(r, SETTLE_MAX_MS).unref())]);
       else await rm(profileDir, { recursive: true, force: true }).catch(() => {});
       this.busy = false;
     }

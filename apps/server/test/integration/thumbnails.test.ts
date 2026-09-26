@@ -747,6 +747,16 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
       expect((await fake.get(job, 'index.html')).status).toBe(401);
       expect((await fake.put(job, FAKE_WEBP)).status).toBe(401);
       expect((await fake.failure(job, { error: 'late' })).status).toBe(401);
+      // With a body the routes would otherwise judge (not a WebP, over the cap,
+      // a wrong type, not JSON), the expired key is still 401 and the body is
+      // never read (verifier round 2, F14): the gate reads the lease too.
+      expect((await fake.put(job, Buffer.from('<html>late</html>'))).status).toBe(401);
+      const big = Buffer.alloc(2 * 1024 * 1024 + 1, 0x5a);
+      big.write('RIFF', 0, 'latin1');
+      big.write('WEBP', 8, 'latin1');
+      expect((await fake.put(job, big)).status).toBe(401);
+      expect((await fake.put(job, FAKE_WEBP, { contentType: 'image/png' })).status).toBe(401);
+      expect((await fake.failure(job, 'not json')).status).toBe(401);
       const row = await c.row(vid);
       expect(row?.state).toBe('pending');
       expect(row?.storage_key).toBeNull();
