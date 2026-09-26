@@ -8,9 +8,10 @@ import { chromium, type Browser, type BrowserServer, type Route } from 'playwrig
  * 1280 × 720 desktop viewport in headless Chromium, captured at 960 × 540 and
  * encoded as WebP.
  *
- * SECURITY: this is the one place the server opens USER-AUTHORED HTML, with
- * its script running. Every layer below is load-bearing; none replaces
- * another.
+ * SECURITY: the renderer container is the one place Slideless opens
+ * USER-AUTHORED HTML, with its script running, and it holds nothing else: no
+ * database, no storage, no secret but the shared one. Every layer below is
+ * load-bearing; none replaces another.
  *
  *  1. Chromium's OWN sandbox, always (`chromiumSandbox: true`). Where the
  *     sandbox cannot start (a container that forbids user namespaces), the

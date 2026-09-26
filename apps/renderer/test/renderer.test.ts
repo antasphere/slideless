@@ -12,14 +12,13 @@ import {
   decodeDeckPath,
   encodeDeckPath,
   type ResolvedFile
-} from '../../src/thumbnails/renderer.js';
-import { thumbnailStorageKey } from '../../src/thumbnails/service.js';
+} from '../src/renderer.js';
 
 /**
  * The REAL Chromium renderer of a deck version's still image (PRDCT-2725):
  * the image it makes, and the walls around the user-authored page it opens
  * (the version's own files and nothing else reach it; a modal or a loop can
- * not hold it). Runs when a Chromium exists — SLIDELESS_TEST_CHROMIUM, or
+ * not hold it). Runs when a Chromium exists — RENDERER_TEST_CHROMIUM, or
  * playwright-core's own download — and is skipped, saying why, otherwise.
  */
 
@@ -44,7 +43,7 @@ function headlessShellBeside(fullChrome: string): string | null {
 }
 
 function findChromium(): string | null {
-  const fromEnv = process.env.SLIDELESS_TEST_CHROMIUM;
+  const fromEnv = process.env.RENDERER_TEST_CHROMIUM;
   if (fromEnv && existsSync(fromEnv)) return fromEnv;
   try {
     const bundled = chromium.executablePath();
@@ -58,7 +57,7 @@ function findChromium(): string | null {
 const CHROMIUM = findChromium();
 if (!CHROMIUM) {
   console.warn(
-    'thumbnail-renderer.test.ts: no Chromium (set SLIDELESS_TEST_CHROMIUM or run `npx playwright install chromium`) — the real-renderer cases are skipped'
+    'renderer.test.ts: no Chromium (set RENDERER_TEST_CHROMIUM or run `npx playwright-core install chromium-headless-shell`) — the real-renderer cases are skipped'
   );
 }
 
@@ -208,21 +207,5 @@ describe('deck paths on the synthetic origin', () => {
   it('drops the leading slashes, and refuses what does not decode', () => {
     expect(decodeDeckPath('//index.html')).toBe('index.html');
     expect(decodeDeckPath('/bad%E0%A4%A.css')).toBeNull();
-  });
-});
-
-describe('thumbnailStorageKey', () => {
-  const W = '11111111-1111-4111-8111-111111111111';
-  const P = '22222222-2222-4222-8222-222222222222';
-  const V = '33333333-3333-4333-8333-333333333333';
-
-  it('builds the key under thumbs/', () => {
-    expect(thumbnailStorageKey(W, P, V)).toBe(`thumbs/${W}/${P}/${V}.webp`);
-  });
-
-  it('refuses anything that is not a uuid', () => {
-    expect(() => thumbnailStorageKey('../../etc', P, V)).toThrow('invalid id');
-    expect(() => thumbnailStorageKey(W, 'x', V)).toThrow('invalid id');
-    expect(() => thumbnailStorageKey(W, P, `${V}/..`)).toThrow('invalid id');
   });
 });
