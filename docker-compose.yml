@@ -138,7 +138,11 @@ services:
     environment:
       # Where the renderer reaches the app for the files and the image callback.
       - SLIDELESS_URL=http://app:3000
-      - SLIDELESS_RENDERER_SECRET=${SLIDELESS_RENDERER_SECRET:?Set SLIDELESS_RENDERER_SECRET in .env to run the renderer}
+      # Empty default on purpose: a `${VAR:?}` here is checked by compose for
+      # EVERY command on this file, images on or off, so an install without
+      # the renderer could not even run `docker compose up`. The renderer
+      # itself refuses to boot without a secret of 16 characters or more.
+      - SLIDELESS_RENDERER_SECRET=${SLIDELESS_RENDERER_SECRET:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     security_opt:
       - seccomp=./deploy/seccomp-chromium.json
