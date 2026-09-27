@@ -310,6 +310,16 @@ describe(`${bin} demo`, () => {
     }
   });
 
+  it('an admin or a member who signs in reads that an owner is needed, with no API key hint', async () => {
+    const h = harness([SIGNED_IN, refusal(403, 'forbidden', 'Requires owner role'), SIGNED_OUT]);
+    expect(await run(['demo', 'list', ...URL_FLAGS], h.io)).toBe(1);
+    expect(h.err()).toBe(
+      'Error: Only an owner of this workspace manages demo links: the account that signed in is not one.\n'
+    );
+    expect(h.calls.at(-1)!.path).toBe('/api/v1/auth/sign-out');
+    expectNoLeak(h);
+  });
+
   it('the unknown-route 404 says the switch is off, on each of the three commands', async () => {
     for (const argv of [
       ['demo', 'link', '--email', 'ada@example.com'],

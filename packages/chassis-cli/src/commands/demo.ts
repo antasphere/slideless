@@ -27,6 +27,10 @@ const SWITCH_OFF =
  * read, so they reach the runner as worded refusals: its generic hints speak
  * of API keys, and these commands hold none.
  */
+/** The role gate's refusal: the person who signed in is an admin or a member. */
+const NOT_AN_OWNER =
+  'Only an owner of this workspace manages demo links: the account that signed in is not one.';
+
 const REFUSALS = new Set([
   'no_such_member',
   'owner_target',
@@ -47,6 +51,9 @@ async function explained<T>(run: () => Promise<T>): Promise<T> {
       if (e.status === 404 && e.code === 'not_found' && e.message === 'Not found') {
         throw new CliApiRefusal(SWITCH_OFF, 404);
       }
+      // The role gate answers the generic `forbidden`; the runner's hint for
+      // a 403 speaks of an API key, which this command never holds.
+      if (e.status === 403 && e.code === 'forbidden') throw new CliApiRefusal(NOT_AN_OWNER, 403);
       if (REFUSALS.has(e.code)) throw new CliApiRefusal(e.message, e.status);
     }
     throw e;
