@@ -119,11 +119,14 @@ describe('MCP is unaffected (zero MCP code changes)', () => {
     // so neither is under the hub-managed gate: the per-deck collaborator pair
     // (ADR 013) and PROJECT membership (PRDCT-2577 — a project is a subgroup of
     // the workspace, its roster is the tool's own on both editions). Nothing
-    // here touches /members or /invitations, which is what P7 gates.
+    // here touches /members or /invitations, which is what P7 gates. A team's
+    // roster read (PRDCT-2813) is a READ of the tool's own tables on both
+    // editions; the writes on a hub-origin workspace are the gate's.
     expect(names.filter((n: string) => /member|invit/i.test(n)).sort()).toEqual([
       'slideless_add_project_member',
       'slideless_invite_collaborator',
       'slideless_list_project_members',
+      'slideless_list_team_members',
       'slideless_remove_project_member',
       'slideless_set_project_member_role',
       'slideless_uninvite_collaborator'
