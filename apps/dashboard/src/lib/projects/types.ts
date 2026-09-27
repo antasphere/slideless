@@ -1,6 +1,8 @@
 /**
  * A project as the dashboard reads it (PRDCT-2582): a subgroup of the
  * workspace, with members who each hold a role, and what the tool links to it.
+ * A member is a person or a team (PRDCT-2794): `ProjectMember` is the union
+ * on `kind`.
  * The shapes are the chassis contract's; this file is the one place the
  * dashboard names them.
  */
@@ -9,6 +11,8 @@ export type {
   ProjectCreate,
   ProjectMember,
   ProjectMemberAdd,
+  ProjectPersonMember,
+  ProjectTeamMember,
   ProjectRole,
   ProjectUpdate,
   ProjectsArchivedFilter as ProjectArchivedFilter

@@ -48,6 +48,16 @@ Project membership is managed inside Slideless on both editions. On cloud, the w
 managed at Antasphere ([Antasphere account](../getting-started/antasphere-account.md)), but the
 projects inside that workspace, and who is in them, stay in Slideless.
 
+## A team as a member
+
+A team of the workspace (a named group of its people) can be a member of a project, and it holds a
+role like a person does. Its members hold that role through the team: add someone to the team and
+they reach the project, remove them from the team and their access through it ends on the next
+request. When a person holds a role of their own and roles through one or more teams, the highest of
+them wins. Taking a team off a project leaves its people's own entries as they are. On a workspace
+managed by the Antasphere account site, the teams come from there; putting one on a project is still
+done in Slideless.
+
 ## Linking a deck to a project
 
 Linking a deck widens who reads it, so it is the deck's own act: the deck's owner does it, or a
@@ -150,9 +160,11 @@ not something a colleague can probe. The same rule the decks follow ([Decks](art
 | `POST /api/v1/projects/{id}/archive`            | Archive it                                              |
 | `POST /api/v1/projects/{id}/unarchive`          | Bring it back                                           |
 | `GET /api/v1/projects/{id}/members`             | The roster                                              |
-| `POST /api/v1/projects/{id}/members`            | Add a workspace member, with a role                     |
+| `POST /api/v1/projects/{id}/members`            | Add a workspace member or a team, with a role           |
 | `PATCH /api/v1/projects/{id}/members/{userId}`  | Change a member's role                                  |
 | `DELETE /api/v1/projects/{id}/members/{userId}` | Remove a member                                         |
+| `PATCH /api/v1/projects/{id}/teams/{teamId}`    | Change a team's role                                    |
+| `DELETE /api/v1/projects/{id}/teams/{teamId}`   | Take a team off the project                             |
 | `GET\|PUT\|DELETE /api/v1/projects/{id}/brand`  | Read, set or clear the project's brand                  |
 
 `?archived=false` is the default, so a plain `GET /api/v1/projects` lists the live ones.
@@ -174,7 +186,8 @@ no scope of their own for projects, because a project is a way of reading and wr
 | `403 insufficient_project_role` | Your role in the project does not carry the act                                                      |
 | `403 guest_target`              | The person named is a per-deck guest                                                                 |
 | `409 project_archived`          | The project is archived; unarchive it first                                                          |
-| `409 already_member`            | That person is already in the project                                                                |
+| `409 already_member`            | That person or team is already in the project                                                        |
+| `404 team_not_found`            | On add: no team of the workspace matches; on a role change or a removal: not on this project         |
 | `404 not_linked`                | The deck is not in the project, so there is nothing to unlink                                        |
 | `409 not_linked`                | The deck named as the brand is not linked to the project yet                                         |
 | `400 not_a_brand`               | The deck named as the brand is not a brand reference                                                 |

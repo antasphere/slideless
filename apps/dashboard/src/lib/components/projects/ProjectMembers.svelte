@@ -2,10 +2,14 @@
   /* Who is in a project, and with which role. A manager of an open project
      adds people, changes roles and removes; everyone else reads the list, and
      finds one action on their own row: leaving. Membership of a project is
-     local to the tool on both editions, so nothing here reads `hub_managed`. */
+     local to the tool on both editions, so nothing here reads `hub_managed`.
+     A member is a person or a team (PRDCT-2794): a team row takes the same
+     role select and the same removal as a person's, and links to the team's
+     page (here, or at Antasphere on a hub-origin workspace, whose teams the
+     account site owns). */
   import { goto } from '$app/navigation';
   import { type ColumnDef } from '@tanstack/table-core';
-  import { renderComponent } from '$lib/components/ui/data-table/index.js';
+  import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/index.js';
   import DataTable, { rowCount } from '$lib/components/shared/DataTable.svelte';
   import DataTableColumnHeader from '$lib/components/shared/DataTableColumnHeader.svelte';
   import DataTableActions from '$lib/components/shared/DataTableActions.svelte';
@@ -19,11 +23,14 @@
   import { Tag } from '$lib/components/ui/tag';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import Plus from '@lucide/svelte/icons/plus';
+  import UsersRound from '@lucide/svelte/icons/users-round';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { errorMessage } from '$lib/api';
   import { projects } from '$lib/projects/client';
   import { projectCan } from '$lib/projects/can';
-  import type { Project, ProjectMember, ProjectRole } from '$lib/projects/types';
+  import type { Project, ProjectMember, ProjectRole, ProjectTeamMember } from '$lib/projects/types';
+  import { hubLinkHere, hubTeamsPage } from '$lib/hub-links';
   import { projectRoleTag } from '$lib/tags';
   import { formatDate } from '$lib/format';
   import { toast } from 'svelte-sonner';
@@ -34,8 +41,14 @@
     myUserId: string;
     /** After any change: the page reads the project again (a role changed here may be the reader's own). */
     onChanged: () => Promise<void> | void;
+    /**
+     * The account site's root when the workspace is hub-origin (`/me.hubManageUrl`
+     * there): a team's Manage link then opens its page at Antasphere. Null on
+     * any other workspace, where the team's page is this dashboard's.
+     */
+    hubManageUrl?: string | null;
   }
-  let { project, myUserId, onChanged }: Props = $props();
+  let { project, myUserId, onChanged, hubManageUrl = null }: Props = $props();
 
   // the page is made anew for each project (the route keys it on the id)
   // svelte-ignore state_referenced_locally
@@ -52,6 +65,18 @@
   const memberCount = $derived(list.nextCursor ? undefined : rowCount('members.countOne', 'members.count'));
 
   const canManage = $derived(projectCan.manageMembers(project));
+  const teamsOnProject = $derived(
+    members.filter((m): m is ProjectTeamMember => m.kind === 'team').map((m) => m.teamId)
+  );
+
+  /** How a row is named in a sentence: a person by their email, a team by its name. */
+  const labelOf = (member: ProjectMember) => (member.kind === 'team' ? member.name : member.email);
+
+  /** Where a team row's Manage link goes: the team's page here, or at Antasphere on a hub-origin workspace. */
+  function teamHref(team: ProjectTeamMember): string | null {
+    if (hubManageUrl) return team.hubTeamId ? hubLinkHere(hubTeamsPage(hubManageUrl, team.hubTeamId)) : null;
+    return `/teams/${encodeURIComponent(team.teamId)}`;
+  }
   const canLeave = $derived(projectCan.leave(project, members, myUserId));
 
   async function changed() {
@@ -78,9 +103,13 @@
     if (!roleTarget) return;
     roleLoading = true;
     try {
-      await projects.setMemberRole(projectId, roleTarget.userId, { role: selectedRole });
+      if (roleTarget.kind === 'team') {
+        await projects.setTeamRole(projectId, roleTarget.teamId, { role: selectedRole });
+      } else {
+        await projects.setMemberRole(projectId, roleTarget.userId, { role: selectedRole });
+      }
       toast.success(
-        t('members.roleChanged', { email: roleTarget.email, role: projectRoleTag(selectedRole).label })
+        t('members.roleChanged', { email: labelOf(roleTarget), role: projectRoleTag(selectedRole).label })
       );
       showRoleDialog = false;
       roleTarget = null;
@@ -106,8 +135,12 @@
     if (!removeTarget) return;
     removeLoading = true;
     try {
-      await projects.removeMember(projectId, removeTarget.userId);
-      toast.success(t('projects.memberRemovedToast', { email: removeTarget.email }));
+      if (removeTarget.kind === 'team') {
+        await projects.removeTeam(projectId, removeTarget.teamId);
+      } else {
+        await projects.removeMember(projectId, removeTarget.userId);
+      }
+      toast.success(t('projects.memberRemovedToast', { email: labelOf(removeTarget) }));
       showRemoveDialog = false;
       removeTarget = null;
     } catch (e) {
@@ -140,7 +173,7 @@
 
   function rowActions(member: ProjectMember) {
     const actions: Array<{ label: string; onclick: () => void; variant?: 'default' | 'destructive' }> = [];
-    const mine = member.userId === myUserId;
+    const mine = member.kind === 'person' && member.userId === myUserId;
     if (canManage) {
       actions.push({ label: t('members.actionChangeRole'), onclick: () => openRoleDialog(member) });
       if (!mine) {
@@ -162,17 +195,23 @@
   }
 
   const columns: ColumnDef<ProjectMember, unknown>[] = $derived([
+    // A team reads across the two first columns: its chip and name, then its
+    // slug, its size and its Manage link. The search matches a team's name and slug.
     {
-      accessorKey: 'email',
+      id: 'email',
+      accessorFn: (m) => (m.kind === 'team' ? `${m.name} ${m.slug}` : m.email),
       header: ({ column }) =>
         renderComponent(DataTableColumnHeader, { column, title: t('members.colEmail') }),
-      cell: ({ row }) => row.getValue('email'),
+      cell: ({ row }) =>
+        row.original.kind === 'team' ? renderSnippet(teamNameCell, row.original) : row.original.email,
       meta: { title: t('members.colEmail') }
     },
     {
-      accessorKey: 'name',
+      id: 'name',
+      accessorFn: (m) => (m.kind === 'team' ? m.slug : m.name),
       header: ({ column }) => renderComponent(DataTableColumnHeader, { column, title: t('members.colName') }),
-      cell: ({ row }) => row.getValue('name') || '—',
+      cell: ({ row }) =>
+        row.original.kind === 'team' ? renderSnippet(teamInfoCell, row.original) : row.original.name || '—',
       meta: { title: t('members.colName'), width: '28%' }
     },
     {
@@ -204,6 +243,41 @@
       : [])
   ]);
 </script>
+
+{#snippet teamNameCell(team: ProjectTeamMember)}
+  <!-- team names and slugs are USER-AUTHORED: text interpolation only -->
+  <span class="flex min-w-0 items-center gap-2">
+    <Tag label={t('projects.members.teamChip')} tone="violet" icon={UsersRound} />
+    <span class="truncate font-medium">{team.name}</span>
+  </span>
+{/snippet}
+
+{#snippet teamInfoCell(team: ProjectTeamMember)}
+  {@const href = teamHref(team)}
+  <span class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
+    <span class="font-mono text-xs text-muted-foreground">{team.slug}</span>
+    <span class="text-muted-foreground">
+      {team.membersCount === 1
+        ? t('projects.members.teamPeopleOne')
+        : t('projects.members.teamPeople', { n: team.membersCount })}
+    </span>
+    {#if href}
+      {#if hubManageUrl}
+        <a
+          {href}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 underline-offset-4 hover:underline"
+        >
+          {t('projects.members.manageTeam')}
+          <ExternalLink class="h-3 w-3" />
+        </a>
+      {:else}
+        <a {href} class="underline-offset-4 hover:underline">{t('projects.members.manageTeam')}</a>
+      {/if}
+    {/if}
+  </span>
+{/snippet}
 
 {#snippet addAction()}
   <Button onclick={() => (showAddDialog = true)} size="sm" class="h-8 gap-1.5">
@@ -251,7 +325,8 @@
 <AddProjectMemberDialog
   bind:open={showAddDialog}
   {projectId}
-  alreadyIn={members.map((m) => m.userId)}
+  alreadyIn={members.flatMap((m) => (m.kind === 'person' ? [m.userId] : []))}
+  alreadyInTeams={teamsOnProject}
   onAdded={changed}
   onRefused={changed}
 />
@@ -259,7 +334,7 @@
 <FormDialog
   bind:open={showRoleDialog}
   title={t('members.roleDialogTitle')}
-  description={roleTarget ? t('projects.roleDialogDescription', { email: roleTarget.email }) : ''}
+  description={roleTarget ? t('projects.roleDialogDescription', { email: labelOf(roleTarget) }) : ''}
   onClose={() => {
     showRoleDialog = false;
     roleTarget = null;
@@ -273,8 +348,12 @@
 
 <ConfirmDialog
   bind:open={showRemoveDialog}
-  title={t('projects.removeConfirmTitle')}
-  description={t('projects.removeConfirmDescription', { email: removeTarget?.email ?? '' })}
+  title={removeTarget?.kind === 'team'
+    ? t('projects.members.teamRemoveTitle')
+    : t('projects.removeConfirmTitle')}
+  description={removeTarget?.kind === 'team'
+    ? t('projects.members.teamRemoveConfirm', { name: removeTarget.name })
+    : t('projects.removeConfirmDescription', { email: removeTarget?.email ?? '' })}
   confirmLabel={t('projects.actionRemove')}
   onClose={() => {
     showRemoveDialog = false;

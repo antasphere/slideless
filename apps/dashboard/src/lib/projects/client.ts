@@ -1,7 +1,7 @@
 /**
  * The one seam between the Projects section and the API (PRDCT-2582): every
  * page reads and writes project data through `projects` and nothing else, so
- * the section knows the SDK by these ten calls. A project the caller cannot
+ * the section knows the SDK by these twelve calls. A project the caller cannot
  * read answers 404 (never 403); an archived one answers 409 `project_archived`
  * to every change but the unarchive; a project is never deleted.
  */
@@ -12,7 +12,9 @@ import type {
   ProjectCreate,
   ProjectMember,
   ProjectMemberAdd,
+  ProjectPersonMember,
   ProjectRole,
+  ProjectTeamMember,
   ProjectUpdate
 } from './types';
 
@@ -33,8 +35,11 @@ export interface ProjectsClient {
   unarchive(id: string): Promise<Project>;
   members(id: string, p: PageParams): Promise<{ members: ProjectMember[]; nextCursor: string | null }>;
   addMember(id: string, body: ProjectMemberAdd): Promise<ProjectMember>;
-  setMemberRole(id: string, userId: string, body: { role: ProjectRole }): Promise<ProjectMember>;
+  setMemberRole(id: string, userId: string, body: { role: ProjectRole }): Promise<ProjectPersonMember>;
   removeMember(id: string, userId: string): Promise<void>;
+  /** A team on the project (PRDCT-2794): its role, and taking it off (its people keep their own entries). */
+  setTeamRole(id: string, teamId: string, body: { role: ProjectRole }): Promise<ProjectTeamMember>;
+  removeTeam(id: string, teamId: string): Promise<void>;
 }
 
 export const projects: ProjectsClient = {
@@ -49,5 +54,9 @@ export const projects: ProjectsClient = {
   setMemberRole: (id, userId, { role }) => api.setProjectMemberRole(id, userId, role),
   async removeMember(id, userId) {
     await api.removeProjectMember(id, userId);
+  },
+  setTeamRole: (id, teamId, { role }) => api.setProjectTeamRole(id, teamId, role),
+  async removeTeam(id, teamId) {
+    await api.removeProjectTeam(id, teamId);
   }
 };

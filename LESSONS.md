@@ -1681,3 +1681,37 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   only; its 10 s TTL and 15 s retry throttle keep a polling page off the hub), resolves the
   session again through the same resolver and gate, and answers the normal shape when a
   membership came back. The refusal page polls `/me` every ten seconds while the tab is visible.
+
+## Teams on both editions, a team as a project member (PRDCT-2813 / PRDCT-2794, 2026-09-27)
+
+- **The rule the editions audit set: a concept is on both editions with the same tables, routes and
+  screens, and only its SOURCE differs.** The teams lane of the same morning had built a read-only
+  projection (`hub_team_id NOT NULL`, no route, no screen), which left the self-hosted edition with
+  nothing. Making the hub id nullable and giving the routes a second lock (`hub_team_id IS NULL` on
+  every write) turned the same two tables into the tool's own on self-hosted and the hub's on a
+  hub-origin workspace, with one page and one CLI family reading both.
+- **The caller-scoped `GET /orgs` is not enough for a team list.** It carries the caller's OWN seats,
+  so a team existed here only once one of its members had signed in, and a project could not be
+  shared with a team nobody had signed in from. The hub opens `GET /teams` to a grant under
+  `account:read` (which the SSO scopes carry) with `X-Workspace-Id` selecting the organization, so
+  the reconcile reads the organization's whole list as the person, throttled per org per replica
+  (`orgTeamsTtlMs`). The delete of the teams the list no longer names is what makes a team deleted
+  at the hub lose its project grants here; a list cut at the drain's page cap (`complete: false`)
+  only upserts, else an organization of a thousand teams would lose the rest on every read.
+- **A local slug's uniqueness is a PARTIAL index (`WHERE hub_team_id IS NULL`).** A projected team's
+  slug is the hub's, unique there at any moment; two projections read at different moments (a
+  person's seat from `/orgs`, the org list a minute later) can hold the same slug for an instant,
+  and a full unique index would have made the reconcile fail on the hub's own rename. Postgres
+  reports the INDEX name as the violated constraint, so the 409 `slug_taken` mapping matches
+  `workspace_teams_workspace_slug_local_uniq`, not a constraint name.
+- **One list, two kinds, one cursor.** A project's members are people and teams in one list
+  (`kind`), newest first: the two tables are read in a raw `UNION ALL` with the value-carrying
+  cursor applied inside EACH branch, since a set operation is where drizzle's builder stops and a
+  cursor applied outside would page each kind on its own.
+- **A machine allowlist entry answers `insufficient_scope`, not `endpoint_not_allowed`, to the wrong
+  scope.** A read key on a listed write route is refused by the scope gate with the scope's own
+  code; `endpoint_not_allowed` is for shapes the allowlist does not name. A test that pins the
+  wrong one passes for the wrong reason.
+- **`git commit -a` in a worktree shared with running subagents sweeps their half-written files
+  in.** Name the files on every commit while a subagent edits beside you; a soft reset recovers it
+  when caught.

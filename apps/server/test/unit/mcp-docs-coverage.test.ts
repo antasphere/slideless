@@ -22,7 +22,7 @@ const COUNT_PAGES = ['index.md', 'getting-started/connect-an-agent.md'].map((p) 
 /**
  * Ten tools of the set are in no tool-side source: the chassis registers
  * `<toolPrefix>whoami` itself (`buildMcpServer`, PRDCT-2531) and, beside it,
- * the nine PROJECT tools (PRDCT-2577 — a project is a chassis concept, so its
+ * the eleven PROJECT tools and the two team reads (PRDCT-2577 — a project is a chassis concept, so its
  * tools are the chassis'), all built from a prefix at run time. They are
  * named here by their literals, the names the docs carry.
  */
@@ -36,7 +36,11 @@ const CHASSIS_REGISTERED = [
   'slideless_archive_project',
   'slideless_add_project_member',
   'slideless_set_project_member_role',
-  'slideless_remove_project_member'
+  'slideless_remove_project_member',
+  'slideless_set_project_team_role',
+  'slideless_remove_project_team',
+  'slideless_list_teams',
+  'slideless_list_team_members'
 ];
 
 function registeredTools(): string[] {

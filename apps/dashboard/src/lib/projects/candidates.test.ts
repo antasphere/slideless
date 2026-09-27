@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { offeredMembers, type Candidate } from './candidates';
+import { offeredMembers, offeredTeams, type Candidate, type TeamCandidate } from './candidates';
 
 const person = (userId: string, over: Partial<Candidate> = {}): Candidate => ({
   userId,
@@ -31,5 +31,27 @@ describe('who the add dialog offers', () => {
   it('sorts by the name a person reads, the email when there is no name', () => {
     const people = [person('zed'), person('ben', { name: 'Ben Ito' }), person('amy', { name: '' })];
     expect(offeredMembers(people, []).map((p) => p.userId)).toEqual(['amy', 'ben', 'zed']);
+  });
+});
+
+const team = (id: string, name: string, slug = name.toLowerCase()): TeamCandidate => ({ id, name, slug });
+
+describe('which teams the add dialog offers', () => {
+  it('leaves out the teams already on the project', () => {
+    const teams = [team('t1', 'Design'), team('t2', 'Sales'), team('t3', 'Legal')];
+    expect(offeredTeams(teams, ['t2']).map((t) => t.id)).toEqual(['t1', 't3']);
+    expect(offeredTeams(teams, ['t1', 't2', 't3'])).toEqual([]);
+  });
+
+  it('searches the name and the slug, whatever the case', () => {
+    const teams = [team('t1', 'Design', 'brand-design'), team('t2', 'Sales', 'go-to-market')];
+    expect(offeredTeams(teams, [], ' BRAND ').map((t) => t.id)).toEqual(['t1']);
+    expect(offeredTeams(teams, [], 'sal').map((t) => t.id)).toEqual(['t2']);
+    expect(offeredTeams(teams, [], 'nobody')).toEqual([]);
+  });
+
+  it('sorts by name', () => {
+    const teams = [team('t1', 'Sales'), team('t2', 'Design'), team('t3', 'Legal')];
+    expect(offeredTeams(teams, []).map((t) => t.name)).toEqual(['Design', 'Legal', 'Sales']);
   });
 });

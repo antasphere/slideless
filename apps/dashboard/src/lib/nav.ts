@@ -88,8 +88,8 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       blurb: t('nav.blurb.people'),
       href: '/members',
       icon: Users,
-      // Invitations are a tab of the people section, never a section of their own.
-      also: ['/invitations'],
+      // Invitations and teams are tabs of the people section, never sections of their own.
+      also: ['/invitations', '/teams'],
       pattern: 'blooms'
     });
   }

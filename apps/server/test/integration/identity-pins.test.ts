@@ -122,6 +122,40 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Who is connected: the user this MCP connection acts as, with all their organizations. ' +
     'Returns { user: { id, email, name }, workspace, role, via, scopes, workspaces }. ' +
     'Everything done through this server happens as this user. (Alias of slideless_whoami.)',
+  slideless_list_project_members:
+    "List a project's members and what each of them may do. Roles, each containing the one before " +
+    'it: `viewer` reads the project and what is linked to it; `editor` may also write what is ' +
+    'linked to it; `manager` may also rename the project, archive it, and manage its members. An ' +
+    'organization owner or admin acts as a manager on every project. A member is a person or a ' +
+    'team, told apart by `kind`: a person entry is { kind: "person", userId, email, name, role, ' +
+    'addedBy, createdAt }, a team entry { kind: "team", teamId, slug, name, membersCount, ' +
+    'hubTeamId, role, addedBy, createdAt }, and every member of a team holds the team’s role; a ' +
+    'person’s effective role is the highest of their own entry and their teams’. Returns { ' +
+    'members, nextCursor }; pass a person’s `userId` to the tools that change or remove a member, ' +
+    'a team’s `teamId` to slideless_set_project_team_role and slideless_remove_project_team.',
+  slideless_add_project_member:
+    'Put one of the organization’s own members on a project, with a role — confirm with the user ' +
+    'first. Needs the manager role on the project. Roles, each containing the one before it: ' +
+    '`viewer` reads the project and what is linked to it; `editor` may also write what is linked ' +
+    'to it; `manager` may also rename the project, archive it, and manage its members. An ' +
+    'organization owner or admin acts as a manager on every project. Name the person by either ' +
+    '`userId` or `email`, and it must be someone who is already an active member of the ' +
+    'organization: this invites nobody and creates no account. Or a team by `teamId` (from ' +
+    'slideless_list_teams), which puts every member of the team on the project with that role. ' +
+    'Exactly one of `userId`, `email` or `teamId`. Returns the new project member, a person or a ' +
+    'team entry.',
+  slideless_list_teams:
+    'List the teams of an organization, newest first. A team is a named group of the ' +
+    'organization’s own members (for example "Design" or "Sales"). A team can be put on a project ' +
+    'with a role, and every member of the team then holds that role on the project. In an ' +
+    'organization managed by the Antasphere account site, the teams come from there and are ' +
+    'read-only here. Creating a team or adding people to one is done by a person on the People ' +
+    'page, or on the Antasphere account site for an organization it manages, never through these ' +
+    'tools. Returns { teams: [{ id, slug, name, membersCount, isMember, hubTeamId, createdAt, ' +
+    'updatedAt }], nextCursor } — `isMember` says whether YOU are in the team, and `hubTeamId` is ' +
+    'set when the team comes from the Antasphere account site. Pass a team `id` as `teamId` to ' +
+    'slideless_list_team_members or slideless_add_project_member. When nextCursor is non-null, ' +
+    'call again with cursor set to it.',
   slideless_list_presentations:
     'List the presentations (decks) this credential can read, newest first — deck reads are ' +
     'private: owners and workspace admins see the workspace, others see owned decks, active ' +
@@ -493,7 +527,7 @@ describe('the MCP surface', () => {
       'get_me',
       'list_files',
       'slideless_whoami',
-      // Projects are a chassis concept, so the chassis registers their nine
+      // Projects are a chassis concept, so the chassis registers their eleven, and the two team reads
       // tools too — under this tool's prefix, before its own set.
       'slideless_list_projects',
       'slideless_get_project',
@@ -504,6 +538,10 @@ describe('the MCP surface', () => {
       'slideless_add_project_member',
       'slideless_set_project_member_role',
       'slideless_remove_project_member',
+      'slideless_set_project_team_role',
+      'slideless_remove_project_team',
+      'slideless_list_teams',
+      'slideless_list_team_members',
       'slideless_list_presentations',
       'slideless_get_presentation',
       'slideless_list_versions',

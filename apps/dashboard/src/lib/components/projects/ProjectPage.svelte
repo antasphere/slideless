@@ -24,8 +24,10 @@
     projectId: string;
     myUserId: string;
     instanceName: string;
+    /** The account site's root on a hub-origin workspace (a team's Manage link opens there); null otherwise. */
+    hubManageUrl?: string | null;
   }
-  let { projectId, myUserId, instanceName }: Props = $props();
+  let { projectId, myUserId, instanceName, hubManageUrl = null }: Props = $props();
 
   let project = $state<Project | null>(null);
   let loading = $state(true);
@@ -96,7 +98,7 @@
 {:else}
   <ProjectHeader {project} onChanged={read} />
   <div class="space-y-10">
-    <ProjectMembers {project} {myUserId} onChanged={read} />
+    <ProjectMembers {project} {myUserId} onChanged={read} {hubManageUrl} />
     {#if Resources}
       <Resources {project} />
     {/if}

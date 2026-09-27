@@ -1,5 +1,6 @@
 <script lang="ts">
   import { hubLinkHere } from '$lib/hub-links';
+  import { peopleTabs } from '$lib/people-tabs';
   import { Tag } from '$lib/components/ui/tag';
   import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
@@ -202,15 +203,8 @@
         ])
   ]);
 
-  // People is one section with two tabs (PRDCT-2436). Invitations are local
-  // membership management: absent for a plain member, and on a hub-origin
-  // workspace, whose membership is managed at the hub (P7).
-  const peopleTabs = $derived([
-    { href: '/members', label: t('members.title') },
-    ...((data.me.role === 'owner' || data.me.role === 'admin') && !data.me.workspace.hubOrigin
-      ? [{ href: '/invitations', label: t('invitations.title') }]
-      : [])
-  ]);
+  // People is one section: its tab bar is `peopleTabs`, one list for its three pages.
+  const tabs = $derived(peopleTabs(data.me));
 </script>
 
 <SectionHero
@@ -218,7 +212,7 @@
   title={t('nav.people')}
   lede={t('invitations.description')}
   pageTitle={t('invitations.title')}
-  tabs={peopleTabs}
+  {tabs}
   drawing="graph"
 />
 

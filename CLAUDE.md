@@ -261,16 +261,31 @@ deploys) + `dev` (day-to-day work).
   (`packages/chassis-server/src/jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
   membership row — whole-user delete or nothing, else the reconciler's fail-open `no_link`
   branch becomes reachable for hub-origin principals.
-- **The hub's teams are projected as the person's own seats, never edited here (PRDCT-2793, the hub's
-  ADR 024)**: `GET /orgs` carries each entry's `teams` (the caller's) and a top-level `denied` (the
-  caller's organizations that do not open this tool to them); both parse forward-compatibly
-  (`hub-user-client.ts`). The reconciler alone writes `workspace_teams` and `workspace_team_members`
-  (`projectTeamSeats`, one transaction per org; the sweep deletes the seats with the project grants),
-  both tables stay empty on oss, and no route ever writes a seat. `denied` is remembered in the
-  reconciler's memory per replica and handed to the refusal page through `/me` (`hubDenied`,
-  `hubNoAccessUrl`); it is a hint for the copy, never an access input. Enforcement needs nothing
-  from the tool: a refused person stops seeing the organization in `orgs` and the existing sweep
-  removes the projected membership within the reconcile bound.
+- **A concept lives on both editions with the same tables, routes and screens; only its SOURCE
+  differs (Romain's rule of 27 September 2026: a self-hosted tool behaves exactly like the cloud
+  one connected to the hub, billing aside). Teams are the model (PRDCT-2813, PRDCT-2794)**:
+  `workspace_teams` (`hub_team_id` NULL = the tool's own team, set = the hub's projection),
+  `workspace_team_members` (the seat rides on the membership row, cascade) and `project_teams` (a
+  team's place on a project, with a role) exist on both editions; `api/teams.ts` serves the same
+  routes on both, the People > Teams pages, the `teams` CLI family and the two MCP reads read the
+  same. On self-hosted, and in a cloud-LOCAL workspace, owners and admins create, rename, delete
+  and seat (writes carry `hub_team_id IS NULL`, the second lock). In a hub-origin workspace the
+  members' gate (`hubManagedMembershipGate`, `HUB_MANAGED_TEAMS_MESSAGE`) refuses every write with
+  403 `hub_managed` + `manageUrl`, and the reconciler alone writes: the person's own seats from
+  `GET /orgs` (`projectTeamSeats`), and since PRDCT-2813 the organization's WHOLE team list read
+  `GET <hub>/teams` AS THE PERSON with `X-Workspace-Id` (`orgTeams`, `projectOrgTeams`: upsert by
+  hub id, delete the projected teams the list no longer names, never a local one), at login and
+  then at most every `orgTeamsTtlMs` (5 min) per org per replica, a failure keeping the previous
+  list. Rosters on cloud are the seats of the people who signed in here; the whole roster is the
+  account site's. **A team is a project member like a person, on both editions**: the ONE access
+  rule (`projectGrantPredicate`) holds a grant through `project_members` OR through `project_teams`
+  joined to the caller's seat, on the same live non-guest membership row and the same workspace,
+  the effective role the highest of the two; workspace owners and admins always pass. Every read
+  home of the tool inherits it unchanged (`deck-projects.test.ts` pins a team per home). A
+  removed seat, a deleted team or a swept membership ends the access on the next request. Tool
+  access per team stays the hub's (one self-hosted instance is one tool). `denied` on `GET /orgs`
+  is remembered in the reconciler's memory per replica and handed to the refusal page through
+  `/me` (`hubDenied`, `hubNoAccessUrl`); it is a hint for the copy, never an access input.
 - **Cloud sign-in requests `orgs:create`, and THE HUB DEPLOYS FIRST (PRDCT-2443)**: the scope list
   is stated once (`HUB_SSO_SCOPES`, `packages/chassis-server/src/identity/hub-sso.ts`): `openid profile email offline_access
 account:read orgs:create`. The hub's authorize endpoint refuses an unknown requested scope with

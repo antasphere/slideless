@@ -14,8 +14,10 @@ export function pathCrumbs(nav: NavModel, path: string): Crumb[] {
   const item = [...nav.primary, ...nav.workspace, ...nav.system].find((i) => isActive(i, path));
   if (!item) return [];
   const trail: Crumb[] = [{ label: item.title, href: item.href }];
-  const tab = item.tabs?.find((tab) => tab.href === path)?.label ?? sectionTab(path);
-  if (tab && item.also?.length) trail.push({ label: tab, href: path });
+  // a team's own page sits under the Teams tab: `People / Teams / <the team>` (the page adds its name)
+  const tabPath = path.startsWith('/teams/') ? '/teams' : path;
+  const tab = item.tabs?.find((tab) => tab.href === tabPath)?.label ?? sectionTab(tabPath);
+  if (tab && item.also?.length) trail.push({ label: tab, href: tabPath });
   return trail;
 }
 
@@ -26,6 +28,8 @@ function sectionTab(path: string): string | undefined {
       return t('members.title');
     case '/invitations':
       return t('invitations.title');
+    case '/teams':
+      return t('teams.title');
     case '/settings':
       return t('settings.tabInstance');
     case '/account':

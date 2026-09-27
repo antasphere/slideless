@@ -10,5 +10,10 @@
 
 <!-- Keyed remount: going from one project to another starts from nothing. -->
 {#key projectId}
-  <ProjectPage {projectId} myUserId={data.me.user.id} instanceName={data.instance.name} />
+  <ProjectPage
+    {projectId}
+    myUserId={data.me.user.id}
+    instanceName={data.instance.name}
+    hubManageUrl={data.me.workspace.hubOrigin ? data.me.hubManageUrl : null}
+  />
 {/key}
