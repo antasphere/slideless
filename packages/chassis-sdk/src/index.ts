@@ -118,6 +118,13 @@ export interface ClientOptions {
    * covers the whole body transfer, and an export is legitimately slow.
    */
   downloadTimeoutMs?: number;
+  /**
+   * Headers sent on EVERY call, merged in before the credential and the
+   * workspace are set (so they can never replace either). For a Node caller
+   * that holds a browser-style session: the CLI's owner-only commands send
+   * the session `cookie` and the `origin` the server checks, and no key.
+   */
+  headers?: Record<string, string>;
 }
 
 /** Cursor-pagination params shared by every list endpoint. */
@@ -189,6 +196,7 @@ export class ChassisClient<TScope extends string> {
   protected readonly fetchImpl: typeof globalThis.fetch;
   private readonly timeoutMs: number;
   private readonly downloadTimeoutMs: number;
+  private readonly extraHeaders: Record<string, string>;
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? '';
@@ -197,6 +205,7 @@ export class ChassisClient<TScope extends string> {
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.downloadTimeoutMs = options.downloadTimeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS;
+    this.extraHeaders = { ...options.headers };
   }
 
   /**
@@ -214,9 +223,9 @@ export class ChassisClient<TScope extends string> {
     this.workspaceId = workspaceId ?? undefined;
   }
 
-  /** Base headers shared by every call: credential + active workspace. */
+  /** Base headers shared by every call: the caller's own, then credential + active workspace. */
   protected baseHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...this.extraHeaders };
     if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
     if (this.workspaceId) headers['x-workspace-id'] = this.workspaceId;
     return headers;
