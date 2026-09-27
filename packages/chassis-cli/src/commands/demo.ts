@@ -40,6 +40,7 @@ const REFUSALS = new Set([
   'cross_workspace_target',
   'invalid_demo_path',
   'sessions_only',
+  'demo_session',
   'not_found'
 ]);
 

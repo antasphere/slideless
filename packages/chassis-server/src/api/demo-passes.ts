@@ -81,6 +81,18 @@ const sessionsOnly = (): MiddlewareHandler => async (c, next) => {
   if (principal && principal.via !== 'session') {
     return c.json(err('sessions_only', 'Demo passes are managed from a browser session only'), 403);
   }
+  // A session a demo link opened manages no demo link, whoever it signed in:
+  // an owner may make a link for themself, and whoever holds that link must
+  // not be able to make more of them, or to read and revoke the others.
+  if (c.get('demoPassId')) {
+    return c.json(
+      err(
+        'demo_session',
+        'A session opened by a demo link cannot manage demo links: sign in with your password'
+      ),
+      403
+    );
+  }
   return next();
 };
 

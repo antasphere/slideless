@@ -691,4 +691,26 @@ describe('a session a pass opened lives only while its pass does', () => {
     expect(await dead.json()).toBeNull();
     expect(await sessionRowsOf(minted.id)).toBe(0);
   });
+
+  it('q. a session a demo link opened manages no demo link, even the owner’s own', async () => {
+    const owner = actors.owner!;
+    const minted = await mint(owner, { email: OWNER.email });
+    const cookie = extractCookie(await redeem(minted.secret));
+    const me = (await readJson(await send(app, 'GET', '/me', { cookie }))) as { role: string };
+    expect(me.role).toBe('owner');
+
+    await expectError(await send(app, 'GET', '/demo/passes', { cookie }), 403, 'demo_session');
+    await expectError(
+      await send(app, 'POST', '/demo/passes', { cookie }, { email: 'member@example.com' }),
+      403,
+      'demo_session'
+    );
+    await expectError(
+      await send(app, 'DELETE', `/demo/passes/${minted.id}`, { cookie }),
+      403,
+      'demo_session'
+    );
+    // The owner's password session still does all three.
+    expect((await send(app, 'GET', '/demo/passes', owner)).status).toBe(200);
+  });
 });
