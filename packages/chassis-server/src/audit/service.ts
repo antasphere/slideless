@@ -76,6 +76,14 @@ export class AuditService {
 export interface AuditMiddlewareOptions {
   /** Extra paths the TOOL exempts from the generic audit row, beside the chassis ones. */
   exempt?: (path: string) => boolean;
+  /**
+   * Demo sign-in only (present while DEMO_SIGN_IN is on, self-hosted): the
+   * id of the demo pass that opened the session this request presents, or
+   * null. A row written for such a session carries it as
+   * `metadata.demoPassId`, so the trail tells what was done through a demo
+   * link from what the person did themselves.
+   */
+  demoPassOf?: (headers: Headers) => Promise<string | null>;
 }
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -130,6 +138,12 @@ export function auditMiddleware(
     if (!isMutation && !isMachine) return;
 
     const info = c.get('audit');
+    // ONE lookup, for session principals only (a machine credential is never
+    // a demo pass's session), and only for a row that is being written.
+    const demoPassId =
+      options.demoPassOf && principal.via === 'session'
+        ? await options.demoPassOf(c.req.raw.headers).catch(() => null)
+        : null;
     await audit.write({
       workspaceId: principal.workspaceId,
       principal,
@@ -138,7 +152,7 @@ export function auditMiddleware(
       resourceId: info?.resourceId,
       requestId: c.get('requestId'),
       ip: clientIp(c),
-      metadata: info?.metadata
+      metadata: demoPassId ? { ...info?.metadata, demoPassId } : info?.metadata
     });
   };
 }

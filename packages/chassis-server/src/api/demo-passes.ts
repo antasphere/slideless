@@ -64,6 +64,16 @@ export function demoSignInOn(
   return true;
 }
 
+/**
+ * The audit middleware's mark (spec section 6): the pass that opened the
+ * session a request presents, or null. Handed to `auditMiddleware` only
+ * while the switch is on, so an instance without it pays no lookup.
+ */
+export function demoPassAuditMark(db: Db): (headers: Headers) => Promise<string | null> {
+  const service = new DemoPassService(db);
+  return (headers) => service.passOfRequest(headers);
+}
+
 /** The second lock behind the scope allowlist: a pass is minted from a browser session only. */
 const sessionsOnly = (): MiddlewareHandler => async (c, next) => {
   const principal = c.get('principal');

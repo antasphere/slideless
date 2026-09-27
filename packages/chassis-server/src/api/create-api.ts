@@ -72,7 +72,7 @@ import {
 import { registerSsoConnectRoutes } from './index.js';
 import { registerSsoLogoutRoutes } from './index.js';
 import { registerMemberRoutes } from './index.js';
-import { demoSignInOn, registerDemoPassRoutes } from './index.js';
+import { demoPassAuditMark, demoSignInOn, registerDemoPassRoutes } from './index.js';
 import { registerProjectRoutes } from './index.js';
 import { registerTeamRoutes } from './index.js';
 import { registerApiKeyRoutes } from './index.js';
@@ -530,6 +530,12 @@ export function createApiApp<
   // per IP + email) on top of better-auth's own 3-attempts-per-code limit.
   api.use('/cli/auth/request', rateLimit(limiters.otp, clientIp, emailKeyOf));
   api.use('/cli/auth/complete', rateLimit(limiters.login, clientIp, emailKeyOf, { consumeOn: 'failure' }));
+  // The demo pass redeem (identity/demo-pass-plugin.ts): a secret presented
+  // anonymously, so every arrival costs, per address only. In front of the
+  // sign-in handler, and only where the endpoint exists.
+  if (demoSignIn) {
+    api.use('/auth/demo/redeem', rateLimit(limiters.demoRedeem, clientIp));
+  }
   // The OpenAPI document is unauthenticated (PUBLIC_API_PATHS) so it never
   // reaches the per-principal quota; the buffer is generated once at boot
   // (openapi-doc.ts) and this wall is the defence in depth on top.
@@ -660,7 +666,11 @@ export function createApiApp<
 
   api.use(
     '*',
-    auditMiddleware(audit, clientIp, tool.api.auditExempt ? { exempt: tool.api.auditExempt } : {})
+    auditMiddleware(audit, clientIp, {
+      ...(tool.api.auditExempt ? { exempt: tool.api.auditExempt } : {}),
+      // Demo sign-in: rows written under a session a demo pass opened carry its id.
+      ...(demoSignIn ? { demoPassOf: demoPassAuditMark(db) } : {})
+    })
   );
 
   // Instance id for usage-event sources, cached after first read.
