@@ -122,6 +122,25 @@ To try the CLI from your own computer:
    Replace `PRESENTATION_ID` with the ID returned by the push command. Open
    the returned share link in a private browser window to check it.
 
+## Deck pictures
+
+The dashboard shows a still picture of each deck on its card. The template
+makes it with a second container, `renderer`: a headless browser that opens
+each new deck version once, inside the browser's own sandbox, and hands the
+picture back to Slideless. It starts with the rest of the project; there is
+nothing to set. A deck's picture appears a few seconds after it is pushed,
+and the card shows a plain block until then.
+
+The browser's sandbox needs a Linux feature Docker keeps closed by default.
+The standard install opens it with a small settings file next to its compose
+file; a one-file template cannot carry a second file, so this one gives the
+renderer container the two Docker permissions that open the same feature,
+and nothing else: it drops every other permission, runs as a normal user who
+cannot gain more, on a read-only disk, and never sees the database password.
+The browser's sandbox itself is never switched off. On a host where it still
+cannot start, the renderer stops with a message in its log and the cards
+keep a plain block; everything else works.
+
 ## Optional: connect an agent
 
 Your instance's MCP URL is `https://slides.example.com/mcp`. Follow
@@ -147,6 +166,7 @@ sign-in and password recovery. See the
 | App is unhealthy or the proxy returns 502 | Check database health and the app's logs for migrations, storage permissions, or disk-space errors.                                                                                                                                                                                                                    |
 | Setup token is missing                    | Look in the app's logs, not `init` or `db`. If setup is unfinished, restarting the app prints the same token again. If setup is complete, sign in instead.                                                                                                                                                             |
 | `insecure_transport` during setup         | Use the HTTPS hostname. Keep `ALLOW_INSECURE_SETUP=false`; this template never requires an HTTP exception.                                                                                                                                                                                                             |
+| Deck cards show a plain block             | Pictures appear a few seconds after a push. If they never do, read the `renderer` container's log: it states when the browser's sandbox cannot start on this host, and it never runs without it.                                                                                                                       |
 | A redeploy shows an empty instance        | Check that the project name and existing volumes were preserved. Stop and reconnect the original volumes before setting up another owner.                                                                                                                                                                              |
 
 ## Data and maintenance
@@ -154,18 +174,20 @@ sign-in and password recovery. See the
 Restarting or recreating containers preserves data when the project name and
 volumes remain unchanged. The volumes have distinct roles:
 
-| Volume           | Contents                                               |
-| ---------------- | ------------------------------------------------------ |
-| `pg_data`        | Database, users, settings, and presentation metadata   |
-| `app_data`       | Uploaded files and the generated authentication secret |
-| `db_credentials` | Generated PostgreSQL password                          |
-| `caddy_data`     | Certificates and certificate-account state             |
-| `caddy_config`   | Caddy configuration state                              |
+| Volume                 | Contents                                               |
+| ---------------------- | ------------------------------------------------------ |
+| `pg_data`              | Database, users, settings, and presentation metadata   |
+| `app_data`             | Uploaded files and the generated authentication secret |
+| `db_credentials`       | Generated PostgreSQL password                          |
+| `renderer_credentials` | The secret the app and the picture renderer share      |
+| `caddy_data`           | Certificates and certificate-account state             |
+| `caddy_config`         | Caddy configuration state                              |
 
 Do not select an option that deletes project volumes during a redeploy.
 Persistent volumes are not backups. The VPS owner is responsible for backups
-and maintenance. Preserve the database, uploaded files, and both secret-bearing
-volumes together when planning recovery.
+and maintenance. Preserve the database, uploaded files, and the secret-bearing
+volumes together when planning recovery (`renderer_credentials` can be lost
+without harm: a redeploy writes a new one).
 
 The Slideless image is pinned to a tested build by its immutable image digest. Application upgrades are
 manual; there is no automatic updater. This Hostinger project does not use
