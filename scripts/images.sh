@@ -71,7 +71,7 @@ cmd_on() {
   # The image the compose file names for the renderer (RENDERER_IMAGE or its default).
   local image
   image=$(docker compose --profile images config --images renderer) || image=""
-  [ -n "$image" ] || dr_fail "the compose file names no renderer image"
+  [ -n "$image" ] || dr_fail "could not read the renderer image from the compose file (compose's own error, if any, is above)"
 
   dr_info "pulling the renderer image (deck pictures)"
   if ! docker compose --profile images pull renderer; then
