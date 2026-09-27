@@ -176,10 +176,12 @@ services:
   # sandbox, which needs Linux user namespaces. The standard install grants them with a
   # seccomp profile file beside the compose file; a one-file template cannot carry that
   # file, so here the container keeps Docker's DEFAULT seccomp profile and holds no
-  # capability but the two that profile ties the namespace calls to (SYS_ADMIN,
-  # SYS_CHROOT), as the non-root node user with no-new-privileges: the process's
-  # effective capability set is empty, so the kernel still refuses every privileged act,
-  # and the browser starts sandboxed. Never --no-sandbox, never seccomp=unconfined, never
+  # capability but SYS_ADMIN and SYS_CHROOT, as the non-root node user with
+  # no-new-privileges. With SYS_ADMIN in the container, Docker's default profile lets
+  # through every call it ties to that capability (the namespace calls the sandbox
+  # needs, and also mount, bpf, perf_event_open and the like): a WIDER filter than the
+  # profile file's. No process here holds an effective capability, so the kernel still
+  # refuses every privileged one, and the browser starts sandboxed. Never --no-sandbox, never seccomp=unconfined, never
   # privileged. Where the sandbox cannot start, the renderer refuses to run and the deck
   # cards show a plain block; nothing else changes.
   renderer:

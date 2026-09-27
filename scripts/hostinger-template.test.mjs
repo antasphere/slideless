@@ -82,6 +82,20 @@ test('the renderer keeps Chromium sandboxed with Docker defaults, holds no capab
     undefined,
     'read from its file, never interpolated'
   );
+  // Both sides read the secret from the shared file; neither command carries a value.
+  for (const [name, service] of [
+    ['renderer', renderer],
+    ['app', services.app]
+  ]) {
+    const script = service.command.at(-1);
+    assert.match(
+      script,
+      /="\$+\(cat \/run\/slideless-renderer\/renderer-secret\)/,
+      `${name} reads the secret file`
+    );
+    assert.match(script, /export SLIDELESS_RENDERER_SECRET="\$+(secret|rs)"/, `${name} exports what it read`);
+    assert.equal(/[a-f0-9]{32,}/.test(script), false, `${name} carries no literal secret`);
+  }
   assert.equal(renderer.logging.options['max-size'], '10m');
   assert.match(renderer.image, /^ghcr\.io\/antasphere\/slideless-renderer:/);
   assert.equal(renderer.depends_on['init-renderer'].condition, 'service_completed_successfully');

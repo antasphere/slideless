@@ -13,8 +13,11 @@ into its own volume (`renderer_credentials`, never `db_credentials`), and
 seccomp profile, `cap_drop: ALL`, `cap_add: [SYS_ADMIN, SYS_CHROOT]`,
 `no-new-privileges`, read-only, as its non-root user: the one-file route that
 keeps Chromium's sandbox whole without the profile file the compose stack
-uses (Romain's ruling of 27 September 2026; proven on Ubuntu 22.04 and 24.04
-with AppArmor's user-namespace restriction on). `hostinger-template.test.mjs`
+uses (Romain's ruling of 27 September 2026). The route's self-check was
+proven on GitHub's Ubuntu 22.04 and 24.04 runners with AppArmor's
+user-namespace restriction off and forced on (throwaway probe workflow, run
+36303685812, 27 September 2026); the rehearsal itself on a runner is the
+`hostinger` CI job. `hostinger-template.test.mjs`
 refuses anything that weakens it; the smoke pushes a deck and reads its
 picture. The renderer's pin moves with the app's: the SAME release, both
 digests, never one without the other.
