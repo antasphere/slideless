@@ -391,8 +391,7 @@ export const en = {
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Overview',
-  'overview.description': 'Your self-hosted instance at a glance.',
-  'overview.descriptionCloud': 'Your workspace at a glance.',
+  'overview.description': 'Your workspace at a glance.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Active members',
   'overview.filesCard': 'Files',

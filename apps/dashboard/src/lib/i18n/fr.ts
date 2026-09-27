@@ -399,8 +399,7 @@ export const fr: Record<keyof typeof en, string> = {
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Vue d’ensemble',
-  'overview.description': 'Votre instance auto-hébergée en un coup d’œil.',
-  'overview.descriptionCloud': 'Votre espace de travail en un coup d’œil.',
+  'overview.description': 'Votre espace de travail en un coup d’œil.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Membres actifs',
   'overview.filesCard': 'Fichiers',

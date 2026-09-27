@@ -18,14 +18,6 @@
   // team card points at the members page (which links out) instead of the
   // local invitation flow.
   const hubManaged = $derived(data.me.workspace.hubOrigin);
-  // "Your self-hosted instance at a glance" is wrong on cloud. Keyed off
-  // the PUBLIC discovery edition (instance.edition, already rendered on the
-  // instance card below) — the P7 never-edition-sniff invariant is scoped
-  // to the membership surfaces, which keep keying off /me's hubOrigin.
-  const overviewDescription = $derived(
-    data.instance.edition === 'cloud' ? t('overview.descriptionCloud') : t('overview.description')
-  );
-
   const workspaceName = $derived(
     data.me.workspaces.find((w) => w.id === data.me.activeWorkspaceId)?.name ?? data.instance.name
   );
@@ -137,7 +129,7 @@
   <h1 class="sr-only">{t('overview.title')}</h1>
   <p class="hero-title">{greeting}</p>
   <p class="hero-lede">
-    {toolOverview.lede ?? overviewDescription}
+    {toolOverview.lede ?? t('overview.description')}
   </p>
 </HeroBand>
 
