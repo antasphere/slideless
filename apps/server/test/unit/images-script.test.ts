@@ -22,7 +22,7 @@ let bin: string;
 const FAKE_DOCKER = `#!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
 case "$*" in
-  *" config --images renderer") echo "ghcr.io/antasphere/slideless-renderer:latest" ;;
+  *" config --images renderer") echo "\${FAKE_IMAGE:-ghcr.io/antasphere/slideless-renderer:latest}" ;;
   *" pull renderer") exit "\${FAKE_PULL:-0}" ;;
   "image inspect "*) exit "\${FAKE_LOCAL:-0}" ;;
   *"selfcheck.js"*) exit "\${FAKE_SELFCHECK:-0}" ;;
@@ -54,7 +54,10 @@ const calls = () => {
   }
 };
 
-function images(args: string[], fake: { pull?: number; local?: number; selfcheck?: number } = {}) {
+function images(
+  args: string[],
+  fake: { pull?: number; local?: number; selfcheck?: number; image?: string } = {}
+) {
   const r = spawnSync('bash', [join(work, 'scripts/images.sh'), ...args], {
     encoding: 'utf8',
     env: {
@@ -63,6 +66,7 @@ function images(args: string[], fake: { pull?: number; local?: number; selfcheck
       FAKE_LOG: join(work, 'docker.log'),
       FAKE_PULL: String(fake.pull ?? 0),
       FAKE_LOCAL: String(fake.local ?? 0),
+      ...(fake.image ? { FAKE_IMAGE: fake.image } : {}),
       FAKE_SELFCHECK: String(fake.selfcheck ?? 0)
     }
   });
@@ -144,6 +148,14 @@ describe('images.sh on', () => {
     expect(envFile()).toBe(before);
     expect(calls()).toContain('image inspect ghcr.io/antasphere/slideless-renderer:latest');
     expect(calls().some((c) => c.includes(' run '))).toBe(false);
+  });
+
+  it('looks on the host for the image the compose file names (RENDERER_IMAGE), never the default name', () => {
+    env(BASE);
+    const r = images(['on'], { pull: 1, local: 1, image: 'registry.example/renderer:pinned' });
+    expect(r.status).toBe(4);
+    expect(calls()).toContain('image inspect registry.example/renderer:pinned');
+    expect(calls().some((c) => c.includes('slideless-renderer:latest'))).toBe(false);
   });
 
   it('names the sandbox, not the pull, when the pull failed but a local copy cannot start its sandbox', () => {

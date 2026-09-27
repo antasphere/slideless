@@ -148,6 +148,46 @@ describe('googleIdTokenSource past the refresh point', () => {
     expect(await source()).toBeNull();
   });
 
+  it('keeps the cached token when the metadata server is unreachable, and through the backoff after', async () => {
+    let clock = 0;
+    let down = false;
+    const t = jwt(3600);
+    const { calls, fetchImpl } = recorder(() =>
+      down ? (Promise.reject(new TypeError('fetch failed')) as never) : new Response(t)
+    );
+    const source = googleIdTokenSource({
+      audience: 'https://r.example',
+      logger,
+      fetchImpl,
+      now: () => clock
+    });
+    expect(await source()).toBe(t);
+    down = true;
+    clock = 3301 * 1000; // refresh due, the metadata server unreachable
+    expect(await source()).toBe(t);
+    expect(calls).toHaveLength(2);
+    clock += 5_000; // inside the backoff: no new ask, the token still presented
+    expect(await source()).toBe(t);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('never re-presents a short-lived token past its own expiry', async () => {
+    let clock = 0;
+    let n = 0;
+    const { calls, fetchImpl } = recorder(() => new Response(jwt(10 + n++ * 100))); // ten seconds of life
+    const source = googleIdTokenSource({
+      audience: 'https://r.example',
+      logger,
+      fetchImpl,
+      now: () => clock
+    });
+    const first = await source();
+    clock = 15_000; // past its expiry, within the thirty seconds of minimum reuse
+    const second = await source();
+    expect(second).not.toBe(first);
+    expect(calls).toHaveLength(2);
+  });
+
   it('reuses for at least thirty seconds a token minted already inside the refresh margin', async () => {
     let clock = 1_000_000;
     const { calls, fetchImpl } = recorder(() => new Response(jwt(1_000 + 120))); // two minutes of life
@@ -224,6 +264,16 @@ describe('HttpRendererClient', () => {
     });
     expect(await cloud.submit(job)).toBe('unauthorized');
     expect(error).toHaveBeenCalledTimes(1);
+    const { fetchImpl: f401 } = recorder(() => new Response(null, { status: 401 }));
+    const cloud401 = new HttpRendererClient({
+      baseUrl: 'https://r.example',
+      secret: SECRET,
+      logger: log,
+      fetchImpl: f401,
+      idToken: async () => 't.t.t'
+    });
+    expect(await cloud401.submit(job)).toBe('unauthorized');
+    expect(error).toHaveBeenCalledTimes(2);
     expect(String(error.mock.calls[0]![1])).toMatch(/run\.invoker.*SLIDELESS_RENDERER_SECRET/);
     const compose = new HttpRendererClient({
       baseUrl: 'http://renderer:3100',
@@ -232,7 +282,7 @@ describe('HttpRendererClient', () => {
       fetchImpl
     });
     expect(await compose.submit(job)).toBe('unauthorized');
-    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(2);
   });
 
   it('maps the answers: 202 queued, 503 busy, 401 and 403 unauthorized, anything else or no answer unreachable', async () => {
