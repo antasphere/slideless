@@ -47,6 +47,27 @@ describe('env schema', () => {
     ).toBe(false);
   });
 
+  it('turns the renderer identity token on only beside a renderer URL (PRDCT-2785)', () => {
+    const renderer = {
+      SLIDELESS_RENDERER_URL: 'https://renderer-abc-ew.a.run.app',
+      SLIDELESS_RENDERER_SECRET: 'a-shared-secret-of-sixteen'
+    };
+    expect(envSchema.parse(minimal).SLIDELESS_RENDERER_GOOGLE_AUTH).toBe(false);
+    expect(envSchema.parse({ ...minimal, ...renderer }).SLIDELESS_RENDERER_GOOGLE_AUTH).toBe(false);
+    expect(
+      envSchema.parse({ ...minimal, ...renderer, SLIDELESS_RENDERER_GOOGLE_AUTH: 'true' })
+        .SLIDELESS_RENDERER_GOOGLE_AUTH
+    ).toBe(true);
+    const alone = envSchema.safeParse({ ...minimal, SLIDELESS_RENDERER_GOOGLE_AUTH: 'true' });
+    expect(alone.success).toBe(false);
+    if (!alone.success) {
+      expect(alone.error.issues.map((i) => i.path.join('.'))).toContain('SLIDELESS_RENDERER_GOOGLE_AUTH');
+    }
+    expect(
+      envSchema.safeParse({ ...minimal, ...renderer, SLIDELESS_RENDERER_GOOGLE_AUTH: 'yes' }).success
+    ).toBe(false);
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     const result = envSchema.safeParse({});
     expect(result.success).toBe(false);

@@ -1,4 +1,5 @@
 import type { Logger } from '@antasphere/chassis-server/logger';
+import type { IdTokenSource } from './google-id-token.js';
 
 /**
  * The handoff of a deck version to the renderer container (PRDCT-2725), as
@@ -25,6 +26,11 @@ import type { Logger } from '@antasphere/chassis-server/logger';
  * with the outcome. A renderer that were ever taken over (it opens
  * user-authored HTML) could write the images of the versions it was handed
  * and read nothing else; the shared secret never travels back to Slideless.
+ * On the cloud, leg 1 also carries a Google identity token in
+ * `X-Serverless-Authorization` (google-id-token.ts): the renderer is a
+ * private Cloud Run service that only this instance's service account may
+ * call. Cloud Run checks it before the renderer sees the request; the
+ * renderer itself still judges the shared secret.
  * Nothing on the push path waits on any leg: the push queues, `kick` hands
  * off, the callback lands whenever it lands, and a lease that runs out is
  * handed off again (up to the attempts).
@@ -54,6 +60,8 @@ export interface HttpRendererClientOptions {
   /** The whole submit, connect to answer. The renderer only queues here; it never renders inside this call. */
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /** Set on the cloud: the identity token Cloud Run requires to admit the call (google-id-token.ts). */
+  idToken?: IdTokenSource;
 }
 
 export class HttpRendererClient implements RendererClient {
@@ -62,6 +70,7 @@ export class HttpRendererClient implements RendererClient {
   private readonly logger: Logger;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly idToken: IdTokenSource | undefined;
 
   constructor(opts: HttpRendererClientOptions) {
     this.captureUrl = new URL('/capture', opts.baseUrl).toString();
@@ -69,18 +78,27 @@ export class HttpRendererClient implements RendererClient {
     this.logger = opts.logger;
     this.timeoutMs = opts.timeoutMs ?? 5_000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.idToken = opts.idToken;
   }
 
   async submit(job: RendererJob): Promise<SubmitOutcome> {
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${this.secret}`,
+      'content-type': 'application/json',
+      accept: 'application/json'
+    };
+    if (this.idToken) {
+      // No token, no call: Cloud Run would refuse it, and a refusal there
+      // reads as a wrong secret. The source has logged why.
+      const token = await this.idToken();
+      if (!token) return 'unreachable';
+      headers['x-serverless-authorization'] = `Bearer ${token}`;
+    }
     let res: Response;
     try {
       res = await this.fetchImpl(this.captureUrl, {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${this.secret}`,
-          'content-type': 'application/json',
-          accept: 'application/json'
-        },
+        headers,
         body: JSON.stringify({ v: 1, ...job }),
         signal: AbortSignal.timeout(this.timeoutMs),
         redirect: 'error'
