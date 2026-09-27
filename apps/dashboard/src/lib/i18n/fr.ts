@@ -606,7 +606,7 @@ export const fr: Record<keyof typeof en, string> = {
   'members.emailLinkAria': 'Lien de changement d’e-mail',
   'members.copyEmailLinkAria': 'Copier le lien de changement d’e-mail',
   'members.emailLinkCopied': 'Lien de changement d’e-mail copié dans le presse-papiers',
-  'members.removeConfirmTitle': 'Retirer de l’espace de travail ?',
+  'members.removeConfirmTitle': 'Retirer de l’espace de travail ?',
   'members.removeConfirmDescription':
     '{email} perd l’accès à cet espace de travail, sa place dans chaque projet et dans chaque équipe. Son compte est conservé. Réinvitée, cette personne repart sans projet ni équipe.',
   'members.deleteConfirmTitle': 'Supprimer le membre ?',
