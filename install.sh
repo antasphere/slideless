@@ -3,6 +3,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/antasphere/slideless/prod/install.sh | \
 #     sudo bash -s -- --domain slideless.example.com
 #
+# Deck pictures are on by default where the host can run the renderer's
+# sandbox (setup.sh checks); `--no-images` installs without them.
+#
 # Steps: prereqs (git, docker) → clone/update → setup.sh → UFW (22, 80, 443).
 # TLS: see docs/self-hosting/reverse-proxy.md.
 #
@@ -22,6 +25,7 @@ INSTALL_DIR="/opt/slideless"
 DOMAIN=""
 APP_PORT="${APP_PORT:-3000}"
 EXPOSE_PORT=0
+IMAGES=on
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,6 +35,8 @@ while [ $# -gt 0 ]; do
     # Publish the app port on 0.0.0.0 and open it in the firewall. Plaintext
     # HTTP to the whole internet — only for a trusted private network.
     --expose-port) EXPOSE_PORT=1; shift ;;
+    # Install without deck pictures (the optional renderer container).
+    --no-images) IMAGES=off; shift ;;
     *) fail "unknown flag: $1" ;;
   esac
 done
@@ -69,7 +75,7 @@ chmod +x "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/update.sh "$INSTALL_DIR"/scripts
 # address is the only control that actually holds.
 if [ -n "$DOMAIN" ]; then
   APP_PORT="$APP_PORT" APP_BIND=127.0.0.1 PUBLIC_BASE_URL="https://$DOMAIN" \
-    bash "$INSTALL_DIR/setup.sh"
+    SLIDELESS_IMAGES="$IMAGES" bash "$INSTALL_DIR/setup.sh"
 elif [ "$EXPOSE_PORT" = 1 ]; then
   warn "--expose-port: the dashboard and the first-boot wizard will be served over"
   warn "plaintext HTTP on every interface. Credentials cross the network in the clear."
@@ -83,10 +89,10 @@ elif [ "$EXPOSE_PORT" = 1 ]; then
   Re-run with HOST_IP=<address> --expose-port, or better, with --domain <host> behind TLS."
   APP_PORT="$APP_PORT" APP_BIND=0.0.0.0 ALLOW_INSECURE_SETUP=true \
     PUBLIC_BASE_URL="http://$HOST_IP:$APP_PORT" \
-    bash "$INSTALL_DIR/setup.sh"
+    SLIDELESS_IMAGES="$IMAGES" bash "$INSTALL_DIR/setup.sh"
 else
   APP_PORT="$APP_PORT" APP_BIND=127.0.0.1 PUBLIC_BASE_URL="http://localhost:$APP_PORT" \
-    bash "$INSTALL_DIR/setup.sh"
+    SLIDELESS_IMAGES="$IMAGES" bash "$INSTALL_DIR/setup.sh"
 fi
 
 # 4. Firewall (Linux + ufw only). 22 FIRST — enabling ufw without it locks
