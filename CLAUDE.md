@@ -247,6 +247,16 @@ deploys) + `dev` (day-to-day work).
   (`packages/chassis-server/src/jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
   membership row — whole-user delete or nothing, else the reconciler's fail-open `no_link`
   branch becomes reachable for hub-origin principals.
+- **The hub's teams are projected as the person's own seats, never edited here (PRDCT-2793, the hub's
+  ADR 024)**: `GET /orgs` carries each entry's `teams` (the caller's) and a top-level `denied` (the
+  caller's organizations that do not open this tool to them); both parse forward-compatibly
+  (`hub-user-client.ts`). The reconciler alone writes `workspace_teams` and `workspace_team_members`
+  (`projectTeamSeats`, one transaction per org; the sweep deletes the seats with the project grants),
+  both tables stay empty on oss, and no route ever writes a seat. `denied` is remembered in the
+  reconciler's memory per replica and handed to the refusal page through `/me` (`hubDenied`,
+  `hubNoAccessUrl`); it is a hint for the copy, never an access input. Enforcement needs nothing
+  from the tool: a refused person stops seeing the organization in `orgs` and the existing sweep
+  removes the projected membership within the reconcile bound.
 - **Cloud sign-in requests `orgs:create`, and THE HUB DEPLOYS FIRST (PRDCT-2443)**: the scope list
   is stated once (`HUB_SSO_SCOPES`, `packages/chassis-server/src/identity/hub-sso.ts`): `openid profile email offline_access
 account:read orgs:create`. The hub's authorize endpoint refuses an unknown requested scope with
