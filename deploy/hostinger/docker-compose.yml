@@ -9,7 +9,7 @@
 # it with the instruction the customer can act on from Docker Manager.
 services:
   init:
-    image: ghcr.io/antasphere/slideless:0.7.0@sha256:97f3dbfdaff5004a77a0e29db2ee4ebd351271f6def65bad7813370caa55fb45
+    image: ghcr.io/antasphere/slideless:0.11.0@sha256:5d331cb052ef5f16017abaa0720d240b7e6ce2d591e4024ea7dd1978851f86a5
     restart: 'no'
     environment:
       SLIDELESS_DOMAIN: ${SLIDELESS_DOMAIN:-}
@@ -78,7 +78,7 @@ services:
       start_period: 15s
 
   app:
-    image: ghcr.io/antasphere/slideless:0.7.0@sha256:97f3dbfdaff5004a77a0e29db2ee4ebd351271f6def65bad7813370caa55fb45
+    image: ghcr.io/antasphere/slideless:0.11.0@sha256:5d331cb052ef5f16017abaa0720d240b7e6ce2d591e4024ea7dd1978851f86a5
     restart: unless-stopped
     stop_grace_period: 60s
     # Rotated logs: the app logs every request, and a VPS disk is finite.
@@ -144,7 +144,7 @@ services:
   # Chromium, so it gets its OWN secret in its OWN volume, written here, and never the
   # database credential: it mounts renderer_credentials and nothing else.
   init-renderer:
-    image: ghcr.io/antasphere/slideless:0.7.0@sha256:97f3dbfdaff5004a77a0e29db2ee4ebd351271f6def65bad7813370caa55fb45
+    image: ghcr.io/antasphere/slideless:0.11.0@sha256:5d331cb052ef5f16017abaa0720d240b7e6ce2d591e4024ea7dd1978851f86a5
     restart: 'no'
     volumes:
       - renderer_credentials:/data
@@ -185,7 +185,7 @@ services:
   # privileged. Where the sandbox cannot start, the renderer refuses to run and the deck
   # cards show a plain block; nothing else changes.
   renderer:
-    image: ghcr.io/antasphere/slideless-renderer:0.7.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/antasphere/slideless-renderer:0.11.0@sha256:e72e866c5ec6f3c20ffe3b8a5c5b71880b5f446470b7e36d5aabcf23f57198bb
     restart: unless-stopped
     stop_grace_period: 30s
     logging:

@@ -20,7 +20,7 @@ user-namespace restriction off and forced on (throwaway probe workflow, run
 `hostinger` CI job. `hostinger-template.test.mjs`
 refuses anything that weakens it; the smoke pushes a deck and reads its
 picture. The renderer's pin moves with the app's: the SAME release, both
-digests, never one without the other.
+digests, never one without the other (first pinned together at 0.11.0).
 
 ## Acceptance criteria
 
@@ -46,11 +46,13 @@ sibling folder `deploy/<host>/` staged the same way, never a second domain. The
 compose URL customers paste is `https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml`;
 the deploy button and the guide both use it, never a raw GitHub URL.
 
-The pin is release `0.7.0` (tag `v0.7.0`, commit `609cf7d`), published by
+The pin is release `0.11.0` (tag `v0.11.0`, commit `284bdb3`), published by
 successful release run
-[35549873028](https://github.com/antasphere/slideless/actions/runs/35549873028),
-with manifest digest `sha256:97f3dbfdaff5004a77a0e29db2ee4ebd351271f6def65bad7813370caa55fb45`
-(the index; it carries linux/amd64 only — releases build amd64 only since
+[36327545857](https://github.com/antasphere/slideless/actions/runs/36327545857),
+with manifest digests `sha256:5d331cb052ef5f16017abaa0720d240b7e6ce2d591e4024ea7dd1978851f86a5`
+for the app (and both init services) and
+`sha256:e72e866c5ec6f3c20ffe3b8a5c5b71880b5f446470b7e36d5aabcf23f57198bb` for the renderer, the
+same release, never one without the other (the indexes; they carry linux/amd64 only — releases build amd64 only since
 PRDCT-2337, which is what a Hostinger VPS runs). The pin names a released version on purpose: the image
 reports that version on `GET /instance`, so a customer and a support session
 agree on which build is running. The historical `v0.3.0` tag predates automatic
