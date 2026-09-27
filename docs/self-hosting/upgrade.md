@@ -10,6 +10,11 @@ How you trigger it depends on how you installed.
 ./update.sh            # = docker compose pull && docker compose up -d
 ```
 
+An upgrade never turns deck pictures on by itself: an install made before
+they were on by default keeps plain blocks on its cards until
+`./scripts/images.sh on` (it checks that the browser's sandbox starts on the
+host first; see [Deck images](install.md#deck-images)).
+
 **Hostinger one-file install** — there is no checkout and no `update.sh`.
 Redeploy the existing Docker Manager project from the template URL,
 `https://deploy.slideless.antasphere.com/hostinger/docker-compose.yml`, which
@@ -28,6 +33,7 @@ nothing left to do). `/readyz` stays 503 until the schema is current.
 
 ```bash
 APP_IMAGE=ghcr.io/antasphere/slideless:1.2.3
+RENDERER_IMAGE=ghcr.io/antasphere/slideless-renderer:1.2.3   # with deck pictures on
 ```
 
 Tags published per release (a `vX.Y.Z` tag): `latest`, `X`, `X.Y`, `X.Y.Z`; every

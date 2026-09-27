@@ -105,19 +105,34 @@ that holds a sandboxed headless Chromium and nothing else: no database, no
 file storage, no secret but the one it shares with the app. Without it, the
 cards show a plain block and everything else works the same.
 
-**Turning it on.** Three lines in `.env`, then the profile:
+**On by default for a new install.** `setup.sh` (and so `install.sh`) pulls
+the renderer and runs its self-check on the host before the first start.
+When Chromium's sandbox starts there, it turns the `images` profile on and
+writes the renderer's two settings into `.env`; when it cannot, the install
+goes on without pictures and says why. `install.sh --no-images` (or
+`SLIDELESS_IMAGES=off ./setup.sh`) installs without them.
+
+**Turning it on or off later**, on an install made before pictures were on
+by default or after `--no-images`:
 
 ```bash
-openssl rand -hex 32        # a secret of 16 characters or more; paste it below
+./scripts/images.sh on       # checks the sandbox first; changes nothing if it cannot start
+./scripts/images.sh off      # the cards show a plain block again
+./scripts/images.sh status
 ```
+
+`on` writes three lines into `.env` and restarts the stack:
 
 ```ini
 COMPOSE_PROFILES=images
 SLIDELESS_RENDERER_URL=http://renderer:3100
-SLIDELESS_RENDERER_SECRET=<the value printed above>
+SLIDELESS_RENDERER_SECRET=<64 hex characters, generated>
 ```
 
-Then `docker compose up -d`.
+It exits 3 without touching `.env` when the sandbox cannot start on the host,
+and 4 when the renderer image cannot be pulled. `off` removes the profile and
+the URL (the secret stays, for a later `on`). The renderer image follows
+`RENDERER_IMAGE` like the app follows `APP_IMAGE`; `update.sh` pulls both.
 
 The renderer is reached on the compose network only (no published port).
 After a push, the app hands the new version to it with a one-time key; the
@@ -138,7 +153,8 @@ permission added (the namespace calls, for a process without
 `CAP_SYS_ADMIN`), and `docker-compose.yml` applies it to the `renderer`
 service, never to the app. The renderer refuses to start where the sandbox
 cannot: its log says so and the container restarts until the profile is in
-place. There is no setting that runs Chromium without its sandbox. Never use
+place (`images.sh on` runs the same check first, so it never turns on a
+renderer that cannot start). There is no setting that runs Chromium without its sandbox. Never use
 `seccomp=unconfined` in its place.
 
 To check a host, run the renderer image's self-check with the profile:
@@ -163,10 +179,9 @@ has defaults and is rarely changed:
 | `RENDERER_CHROMIUM_PATH`      | the image's headless shell | The browser binary; the image sets it.                                               |
 | `LOG_LEVEL`                   | `info`                     | `debug`, `info`, `warn` or `error`; one JSON line per event on stdout.               |
 
-**Turning it off.** Remove the three lines (or `docker compose --profile
-images down renderer`). The app answers that it makes no images and the
-cards keep their pattern; versions pushed meanwhile get their image once the
-renderer is back.
+**While it is off** (`./scripts/images.sh off`, or the renderer stopped), the
+app answers that it makes no images and the cards show a plain block;
+versions pushed meanwhile get their image once the renderer is back.
 
 **Other runtimes.**
 
@@ -179,6 +194,12 @@ renderer is back.
   `SLIDELESS_URL` pointing at the app service. `Unconfined` is not
   recommended: it lifts every syscall filter to allow three calls.
 - **Cloud Run**: a second service on the second-generation execution
-  environment (it allows the namespaces the sandbox needs), private ingress,
-  the app's service account as its only invoker; it scales to zero between
-  captures, since the app hands a job over and never polls.
+  environment (it allows the namespaces the sandbox needs), with no public
+  invoker: the app's service account is the only one allowed to call it, and
+  `SLIDELESS_RENDERER_GOOGLE_AUTH=true` on the app makes every hand-off carry
+  a Google identity token for the renderer's URL (in
+  `X-Serverless-Authorization`, beside the shared secret). The renderer keeps
+  its CPU while its queue drains (the capture runs after the `202`), with
+  concurrency 1, and scales to zero between captures, since the app hands a
+  job over and never polls. `SLIDELESS_URL` on the renderer is the app's
+  public URL: the one-time key is what the app checks.
