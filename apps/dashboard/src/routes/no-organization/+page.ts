@@ -15,5 +15,5 @@ export const load: PageLoad = async ({ parent }) => {
   if (instance.setupRequired) redirect(307, '/setup');
   if (!me) redirect(307, '/login');
   if (me.workspace) redirect(307, '/');
-  return { me };
+  return { me, instance };
 };

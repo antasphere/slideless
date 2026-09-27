@@ -351,6 +351,13 @@
       "when": 1790417509956,
       "tag": "0049_version_thumbnails",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790502031615,
+      "tag": "0050_workspace_teams",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hubLinkHere } from '$lib/hub-links';
   import { Tag } from '$lib/components/ui/tag';
   import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
@@ -235,7 +236,7 @@
       <Button
         variant="outline"
         size="sm"
-        href={data.me.hubManageUrl}
+        href={hubLinkHere(data.me.hubManageUrl)}
         target="_blank"
         rel="noopener noreferrer"
       >

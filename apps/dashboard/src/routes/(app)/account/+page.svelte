@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hubLinkHere } from '$lib/hub-links';
   import { onMount } from 'svelte';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import { Tag } from '$lib/components/ui/tag';
@@ -456,7 +457,8 @@
           {#if hubSignIn && data.me.hubManageUrl}
             <Button
               variant="outline"
-              onclick={() => window.open(data.me.hubManageUrl ?? '', '_blank', 'noopener,noreferrer')}
+              onclick={() =>
+                window.open(hubLinkHere(data.me.hubManageUrl ?? ''), '_blank', 'noopener,noreferrer')}
             >
               {t('account.manageHubAccount')}
             </Button>

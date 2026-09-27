@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hubLinkHere } from '$lib/hub-links';
   import { Tag } from '$lib/components/ui/tag';
   import { roleTag, stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
@@ -384,7 +385,13 @@
   <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>
     <p class="min-w-0 text-sm">{t('members.hubManagedNotice')}</p>
     {#if me.hubManageUrl}
-      <Button variant="outline" size="sm" href={me.hubManageUrl} target="_blank" rel="noopener noreferrer">
+      <Button
+        variant="outline"
+        size="sm"
+        href={hubLinkHere(me.hubManageUrl)}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         {t('members.hubManagedCta')}
         <ExternalLink class="ml-2 h-3.5 w-3.5" />
       </Button>

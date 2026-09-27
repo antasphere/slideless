@@ -70,6 +70,15 @@ export const en = {
   'noOrg.titleCreate': 'No workspace yet',
   'noOrg.bodyCreate':
     'Your account is signed in but has no workspace yet. Create one to start publishing decks, or ask a teammate for an invitation to theirs.',
+  // The same zero state when the hub says an organization of the person's
+  // does not open this tool to them (it lets only some of its teams use it).
+  'noOrg.titleDenied': '{tool} is not open to you in {org}',
+  'noOrg.deniedOrgsMany': 'your organizations',
+  'noOrg.bodyDenied':
+    '{org} lets only some of its teams use {tool}. Ask an owner or an admin of {org} to add you to one of those teams on the Antasphere account site; this page checks again every ten seconds and opens the workspace as soon as it is back.',
+  'noOrg.bodyDeniedMany':
+    '{orgs} let only some of their teams use {tool}. Ask an owner or an admin of one of them to add you to one of those teams on the Antasphere account site; this page checks again every ten seconds and opens the workspace as soon as it is back.',
+  'noOrg.ctaDenied': 'Who to ask',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.platform': 'Platform',

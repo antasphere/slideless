@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hubLinkHere } from '$lib/hub-links';
   /* The workspace's own settings (the first tab of Settings, 2026-09-19):
      its identity, the name and the look everyone sees, tried live on the
      whole shell as the person picks and saved in one PATCH; the export of
@@ -161,7 +162,7 @@
                 {#if data.me.hubManageUrl}
                   <a
                     class="inline-flex items-center gap-1 font-medium text-[var(--accent-deep)] underline-offset-4 hover:underline"
-                    href={data.me.hubManageUrl}
+                    href={hubLinkHere(data.me.hubManageUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hubLinkHere } from '$lib/hub-links';
   /* The workspace at the head of the sidebar, and the panel that opens from
      it, the way the hub's sidebar has it. The trigger sits on the sidebar
      like the person at its foot: the workspace's tile (its form in its
@@ -213,7 +214,7 @@
                      it there; a local toggle would be stomped by the next reconcile. -->
                 <DropdownMenu.Item
                   class="!gap-2.5"
-                  onclick={() => window.open(hubManageUrl, '_blank', 'noopener,noreferrer')}
+                  onclick={() => window.open(hubLinkHere(hubManageUrl), '_blank', 'noopener,noreferrer')}
                 >
                   <ExternalLink class="!size-3.5 !text-[var(--muted)]" />
                   {t('workspace.actionMakeDefault')}

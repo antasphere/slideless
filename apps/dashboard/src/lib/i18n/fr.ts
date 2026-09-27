@@ -73,6 +73,15 @@ export const fr: Record<keyof typeof en, string> = {
   'noOrg.titleCreate': 'Aucun espace de travail pour l’instant',
   'noOrg.bodyCreate':
     'Votre compte est connecté mais n’a pas encore d’espace de travail. Créez-en un pour commencer à publier des decks, ou demandez à un collègue de vous inviter dans le sien.',
+  // Le même état vide quand le hub dit qu’une organisation de la personne ne
+  // lui ouvre pas cet outil (elle ne l’ouvre qu’à certaines de ses équipes).
+  'noOrg.titleDenied': '{tool} ne vous est pas ouvert dans {org}',
+  'noOrg.deniedOrgsMany': 'vos organisations',
+  'noOrg.bodyDenied':
+    '{org} n’ouvre {tool} qu’à certaines de ses équipes. Demandez à un propriétaire ou à un administrateur de {org} de vous ajouter à l’une de ces équipes sur le site du compte Antasphere ; cette page vérifie à nouveau toutes les dix secondes et ouvre l’espace de travail dès qu’il est de retour.',
+  'noOrg.bodyDeniedMany':
+    '{orgs} n’ouvrent {tool} qu’à certaines de leurs équipes. Demandez à un propriétaire ou à un administrateur de l’une d’elles de vous ajouter à l’une de ces équipes sur le site du compte Antasphere ; cette page vérifie à nouveau toutes les dix secondes et ouvre l’espace de travail dès qu’il est de retour.',
+  'noOrg.ctaDenied': 'Qui contacter',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.platform': 'Plateforme',
