@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   blankToUndefined,
+  booleanish,
   buildEnvSchema,
   httpUrl,
   numeric,
@@ -42,6 +43,8 @@ const deckEnvShape = {
   SLIDELESS_RENDERER_URL: z.preprocess(blankToUndefined, httpUrl().optional()),
   /** The shared secret the renderer requires on every job this instance hands it (16 characters or more; the same value in the renderer's environment). Required when SLIDELESS_RENDERER_URL is set. It authenticates this instance to the renderer only: the image comes back under a one-time key minted per job, never under this secret. */
   SLIDELESS_RENDERER_SECRET: z.preprocess(blankToUndefined, z.string().min(16).optional()),
+  /** Cloud Run only (PRDCT-2785): the renderer is a private Cloud Run service that admits nothing but this instance's service account, so every job handed to it carries a Google identity token for its URL, minted by the metadata server (in `X-Serverless-Authorization`; the shared secret keeps `Authorization`). Needs SLIDELESS_RENDERER_URL. Off (default) everywhere else: the compose stack reaches the renderer on its private network with the secret alone. */
+  SLIDELESS_RENDERER_GOOGLE_AUTH: booleanish.default(false),
   /** Size ceiling, in MB, of ONE file a respondent uploads into a form's file field (PRDCT-2403) — an anonymous write path, so it has its own knob. Never above MAX_FILE_SIZE_MB (the lower of the two applies). 0 switches form file uploads off instance-wide: file fields show as unavailable and the rest of the form still submits. */
   FORMS_MAX_UPLOAD_MB: numeric(z.coerce.number().int().min(0).default(100)),
   /** How many files ONE form response can hold, all file fields together — the instance's ceiling behind the maximum a deck author sets on a field (an author who sets none gets this one). */
@@ -63,6 +66,7 @@ export const deckEnvExtension: EnvExtension<DeckEnvShape> = {
     VIEW_DEDUPE_WINDOW_MINUTES: 'PUBLIC_BASE_URL',
     SLIDELESS_RENDERER_URL: 'MAX_FILE_SIZE_MB',
     SLIDELESS_RENDERER_SECRET: 'MAX_FILE_SIZE_MB',
+    SLIDELESS_RENDERER_GOOGLE_AUTH: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_UPLOAD_MB: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_FILES_PER_RESPONSE: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_UPLOADS_MB_PER_DECK: 'MAX_FILE_SIZE_MB',
@@ -77,6 +81,16 @@ export const deckEnvExtension: EnvExtension<DeckEnvShape> = {
         code: 'custom',
         path: ['SLIDELESS_RENDERER_SECRET'],
         message: 'required when SLIDELESS_RENDERER_URL is set (the same value as in the renderer container)'
+      });
+    }
+    // The identity token names the renderer's URL as its audience: without
+    // one it would mean nothing, and a switch that does nothing hides a
+    // half-made configuration.
+    if (env.SLIDELESS_RENDERER_GOOGLE_AUTH && env.SLIDELESS_RENDERER_URL === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SLIDELESS_RENDERER_GOOGLE_AUTH'],
+        message: 'needs SLIDELESS_RENDERER_URL (the renderer Cloud Run service the token is minted for)'
       });
     }
     // The viewer origin is a boundary only if it is a DIFFERENT origin: equal

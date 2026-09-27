@@ -56,6 +56,17 @@ ALLOW_INSECURE_SETUP=${ALLOW_INSECURE_SETUP}
 EOF
   chmod 600 .env
   success ".env written (mode 600)"
+
+  # Deck pictures, on by default for a new install (PRDCT-2790), but only
+  # where they work: images.sh pulls the renderer and runs its self-check,
+  # and turns the images profile on only when the browser's sandbox starts
+  # on this host. A host where it cannot start still installs, without
+  # pictures. SLIDELESS_IMAGES=off skips it; ./scripts/images.sh on|off
+  # changes it later.
+  if [ "${SLIDELESS_IMAGES:-on}" != off ]; then
+    bash ./scripts/images.sh on --no-start ||
+      warn "deck pictures are off (the reason is above); the install continues without them"
+  fi
 fi
 
 info "pulling images and starting"
@@ -70,6 +81,11 @@ echo "  First boot:   open the dashboard and complete the setup wizard."
 echo "  Setup token:  ${SETUP_TOKEN:-<none>}   (required by the wizard; keep it private)"
 echo
 echo "  Health:       curl http://127.0.0.1:${APP_PORT}/healthz"
+if [ -n "${SLIDELESS_RENDERER_URL:-}" ]; then
+  echo "  Pictures:     on (./scripts/images.sh off to turn them off)"
+else
+  echo "  Pictures:     off (./scripts/images.sh on to turn them on)"
+fi
 echo "  Update:       ./update.sh"
 echo "  Backup:       ./scripts/backup.sh"
 

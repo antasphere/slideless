@@ -211,6 +211,14 @@ jobs:
           tags: slideless:federation-dev
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build the renderer image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/renderer/Dockerfile
+          load: true
+          tags: slideless-renderer:federation-dev
+          cache-from: type=gha,scope=renderer
       - name: Build the hub image
         uses: docker/build-push-action@v6
         with:

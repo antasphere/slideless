@@ -1,5 +1,6 @@
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
+import { googleIdTokenSource } from './google-id-token.js';
 import { HttpRendererClient, type RendererClient } from './renderer-client.js';
 
 /**
@@ -9,7 +10,7 @@ import { HttpRendererClient, type RendererClient } from './renderer-client.js';
  * The env schema refuses a URL without its secret at boot (env.ts).
  */
 export function rendererClientFor(
-  env: Pick<Env, 'SLIDELESS_RENDERER_URL' | 'SLIDELESS_RENDERER_SECRET'>,
+  env: Pick<Env, 'SLIDELESS_RENDERER_URL' | 'SLIDELESS_RENDERER_SECRET' | 'SLIDELESS_RENDERER_GOOGLE_AUTH'>,
   logger: Logger
 ): RendererClient | null {
   if (!env.SLIDELESS_RENDERER_URL || !env.SLIDELESS_RENDERER_SECRET) {
@@ -18,10 +19,16 @@ export function rendererClientFor(
     );
     return null;
   }
-  logger.info({ renderer: env.SLIDELESS_RENDERER_URL }, 'thumbnails: renderer configured');
+  logger.info(
+    { renderer: env.SLIDELESS_RENDERER_URL, googleAuth: env.SLIDELESS_RENDERER_GOOGLE_AUTH },
+    'thumbnails: renderer configured'
+  );
   return new HttpRendererClient({
     baseUrl: env.SLIDELESS_RENDERER_URL,
     secret: env.SLIDELESS_RENDERER_SECRET,
-    logger
+    logger,
+    ...(env.SLIDELESS_RENDERER_GOOGLE_AUTH
+      ? { idToken: googleIdTokenSource({ audience: env.SLIDELESS_RENDERER_URL, logger }) }
+      : {})
   });
 }

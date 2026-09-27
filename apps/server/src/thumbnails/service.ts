@@ -251,7 +251,7 @@ export class ThumbnailService {
       await this.release(claim.row.versionId, hashToken(claim.token));
       if (outcome === 'unauthorized') {
         this.logger.error(
-          'thumbnails: the renderer refused this instance (SLIDELESS_RENDERER_SECRET differs between the two containers); no image will be made until they match'
+          'thumbnails: the renderer refused this instance (SLIDELESS_RENDERER_SECRET differs between the two containers, or on Cloud Run the line before this one names the cause); no image will be made until it is fixed'
         );
       } else if (Date.now() - this.lastOutageLog > 60_000) {
         this.lastOutageLog = Date.now();

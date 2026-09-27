@@ -145,6 +145,10 @@ services:
       - SMTP_URL=smtp://mailpit:1025
       - EMAIL_FROM=Slideless Federation Dev <dev@slideless.local>
       - LOG_LEVEL=info
+      # The still-image renderer (PRDCT-2785): the cloud edition hands each pushed
+      # version to it, as the cloud instance does to its renderer service.
+      - SLIDELESS_RENDERER_URL=http://renderer:3100
+      - SLIDELESS_RENDERER_SECRET=federation-dev-renderer-secret-0001
     ports:
       - '127.0.0.1:${FEDERATION_SL_PORT:-3310}:${FEDERATION_SL_PORT:-3310}'
     read_only: true
@@ -158,6 +162,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # The still-image renderer (PRDCT-2785), Chromium sandboxed under the shipped
+  # seccomp profile exactly as in docker-compose.yml; the drill's picture leg reads
+  # a pushed deck's image back through the cloud edition.
+  renderer:
+    image: ${FEDERATION_RENDERER_IMAGE:-slideless-renderer:federation-dev}
+    build:
+      context: .
+      dockerfile: apps/renderer/Dockerfile
+    restart: unless-stopped
+    environment:
+      - SLIDELESS_URL=http://app:${FEDERATION_SL_PORT:-3310}
+      - SLIDELESS_RENDERER_SECRET=federation-dev-renderer-secret-0001
+      - LOG_LEVEL=info
+    security_opt:
+      - seccomp=./deploy/seccomp-chromium.json
+    read_only: true
+    tmpfs:
+      - /tmp
 
   db:
     image: pgvector/pgvector:pg17

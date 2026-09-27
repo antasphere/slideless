@@ -45,6 +45,9 @@
 #      prices it, its debit is on GET /billing/ledger and the balance moved;
 #      the hub slow beyond the check's budget still lets the action land
 #      (fail-open) with the posture on /metrics, healed by the next answer.
+#   9. Deck pictures on the cloud edition (PRDCT-2785, Phase 8, after the MCP
+#      deck) — the deck an agent just pushed gets its still image from the
+#      renderer: its thumbnail route answers 200 with a WebP within a minute.
 #
 # Phase 3 of the billing rail (PRDCT-2718) is proven by the billing campaign,
 # not by a leg here: scripts/billing-campaign.sh boots this same pair through
@@ -77,7 +80,8 @@
 #
 # Usage: ./scripts/federation-drill.sh
 #   FEDERATION_HUB_DIR=<path>  hub checkout to build (default ../../../hub, see the compose file)
-#   DRILL_SKIP_BUILD=1         reuse antasphere-hub:federation-dev + slideless:federation-dev (CI pre-builds)
+#   DRILL_SKIP_BUILD=1         reuse antasphere-hub:federation-dev + slideless:federation-dev
+#                              + slideless-renderer:federation-dev (CI pre-builds)
 #   DRILL_KEEP=1               leave the stack up after a PASS (inspect; `down -v` yourself)
 #
 # A second copy beside a busy machine's standing stacks (PRDCT-2443): every
@@ -95,6 +99,7 @@
 #   FEDERATION_SUBNET_PREFIX=172.30.250             the /24's first three octets
 #   FEDERATION_HUB_IMAGE=antasphere-hub:federation-dev
 #   FEDERATION_SL_IMAGE=slideless:federation-dev
+#   FEDERATION_RENDERER_IMAGE=slideless-renderer:federation-dev
 #
 # Everything else is throwaway: the compose project's volumes go with
 # `down -v` on exit, pass or fail.
@@ -107,6 +112,7 @@ SL_PORT=${FEDERATION_SL_PORT:-3310}
 HOP_PORT=${FEDERATION_HOP_PORT:-8474}
 HUB_IMAGE=${FEDERATION_HUB_IMAGE:-antasphere-hub:federation-dev}
 SL_IMAGE=${FEDERATION_SL_IMAGE:-slideless:federation-dev}
+RENDERER_IMAGE=${FEDERATION_RENDERER_IMAGE:-slideless-renderer:federation-dev}
 HUB=http://hub.localhost:$HUB_PORT
 SL=http://slideless.localhost:$SL_PORT
 HOP=http://127.0.0.1:$HOP_PORT
@@ -208,8 +214,9 @@ family() { # client_id user_id
 say "Phase 0 — images (hub from ${FEDERATION_HUB_DIR:-../../../hub}, Slideless from this repo)"
 if [ "${DRILL_SKIP_BUILD:-}" = "1" ] \
   && docker image inspect "$HUB_IMAGE" >/dev/null 2>&1 \
-  && docker image inspect "$SL_IMAGE" >/dev/null 2>&1; then
-  note "DRILL_SKIP_BUILD=1 and both images exist — reusing"
+  && docker image inspect "$SL_IMAGE" >/dev/null 2>&1 \
+  && docker image inspect "$RENDERER_IMAGE" >/dev/null 2>&1; then
+  note "DRILL_SKIP_BUILD=1 and the three images exist — reusing"
 else
   dc build
 fi
@@ -541,6 +548,25 @@ echo "$mcp_answer" | jq -e '.result.isError != true and (.result.content[0].text
   || fail "the MCP deck creation failed: $(echo "$mcp_answer" | head -c 400)"
 MCP_BYTES=$(printf '%s' "$mcp_html" | wc -c | tr -d ' ')
 pass "one metered action per surface: the dashboard session ($SESSION_BYTES bytes), the slk_ key ($KEY_BYTES bytes), an OAuth bearer over MCP ($MCP_BYTES bytes + one commit)"
+
+# ── Leg 9 — the deck's picture on the cloud edition (PRDCT-2785) ─────────────
+# The deck the agent just pushed is handed to the renderer by the cloud edition;
+# its still image comes back through the one-time key, and the dashboard's read
+# route serves it. A renderer that never turned ready (its boot self-check exits 3
+# when Chromium's sandbox cannot start) leaves the route on thumbnail_pending.
+MCP_DECK=$(echo "$mcp_answer" | jq -r '.result.content[0].text | fromjson | .presentation.id // empty')
+[ -n "$MCP_DECK" ] || fail "the MCP answer names no presentation id: $(echo "$mcp_answer" | head -c 300)"
+thumb_status=""
+for i in $(seq 1 60); do
+  thumb_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/thumb.webp" -w '%{http_code}' \
+    -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations/$MCP_DECK/versions/1/thumbnail")
+  [ "$thumb_status" = 200 ] && break
+  sleep 1
+done
+[ "$thumb_status" = 200 ] || fail "the deck's picture never came (last answer $thumb_status): $(applogs renderer | tail -5)"
+[ "$(head -c 4 "$SCRATCH/thumb.webp")" = RIFF ] && [ "$(dd if="$SCRATCH/thumb.webp" bs=1 skip=8 count=4 2>/dev/null)" = WEBP ] \
+  || fail "the thumbnail route answered 200 with something that is not a WebP"
+pass "the agent's deck got its picture on the cloud edition: a $(wc -c < "$SCRATCH/thumb.webp" | tr -d ' ')-byte WebP after ${i} s"
 
 # What the gate queued, verbatim (the poster drains this queue to the hub).
 queued=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events'")
