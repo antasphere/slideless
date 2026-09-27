@@ -87,3 +87,22 @@ describe('requiredScopeFor — members stay closed to machines (ADR 014, PRDCT-2
     }
   });
 });
+
+describe('requiredScopeFor — the default workspace (PRDCT-2815)', () => {
+  const PATH = '/api/v1/me/default-workspace';
+
+  it('PUT is listed under presentations:write', () => {
+    expect(requiredScopeFor(PATH, 'PUT')).toBe('presentations:write');
+  });
+
+  it('every other method on the path stays unlisted', () => {
+    for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+      expect(requiredScopeFor(PATH, method)).toBeNull();
+    }
+  });
+
+  it('a longer path and any other path under /me stay unlisted for PUT', () => {
+    expect(requiredScopeFor(`${PATH}/x`, 'PUT')).toBeNull();
+    expect(requiredScopeFor('/api/v1/me/anything', 'PUT')).toBeNull();
+  });
+});

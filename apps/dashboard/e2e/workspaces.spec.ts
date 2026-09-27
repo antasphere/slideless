@@ -377,3 +377,73 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
     expect(await page.evaluate(() => localStorage.getItem('platform.workspaceId'))).toBe(firstWorkspace.id);
   });
 });
+
+/**
+ * PRDCT-2815: on a self-hosted instance (discovery's sign-in methods carry no
+ * `antasphere`) the person makes a workspace their default from the switcher,
+ * in place. Runs after the test above, which leaves the owner with SECOND;
+ * the default is cleared again at the end, since the `projects` project runs
+ * next and walks the default workspace.
+ */
+test('a workspace is made the default from the switcher, and the Default badge moves to it', async ({
+  page
+}) => {
+  await signInAsOwner(page);
+  const me = await (await page.request.get('/api/v1/me')).json();
+  const second = me.workspaces.find((w: { name: string }) => w.name === SECOND);
+  const first = me.workspaces.find((w: { name: string }) => w.name !== SECOND);
+  expect(second, 'the test above leaves the owner with the second workspace').toBeTruthy();
+  expect(second.default).toBe(false);
+
+  try {
+    await test.step('the badge is on neither workspace before a choice', async () => {
+      await page.goto('/');
+      const switcher = page.getByTestId('workspace-switcher');
+      await expect(switcher).toBeVisible({ timeout: 20_000 });
+      await switcher.click();
+      const entries = page.getByRole('menu').getByTestId('workspace-entry');
+      await expect(entries).toHaveCount(2);
+      await expect(entries.filter({ hasText: SECOND }).getByText('Default', { exact: true })).toHaveCount(0);
+    });
+
+    await test.step('Make default on the second workspace: one PUT, 200', async () => {
+      const entry = page.getByRole('menu').getByTestId('workspace-entry').filter({ hasText: SECOND });
+      await entry.hover();
+      const makeDefault = page.getByTestId('workspace-make-default');
+      await expect(makeDefault).toBeVisible();
+      const put = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PUT' &&
+          new URL(response.url()).pathname === '/api/v1/me/default-workspace'
+      );
+      await makeDefault.click();
+      const answered = await put;
+      expect(answered.status()).toBe(200);
+      expect(await answered.json()).toEqual({ defaultWorkspaceId: second.id });
+    });
+
+    await test.step('the Default badge is on the second workspace, and the server agrees', async () => {
+      await page.keyboard.press('Escape');
+      await page.getByTestId('workspace-switcher').click();
+      const entries = page.getByRole('menu').getByTestId('workspace-entry');
+      await expect(entries.filter({ hasText: SECOND }).getByText('Default', { exact: true })).toBeVisible({
+        timeout: 10_000
+      });
+      await expect(entries.filter({ hasText: first.name }).getByText('Default', { exact: true })).toHaveCount(
+        0
+      );
+      // The default's own quick actions no longer offer to make it so.
+      await entries.filter({ hasText: SECOND }).hover();
+      await expect(page.getByTestId('workspace-make-default')).toHaveCount(0);
+
+      const after = await (await page.request.get('/api/v1/me')).json();
+      expect(after.workspaces.find((w: { id: string }) => w.id === second.id).default).toBe(true);
+      expect(after.workspaces.filter((w: { default: boolean }) => w.default)).toHaveLength(1);
+    });
+  } finally {
+    const cleared = await page.request.put('/api/v1/me/default-workspace', {
+      data: { workspaceId: null }
+    });
+    expect(cleared.status()).toBe(200);
+  }
+});
