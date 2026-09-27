@@ -63,6 +63,12 @@ services:
       # origin. Default false: the owner password and the setup token would
       # cross the network in the clear.
       - ALLOW_INSECURE_SETUP=${ALLOW_INSECURE_SETUP:-false}
+      # Demo sign-in (demo links that sign a member in without a password).
+      # Default false; the boot refuses it on a public host not listed in
+      # DEMO_SIGN_IN_HOSTS.
+      - DEMO_SIGN_IN=${DEMO_SIGN_IN:-false}
+      - DEMO_SIGN_IN_HOSTS=${DEMO_SIGN_IN_HOSTS:-}
+      - DEMO_SIGN_IN_EMAIL_DOMAINS=${DEMO_SIGN_IN_EMAIL_DOMAINS:-}
       # OTLP/HTTP endpoint for trace export. Unset = no export (zero phone-home).
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # The optional renderer container that makes the still image of each

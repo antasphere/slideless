@@ -7,6 +7,16 @@ export {
   trustedOriginsFor
 } from './better-auth.js';
 export {
+  DEMO_PASS_DEFAULT_MINUTES,
+  DEMO_PASS_MAX_MINUTES,
+  DEMO_PASS_MAX_PATH_LENGTH,
+  isDemoAddress,
+  isDemoSignInHost,
+  isSafeDemoPath,
+  parseDemoEmailDomains,
+  parseDemoHosts
+} from './demo-pass-rules.js';
+export {
   DEFAULT_GRANT_DIALS,
   type GrantAccess,
   HubGrantService,

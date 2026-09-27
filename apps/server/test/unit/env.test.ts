@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { shannonEntropyBits, weakSecretReason } from '@antasphere/chassis-server/env';
+import { INSECURE_SETUP_ORIGINS, SECURE_SETUP_ORIGINS } from '@antasphere/chassis-server/testing';
 import { envSchema, hubConfig } from '../../src/env.js';
 
 const minimal = { DATABASE_URL: 'postgres://u:p@localhost:5432/db' };
@@ -421,6 +422,76 @@ describe('env schema', () => {
       expect(result.error!.issues.map((i) => i.path.join('.'))).toContain('EDITION');
       // Blank (EDITION= in compose) still means unset, i.e. the oss default.
       expect(envSchema.parse({ ...minimal, EDITION: ' ' }).EDITION).toBe('oss');
+    });
+  });
+
+  describe('demo sign-in (the demo pass spec, section 1)', () => {
+    const issuesOf = (env: Record<string, string>) => {
+      const result = envSchema.safeParse({ ...minimal, ...env });
+      return result.success
+        ? []
+        : result.error.issues.map((i) => ({ key: i.path.join('.'), message: i.message }));
+    };
+
+    it('is off by default, with both lists unset; blank reads as unset', () => {
+      const env = envSchema.parse(minimal);
+      expect(env.DEMO_SIGN_IN).toBe(false);
+      expect(env.DEMO_SIGN_IN_HOSTS).toBeUndefined();
+      expect(env.DEMO_SIGN_IN_EMAIL_DOMAINS).toBeUndefined();
+      const blank = envSchema.parse({ ...minimal, DEMO_SIGN_IN_HOSTS: ' ', DEMO_SIGN_IN_EMAIL_DOMAINS: '' });
+      expect(blank.DEMO_SIGN_IN_HOSTS).toBeUndefined();
+      expect(blank.DEMO_SIGN_IN_EMAIL_DOMAINS).toBeUndefined();
+    });
+
+    it('parses the switch as booleanish and refuses anything else', () => {
+      expect(envSchema.parse({ ...minimal, DEMO_SIGN_IN: '1' }).DEMO_SIGN_IN).toBe(true);
+      expect(envSchema.parse({ ...minimal, DEMO_SIGN_IN: 'true' }).DEMO_SIGN_IN).toBe(true);
+      expect(envSchema.safeParse({ ...minimal, DEMO_SIGN_IN: 'yes' }).success).toBe(false);
+    });
+
+    // The loopback half of the setup-origin table is accepted with no list;
+    // every other origin of it (https hosts, private addresses, the
+    // look-alikes of loopback) refuses the boot, naming the variable and the host.
+    // The two table rows no URL parser accepts (`1270.0.0.1`, `127a.0.0.1`)
+    // never reach the rule: PUBLIC_BASE_URL itself refuses them.
+    const LOOPBACK = SECURE_SETUP_ORIGINS.filter((url) => url.startsWith('http://'));
+    const PUBLIC = [
+      ...SECURE_SETUP_ORIGINS.filter((url) => url.startsWith('https://')),
+      ...INSECURE_SETUP_ORIGINS
+    ].filter((url) => URL.canParse(url));
+
+    it.each(LOOPBACK)('boots with the switch on at %s', (url) => {
+      expect(issuesOf({ DEMO_SIGN_IN: 'true', PUBLIC_BASE_URL: url })).toEqual([]);
+    });
+
+    it.each(PUBLIC)('REFUSES the switch at %s with no list', (url) => {
+      const host = new URL(url).hostname;
+      expect(issuesOf({ DEMO_SIGN_IN: 'true', PUBLIC_BASE_URL: url })).toEqual([
+        { key: 'DEMO_SIGN_IN', message: expect.stringContaining(`refused on ${host}`) }
+      ]);
+    });
+
+    it('names DEMO_SIGN_IN_HOSTS in the refusal, and accepts the host once it is listed there', () => {
+      const off = { PUBLIC_BASE_URL: 'https://tool.example.io' };
+      expect(issuesOf({ ...off, DEMO_SIGN_IN: 'true' })[0]?.message).toMatch(/DEMO_SIGN_IN_HOSTS/);
+      expect(issuesOf({ ...off, DEMO_SIGN_IN: 'true', DEMO_SIGN_IN_HOSTS: 'tool.example.io' })).toEqual([]);
+      expect(issuesOf({ ...off, DEMO_SIGN_IN: 'true', DEMO_SIGN_IN_HOSTS: 'other.example.io' })).toHaveLength(
+        1
+      );
+      // Off, the host is nobody's concern.
+      expect(issuesOf(off)).toEqual([]);
+    });
+
+    it('refuses a malformed entry in either list, switch on or off', () => {
+      expect(issuesOf({ DEMO_SIGN_IN_HOSTS: 'https://tool.example.io' })).toEqual([
+        { key: 'DEMO_SIGN_IN_HOSTS', message: expect.stringContaining('scheme') }
+      ]);
+      expect(issuesOf({ DEMO_SIGN_IN_EMAIL_DOMAINS: '*.acme.io' })).toEqual([
+        { key: 'DEMO_SIGN_IN_EMAIL_DOMAINS', message: expect.stringContaining('wildcard') }
+      ]);
+      expect(
+        envSchema.parse({ ...minimal, DEMO_SIGN_IN_EMAIL_DOMAINS: 'Demo.Acme.io' }).DEMO_SIGN_IN_EMAIL_DOMAINS
+      ).toBe('Demo.Acme.io'); // raw value kept; parsing happens where it is used
     });
   });
 
