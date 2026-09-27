@@ -113,8 +113,22 @@ deploys) + `dev` (day-to-day work).
   Alpine's Chromium is out for good: its graphics helper dies under Chromium's own seccomp on musl
   (arm64 and amd64 alike), so the renderer image is Debian with Playwright's pinned headless shell.
   Unset `SLIDELESS_RENDERER_URL` = no images, `thumbnail_unavailable`, a plain block on the
-  cards (no drawn pattern on a card, Romain 26 September 2026). The renderer's cloud deployment is
-  its own task; until it ships, cloud cards show the plain block.
+  cards (no drawn pattern on a card, Romain 26 September 2026). **Where it runs (PRDCT-2785,
+  PRDCT-2790)**: a new install gets it on by default only where the sandbox starts
+  (`scripts/images.sh on`, run by `setup.sh`: the self-check under the compose file's own settings,
+  the three `.env` lines written on exit 0 alone, exit 3/4 leave `.env` untouched, and it never lets
+  compose BUILD the renderer from source; a host without the sandbox still installs). An optional
+  service's variable is never `${VAR:?}` in any compose file (compose checks it on every command,
+  profiles off too). The one-file Hostinger template cannot carry the profile file, so there the
+  renderer keeps Docker's DEFAULT seccomp with `cap_drop: ALL` + `cap_add: [SYS_ADMIN, SYS_CHROOT]`,
+  non-root, `no-new-privileges`, read-only, and its own secret in its own volume (never
+  `db_credentials`), Romain's ruling of 27 September 2026; `hostinger-template.test.mjs` pins every
+  one of those lines and the commands byte for byte. The cloud runs it as a second, PRIVATE Cloud
+  Run service (gen2, CPU always allocated, concurrency 1, the app's service account its only
+  invoker; `antasphere/infra`, `modules/instance/renderer.tf`), and the app presents a Google
+  identity token in `X-Serverless-Authorization` (`SLIDELESS_RENDERER_GOOGLE_AUTH`,
+  `thumbnails/google-id-token.ts`) while the shared secret keeps `Authorization`: a token in
+  `Authorization` would take the secret's place and the renderer would refuse it.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **The viewer origin is a real boundary, never a trust grant (PRDCT-1352)**: with
