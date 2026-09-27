@@ -169,6 +169,9 @@ describe('googleIdTokenSource past the refresh point', () => {
     clock += 5_000; // inside the backoff: no new ask, the token still presented
     expect(await source()).toBe(t);
     expect(calls).toHaveLength(2);
+    clock = 3700 * 1000; // expired 100 s ago, the server still unreachable
+    expect(await source()).toBeNull();
+    expect(calls).toHaveLength(3);
   });
 
   it('never re-presents a short-lived token past its own expiry', async () => {
