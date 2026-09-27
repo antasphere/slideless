@@ -325,6 +325,13 @@ export const en = {
   'invite.errorWrongPassword': 'Wrong password for this account.',
   'invite.errorSignInFailed': 'Sign-in failed.',
 
+  // ── Demo link (/demo, the demo pass) ─────────────────────────────────
+  'demo.eyebrow': 'Demo link',
+  'demo.title': 'Demo link',
+  'demo.signingIn': 'Signing you in…',
+  'demo.refused': 'This demo link is not valid or has expired.',
+  'demo.rateLimited': 'Too many tries from this address. Wait a few minutes.',
+
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Authorization request invalid',
   'consent.invalidDescription':

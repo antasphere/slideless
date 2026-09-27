@@ -330,6 +330,13 @@ export const fr: Record<keyof typeof en, string> = {
   'invite.errorWrongPassword': 'Mot de passe incorrect pour ce compte.',
   'invite.errorSignInFailed': 'Échec de la connexion.',
 
+  // ── Demo link (/demo, the demo pass) ─────────────────────────────────
+  'demo.eyebrow': 'Lien de démonstration',
+  'demo.title': 'Lien de démonstration',
+  'demo.signingIn': 'Connexion en cours…',
+  'demo.refused': 'Ce lien de démonstration n’est pas valide ou a expiré.',
+  'demo.rateLimited': 'Trop de tentatives depuis cette adresse. Patientez quelques minutes.',
+
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Demande d’autorisation invalide',
   'consent.invalidDescription':
