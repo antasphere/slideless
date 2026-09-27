@@ -21,6 +21,10 @@ export const METADATA_IDENTITY_URL =
 
 /** A token is reused until this long before it expires (Google mints them for one hour). */
 const REFRESH_MARGIN_MS = 5 * 60_000;
+/** A token minted already inside the margin (clock skew, a short-lived token) is still reused this long, never re-asked per call. */
+const MIN_REUSE_MS = 30_000;
+/** Past its refresh point, a token is still presented while a refresh fails, until this close to its expiry. */
+const EXPIRY_SLACK_MS = 10_000;
 /** After a failed mint, the next ask waits this long before asking the metadata server again. */
 const FAILURE_BACKOFF_MS = 10_000;
 
@@ -46,10 +50,12 @@ export function jwtExpiryMs(token: string): number | null {
 }
 
 /**
- * The token source: one token cached until five minutes before its expiry,
- * one mint in flight at a time, and null (never a throw) when the metadata
- * server cannot give one, so the hand-off counts as an unreachable renderer
- * and costs the version no attempt.
+ * The token source: one token cached until five minutes before its expiry
+ * (at least thirty seconds, whatever its expiry says), one mint in flight at
+ * a time, and null (never a throw) when the metadata server cannot give one
+ * AND no cached token is still valid, so the hand-off counts as an unreachable
+ * renderer and costs the version no attempt. A refresh that fails keeps the
+ * cached token in use until ten seconds before it really expires.
  */
 export function googleIdTokenSource(opts: GoogleIdTokenOptions): IdTokenSource {
   const audience = new URL(opts.audience).origin;
@@ -58,9 +64,13 @@ export function googleIdTokenSource(opts: GoogleIdTokenOptions): IdTokenSource {
   const timeoutMs = opts.timeoutMs ?? 2_000;
   const url = `${METADATA_IDENTITY_URL}?audience=${encodeURIComponent(audience)}`;
 
-  let cached: { token: string; refreshAt: number } | null = null;
+  let cached: { token: string; refreshAt: number; expiresAt: number } | null = null;
   let failedAt = -Infinity;
   let inFlight: Promise<string | null> | null = null;
+
+  /** The cached token while it is still valid, past its refresh point or not. */
+  const stillValid = (): string | null =>
+    cached && now() < cached.expiresAt - EXPIRY_SLACK_MS ? cached.token : null;
 
   const mint = async (): Promise<string | null> => {
     try {
@@ -77,9 +87,14 @@ export function googleIdTokenSource(opts: GoogleIdTokenOptions): IdTokenSource {
           'thumbnails: the metadata server gave no identity token for the renderer (is this instance on Cloud Run with a service account?)'
         );
         failedAt = now();
-        return null;
+        return stillValid();
       }
-      cached = { token: body, refreshAt: expiry - REFRESH_MARGIN_MS };
+      const mintedAt = now();
+      cached = {
+        token: body,
+        refreshAt: Math.max(expiry - REFRESH_MARGIN_MS, Math.min(expiry, mintedAt + MIN_REUSE_MS)),
+        expiresAt: expiry
+      };
       return body;
     } catch (err) {
       opts.logger.error(
@@ -87,13 +102,13 @@ export function googleIdTokenSource(opts: GoogleIdTokenOptions): IdTokenSource {
         'thumbnails: the metadata server is unreachable, no identity token for the renderer'
       );
       failedAt = now();
-      return null;
+      return stillValid();
     }
   };
 
   return async () => {
     if (cached && now() < cached.refreshAt) return cached.token;
-    if (now() - failedAt < FAILURE_BACKOFF_MS) return null;
+    if (now() - failedAt < FAILURE_BACKOFF_MS) return stillValid();
     inFlight ??= mint().finally(() => {
       inFlight = null;
     });

@@ -115,7 +115,17 @@ export class HttpRendererClient implements RendererClient {
     await res.body?.cancel().catch(() => {});
     if (res.status === 202) return 'queued';
     if (res.status === 503) return 'busy';
-    if (res.status === 401 || res.status === 403) return 'unauthorized';
+    if (res.status === 401 || res.status === 403) {
+      if (this.idToken) {
+        // On Cloud Run the refusal may come from Google's front end, before the
+        // renderer judges the secret: say both, so the operator looks at both.
+        this.logger.error(
+          { status: res.status },
+          "thumbnails: the renderer's Cloud Run service refused this instance: check that the app's service account holds run.invoker on it and that SLIDELESS_RENDERER_URL is its URL (the token's audience), then that SLIDELESS_RENDERER_SECRET is the same on both"
+        );
+      }
+      return 'unauthorized';
+    }
     this.logger.warn({ status: res.status }, 'thumbnails: renderer answered an unexpected status');
     return 'unreachable';
   }

@@ -123,6 +123,51 @@ describe('googleIdTokenSource', () => {
   });
 });
 
+describe('googleIdTokenSource past the refresh point', () => {
+  it('keeps presenting the cached token while a refresh fails, until ten seconds before it expires', async () => {
+    let clock = 0;
+    let fail = false;
+    const t = jwt(3600);
+    const { calls, fetchImpl } = recorder(() =>
+      fail ? new Response('down', { status: 500 }) : new Response(t)
+    );
+    const source = googleIdTokenSource({
+      audience: 'https://r.example',
+      logger,
+      fetchImpl,
+      now: () => clock
+    });
+    expect(await source()).toBe(t);
+    fail = true;
+    clock = 3301 * 1000; // past the refresh point, the refresh fails
+    expect(await source()).toBe(t);
+    expect(calls).toHaveLength(2);
+    clock = 3589 * 1000; // still 11 s of life
+    expect(await source()).toBe(t);
+    clock = 3591 * 1000; // 9 s left: no longer presented
+    expect(await source()).toBeNull();
+  });
+
+  it('reuses for at least thirty seconds a token minted already inside the refresh margin', async () => {
+    let clock = 1_000_000;
+    const { calls, fetchImpl } = recorder(() => new Response(jwt(1_000 + 120))); // two minutes of life
+    const source = googleIdTokenSource({
+      audience: 'https://r.example',
+      logger,
+      fetchImpl,
+      now: () => clock
+    });
+    await Promise.all([source(), source(), source(), source(), source()]);
+    expect(calls).toHaveLength(1);
+    clock += 29_000;
+    await source();
+    expect(calls).toHaveLength(1);
+    clock += 2_000;
+    await source();
+    expect(calls).toHaveLength(2);
+  });
+});
+
 describe('HttpRendererClient', () => {
   it('presents the shared secret alone when no identity token is configured (the compose stack)', async () => {
     const { calls, fetchImpl } = recorder(() => new Response(null, { status: 202 }));
@@ -164,6 +209,30 @@ describe('HttpRendererClient', () => {
     });
     expect(await client.submit(job)).toBe('unreachable');
     expect(calls).toHaveLength(0);
+  });
+
+  it('on the cloud, names Google sign-in AND the secret when refused, so the operator looks at both', async () => {
+    const error = vi.fn();
+    const log = { ...logger, error } as unknown as Logger;
+    const { fetchImpl } = recorder(() => new Response(null, { status: 403 }));
+    const cloud = new HttpRendererClient({
+      baseUrl: 'https://r.example',
+      secret: SECRET,
+      logger: log,
+      fetchImpl,
+      idToken: async () => 't.t.t'
+    });
+    expect(await cloud.submit(job)).toBe('unauthorized');
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]![1])).toMatch(/run\.invoker.*SLIDELESS_RENDERER_SECRET/);
+    const compose = new HttpRendererClient({
+      baseUrl: 'http://renderer:3100',
+      secret: SECRET,
+      logger: log,
+      fetchImpl
+    });
+    expect(await compose.submit(job)).toBe('unauthorized');
+    expect(error).toHaveBeenCalledTimes(1);
   });
 
   it('maps the answers: 202 queued, 503 busy, 401 and 403 unauthorized, anything else or no answer unreachable', async () => {
