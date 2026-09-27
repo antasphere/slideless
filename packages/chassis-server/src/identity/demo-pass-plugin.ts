@@ -44,7 +44,8 @@ const INVALID_DEMO_PASS = {
   error: { code: 'invalid_demo_pass', message: 'This demo link is not valid' }
 } as const;
 
-const redeemBodySchema = z.object({ pass: z.string() });
+/** A secret is 43 characters; the bound keeps an oversized body from reaching the hash. */
+const redeemBodySchema = z.object({ pass: z.string().min(1).max(128) });
 
 export function demoPassPlugin(deps: DemoPassPluginDeps): BetterAuthPlugin {
   const service = new DemoPassService(deps.db);
@@ -90,9 +91,16 @@ export function demoPassPlugin(deps: DemoPassPluginDeps): BetterAuthPlugin {
               code: 'FAILED_TO_CREATE_SESSION'
             });
           }
+          // The use is recorded BEFORE the cookie leaves: the row is what ties
+          // the session to its pass (the resolver's judge, the audit mark), so
+          // a session that could not be tied is dropped, never handed out.
+          try {
+            await service.recordUse(pass.passId, session.id);
+          } catch (cause) {
+            await ctx.context.internalAdapter.deleteSession(session.token);
+            throw cause;
+          }
           await setSessionCookie(ctx, { session, user }, false);
-
-          await service.recordUse(pass.passId, session.id);
           await deps.audit.write({
             workspaceId: pass.workspaceId,
             principal: { userId: user.id, via: 'session' },

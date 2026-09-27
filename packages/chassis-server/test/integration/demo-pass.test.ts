@@ -517,7 +517,6 @@ describe('the trail and the owner’s list', () => {
     const redeemed = await redeem(minted.secret);
     expect(redeemed.status).toBe(200);
     const passCookie = extractCookie(redeemed);
-    expect((await send(app, 'DELETE', `/demo/passes/${minted.id}`, owner)).status).toBe(200);
 
     const rowsOf = async (action: string) =>
       (
@@ -542,11 +541,7 @@ describe('the trail and the owner’s list', () => {
       workspace_id: workspaceId,
       metadata: { passId: minted.id }
     });
-    const [revokeRow] = await rowsOf('demo_pass.revoke');
-    expect(revokeRow).toMatchObject({ actor_user_id: owner.userId, resource_type: 'demo_pass' });
-
-    // A mutation a member may make, once through the pass's session (the
-    // pass is revoked now, but the session it opened lives on), once
+    // A mutation a member may make, once through the pass's session, once
     // through the member's own password session.
     const viaPass = await send(
       app,
@@ -573,6 +568,10 @@ describe('the trail and the owner’s list', () => {
     const unmarked = await metadataOf(viaPasswordId);
     expect(unmarked.actor_user_id).toBe(actors.member!.userId);
     expect(unmarked.metadata?.demoPassId).toBeUndefined();
+
+    expect((await send(app, 'DELETE', `/demo/passes/${minted.id}`, owner)).status).toBe(200);
+    const [revokeRow] = await rowsOf('demo_pass.revoke');
+    expect(revokeRow).toMatchObject({ actor_user_id: owner.userId, resource_type: 'demo_pass' });
 
     // No audit row anywhere carries a secret this suite minted, or its hash.
     const { rows: all } = await app.db.pool.query(`SELECT row_to_json(a)::text AS json FROM audit_log a`);
@@ -619,5 +618,61 @@ describe('the trail and the owner’s list', () => {
       expect(text).not.toContain(secret);
       expect(text).not.toContain(sha256(secret));
     }
+  });
+});
+
+describe('a session a pass opened lives only while its pass does', () => {
+  const sessionRowsOf = async (passId: string) =>
+    (
+      await app.db.pool.query(
+        `SELECT s.id FROM session s JOIN demo_pass_sessions d ON d.session_id = s.id WHERE d.pass_id = $1`,
+        [passId]
+      )
+    ).rows.length;
+
+  it('m. a revoke ends the sessions the pass opened, and leaves the person’s own session alone', async () => {
+    const owner = actors.owner!;
+    const minted = await mint(owner, { email: 'member@example.com' });
+    const first = extractCookie(await redeem(minted.secret));
+    const second = extractCookie(await redeem(minted.secret));
+    expect((await send(app, 'GET', '/me', { cookie: first })).status).toBe(200);
+    expect(await sessionRowsOf(minted.id)).toBe(2);
+
+    expect((await send(app, 'DELETE', `/demo/passes/${minted.id}`, owner)).status).toBe(200);
+
+    expect(await sessionRowsOf(minted.id)).toBe(0);
+    expect((await send(app, 'GET', '/me', { cookie: first })).status).toBe(401);
+    expect((await send(app, 'GET', '/me', { cookie: second })).status).toBe(401);
+    const session = await app.app.request('/api/v1/auth/get-session', { headers: { cookie: first } });
+    expect(await session.json()).toBeNull();
+    // The member's password session is theirs: the revoke does not touch it.
+    expect((await send(app, 'GET', '/me', actors.member!)).status).toBe(200);
+  });
+
+  it('n. once the pass has expired its session is refused and deleted, on the first request that presents it', async () => {
+    const owner = actors.owner!;
+    const minted = await mint(owner, { email: 'member@example.com' });
+    const cookie = extractCookie(await redeem(minted.secret));
+    expect((await send(app, 'GET', '/me', { cookie })).status).toBe(200);
+    expect(await sessionRowsOf(minted.id)).toBe(1);
+
+    await app.db.pool.query(`UPDATE demo_passes SET expires_at = now() - interval '1 minute' WHERE id = $1`, [
+      minted.id
+    ]);
+
+    expect((await send(app, 'GET', '/me', { cookie })).status).toBe(401);
+    expect(await sessionRowsOf(minted.id)).toBe(0);
+    const made = await send(app, 'POST', '/projects', { cookie }, { name: 'After the pass died' });
+    expect(made.status).toBe(401);
+  });
+
+  it('o. an ordinary session is never judged against a pass: the member’s own sign-in works whatever their passes do', async () => {
+    const owner = actors.owner!;
+    const minted = await mint(owner, { email: 'member@example.com' });
+    await redeem(minted.secret);
+    await app.db.pool.query(`UPDATE demo_passes SET expires_at = now() - interval '1 minute' WHERE id = $1`, [
+      minted.id
+    ]);
+    expect((await send(app, 'GET', '/me', actors.member!)).status).toBe(200);
   });
 });

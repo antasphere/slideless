@@ -72,7 +72,7 @@ import {
 import { registerSsoConnectRoutes } from './index.js';
 import { registerSsoLogoutRoutes } from './index.js';
 import { registerMemberRoutes } from './index.js';
-import { demoPassAuditMark, demoSignInOn, registerDemoPassRoutes } from './index.js';
+import { demoSessionJudge, demoSignInOn, registerDemoPassRoutes } from './index.js';
 import { registerProjectRoutes } from './index.js';
 import { registerTeamRoutes } from './index.js';
 import { registerApiKeyRoutes } from './index.js';
@@ -646,6 +646,9 @@ export function createApiApp<
       // Cloud edition's post-resolution veto (internal/federation.md P4);
       // undefined on oss.
       principalGate: deps.principalGate,
+      // Demo sign-in: a session a demo pass opened lives only while its pass
+      // does, and its audit rows carry the pass's id. Absent while the switch is off.
+      ...(demoSignIn ? { demoSession: demoSessionJudge(db) } : {}),
       // The composed fail-closed allowlist: chassis rules, then the tool's rules.
       requiredScopeFor: tool.scopes.requiredScopeFor,
       guestForbiddenMessage: tool.copy.guestForbidden
@@ -666,11 +669,7 @@ export function createApiApp<
 
   api.use(
     '*',
-    auditMiddleware(audit, clientIp, {
-      ...(tool.api.auditExempt ? { exempt: tool.api.auditExempt } : {}),
-      // Demo sign-in: rows written under a session a demo pass opened carry its id.
-      ...(demoSignIn ? { demoPassOf: demoPassAuditMark(db) } : {})
-    })
+    auditMiddleware(audit, clientIp, tool.api.auditExempt ? { exempt: tool.api.auditExempt } : {})
   );
 
   // Instance id for usage-event sources, cached after first read.

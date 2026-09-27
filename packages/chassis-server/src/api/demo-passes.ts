@@ -65,13 +65,14 @@ export function demoSignInOn(
 }
 
 /**
- * The audit middleware's mark (spec section 6): the pass that opened the
- * session a request presents, or null. Handed to `auditMiddleware` only
- * while the switch is on, so an instance without it pays no lookup.
+ * The credential resolver's judge (identity/demo-pass.ts `judgeSession`): a
+ * session a pass opened lives only while its pass does, and carries the
+ * pass's id for the audit trail. Handed to `authContext` only while the
+ * switch is on, so an instance without it pays no lookup.
  */
-export function demoPassAuditMark(db: Db): (headers: Headers) => Promise<string | null> {
+export function demoSessionJudge(db: Db): (headers: Headers) => Promise<{ passId: string } | 'ended' | null> {
   const service = new DemoPassService(db);
-  return (headers) => service.passOfRequest(headers);
+  return (headers) => service.judgeSession(headers);
 }
 
 /** The second lock behind the scope allowlist: a pass is minted from a browser session only. */

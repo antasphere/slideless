@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getSessionCookie } from 'better-auth/cookies';
 import {
   demoPasses,
@@ -134,16 +134,32 @@ export class DemoPassService {
   /**
    * Revoke a pass of this workspace. Idempotent: a revoked pass keeps its
    * first revocation time and is answered again. Null when the workspace
-   * holds no such pass. The sessions the pass opened are not ended: they are
-   * the person's sessions now, and the person signs out of them.
+   * holds no such pass. The sessions the pass opened END with it, in the same
+   * transaction: a revoke that left them alive would stop the next click and
+   * nothing else, and the owner revokes to take the access back.
    */
   async revoke(workspaceId: string, id: string): Promise<PassWithPerson | null> {
-    const updated = await this.db
-      .update(demoPasses)
-      .set({ revokedAt: sql`coalesce(${demoPasses.revokedAt}, now())` })
-      .where(and(eq(demoPasses.id, id), eq(demoPasses.workspaceId, workspaceId)))
-      .returning({ id: demoPasses.id });
-    if (updated.length === 0) return null;
+    const found = await this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(demoPasses)
+        .set({ revokedAt: sql`coalesce(${demoPasses.revokedAt}, now())` })
+        .where(and(eq(demoPasses.id, id), eq(demoPasses.workspaceId, workspaceId)))
+        .returning({ id: demoPasses.id });
+      if (updated.length === 0) return false;
+      await tx
+        .delete(sessionTable)
+        .where(
+          inArray(
+            sessionTable.id,
+            tx
+              .select({ id: demoPassSessions.sessionId })
+              .from(demoPassSessions)
+              .where(eq(demoPassSessions.passId, id))
+          )
+        );
+      return true;
+    });
+    if (!found) return null;
     return this.get(workspaceId, id);
   }
 
@@ -210,24 +226,38 @@ export class DemoPassService {
   }
 
   /**
-   * The pass that opened the session this request presents, or null: the
-   * audit middleware's ONE lookup (spec section 6). The session cookie is
-   * `<token>.<signature>` (the token is alphanumeric, the signature follows
-   * the first dot); the principal was already resolved from this very
-   * cookie, so its signature has been checked and the token part is enough to
-   * find the session row.
+   * The rule that makes a pass's lifetime the lifetime of what it opened: a
+   * session a pass opened lives only while its pass does. Judged once per
+   * request by the credential resolver, for session principals, while the
+   * switch is on. Three answers: null (an ordinary session, the person signed
+   * in themselves), the pass's id (the audit mark), or `ended`: the pass has
+   * expired or was revoked, the session row is deleted here and the request
+   * goes on signed out. Without it a link valid one day would open a session
+   * the library keeps a year and renews on use.
+   *
+   * The session cookie is `<token>.<signature>`; the resolver already
+   * resolved a principal from this very cookie, so its signature has been
+   * checked and the token part is enough to find the row.
    */
-  async passOfRequest(headers: Headers): Promise<string | null> {
+  async judgeSession(headers: Headers): Promise<{ passId: string } | 'ended' | null> {
     const cookie = getSessionCookie(headers);
     if (!cookie) return null;
     const token = cookie.split('.')[0];
     if (!token) return null;
     const [row] = await this.db
-      .select({ passId: demoPassSessions.passId })
+      .select({
+        sessionId: sessionTable.id,
+        passId: demoPassSessions.passId,
+        live: sql<boolean>`${demoPasses.revokedAt} is null and ${demoPasses.expiresAt} > now()`
+      })
       .from(demoPassSessions)
       .innerJoin(sessionTable, eq(sessionTable.id, demoPassSessions.sessionId))
+      .innerJoin(demoPasses, eq(demoPasses.id, demoPassSessions.passId))
       .where(eq(sessionTable.token, token))
       .limit(1);
-    return row?.passId ?? null;
+    if (!row) return null;
+    if (row.live) return { passId: row.passId };
+    await this.db.delete(sessionTable).where(eq(sessionTable.id, row.sessionId));
+    return 'ended';
   }
 }
