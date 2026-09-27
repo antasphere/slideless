@@ -635,7 +635,7 @@ export const demoPassRevokeRoute = createRoute({
   method: 'delete',
   path: '/demo/passes/{id}',
   tags: ['demo'],
-  summary: 'Revoke a demo pass (owner; idempotent). The sessions it opened are not ended',
+  summary: 'Revoke a demo pass (owner; idempotent). The sessions it opened end with it',
   request: { params: uuidParams },
   responses: {
     200: jsonBody(demoPassSchema, 'The pass, revoked'),
