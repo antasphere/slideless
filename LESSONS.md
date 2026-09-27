@@ -1636,6 +1636,29 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   without `SLIDELESS_RENDERER_SECRET` refuses the boot with the fix named (the renderer would take
   no job and every version would wait forever); blank means unset, as for every other key.
 
+- **Where the sandbox starts, measured (PRDCT-2785/2790, 27 September 2026).** Docker's default
+  seccomp refuses it (exit 3) everywhere; the shipped profile, and the default profile with
+  `cap_drop: ALL` + `cap_add: [SYS_ADMIN, SYS_CHROOT]` (the capabilities the default profile ties the
+  namespace calls and `chroot` to) both start it, on Docker Desktop and on GitHub's Ubuntu 22.04 and
+  24.04 runners with AppArmor's user-namespace restriction OFF and forced ON (run 36303685812).
+  Cloud Run gen2 starts it too (a throwaway service logged `ready`, self-check 4.3 s). The setuid
+  helper is no route: the headless shell ships none, and even the full Chromium's `chrome_sandbox`,
+  installed setuid root, finds "No usable sandbox" under the default profile.
+- **`docker compose run` BUILDS a missing image when the service has a `build:` section.** A
+  script that checks a pulled image by running it must first confirm the image is on the host
+  (`config --images <service>`, then `docker image inspect`), or a failed pull turns into minutes
+  of building on a customer's server and an unpublished build switched on. A fake `docker` in a
+  test must answer `config --images` with a non-default name, or the check can inspect the wrong
+  image and stay green.
+- **On Cloud Run, the Google token goes in `X-Serverless-Authorization`.** Cloud Run checks it and
+  still hands `Authorization` to the container, so a shared secret there keeps working; the token
+  in `Authorization` takes the secret's place. A person's `gcloud auth print-identity-token` is
+  accepted whatever the audience, so it proves the header, never the audience or a service
+  account's invoker binding: only the service account's own token does.
+- **A new Cloud Run service needs the deployer's actAs on ITS runtime account.** `run.admin`
+  cannot create a revision that runs as an account the deployer may not act as; the plan cannot
+  show it, and the roll would apply the first service and be refused on the second.
+
 ## The hub's teams and refusals in the chassis (2026-09-27, the teams lane)
 
 - **A `.default()` on a field of a RESPONSE schema makes the field required for every handler
