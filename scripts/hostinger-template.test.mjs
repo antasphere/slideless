@@ -107,6 +107,28 @@ test('the renderer keeps Chromium sandboxed with Docker defaults, holds no capab
       `${name} assigns ${variable} from the file`
     );
   }
+  // Byte for byte: nothing else may reach the secret or the exec (verifier round 3).
+  assert.deepEqual(renderer.command, [
+    'sh',
+    '-ec',
+    'secret="$$(cat /run/slideless-renderer/renderer-secret)"\n' +
+      'test -n "$$secret"\n' +
+      'export SLIDELESS_RENDERER_SECRET="$$secret"\n' +
+      'exec node dist/index.js\n'
+  ]);
+  assert.ok(
+    services.app.command
+      .at(-1)
+      .endsWith(
+        'rs="$$(cat /run/slideless-renderer/renderer-secret)"\n' +
+          'test -n "$$rs"\n' +
+          'export SLIDELESS_RENDERER_URL=http://renderer:3100\n' +
+          'export SLIDELESS_RENDERER_SECRET="$$rs"\n' +
+          'exec node dist/index.js\n'
+      ),
+    'the app reads the renderer secret and execs, nothing between'
+  );
+  assert.equal(services.app.command.at(-1).match(/SLIDELESS_RENDERER_SECRET/g).length, 1);
   assert.equal(renderer.logging.options['max-size'], '10m');
   assert.match(renderer.image, /^ghcr\.io\/antasphere\/slideless-renderer:/);
   assert.equal(renderer.depends_on['init-renderer'].condition, 'service_completed_successfully');
