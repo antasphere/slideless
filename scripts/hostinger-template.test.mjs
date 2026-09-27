@@ -95,6 +95,17 @@ test('the renderer keeps Chromium sandboxed with Docker defaults, holds no capab
     );
     assert.match(script, /export SLIDELESS_RENDERER_SECRET="\$+(secret|rs)"/, `${name} exports what it read`);
     assert.equal(/[a-f0-9]{32,}/.test(script), false, `${name} carries no literal secret`);
+    // The variable it exports is assigned ONCE, from the file: nothing overwrites it after the read.
+    const variable = /export SLIDELESS_RENDERER_SECRET="\$+(\w+)"/.exec(script)[1];
+    const assignments = script
+      .split('\n')
+      .filter((line) => new RegExp(`^\\s*(export\\s+)?${variable}=`).test(line));
+    assert.equal(assignments.length, 1, `${name} assigns ${variable} once`);
+    assert.match(
+      assignments[0],
+      /\$\(cat \/run\/slideless-renderer\/renderer-secret\)/,
+      `${name} assigns ${variable} from the file`
+    );
   }
   assert.equal(renderer.logging.options['max-size'], '10m');
   assert.match(renderer.image, /^ghcr\.io\/antasphere\/slideless-renderer:/);
