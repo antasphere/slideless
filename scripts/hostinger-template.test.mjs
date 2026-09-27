@@ -43,7 +43,7 @@ test('template renders without a hostname (hPanel runs it with no environment) a
   assert.equal(services.init.image, services.app.image);
   // Every image is digest-pinned: the Pages gate inspects exactly what customers pull.
   for (const service of Object.values(services)) assert.match(service.image, /@sha256:[a-f0-9]{64}$/);
-  for (const name of ['app', 'db', 'caddy']) {
+  for (const name of ['app', 'db', 'caddy', 'renderer']) {
     assert.equal(services[name].logging.options['max-size'], '10m', `${name} log rotation`);
   }
   for (const service of Object.values(services)) assert.equal(service.build, undefined);
@@ -51,6 +51,84 @@ test('template renders without a hostname (hPanel runs it with no environment) a
   assert.equal(services.db.environment.POSTGRES_HOST_AUTH_METHOD, undefined);
   assert.equal(services.app.depends_on.db.condition, 'service_healthy');
   assert.equal(services.db.depends_on.init.condition, 'service_completed_successfully');
+});
+
+test('the renderer keeps Chromium sandboxed with Docker defaults, holds no capability to use, and never sees the database', () => {
+  // PRDCT-2790, Romain's ruling of 27 September 2026: a one-file template cannot carry
+  // the seccomp profile, so the renderer keeps Docker's DEFAULT profile and holds only
+  // the two capabilities that profile ties the namespace calls to, as a non-root user
+  // with no-new-privileges. Anything that weakens a layer is refused here.
+  const result = config();
+  assert.equal(result.status, 0, result.stderr);
+  const { services, volumes } = JSON.parse(result.stdout);
+  const renderer = services.renderer;
+  assert.deepEqual(renderer.cap_drop, ['ALL']);
+  assert.deepEqual([...renderer.cap_add].sort(), ['SYS_ADMIN', 'SYS_CHROOT']);
+  assert.deepEqual(renderer.security_opt, ['no-new-privileges:true']);
+  assert.equal(renderer.privileged, undefined);
+  assert.equal(renderer.user, undefined, 'the image runs as its non-root node user');
+  assert.equal(renderer.read_only, true);
+  assert.equal(renderer.ports, undefined);
+  assert.equal(renderer.network_mode, undefined);
+  assert.equal(JSON.stringify(renderer).includes('no-sandbox'), false);
+  assert.equal(JSON.stringify(renderer).includes('unconfined'), false);
+  assert.deepEqual(
+    renderer.volumes.map((v) => [v.source, v.target, v.read_only]),
+    [['renderer_credentials', '/run/slideless-renderer', true]]
+  );
+  assert.equal(renderer.environment.SLIDELESS_URL, 'http://app:3000');
+  assert.equal(
+    renderer.environment.SLIDELESS_RENDERER_SECRET,
+    undefined,
+    'read from its file, never interpolated'
+  );
+  assert.equal(renderer.logging.options['max-size'], '10m');
+  assert.match(renderer.image, /^ghcr\.io\/antasphere\/slideless-renderer:/);
+  assert.equal(renderer.depends_on['init-renderer'].condition, 'service_completed_successfully');
+  // The app hands versions to it and never waits on it.
+  assert.equal(services.app.depends_on.renderer, undefined);
+  assert.ok(services.app.volumes.some((v) => v.source === 'renderer_credentials' && v.read_only));
+  assert.match(services.app.command.at(-1), /SLIDELESS_RENDERER_URL=http:\/\/renderer:3100/);
+  // Its secret lives in its own volume, written by its own one-shot initializer.
+  const init = services['init-renderer'];
+  assert.equal(init.image, services.app.image);
+  assert.equal(init.network_mode, 'none');
+  assert.equal(init.read_only, true);
+  assert.deepEqual(
+    init.volumes.map((v) => [v.source, v.target]),
+    [['renderer_credentials', '/data']]
+  );
+  assert.ok('renderer_credentials' in volumes);
+});
+
+test('renderer initializer preserves its secret and rejects corruption', () => {
+  const result = config();
+  assert.equal(result.status, 0, result.stderr);
+  const { command } = JSON.parse(result.stdout).services['init-renderer'];
+  const dir = mkdtempSync(join(tmpdir(), 'slideless-hostinger-renderer-'));
+  const run = () =>
+    spawnSync(process.execPath, [...command.slice(1, -1), dir], {
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: {}
+    });
+  try {
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const path = join(dir, 'renderer-secret');
+    const secret = readFileSync(path, 'utf8');
+    assert.match(secret, /^[a-f0-9]{64}\n$/);
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.equal(first.stdout.includes(secret.trim()), false);
+    assert.equal(run().status, 0);
+    assert.equal(readFileSync(path, 'utf8'), secret);
+    writeFileSync(path, 'broken');
+    const corrupt = run();
+    assert.notEqual(corrupt.status, 0);
+    assert.equal(readFileSync(path, 'utf8'), 'broken');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('initializer preserves credentials, rejects corruption and validates the hostname', () => {

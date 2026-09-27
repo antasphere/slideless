@@ -185,9 +185,16 @@ versions pushed meanwhile get their image once the renderer is back.
 
 **Other runtimes.**
 
-- **Hostinger's one-file template** ([hostinger.md](hostinger.md)) does not
-  carry the renderer: a single downloaded compose file cannot ship the
-  seccomp profile. Those instances show a plain block.
+- **Hostinger's one-file template** ([hostinger.md](hostinger.md)) carries
+  the renderer too. A single downloaded compose file cannot ship the seccomp
+  profile, so there the renderer keeps Docker's default profile and holds
+  only the two capabilities that profile ties the namespace calls to
+  (`cap_drop: ALL`, `cap_add: [SYS_ADMIN, SYS_CHROOT]`), as the non-root user
+  with `no-new-privileges` and a read-only root: its processes hold no
+  effective capability, and Chromium's own sandbox stays on. That filter is
+  wider than the profile's (the calls Docker's default profile opens with
+  `SYS_ADMIN` become reachable, the kernel still refusing every privileged
+  one), which is why the standard install keeps the profile.
 - **Kubernetes**: run the renderer as its own deployment with a seccomp
   profile that allows the same calls (a `Localhost` profile built from
   `deploy/seccomp-chromium.json`), reachable from the app pods only, with

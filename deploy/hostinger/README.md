@@ -5,6 +5,20 @@ host scripts, or companion config files. `SLIDELESS_DOMAIN` is its only
 required input. `index.html` contains the deployment button and template URL.
 User instructions live in `docs/self-hosting/hostinger.md`.
 
+## Deck pictures (PRDCT-2790)
+
+The template carries the still-image renderer: `init-renderer` writes its secret
+into its own volume (`renderer_credentials`, never `db_credentials`), and
+`renderer` runs `ghcr.io/antasphere/slideless-renderer` with Docker's DEFAULT
+seccomp profile, `cap_drop: ALL`, `cap_add: [SYS_ADMIN, SYS_CHROOT]`,
+`no-new-privileges`, read-only, as its non-root user: the one-file route that
+keeps Chromium's sandbox whole without the profile file the compose stack
+uses (Romain's ruling of 27 September 2026; proven on Ubuntu 22.04 and 24.04
+with AppArmor's user-namespace restriction on). `hostinger-template.test.mjs`
+refuses anything that weakens it; the smoke pushes a deck and reads its
+picture. The renderer's pin moves with the app's: the SAME release, both
+digests, never one without the other.
+
 ## Acceptance criteria
 
 - A dedicated VPS with DNS configured can start the stack from the public URL.
