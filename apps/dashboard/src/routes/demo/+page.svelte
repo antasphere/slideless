@@ -1,12 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import { api, PlatformApiError } from '$lib/api';
-  import { refreshSession } from '$lib/session';
   import { demoTarget, parseDemoFragment } from '$lib/demo-link';
   import { t } from '$lib/i18n';
 
@@ -18,9 +16,11 @@
    *   3. redeem the pass through the SDK (the sign-in library sets the
    *      session cookie on its answer, replacing any session this browser
    *      had);
-   *   4. read the target, THEN refresh the session (the login page's order,
-   *      PRDCT-2693), then go there. Every target goes through `safeNext`
-   *      (`demoTarget`).
+   *   4. read the target, then LOAD it as a fresh document, replacing this
+   *      history entry. Not a client-side navigation: the browser may have
+   *      been signed in as someone else a second ago, and nothing that person's
+   *      pages kept in memory may follow the new one. Every target goes
+   *      through `safeNext` (`demoTarget`).
    * A refusal is one sentence: never the server's code, never the secret.
    */
   let phase = $state<'working' | 'refused' | 'limited'>('working');
@@ -43,9 +43,7 @@
       phase = e instanceof PlatformApiError && e.status === 429 ? 'limited' : 'refused';
       return;
     }
-    const target = demoTarget(to, path);
-    await refreshSession();
-    await goto(target);
+    window.location.replace(demoTarget(to, path));
   }
 </script>
 
