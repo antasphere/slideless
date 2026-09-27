@@ -303,7 +303,9 @@ deploys) + `dev` (day-to-day work).
   workspace (a local write would be undone within minutes); on self-hosted the route is the writer,
   clear-then-set in one transaction (the partial unique index forbids two trues even transiently), on
   an ACTIVE membership of the caller or 404. It reads `principal.userId`, never the request's
-  workspace, writes NO audit row (a workspace never learns what its members do elsewhere), is open to
+  workspace, writes NO audit row (a workspace never learns what its members do elsewhere: the path is
+  exempt in `audit/service.ts`, the one machine-reachable exemption, and the change is on the server
+  log), is open to
   machines under the write scope (the CLI's `workspace default`), and refuses a key pinned to one
   workspace (`key_pinned`). The dashboard decides between the in-place action and the link to the
   account site on discovery's sign-in methods, never on the edition's name.

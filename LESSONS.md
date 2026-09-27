@@ -1725,8 +1725,11 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   transaction that switches the row off.
 - **A setting of the person is not an event of the workspace the request happened to be in.** The
   generic audit middleware writes into the principal's workspace; a default-workspace change recorded
-  there would tell workspace A that one of its members prefers workspace B. The route sets no audit
-  entry, the rule `POST /workspaces` already follows.
+  there would tell workspace A that one of its members prefers workspace B. Setting no audit entry
+  in the handler is NOT enough: the middleware writes its generic row (method and path) for every
+  authenticated mutation unless the path is exempt in `isAuditExempt`. The handler's comment and the
+  invariant both said "no audit row" while every call wrote one; the test that counts the rows before
+  and after found it. The path is exempt now, the rule `POST /workspaces` already follows.
 - **A hidden form is not a closed route.** The cloud edition reported `emailChange: false` and the
   dashboard hid the form, while `/change-email` stayed open to any signed-in caller. Discovery says
   what the screens offer; only the before-hook says what the instance accepts.
