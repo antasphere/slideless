@@ -9,6 +9,7 @@
   import { HeadWatch } from '$lib/components/shell/headWatch.svelte';
   import { pathCrumbs } from '$lib/components/shell/path';
   import WelcomeBanner from '$lib/components/shared/WelcomeBanner.svelte';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { page } from '$app/state';
   import { crumbs } from '$lib/crumbs.svelte';
   import { buildNav, phoneTabs } from '$lib/nav';
@@ -16,6 +17,8 @@
   import { theme } from '$lib/theme.svelte';
   import { listScope } from '$lib/stores/pagedList.svelte';
   import { warmLists } from '$lib/stores/warmLists';
+  import { demoSignInOn } from '$lib/demo-link';
+  import { t } from '$lib/i18n';
 
   let { data, children } = $props();
 
@@ -87,6 +90,14 @@
     </header>
     <main class="app-main flex-1 overflow-y-auto px-4 pt-5 md:px-8 md:pt-2" use:head.attach>
       <div class="mx-auto w-full max-w-6xl">
+        {#if demoSignInOn(data.instance)}
+          <!-- the operator's DEMO_SIGN_IN is on (GET /instance): said to every
+               signed-in person, on every page, with no way to hide it -->
+          <p class="notice notice--warn mb-4" role="status">
+            <TriangleAlert class="size-4" />
+            <span>{t('demo.banner')}</span>
+          </p>
+        {/if}
         {#if data.me.firstRunPending}
           <!-- SL-6: cloud + sessions only — the field is absent on oss. -->
           <WelcomeBanner instanceName={data.instance.name} />

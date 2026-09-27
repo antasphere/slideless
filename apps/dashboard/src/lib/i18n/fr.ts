@@ -336,6 +336,8 @@ export const fr: Record<keyof typeof en, string> = {
   'demo.signingIn': 'Connexion en cours…',
   'demo.refused': 'Ce lien de démonstration n’est pas valide ou a expiré.',
   'demo.rateLimited': 'Trop de tentatives depuis cette adresse. Patientez quelques minutes.',
+  'demo.banner':
+    'La connexion de démonstration est activée : un propriétaire de cet espace de travail peut ouvrir des comptes de démonstration sans leur mot de passe.',
 
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Demande d’autorisation invalide',

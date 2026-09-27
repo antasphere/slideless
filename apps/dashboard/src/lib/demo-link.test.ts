@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoTarget, parseDemoFragment } from './demo-link';
+import { demoSignInOn, demoTarget, parseDemoFragment } from './demo-link';
 
 describe('parseDemoFragment', () => {
   it('reads both keys', () => {
@@ -73,5 +73,16 @@ describe('demoTarget', () => {
   it('keeps a nested `#` as the page’s own fragment, on this origin', () => {
     const { to } = parseDemoFragment('#pass=x&to=/members#top');
     expect(demoTarget(to, '/')).toBe('/members#top');
+  });
+});
+
+describe('demoSignInOn (the banner of the app layout)', () => {
+  it('is on only when the instance says true', () => {
+    expect(demoSignInOn({ demoSignIn: true })).toBe(true);
+  });
+
+  it('is off when the key is absent or false', () => {
+    expect(demoSignInOn({})).toBe(false);
+    expect(demoSignInOn({ demoSignIn: false })).toBe(false);
   });
 });

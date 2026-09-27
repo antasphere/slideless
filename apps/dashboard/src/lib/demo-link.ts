@@ -34,3 +34,12 @@ export function demoTarget(to: string | null, answerPath: string | null | undefi
   }
   return safeNext(answerPath);
 }
+
+/**
+ * Whether the instance says its demo sign-in is on (`GET /instance` carries
+ * `demoSignIn: true` while the operator's switch is on, and no key
+ * otherwise). Anything but `true` reads as off.
+ */
+export function demoSignInOn(instance: { demoSignIn?: boolean }): boolean {
+  return instance.demoSignIn === true;
+}

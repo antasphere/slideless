@@ -331,6 +331,8 @@ export const en = {
   'demo.signingIn': 'Signing you in…',
   'demo.refused': 'This demo link is not valid or has expired.',
   'demo.rateLimited': 'Too many tries from this address. Wait a few minutes.',
+  'demo.banner':
+    'Demo sign-in is on: an owner of this workspace can open demonstration accounts without their password.',
 
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Authorization request invalid',
