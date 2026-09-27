@@ -37,6 +37,7 @@ import {
   versionAttachmentsZipRoute,
   versionCommitRoute,
   versionGetRoute,
+  versionThumbnailRoute,
   versionsListRoute,
   presentationProjectLinkRoute,
   presentationProjectUnlinkRoute,
@@ -68,6 +69,7 @@ import { encodeContentDisposition } from '@antasphere/chassis-server/files';
 import { serveBlob } from '@antasphere/chassis-server/files';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';
 import { manifestHasForms } from '../forms/detect.js';
+import type { ThumbnailService } from '../thumbnails/service.js';
 import { readReference } from '../presentations/reference-frontmatter.js';
 import { attachmentsZipFilename, serveAttachmentsZip, serveZip } from '../presentations/attachments.js';
 import { responseZipFolder, uniqueZipPath, zipSegment, type FormUploadService } from '../forms/uploads.js';
@@ -150,6 +152,8 @@ export interface PresentationRouteDeps {
   annotations: AnnotationService;
   forms: FormResponseService;
   formUploads: FormUploadService;
+  /** The still image of each version (PRDCT-2725): kicked after a new version, read by the thumbnail route. */
+  thumbnails: ThumbnailService;
   fileService: FileService;
   storage: StorageDriver;
   registry: DeckRegistry;
@@ -166,6 +170,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     annotations,
     forms,
     formUploads,
+    thumbnails,
     fileService,
     storage,
     registry,
@@ -362,6 +367,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       workspaceId: principal.workspaceId,
       presentationId: result.presentation.id
     });
+    // A new current version: capture its still image now (fire-and-forget,
+    // PRDCT-2725); the worker's minute sweep covers a process that cannot.
+    thumbnails.kick();
     return c.json(
       { presentation: await wire(principal, result.presentation), version: versionToWire(result.version) },
       201
@@ -437,6 +445,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       presentationId: result.presentation.id,
       version: result.version.version
     });
+    // A new current version: capture its still image now (PRDCT-2725).
+    thumbnails.kick();
     return c.json(
       { presentation: await wire(principal, result.presentation), version: versionToWire(result.version) },
       201
@@ -806,6 +816,9 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       workspaceId: principal.workspaceId,
       presentationId: result.presentation.id
     });
+    // A new current version: capture its still image now (fire-and-forget,
+    // PRDCT-2725); the worker's minute sweep covers a process that cannot.
+    thumbnails.kick();
     return c.json(
       { presentation: await wire(principal, result.presentation), version: versionToWire(result.version) },
       201
@@ -958,6 +971,72 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       contentType: entry.contentType,
       filename: entry.path.split('/').pop() ?? entry.path,
       headOnly: false
+    });
+  });
+
+  // ── The version's still image (PRDCT-2725) ─────────────────────────────────
+  // One WebP per version, captured by the server (thumbnails/). The deck's
+  // own read rule (canReadDeck, ADR 013 + ADR 026): a non-reader and an
+  // unknown deck get the same 404. The bytes are the SERVER's rendering, not
+  // user content, so they are served inline as an image; nosniff still rides.
+  // Every refusal is no-store: pending turns into ready within seconds.
+  api.openapi(versionThumbnailRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, version } = c.req.valid('param');
+    const noStore = { 'cache-control': 'no-store' };
+    const deck = await service.get(principal.workspaceId, id);
+    if (!deck || !(await service.canRead(principal, deck))) {
+      return c.json(err('not_found', 'Presentation not found'), 404, noStore);
+    }
+    const row = await service.getVersion(principal.workspaceId, id, version);
+    if (!row) return c.json(err('not_found', 'Version not found'), 404, noStore);
+    const st = await thumbnails.status({
+      workspaceId: principal.workspaceId,
+      presentationId: id,
+      versionId: row.id
+    });
+    switch (st.state) {
+      case 'pending':
+        return c.json(err('thumbnail_pending', 'The image of this version is being made.'), 404, noStore);
+      case 'failed':
+        return c.json(err('thumbnail_failed', 'No image could be made of this version.'), 404, noStore);
+      case 'off':
+        return c.json(
+          err('thumbnail_unavailable', 'This instance does not make images of decks.'),
+          404,
+          noStore
+        );
+    }
+    // The bytes never change, but the RIGHT to read them can (a revoked
+    // collaborator, ADR 013): the browser keeps the image and asks again
+    // with its ETag on every mount, one 304 per card, never a copy that
+    // outlives the grant (verifier round 1, F6).
+    const etag = `"${st.versionId}"`;
+    const cacheHeaders: Record<string, string> = {
+      'cache-control': 'private, no-cache',
+      etag
+    };
+    if (c.req.header('if-none-match') === etag) {
+      return c.body(null, 304, cacheHeaders);
+    }
+    let stream: Readable;
+    try {
+      stream = await storage.getStream(st.storageKey);
+    } catch (e) {
+      logger.error(
+        { err: e, key: st.storageKey },
+        'thumbnail unreadable: row is ready but storage has no bytes'
+      );
+      return c.json(err('thumbnail_failed', 'No image could be made of this version.'), 404, noStore);
+    }
+    // A client abort must destroy the source (serveBlob's lesson).
+    c.req.raw.signal.addEventListener('abort', () => stream.destroy());
+    return c.body(Readable.toWeb(stream) as unknown as ReadableStream, 200, {
+      ...cacheHeaders,
+      'content-type': 'image/webp',
+      'content-length': String(st.sizeBytes),
+      'x-content-type-options': 'nosniff',
+      'content-disposition': `inline; filename="v${row.version}.webp"`
     });
   });
 

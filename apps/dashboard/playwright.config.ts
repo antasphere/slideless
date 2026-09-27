@@ -5,6 +5,9 @@ import { defineConfig } from '@playwright/test';
 // minted here, in the runner process, so the compose stack (webServer
 // inherits this env) and the smoke spec (workers inherit it too) agree.
 process.env.PW_SMOKE_SETUP_TOKEN ??= randomBytes(16).toString('hex');
+// The shared secret between the app and the renderer container (PRDCT-2725),
+// minted here for the same reason: every process must hand the same one.
+process.env.PW_SMOKE_RENDERER_SECRET ??= randomBytes(16).toString('hex');
 
 // Keep in lockstep with e2e/stack-env.mjs (this config cannot import the
 // .mjs): the port is overridable so the suite can run beside another

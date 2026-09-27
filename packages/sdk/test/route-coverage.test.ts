@@ -118,6 +118,8 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
     c.downloadVersionAttachmentsZip(SAMPLE_ID, SAMPLE_VERSION),
   'GET /presentations/{id}/versions/{version}/downloads/{name}': (c) =>
     c.downloadVersionAttachment(SAMPLE_ID, SAMPLE_VERSION, SAMPLE_ATTACHMENT),
+  'GET /presentations/{id}/versions/{version}/thumbnail': (c) =>
+    c.versionThumbnail(SAMPLE_ID, SAMPLE_VERSION),
   'GET /presentations/{id}/agent-doc': (c) => c.agentDoc(SAMPLE_ID),
   'GET /presentations/{id}/tokens': (c) => c.shareTokens(SAMPLE_ID),
   'POST /presentations/{id}/tokens': (c) => c.createShareToken(SAMPLE_ID, { name: 'Alice' }),

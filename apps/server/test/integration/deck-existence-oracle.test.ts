@@ -164,6 +164,10 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
       shot(`${P}/versions/1/downloads.zip`, 'GET', cookie),
     'get /presentations/{id}/versions/{version}/downloads/{name}': () =>
       shot(`${P}/versions/1/downloads/figures.csv`, 'GET', cookie),
+    // The version's still image (PRDCT-2725): the deck's read rule, 404
+    // not_found before any image state is looked at.
+    'get /presentations/{id}/versions/{version}/thumbnail': () =>
+      shot(`${P}/versions/1/thumbnail`, 'GET', cookie),
     // The duplicate (PRDCT-2279): the source is a READ, so a plain member
     // gets the same 404 on a real-unreadable deck and on a nonexistent one.
     'post /presentations/{id}/duplicate': () => shot(`${P}/duplicate`, 'POST', cookie, {}),

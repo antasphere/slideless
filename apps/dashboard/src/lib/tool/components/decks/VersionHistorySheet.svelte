@@ -6,7 +6,6 @@
   import Download from '@lucide/svelte/icons/download';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import VersionThumb from './VersionThumb.svelte';
-  import type { ThumbnailController } from '$lib/tool/decks/preview.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage } from '$lib/api';
   import { download } from '$lib/download';
@@ -16,7 +15,7 @@
 
   /**
    * The master page's version history (PRDCT-2279, thumbnails and counts
-   * with PRDCT-2308): every push newest first, each with its live rendering
+   * with PRDCT-2308): every push newest first, each with its still image
    * at the top of its row, the one the frame shows marked, its views and
    * downloads, and each version's own files (its `downloads/` entries, read
    * from the version detail the server derives — the page reads, it never
@@ -28,14 +27,13 @@
     open: boolean;
     /** Page-owned list — shared with the share sheet's pin selects. */
     list: PagedList<PresentationVersionSummary>;
-    thumbs: ThumbnailController;
     currentVersion: number;
     /** The version the frame shows (page state). */
     shownVersion: number | null;
     onShow: (version: number) => void;
   }
 
-  let { deckId, open = $bindable(), list, thumbs, currentVersion, shownVersion, onShow }: Props = $props();
+  let { deckId, open = $bindable(), list, currentVersion, shownVersion, onShow }: Props = $props();
 
   // One detail fetch per version that carries files, on first open of the
   // sheet; versions are immutable, so the answer never goes stale.
@@ -89,7 +87,7 @@
         {#each list.items as version (version.version)}
           {@const shown = version.version === shownVersion}
           <li class="space-y-2 p-3" data-testid="version-row" data-version={version.version}>
-            <VersionThumb {thumbs} version={version.version} width={400} class="w-full max-w-full" />
+            <VersionThumb {deckId} version={version.version} width={400} class="w-full max-w-full" />
             <div class="flex items-center justify-between gap-3">
               <div class="min-w-0 space-y-0.5">
                 <div class="flex flex-wrap items-center gap-2 text-sm">

@@ -23,7 +23,9 @@ function compose(args, opts = {}) {
 // A stale project from an aborted run would reuse its old database — the spec
 // assumes first-boot, so always start from zero.
 compose(['down', '-v', '--remove-orphans']);
-compose(['build', 'app']);
+// The renderer is built too (the images profile): its boot self-check takes
+// a few seconds, and `up --wait` waits on its healthcheck as well.
+compose(['build', 'app', 'renderer']);
 compose(['up', '-d', '--wait']);
 
 console.log(`pw-smoke stack up on :${APP_PORT}; waiting for teardown…`);

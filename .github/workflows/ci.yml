@@ -18,9 +18,45 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The renderer's real-Chromium unit cases (apps/renderer/test) run
+      # against this headless shell; without it they skip, saying why.
+      - run: pnpm --filter @slideless/renderer exec playwright-core install --with-deps chromium-headless-shell
       - run: pnpm turbo lint typecheck test build
       - run: pnpm format:check
       - run: pnpm --filter @slideless/server drift:check
+
+  # The renderer image (PRDCT-2725), built as it ships and proven both ways.
+  # It opens user-authored HTML, so Chromium's OWN sandbox is always on:
+  # never --no-sandbox, never seccomp=unconfined. Docker's default seccomp
+  # profile forbids the user namespaces that sandbox needs, so the renderer
+  # runs under deploy/seccomp-chromium.json (the default plus those calls),
+  # and without it the self-check exits 3 instead of running unsandboxed.
+  renderer:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the renderer image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/renderer/Dockerfile
+          load: true
+          tags: slideless-renderer:ci
+          cache-from: type=gha,scope=renderer
+          cache-to: type=gha,mode=max,scope=renderer
+      - name: The renderer captures sandboxed under the shipped profile
+        run: docker run --rm --security-opt seccomp=deploy/seccomp-chromium.json slideless-renderer:ci node dist/selfcheck.js
+      - name: Without the profile the renderer refuses to run unsandboxed
+        run: |
+          set +e
+          docker run --rm slideless-renderer:ci node dist/selfcheck.js
+          code=$?
+          set -e
+          echo "exit code without the profile: $code"
+          test "$code" -eq 3
 
   # The hub–tool wire check (PRDCT-2677): the hub owns the messages the tools
   # exchange with it (the usage event and batch, the ingest result, the

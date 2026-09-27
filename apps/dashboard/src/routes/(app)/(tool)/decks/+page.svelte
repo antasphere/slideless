@@ -174,7 +174,7 @@
 
 <!-- the page opens as the overview and the brands do: on a field, the
      page's name and its sentence on it -->
-<HeroBand drawing="apollonian" seed={20260918}>
+<HeroBand drawing="apollonian" seed={20260918} compact>
   <p class="hero-eyebrow">{t('nav.workspace')}</p>
   <h1 class="hero-title">{t('decks.title')}</h1>
   <p class="hero-lede">{t('decks.description')}</p>

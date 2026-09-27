@@ -1,32 +1,25 @@
 <script lang="ts">
-  /* One reference as a card (PRDCT-2421): the reference deck itself, live,
-     the title, the description its author wrote, its colours as a strip, its
+  /* One reference as a card (PRDCT-2421): the reference deck itself, the
+     title, the description its author wrote, its colours as a strip, its
      font names, who reads it, its version, and the crown when it is the
      workspace's default. The card is a button: it opens the side sheet, where
      everything else lives.
 
-     The picture is the deck's first page rendered live, the way DeckCard and
-     the version thumbnails do it (PRDCT-2308). SECURITY (ADR 012 Surface D):
-     deck HTML renders ONLY inside the sandboxed iframe, never
-     `allow-same-origin`; the frame takes no pointer events and no focus, it is
-     a picture. The token is a hidden, stat-excluded preview token, asked for
-     once the card has been in view and revoked when the card goes. The mint is
-     owner-level on the server: a plain member reading a published reference
-     sees the drawn plate instead. */
-  import { onDestroy, untrack } from 'svelte';
-  import { page } from '$app/state';
-  import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
+     The picture is a still image of the reference's first page, captured on
+     the server at each push and shown to everyone who can read the deck, as
+     DeckCard does (PRDCT-2725); no deck HTML loads here. The plate is a plain
+     neutral block, nothing drawn on it: while the image is fetched or made a
+     shimmering skeleton covers it, the image fades in over that, and when
+     there is none the block stays plain. */
   import { Tag } from '$lib/components/ui/tag';
   import DeckProjectTags from '$lib/tool/components/projects/DeckProjectTags.svelte';
-  import { PREVIEW_SANDBOX } from '$lib/tool/decks';
-  import { canPreviewDeck, createThumbnailController } from '$lib/tool/decks/preview.svelte';
+  import DeckStill from '$lib/tool/components/decks/DeckStill.svelte';
   import { descriptionOf, fontsOf, swatchesOf } from '$lib/tool/references';
+  import type { StillState } from '$lib/tool/decks/stills';
   import Crown from '@lucide/svelte/icons/crown';
   import Clock from '@lucide/svelte/icons/clock-3';
   import Lock from '@lucide/svelte/icons/lock';
   import Users from '@lucide/svelte/icons/users';
-  import { DECK_PALETTES } from '$lib/brand/recipe.js';
-  import { seedOf } from '$lib/brand/seed';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
   import type { DeckWithProjects } from '$lib/tool/projects-client';
@@ -40,36 +33,11 @@
 
   let { deck, selected = false, onOpen }: Props = $props();
 
-  const seed = $derived(seedOf(deck.id));
-  const palette = $derived(DECK_PALETTES[seed % DECK_PALETTES.length]);
   const description = $derived(descriptionOf(deck.reference));
   const swatches = $derived(swatchesOf(deck.reference).filter((s) => s.hex));
   const fonts = $derived([...new Set(fontsOf(deck.reference).map((f) => f.family))]);
 
-  let played = $state(false);
-
-  const canThumb = $derived(deck.currentVersion > 0 && canPreviewDeck(page.data.me, deck));
-  const thumbs = createThumbnailController(
-    untrack(() => deck.id),
-    { canPreview: () => canThumb }
-  );
-  onDestroy(() => thumbs.destroy());
-
-  let box = $state<HTMLElement | null>(null);
-  let width = $state(0);
-  let loaded = $state(false);
-  $effect(() => {
-    if (!box || !canThumb) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) {
-        thumbs.request(deck.currentVersion);
-        io.disconnect();
-      }
-    });
-    io.observe(box);
-    return () => io.disconnect();
-  });
-  const url = $derived(canThumb ? thumbs.url(deck.currentVersion) : null);
+  let still = $state<StillState>('idle');
 </script>
 
 <!-- SECURITY: the title, the description and every frontmatter value are
@@ -84,32 +52,15 @@
   data-deck-id={deck.id}
   aria-pressed={selected}
   onclick={onOpen}
-  onpointerenter={() => (played = true)}
-  onpointerleave={() => (played = false)}
-  onfocus={() => (played = true)}
-  onblur={() => (played = false)}
 >
   {#if deck.defaultReference}
     <span class="crown" data-testid="reference-default"
       ><Crown class="size-3.5" strokeWidth={1.6} />{t('refs.default')}</span
     >
   {/if}
-  <div class="plate-window plate" bind:this={box} bind:clientWidth={width}>
-    <PatternCanvas pattern="slides" {palette} {seed} active={played && !loaded} />
-    {#if url && width}
-      <iframe
-        src={url}
-        title={deck.title}
-        sandbox={PREVIEW_SANDBOX}
-        referrerpolicy="no-referrer"
-        tabindex="-1"
-        aria-hidden="true"
-        loading="lazy"
-        class="thumb"
-        class:loaded
-        style="transform: scale({width / 1280})"
-        onload={() => (loaded = true)}
-      ></iframe>
+  <div class="plate-window plate" data-still={deck.currentVersion > 0 ? still : undefined}>
+    {#if deck.currentVersion > 0}
+      <DeckStill deckId={deck.id} version={deck.currentVersion} bind:state={still} />
     {/if}
     {#if deck.currentVersion > 0}
       <span class="chip">{t('refs.version', { n: deck.currentVersion })}</span>
@@ -194,22 +145,7 @@
   }
   .plate {
     aspect-ratio: 16 / 9;
-  }
-  .thumb {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 1280px;
-    height: 720px;
-    border: 0;
-    transform-origin: top left;
-    pointer-events: none;
-    background: var(--ground);
-    opacity: 0;
-    transition: opacity 320ms var(--motion-ease);
-  }
-  .thumb.loaded {
-    opacity: 1;
+    background: var(--ground-2);
   }
   .chip {
     position: absolute;

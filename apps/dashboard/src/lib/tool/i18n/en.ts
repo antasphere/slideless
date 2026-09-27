@@ -184,7 +184,7 @@ export const en = {
 
   // ── Decks (list) ─────────────────────────────────────────────────────
   'decks.title': 'Decks',
-  'decks.description': 'Your presentations. Every push from the command line or an agent is a new version.',
+  'decks.description': 'Your presentations, one version per push.',
   'decks.newDeck': 'New deck',
   'decks.colTitle': 'Title',
   'decks.colKind': 'Kind',

@@ -27,6 +27,14 @@ export function stackEnv() {
     AUTH_SECRET: '',
     // The runner mints this in playwright.config.ts; the smoke presents it.
     SETUP_TOKEN: process.env.PW_SMOKE_SETUP_TOKEN ?? '',
-    EMAIL_DRIVER: 'none'
+    EMAIL_DRIVER: 'none',
+    // The renderer container (PRDCT-2725), built from this checkout, so the
+    // master spec sees a real still image. The secret is minted once in
+    // playwright.config.ts, so every runner process hands the same one to
+    // the app and to the renderer.
+    COMPOSE_PROFILES: 'images',
+    RENDERER_IMAGE: 'slideless-renderer:pw-smoke',
+    SLIDELESS_RENDERER_URL: 'http://renderer:3100',
+    SLIDELESS_RENDERER_SECRET: process.env.PW_SMOKE_RENDERER_SECRET ?? randomBytes(16).toString('hex')
   };
 }

@@ -139,6 +139,28 @@ jobs:
               --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln \
               --exit-code 1 --no-progress \
               slideless-scan:test
+      # The renderer image (PRDCT-2725) is scanned too, but it carries a
+      # browser, which always has open findings between its releases: its
+      # scan REPORTS in the log and never gates the app's release (the
+      # lane's call, to be confirmed at the merge gate).
+      - name: Build the renderer image (runner arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/renderer/Dockerfile
+          load: true
+          tags: slideless-renderer-scan:test
+          cache-from: type=gha,scope=renderer
+      - name: Trivy scan of the renderer (report only)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -e TRIVY_USERNAME=${{ github.actor }} \
+            -e TRIVY_PASSWORD=${{ secrets.GITHUB_TOKEN }} \
+            aquasec/trivy:latest image \
+              --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln \
+              --exit-code 0 --no-progress \
+              slideless-renderer-scan:test
 
   publish:
     runs-on: ubuntu-latest
@@ -211,6 +233,35 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The renderer image (PRDCT-2725), published beside the app under the
+      # same tags as ghcr.io/<repo>-renderer. Its cloud deployment is a
+      # follow-up: the fleet dispatch below still rolls the app alone.
+      - id: renderer-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}-renderer
+          # The action titles every image after the repository; keep the Dockerfile's own.
+          labels: |
+            org.opencontainers.image.title=slideless-renderer
+          tags: |
+            type=raw,value=next,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build + push the renderer
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/renderer/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.renderer-meta.outputs.tags }}
+          labels: ${{ steps.renderer-meta.outputs.labels }}
+          cache-from: type=gha,scope=renderer
+          cache-to: type=gha,mode=max,scope=renderer
 
       # Hand the published image to the fleet (PRDCT-2326). The roll itself lives in
       # the fleet repository's deploy workflow, never here: this repository is going

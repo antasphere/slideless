@@ -19,8 +19,8 @@ import { signInAsOwner } from './accounts';
  * link created and copied, a duplicate that lands on its own page, delete.
  *
  * PRDCT-2308 (the second pass): hovering [[Version history]] opens the
- * versions beside the menu, each with a live sandboxed thumbnail, its
- * files, its views and downloads; the version badge on the right opens
+ * versions beside the menu, each with a still thumbnail (the image the
+ * server captured at the push, PRDCT-2725, no deck HTML), its files, its views and downloads; the version badge on the right opens
  * the same list on hover and a pick shows that version; [[Show]] in the
  * sheet closes it by itself; the links table copies and opens a link made
  * in this session and shows one check column per capability; the create
@@ -190,7 +190,7 @@ test('master page: full-page deck under the bar — rename, version history with
     expect((await fresh.json()).title).toBe(RENAMED);
   });
 
-  await test.step('hovering Version history opens the versions beside the menu, newest first, each with a live thumbnail and its counts', async () => {
+  await test.step('hovering Version history opens the versions beside the menu, newest first, each with a still thumbnail and its counts', async () => {
     await openTitleMenu(page);
     await page.getByTestId('master-history-trigger').hover();
     const popover = page.getByTestId('master-history-popover');
@@ -209,14 +209,17 @@ test('master page: full-page deck under the bar — rename, version history with
       .getByTestId('version-list')
       .evaluate((el) => getComputedStyle(el).overflowY);
     expect(overflow).toBe('auto');
-    // Each thumbnail is the viewer's own page for that version, in the exact
-    // ADR 012 sandbox, scaled down, taking no pointer events.
-    const thumb = popover.locator('[data-testid="version-thumb"][data-version="1"] iframe');
-    await expect(thumb).toHaveCount(1, { timeout: 15_000 });
-    expect(await thumb.getAttribute('sandbox')).toBe(VIEWER_IFRAME_SANDBOX);
-    expect(await thumb.getAttribute('sandbox')).not.toContain('allow-same-origin');
-    expect(await thumb.getAttribute('referrerpolicy')).toBe('no-referrer');
-    expect(await thumb.getAttribute('src')).toMatch(/\/v\/[A-Za-z0-9_-]{20,}/);
+    // Each thumbnail is the still image the server captured for that version
+    // (PRDCT-2725): an <img> on a blob: URL, never a frame of the deck, taking
+    // no pointer events. The capture runs after the push, so the wait covers
+    // the loader's retries.
+    const box = popover.locator('[data-testid="version-thumb"][data-version="1"]');
+    await expect(box).toHaveAttribute('data-loaded', '', { timeout: 30_000 });
+    await expect(box.locator('iframe')).toHaveCount(0);
+    const thumb = box.locator('img');
+    await expect(thumb).toHaveCount(1);
+    expect(await thumb.getAttribute('src')).toMatch(/^blob:/);
+    expect(await thumb.evaluate((el) => el.naturalWidth)).toBeGreaterThan(0);
     expect(await thumb.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
     // The popover carries the product's one motion.
     const motion = await popover.evaluate((el) => ({
@@ -254,9 +257,11 @@ test('master page: full-page deck under the bar — rename, version history with
     await expect(sheet).toBeVisible();
     const rows = sheet.getByTestId('version-row');
     await expect(rows).toHaveCount(3);
-    await expect(rows.nth(0).locator('[data-testid="version-thumb"] iframe')).toHaveCount(1, {
-      timeout: 15_000
+    await expect(rows.nth(0).getByTestId('version-thumb')).toHaveAttribute('data-loaded', '', {
+      timeout: 30_000
     });
+    await expect(rows.nth(0).locator('[data-testid="version-thumb"] img')).toHaveCount(1);
+    await expect(rows.nth(0).locator('[data-testid="version-thumb"] iframe')).toHaveCount(0);
 
     const v3 = sheet.locator('[data-testid="version-row"][data-version="3"]');
     await expect(v3).toContainText('Current');
@@ -292,16 +297,15 @@ test('master page: full-page deck under the bar — rename, version history with
     expect(await iframe.getAttribute('sandbox')).toBe(VIEWER_IFRAME_SANDBOX);
   });
 
-  await test.step('leaving the page revokes every thumbnail token it minted (an in-app navigation)', async () => {
-    // The frame's token plus one per version the popovers rendered: each is
-    // revoked on the way out (verifier round 1, G4). The hard-navigation
-    // path (pagehide, keepalive) is pinned by the controller's unit test.
+  await test.step("the thumbnails mint no token; leaving the page revokes the frame's (an in-app navigation)", async () => {
+    // The still thumbnails are images (PRDCT-2725): the only live preview
+    // token is the big frame's, and it is revoked on the way out.
     const livePreviews = async () =>
       (await (await page.request.get(`/api/v1/presentations/${deckId}/tokens`)).json()).shareTokens.filter(
         (t: { purpose: string; revokedAt: string | null }) => t.purpose === 'preview' && !t.revokedAt
       ).length;
+    await expect.poll(livePreviews).toBe(1);
     const minted = await livePreviews();
-    expect(minted).toBeGreaterThanOrEqual(4);
     const revoked: string[] = [];
     page.on('request', (req) => {
       if (req.method() === 'DELETE' && /\/tokens\/[^/]+$/.test(req.url())) revoked.push(req.url());

@@ -17,7 +17,7 @@
      and renders through text interpolation only, never {@html}. A colour
      reaches an inline style only as a checked hex (hexOf); a font family
      reaches a font-family style only when it is on the Google Fonts list. */
-  import { onDestroy, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import * as Sheet from '$lib/components/ui/sheet/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -25,8 +25,7 @@
   import { Tag } from '$lib/components/ui/tag';
   import { appear, reveal } from '$lib/components/ui/reveal/index.js';
   import VersionList from '$lib/tool/components/decks/VersionList.svelte';
-  import { PREVIEW_SANDBOX } from '$lib/tool/decks';
-  import { canPreviewDeck, createThumbnailController } from '$lib/tool/decks/preview.svelte';
+  import DeckStill from '$lib/tool/components/decks/DeckStill.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
   import { download } from '$lib/download';
@@ -84,10 +83,6 @@
   const typeName = $derived(t(type === 'brand' ? 'refs.typeBrandLower' : 'refs.typeTemplateLower'));
 
   // ── The versions and the one shown ──────────────────────────────────────
-  const canPreview = $derived(canPreviewDeck(me, deck));
-  const thumbs = createThumbnailController(deckId, { canPreview: () => canPreview });
-  onDestroy(() => thumbs.destroy());
-
   const versions = createPagedList<PresentationVersionSummary>(async (p) => {
     const { versions, nextCursor } = await api.presentationVersions(deckId, p);
     return { items: versions, nextCursor };
@@ -110,12 +105,6 @@
       .catch((e) => (detailErrors = { ...detailErrors, [v]: errorMessage(e, t('common.genericError')) }));
   });
   const detail = $derived(details[shownVersion] ?? null);
-  // the plate asks for the shown version's rendering once it may
-  let previewWidth = $state(0);
-  $effect(() => {
-    if (canPreview && shownVersion > 0) thumbs.request(shownVersion);
-  });
-  const previewUrl = $derived(canPreview ? thumbs.url(shownVersion) : null);
   // The frontmatter of the shown version: the detail's once it is here, the
   // deck's own for the current version meanwhile.
   const reference = $derived(
@@ -214,29 +203,13 @@
   {/if}
 </Sheet.Header>
 
-<!-- the live rendering is owner-level on the server (the preview token): a
-     member who cannot mint one gets no empty plate here, the card's drawing
-     stands for the deck -->
-{#if deck.currentVersion > 0 && canPreview}
+<!-- the shown version's still image, captured on the server at its push and
+     served to every reader of the deck (PRDCT-2725); a picture, no deck HTML -->
+{#if deck.currentVersion > 0}
   <section class="space-y-2">
     <p class="eyebrow">{t('refs.sheetPreview', { n: shownVersion })}</p>
-    <!-- the shown version, live, framed at deck size and scaled to the sheet's
-         width (the card's plate does the same); SECURITY: the same sandbox set
-         as every preview, never allow-same-origin, no pointer events -->
-    <div class="plate-window preview" bind:clientWidth={previewWidth} data-testid="reference-preview">
-      {#if previewUrl && previewWidth}
-        <iframe
-          src={previewUrl}
-          title={t('master.thumbTitle', { n: shownVersion })}
-          sandbox={PREVIEW_SANDBOX}
-          referrerpolicy="no-referrer"
-          tabindex="-1"
-          aria-hidden="true"
-          loading="lazy"
-          class="thumb"
-          style="transform: scale({previewWidth / 1280})"
-        ></iframe>
-      {/if}
+    <div class="plate-window preview" data-testid="reference-preview">
+      <DeckStill {deckId} version={shownVersion} alt={t('master.thumbTitle', { n: shownVersion })} />
     </div>
   </section>
 {/if}
@@ -455,7 +428,7 @@
   <div class="versions">
     <VersionList
       list={versions}
-      {thumbs}
+      {deckId}
       currentVersion={deck.currentVersion}
       {shownVersion}
       onPick={(v) => (shownVersion = v)}
@@ -545,17 +518,6 @@
   .preview {
     aspect-ratio: 16 / 9;
     width: 100%;
-  }
-  .thumb {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 1280px;
-    height: 720px;
-    border: 0;
-    transform-origin: top left;
-    pointer-events: none;
-    background: var(--ground);
   }
   .eyebrow {
     font-size: 11.5px;

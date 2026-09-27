@@ -3,7 +3,6 @@
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import VersionThumb from './VersionThumb.svelte';
-  import type { ThumbnailController } from '$lib/tool/decks/preview.svelte';
   import type { PagedList } from '$lib/stores/pagedList.svelte';
   import { formatTimeAgo } from '$lib/format';
   import { t } from '$lib/i18n';
@@ -12,7 +11,7 @@
 
   /**
    * The version popover's body (PRDCT-2308): every version newest first in
-   * a scrollable list with a max height, each row a live thumbnail, the
+   * a scrollable list with a max height, each row a still thumbnail, the
    * version, its file count, its views and its downloads. One component for
    * both popovers — the title menu's sub-menu (rows are menu items, so the
    * arrow keys and Enter work) and the hover card on the bar's version badge
@@ -21,7 +20,7 @@
    */
   interface Props {
     list: PagedList<PresentationVersionSummary>;
-    thumbs: ThumbnailController;
+    deckId: string;
     currentVersion: number;
     /** The version the frame shows (page state). */
     shownVersion: number | null;
@@ -30,11 +29,11 @@
     onPick: (version: number) => void;
   }
 
-  let { list, thumbs, currentVersion, shownVersion, menu = false, onPick }: Props = $props();
+  let { list, deckId, currentVersion, shownVersion, menu = false, onPick }: Props = $props();
 </script>
 
 {#snippet row(version: PresentationVersionSummary)}
-  <VersionThumb {thumbs} version={version.version} />
+  <VersionThumb {deckId} version={version.version} />
   <div class="min-w-0 flex-1 space-y-0.5">
     <div class="flex flex-wrap items-center gap-1.5 text-sm">
       <span class="font-mono font-medium">v{version.version}</span>

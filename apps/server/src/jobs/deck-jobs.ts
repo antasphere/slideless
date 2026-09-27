@@ -7,13 +7,14 @@ import { purgeShareTokenViews } from '../sharing/view-events.js';
 import { purgeShareTokenDownloads } from '../sharing/download-events.js';
 
 /**
- * The deck domain's three nightly jobs, declared to the chassis job runtime
+ * The deck domain's jobs (three nightly purges and the minute thumbnail sweep), declared to the chassis job runtime
  * (`createJobs(…, deckJobs(…))`), which installs their queues inside its
  * advisory-lock section and registers their pollers where they always ran.
  */
 export const UPLOAD_SESSION_PURGE_QUEUE = 'upload-session-purge';
 export const VIEW_EVENTS_PURGE_QUEUE = 'view-events-purge';
 export const FORM_UPLOAD_PURGE_QUEUE = 'form-upload-purge';
+export const THUMBNAIL_SWEEP_QUEUE = 'thumbnail-sweep';
 
 /**
  * Upload sessions carry a ~1 h TTL (ADR 011), so the table is bounded by an
@@ -33,9 +34,17 @@ export interface DeckJobsDeps {
   logger: Logger;
   /** Purge owned by a service built after the jobs (it needs the storage driver): resolved at RUN time. */
   purgeFormUploads: () => Promise<number>;
+  /** The still-image capture's drain (PRDCT-2725), owned by the thumbnail service: resolved at RUN time. */
+  sweepThumbnails: () => Promise<void>;
 }
 
-export function deckJobs({ env, db, logger, purgeFormUploads }: DeckJobsDeps): JobDeclaration[] {
+export function deckJobs({
+  env,
+  db,
+  logger,
+  purgeFormUploads,
+  sweepThumbnails
+}: DeckJobsDeps): JobDeclaration[] {
   const viewRetentionDays = env.VIEW_EVENTS_RETENTION_DAYS;
   return [
     // Upload-session purge: expired reservations (consumed or abandoned) are
@@ -56,6 +65,19 @@ export function deckJobs({ env, db, logger, purgeFormUploads }: DeckJobsDeps): J
       handler: async () => {
         const removed = await purgeFormUploads();
         logger.info({ removed }, 'form upload purge ran');
+      }
+    },
+    // Thumbnail sweep (PRDCT-2725): a push starts a drain in the process that
+    // took it (`thumbnails.kick()`); this minute sweep is what captures when
+    // that process cannot (an api-only replica, whose renderer is null), what
+    // resumes after a restart or a lease that ran out, and what backfills the
+    // decks older than the feature (the drain seeds every current version
+    // with no image). A process without a renderer drains nothing.
+    {
+      queue: THUMBNAIL_SWEEP_QUEUE,
+      schedule: { cron: '* * * * *' },
+      handler: async () => {
+        await sweepThumbnails();
       }
     },
     // Per-view analytics retention (PRDCT-1313): share_token_views grows one
