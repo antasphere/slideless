@@ -555,6 +555,18 @@ export function createApiApp<
   // Registered here, after the size and depth caps, so the guard's body read
   // is bounded.
   api.use('/auth/*', authBodyGuard());
+  // Demo sign-in, the second door of "a session a pass opened lives only
+  // while its pass does": the sign-in library's mount runs BEFORE the
+  // credential resolver, and it is where a session authorizes an OAuth client
+  // and answers get-session. A dead pass's session is deleted here first, so
+  // the library sees none. The verdict itself is not needed at this door.
+  if (demoSignIn) {
+    const judge = demoSessionJudge(db);
+    api.use('/auth/*', async (c, next) => {
+      if (c.req.header('cookie')) await judge(c.req.raw.headers);
+      return next();
+    });
+  }
 
   // Better Auth owns /api/v1/auth/* (mounted before the credential middleware
   // — it IS the credential machinery). On cloud the whole mount runs inside

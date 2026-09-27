@@ -235,9 +235,11 @@ export class DemoPassService {
    * goes on signed out. Without it a link valid one day would open a session
    * the library keeps a year and renews on use.
    *
-   * The session cookie is `<token>.<signature>`; the resolver already
-   * resolved a principal from this very cookie, so its signature has been
-   * checked and the token part is enough to find the row.
+   * The session cookie is `<token>.<signature>` and only the token part is
+   * read, the signature unchecked: at the resolver it was already checked, and
+   * at the sign-in library's door it does not need to be, because the only
+   * thing this can do with a token is delete the session of a pass that is
+   * already dead, and the token is that session's own secret.
    */
   async judgeSession(headers: Headers): Promise<{ passId: string } | 'ended' | null> {
     const cookie = getSessionCookie(headers);

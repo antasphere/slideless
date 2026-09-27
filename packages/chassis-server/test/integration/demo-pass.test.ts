@@ -675,4 +675,20 @@ describe('a session a pass opened lives only while its pass does', () => {
     ]);
     expect((await send(app, 'GET', '/me', actors.member!)).status).toBe(200);
   });
+
+  it('p. the sign-in library’s own door: get-session on an expired pass’s session answers null and deletes the row, with no API request in between', async () => {
+    const owner = actors.owner!;
+    const minted = await mint(owner, { email: 'member@example.com' });
+    const cookie = extractCookie(await redeem(minted.secret));
+    const live = await app.app.request('/api/v1/auth/get-session', { headers: { cookie } });
+    expect(((await live.json()) as { user: { email: string } }).user.email).toBe('member@example.com');
+
+    await app.db.pool.query(`UPDATE demo_passes SET expires_at = now() - interval '1 minute' WHERE id = $1`, [
+      minted.id
+    ]);
+
+    const dead = await app.app.request('/api/v1/auth/get-session', { headers: { cookie } });
+    expect(await dead.json()).toBeNull();
+    expect(await sessionRowsOf(minted.id)).toBe(0);
+  });
 });
