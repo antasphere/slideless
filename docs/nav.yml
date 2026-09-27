@@ -34,6 +34,7 @@ groups:
       - self-hosting/hostinger
       - self-hosting/reverse-proxy
       - self-hosting/deployment-profiles
+      - self-hosting/demo-links
       - self-hosting/upgrade
   - title: Operations
     pages:
