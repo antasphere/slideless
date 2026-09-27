@@ -32,7 +32,7 @@
   title={t('nav.settings')}
   lede={t('settings.instanceLede')}
   pageTitle={t('settings.tabInstance')}
-  tabs={settingsTabs()}
+  tabs={settingsTabs(data)}
   drawing="meridians"
 />
 

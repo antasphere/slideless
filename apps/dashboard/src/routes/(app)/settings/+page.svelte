@@ -112,7 +112,7 @@
   title={t('nav.settings')}
   lede={t('settings.workspaceLede')}
   pageTitle={t('settings.tabWorkspace')}
-  tabs={settingsTabs()}
+  tabs={settingsTabs(data)}
   drawing="meridians"
 />
 

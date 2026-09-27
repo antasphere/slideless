@@ -326,7 +326,7 @@
   title={t('nav.settings')}
   lede={t('account.lede')}
   pageTitle={t('account.title')}
-  tabs={settingsTabs()}
+  tabs={settingsTabs(data)}
   drawing="meridians"
 />
 
