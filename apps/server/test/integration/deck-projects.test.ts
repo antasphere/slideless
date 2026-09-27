@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { workspaceMembers } from '@antasphere/chassis-db';
+import { and, eq } from 'drizzle-orm';
+import { workspaceMembers, workspaceTeamMembers, workspaceTeams } from '@antasphere/chassis-db';
 import {
   createDatabase,
   createTestApp,
@@ -821,5 +822,95 @@ describe('the project’s brand: a brand reference linked to the project, one pe
       403,
       'endpoint_not_allowed'
     );
+  });
+});
+
+describe('a team on the project opens the three homes to its members, and closes them when the seat goes', () => {
+  const sha = shaOf(DECK_HTML);
+  let team = '';
+
+  const seat = (who: Who) =>
+    app.db.db.insert(workspaceTeamMembers).values({ teamId: team, memberId: memberIds[who] });
+  const unseat = (who: Who) =>
+    app.db.db
+      .delete(workspaceTeamMembers)
+      .where(and(eq(workspaceTeamMembers.teamId, team), eq(workspaceTeamMembers.memberId, memberIds[who])));
+  const addTeam = async (role: 'manager' | 'editor' | 'viewer') => {
+    const res = await send('POST', `/projects/${project}/members`, 'manager', { teamId: team, role });
+    expect(res.status).toBe(201);
+  };
+  /** The four reads, the list with and without ?project, and the blob: everything a reader of the deck sees. */
+  async function sees(who: Who) {
+    return {
+      reads: await reads(who, deck, sha),
+      listed: (await listIds(who)).includes(deck),
+      filtered: (await send('GET', `/presentations?project=${project}`, who)).status,
+      blob: await blobStatus(who, sha)
+    };
+  }
+  const OPEN = { reads: ALL_200, listed: true, filtered: 200, blob: 200 };
+  const CLOSED = { reads: ALL_404, listed: false, filtered: 404, blob: 404 };
+
+  beforeAll(async () => {
+    // The deck is linked to the project again by the tests above; the outsider holds no entry of their own.
+    const [row] = await app.db.db
+      .insert(workspaceTeams)
+      .values({ workspaceId, slug: 'deck-readers', name: 'Deck readers', hubTeamId: null })
+      .returning({ id: workspaceTeams.id });
+    team = row!.id;
+  });
+
+  it('before the team, the outsider sees nothing', async () => {
+    expect(await sees('outsider')).toEqual(CLOSED);
+  });
+
+  it('seated and the team added as viewer: home 1, home 2 and home 3 open to the outsider', async () => {
+    await seat('outsider');
+    await addTeam('viewer');
+    expect(await reads('outsider', deck, sha)).toEqual(ALL_200);
+    expect(await listIds('outsider')).toContain(deck);
+    expect(await listIds('outsider', `?project=${project}`)).toContain(deck);
+    expect(await blobStatus('outsider', sha)).toBe(200);
+  });
+
+  it('the write rule: viewer through the team is the uniform 404, editor through the team commits', async () => {
+    const current = (await readJson(await send('GET', `/presentations/${deck}`, 'outsider'))).currentVersion;
+    const next = { path: 'index.html', bytes: htmlOf('pushed through a team'), contentType: 'text/html' };
+    await upload('outsider', next);
+    const body = { expectedBaseVersion: current, entryPath: 'index.html', manifest: [entryOf(next)] };
+    await expectError(
+      await send('POST', `/presentations/${deck}/versions`, 'outsider', body),
+      404,
+      'not_found'
+    );
+    const raised = await send('PATCH', `/projects/${project}/teams/${team}`, 'manager', { role: 'editor' });
+    expect(raised.status).toBe(200);
+    const res = await send('POST', `/presentations/${deck}/versions`, 'outsider', body);
+    expect(res.status).toBe(201);
+    expect((await readJson(res)).version).toMatchObject({ version: current + 1, createdByRole: 'dev' });
+  });
+
+  it('the seat removed: the four reads, the list and the blob answer 404 on the next request', async () => {
+    await unseat('outsider');
+    expect(await sees('outsider')).toEqual(CLOSED);
+  });
+
+  it('seated again, then the team removed from the project: the same closure', async () => {
+    await seat('outsider');
+    expect(await sees('outsider')).toEqual(OPEN);
+    expect((await send('DELETE', `/projects/${project}/teams/${team}`, 'manager')).status).toBe(200);
+    expect(await sees('outsider')).toEqual(CLOSED);
+  });
+
+  it('a guest seated by force in the team still reads nothing', async () => {
+    await addTeam('manager');
+    await seat('guest');
+    // The team is live on the project: the outsider, still seated, reads again.
+    expect(await reads('outsider', deck, sha)).toEqual(ALL_200);
+    expect(await reads('guest', deck, sha)).toEqual(ALL_404);
+    expect(await listIds('guest')).not.toContain(deck);
+    // A guest is refused the generic /files surface flat (D2): 403, before any rule.
+    expect(await blobStatus('guest', sha)).toBe(403);
+    await unseat('guest');
   });
 });
