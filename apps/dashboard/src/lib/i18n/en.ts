@@ -324,6 +324,9 @@ export const en = {
   'invite.createAndJoin': 'Create account and join',
   'invite.errorWrongPassword': 'Wrong password for this account.',
   'invite.errorSignInFailed': 'Sign-in failed.',
+  'invite.ssoIntro': 'This instance signs in with Antasphere. Sign in to accept your invitation.',
+  'invite.ssoWrongAccount':
+    'You are signed in as {current}, but this invitation is for {email}. Sign in with the invited account to accept it.',
 
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Authorization request invalid',

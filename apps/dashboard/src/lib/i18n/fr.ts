@@ -329,6 +329,10 @@ export const fr: Record<keyof typeof en, string> = {
   'invite.createAndJoin': 'Créer le compte et rejoindre',
   'invite.errorWrongPassword': 'Mot de passe incorrect pour ce compte.',
   'invite.errorSignInFailed': 'Échec de la connexion.',
+  'invite.ssoIntro':
+    'Cette instance se connecte via Antasphere. Connectez-vous pour accepter votre invitation.',
+  'invite.ssoWrongAccount':
+    'Vous êtes connecté en tant que {current}, mais cette invitation est destinée à {email}. Connectez-vous avec le compte invité pour l’accepter.',
 
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Demande d’autorisation invalide',
