@@ -72,6 +72,7 @@ import {
 import { registerSsoConnectRoutes } from './index.js';
 import { registerSsoLogoutRoutes } from './index.js';
 import { registerMemberRoutes } from './index.js';
+import { demoSignInOn, registerDemoPassRoutes } from './index.js';
 import { registerProjectRoutes } from './index.js';
 import { registerTeamRoutes } from './index.js';
 import { registerApiKeyRoutes } from './index.js';
@@ -345,6 +346,9 @@ export function createApiApp<
   // hubManageUrl null.
   const hub = hubConfig(env);
   const hubManaged = hub ? { manageUrl: hub.issuerUrl } : undefined;
+  // Demo sign-in (the demo pass spec): DEMO_SIGN_IN on the self-hosted
+  // edition only. Off, no demo route, wall or discovery key exists.
+  const demoSignIn = demoSignInOn(env, hub, logger);
 
   const api = new OpenAPIHono({
     // Validation failures use the same wire shape as every other error.
@@ -707,6 +711,8 @@ export function createApiApp<
             : {})
         },
         features: { mcp: true, oauth: true, files: true },
+        // Present only while demo links sign people in here (the banner's cue).
+        ...(demoSignIn ? { demoSignIn: true } : {}),
         // What this version declares for the billing rail (§7): the hub seeds
         // from it, staff read it, a client reads the limit it is held to.
         entitlements: {
@@ -1184,6 +1190,14 @@ export function createApiApp<
   // Teams: the tool's own on self-hosted (and in a cloud-local workspace), the
   // hub's projection in a hub-origin workspace, where the members' gate refuses the writes.
   registerTeamRoutes(api, { db, hubManaged });
+  if (demoSignIn) {
+    registerDemoPassRoutes(api, {
+      db,
+      publicBaseUrl: env.PUBLIC_BASE_URL,
+      emailDomains: env.DEMO_SIGN_IN_EMAIL_DOMAINS,
+      guestTargetMessage: tool.copy.guestTarget
+    });
+  }
   registerApiKeyRoutes(api, db, apiKeyService, { apiKeysListRoute, apiKeyCreateRoute, apiKeyRevokeRoute });
   registerInvitationRoutes(api, {
     db,
