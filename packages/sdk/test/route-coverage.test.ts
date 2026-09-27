@@ -32,6 +32,7 @@ const SAMPLE_MANIFEST = [
 /** contract route → an SDK call. Keyed by `METHOD path` (contract shape). */
 /** A Better Auth user id: text, never a uuid. */
 const SAMPLE_USER_ID = 'usr_projects_coverage';
+const SAMPLE_TEAM_ID = '7b0c3d1e-2f4a-4b6c-8d9e-0f1a2b3c4d5e';
 
 const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /instance': (c) => c.instance(),
@@ -91,6 +92,16 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'POST /projects/{id}/members': (c) => c.addProjectMember(SAMPLE_ID, { email: 'a@b.co', role: 'viewer' }),
   'PATCH /projects/{id}/members/{userId}': (c) => c.setProjectMemberRole(SAMPLE_ID, SAMPLE_USER_ID, 'editor'),
   'DELETE /projects/{id}/members/{userId}': (c) => c.removeProjectMember(SAMPLE_ID, SAMPLE_USER_ID),
+  'PATCH /projects/{id}/teams/{teamId}': (c) => c.setProjectTeamRole(SAMPLE_ID, SAMPLE_TEAM_ID, 'editor'),
+  'DELETE /projects/{id}/teams/{teamId}': (c) => c.removeProjectTeam(SAMPLE_ID, SAMPLE_TEAM_ID),
+  'GET /teams': (c) => c.teams(),
+  'GET /teams/{id}': (c) => c.team(SAMPLE_ID),
+  'POST /teams': (c) => c.createTeam({ name: 'Design' }),
+  'PATCH /teams/{id}': (c) => c.updateTeam(SAMPLE_ID, { name: 'Design' }),
+  'DELETE /teams/{id}': (c) => c.deleteTeam(SAMPLE_ID),
+  'GET /teams/{id}/members': (c) => c.teamMembers(SAMPLE_ID),
+  'POST /teams/{id}/members': (c) => c.addTeamMember(SAMPLE_ID, { email: 'a@b.co' }),
+  'DELETE /teams/{id}/members/{userId}': (c) => c.removeTeamMember(SAMPLE_ID, SAMPLE_USER_ID),
   'GET /projects/{id}/brand': (c) => c.projectBrand(SAMPLE_ID),
   'PUT /projects/{id}/brand': (c) => c.setProjectBrand(SAMPLE_ID, SAMPLE_ID),
   'DELETE /projects/{id}/brand': (c) => c.clearProjectBrand(SAMPLE_ID),
@@ -201,6 +212,7 @@ function expectedPath(contractPath: string): string {
     .replace('{id}', SAMPLE_ID)
     .replace(/\{(tokenId|collaboratorId|annotationId|responseId|projectId)\}/, SAMPLE_CHILD_ID)
     .replace('{userId}', SAMPLE_USER_ID)
+    .replace('{teamId}', SAMPLE_TEAM_ID)
     .replace('{fileId}', SAMPLE_FILE_ID)
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)
