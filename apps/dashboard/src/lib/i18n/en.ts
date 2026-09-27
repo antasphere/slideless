@@ -820,6 +820,8 @@ export const en = {
   'workspace.actionOpen': 'Open',
   'workspace.actionSettings': 'Settings',
   'workspace.actionMakeDefault': 'Make default',
+  'workspace.defaultSetToast': '{workspace} is now your default workspace',
+  'workspace.defaultSetFailed': 'Could not set the default workspace',
   'workspace.actionIsDefault': 'Your default',
   // gate pages: the small line over each title
   'gate.eyebrowSignup': 'New here',

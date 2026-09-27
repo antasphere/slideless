@@ -840,6 +840,8 @@ export const fr: Record<keyof typeof en, string> = {
   'workspace.actionOpen': 'Ouvrir',
   'workspace.actionSettings': 'Réglages',
   'workspace.actionMakeDefault': 'Définir par défaut',
+  'workspace.defaultSetToast': '{workspace} est maintenant votre espace de travail par défaut',
+  'workspace.defaultSetFailed': 'Impossible de définir l’espace de travail par défaut',
   'workspace.actionIsDefault': 'Votre défaut',
   // gate pages: the small line over each title
   'gate.eyebrowSignup': 'Nouveau ici',
