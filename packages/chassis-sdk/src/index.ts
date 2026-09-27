@@ -613,7 +613,7 @@ export class ChassisClient<TScope extends string> {
    * sign-in library (like `signInEmail`, no route contract), which sets the
    * session cookie on this very answer; in a browser, call it same-origin.
    * Every refusal of a pass is one 401 `invalid_demo_pass`, whatever the
-   * reason; 429 `rate_limited` past 20 tries in 15 minutes from one address.
+   * reason; 429 `rate_limited` past 20 REFUSED tries in 15 minutes from one address.
    */
   redeemDemoPass(secret: string): Promise<DemoPassRedeemed> {
     return this.request('POST', '/auth/demo/redeem', { pass: secret });
