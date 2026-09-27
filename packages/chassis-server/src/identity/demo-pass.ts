@@ -13,6 +13,7 @@ import {
   type DbConn
 } from '@antasphere/chassis-db';
 import type { DemoPass } from '@antasphere/chassis-contract';
+import { mintRefusal } from '../accounts/mint-refusal.js';
 import { isDemoAddress } from './demo-pass-rules.js';
 
 /**
@@ -161,10 +162,12 @@ export class DemoPassService {
    * The redeem's lookup (spec section 4, step 2): the pass whose secret hashes
    * to this, and only while EVERY condition still holds: not expired, not
    * revoked, its person still there, still an ACTIVE member of the pass's
-   * workspace, the address still a demonstration address, and no second
-   * factor enrolled since the mint. One statement for the pass, its person
-   * and the membership; null whatever the reason, so the caller has one
-   * answer to give.
+   * workspace, the address still a demonstration address, no second factor
+   * enrolled since the mint, and the mint's own refusals judged again: not
+   * an owner now unless the pass is their own, not a guest, and no
+   * membership in any other workspace (`mintRefusal`). One statement for the
+   * pass, its person and the membership; null whatever the reason, so the
+   * caller has one answer to give.
    */
   async redeemable(secret: string, extraDomains: ReadonlySet<string>): Promise<RedeemablePass | null> {
     const [row] = await this.db
@@ -173,6 +176,9 @@ export class DemoPassService {
         workspaceId: demoPasses.workspaceId,
         targetPath: demoPasses.targetPath,
         expiresAt: demoPasses.expiresAt,
+        createdBy: demoPasses.createdBy,
+        role: workspaceMembers.role,
+        origin: workspaceMembers.origin,
         userId: userTable.id,
         email: userTable.email,
         name: userTable.name,
@@ -199,6 +205,18 @@ export class DemoPassService {
     if (!row) return null;
     if (row.twoFactorEnabled) return null;
     if (!isDemoAddress(row.email, extraDomains)) return null;
+    if (row.role === 'owner' && row.userId !== row.createdBy) return null;
+    // The message is the mint's; here only whether there is a refusal counts.
+    if (
+      await mintRefusal(
+        this.db,
+        '',
+        { workspaceId: row.workspaceId },
+        { userId: row.userId, origin: row.origin }
+      )
+    ) {
+      return null;
+    }
     return {
       passId: row.passId,
       workspaceId: row.workspaceId,

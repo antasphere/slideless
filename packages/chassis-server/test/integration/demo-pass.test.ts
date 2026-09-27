@@ -480,6 +480,49 @@ describe('the redeem', () => {
     }
   });
 
+  /** The one answer every refused redeem gives (test g), with no session set. */
+  async function expectRefusedRedeem(secret: string): Promise<void> {
+    const res = await redeem(secret);
+    expect({ ...(await answerOf(res)), sets: setsSession(res) }).toEqual({
+      status: 401,
+      body: JSON.stringify({ error: { code: 'invalid_demo_pass', message: 'This demo link is not valid' } }),
+      sets: false
+    });
+  }
+
+  it('g3. a member made an owner after the mint is refused at the redeem', async () => {
+    const promoted = await addMember('promoted', 'promoted@example.com', { signIn: false });
+    const minted = await mint(actors.owner!, { email: promoted.email });
+    await app.db.pool.query(`UPDATE workspace_members SET role = 'owner' WHERE user_id = $1`, [
+      promoted.userId
+    ]);
+    await expectRefusedRedeem(minted.secret);
+  });
+
+  it('g4. a member who joined another workspace after the mint is refused at the redeem', async () => {
+    const joined = await addMember('joined', 'joined@example.com', { signIn: false });
+    const minted = await mint(actors.owner!, { email: joined.email });
+    // `cross`'s other workspace, the one created in beforeAll.
+    const { rows } = await app.db.pool.query(
+      `SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND workspace_id <> $2`,
+      [actors.cross!.userId, workspaceId]
+    );
+    expect(rows).toHaveLength(1);
+    await app.db.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: rows[0].workspace_id, userId: joined.userId, role: 'member', origin: 'local' });
+    await expectRefusedRedeem(minted.secret);
+  });
+
+  it('g5. a member whose membership turned guest after the mint is refused at the redeem', async () => {
+    const turned = await addMember('turned', 'turned@example.com', { signIn: false });
+    const minted = await mint(actors.owner!, { email: turned.email });
+    await app.db.pool.query(`UPDATE workspace_members SET origin = 'guest' WHERE user_id = $1`, [
+      turned.userId
+    ]);
+    await expectRefusedRedeem(minted.secret);
+  });
+
   it('h. no Origin: 403 and no cookie; a foreign Origin: refused and no cookie', async () => {
     const minted = await mint(actors.owner!, { email: 'member@example.com' });
     const noOrigin = await app.app.request('/api/v1/auth/demo/redeem', {
