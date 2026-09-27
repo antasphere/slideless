@@ -4,10 +4,13 @@ import { getSessionCookie } from 'better-auth/cookies';
 import {
   demoPasses,
   demoPassSessions,
+  oauthAccessToken,
+  oauthRefreshToken,
   session as sessionTable,
   user as userTable,
   workspaceMembers,
-  type Db
+  type Db,
+  type DbConn
 } from '@antasphere/chassis-db';
 import type { DemoPass } from '@antasphere/chassis-contract';
 import { isDemoAddress } from './demo-pass-rules.js';
@@ -135,8 +138,9 @@ export class DemoPassService {
    * Revoke a pass of this workspace. Idempotent: a revoked pass keeps its
    * first revocation time and is answered again. Null when the workspace
    * holds no such pass. The sessions the pass opened END with it, in the same
-   * transaction: a revoke that left them alive would stop the next click and
-   * nothing else, and the owner revokes to take the access back.
+   * transaction (`endSessions`, their session links included): a revoke that
+   * left them alive would stop the next click and nothing else, and the owner
+   * revokes to take the access back.
    */
   async revoke(workspaceId: string, id: string): Promise<PassWithPerson | null> {
     const found = await this.db.transaction(async (tx) => {
@@ -146,17 +150,7 @@ export class DemoPassService {
         .where(and(eq(demoPasses.id, id), eq(demoPasses.workspaceId, workspaceId)))
         .returning({ id: demoPasses.id });
       if (updated.length === 0) return false;
-      await tx
-        .delete(sessionTable)
-        .where(
-          inArray(
-            sessionTable.id,
-            tx
-              .select({ id: demoPassSessions.sessionId })
-              .from(demoPassSessions)
-              .where(eq(demoPassSessions.passId, id))
-          )
-        );
+      await this.endSessions(await this.sessionIdsOf(id, tx), tx);
       return true;
     });
     if (!found) return null;
@@ -230,16 +224,17 @@ export class DemoPassService {
    * session a pass opened lives only while its pass does. Judged once per
    * request by the credential resolver, for session principals, while the
    * switch is on. Three answers: null (an ordinary session, the person signed
-   * in themselves), the pass's id (the audit mark) with the session's id, or `ended`: the pass has
-   * expired or was revoked, the session row is deleted here and the request
-   * goes on signed out. Without it a link valid one day would open a session
+   * in themselves), the pass's id (the audit mark) with the session's id, or
+   * `ended`: the pass has expired or was revoked, every session it opened is
+   * ended here (`endSessions`) and the request goes on signed out. Without it a link valid one day would open a session
    * the library keeps a year and renews on use.
    *
    * The session cookie is `<token>.<signature>` and only the token part is
    * read, the signature unchecked: at the resolver it was already checked, and
    * at the sign-in library's door it does not need to be, because the only
-   * thing this can do with a token is delete the session of a pass that is
-   * already dead, and the token is that session's own secret.
+   * thing this can do with a token is end the sessions of a pass that is
+   * already dead, or refuse that session a path, and the token is that
+   * session's own secret.
    */
   async judgeSession(headers: Headers): Promise<{ passId: string; sessionId: string } | 'ended' | null> {
     const cookie = getSessionCookie(headers);
@@ -259,7 +254,39 @@ export class DemoPassService {
       .limit(1);
     if (!row) return null;
     if (row.live) return { passId: row.passId, sessionId: row.sessionId };
-    await this.db.delete(sessionTable).where(eq(sessionTable.id, row.sessionId));
+    // The pass is dead: every session it opened ends now, not only the one
+    // presented, so a second tab's session does not wait for its own request.
+    await this.db.transaction(async (tx) => this.endSessions(await this.sessionIdsOf(row.passId, tx), tx));
     return 'ended';
+  }
+
+  /** The ids of the sessions a pass opened (its `demo_pass_sessions` rows). */
+  private async sessionIdsOf(passId: string, conn: DbConn): Promise<string[]> {
+    const rows = await conn
+      .select({ id: demoPassSessions.sessionId })
+      .from(demoPassSessions)
+      .where(eq(demoPassSessions.passId, passId));
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * End sessions a pass opened, and what they opened with them: the OAuth
+   * access and refresh tokens issued under them (deleted FIRST: their
+   * `session_id` is `on delete set null`, so deleting the session alone would
+   * leave them alive and unattached), the `demo_pass_sessions` links, then
+   * the `session` rows. In the caller's transaction when one is given, in
+   * its own otherwise.
+   */
+  async endSessions(sessionIds: readonly string[], tx?: DbConn): Promise<void> {
+    if (sessionIds.length === 0) return;
+    const ids = [...sessionIds];
+    const run = async (conn: DbConn) => {
+      await conn.delete(oauthAccessToken).where(inArray(oauthAccessToken.sessionId, ids));
+      await conn.delete(oauthRefreshToken).where(inArray(oauthRefreshToken.sessionId, ids));
+      await conn.delete(demoPassSessions).where(inArray(demoPassSessions.sessionId, ids));
+      await conn.delete(sessionTable).where(inArray(sessionTable.id, ids));
+    };
+    if (tx) return run(tx);
+    return this.db.transaction(async (own) => run(own));
   }
 }

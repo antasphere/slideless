@@ -640,6 +640,10 @@ describe('a session a pass opened lives only while its pass does', () => {
         [passId]
       )
     ).rows.length;
+  /** The pass's session links, whether or not their session is still there. */
+  const linksOf = async (passId: string) =>
+    (await app.db.pool.query(`SELECT session_id FROM demo_pass_sessions WHERE pass_id = $1`, [passId])).rows
+      .length;
 
   it('m. a revoke ends the sessions the pass opened, and leaves the person’s own session alone', async () => {
     const owner = actors.owner!;
@@ -652,6 +656,7 @@ describe('a session a pass opened lives only while its pass does', () => {
     expect((await send(app, 'DELETE', `/demo/passes/${minted.id}`, owner)).status).toBe(200);
 
     expect(await sessionRowsOf(minted.id)).toBe(0);
+    expect(await linksOf(minted.id)).toBe(0);
     expect((await send(app, 'GET', '/me', { cookie: first })).status).toBe(401);
     expect((await send(app, 'GET', '/me', { cookie: second })).status).toBe(401);
     const session = await app.app.request('/api/v1/auth/get-session', { headers: { cookie: first } });
@@ -673,6 +678,7 @@ describe('a session a pass opened lives only while its pass does', () => {
 
     expect((await send(app, 'GET', '/me', { cookie })).status).toBe(401);
     expect(await sessionRowsOf(minted.id)).toBe(0);
+    expect(await linksOf(minted.id)).toBe(0);
     const made = await send(app, 'POST', '/projects', { cookie }, { name: 'After the pass died' });
     expect(made.status).toBe(401);
   });
