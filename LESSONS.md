@@ -1715,3 +1715,24 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
 - **`git commit -a` in a worktree shared with running subagents sweeps their half-written files
   in.** Name the files on every commit while a subagent edits beside you; a soft reset recovers it
   when caught.
+
+## The small gaps between the editions (PRDCT-2815 to PRDCT-2819, 2026-09-28)
+
+- **A rule that two editions share is a function, not two copies of three lines.** The hub's removal
+  lived inside the reconcile's sweep; giving self-hosted "the same removal" by copying its two deletes
+  into a route would have held until the next table hung on a membership row (the teams merge added
+  one the day before). `deleteMembershipGrants` is the one statement, and both callers run it in the
+  transaction that switches the row off.
+- **A setting of the person is not an event of the workspace the request happened to be in.** The
+  generic audit middleware writes into the principal's workspace; a default-workspace change recorded
+  there would tell workspace A that one of its members prefers workspace B. The route sets no audit
+  entry, the rule `POST /workspaces` already follows.
+- **A hidden form is not a closed route.** The cloud edition reported `emailChange: false` and the
+  dashboard hid the form, while `/change-email` stayed open to any signed-in caller. Discovery says
+  what the screens offer; only the before-hook says what the instance accepts.
+- **A page that finishes with `goto('/')` opens the person's default workspace, not the one they just
+  joined.** On cloud everyone has at least their own organization, so an accepted invitation landed
+  somewhere else. The invitation page now persists the accepted workspace and navigates in full, the
+  collaborator claim's pattern.
+- **`turbo typecheck lint` prints both failures in one stream; read to the end.** A lint error was
+  fixed and the typecheck error two lines below it was committed (e5867eb, fixed by 00c00a8).
