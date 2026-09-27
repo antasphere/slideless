@@ -488,8 +488,11 @@ slideless projects unarchive <project>           # …and writable again
 slideless projects members list <project>
 slideless projects members add <project> ada@acme.co --role editor
 slideless projects members add <project> <userId> --role manager
+slideless projects members add <project> --team design --role editor   # a team: every member of it holds the role
 slideless projects members role <project> <userId> viewer
+slideless projects members role <project> design manager --team         # …a team's role
 slideless projects members remove <project> <userId>
+slideless projects members remove <project> design --team               # take a team off; its people keep their own entries
 slideless projects link <project> <deck>         # put a deck in the project
 cd deck && slideless projects link <project>     # …no deck: the .slideless.json of this folder
 slideless projects unlink <project> <deck>       # take it back out
@@ -517,6 +520,13 @@ A manager removes anyone; anyone removes themselves. A stranger's address is
 member of the workspace can join a project.`, and a per-deck guest is refused
 with `That person is a guest of the workspace, and a guest cannot be a project
 member. Invite them as a workspace member first.`
+
+**A team is a member too.** `add --team <team>` (a slug or an id, in place of
+the person) puts one of the workspace's [teams](#teams) on the project with the
+role, and every member of the team holds it; `role` and `remove` take `--team`
+to name a team as their second argument. `members list` prints a `person` or
+`team` column first, then the user id or the team's slug. A person's role on
+the project is the highest of their own entry and their teams' entries.
 
 **link / unlink** are the deck's side. Linking widens who reads the deck, so it
 is the deck administrator's act — its owner, or a workspace admin or owner —
@@ -559,6 +569,32 @@ its existence is not probeable.)`, `You need the manager role on this project to
 do that.`, `This project is archived and read-only. Unarchive it first to change
 it.`, and `You are a guest of this workspace, and guests do not take part in
 projects.`
+
+## Teams
+
+A team is a named group of the workspace's people, which a project can take as a
+member. Every member of the workspace reads the teams; an owner or an admin
+shapes them. On a workspace managed by the Antasphere account site, the teams are
+read here and managed there.
+
+```bash
+slideless teams list                             # every team: slug, name, members, yours, created
+slideless teams get <team>                       # one team (<team> is a slug or an id)
+slideless teams create "Design"                  # the slug is made from the name…
+slideless teams create "Design" --slug design    # …or given
+slideless teams rename <team> --name "Design Ops" --slug design-ops
+slideless teams delete <team> --yes              # the people stay in the workspace
+slideless teams members <team>                   # every member of the team
+slideless teams add <team> ada@acme.co           # seat a member of the workspace, by email or user id
+slideless teams remove <team> <userId>           # unseat them (an email works too)
+```
+
+`list` and `members` read every page, and every verb takes `--json` (the API
+answer verbatim). A team from the Antasphere account site is marked
+`(Antasphere)` in `list`. The refusals read as sentences: `Only an owner or an
+admin manages teams.`, `Teams of this workspace are managed on the Antasphere
+account site: <link>`, `A team of this workspace already uses the slug
+"design".`, and `ada@acme.co is already in this team.`
 
 ## Share
 

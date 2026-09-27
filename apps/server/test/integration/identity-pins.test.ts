@@ -493,7 +493,7 @@ describe('the MCP surface', () => {
       'get_me',
       'list_files',
       'slideless_whoami',
-      // Projects are a chassis concept, so the chassis registers their nine
+      // Projects are a chassis concept, so the chassis registers their eleven, and the two team reads
       // tools too — under this tool's prefix, before its own set.
       'slideless_list_projects',
       'slideless_get_project',
@@ -504,6 +504,10 @@ describe('the MCP surface', () => {
       'slideless_add_project_member',
       'slideless_set_project_member_role',
       'slideless_remove_project_member',
+      'slideless_set_project_team_role',
+      'slideless_remove_project_team',
+      'slideless_list_teams',
+      'slideless_list_team_members',
       'slideless_list_presentations',
       'slideless_get_presentation',
       'slideless_list_versions',
