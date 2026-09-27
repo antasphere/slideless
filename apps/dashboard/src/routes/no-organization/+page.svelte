@@ -3,7 +3,8 @@
   import GateShell from '$lib/components/brand/GateShell.svelte';
   import CreateWorkspaceDialog from '$lib/components/sidebar/CreateWorkspaceDialog.svelte';
   import { signOutToLogin } from '$lib/session';
-  import { t } from '$lib/i18n';
+  import { getLocale, t } from '$lib/i18n';
+  import { hubLinkHere } from '$lib/hub-links';
 
   let { data } = $props();
 
@@ -11,6 +12,17 @@
   // target (hubManageUrl) even in the zero-membership state. On oss (no
   // hub) the honest copy is "ask for an invitation".
   const hubManageUrl = $derived(data.me.hubManageUrl);
+
+  // The hub says an organization of this person's does not open the tool to
+  // them (it lets only some of its teams use it): name it, and send them to
+  // the hub's page of whom to ask. Absent (oss, an older server) reads as none.
+  const denied = $derived(data.me.hubDenied ?? []);
+  const toolName = $derived(data.instance.name);
+  const deniedOrg = $derived(denied.length === 1 ? (denied[0]?.name ?? '') : t('noOrg.deniedOrgsMany'));
+  const deniedList = $derived(
+    new Intl.ListFormat(getLocale(), { style: 'long', type: 'conjunction' }).format(denied.map((o) => o.name))
+  );
+  const noAccessUrl = $derived(data.me.hubNoAccessUrl ?? null);
 
   // When /me says this person may create a workspace (PRDCT-2443), the same
   // dialog as the sidebar's is the way out of the zero state: the server
@@ -23,19 +35,36 @@
 
 <GateShell palette="paper" strength="quiet" width="max-w-md" eyebrow={t('gate.eyebrowEdge')}>
   <div class="flex flex-col items-center gap-4 p-8 text-center">
-    <h1 class="font-display text-2xl font-normal">
-      {canCreate ? t('noOrg.titleCreate') : t('noOrg.title')}
-    </h1>
-    <p class="max-w-md text-sm text-muted-foreground">
-      {canCreate ? t('noOrg.bodyCreate') : hubManageUrl ? t('noOrg.body') : t('noOrg.bodyLocal')}
-    </p>
+    {#if denied.length > 0}
+      <h1 class="font-display text-2xl font-normal" data-testid="no-org-denied">
+        {t('noOrg.titleDenied', { tool: toolName, org: deniedOrg })}
+      </h1>
+      <p class="max-w-md text-sm text-muted-foreground">
+        {denied.length === 1
+          ? t('noOrg.bodyDenied', { org: deniedOrg, tool: toolName })
+          : t('noOrg.bodyDeniedMany', { orgs: deniedList, tool: toolName })}
+      </p>
+    {:else}
+      <h1 class="font-display text-2xl font-normal">
+        {canCreate ? t('noOrg.titleCreate') : t('noOrg.title')}
+      </h1>
+      <p class="max-w-md text-sm text-muted-foreground">
+        {canCreate ? t('noOrg.bodyCreate') : hubManageUrl ? t('noOrg.body') : t('noOrg.bodyLocal')}
+      </p>
+    {/if}
     <div class="flex flex-wrap justify-center gap-2">
-      {#if canCreate}
+      {#if denied.length > 0 && noAccessUrl}
+        <Button href={hubLinkHere(noAccessUrl)} target="_blank" rel="noopener noreferrer">
+          {t('noOrg.ctaDenied')}
+        </Button>
+      {:else if canCreate}
         <Button onclick={() => (showCreateDialog = true)} data-testid="workspace-create">
           {t('workspace.createSubmit')}
         </Button>
       {:else if hubManageUrl}
-        <Button href={hubManageUrl} target="_blank" rel="noopener noreferrer">{t('noOrg.cta')}</Button>
+        <Button href={hubLinkHere(hubManageUrl)} target="_blank" rel="noopener noreferrer"
+          >{t('noOrg.cta')}</Button
+        >
       {/if}
       <Button variant="outline" onclick={() => window.location.assign('/')}>{t('common.tryAgain')}</Button>
       <Button variant="outline" onclick={() => signOutToLogin()}>{t('nav.signOut')}</Button>
