@@ -1648,3 +1648,13 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   registry-level extras it knows by name (`status`, `isDefault`, now `teams`). A new per-org field
   on `HubOrgEntry` must be added to BOTH re-seed sites (the code exchange and the H3 connect), or
   the next login silently drops what a test set with `setUserOrg`.
+- **A zero-membership session is outside the live gate's reach.** The gate runs on a resolved
+  principal, and a session whose last projected membership was swept resolves to none, so
+  nothing ran a reconcile for it again: a person re-seated at the hub stayed on the zero state
+  for ever while the refusal page promised access within seconds (only a request naming the
+  swept workspace re-admitted, through `onWorkspaceMiss`). Anything that must reach that
+  person, re-admission after a hub-side change first, runs from the zero-state read itself:
+  the zero-membership `/me` runs the reconciler's cached pass (`reconcileForZeroState`, cloud
+  only; its 10 s TTL and 15 s retry throttle keep a polling page off the hub), resolves the
+  session again through the same resolver and gate, and answers the normal shape when a
+  membership came back. The refusal page polls `/me` every ten seconds while the tab is visible.

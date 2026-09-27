@@ -75,9 +75,9 @@ export const en = {
   'noOrg.titleDenied': '{tool} is not open to you in {org}',
   'noOrg.deniedOrgsMany': 'your organizations',
   'noOrg.bodyDenied':
-    '{org} lets only some of its teams use {tool}. Ask an owner or an admin of {org} to add you to one of those teams on the Antasphere account site; your access here follows within a few seconds.',
+    '{org} lets only some of its teams use {tool}. Ask an owner or an admin of {org} to add you to one of those teams on the Antasphere account site; this page checks again every ten seconds and opens the workspace as soon as it is back.',
   'noOrg.bodyDeniedMany':
-    '{orgs} let only some of their teams use {tool}. Ask an owner or an admin of one of them to add you to one of those teams on the Antasphere account site; your access here follows within a few seconds.',
+    '{orgs} let only some of their teams use {tool}. Ask an owner or an admin of one of them to add you to one of those teams on the Antasphere account site; this page checks again every ten seconds and opens the workspace as soon as it is back.',
   'noOrg.ctaDenied': 'Who to ask',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────

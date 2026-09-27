@@ -78,9 +78,9 @@ export const fr: Record<keyof typeof en, string> = {
   'noOrg.titleDenied': '{tool} ne vous est pas ouvert dans {org}',
   'noOrg.deniedOrgsMany': 'vos organisations',
   'noOrg.bodyDenied':
-    '{org} n’ouvre {tool} qu’à certaines de ses équipes. Demandez à un propriétaire ou à un administrateur de {org} de vous ajouter à l’une de ces équipes sur le site du compte Antasphere ; votre accès ici suit en quelques secondes.',
+    '{org} n’ouvre {tool} qu’à certaines de ses équipes. Demandez à un propriétaire ou à un administrateur de {org} de vous ajouter à l’une de ces équipes sur le site du compte Antasphere ; cette page vérifie à nouveau toutes les dix secondes et ouvre l’espace de travail dès qu’il est de retour.',
   'noOrg.bodyDeniedMany':
-    '{orgs} n’ouvrent {tool} qu’à certaines de leurs équipes. Demandez à un propriétaire ou à un administrateur de l’une d’elles de vous ajouter à l’une de ces équipes sur le site du compte Antasphere ; votre accès ici suit en quelques secondes.',
+    '{orgs} n’ouvrent {tool} qu’à certaines de leurs équipes. Demandez à un propriétaire ou à un administrateur de l’une d’elles de vous ajouter à l’une de ces équipes sur le site du compte Antasphere ; cette page vérifie à nouveau toutes les dix secondes et ouvre l’espace de travail dès qu’il est de retour.',
   'noOrg.ctaDenied': 'Qui contacter',
 
   // ── Navigation / sidebar ─────────────────────────────────────────────

@@ -5,6 +5,8 @@
   import { signOutToLogin } from '$lib/session';
   import { getLocale, t } from '$lib/i18n';
   import { hubLinkHere } from '$lib/hub-links';
+  import { api } from '$lib/api';
+  import { readmissionPollInterval, type TabVisibility } from '$lib/readmission-poll';
 
   let { data } = $props();
 
@@ -31,6 +33,36 @@
   // stays for everyone the flag is false for.
   const canCreate = $derived(data.me.canCreateWorkspace);
   let showCreateDialog = $state(false);
+
+  // Re-admission: while the hub names an organization that does not open
+  // the tool to this person, re-read /me every ten seconds (the server's
+  // zero-state read runs the hub pass itself) and open the workspace as
+  // soon as the answer carries one. A hidden tab stops; showing it resumes.
+  let visibility = $state<TabVisibility>(
+    typeof document === 'undefined' ? 'hidden' : document.visibilityState
+  );
+  $effect(() => {
+    const onVisibility = () => (visibility = document.visibilityState);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  });
+  $effect(() => {
+    const every = readmissionPollInterval(denied.length, visibility);
+    if (every === null) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      const me = await api.me().catch(() => null);
+      if (!stopped && me?.workspace) {
+        stopped = true;
+        clearInterval(timer);
+        window.location.assign('/');
+      }
+    }, every);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  });
 </script>
 
 <GateShell palette="paper" strength="quiet" width="max-w-md" eyebrow={t('gate.eyebrowEdge')}>
