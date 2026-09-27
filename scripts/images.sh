@@ -68,21 +68,27 @@ cmd_on() {
   secret=$(dr_env_get "$ENV_FILE" SLIDELESS_RENDERER_SECRET)
   [ "${#secret}" -ge 16 ] || secret=$(openssl rand -hex 32)
 
+  # The image the compose file names for the renderer (RENDERER_IMAGE or its default).
+  local image
+  image=$(docker compose --profile images config --images renderer) || image=""
+  [ -n "$image" ] || dr_fail "the compose file names no renderer image"
+
   dr_info "pulling the renderer image (deck pictures)"
-  local pulled=1
   if ! docker compose --profile images pull renderer; then
-    pulled=0
     dr_warn "the renderer image could not be pulled; trying a copy already on this host"
+  fi
+  # Never let the check below fall back to BUILDING the renderer: the checkout's compose
+  # file carries a build section, and `compose run` builds a missing image from source
+  # (minutes and a gigabyte on the host, then an unpublished build turned on).
+  if ! docker image inspect "$image" > /dev/null 2>&1; then
+    dr_warn "the renderer image ($image) could not be pulled and there is no copy on this host, so deck
+  pictures stay off (the cards show a plain block). Nothing changed. Try again later with ./scripts/images.sh on"
+    return 4
   fi
 
   dr_info "checking that the browser's sandbox starts on this host"
   local code=0
   docker compose --profile images run --rm --no-deps -T renderer node dist/selfcheck.js || code=$?
-  if [ "$code" != 0 ] && [ "$code" != 3 ] && [ "$pulled" = 0 ]; then
-    dr_warn "the renderer image could not be pulled and there is no copy on this host, so deck pictures stay off
-  (the cards show a plain block). Nothing changed. Try again later with ./scripts/images.sh on"
-    return 4
-  fi
   case "$code" in
     0) ;;
     3)

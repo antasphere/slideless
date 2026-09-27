@@ -22,7 +22,9 @@ let bin: string;
 const FAKE_DOCKER = `#!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
 case "$*" in
+  *" config --images renderer") echo "ghcr.io/antasphere/slideless-renderer:latest" ;;
   *" pull renderer") exit "\${FAKE_PULL:-0}" ;;
+  "image inspect "*) exit "\${FAKE_LOCAL:-0}" ;;
   *"selfcheck.js"*) exit "\${FAKE_SELFCHECK:-0}" ;;
 esac
 exit 0
@@ -52,7 +54,7 @@ const calls = () => {
   }
 };
 
-function images(args: string[], fake: { pull?: number; selfcheck?: number } = {}) {
+function images(args: string[], fake: { pull?: number; local?: number; selfcheck?: number } = {}) {
   const r = spawnSync('bash', [join(work, 'scripts/images.sh'), ...args], {
     encoding: 'utf8',
     env: {
@@ -60,6 +62,7 @@ function images(args: string[], fake: { pull?: number; selfcheck?: number } = {}
       PATH: `${bin}:${process.env.PATH}`,
       FAKE_LOG: join(work, 'docker.log'),
       FAKE_PULL: String(fake.pull ?? 0),
+      FAKE_LOCAL: String(fake.local ?? 0),
       FAKE_SELFCHECK: String(fake.selfcheck ?? 0)
     }
   });
@@ -132,13 +135,23 @@ describe('images.sh on', () => {
     expect(envFile()).toBe(before);
   });
 
-  it('exits 4 and changes nothing when the image can neither be pulled nor found here', () => {
+  it('exits 4, changes nothing and never runs the check when the image can neither be pulled nor found here (compose would BUILD it from source)', () => {
     env(BASE);
     const before = envFile();
-    const r = images(['on'], { pull: 1, selfcheck: 125 });
+    const r = images(['on'], { pull: 1, local: 1 });
     expect(r.status).toBe(4);
-    expect(r.out).toContain('could not be pulled');
+    expect(r.out).toContain('could not be pulled and there is no copy on this host');
     expect(envFile()).toBe(before);
+    expect(calls()).toContain('image inspect ghcr.io/antasphere/slideless-renderer:latest');
+    expect(calls().some((c) => c.includes(' run '))).toBe(false);
+  });
+
+  it('names the sandbox, not the pull, when the pull failed but a local copy cannot start its sandbox', () => {
+    env(BASE);
+    const r = images(['on'], { pull: 1, selfcheck: 3 });
+    expect(r.status).toBe(3);
+    expect(r.out).toContain('cannot start its sandbox');
+    expect(r.out).not.toContain('no copy on this host');
   });
 
   it('uses a copy already on the host when the pull fails but the self-check runs', () => {
@@ -184,6 +197,10 @@ describe('images.sh off', () => {
 describe('images.sh status and usage', () => {
   it('says off, then on once both the profile and the URL are there', () => {
     env(BASE);
+    expect(images(['status']).out).toContain('deck pictures: off');
+    env([...BASE, 'COMPOSE_PROFILES=images']);
+    expect(images(['status']).out).toContain('deck pictures: off');
+    env([...BASE, 'SLIDELESS_RENDERER_URL=http://renderer:3100']);
     expect(images(['status']).out).toContain('deck pictures: off');
     env([...BASE, 'COMPOSE_PROFILES=images', 'SLIDELESS_RENDERER_URL=http://renderer:3100']);
     expect(images(['status']).out).toContain('deck pictures: on');
