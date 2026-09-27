@@ -13,10 +13,12 @@ import { isLoopbackHost } from '../setup-transport.js';
  * and tests (RFC 2606 / RFC 6761) or one the operator named on purpose.
  */
 
-/** A pass's lifetime when the mint names none: one day. */
-export const DEMO_PASS_DEFAULT_MINUTES = 1440;
-/** The longest lifetime a mint may ask for: one week. */
-export const DEMO_PASS_MAX_MINUTES = 10080;
+/**
+ * The lifetime bounds are the contract's (the mint body is validated with
+ * them, the dashboard's form reads them): one definition, re-exported here
+ * beside the other rules.
+ */
+export { DEMO_PASS_DEFAULT_MINUTES, DEMO_PASS_MAX_MINUTES } from '@antasphere/chassis-contract';
 /** The longest target path a pass may carry. */
 export const DEMO_PASS_MAX_PATH_LENGTH = 2048;
 

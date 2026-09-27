@@ -14,6 +14,11 @@ import type {
   CliAuthRequest,
   CliAuthRequested,
   CliAuthRevoked,
+  DemoPass,
+  DemoPassesList,
+  DemoPassMint,
+  DemoPassMinted,
+  DemoPassRedeemed,
   FileInfo,
   InstanceInfo,
   InvitationAccept,
@@ -563,6 +568,46 @@ export class ChassisClient<TScope extends string> {
   /** Unseats a member; the workspace membership stays. */
   removeTeamMember(id: string, userId: string): Promise<TeamMemberInfo> {
     return this.request('DELETE', `/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`);
+  }
+
+  // ── Demo passes ───────────────────────────────────────────────────────────
+  // A link that signs one member in without a password, for a demonstration.
+  // The routes exist only while `instance().demoSignIn` is true (a self-hosted
+  // instance whose operator turned DEMO_SIGN_IN on); otherwise they answer
+  // 404 like any unknown path. Owner and session only: an admin or a member
+  // gets 403 `forbidden`, an API key 403 before the route.
+
+  /** Owner: the workspace's passes, newest first. Never carries a secret. */
+  demoPasses(): Promise<DemoPassesList> {
+    return this.request('GET', '/demo/passes');
+  }
+
+  /**
+   * Owner: mint a pass for a member by address. The `secret` and the `url`
+   * (`<instance>/demo#pass=…&to=…`) appear in this answer only. Refusals, in
+   * this order: 404 `no_such_member`, 403 `owner_target`,
+   * `demo_address_required`, `two_factor_enrolled`, `guest_target`,
+   * `cross_workspace_target`, then 400 `invalid_demo_path` or
+   * `validation_error` (a lifetime outside 1 to 10080 minutes).
+   */
+  mintDemoPass(req: DemoPassMint): Promise<DemoPassMinted> {
+    return this.request('POST', '/demo/passes', req);
+  }
+
+  /** Owner: revoke a pass; revoking a revoked pass answers it again. */
+  revokeDemoPass(id: string): Promise<DemoPass> {
+    return this.request('DELETE', `/demo/passes/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Anyone holding a pass's secret: sign in as its person. Served by the
+   * sign-in library (like `signInEmail`, no route contract), which sets the
+   * session cookie on this very answer; in a browser, call it same-origin.
+   * Every refusal of a pass is one 401 `invalid_demo_pass`, whatever the
+   * reason; 429 `rate_limited` past 20 tries in 15 minutes from one address.
+   */
+  redeemDemoPass(secret: string): Promise<DemoPassRedeemed> {
+    return this.request('POST', '/auth/demo/redeem', { pass: secret });
   }
 
   // ── Break-glass (superadmin recovery, ADR 010) ────────────────────────────
