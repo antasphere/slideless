@@ -534,7 +534,14 @@ export function createApiApp<
   // anonymously, so every arrival costs, per address only. In front of the
   // sign-in handler, and only where the endpoint exists.
   if (demoSignIn) {
-    api.use('/auth/demo/redeem', rateLimit(limiters.demoRedeem, clientIp));
+    // Only a REFUSED redeem costs: the wall is there against guessing, and a
+    // person playing a demonstration opens many valid links in a row from one
+    // address (found on the pair: the 21st valid click in fifteen minutes was
+    // refused). A drained wall still refuses everything until it refills.
+    api.use(
+      '/auth/demo/redeem',
+      rateLimit(limiters.demoRedeem, clientIp, undefined, { consumeOn: 'failure' })
+    );
   }
   // The OpenAPI document is unauthenticated (PUBLIC_API_PATHS) so it never
   // reaches the per-principal quota; the buffer is generated once at boot

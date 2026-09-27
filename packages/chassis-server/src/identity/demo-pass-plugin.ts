@@ -20,7 +20,7 @@ import { parseDemoEmailDomains } from './demo-pass-rules.js';
  *
  * In front of it, outside the library: the cross-site guard refuses a
  * foreign Origin before any work (api/create-api.ts), and the `demo-redeem`
- * wall bounds one address to 20 tries in 15 minutes. The sign-in Origin lock
+ * wall bounds one address to 20 refused tries in 15 minutes. The sign-in Origin lock
  * of the before-hook is keyed on `/sign-in*` paths and does not cover this
  * one, so the endpoint carries its own lock: no Origin, no redeem.
  */

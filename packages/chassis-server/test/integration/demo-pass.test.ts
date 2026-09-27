@@ -499,12 +499,23 @@ describe('the redeem', () => {
     expect(rows[0].use_count).toBe(0);
   });
 
-  it('i. the wall: the 21st redeem from one address in the window answers 429', async () => {
+  it('i2. valid redeems never cost: thirty in a row from one address all sign in', async () => {
+    const minted = await mint(actors.owner!, { email: 'member@example.com' });
+    const address = { 'x-forwarded-for': '10.99.1.1' };
+    for (let i = 0; i < 30; i++) {
+      expect((await redeem(minted.secret, app, address)).status).toBe(200);
+    }
+  });
+
+  it('i. the wall: after twenty refused redeems from one address the next answers 429, a valid pass included', async () => {
+    const minted = await mint(actors.owner!, { email: 'member@example.com' });
     const address = { 'x-forwarded-for': '10.99.0.1' };
     for (let i = 0; i < 20; i++) {
       expect((await redeem('B'.repeat(43), app, address)).status).toBe(401);
     }
     await expectError(await redeem('B'.repeat(43), app, address), 429, 'rate_limited');
+    // A drained wall refuses a valid pass too: no work is done for that address.
+    await expectError(await redeem(minted.secret, app, address), 429, 'rate_limited');
     // Another address is untouched.
     expect((await redeem('B'.repeat(43), app, { 'x-forwarded-for': '10.99.0.2' })).status).toBe(401);
   });
