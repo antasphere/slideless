@@ -34,6 +34,7 @@ function harness(responses: Canned[], env: Record<string, string> = {}) {
   const calls: Call[] = [];
   const out: string[] = [];
   const err: string[] = [];
+  const waits: number[] = [];
   const queue = [...responses];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input.toString());
@@ -56,9 +57,12 @@ function harness(responses: Canned[], env: Record<string, string> = {}) {
     },
     out: { write: (s) => out.push(s) },
     err: { write: (s) => err.push(s) },
-    fetch
+    fetch,
+    sleep: async (ms) => {
+      waits.push(ms);
+    }
   };
-  return { io, calls, out: () => out.join(''), err: () => err.join('') };
+  return { io, calls, waits, out: () => out.join(''), err: () => err.join('') };
 }
 
 const URL_FLAGS = ['--url', 'http://demo.localhost:3000'];
@@ -167,7 +171,7 @@ describe(`${bin} demo`, () => {
     expectNoLeak(h);
   });
 
-  it('link --json is { pass, links } byte-exact, the secret only inside the urls', async () => {
+  it('link --json is { passes: [{ pass, links }], refused } byte-exact, the secret only inside the urls', async () => {
     const h = harness([SIGNED_IN, MINTED, SIGNED_OUT]);
     const code = await run(
       [
@@ -187,11 +191,16 @@ describe(`${bin} demo`, () => {
     expect(code).toBe(0);
     const base = `http://demo.localhost:3000/demo#pass=${SECRET}&to=`;
     const value = {
-      pass: PASS,
-      links: [
-        { path: '/decks', url: `${base}%2Fdecks` },
-        { path: '/', url: `${base}%2F` }
-      ]
+      passes: [
+        {
+          pass: PASS,
+          links: [
+            { path: '/decks', url: `${base}%2Fdecks` },
+            { path: '/', url: `${base}%2F` }
+          ]
+        }
+      ],
+      refused: []
     };
     expect(h.out()).toBe(JSON.stringify(value, null, 2) + '\n');
     // The raw name survives: --json never goes through the TTY sanitizer.
@@ -289,7 +298,7 @@ describe(`${bin} demo`, () => {
       '/api/v1/auth/sign-out'
     ]);
     expect(h.calls[2]!.headers['cookie']).toBe(COOKIE);
-    expect(h.err()).toBe(`Error: ${sentence}\n`);
+    expect(h.err()).toBe(`Error: boss2@example.com: ${sentence}\n`);
     expectNoLeak(h);
   });
 
@@ -305,7 +314,7 @@ describe(`${bin} demo`, () => {
     ] as const) {
       const h = harness([SIGNED_IN, refusal(status, code, `the ${code} sentence`), SIGNED_OUT]);
       expect(await run(['demo', 'link', '--email', 'ada@example.com', ...URL_FLAGS], h.io)).toBe(1);
-      expect(h.err()).toBe(`Error: the ${code} sentence\n`);
+      expect(h.err()).toBe(`Error: ada@example.com: the ${code} sentence\n`);
       expect(h.calls.at(-1)!.path).toBe('/api/v1/auth/sign-out');
     }
   });
@@ -317,6 +326,70 @@ describe(`${bin} demo`, () => {
       'Error: Only an owner of this workspace manages demo links: the account that signed in is not one.\n'
     );
     expect(h.calls.at(-1)!.path).toBe('/api/v1/auth/sign-out');
+    expectNoLeak(h);
+  });
+
+  it('several --email: one sign-in, one pass each, a refused member does not stop the others, exit 1', async () => {
+    const sentence = 'A demo link opens only a demonstration address';
+    const h = harness([
+      SIGNED_IN,
+      MINTED,
+      refusal(403, 'demo_address_required', sentence),
+      MINTED,
+      SIGNED_OUT
+    ]);
+    const code = await run(
+      [
+        'demo',
+        'link',
+        '--email',
+        'ada@example.com',
+        '--email',
+        'real@gmail.com',
+        '--email',
+        'bob@example.com',
+        ...URL_FLAGS,
+        '--json'
+      ],
+      h.io
+    );
+    expect(code).toBe(1);
+    expect(h.calls.map((c) => c.path)).toEqual([
+      '/api/v1/auth/sign-in/email',
+      '/api/v1/demo/passes',
+      '/api/v1/demo/passes',
+      '/api/v1/demo/passes',
+      '/api/v1/auth/sign-out'
+    ]);
+    expect(h.calls.slice(1, 4).map((c) => (c.body as { email: string }).email)).toEqual([
+      'ada@example.com',
+      'real@gmail.com',
+      'bob@example.com'
+    ]);
+    const printed = JSON.parse(h.out());
+    expect(printed.passes).toHaveLength(2);
+    expect(printed.refused).toEqual([
+      { email: 'real@gmail.com', code: 'demo_address_required', message: sentence }
+    ]);
+    expect(h.err()).toBe(`Error: real@gmail.com: ${sentence}\n`);
+    expectNoLeak(h);
+  });
+
+  it('the sign-in wall is waited out: 429, a wait, then the sign-in and the command go through', async () => {
+    const wall = { status: 429, body: { message: 'Too many requests. Please try again later.' } };
+    const h = harness([wall, wall, SIGNED_IN, { body: { passes: [] } }, SIGNED_OUT]);
+    expect(await run(['demo', 'list', ...URL_FLAGS], h.io)).toBe(0);
+    expect(h.waits).toEqual([4000, 8000]);
+    expect(h.calls.map((c) => c.path)).toEqual([
+      '/api/v1/auth/sign-in/email',
+      '/api/v1/auth/sign-in/email',
+      '/api/v1/auth/sign-in/email',
+      '/api/v1/demo/passes',
+      '/api/v1/auth/sign-out'
+    ]);
+    expect(h.err()).toBe(
+      'The instance limits sign-ins: waiting 4 seconds.\nThe instance limits sign-ins: waiting 8 seconds.\n'
+    );
     expectNoLeak(h);
   });
 
@@ -361,8 +434,11 @@ describe(`${bin} demo`, () => {
     expect(bad.calls).toHaveLength(1);
     expectNoLeak(bad);
 
-    const wall = harness([{ status: 429, body: {} }]);
+    const limited = { status: 429, body: {} };
+    const wall = harness([limited, limited, limited, limited]);
     expect(await run(['demo', 'list', ...URL_FLAGS], wall.io)).toBe(1);
+    expect(wall.waits).toEqual([4000, 8000, 12000]);
+    expect(wall.calls).toHaveLength(4);
     expect(wall.err()).toContain('wait a few minutes');
   });
 

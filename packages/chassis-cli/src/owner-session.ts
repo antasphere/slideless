@@ -31,6 +31,14 @@ export interface OwnerSessionOptions {
   ownerPasswordStdin?: boolean;
 }
 
+/**
+ * The sign-in library allows three sign-ins per ten seconds per address, and
+ * a script that makes links for several people signs in once per command:
+ * the fourth command in a row meets the wall. It is a wall of seconds, so the
+ * command waits it out, three times at most, and says so on stderr.
+ */
+const SIGN_IN_WAITS_MS = [4_000, 8_000, 12_000] as const;
+
 /** The session cookie the sign-in library sets, whatever prefix the instance gives it. */
 const SESSION_COOKIE = /session_token$/;
 
@@ -89,12 +97,21 @@ export async function withOwnerSession<T>(
   const { email, password } = await ownerCredentials(ctx, options);
 
   // The server refuses a sign-in that carries no Origin (the cross-site guard).
-  const res = await fetchImpl(`${base}/api/v1/auth/sign-in/email`, {
-    method: 'POST',
-    headers: { origin, 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
-  });
+  const signIn = () =>
+    fetchImpl(`${base}/api/v1/auth/sign-in/email`, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
+    });
+  const sleep = ctx.io.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  let res = await signIn();
+  for (const wait of SIGN_IN_WAITS_MS) {
+    if (res.status !== 429) break;
+    ctx.io.err.write(`The instance limits sign-ins: waiting ${wait / 1000} seconds.\n`);
+    await sleep(wait);
+    res = await signIn();
+  }
   if (res.status === 429) {
     throw new CliApiRefusal('Too many sign-in attempts for now: wait a few minutes, then try again.', 429);
   }

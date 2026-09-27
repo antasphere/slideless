@@ -108,7 +108,9 @@ slideless demo list                # the links made in this workspace, newest fi
 slideless demo revoke <id>         # end one, and the sessions it opened
 ```
 
-`demo link` prints one line per `--path`, all opening the same link. The
+`demo link` prints one line per `--path`. Name several people on one command
+(`--email ada@example.com --email bob@example.com`) and it signs in once and
+makes one link per person and page. The
 [CLI reference](../agents/cli.md#demo-links) lists every flag.
 
 ## What this is not

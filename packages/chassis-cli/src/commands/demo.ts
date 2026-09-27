@@ -13,8 +13,8 @@ import { withOwnerSession } from '../owner-session.js';
  * commands sign in as the owner (owner-session.ts) and never send a key.
  *
  * The secret is in the mint's answer only, and leaves this process in one
- * place: inside the links. `--json` is `{ pass, links }` through `printJson`
- * (the raw sink); every human line goes through the sanitizing sinks the
+ * place: inside the links. `--json` is `{ passes: [{ pass, links }], refused }`
+ * through `printJson` (the raw sink); every human line goes through the sanitizing sinks the
  * runner installed, since a member's name is somebody else's text.
  */
 
@@ -43,6 +43,17 @@ const REFUSALS = new Set([
   'not_found'
 ]);
 
+/** A refusal about ONE member: the others named on the command are still served. */
+class MemberRefusal extends CliApiRefusal {
+  constructor(
+    message: string,
+    status: number,
+    public readonly code: string
+  ) {
+    super(message, status);
+  }
+}
+
 async function explained<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
@@ -54,7 +65,7 @@ async function explained<T>(run: () => Promise<T>): Promise<T> {
       // The role gate answers the generic `forbidden`; the runner's hint for
       // a 403 speaks of an API key, which this command never holds.
       if (e.status === 403 && e.code === 'forbidden') throw new CliApiRefusal(NOT_AN_OWNER, 403);
-      if (REFUSALS.has(e.code)) throw new CliApiRefusal(e.message, e.status);
+      if (REFUSALS.has(e.code)) throw new MemberRefusal(e.message, e.status, e.code);
     }
     throw e;
   }
@@ -139,14 +150,19 @@ export function registerDemoCommands<TClient extends ChassisClient<string>>(
   ownerFlags(
     demo
       .command('link')
-      .description('Mint one demo pass for a member and print one link per page')
-      .requiredOption('--email <address>', 'the member the link signs in')
+      .description('Mint one demo pass per member and print one link per page')
+      .requiredOption(
+        '--email <address>',
+        'a member the links sign in (repeatable: one sign-in, one pass per member)',
+        collect,
+        []
+      )
       .option('--path <p>', 'a page the link lands on (repeatable; the first is the default, /)', collect, [])
       .option('--hours <n>', 'how long the link lives, in hours (default: a day; at most a week)')
       .option('--minutes <n>', 'how long the link lives, in minutes (instead of --hours)')
   ).action(
     async (
-      opts: OwnerOpts & { email: string; path: string[]; hours?: string; minutes?: string },
+      opts: OwnerOpts & { email: string[]; path: string[]; hours?: string; minutes?: string },
       cmd: Command
     ) => {
       const paths = opts.path.length > 0 ? opts.path : ['/'];
@@ -161,22 +177,51 @@ export function registerDemoCommands<TClient extends ChassisClient<string>>(
       }
       const expiresInMinutes = lifetimeMinutes(opts);
       const ctx = resolveContext(cmd, io);
-      const minted = await withOwnerSession(ctx, session(opts), (client) =>
-        explained(() =>
-          client.mintDemoPass({
-            email: opts.email,
-            path: paths[0]!,
-            ...(expiresInMinutes !== undefined ? { expiresInMinutes } : {})
-          })
-        )
-      );
-      const links = paths.map((path) => ({ path, url: demoLink(ctx.baseUrl, minted.secret, path) }));
-      if (ctx.json) return printJson(io, { pass: minted.pass, links });
-      const { pass } = minted;
-      io.out.write(
-        `Demo link for ${pass.name} <${pass.email}>, valid until ${pass.expiresAt}:\n` +
-          links.map((l) => `${l.url}\n`).join('')
-      );
+      // ONE sign-in for every member named: a script that makes the links of
+      // a whole demonstration calls the command once. A member the server
+      // refuses does not stop the others; the command says who and why, and
+      // exits 1.
+      const { passes, refused } = await withOwnerSession(ctx, session(opts), async (client) => {
+        const passes: { pass: DemoPass; links: { path: string; url: string }[] }[] = [];
+        const refused: { email: string; code: string; message: string }[] = [];
+        for (const email of opts.email) {
+          try {
+            const minted = await explained(() =>
+              client.mintDemoPass({
+                email,
+                path: paths[0]!,
+                ...(expiresInMinutes !== undefined ? { expiresInMinutes } : {})
+              })
+            );
+            passes.push({
+              pass: minted.pass,
+              links: paths.map((path) => ({ path, url: demoLink(ctx.baseUrl, minted.secret, path) }))
+            });
+          } catch (e) {
+            // Anything else (the switch off, the signed-in account not an
+            // owner, the network) is the same for everyone: no point going on.
+            if (!(e instanceof MemberRefusal)) throw e;
+            refused.push({ email, code: e.code, message: e.message });
+          }
+        }
+        return { passes, refused };
+      });
+      if (ctx.json) {
+        printJson(io, { passes, refused });
+      } else {
+        for (const { pass, links } of passes) {
+          io.out.write(
+            `Demo link for ${pass.name} <${pass.email}>, valid until ${pass.expiresAt}:\n` +
+              links.map((l) => `${l.url}\n`).join('')
+          );
+        }
+      }
+      if (refused.length > 0) {
+        throw new CliApiRefusal(
+          refused.map((r) => `${r.email}: ${r.message}`).join('\n'),
+          refused.length === opts.email.length ? 403 : 207
+        );
+      }
     }
   );
 
