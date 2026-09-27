@@ -5,7 +5,7 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import { api, PlatformApiError } from '$lib/api';
-  import { demoTarget, parseDemoFragment } from '$lib/demo-link';
+  import { consumeDemoFragment, demoTarget } from '$lib/demo-link';
   import { t } from '$lib/i18n';
 
   /*
@@ -26,8 +26,7 @@
   let phase = $state<'working' | 'refused' | 'limited'>('working');
 
   onMount(() => {
-    const { pass, to } = parseDemoFragment(location.hash);
-    history.replaceState(null, '', location.pathname);
+    const { pass, to } = consumeDemoFragment(location, history);
     if (!pass) {
       phase = 'refused';
       return;

@@ -20,6 +20,16 @@ export function parseDemoFragment(hash: string): DemoFragment {
   return { pass: params.get('pass') || null, to: params.get('to') || null };
 }
 
+/** Read the pass from the fragment and take the fragment out of the address bar and this history entry. */
+export function consumeDemoFragment(
+  loc: Pick<Location, 'hash' | 'pathname'>,
+  hist: Pick<History, 'replaceState'>
+): DemoFragment {
+  const fragment = parseDemoFragment(loc.hash);
+  hist.replaceState(null, '', loc.pathname);
+  return fragment;
+}
+
 /**
  * Where a redeemed link lands: the link's own `to` when it is present and
  * safe, else the pass's page from the redeem's answer, else `/`. Both go

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { demoSignInOn, demoTarget, parseDemoFragment } from './demo-link';
+import { describe, expect, it, vi } from 'vitest';
+import { consumeDemoFragment, demoSignInOn, demoTarget, parseDemoFragment } from './demo-link';
 
 describe('parseDemoFragment', () => {
   it('reads both keys', () => {
@@ -84,5 +84,18 @@ describe('demoSignInOn (the banner of the app layout)', () => {
   it('is off when the key is absent or false', () => {
     expect(demoSignInOn({})).toBe(false);
     expect(demoSignInOn({ demoSignIn: false })).toBe(false);
+  });
+});
+
+describe('consumeDemoFragment', () => {
+  it('takes the fragment out of the address bar once, and returns what it read', () => {
+    const replaceState = vi.fn();
+    const result = consumeDemoFragment(
+      { hash: '#pass=abc123&to=/members', pathname: '/demo' },
+      { replaceState }
+    );
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/demo');
+    expect(result).toEqual({ pass: 'abc123', to: '/members' });
   });
 });
