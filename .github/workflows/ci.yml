@@ -24,6 +24,13 @@ jobs:
       - run: pnpm turbo lint typecheck test build
       - run: pnpm format:check
       - run: pnpm --filter @slideless/server drift:check
+      # The compose file must read with NOTHING set but the one variable every
+      # install has: an optional service's required variable once made every
+      # compose command fail for every self-hoster (PRDCT-2725 follow-up).
+      - name: The compose file reads without the optional services' variables
+        run: |
+          POSTGRES_PASSWORD=ci docker compose -f docker-compose.yml config --quiet
+          POSTGRES_PASSWORD=ci docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
 
   # The renderer image (PRDCT-2725), built as it ships and proven both ways.
   # It opens user-authored HTML, so Chromium's OWN sandbox is always on:
