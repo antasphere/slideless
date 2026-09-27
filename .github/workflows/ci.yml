@@ -139,18 +139,9 @@ jobs:
           tags: slideless:hostinger-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Build the renderer for the Hostinger rehearsal
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/renderer/Dockerfile
-          load: true
-          tags: slideless-renderer:hostinger-test
-          cache-from: type=gha,scope=renderer
-      - name: Exercise HTTPS installation, deck pictures and persistence
+      - name: Exercise HTTPS installation and persistence
         env:
           HOSTINGER_TEST_IMAGE: slideless:hostinger-test
-          HOSTINGER_TEST_RENDERER_IMAGE: slideless-renderer:hostinger-test
         run: node scripts/hostinger-smoke.mjs
       # This verifies the exact artifact used by customers, independently of
       # the checkout build above. Public publication separately requires
