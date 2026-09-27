@@ -35,6 +35,8 @@ const people = {
   editor: { email: 'editor@deck-projects.test', name: 'Project Editor' },
   viewer: { email: 'viewer@deck-projects.test', name: 'Project Viewer' },
   outsider: { email: 'outsider@deck-projects.test', name: 'Plain Member' },
+  /** A second plain member, on no project and in no team: what one person's seat must never open. */
+  bystander: { email: 'bystander@deck-projects.test', name: 'Another Member' },
   guest: { email: 'guest@deck-projects.test', name: 'A Guest' }
 } as const;
 type Who = keyof typeof people;
@@ -912,5 +914,17 @@ describe('a team on the project opens the three homes to its members, and closes
     // A guest is refused the generic /files surface flat (D2): 403, before any rule.
     expect(await blobStatus('guest', sha)).toBe(403);
     await unseat('guest');
+  });
+
+  it('one person’s seat opens nothing to another member who is not seated (verifier round 1, E1 / F7)', async () => {
+    // The team is on the project (manager) and the outsider still seated.
+    expect(await sees('outsider')).toEqual(OPEN);
+    const { rows } = await app.db.pool.query(
+      `SELECT (SELECT count(*) FROM workspace_team_members WHERE member_id = $1)::int AS seats,
+              (SELECT count(*) FROM project_members WHERE member_id = $1)::int AS entries`,
+      [memberIds.bystander]
+    );
+    expect(rows).toEqual([{ seats: 0, entries: 0 }]);
+    expect(await sees('bystander')).toEqual(CLOSED);
   });
 });

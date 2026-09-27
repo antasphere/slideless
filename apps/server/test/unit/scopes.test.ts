@@ -38,6 +38,32 @@ describe('requiredScopeFor — duplicate (PRDCT-2279)', () => {
   });
 });
 
+describe('requiredScopeFor — teams (PRDCT-2813, the chassis rules under the tool’s scope names)', () => {
+  const TEAM = '/api/v1/teams/11111111-2222-3333-4444-555555555555';
+
+  it('the list: GET under presentations:read, POST under presentations:write', () => {
+    expect(requiredScopeFor('/api/v1/teams', 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor('/api/v1/teams', 'POST')).toBe('presentations:write');
+  });
+
+  it('the seat of one person: DELETE under presentations:write, every other method closed', () => {
+    const seat = `${TEAM}/members/user-abc`;
+    expect(requiredScopeFor(seat, 'DELETE')).toBe('presentations:write');
+    expect(requiredScopeFor(seat, 'POST')).toBeNull();
+    expect(requiredScopeFor(seat, 'PUT')).toBeNull();
+    expect(requiredScopeFor(seat, 'PATCH')).toBeNull();
+  });
+
+  it('the roster: GET under presentations:read, PUT closed', () => {
+    expect(requiredScopeFor(`${TEAM}/members`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${TEAM}/members`, 'PUT')).toBeNull();
+  });
+
+  it('a team id that is not a uuid is not a listed shape', () => {
+    expect(requiredScopeFor('/api/v1/teams/not-a-uuid', 'GET')).toBeNull();
+  });
+});
+
 describe('requiredScopeFor — workspace creation (PRDCT-2444 / PRDCT-2443)', () => {
   it('stays UNLISTED for every method and every neighbouring spelling: sessions only', () => {
     for (const method of ['POST', 'GET', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
