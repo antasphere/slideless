@@ -1,5 +1,5 @@
 import { projectRoleAtLeast } from '@antasphere/chassis-contract';
-import type { Project, ProjectMember, ProjectRole } from './types';
+import type { Project, ProjectRole } from './types';
 
 /**
  * Which controls of a project a person gets (PRDCT-2582). A control is on
@@ -29,7 +29,9 @@ export const projectCan = {
   /**
    * Leaving is removing your own row. A workspace admin who reads a project as
    * its manager without being a member of it has no row, so nothing to leave.
+   * A team row carries no `userId` (PRDCT-2794): holding a role through a
+   * team is not a row of one's own, so it never opens the leave.
    */
-  leave: (p: Facts, members: Pick<ProjectMember, 'userId'>[], myUserId: string) =>
+  leave: (p: Facts, members: ReadonlyArray<{ kind?: string; userId?: string }>, myUserId: string) =>
     !archived(p) && members.some((m) => m.userId === myUserId)
 };

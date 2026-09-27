@@ -13,6 +13,8 @@
     href: string;
     label: string;
     count?: number;
+    /** Lights the tab on a page under it (a team's own page lights Teams); the exact path lights it otherwise. */
+    on?: boolean;
   }
   interface Props {
     tabs: Tab[];
@@ -27,7 +29,7 @@
 <nav class="bar" aria-label={label} data-section-bar use:stuck>
   <div class="tabs">
     {#each tabs as tab (tab.href)}
-      {@const on = page.url.pathname === tab.href}
+      {@const on = tab.on || page.url.pathname === tab.href}
       <a href={tab.href} class="tab" class:on aria-current={on ? 'page' : undefined}>
         {tab.label}
         {#if tab.count}<span class="count">{tab.count}</span>{/if}

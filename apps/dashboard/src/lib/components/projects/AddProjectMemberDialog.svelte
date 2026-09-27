@@ -5,7 +5,10 @@
      roster (`GET /members`), which any member who is not a guest may read
      today. The dialog does not lean on that: when the roster does not answer,
      or when it is longer than one page, the person's email does the same job,
-     and the server says whether it is someone of this workspace. */
+     and the server says whether it is someone of this workspace. The
+     workspace's teams are offered beside the people, as a second group of the
+     same list (PRDCT-2794): picking one gives every member of the team the
+     role. A teams list that does not answer only leaves that group out. */
   import FormDialog from '$lib/components/shared/FormDialog.svelte';
   import FormError from '$lib/components/shared/FormError.svelte';
   import ProjectRoleSelect from './ProjectRoleSelect.svelte';
@@ -14,23 +17,25 @@
   import Check from '@lucide/svelte/icons/check';
   import { api, errorMessage } from '$lib/api';
   import { projects } from '$lib/projects/client';
-  import { offeredMembers } from '$lib/projects/candidates';
+  import { offeredMembers, offeredTeams } from '$lib/projects/candidates';
   import { errorCode } from '$lib/projects/errors';
   import type { ProjectRole } from '$lib/projects/types';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { Member } from '@antasphere/chassis-contract';
+  import type { Member, Team } from '@antasphere/chassis-contract';
 
   interface Props {
     open: boolean;
     projectId: string;
     /** The user ids already in the project: never offered again. */
     alreadyIn: string[];
+    /** The team ids already on the project: never offered again. */
+    alreadyInTeams?: string[];
     onAdded: () => Promise<void> | void;
     /** A refusal may mean the project changed elsewhere (archived, a role lost): the page reads it again. */
     onRefused: () => Promise<void> | void;
   }
-  let { open = $bindable(), projectId, alreadyIn, onAdded, onRefused }: Props = $props();
+  let { open = $bindable(), projectId, alreadyIn, alreadyInTeams = [], onAdded, onRefused }: Props = $props();
 
   // null until the roster answered; `false` once it refused or failed
   let roster = $state<Member[] | false | null>(null);
@@ -38,6 +43,9 @@
   let byEmail = $state(false);
   let query = $state('');
   let pickedId = $state<string | null>(null);
+  // the workspace's teams; empty until they answered, and when they could not be read
+  let teams = $state<Team[]>([]);
+  let pickedTeamId = $state<string | null>(null);
   let email = $state('');
   let role = $state<ProjectRole>('viewer');
   let loading = $state(false);
@@ -54,6 +62,15 @@
     }
   }
 
+  async function readTeams() {
+    try {
+      teams = (await api.teams({ limit: 100 })).teams;
+    } catch {
+      // the people are still offered; only the teams group is left out
+      teams = [];
+    }
+  }
+
   // each opening starts clean, on a fresh roster
   $effect(() => {
     if (!open) return;
@@ -61,10 +78,13 @@
     byEmail = false;
     query = '';
     pickedId = null;
+    pickedTeamId = null;
+    teams = [];
     email = '';
     role = 'viewer';
     refusal = null;
     void readRoster();
+    void readTeams();
   });
 
   const usesEmail = $derived(roster === false || byEmail);
@@ -74,13 +94,26 @@
   }
   const offered = $derived(roster ? offeredMembers(roster, alreadyIn, query) : []);
   const picked = $derived(roster ? (roster.find((m) => m.userId === pickedId) ?? null) : null);
+  const offeredTeamList = $derived(roster ? offeredTeams(teams, alreadyInTeams, query) : []);
+  const pickedTeam = $derived(teams.find((team) => team.id === pickedTeamId) ?? null);
+  // one pick at a time across the two groups
+  function pickPerson(userId: string | null) {
+    pickedId = userId;
+    pickedTeamId = null;
+  }
+  function pickTeam(teamId: string | null) {
+    pickedTeamId = teamId;
+    pickedId = null;
+  }
 
   // The refusals that have a sentence of their own; the server's words otherwise.
   function refusalOf(e: unknown): string {
     const code = errorCode(e);
     if (code === 'guest_target') return t('projects.addRefusedGuest');
     if (code === 'project_archived') return t('projects.refusedArchived');
-    if (code === 'already_member') return t('projects.addRefusedAlready');
+    if (code === 'already_member')
+      return pickedTeam && !usesEmail ? t('projects.addRefusedTeamAlready') : t('projects.addRefusedAlready');
+    if (code === 'team_not_found') return t('projects.addRefusedTeamNotFound');
     if (code === 'member_not_found') return t('projects.addRefusedNotMember');
     // a 404 without that code is the project itself: the page reads it again behind the dialog
     return errorMessage(e, t('projects.addFailed'));
@@ -89,7 +122,15 @@
   async function submit() {
     refusal = null;
     const typed = email.trim();
-    const target = usesEmail ? (typed ? { email: typed } : null) : picked ? { userId: picked.userId } : null;
+    const target = usesEmail
+      ? typed
+        ? { email: typed }
+        : null
+      : pickedTeam
+        ? { teamId: pickedTeam.id }
+        : picked
+          ? { userId: picked.userId }
+          : null;
     if (!target) {
       refusal = usesEmail ? t('projects.addNeedsEmail') : t('projects.addNeedsPick');
       return;
@@ -98,7 +139,9 @@
     try {
       const added = await projects.addMember(projectId, { ...target, role });
       open = false;
-      toast.success(t('projects.memberAddedToast', { email: added.email }));
+      toast.success(
+        t('projects.memberAddedToast', { email: added.kind === 'team' ? added.name : added.email })
+      );
       await onAdded();
     } catch (e) {
       refusal = refusalOf(e);
@@ -155,6 +198,11 @@
         aria-label={t('projects.addPickLabel')}
         aria-busy={roster === null}
       >
+        {#if offeredTeamList.length && offered.length}
+          <li class="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground" role="presentation">
+            {t('projects.members.peopleGroup')}
+          </li>
+        {/if}
         {#each offered as person (person.userId)}
           {@const chosen = person.userId === pickedId}
           <li>
@@ -162,7 +210,7 @@
               type="button"
               class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-[var(--ground-3)] focus-visible:bg-[var(--ground-3)] focus-visible:outline-none"
               aria-pressed={chosen}
-              onclick={() => (pickedId = chosen ? null : person.userId)}
+              onclick={() => pickPerson(chosen ? null : person.userId)}
             >
               <!-- names and emails are USER-AUTHORED: text interpolation only -->
               <span class="min-w-0 flex-1">
@@ -174,13 +222,36 @@
               {#if chosen}<Check class="h-4 w-4 shrink-0" strokeWidth={2.2} />{/if}
             </button>
           </li>
-        {:else}
-          {#if roster}
-            <li class="px-3 py-8 text-center text-sm text-muted-foreground">
-              {query.trim() ? t('projects.addNoMatch', { query: query.trim() }) : t('projects.addNobodyLeft')}
-            </li>
-          {/if}
         {/each}
+        {#if offeredTeamList.length}
+          <li class="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground" role="presentation">
+            {t('projects.members.teamsGroup')}
+          </li>
+          {#each offeredTeamList as team (team.id)}
+            {@const chosen = team.id === pickedTeamId}
+            <li>
+              <button
+                type="button"
+                class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-[var(--ground-3)] focus-visible:bg-[var(--ground-3)] focus-visible:outline-none"
+                aria-pressed={chosen}
+                onclick={() => pickTeam(chosen ? null : team.id)}
+              >
+                <!-- team names and slugs are USER-AUTHORED: text interpolation only -->
+                <span class="min-w-0 flex-1 truncate">
+                  <span class="font-medium">{team.name}</span>
+                  <span class="text-muted-foreground"> · </span>
+                  <span class="font-mono text-xs text-muted-foreground">{team.slug}</span>
+                </span>
+                {#if chosen}<Check class="h-4 w-4 shrink-0" strokeWidth={2.2} />{/if}
+              </button>
+            </li>
+          {/each}
+        {/if}
+        {#if roster && !offered.length && !offeredTeamList.length}
+          <li class="px-3 py-8 text-center text-sm text-muted-foreground">
+            {query.trim() ? t('projects.addNoMatch', { query: query.trim() }) : t('projects.addNobodyLeft')}
+          </li>
+        {/if}
       </ul>
       <p class="text-xs text-muted-foreground">
         {rosterPartial ? t('projects.addRosterPartial') : t('projects.addRosterHint')}

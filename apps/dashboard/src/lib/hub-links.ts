@@ -24,3 +24,14 @@ export function hereForHub(): string {
 export function hubLinkHere(base: string): string {
   return hubLink(base, hereForHub());
 }
+
+/**
+ * The account site's Teams page, or one team's page there (PRDCT-2813).
+ * `base` is `/me.hubManageUrl`, the hub's ROOT (its issuer URL): the path is
+ * joined onto it, never onto a page of it. Hand the result to `hubLink` /
+ * `hubLinkHere` like any other hub URL.
+ */
+export function hubTeamsPage(base: string, hubTeamId?: string | null): string {
+  const root = base.replace(/\/+$/, '');
+  return hubTeamId ? `${root}/teams/${encodeURIComponent(hubTeamId)}` : `${root}/teams`;
+}

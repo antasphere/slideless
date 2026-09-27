@@ -15,6 +15,7 @@
     href: string;
     label: string;
     count?: number;
+    on?: boolean;
   }
   interface Props {
     /** The small line over the title: where this page lives. */
