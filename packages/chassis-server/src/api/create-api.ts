@@ -21,6 +21,7 @@ import type { z } from 'zod';
 import { hubConfig, type ToolEnv } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/index.js';
+import { demoSessionAuthRefusal } from '../identity/index.js';
 import type { PlatformRegistry } from '../platform/index.js';
 import type {
   ApiContext,
@@ -86,6 +87,8 @@ import type { StorageDriver } from '../storage/index.js';
 
 /** Inline error body matching the wire shape; keeps openapi handlers typed. */
 const err = (code: string, message: string) => ({ error: { code, message } });
+/** Where the sign-in library is mounted: the full path a middleware on `api` sees starts with it. */
+const AUTH_MOUNT = '/api/v1/auth';
 
 /**
  * PRDCT-1437 door 1: neutralize the change-email consume's account-existence
@@ -566,11 +569,24 @@ export function createApiApp<
   // while its pass does": the sign-in library's mount runs BEFORE the
   // credential resolver, and it is where a session authorizes an OAuth client
   // and answers get-session. A dead pass's session is deleted here first, so
-  // the library sees none. The verdict itself is not needed at this door.
+  // the library sees none. A live pass's session is a visit: the library
+  // paths that would leave a credential, a grant or an account change behind
+  // it are refused here (identity/demo-pass-rules.ts
+  // `DEMO_SESSION_REFUSED_AUTH_PATHS`).
   if (demoSignIn) {
     const judge = demoSessionJudge(db);
     api.use('/auth/*', async (c, next) => {
-      if (c.req.header('cookie')) await judge(c.req.raw.headers);
+      if (!c.req.header('cookie')) return next();
+      const verdict = await judge(c.req.raw.headers);
+      if (verdict && verdict !== 'ended') {
+        const authPath = c.req.path.startsWith(AUTH_MOUNT) ? c.req.path.slice(AUTH_MOUNT.length) : c.req.path;
+        if (demoSessionAuthRefusal(authPath)) {
+          return c.json(
+            err('demo_session', 'A session opened by a demo link cannot do this: sign in with your password'),
+            403
+          );
+        }
+      }
       return next();
     });
   }

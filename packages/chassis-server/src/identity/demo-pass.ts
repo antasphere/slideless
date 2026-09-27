@@ -230,7 +230,7 @@ export class DemoPassService {
    * session a pass opened lives only while its pass does. Judged once per
    * request by the credential resolver, for session principals, while the
    * switch is on. Three answers: null (an ordinary session, the person signed
-   * in themselves), the pass's id (the audit mark), or `ended`: the pass has
+   * in themselves), the pass's id (the audit mark) with the session's id, or `ended`: the pass has
    * expired or was revoked, the session row is deleted here and the request
    * goes on signed out. Without it a link valid one day would open a session
    * the library keeps a year and renews on use.
@@ -241,7 +241,7 @@ export class DemoPassService {
    * thing this can do with a token is delete the session of a pass that is
    * already dead, and the token is that session's own secret.
    */
-  async judgeSession(headers: Headers): Promise<{ passId: string } | 'ended' | null> {
+  async judgeSession(headers: Headers): Promise<{ passId: string; sessionId: string } | 'ended' | null> {
     const cookie = getSessionCookie(headers);
     if (!cookie) return null;
     const token = cookie.split('.')[0];
@@ -258,7 +258,7 @@ export class DemoPassService {
       .where(eq(sessionTable.token, token))
       .limit(1);
     if (!row) return null;
-    if (row.live) return { passId: row.passId };
+    if (row.live) return { passId: row.passId, sessionId: row.sessionId };
     await this.db.delete(sessionTable).where(eq(sessionTable.id, row.sessionId));
     return 'ended';
   }

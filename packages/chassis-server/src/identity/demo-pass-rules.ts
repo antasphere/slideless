@@ -138,3 +138,54 @@ export function isSafeDemoPath(path: string): boolean {
   }
   return !path.includes('#');
 }
+
+/**
+ * Sign-in library paths (relative to /api/v1/auth) a demo pass's session is
+ * refused. A pass's session is a visit: what it opens or changes must not
+ * outlive the pass, so it changes no address, password, name or second
+ * factor, deletes no account, mints no token and ends no other session. On
+ * this edition a pass lands in no tool, so it authorizes no OAuth client at
+ * all: the whole authorize and consent flow is on the list, and client
+ * management with it. A new sign-in-library plugin's endpoints must be
+ * reviewed against this list when it is added.
+ */
+export const DEMO_SESSION_REFUSED_AUTH_PATHS: readonly string[] = [
+  '/change-email',
+  '/change-password',
+  '/delete-user',
+  '/update-user',
+  '/link-social',
+  '/unlink-account',
+  '/email-otp/change-email',
+  '/email-otp/request-email-change',
+  '/two-factor/enable',
+  '/two-factor/disable',
+  '/two-factor/generate-backup-codes',
+  '/two-factor/get-totp-uri',
+  '/oauth2/authorize',
+  '/oauth2/consent',
+  '/oauth2/update-consent',
+  '/oauth2/continue',
+  '/oauth2/create-client',
+  '/oauth2/update-client',
+  '/oauth2/client/rotate-secret',
+  '/oauth2/delete-client',
+  '/revoke-sessions',
+  '/revoke-other-sessions',
+  '/revoke-session',
+  '/token',
+  '/get-access-token',
+  '/refresh-token'
+];
+
+const REFUSED_AUTH_PATHS: ReadonlySet<string> = new Set(DEMO_SESSION_REFUSED_AUTH_PATHS);
+
+/**
+ * Whether a demo pass's session is refused this sign-in library path
+ * (relative to /api/v1/auth). One trailing `/` is dropped and the comparison
+ * is lowercase, so neither spelling walks past the list.
+ */
+export function demoSessionAuthRefusal(authPath: string): boolean {
+  const trimmed = authPath.endsWith('/') ? authPath.slice(0, -1) : authPath;
+  return REFUSED_AUTH_PATHS.has(trimmed.toLowerCase());
+}

@@ -137,7 +137,8 @@ export interface AuthContextDeps {
    * the request goes on signed out. Here, in the single credential resolver,
    * so no route can be reached with a session its pass no longer backs.
    */
-  demoSession?: ((headers: Headers) => Promise<{ passId: string } | 'ended' | null>) | undefined;
+  demoSession?:
+    ((headers: Headers) => Promise<{ passId: string; sessionId: string } | 'ended' | null>) | undefined;
   /**
    * The composed fail-closed scope allowlist (`createScopeAllowlist` in
    * scopes.ts: the chassis rules, then the tool's). `null` = the endpoint is

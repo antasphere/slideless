@@ -725,3 +725,107 @@ describe('a session a pass opened lives only while its pass does', () => {
     expect((await send(app, 'GET', '/demo/passes', owner)).status).toBe(200);
   });
 });
+
+describe('a demo link’s session leaves nothing behind', () => {
+  /** A fresh member and a session a pass opened for them. */
+  async function passSessionFor(name: string, email: string): Promise<{ actor: Actor; cookie: string }> {
+    const actor = await addMember(name, email);
+    const minted = await mint(actors.owner!, { email });
+    const res = await redeem(minted.secret);
+    expect(res.status).toBe(200);
+    return { actor, cookie: extractCookie(res) };
+  }
+
+  it('t. a pass’s session creates no API key; the person’s own password session does', async () => {
+    const { actor, cookie } = await passSessionFor('keyless', 'keyless@example.com');
+    const body = { name: 'from-a-demo', scopes: [host.scopes.read] };
+    await expectError(await send(app, 'POST', '/api-keys', { cookie }, body), 403, 'demo_session');
+    const keysOf = async () =>
+      (await app.db.pool.query(`SELECT id FROM api_keys WHERE created_by = $1`, [actor.userId])).rows.length;
+    expect(await keysOf()).toBe(0);
+
+    expect((await send(app, 'POST', '/api-keys', actor, body)).status).toBe(201);
+    expect(await keysOf()).toBe(1);
+  });
+
+  it('t2. a pass’s session changes no password, address, name or second factor, and deletes no account', async () => {
+    const { actor, cookie } = await passSessionFor('unchanged', 'unchanged@example.com');
+    const snapshot = async () => ({
+      user: (
+        await app.db.pool.query(`SELECT name, email, two_factor_enabled FROM "user" WHERE id = $1`, [
+          actor.userId
+        ])
+      ).rows,
+      password: (
+        await app.db.pool.query(`SELECT password FROM account WHERE user_id = $1 ORDER BY id`, [actor.userId])
+      ).rows
+    });
+    const before = await snapshot();
+    expect(before.user).toHaveLength(1);
+
+    const attempts: Array<[string, unknown]> = [
+      ['/auth/change-password', { currentPassword: PASSWORD, newPassword: 'another-long-password-2' }],
+      ['/auth/change-email', { newEmail: 'moved@example.com' }],
+      ['/auth/update-user', { name: 'Renamed by a demo' }],
+      ['/auth/two-factor/enable', { password: PASSWORD }],
+      ['/auth/delete-user', {}]
+    ];
+    for (const [path, body] of attempts) {
+      await expectError(await send(app, 'POST', path, { cookie }, body), 403, 'demo_session');
+    }
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('t3. a pass’s session authorizes no OAuth client', async () => {
+    const { cookie } = await passSessionFor('noGrant', 'no-grant@example.com');
+    const redirectUri = 'http://127.0.0.1:9999/callback';
+    const register = await send(
+      app,
+      'POST',
+      '/auth/oauth2/register',
+      {},
+      {
+        client_name: 'demo-pass-client',
+        redirect_uris: [redirectUri],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code']
+      }
+    );
+    expect([200, 201]).toContain(register.status);
+    const clientId = (await readJson(register)).client_id as string;
+    expect(clientId).toBeTruthy();
+
+    const verifier = 'v'.repeat(64);
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: `openid offline_access ${host.scopes.read}`,
+      state: 'demo-state',
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256'
+    });
+    await expectError(
+      await send(app, 'GET', `/auth/oauth2/authorize?${params}`, { cookie }),
+      403,
+      'demo_session'
+    );
+    const { rows } = await app.db.pool.query(
+      `SELECT count(*)::int AS n FROM oauth_consent WHERE client_id = $1`,
+      [clientId]
+    );
+    expect(rows[0].n).toBe(0);
+  });
+
+  it('t4. a pass’s session still reads itself and signs out', async () => {
+    const { cookie } = await passSessionFor('visitor', 'visitor@example.com');
+    const session = await send(app, 'GET', '/auth/get-session', { cookie });
+    expect(session.status).toBe(200);
+    expect(((await readJson(session)) as { user: { email: string } }).user.email).toBe('visitor@example.com');
+
+    const out = await send(app, 'POST', '/auth/sign-out', { cookie }, {});
+    expect(out.status).toBe(200);
+    expect((await send(app, 'GET', '/me', { cookie })).status).toBe(401);
+  });
+});

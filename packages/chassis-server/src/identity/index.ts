@@ -10,6 +10,8 @@ export {
   DEMO_PASS_DEFAULT_MINUTES,
   DEMO_PASS_MAX_MINUTES,
   DEMO_PASS_MAX_PATH_LENGTH,
+  DEMO_SESSION_REFUSED_AUTH_PATHS,
+  demoSessionAuthRefusal,
   isDemoAddress,
   isDemoSignInHost,
   isSafeDemoPath,

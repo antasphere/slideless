@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEMO_PASS_DEFAULT_MINUTES,
   DEMO_PASS_MAX_MINUTES,
+  DEMO_SESSION_REFUSED_AUTH_PATHS,
+  demoSessionAuthRefusal,
   isDemoAddress,
   isDemoSignInHost,
   isSafeDemoPath,
@@ -162,5 +164,27 @@ describe('isSafeDemoPath: one leading slash, no fragment, no control character',
     ['2049 characters', '/' + 'a'.repeat(2048)]
   ])('refuses %s', (_what, path) => {
     expect(isSafeDemoPath(path)).toBe(false);
+  });
+});
+
+describe('demoSessionAuthRefusal: what a pass’s session may not do at the sign-in library', () => {
+  it('refuses every listed path', () => {
+    expect(DEMO_SESSION_REFUSED_AUTH_PATHS.length).toBe(26);
+    for (const path of DEMO_SESSION_REFUSED_AUTH_PATHS) {
+      expect(demoSessionAuthRefusal(path), path).toBe(true);
+    }
+  });
+
+  it('refuses them whatever the case, and with one trailing slash', () => {
+    expect(demoSessionAuthRefusal('/Change-Password')).toBe(true);
+    expect(demoSessionAuthRefusal('/OAUTH2/AUTHORIZE')).toBe(true);
+    expect(demoSessionAuthRefusal('/change-password/')).toBe(true);
+    expect(demoSessionAuthRefusal('/Two-Factor/Enable/')).toBe(true);
+  });
+
+  it('allows reading the session, signing out, signing in and redeeming', () => {
+    for (const path of ['/get-session', '/sign-out', '/sign-in/email', '/demo/redeem']) {
+      expect(demoSessionAuthRefusal(path), path).toBe(false);
+    }
   });
 });

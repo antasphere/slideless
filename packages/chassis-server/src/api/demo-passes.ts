@@ -70,7 +70,9 @@ export function demoSignInOn(
  * pass's id for the audit trail. Handed to `authContext` only while the
  * switch is on, so an instance without it pays no lookup.
  */
-export function demoSessionJudge(db: Db): (headers: Headers) => Promise<{ passId: string } | 'ended' | null> {
+export function demoSessionJudge(
+  db: Db
+): (headers: Headers) => Promise<{ passId: string; sessionId: string } | 'ended' | null> {
   const service = new DemoPassService(db);
   return (headers) => service.judgeSession(headers);
 }
