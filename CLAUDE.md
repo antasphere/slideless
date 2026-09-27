@@ -259,7 +259,11 @@ deploys) + `dev` (day-to-day work).
   router. A session a pass opened lives only while its pass does: the revoke deletes it in its own
   transaction, and the credential resolver's judge (`judgeSession`, handed to `authContext` and to
   the library's mount only while the switch is on) deletes it once the pass has expired or was
-  revoked. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
+  revoked. A session a pass opened is a VISIT: the library's mount refuses it every path of
+  `DEMO_SESSION_REFUSED_AUTH_PATHS` (the OAuth authorize included: a pass lands in no tool here),
+  `POST /api-keys` refuses it, a pass's end (`endSessions`) takes the OAuth tokens and the
+  `demo_pass_sessions` rows tied to its sessions BEFORE the sessions, and the redeem judges the
+  mint's refusals again. A new sign-in-library plugin is reviewed against that list. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
   nothing, whatever the switch says (the hub owns identity).
 - **Cloud federation is USER-scoped and live (ADR 019, internal/federation.md "Live reconcile +
   grant")**: every hub read between logins is `GET <hub>/orgs` AS THE USER with that user's own

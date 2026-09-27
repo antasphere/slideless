@@ -244,8 +244,9 @@ export class DemoPassService {
    * switch is on. Three answers: null (an ordinary session, the person signed
    * in themselves), the pass's id (the audit mark) with the session's id, or
    * `ended`: the pass has expired or was revoked, every session it opened is
-   * ended here (`endSessions`) and the request goes on signed out. Without it a link valid one day would open a session
-   * the library keeps a year and renews on use.
+   * ended here (`endSessions`) and the request goes on signed out. Without
+   * it a link valid one day would open a session the library keeps a year
+   * and renews on use.
    *
    * The session cookie is `<token>.<signature>` and only the token part is
    * read, the signature unchecked: at the resolver it was already checked, and
