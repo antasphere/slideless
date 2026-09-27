@@ -1,3 +1,12 @@
+<script module lang="ts">
+  /**
+   * The re-admission poll's cadence. The server's zero-state read runs the
+   * reconciler's cached pass (10 s TTL, 15 s retry throttle), so a faster
+   * poll would buy nothing.
+   */
+  export const READMISSION_POLL_MS = 10_000;
+</script>
+
 <script lang="ts">
   import { Button } from '$lib/components/ui/button/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
@@ -6,7 +15,6 @@
   import { getLocale, t } from '$lib/i18n';
   import { hubLinkHere } from '$lib/hub-links';
   import { api } from '$lib/api';
-  import { readmissionPollInterval, type TabVisibility } from '$lib/readmission-poll';
 
   let { data } = $props();
 
@@ -38,7 +46,7 @@
   // the tool to this person, re-read /me every ten seconds (the server's
   // zero-state read runs the hub pass itself) and open the workspace as
   // soon as the answer carries one. A hidden tab stops; showing it resumes.
-  let visibility = $state<TabVisibility>(
+  let visibility = $state<'visible' | 'hidden'>(
     typeof document === 'undefined' ? 'hidden' : document.visibilityState
   );
   $effect(() => {
@@ -47,8 +55,7 @@
     return () => document.removeEventListener('visibilitychange', onVisibility);
   });
   $effect(() => {
-    const every = readmissionPollInterval(denied.length, visibility);
-    if (every === null) return;
+    if (!(denied.length > 0 && visibility === 'visible')) return;
     let stopped = false;
     const timer = setInterval(async () => {
       const me = await api.me().catch(() => null);
@@ -57,7 +64,7 @@
         clearInterval(timer);
         window.location.assign('/');
       }
-    }, every);
+    }, READMISSION_POLL_MS);
     return () => {
       stopped = true;
       clearInterval(timer);
@@ -68,7 +75,7 @@
 <GateShell palette="paper" strength="quiet" width="max-w-md" eyebrow={t('gate.eyebrowEdge')}>
   <div class="flex flex-col items-center gap-4 p-8 text-center">
     {#if denied.length > 0}
-      <h1 class="font-display text-2xl font-normal" data-testid="no-org-denied">
+      <h1 class="font-display text-2xl font-normal">
         {t('noOrg.titleDenied', { tool: toolName, org: deniedOrg })}
       </h1>
       <p class="max-w-md text-sm text-muted-foreground">

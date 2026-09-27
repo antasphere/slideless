@@ -3,23 +3,24 @@
  * (the hub): every "Manage at Antasphere" link goes through `hubLink`, so
  * each carries `return_to`, the page the person left, and the hub can offer
  * the way back. `base` is what `/me` hands over (`hubManageUrl`, or a
- * ready-made hub URL such as `hubNoAccessUrl`); `path` is appended to it
- * with exactly one slash between them. The return target is encoded once.
+ * ready-made hub URL such as `hubNoAccessUrl`). The return target is encoded
+ * once.
  */
-export function hubLink(base: string, path?: string, returnTo?: string): string {
-  let url = base;
-  if (path) url = `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-  if (returnTo) url += `${url.includes('?') ? '&' : '?'}return_to=${encodeURIComponent(returnTo)}`;
-  return url;
+export function hubLink(base: string, returnTo?: string): string {
+  if (!returnTo) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}return_to=${encodeURIComponent(returnTo)}`;
 }
 
-/** The page the person is on, as the hub's `return_to` wants it (no query, no hash). */
-export function hereForHub(): string | undefined {
-  if (typeof location === 'undefined') return undefined;
+/**
+ * The page the person is on, as the hub's `return_to` wants it (no query, no
+ * hash). The dashboard is a pure SPA (`ssr = false`), so `location` is always
+ * there.
+ */
+export function hereForHub(): string {
   return location.origin + location.pathname;
 }
 
 /** `hubLink` with the current page as the return target: what every link-out in the dashboard uses. */
-export function hubLinkHere(base: string, path?: string): string {
-  return hubLink(base, path, hereForHub());
+export function hubLinkHere(base: string): string {
+  return hubLink(base, hereForHub());
 }
