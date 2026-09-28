@@ -1739,3 +1739,14 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   collaborator claim's pattern.
 - **`turbo typecheck lint` prints both failures in one stream; read to the end.** A lint error was
   fixed and the typecheck error two lines below it was committed (e5867eb, fixed by 00c00a8).
+- **A removal that a pending invite can undo is not a removal (verifier round 1, F1).** The deck claim
+  switches an inactive membership back on, by design: a fresh deck invite is the workspace's own
+  re-invite. An invite made BEFORE the removal is not, and it let a removed admin come back alone, as
+  admin. Three things close it together: the removal revokes the person's deck invites and grants
+  (the `membershipRemoval` slot, since the chassis names no deck), the removal leaves the row at
+  `member`, and the claim never restores a role. Reading "what references the membership row" was not
+  enough to find it: the door was keyed on the ADDRESS, in the tool, outside the chassis tables.
+- **Intent in a URL is anyone's intent (verifier round 1, F2).** `?accept=1` was meant as "the person
+  pressed the button before leaving for the sign-in", and it read as that for anyone who was sent the
+  link. What says "this person, in this tab, pressed the button" is state the page wrote itself at
+  the click: session storage, one invitation, a short life, taken once.

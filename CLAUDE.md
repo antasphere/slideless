@@ -287,16 +287,25 @@ deploys) + `dev` (day-to-day work).
   is remembered in the reconciler's memory per replica and handed to the refusal page through
   `/me` (`hubDenied`, `hubNoAccessUrl`); it is a hint for the copy, never an access input.
 - **Taking a person out has three acts, and a removal is the same on both editions (PRDCT-2816)**:
-  a PAUSE (`PATCH /members/{id}` `isActive: false`) keeps the project grants and team seats; a
-  REMOVAL switches the membership row off, never deletes it, and deletes the grants and the seats in
-  the same transaction, so a person invited back (the accept reactivates the very same row) starts
-  with none; the ERASURE (`DELETE /members/{id}`) deletes the account. What a removal takes is stated
-  ONCE, `deleteMembershipGrants` (`packages/chassis-server/src/members/removal.ts`), called by the hub
+  a PAUSE (`PATCH /members/{id}` `isActive: false`) keeps everything; a REMOVAL switches the
+  membership row off, never deletes it, and in the same transaction deletes the person's project
+  grants and team seats and ends what the tool hangs on them in that workspace; the ERASURE
+  (`DELETE /members/{id}`) deletes the account. What a removal takes is stated ONCE,
+  `deleteMembershipGrants` (`packages/chassis-server/src/members/removal.ts`), called by the hub
   reconcile's sweep (cloud, a hub organization) and by `POST /members/{id}/remove` (a workspace
   managed here: admin and above, an owner by an owner only, never oneself, the last-owner guard,
-  `hub_managed` on a hub-origin workspace). The route is deliberately UNLISTED in the machine scope
-  allowlist, like the erasure. A new table that hangs a right on a membership row joins that function,
-  or a removed person finds it again on the way back.
+  `hub_managed` on a hub-origin workspace, deliberately UNLISTED in the machine scope allowlist like
+  the erasure). The tool's half is the `membershipRemoval` slot: Slideless revokes the person's deck
+  invites AND deck grants of that workspace (`apps/server/src/collaborators/removal.ts`), matched by
+  account or by address. **A removed person never comes back by themselves, and never at the role
+  they held**: the route leaves the row at `member`; a pending deck invite is revoked because claiming
+  one switches an inactive membership back on (`api/collaborators.ts`), and that claim brings a paused
+  or removed person back as `member` whatever the row held. Only an act of the workspace brings a
+  person back: an admin's Reactivate, a workspace invitation (which names its role), a deck invite
+  made AFTER the removal. A new table or a new door that hangs a right on a person in a workspace
+  joins the function or the slot. What a removal does NOT end: the person's own API keys (a key is
+  the person's credential; one pinned to the workspace reaches nothing while the membership is off
+  and works again once they are back) and the decks they own, which stay with the workspace.
 - **The default workspace is the person's setting on both editions; only its writer differs
   (PRDCT-2815)**: on cloud the hub reconcile clears and sets `workspace_members.is_default` at every
   pass, so `PUT /me/default-workspace` answers 403 `hub_managed` + `manageUrl` there on EVERY
@@ -309,6 +318,13 @@ deploys) + `dev` (day-to-day work).
   machines under the write scope (the CLI's `workspace default`), and refuses a key pinned to one
   workspace (`key_pinned`). The dashboard decides between the in-place action and the link to the
   account site on discovery's sign-in methods, never on the edition's name.
+- **An invitation is accepted on the person's own act, never on the address of a page (PRDCT-2817)**:
+  on cloud the workspace invitation page offers Sign in with Antasphere, and the return from the
+  sign-in accepts without a second click ONLY when that browser tab holds the mark the click left
+  for that invitation (`apps/dashboard/src/lib/invite-return.ts`: session storage, one invitation,
+  ten minutes, taken once). Never put the intent in the URL: a link carrying it joined whoever opened
+  it while signed in, on both editions (verifier round 1, F2). After an acceptance the page opens the
+  workspace the invitation names, not the person's default.
 - **On cloud the email address is the hub's, and the tool refuses to change it (PRDCT-2818)**:
   `/change-email` and the emailOTP pair answer 403 `email_change_disabled` naming the account site
   (`isEmailChangePath`, the same before-hook as the reset closure; re-verify the enumeration on any

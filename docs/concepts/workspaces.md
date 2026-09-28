@@ -112,12 +112,16 @@ the account stays with its other workspaces.
 
 An owner or an admin has three ways to take someone out, from the row's menu on the Members page:
 
-| Act                       | The membership | Their places in projects and teams | The account |
-| ------------------------- | -------------- | ---------------------------------- | ----------- |
-| **Deactivate**            | paused         | kept, and back on **Reactivate**   | kept        |
-| **Remove from workspace** | off            | deleted                            | kept        |
-| **Delete member**         | deleted        | deleted                            | erased      |
+| Act                       | The membership | Their places in projects and teams, their deck invites and grants | The account |
+| ------------------------- | -------------- | ----------------------------------------------------------------- | ----------- |
+| **Deactivate**            | paused         | kept, and back on **Reactivate**                                  | kept        |
+| **Remove from workspace** | off            | ended                                                             | kept        |
+| **Delete member**         | deleted        | ended                                                             | erased      |
 
-A removed person is shown as inactive on the Members page. Reactivated or invited again, they are a
-member with no project and no team, and are added back where they are needed. On Slideless Cloud the
+A removed person is shown as inactive on the Members page, with the role Member whatever they held.
+Only the workspace brings them back: **Reactivate**, a new invitation, or an invitation on a deck made
+after the removal. They come back as a member with no project, no team and no deck shared with them,
+and are added back where they are needed. The decks they own stay in the workspace, readable by its
+admins and owners. Their API keys are theirs and are not revoked: a key reaches the workspace again
+once the person is a member again, so revoke the keys too when that matters. On Slideless Cloud the
 members of an organization are removed at `account.antasphere.com`, with the same result here.
