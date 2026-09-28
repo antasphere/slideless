@@ -124,7 +124,9 @@ workspace brings them back, by an act made after it: **Reactivate**, a new invit
 invitation on a deck. They come back as a member with no project, no team and no deck shared with them,
 and are added back where they are needed. The decks they own stay in the workspace, readable by its
 admins and owners. Their API keys are theirs and are not revoked: a key reaches the workspace again
-once the person is a member again, so revoke the keys too when that matters. On Slideless Cloud the
+once the person is a member again, so revoke the keys too when that matters. The share links they
+minted keep serving their decks, which stay in the workspace: revoke a link from the deck's page when
+it should stop. A demo link they minted, or one made for them, stops with the removal. On Slideless Cloud the
 members of an organization are removed at `account.antasphere.com`, with the same result here, and
 they come back the same way: a person who left an organization is added to it again on the account
 site, and an invitation on a deck does not bring them back.

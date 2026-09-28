@@ -389,6 +389,31 @@ describe('a removal ends the deck invites and grants in the workspace (self-host
     expect(await removalRecord(issuer.memberId)).toMatchObject({ deckInvitesIssued: 1 });
   });
 
+  it('F3 (round 3): an admin of two workspaces removed from the first: only the first workspace’s issued invite is revoked', async () => {
+    const owner = actors.owner!;
+    const issuer = await addActor('two-ws-issuer', { role: 'admin' });
+    const second = (await app.registry.workspaces.create('Second of two', owner.userId)).workspaceId;
+    await app.db.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: second, userId: issuer.userId, role: 'admin', origin: 'local' });
+    const there = { 'x-workspace-id': second };
+
+    const hereDeck = await oss.createDeck(owner, 'Two workspaces: here');
+    const thereDeck = await oss.createDeck(owner, 'Two workspaces: there', there);
+    const hereInvite = await oss.inviteOnDeck(hereDeck, issuer, 'two-ws-here@removal-decks.test');
+    const thereInvite = await oss.inviteOnDeck(thereDeck, issuer, 'two-ws-there@removal-decks.test', there);
+    expect(await oss.grantRow(hereInvite.grantId)).toMatchObject({ status: 'pending', revokedAt: null });
+    expect(await oss.grantRow(thereInvite.grantId)).toMatchObject({ status: 'pending', revokedAt: null });
+
+    expect((await remove(issuer.memberId, owner)).status).toBe(200);
+
+    const here = await oss.grantRow(hereInvite.grantId);
+    expect(here.status).toBe('revoked');
+    expect(here.revokedAt).not.toBeNull();
+    expect(await oss.grantRow(thereInvite.grantId)).toMatchObject({ status: 'pending', revokedAt: null });
+    expect(await removalRecord(issuer.memberId)).toMatchObject({ deckInvitesIssued: 1 });
+  });
+
   it('a grant another person already claimed through the removed admin’s invite stays active and reads', async () => {
     const owner = actors.owner!;
     const issuer = await addActor('claimed-issuer', { role: 'admin' });

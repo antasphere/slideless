@@ -369,19 +369,23 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
 
     // The WHERE names the workspace again: the row is the one read above,
     // and the statement could not reach another workspace's even if it were not.
+    // What the person held goes first, the row second: the same lock order
+    // as an invitation's accept, which locks the invitation and then the
+    // membership row (members/removal.ts, ORDER).
     const remove = () =>
       db.transaction(async (tx) => {
+        const counts = await deleteMembershipGrants(
+          tx,
+          [{ memberId: target.id, workspaceId: principal.workspaceId, userId: target.userId }],
+          deps.onMembershipRemoval
+        );
         await tx
           .update(workspaceMembers)
           .set({ isActive: false, isDefault: false, role: 'member' })
           .where(
             and(eq(workspaceMembers.id, target.id), eq(workspaceMembers.workspaceId, principal.workspaceId))
           );
-        return deleteMembershipGrants(
-          tx,
-          [{ memberId: target.id, workspaceId: principal.workspaceId, userId: target.userId }],
-          deps.onMembershipRemoval
-        );
+        return counts;
       });
     let removed: RemovalCounts;
     try {
@@ -425,7 +429,8 @@ export function registerMemberRoutes(api: OpenAPIHono, deps: MemberRouteDeps): v
         roleBefore: target.role,
         projectGrants: removed.projectGrants,
         teamSeats: removed.teamSeats,
-        invitations: removed.invitations
+        invitations: removed.invitations,
+        demoPasses: removed.demoPasses
       }
     });
     return c.json(toWire(after!), 200);

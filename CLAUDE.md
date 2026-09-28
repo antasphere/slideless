@@ -317,7 +317,9 @@ deploys) + `dev` (day-to-day work).
   a PAUSE (`PATCH /members/{id}` `isActive: false`) keeps everything; a REMOVAL switches the
   membership row off, never deletes it, and in the same transaction deletes the person's project
   grants and team seats, revokes the open workspace invitations that name them or that they issued,
-  and ends what the tool hangs on them in that workspace; the ERASURE
+  revokes the live demo passes minted for them or by them with the sessions those opened, and ends
+  what the tool hangs on them in that workspace; the caller runs that BEFORE it switches the row
+  off, the lock order of an invitation's accept (round 3, F2); the ERASURE
   (`DELETE /members/{id}`) deletes the account. What a removal takes is stated ONCE,
   `deleteMembershipGrants` (`packages/chassis-server/src/members/removal.ts`), called by the hub
   reconcile's sweep (cloud, a hub organization) and by `POST /members/{id}/remove` (a workspace
@@ -336,7 +338,8 @@ deploys) + `dev` (day-to-day work).
   again, the grant with it (verifier round 2, N3; the follow-up is PRDCT-2831). A new table or a new door that hangs a right on a person in a workspace
   joins the function or the slot. What a removal does NOT end: the person's own API keys (a key is
   the person's credential; one pinned to the workspace reaches nothing while the membership is off
-  and works again once they are back) and the decks they own, which stay with the workspace.
+  and works again once they are back), the decks they own and the share links they minted, which
+  stay with the workspace.
 - **The default workspace is the person's setting on both editions; only its writer differs
   (PRDCT-2815)**: on cloud the hub reconcile clears and sets `workspace_members.is_default` at every
   pass, so `PUT /me/default-workspace` answers 403 `hub_managed` + `manageUrl` there on EVERY

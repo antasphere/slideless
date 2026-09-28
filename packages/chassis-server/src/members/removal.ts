@@ -1,7 +1,12 @@
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  demoPasses,
+  demoPassSessions,
   invitations,
+  oauthAccessToken,
+  oauthRefreshToken,
   projectMembers,
+  session as sessionTable,
   user as userTable,
   workspaceTeamMembers,
   type DbConn
@@ -32,6 +37,8 @@ export interface RemovalCounts {
   teamSeats: number;
   /** Open workspace invitations revoked: the ones FOR the person and the ones they ISSUED. */
   invitations: number;
+  /** Live demo passes revoked, their sessions ended: the ones opening the person and the ones they MINTED. */
+  demoPasses: number;
   /** What the tool's hook ended, under the names it gave; empty without a hook. */
   tool: Record<string, number>;
 }
@@ -42,6 +49,17 @@ export interface RemovalCounts {
  * (which is also every grant they held through a team), the open workspace
  * invitations that name them or that they issued, and what the tool hangs
  * on them in that workspace (`toolHook`).
+ *
+ * The demo passes are doors too (round 3, F1): a pass the person MINTED
+ * signs a demo person in, who could reactivate them; a pass minted FOR them
+ * works again the day they are re-invited, in whoever's hands it is. Both
+ * are revoked with the sessions they opened, the pass service's own way.
+ *
+ * ORDER (round 3, F2): the caller runs this BEFORE it switches the membership
+ * row off, inside the same transaction. An invitation's accept locks the
+ * invitation, then the membership row; a removal that locked the membership
+ * first and the invitation second met it head on and one of the two died
+ * of a deadlock. Same order on both sides, no deadlock.
  *
  * The invitations are doors, not rights (the verifier's round 2, N1 and N2).
  * An invitation FOR the person that was open at the removal reactivates the
@@ -68,7 +86,9 @@ export async function deleteMembershipGrants(
   removed: readonly RemovedMembership[],
   toolHook?: MembershipRemovalHook
 ): Promise<RemovalCounts> {
-  if (removed.length === 0) return { projectGrants: 0, teamSeats: 0, invitations: 0, tool: {} };
+  if (removed.length === 0) {
+    return { projectGrants: 0, teamSeats: 0, invitations: 0, demoPasses: 0, tool: {} };
+  }
   const ids = removed.map((row) => row.memberId);
   const grants = await tx
     .delete(projectMembers)
@@ -79,7 +99,35 @@ export async function deleteMembershipGrants(
     .where(inArray(workspaceTeamMembers.memberId, ids))
     .returning({ id: workspaceTeamMembers.id });
   let revokedInvitations = 0;
+  let revokedPasses = 0;
   for (const { workspaceId, userId } of removed) {
+    const passes = await tx
+      .update(demoPasses)
+      .set({ revokedAt: sql`now()` })
+      .where(
+        and(
+          eq(demoPasses.workspaceId, workspaceId),
+          isNull(demoPasses.revokedAt),
+          or(eq(demoPasses.userId, userId), eq(demoPasses.createdBy, userId))
+        )
+      )
+      .returning({ id: demoPasses.id });
+    if (passes.length > 0) {
+      const passIds = passes.map((p) => p.id);
+      const sessions = (
+        await tx
+          .select({ sessionId: demoPassSessions.sessionId })
+          .from(demoPassSessions)
+          .where(inArray(demoPassSessions.passId, passIds))
+      ).map((s) => s.sessionId);
+      if (sessions.length > 0) {
+        await tx.delete(oauthAccessToken).where(inArray(oauthAccessToken.sessionId, sessions));
+        await tx.delete(oauthRefreshToken).where(inArray(oauthRefreshToken.sessionId, sessions));
+        await tx.delete(demoPassSessions).where(inArray(demoPassSessions.sessionId, sessions));
+        await tx.delete(sessionTable).where(inArray(sessionTable.id, sessions));
+      }
+      revokedPasses += passes.length;
+    }
     const [person] = await tx
       .select({ email: userTable.email })
       .from(userTable)
@@ -102,5 +150,11 @@ export async function deleteMembershipGrants(
     revokedInvitations += rows.length;
   }
   const tool = toolHook ? await toolHook(tx, removed) : {};
-  return { projectGrants: grants.length, teamSeats: seats.length, invitations: revokedInvitations, tool };
+  return {
+    projectGrants: grants.length,
+    teamSeats: seats.length,
+    invitations: revokedInvitations,
+    demoPasses: revokedPasses,
+    tool
+  };
 }

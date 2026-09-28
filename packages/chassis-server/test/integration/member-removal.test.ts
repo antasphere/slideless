@@ -509,7 +509,7 @@ describe('deleteMembershipGrants, called directly (S06)', () => {
     }));
 
     const plain = await app.db.db.transaction((tx) => deleteMembershipGrants(tx, removed));
-    expect(plain).toEqual({ projectGrants: 2, teamSeats: 2, invitations: 0, tool: {} });
+    expect(plain).toEqual({ projectGrants: 2, teamSeats: 2, invitations: 0, demoPasses: 0, tool: {} });
     for (const who of [d1, d2]) {
       expect(await grantsOf(who.memberId)).toHaveLength(0);
       expect(await seatsOf(who.memberId)).toHaveLength(0);
@@ -522,7 +522,13 @@ describe('deleteMembershipGrants, called directly (S06)', () => {
         return { things: 3 };
       })
     );
-    expect(hooked).toEqual({ projectGrants: 0, teamSeats: 0, invitations: 0, tool: { things: 3 } });
+    expect(hooked).toEqual({
+      projectGrants: 0,
+      teamSeats: 0,
+      invitations: 0,
+      demoPasses: 0,
+      tool: { things: 3 }
+    });
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual([
       { memberId: d1.memberId, workspaceId, userId: d1.userId },
@@ -538,7 +544,7 @@ describe('deleteMembershipGrants, called directly (S06)', () => {
         return { things: 3 };
       })
     );
-    expect(result).toEqual({ projectGrants: 0, teamSeats: 0, invitations: 0, tool: {} });
+    expect(result).toEqual({ projectGrants: 0, teamSeats: 0, invitations: 0, demoPasses: 0, tool: {} });
     expect(calls).toBe(0);
   });
 });
@@ -692,11 +698,64 @@ describe('the invitations open at the removal', () => {
       userId: who.userId
     }));
     const result = await app.db.db.transaction((tx) => deleteMembershipGrants(tx, removed));
-    expect(result).toEqual({ projectGrants: 0, teamSeats: 0, invitations: 2, tool: {} });
+    expect(result).toEqual({ projectGrants: 0, teamSeats: 0, invitations: 2, demoPasses: 0, tool: {} });
     for (const row of opened) {
       expect((await invitationRow(row.id)).revokedAt).toBeInstanceOf(Date);
     }
   });
+});
+
+// Round 3, F2: the removal locked the membership row and then the invitation,
+// an accept locks the invitation and then the membership row; racing, one of
+// the two died of a deadlock and answered 500. The removal now takes what the
+// person held first and the row second, the accept's order.
+describe('a removal racing an acceptance', () => {
+  it('eight rounds: never a 500, and the row always matches whoever won', async () => {
+    const observed: Record<string, number> = {};
+    for (let round = 1; round <= 8; round++) {
+      const racer = await addActor(`racer-${round}`);
+      const pause = await send('PATCH', `/members/${racer.memberId}`, actors.admin!, { isActive: false });
+      expect(pause.status).toBe(200);
+      const invited = await send('POST', '/invitations', actors.admin!, {
+        email: racer.email,
+        role: 'admin'
+      });
+      expect(invited.status).toBe(201);
+      const invitedBody = await readJson(invited);
+      const invitationId = invitedBody.invitation.id as string;
+      const token = (invitedBody.acceptUrl as string).split('/invite/')[1]!;
+
+      const [removed, accepted] = await Promise.all([
+        remove(racer.memberId, actors.owner!),
+        send('POST', '/invitations/accept', racer, { token })
+      ]);
+      const acceptCode = accepted.status === 200 ? '' : ` ${(await readJson(accepted))?.error?.code}`;
+      const row = await memberRow(racer.memberId);
+      const [invitation] = await app.db.db.select().from(invitations).where(eq(invitations.id, invitationId));
+      const state = {
+        isActive: row!.isActive,
+        role: row!.role,
+        revoked: invitation!.revokedAt !== null,
+        accepted: invitation!.acceptedAt !== null
+      };
+      const pair = `remove ${removed.status} / accept ${accepted.status}${acceptCode} → ${JSON.stringify(state)}`;
+      observed[pair] = (observed[pair] ?? 0) + 1;
+      console.log(`race round ${round}: ${pair}`);
+
+      expect(removed.status).not.toBe(500);
+      expect(accepted.status).not.toBe(500);
+      expect(removed.status).toBe(200);
+      expect([200, 404, 410]).toContain(accepted.status);
+      expect([
+        // The removal won: the invitation went with it.
+        { isActive: false, role: 'member', revoked: true, accepted: false },
+        // The acceptance committed first and the removal came after it, the
+        // later act: the person is out, and the invitation reads as used.
+        { isActive: false, role: 'member', revoked: false, accepted: true }
+      ]).toContainEqual(state);
+    }
+    console.log('removal vs accept race outcomes:', JSON.stringify(observed));
+  }, 120_000);
 });
 
 describe('the record', () => {
