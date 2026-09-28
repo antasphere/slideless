@@ -982,4 +982,69 @@ describe('a demo link’s session leaves nothing behind', () => {
     expect((await send(app, 'GET', '/me', { cookie })).status).toBe(401);
     expect((await send(app, 'GET', '/me', actor)).status).toBe(200);
   });
+
+  /** The session rows (id and token) a pass opened. */
+  const passSessionsOf = async (passId: string) =>
+    (
+      await app.db.pool.query(
+        `SELECT s.id, s.token FROM session s JOIN demo_pass_sessions d ON d.session_id = s.id WHERE d.pass_id = $1`,
+        [passId]
+      )
+    ).rows as Array<{ id: string; token: string }>;
+
+  it('w3. a forged signature on the person’s own session cookie ends none of their pass’s sessions', async () => {
+    const actor = await addMember('forger', 'forger@example.com');
+    const minted = await mint(actors.owner!, { email: actor.email });
+    const first = extractCookie(await redeem(minted.secret));
+    const second = extractCookie(await redeem(minted.secret));
+    expect(await leftOf(minted.id)).toEqual({ links: 2, sessions: 2 });
+    // The token part kept, the signature replaced: the library refuses the caller.
+    const forged = actor.cookie.replace(/(session_token=[^.;]+)\.[^;]*/, '$1.forged');
+    expect(forged).not.toBe(actor.cookie);
+
+    const revoked = await send(app, 'POST', '/auth/revoke-sessions', { cookie: forged }, {});
+    expect(revoked.status).toBe(401);
+
+    expect(await leftOf(minted.id)).toEqual({ links: 2, sessions: 2 });
+    expect((await send(app, 'GET', '/me', { cookie: first })).status).toBe(200);
+    expect((await send(app, 'GET', '/me', { cookie: second })).status).toBe(200);
+  });
+
+  it('w4. another person’s session naming a pass’s session token ends nothing of it', async () => {
+    const actor = await addMember('named', 'named@example.com');
+    const other = await addMember('namer', 'namer@example.com');
+    const minted = await mint(actors.owner!, { email: actor.email });
+    const cookie = extractCookie(await redeem(minted.secret));
+    const [passSession] = await passSessionsOf(minted.id);
+    expect(passSession).toBeTruthy();
+
+    const revoked = await send(app, 'POST', '/auth/revoke-session', other, { token: passSession!.token });
+    expect(revoked.status).toBe(200);
+
+    expect(await leftOf(minted.id)).toEqual({ links: 1, sessions: 1 });
+    expect((await send(app, 'GET', '/me', { cookie })).status).toBe(200);
+  });
+
+  it('w5. the person revokes ONE of their pass’s sessions by token: the other and its link remain', async () => {
+    const actor = await addMember('selective', 'selective@example.com');
+    const minted = await mint(actors.owner!, { email: actor.email });
+    const first = extractCookie(await redeem(minted.secret));
+    const second = extractCookie(await redeem(minted.secret));
+    const sessions = await passSessionsOf(minted.id);
+    expect(sessions).toHaveLength(2);
+    // Which row is the first cookie's: its token part.
+    const firstToken = decodeURIComponent(first).match(/session_token=([^.;]+)/)![1]!;
+    const target = sessions.find((row) => row.token === firstToken)!;
+    expect(target).toBeTruthy();
+
+    const revoked = await send(app, 'POST', '/auth/revoke-session', actor, { token: target.token });
+    expect(revoked.status).toBe(200);
+
+    expect(await leftOf(minted.id)).toEqual({ links: 1, sessions: 1 });
+    expect((await passSessionsOf(minted.id)).map((row) => row.id)).toEqual(
+      sessions.filter((row) => row.id !== target.id).map((row) => row.id)
+    );
+    expect((await send(app, 'GET', '/me', { cookie: second })).status).toBe(200);
+    expect((await send(app, 'GET', '/me', { cookie: first })).status).toBe(401);
+  });
 });

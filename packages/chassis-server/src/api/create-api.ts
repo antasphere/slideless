@@ -577,6 +577,8 @@ export function createApiApp<
   // (a pass session's sign-out, a person's own revoke of one) delete the
   // session row only: those sessions are ended the pass's way first
   // (`endSessions`), so their OAuth tokens and link rows go with them.
+  // The revoking caller is verified by the library: a forged or dead cookie
+  // ends nothing.
   if (demoSignIn) {
     const judge = demoSessionJudge(db);
     const demoPassService = new DemoPassService(db);
@@ -600,24 +602,29 @@ export function createApiApp<
         authPath === '/revoke-other-sessions'
       ) {
         // A person's OWN session revoking a pass session (a pass session is
-        // refused these paths above). The body is read from a clone: the
-        // library gets the request untouched. The exact path compare loses
-        // nothing: the library's router answers 404 to any other spelling.
-        let bodyToken: string | null = null;
-        try {
-          const body: unknown = await c.req.raw.clone().json();
-          if (body && typeof body === 'object' && typeof (body as { token?: unknown }).token === 'string') {
-            bodyToken = (body as { token: string }).token;
+        // refused these paths above). The caller is verified by the library
+        // (`getSession`, the cookie's signature checked): a forged or dead
+        // cookie ends nothing. The body is read from a clone: the library
+        // gets the request untouched. The exact path compare loses nothing:
+        // the library's router answers 404 to any other spelling.
+        const verified = await auth.api.getSession({ headers: c.req.raw.headers }).catch(() => null);
+        if (verified?.session?.id && verified?.user?.id) {
+          let bodyToken: string | null = null;
+          try {
+            const body: unknown = await c.req.raw.clone().json();
+            if (body && typeof body === 'object' && typeof (body as { token?: unknown }).token === 'string') {
+              bodyToken = (body as { token: string }).token;
+            }
+          } catch {
+            // No JSON body: nothing names a session (the library answers as it does).
           }
-        } catch {
-          // No JSON body: nothing names a session (the library answers as it does).
+          const passSessions = await demoPassService.passSessionsRevokedBy(
+            authPath,
+            { sessionId: verified.session.id, userId: verified.user.id },
+            bodyToken
+          );
+          if (passSessions.length > 0) await demoPassService.endSessions(passSessions);
         }
-        const passSessions = await demoPassService.passSessionsRevokedBy(
-          authPath,
-          c.req.raw.headers,
-          bodyToken
-        );
-        if (passSessions.length > 0) await demoPassService.endSessions(passSessions);
       }
       return next();
     });

@@ -287,7 +287,7 @@ export class DemoPassService {
   }
 
   /**
-   * Pass sessions a revoke by this cookie's session is about to delete (the library's revoke-session(s) paths).
+   * Pass sessions a revoke by this verified caller's session is about to delete (the library's revoke-session(s) paths).
    *
    * The library's own `/revoke-session`, `/revoke-sessions` and
    * `/revoke-other-sessions` delete session rows and nothing else: a pass
@@ -295,8 +295,9 @@ export class DemoPassService {
    * (their link to it set null, out of `endSessions`' reach) and its
    * `demo_pass_sessions` row behind. The `/auth/*` middleware asks this first
    * and ends those sessions the pass's way before the library runs. The
-   * caller's session is found from the cookie's token part exactly as
-   * `judgeSession` does; a pass session never gets here (the middleware
+   * caller is the library's verified session (the middleware resolves it
+   * through `auth.api.getSession`, the signature checked), so a forged or
+   * dead cookie ends nothing; a pass session never gets here (the middleware
    * refuses it these paths). `/revoke-session`: the session whose token is
    * the body's, the caller's own person's, and a pass's; `/revoke-sessions`:
    * every pass session of that person; `/revoke-other-sessions`: the same,
@@ -304,7 +305,7 @@ export class DemoPassService {
    */
   async passSessionsRevokedBy(
     authPath: string,
-    headers: Headers,
+    caller: { sessionId: string; userId: string },
     bodyToken: string | null
   ): Promise<string[]> {
     if (
@@ -314,16 +315,6 @@ export class DemoPassService {
     ) {
       return [];
     }
-    const cookie = getSessionCookie(headers);
-    if (!cookie) return [];
-    const token = cookie.split('.')[0];
-    if (!token) return [];
-    const [caller] = await this.db
-      .select({ id: sessionTable.id, userId: sessionTable.userId })
-      .from(sessionTable)
-      .where(eq(sessionTable.token, token))
-      .limit(1);
-    if (!caller) return [];
     if (authPath === '/revoke-session') {
       if (!bodyToken) return [];
       const rows = await this.db
@@ -340,7 +331,7 @@ export class DemoPassService {
       .innerJoin(demoPassSessions, eq(demoPassSessions.sessionId, sessionTable.id))
       .where(eq(sessionTable.userId, caller.userId));
     const ids = rows.map((r) => r.id);
-    return authPath === '/revoke-other-sessions' ? ids.filter((id) => id !== caller.id) : ids;
+    return authPath === '/revoke-other-sessions' ? ids.filter((id) => id !== caller.sessionId) : ids;
   }
 
   /** The ids of the sessions a pass opened (its `demo_pass_sessions` rows). */
