@@ -751,4 +751,44 @@ test.describe('Projects — the shell section, four people and two widths', () =
     await expect(rowMenu(owner, VIEWER.email)).toHaveCount(0, { timeout: 15_000 });
     await expect(rowMenu(owner, EDITOR.email)).toBeVisible();
   });
+
+  /**
+   * PRDCT-2816, LAST on purpose (it takes the editor out of the workspace):
+   * the owner removes a member from the Members page, and the person's place
+   * in the project goes with the membership. The person is one this file made,
+   * so the test spends none of the instance's ten invitation calls an hour,
+   * which the suite's other projects use up.
+   */
+  test('the owner removes the editor from the workspace: the row turns inactive, the project loses them', async () => {
+    await owner.goto(`/projects/${projectId}`);
+    await expect(rowMenu(owner, EDITOR.email)).toBeVisible({ timeout: 20_000 });
+
+    await owner.goto('/members');
+    await expect(owner.getByRole('heading', { name: 'Members' })).toBeVisible({ timeout: 20_000 });
+    const row = owner.getByRole('row', { name: new RegExp(EDITOR.email.replace(/\./g, '\\.')) });
+    await expect(row).toContainText('Active');
+    await row.getByRole('button', { name: 'Open menu' }).click();
+    await owner.getByRole('menuitem', { name: 'Remove from workspace' }).click();
+    const dialog = owner.getByRole('dialog', { name: 'Remove from the workspace?' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(EDITOR.email);
+    const removed = owner.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/api\/v1\/members\/[^/]+\/remove$/.test(new URL(response.url()).pathname)
+    );
+    await dialog.getByRole('button', { name: 'Remove from workspace' }).click();
+    expect((await removed).status()).toBe(200);
+    await expect(owner.getByText(`${EDITOR.email} was removed from the workspace`)).toBeVisible();
+    await expect(row).toContainText('Inactive');
+    await expect(row).toContainText('Member');
+
+    // The project no longer lists them.
+    await owner.goto(`/projects/${projectId}`);
+    await expect(owner.getByRole('heading', { name: PROJECT_NAME, level: 1 })).toBeVisible({
+      timeout: 20_000
+    });
+    await expect(rowMenu(owner, EDITOR.email)).toHaveCount(0, { timeout: 15_000 });
+    await expect(rowMenu(owner, MANAGER.email)).toBeVisible();
+  });
 });
