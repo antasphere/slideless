@@ -330,7 +330,10 @@ export const SSO_RELOGIN_PARAM = 'relogin';
  * no hub session to have been replaced, so the key means nothing there and
  * the page behaves as if it were absent.
  */
-export function isReloginLanding(params: Pick<URLSearchParams, 'get'>, sso: SsoDiscovery | null | undefined): boolean {
+export function isReloginLanding(
+  params: Pick<URLSearchParams, 'get'>,
+  sso: SsoDiscovery | null | undefined
+): boolean {
   return Boolean(sso) && params.get(SSO_RELOGIN_PARAM) === '1';
 }
 

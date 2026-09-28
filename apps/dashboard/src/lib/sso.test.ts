@@ -52,7 +52,12 @@ function memoryStorage(seed: Record<string, string> = {}): StorageLike & { data:
 
 describe('evaluateAutoConnect — the gate table', () => {
   it('attempts when every gate is green', () => {
-    expect(evaluateAutoConnect(ctx())).toEqual({ attempt: true, clearStaleHint: false, signedOut: false, endOwnSession: false });
+    expect(evaluateAutoConnect(ctx())).toEqual({
+      attempt: true,
+      clearStaleHint: false,
+      signedOut: false,
+      endOwnSession: false
+    });
   });
 
   it('gate A (posture): no auth.sso in discovery → never, even with a hint present (oss leakage pin)', () => {
@@ -131,12 +136,16 @@ describe('evaluateAutoConnect — the relogin landing (the account site replaced
     });
   });
   it('the other gates keep their say on a relogin landing: no hint, an error, a fresh marker each block', () => {
-    expect(evaluateAutoConnect(ctx({ relogin: true, signedIn: true, cookies: '' })).blockedBy).toBe('no_hint');
+    expect(evaluateAutoConnect(ctx({ relogin: true, signedIn: true, cookies: '' })).blockedBy).toBe(
+      'no_hint'
+    );
     expect(
-      evaluateAutoConnect(ctx({ relogin: true, signedIn: true, params: new URLSearchParams('error=x') })).blockedBy
+      evaluateAutoConnect(ctx({ relogin: true, signedIn: true, params: new URLSearchParams('error=x') }))
+        .blockedBy
     ).toBe('error_param');
     expect(
-      evaluateAutoConnect(ctx({ relogin: true, signedIn: true, attemptMarker: String(NOW - 1_000) })).blockedBy
+      evaluateAutoConnect(ctx({ relogin: true, signedIn: true, attemptMarker: String(NOW - 1_000) }))
+        .blockedBy
     ).toBe('recent_attempt');
   });
   it('isReloginLanding: relogin=1 on a hub-federated instance only; self-hosted never sees it', () => {
