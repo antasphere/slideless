@@ -46,6 +46,26 @@ describe('the acceptance on the return from the sign-in', () => {
     expect(takeAcceptOnReturn('tok', 1_000, store)).toBe(false);
   });
 
+  it('V05: a stored Infinity, NaN or overflowing number accepts nothing, and is removed', () => {
+    for (const raw of ['Infinity', 'NaN', '1e999']) {
+      const store = memoryStore();
+      store.setItem('platform.inviteAccept.tok', raw);
+      expect(takeAcceptOnReturn('tok', 1_000, store)).toBe(false);
+      expect(store.values.has('platform.inviteAccept.tok')).toBe(false);
+    }
+  });
+
+  it('V06: a mark lives exactly ten minutes', () => {
+    expect(ACCEPT_MARK_TTL_MS).toBe(600000);
+    const written = 1_700_000_000_000;
+    const late = memoryStore();
+    markAcceptOnReturn('tok', written, late);
+    expect(takeAcceptOnReturn('tok', written + 11 * 60 * 1000, late)).toBe(false);
+    const inTime = memoryStore();
+    markAcceptOnReturn('tok', written, inTime);
+    expect(takeAcceptOnReturn('tok', written + 9 * 60 * 1000, inTime)).toBe(true);
+  });
+
   it('no storage, or a storage that throws: no mark and no acceptance', () => {
     expect(() => markAcceptOnReturn('tok', 1_000, null)).not.toThrow();
     expect(takeAcceptOnReturn('tok', 1_000, null)).toBe(false);

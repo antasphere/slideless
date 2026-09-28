@@ -14,6 +14,7 @@ import {
   type TestApp
 } from './helpers.js';
 import * as sso from './sso-helpers.js';
+import { endDeckAccessOnRemoval } from '../../src/collaborators/removal.js';
 
 /**
  * A member's removal ends what Slideless hangs on them in the workspace
@@ -361,6 +362,125 @@ describe('a removal ends the deck invites and grants in the workspace (self-host
       deckInvites: 2,
       deckGrants: 1
     });
+  });
+
+  it('N2: a pending deck invite a removed admin issued to an outside address is revoked and claims nothing', async () => {
+    const owner = actors.owner!;
+    const issuer = await addActor('n2-deck-issuer', { role: 'admin' });
+    const outside = 'n2-outside@removal-decks.test';
+    const deck = await oss.createDeck(owner, 'Deck the removed admin shared out');
+    const invite = await oss.inviteOnDeck(deck, issuer, outside);
+    expect(await oss.grantRow(invite.grantId)).toMatchObject({ status: 'pending', revokedAt: null });
+
+    expect((await remove(issuer.memberId, owner)).status).toBe(200);
+    const row = await oss.grantRow(invite.grantId);
+    expect(row.status).toBe('revoked');
+    expect(row.revokedAt).not.toBeNull();
+
+    // The account under that address exists only after the removal (an
+    // earlier sign-up would have swept the pending invite into a grant).
+    await app.auth.api.signUpEmail({ body: { email: outside, password: PASSWORD, name: 'Outside' } });
+    const cookie = await signIn(outside);
+    const claimed = await oss.claim(invite.token, { cookie });
+    const body = await readJson(claimed);
+    // Pinned as observed.
+    expect({ status: claimed.status, code: body?.error?.code }).toEqual({ status: 404, code: 'not_found' });
+    expect(await oss.grantRow(invite.grantId)).toMatchObject({ status: 'revoked' });
+    expect(await removalRecord(issuer.memberId)).toMatchObject({ deckInvitesIssued: 1 });
+  });
+
+  it('a grant another person already claimed through the removed admin’s invite stays active and reads', async () => {
+    const owner = actors.owner!;
+    const issuer = await addActor('claimed-issuer', { role: 'admin' });
+    const reader = await addActor('claimed-reader');
+    const deck = await oss.createDeck(owner, 'Deck read through a removed admin’s invite');
+    const invite = await oss.inviteOnDeck(deck, issuer, reader.email);
+    expect((await oss.claim(invite.token, reader)).status).toBe(200);
+    expect(await oss.grantRow(invite.grantId)).toMatchObject({ status: 'active', userId: reader.userId });
+
+    expect((await remove(issuer.memberId, owner)).status).toBe(200);
+    expect(await oss.grantRow(invite.grantId)).toMatchObject({
+      status: 'active',
+      revokedAt: null,
+      userId: reader.userId
+    });
+    const read = await oss.send('GET', `/presentations/${deck}`, reader, undefined, {
+      'x-workspace-id': workspaceId
+    });
+    expect(read.status).toBe(200);
+    expect(await removalRecord(issuer.memberId)).toMatchObject({ deckInvitesIssued: 0 });
+  });
+
+  it('T02: a row already revoked before the removal keeps its revoked_at and is not counted', async () => {
+    const owner = actors.owner!;
+    const tessa = await addActor('tessa');
+    const oldDeck = await oss.createDeck(owner, 'Tessa old');
+    const liveDeck = await oss.createDeck(owner, 'Tessa live');
+    const pendingDeck = await oss.createDeck(owner, 'Tessa pending');
+    // Claims first: a claim sweeps the person's sibling pending invites.
+    const old = await oss.inviteOnDeck(oldDeck, owner, tessa.email);
+    expect((await oss.claim(old.token, tessa)).status).toBe(200);
+    const live = await oss.inviteOnDeck(liveDeck, owner, tessa.email);
+    expect((await oss.claim(live.token, tessa)).status).toBe(200);
+    const revokeRes = await oss.send(
+      'DELETE',
+      `/presentations/${oldDeck}/collaborators/${old.grantId}`,
+      owner
+    );
+    expect(revokeRes.status).toBe(200);
+    const oldRevokedAt = new Date('2020-01-01T00:00:00.000Z');
+    await app.db.db
+      .update(collaborators)
+      .set({ revokedAt: oldRevokedAt })
+      .where(eq(collaborators.id, old.grantId));
+    const pending = await oss.inviteOnDeck(pendingDeck, owner, tessa.email);
+    expect(await oss.grantRow(old.grantId)).toMatchObject({ status: 'revoked', revokedAt: oldRevokedAt });
+
+    expect((await remove(tessa.memberId, owner)).status).toBe(200);
+
+    expect(await oss.grantRow(old.grantId)).toMatchObject({ status: 'revoked', revokedAt: oldRevokedAt });
+    expect(await oss.grantRow(live.grantId)).toMatchObject({ status: 'revoked' });
+    expect(await oss.grantRow(pending.grantId)).toMatchObject({ status: 'revoked' });
+    expect(await removalRecord(tessa.memberId)).toMatchObject({ deckGrants: 1, deckInvites: 1 });
+  });
+
+  it('T03: a claimed grant whose stored address changed is revoked on the account alone', async () => {
+    const owner = actors.owner!;
+    const theo = await addActor('theo');
+    const deck = await oss.createDeck(owner, 'Theo deck');
+    const invite = await oss.inviteOnDeck(deck, owner, theo.email);
+    expect((await oss.claim(invite.token, theo)).status).toBe(200);
+    await app.db.db
+      .update(collaborators)
+      .set({ email: 'not-theo-anymore@removal-decks.test' })
+      .where(eq(collaborators.id, invite.grantId));
+    expect(await oss.grantRow(invite.grantId)).toMatchObject({
+      status: 'active',
+      userId: theo.userId,
+      email: 'not-theo-anymore@removal-decks.test'
+    });
+
+    expect((await remove(theo.memberId, owner)).status).toBe(200);
+    const row = await oss.grantRow(invite.grantId);
+    expect(row.status).toBe('revoked');
+    expect(row.revokedAt).not.toBeNull();
+    expect(await removalRecord(theo.memberId)).toMatchObject({ deckGrants: 1, deckInvites: 0 });
+  });
+
+  it('T09: the hook called directly with two people holding one pending invite each: deckInvites 2', async () => {
+    const owner = actors.owner!;
+    const h1 = await addActor('hook-1');
+    const h2 = await addActor('hook-2');
+    const deck = await oss.createDeck(owner, 'Hook deck');
+    const i1 = await oss.inviteOnDeck(deck, owner, h1.email);
+    const i2 = await oss.inviteOnDeck(deck, owner, h2.email);
+    const removed = [h1, h2].map((who) => ({ memberId: who.memberId, workspaceId, userId: who.userId }));
+
+    const counts = await app.db.db.transaction((tx) => endDeckAccessOnRemoval(tx, removed));
+    expect(counts).toEqual({ deckGrants: 0, deckInvites: 2, deckInvitesIssued: 0 });
+    for (const id of [i1.grantId, i2.grantId]) {
+      expect(await oss.grantRow(id)).toMatchObject({ status: 'revoked' });
+    }
   });
 });
 
