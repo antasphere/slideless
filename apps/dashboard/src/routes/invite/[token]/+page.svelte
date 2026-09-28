@@ -13,6 +13,7 @@
   import { api, PlatformApiError, WORKSPACE_STORAGE_KEY } from '$lib/api';
   import { authClient, isTwoFactorRedirect } from '$lib/auth-client';
   import { refreshSession } from '$lib/session';
+  import { markAcceptOnReturn, takeAcceptOnReturn } from '$lib/invite-return';
   import NameFields from '$lib/components/shared/NameFields.svelte';
   import { joinPersonName } from '$lib/person-name';
   import { t } from '$lib/i18n';
@@ -37,13 +38,13 @@
   let mode = $state<'create' | 'signin'>('create');
   let deadReason = $state<string | null>(null);
 
-  /** The return from the hub carries this mark: the person already chose to accept. */
-  const ACCEPT_ON_RETURN = 'accept';
-
+  // The return from "Sign in with Antasphere": accepted without a second
+  // click ONLY when this browser tab holds the mark the person's own click
+  // left for this invitation ($lib/invite-return.ts). Nothing in the address
+  // accepts; the mark is taken whatever the page then shows.
   onMount(() => {
-    if (!signedInMatch) return;
-    if (new URLSearchParams(window.location.search).get(ACCEPT_ON_RETURN) !== '1') return;
-    void acceptAsSignedIn();
+    const asked = takeAcceptOnReturn(token);
+    if (asked && signedInMatch) void acceptAsSignedIn();
   });
 
   /**
@@ -81,10 +82,11 @@
   async function signInWithAntasphere() {
     error = null;
     loading = true;
+    markAcceptOnReturn(token);
     try {
       const { error: err } = await authClient.signIn.oauth2({
         providerId: 'antasphere',
-        callbackURL: `/invite/${token}?${ACCEPT_ON_RETURN}=1`,
+        callbackURL: `/invite/${token}`,
         errorCallbackURL: `/invite/${token}`
       });
       if (err) {

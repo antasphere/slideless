@@ -403,7 +403,11 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
     // Pure data in Phase 1 (no capability change); the discriminator is what
     // lets the cloud edition's hub re-assertion leave these rows alone and
     // Phase 6 scope guest powers. Rejoining after deactivation reactivates
-    // and PRESERVES the row's origin — the invitation-accept semantics.
+    // and PRESERVES the row's origin — the invitation-accept semantics — and
+    // the row comes back at the role `member`, whatever it held (the
+    // verifier's round 1 on PRDCT-2816, F1): a deck invite is an invitation
+    // to a deck, and claiming one must never hand a paused admin or owner
+    // their role back. A workspace invitation names its role; this names none.
     const [membership] = await db
       .select({ id: workspaceMembers.id, isActive: workspaceMembers.isActive })
       .from(workspaceMembers)
@@ -429,7 +433,10 @@ export function registerCollaboratorRoutes(api: OpenAPIHono, deps: CollaboratorR
       if (sweptOwnerId) {
         return c.json(err('not_found', 'Invite not found or no longer valid'), 404);
       }
-      await db.update(workspaceMembers).set({ isActive: true }).where(eq(workspaceMembers.id, membership.id));
+      await db
+        .update(workspaceMembers)
+        .set({ isActive: true, role: 'member' })
+        .where(eq(workspaceMembers.id, membership.id));
     }
 
     // Sweep sibling pending grants for the same email (idempotent against
