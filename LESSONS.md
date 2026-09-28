@@ -1715,3 +1715,26 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
 - **`git commit -a` in a worktree shared with running subagents sweeps their half-written files
   in.** Name the files on every commit while a subagent edits beside you; a soft reset recovers it
   when caught.
+
+## Demo sign-in on the self-hosted edition (PRDCT-2821, 2026-09-27 to 28)
+
+- **A session a link opens is a visit, and the sign-in library is not the only door.** The first
+  round refused the library's account paths and still let a link's session make an API key; the
+  second found it could also create a workspace and accept an invitation, routes of our own. The
+  rule to write is the one about the account ("it changes nothing durable"), then every route that
+  creates a credential, an organization or a membership checks `demoPassId`; the library's paths
+  are a named list (`DEMO_SESSION_REFUSED_AUTH_PATHS`) to review at every plugin or version bump.
+- **OAuth token rows outlive their session: `session_id` is `on delete set null`.** Deleting a
+  session leaves the tool's refresh token alive and unattached, out of reach of anything keyed on
+  the session. To end what a session opened, delete its OAuth rows BEFORE the session row, and
+  hook every path that deletes a session (sign-out, the library's revoke paths), not only yours.
+- **A cleanup that runs before the library authenticates must authenticate the caller itself.**
+  A hook that read the caller from the cookie's token part ended live sessions on a request the
+  library then refused with 401 (a forged signature). Resolve the caller with
+  `auth.api.getSession`; the token-only lookup is fine for a refusal, never for a write.
+- **A migration renumbered by a rebase breaks every local database that ran the old number.**
+  Rebased behind a sibling lane's `0051`, this lane's `0051_demo_passes` became `0052`; a stack that
+  had applied it as `0051` then crashed at boot on `relation "demo_pass_sessions" already exists`:
+  Drizzle runs only migrations newer than the last applied, so it skipped the sibling's and replayed
+  ours. Repair in one transaction: apply the skipped SQL, record it, move our row to the new
+  timestamp (its hash is unchanged). Or `down -v` a throwaway stack.
