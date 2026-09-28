@@ -1738,6 +1738,17 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   Drizzle runs only migrations newer than the last applied, so it skipped the sibling's and replayed
   ours. Repair in one transaction: apply the skipped SQL, record it, move our row to the new
   timestamp (its hash is unchanged). Or `down -v` a throwaway stack.
+- **A list the chassis owns cannot see the product's doors, and a lock that closes one race opens
+  another.** The refusals became one list (`DEMO_SESSION_REFUSED_API_ROUTES`) with a contract walk
+  over the CHASSIS routes; a pass at admin still invited an outsider to a deck, whose claim link
+  seated a standing guest member: the product's route, the product's contract, a key
+  (`claimUrl`) the walk did not know. The tool now declares its own routes
+  (`demoSessionRefusedRoutes`) and walks its own contract with the chassis's. In the same round,
+  every add started holding the membership `FOR SHARE` against a removal; a DUPLICATE add then
+  waited on the removal's uncommitted delete of the same grant while the removal's update waited on
+  the add's share lock, and 14 removals in 40 answered 500 on a deadlock. An add that meets a lock
+  must not wait on a row the removal is deleting: read the existing row first (a plain read still
+  sees the uncommitted delete) and answer the repeat without an insert.
 
 ## The small gaps between the editions (PRDCT-2815 to PRDCT-2819, 2026-09-28)
 

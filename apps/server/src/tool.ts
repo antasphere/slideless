@@ -531,6 +531,15 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
     // A removed member's deck invites and deck grants end with the membership (PRDCT-2816).
     membershipRemoval: endDeckAccessOnRemoval,
 
+    // A session a demo link opened is a visit: it invites nobody to a deck,
+    // colleague or outsider (a deck invite answers a claim link, and an
+    // outsider's claim seats a standing guest member). Appended to the
+    // chassis's list at its one mount; `demo-pass-rules.test.ts` walks this
+    // contract so the next product route that answers a credential joins it.
+    demoSessionRefusedRoutes: [
+      { method: 'POST', path: '/presentations/:id/collaborators', does: 'invite someone to a deck' }
+    ],
+
     // The chassis refusals that name the tool's domain, in Slideless's words (decks, presentations).
     copy: {
       guestForbidden: 'Guest access is limited to the decks you were invited to',

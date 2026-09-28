@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -43,6 +43,9 @@
   // branded connecting state — the login form never flashes on the silent
   // path. +page.ts already redirected any signed-in visitor (gate E).
   const sso = data.instance.auth.sso ?? null;
+  // The landing's own flag, read once on purpose: the decision is taken at
+  // init and a later navigation to this page mounts it again.
+  const relogin = untrack(() => data.relogin);
   const decision = evaluateAutoConnect({
     sso,
     methods: data.instance.auth.methods,
@@ -52,8 +55,8 @@
     now: Date.now(),
     // +page.ts already redirected any signed-in visitor (gate E), except on
     // a relogin landing, where the signed-in visitor is the wrong person.
-    signedIn: data.relogin,
-    relogin: data.relogin
+    signedIn: relogin,
+    relogin
   });
   // The AS answered a silent attempt with the login_required family: the
   // hint promised a hub session that is not there — retire it so the next
@@ -78,10 +81,15 @@
     try {
       // A relogin landing: the tool's own session is the person the account
       // site no longer holds. The LOCAL sign-out ends it (never the hub's
-      // end-session, whose session is the right person now); a failure here
-      // falls through to the form rather than to the wrong person's decks.
+      // end-session, whose session is the right person now). The client
+      // answers a refused sign-out as `{ error }` and never throws: a refused
+      // sign-out shows the form, so the wrong person is never sent on.
       if (decision.endOwnSession) {
-        await authClient.signOut();
+        const out = await authClient.signOut();
+        if (out.error) {
+          connecting = false;
+          return;
+        }
         await refreshSession();
       }
       let err = await silentStart(next);
