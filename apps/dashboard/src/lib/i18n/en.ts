@@ -592,7 +592,7 @@ export const en = {
   'members.emailLinkCopied': 'Email change link copied to clipboard',
   'members.removeConfirmTitle': 'Remove from the workspace?',
   'members.removeConfirmDescription':
-    '{email} loses access to this workspace, their place in every project and their seat in every team. Their account is kept. Invited back, they start with no project and no team.',
+    '{email} loses access to this workspace, their place in every project and every team, and the decks shared with them. Their account is kept. Brought back, they start as a member with none of these.',
   'members.deleteConfirmTitle': 'Delete member?',
   'members.deleteConfirmDescription':
     "{email}'s account, sessions, and API keys are removed permanently. Files they uploaded remain with the workspace; audit history is kept anonymized.",

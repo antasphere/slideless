@@ -608,7 +608,7 @@ export const fr: Record<keyof typeof en, string> = {
   'members.emailLinkCopied': 'Lien de changement d’e-mail copié dans le presse-papiers',
   'members.removeConfirmTitle': 'Retirer de l’espace de travail ?',
   'members.removeConfirmDescription':
-    '{email} perd l’accès à cet espace de travail, sa place dans chaque projet et dans chaque équipe. Son compte est conservé. Réinvitée, cette personne repart sans projet ni équipe.',
+    '{email} perd l’accès à cet espace de travail, sa place dans chaque projet et chaque équipe, et les decks partagés avec cette personne. Son compte est conservé. De retour, elle repart comme membre, sans rien de tout cela.',
   'members.deleteConfirmTitle': 'Supprimer le membre ?',
   'members.deleteConfirmDescription':
     'Le compte, les sessions et les clés API de {email} sont supprimés définitivement. Les fichiers téléversés restent dans l’espace de travail ; l’historique d’audit est conservé anonymisé.',
