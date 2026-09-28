@@ -867,6 +867,70 @@ describe('a demo link’s session leaves nothing behind', () => {
     expect(rows[0].n).toBe(0);
   });
 
+  it('v. a pass’s session creates no workspace and is not offered one; the person’s own password session is', async () => {
+    const { actor, cookie } = await passSessionFor('founder', 'founder@example.com');
+    const ownedBy = async () =>
+      (
+        await app.db.pool.query(
+          `SELECT id FROM workspace_members WHERE user_id = $1 AND role = 'owner' AND is_active`,
+          [actor.userId]
+        )
+      ).rows.length;
+    expect(await ownedBy()).toBe(0);
+
+    const me = (await readJson(await send(app, 'GET', '/me', { cookie }))) as { canCreateWorkspace: boolean };
+    expect(me.canCreateWorkspace).toBe(false);
+    await expectError(
+      await send(app, 'POST', '/workspaces', { cookie }, { name: 'Made by a demo' }),
+      403,
+      'demo_session'
+    );
+    expect(await ownedBy()).toBe(0);
+
+    const own = (await readJson(await send(app, 'GET', '/me', actor))) as { canCreateWorkspace: boolean };
+    expect(own.canCreateWorkspace).toBe(true);
+    expect((await send(app, 'POST', '/workspaces', actor, { name: 'Made by the person' })).status).toBe(201);
+    expect(await ownedBy()).toBe(1);
+  });
+
+  it('v2. a pass’s session accepts no invitation into another workspace; the person’s own password session does', async () => {
+    const { actor, cookie } = await passSessionFor('invitee', 'invitee@example.com');
+    // `cross`'s other workspace, the one created in beforeAll.
+    const { rows } = await app.db.pool.query(
+      `SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND workspace_id <> $2`,
+      [actors.cross!.userId, workspaceId]
+    );
+    expect(rows).toHaveLength(1);
+    const elsewhere = rows[0].workspace_id as string;
+    const invite = await send(
+      app,
+      'POST',
+      '/invitations',
+      actors.cross!,
+      { email: actor.email, role: 'member' },
+      { 'x-workspace-id': elsewhere }
+    );
+    expect(invite.status).toBe(201);
+    const token = ((await readJson(invite)).acceptUrl as string).split('/invite/')[1]!;
+    const membershipsElsewhere = async () =>
+      (
+        await app.db.pool.query(`SELECT id FROM workspace_members WHERE user_id = $1 AND workspace_id = $2`, [
+          actor.userId,
+          elsewhere
+        ])
+      ).rows.length;
+
+    await expectError(
+      await send(app, 'POST', '/invitations/accept', { cookie }, { token }),
+      403,
+      'demo_session'
+    );
+    expect(await membershipsElsewhere()).toBe(0);
+
+    expect((await send(app, 'POST', '/invitations/accept', actor, { token })).status).toBe(200);
+    expect(await membershipsElsewhere()).toBe(1);
+  });
+
   it('t4. a pass’s session still reads itself and signs out', async () => {
     const { cookie } = await passSessionFor('visitor', 'visitor@example.com');
     const session = await send(app, 'GET', '/auth/get-session', { cookie });

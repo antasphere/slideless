@@ -1125,7 +1125,11 @@ export function createApiApp<
         workspaces: wireWorkspaces,
         activeWorkspaceId: principal.workspaceId,
         hubManageUrl: hubManaged && principal.accountRef ? hubManaged.manageUrl : null,
-        canCreateWorkspace: await canCreateWorkspace(principal.userId, principal.via, clientIp(c)),
+        // A session a demo link opened creates no workspace (POST /workspaces
+        // refuses it before the rule), so it is not offered one.
+        canCreateWorkspace: c.get('demoPassId')
+          ? false
+          : await canCreateWorkspace(principal.userId, principal.via, clientIp(c)),
         // Cloud + SESSION only (SL-6): machine credentials never carry the
         // onboarding/hint-watch keys — the banner and the auto-sign-out are
         // browser concerns.
@@ -1255,7 +1259,8 @@ export function createApiApp<
     inviteMail: { pitch: tool.copy.mail.invitePitch, preheader: tool.copy.mail.invitePreheader },
     hubManaged,
     // CLOUD-5: no local-password accounts minted through invitations on cloud.
-    ssoOnly: Boolean(deps.hubSso)
+    ssoOnly: Boolean(deps.hubSso),
+    ...(demoSignIn ? { demoSession: demoSessionJudge(db) } : {})
   });
   // Projects: a subgroup of the workspace with its own members. Deliberately
   // handed NO `hubManaged`: project membership is the tool's own on both

@@ -261,7 +261,7 @@ deploys) + `dev` (day-to-day work).
   the library's mount only while the switch is on) deletes it once the pass has expired or was
   revoked. A session a pass opened is a VISIT: the library's mount refuses it every path of
   `DEMO_SESSION_REFUSED_AUTH_PATHS` (the OAuth authorize included: a pass lands in no tool here),
-  `POST /api-keys` refuses it, a pass's end (`endSessions`) takes the OAuth tokens and the
+  `POST /api-keys`, `POST /workspaces` and the invitation accept refuse it, a pass's end (`endSessions`) takes the OAuth tokens and the
   `demo_pass_sessions` rows tied to its sessions BEFORE the sessions, and the redeem judges the
   mint's refusals again. A new sign-in-library plugin is reviewed against that list. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
   nothing, whatever the switch says (the hub owns identity).

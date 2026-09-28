@@ -60,6 +60,13 @@ export function demoPassToWire(p: PassWithPerson): DemoPass {
   };
 }
 
+/**
+ * The judge's answer on a request's session cookie (`judgeSession`): null for
+ * an ordinary session (or none), the pass and the session for a live pass's
+ * session, `ended` when the pass is dead and its sessions were just ended.
+ */
+export type DemoSessionVerdict = { passId: string; sessionId: string } | 'ended' | null;
+
 /** What a redeem signs in: the pass and its person, every condition re-checked. */
 export interface RedeemablePass {
   passId: string;
@@ -255,7 +262,7 @@ export class DemoPassService {
    * already dead, or refuse that session a path, and the token is that
    * session's own secret.
    */
-  async judgeSession(headers: Headers): Promise<{ passId: string; sessionId: string } | 'ended' | null> {
+  async judgeSession(headers: Headers): Promise<DemoSessionVerdict> {
     const cookie = getSessionCookie(headers);
     if (!cookie) return null;
     const token = cookie.split('.')[0];
