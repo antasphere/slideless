@@ -492,6 +492,18 @@ export function registerWorkspaceRoutes(api: OpenAPIHono, deps: WorkspaceRouteDe
         403
       );
     }
+    // A session a demo link opened is a visit (identity/demo-pass.ts): the
+    // person's default is theirs to keep long after the pass, like a
+    // workspace the session would have made.
+    if (c.get('demoPassId')) {
+      return c.json(
+        err(
+          'demo_session',
+          'A session opened by a demo link cannot change your default workspace: sign in with your password'
+        ),
+        403
+      );
+    }
     if (principal.apiKeyId) {
       const [key] = await db
         .select({ pin: apiKeys.workspaceId })

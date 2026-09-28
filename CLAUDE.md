@@ -347,7 +347,7 @@ deploys) + `dev` (day-to-day work).
   exempt in `audit/service.ts`, the one machine-reachable exemption, and the change is on the server
   log), is open to
   machines under the write scope (the CLI's `workspace default`), and refuses a key pinned to one
-  workspace (`key_pinned`). The dashboard decides between the in-place action and the link to the
+  workspace (`key_pinned`) and a session a demo link opened (`demo_session`). The dashboard decides between the in-place action and the link to the
   account site on discovery's sign-in methods, never on the edition's name.
 - **An invitation is accepted on the person's own act, never on the address of a page (PRDCT-2817)**:
   on cloud the workspace invitation page offers Sign in with Antasphere, and the return from the

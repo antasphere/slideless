@@ -931,6 +931,37 @@ describe('a demo link’s session leaves nothing behind', () => {
     expect(await membershipsElsewhere()).toBe(1);
   });
 
+  it('v3. a pass’s session changes no default workspace; the person’s own password session does (PRDCT-2815)', async () => {
+    const { actor, cookie } = await passSessionFor('settled', 'settled@example.com');
+    const defaults = async () =>
+      (
+        await app.db.pool.query(
+          `SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND is_default`,
+          [actor.userId]
+        )
+      ).rows.map((row) => row.workspace_id as string);
+    expect(await defaults()).toEqual([]);
+
+    for (const body of [{ workspaceId }, { workspaceId: null }]) {
+      await expectError(
+        await send(app, 'PUT', '/me/default-workspace', { cookie }, body),
+        403,
+        'demo_session'
+      );
+    }
+    expect(await defaults()).toEqual([]);
+
+    expect((await send(app, 'PUT', '/me/default-workspace', actor, { workspaceId })).status).toBe(200);
+    expect(await defaults()).toEqual([workspaceId]);
+    // The pass's session refuses the clear too, once a default exists.
+    await expectError(
+      await send(app, 'PUT', '/me/default-workspace', { cookie }, { workspaceId: null }),
+      403,
+      'demo_session'
+    );
+    expect(await defaults()).toEqual([workspaceId]);
+  });
+
   it('t4. a pass’s session still reads itself and signs out', async () => {
     const { cookie } = await passSessionFor('visitor', 'visitor@example.com');
     const session = await send(app, 'GET', '/auth/get-session', { cookie });
