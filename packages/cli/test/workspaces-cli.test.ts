@@ -817,6 +817,22 @@ describe('slideless workspace default', () => {
     expect(h.err()).toContain('wins over the default');
   });
 
+  it('--clear with a saved selection: a Note on stderr says the selection still wins', async () => {
+    const h = routedHarness(withDefault(), await profileEnv(ACME));
+    expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
+    expect(h.err()).toMatch(/^Note: /);
+    expect(h.err()).toContain('profile "work"');
+    expect(h.err()).toContain('wins over the default');
+  });
+
+  it('--clear with no saved selection: no note', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
+    expect(h.err()).toBe('');
+  });
+
   it('a saved selection naming the same workspace: no note', async () => {
     const h = routedHarness(withDefault(), await profileEnv(NORD));
     expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).toBe(0);
