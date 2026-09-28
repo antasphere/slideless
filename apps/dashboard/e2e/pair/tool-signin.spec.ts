@@ -25,11 +25,20 @@ test(`a tool sign-in with no hub session lands ${RUNS} times out of ${RUNS}`, as
       if (r.url().includes('/api/v1/auth/oauth2/callback/')) callbacks.push(r.url());
     });
     await page.goto(`${SL}/login`);
-    await page.getByRole('button', { name: /antasphere/i }).first().click();
+    await page
+      .getByRole('button', { name: /antasphere/i })
+      .first()
+      .click();
     await page.waitForURL((u) => u.origin === new URL(HUB!).origin);
     await page.getByLabel(/email/i).first().fill(PERSON);
-    await page.getByLabel(/password/i).first().fill(PASSWORD!);
-    await page.getByRole('button', { name: /^(sign in|continue|log in)$/i }).first().click();
+    await page
+      .getByLabel(/password/i)
+      .first()
+      .fill(PASSWORD!);
+    await page
+      .getByRole('button', { name: /^(sign in|continue|log in)$/i })
+      .first()
+      .click();
     await page.waitForURL((u) => u.origin === new URL(SL!).origin && !u.pathname.startsWith('/login'), {
       timeout: 30_000
     });
