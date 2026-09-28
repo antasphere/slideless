@@ -20,6 +20,7 @@
     'reset-password',
     'setup',
     'invite',
+    'demo',
     'oauth',
     'no-organization',
     'suspended',

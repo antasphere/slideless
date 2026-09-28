@@ -231,7 +231,7 @@ deploys) + `dev` (day-to-day work).
   AUTH-1/2/8)**: `POST /members/{id}/reset-link` and `/members/{id}/change-email-link` both mint
   a SIGN-IN-EQUIVALENT bearer for a target (LESSONS.md M6), and a `user` row is instance-GLOBAL —
   so the mint's blast radius is every workspace the target belongs to. Both are `requireRole('owner')`,
-  both run `mintRefusal` (`packages/chassis-server/src/api/members.ts`), and both refuse an `origin='guest'` target
+  both run `mintRefusal` (`packages/chassis-server/src/accounts/mint-refusal.ts`, shared with the demo pass mint), and both refuse an `origin='guest'` target
   (`guest_target` — a per-deck outsider's account is not the host tenant's to recover, D2) and any
   target holding a membership in ANOTHER workspace (`cross_workspace_target`). Both also carry the
   cloud closure (`password_reset_disabled` / `email_change_disabled`) and both are idempotency
@@ -239,6 +239,33 @@ deploys) + `dev` (day-to-day work).
   boundary with a per-deck collaborator invite is likewise admin/owner-only
   (`external_invite_forbidden`, `api/collaborators.ts`): the claim path mints a real global `user`
   row, so inviting an outsider is an onboarding act, not a deck act.
+- **Demo sign-in is a switch, and a pass opens a demonstration address only (the demo pass spec,
+  27 September 2026)**: `DEMO_SIGN_IN` off means NO demo route is registered (the three owner
+  routes, the redeem endpoint, its wall, the `demoSignIn` discovery key): every demo path answers
+  the unknown-path 404 byte for byte, signed in or not. On, the boot refuses unless the host of
+  `PUBLIC_BASE_URL` is loopback (`isLoopbackHost`, never a second copy) or listed in
+  `DEMO_SIGN_IN_HOSTS`, and a malformed entry in either list refuses too. Minting, listing and
+  revoking are an OWNER act from a SESSION only (`requireRole('owner')` + `sessions_only`); the
+  paths are in nothing in the scope allowlist, ever, so no API key or OAuth bearer reaches them,
+  and the CLI's `demo` commands sign in as the owner (`chassis-cli/src/owner-session.ts`) rather
+  than open that door. A pass opens only an address `isDemoAddress` accepts (the reserved example
+  and test domains, or `DEMO_SIGN_IN_EMAIL_DOMAINS`), never another owner, never an account with a
+  second factor, and it runs the SAME `mintRefusal` as the reset link
+  (`packages/chassis-server/src/accounts/mint-refusal.ts`: `guest_target`,
+  `cross_workspace_target`). Every dead pass (unknown, expired, revoked, the person gone or no
+  longer a member, the address no longer a demonstration one, a second factor since) answers ONE
+  401 `invalid_demo_pass`, same body. The redeem is an endpoint of the sign-in library itself
+  (`identity/demo-pass-plugin.ts`), so its own cookie and hooks apply; never re-home it on the API
+  router. A session a pass opened lives only while its pass does: the revoke deletes it in its own
+  transaction, and the credential resolver's judge (`judgeSession`, handed to `authContext` and to
+  the library's mount only while the switch is on) deletes it once the pass has expired or was
+  revoked. A session a pass opened is a VISIT: the library's mount refuses it every path of
+  `DEMO_SESSION_REFUSED_AUTH_PATHS` (the OAuth authorize included: a pass lands in no tool here),
+  `POST /api-keys`, `POST /workspaces` and the invitation accept refuse it, a pass's end (`endSessions`) takes the OAuth tokens and the
+  `demo_pass_sessions` rows tied to its sessions BEFORE the sessions, and the redeem judges the
+  mint's refusals again; a pass session's sign-out and a person's own revoke of one end it the
+  pass's way (`passSessionsRevokedBy`). A new sign-in-library plugin is reviewed against that list. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
+  nothing, whatever the switch says (the hub owns identity).
 - **Cloud federation is USER-scoped and live (ADR 019, internal/federation.md "Live reconcile +
   grant")**: every hub read between logins is `GET <hub>/orgs` AS THE USER with that user's own
   stored grant (encrypted on the `account` row) — there is NO service key, no cross-tenant

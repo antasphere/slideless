@@ -102,6 +102,7 @@ export const en = {
   // settings with tabs (PRDCT-2441)
   'settings.tabInstance': 'Instance',
   'settings.tabAccount': 'My account',
+  'settings.tabDemo': 'Demo links',
   'settings.openAccount': 'Open my account',
   'account.languageTitle': 'Language',
   'account.languageDescription': 'The language of this dashboard, kept in this browser.',
@@ -325,6 +326,15 @@ export const en = {
   'invite.errorWrongPassword': 'Wrong password for this account.',
   'invite.errorSignInFailed': 'Sign-in failed.',
 
+  // ── Demo link (/demo, the demo pass) ─────────────────────────────────
+  'demo.eyebrow': 'Demo link',
+  'demo.title': 'Demo link',
+  'demo.signingIn': 'Signing you in…',
+  'demo.refused': 'This demo link is not valid or has expired.',
+  'demo.rateLimited': 'Too many tries from this address. Wait a few minutes.',
+  'demo.banner':
+    'Demo sign-in is on: an owner of this workspace can open demonstration accounts without their password.',
+
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Authorization request invalid',
   'consent.invalidDescription':
@@ -531,6 +541,54 @@ export const en = {
   'apiKeys.savedIt': 'I saved it',
   'apiKeys.revokeConfirmTitle': 'Revoke API key?',
   'apiKeys.revokeConfirmDescription': '"{name}" will stop authenticating immediately. This cannot be undone.',
+
+  // ── Demo links (settings, the demo pass) ─────────────────────────────
+  'demoLinks.lede': 'Links that sign a demonstration account in without its password.',
+  'demoLinks.intro':
+    'A demo link signs one member of this workspace in without their password, for a demonstration. It opens only demonstration addresses (example.com, a .test domain, or a domain the operator named), never another owner. Revoking a link ends the sessions it opened.',
+  'demoLinks.create': 'New demo link',
+  'demoLinks.colPerson': 'Person',
+  'demoLinks.colPage': 'Page',
+  'demoLinks.colExpires': 'Expires',
+  'demoLinks.colLastUsed': 'Last used',
+  'demoLinks.colUses': 'Uses',
+  'demoLinks.colState': 'State',
+  'demoLinks.stateLive': 'Live',
+  'demoLinks.stateExpired': 'Expired',
+  'demoLinks.stateRevoked': 'Revoked',
+  'demoLinks.actionRevoke': 'Revoke',
+  'demoLinks.searchPlaceholder': 'Search links…',
+  'demoLinks.count': '{n} links',
+  'demoLinks.countOne': '1 link',
+  'demoLinks.empty': 'No demo link yet.',
+  'demoLinks.loadFailed': 'Failed to load the demo links: {error}',
+  'demoLinks.createTitle': 'New demo link',
+  'demoLinks.createDescription': 'The link is shown once, right after it is made.',
+  'demoLinks.memberLabel': 'Member',
+  'demoLinks.memberPlaceholder': 'Choose a member',
+  'demoLinks.membersLoadFailed': 'The members could not be loaded: {error}',
+  'demoLinks.pageLabel': 'Page',
+  'demoLinks.pageHint': 'The path the link opens, such as /projects.',
+  'demoLinks.lifetimeLabel': 'Lifetime',
+  'demoLinks.lifetimeHour': '1 hour',
+  'demoLinks.lifetimeDay': '1 day',
+  'demoLinks.lifetimeDays': '{n} days',
+  'demoLinks.errorNoMember': 'Choose the member the link signs in',
+  'demoLinks.createFailed': 'The demo link could not be made',
+  'demoLinks.asideEyebrow': 'Demo link',
+  'demoLinks.asideCaption': 'One member, one page, for a limited time.',
+  'demoLinks.secretAsideCaption': 'Shown once. Send it to whoever runs the demonstration.',
+  'demoLinks.secretTitle': 'Copy your demo link',
+  'demoLinks.secretDescription': 'It signs {email} in and opens {path}.',
+  'demoLinks.secretAria': 'Demo link',
+  'demoLinks.copyAria': 'Copy the demo link',
+  'demoLinks.copiedToast': 'Demo link copied to clipboard',
+  'demoLinks.secretWarning': 'Copy it now: it is not shown again.',
+  'demoLinks.savedIt': 'I copied it',
+  'demoLinks.revokeConfirmTitle': 'Revoke this demo link?',
+  'demoLinks.revokeConfirmDescription':
+    'The link for {email} stops working, and every session it opened ends now.',
+  'demoLinks.revokedToast': 'Demo link for {email} revoked',
 
   // ── Members ──────────────────────────────────────────────────────────
   'members.title': 'Members',

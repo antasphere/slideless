@@ -102,6 +102,10 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /teams/{id}/members': (c) => c.teamMembers(SAMPLE_ID),
   'POST /teams/{id}/members': (c) => c.addTeamMember(SAMPLE_ID, { email: 'a@b.co' }),
   'DELETE /teams/{id}/members/{userId}': (c) => c.removeTeamMember(SAMPLE_ID, SAMPLE_USER_ID),
+  // The chassis' demo pass routes, inherited by PlatformClient.
+  'GET /demo/passes': (c) => c.demoPasses(),
+  'POST /demo/passes': (c) => c.mintDemoPass({ email: 'a@example.com' }),
+  'DELETE /demo/passes/{id}': (c) => c.revokeDemoPass(SAMPLE_ID),
   'GET /projects/{id}/brand': (c) => c.projectBrand(SAMPLE_ID),
   'PUT /projects/{id}/brand': (c) => c.setProjectBrand(SAMPLE_ID, SAMPLE_ID),
   'DELETE /projects/{id}/brand': (c) => c.clearProjectBrand(SAMPLE_ID),

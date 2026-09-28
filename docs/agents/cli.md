@@ -596,6 +596,66 @@ admin manages teams.`, `Teams of this workspace are managed on the Antasphere
 account site: <link>`, `A team of this workspace already uses the slug
 "design".`, and `ada@acme.co is already in this team.`
 
+## Demo links
+
+On a self-hosted instance whose operator turned demo sign-in on
+(`DEMO_SIGN_IN`, [Demo links](../self-hosting/demo-links.md)), an owner makes a
+link that signs one member in without a password, for a demonstration.
+
+```bash
+export SLIDELESS_OWNER_EMAIL=owner@example.com
+read -rs SLIDELESS_OWNER_PASSWORD && export SLIDELESS_OWNER_PASSWORD
+slideless demo link --email ada@example.com                         # one link, a day, landing on /
+slideless demo link --email ada@example.com --path /decks --path /settings --hours 2
+slideless demo link --email ada@example.com --email bob@example.com  # one sign-in, one pass each
+slideless demo link --email ada@example.com --minutes 30 --json     # { passes: [{ pass, links: [{ path, url }] }], refused: [] }
+slideless demo list                                                 # the passes, newest first
+slideless demo revoke <id>                                          # and the sessions it opened
+pass show demo-owner | slideless demo list --owner-email owner@example.com --owner-password-stdin
+```
+
+**These commands never use an API key.** The instance refuses every machine
+credential on its demo routes, so each command signs in as the owner for its
+own length and signs out when it ends, whatever happened. The owner's address
+is `--owner-email` or `SLIDELESS_OWNER_EMAIL`; the password is
+`SLIDELESS_OWNER_PASSWORD` or, with `--owner-password-stdin`, the first line of
+stdin. There is no password flag (a password on a command line lands in the
+shell history), and nothing (address, password, session) is written to the
+profile. The instance comes from the usual `--api-url` / `SLIDELESS_URL` /
+profile, and `--workspace` selects the workspace as for every command. An owner
+with a second factor is refused: mint that owner's links from the dashboard.
+
+**`demo link`** mints ONE pass per member `--email` names (repeatable: several
+members cost one sign-in) and prints, for each, one link per `--path`
+(repeatable), all opening that member's pass; the first `--path` is the pass's
+own page, and with none it is `/`. A member the instance refuses does not stop
+the others: the command names who was refused and why, and exits 1. Each page must be a path on the
+instance (one leading `/`, no `#`, no space), checked before any sign-in.
+`--hours <n>` or `--minutes <n>` sets the lifetime (a day by default, a week at
+most; not both). The human output is the person, the expiry, then the links one
+per line; `--json` is `{ passes: [{ pass, links: [{ path, url }] }], refused:
+[{ email, code, message }] }`, and the links are the only place the secret ever
+appears. Keep them like a password until they expire.
+
+The instance allows three sign-ins per ten seconds from one address. A script
+that runs several demo commands in a row meets that limit: the command waits
+it out (a few seconds, three times at most) and says so on stderr. Name every
+member on ONE `demo link` to sign in once.
+
+**`demo list`** prints each pass's id, the person's address, the page, the
+expiry, the revocation, the last use and the number of uses (`--json`:
+`{ passes }`). **`demo revoke <id>`** revokes a pass and ends every session it
+opened (`--json`: the pass).
+
+The refusals are the instance's own sentences: no member of the workspace holds
+that address, a link cannot open another owner's account, the address is not a
+demonstration address (a reserved example or test domain, or one in
+`DEMO_SIGN_IN_EMAIL_DOMAINS`), the account has a second factor, the person is a
+guest or belongs to another workspace, or the page is not a path on this
+instance. On an instance where the switch is off, and on the cloud edition,
+every demo command says: `Demo sign-in is off on this instance (DEMO_SIGN_IN), or
+this is the cloud edition, where demo links are minted at the Antasphere hub.`
+
 ## Share
 
 A share link is a secret URL made on top of the deck, public to whoever holds

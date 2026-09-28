@@ -72,6 +72,7 @@
   // the shell's own, then the tool's; the list below is sorted either way
   const RESOURCE_TYPES = [
     'api_key',
+    'demo_pass',
     'file',
     'instance',
     'invitation',

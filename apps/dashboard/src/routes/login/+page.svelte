@@ -73,14 +73,17 @@
     // journeys that outlive the OAuth state row (the signup detour).
     writePendingNext(pendingNextStorage(), next, Date.now());
     try {
-      const { error: err } = await authClient.signIn.oauth2({
-        providerId: 'antasphere',
-        callbackURL: next,
-        // AS failures land back on this page as /login?error=<code>.
-        errorCallbackURL: '/login',
-        // Only the literal prompt=none pair passes the server whitelist.
-        additionalData: { prompt: 'none' }
-      });
+      let err = await silentStart(next);
+      // The sign-in library's own wall (a few starts per ten seconds per
+      // address) is a wall of seconds: someone who opens several links in a
+      // row, each signing another person in, meets it on the fourth. The
+      // connecting state stays up and the start is tried again, instead of
+      // dropping a person the hub already knows onto the form.
+      for (const wait of SILENT_RETRY_WAITS_MS) {
+        if (err?.status !== 429) break;
+        await new Promise((done) => setTimeout(done, wait));
+        err = await silentStart(next);
+      }
       // Success answers { url, redirect } and the client navigates to the
       // hub — the connecting state stays up until the browser leaves. A
       // refused sign-in degrades QUIETLY to the form: the user asked for
@@ -89,6 +92,20 @@
     } catch {
       connecting = false;
     }
+  }
+
+  const SILENT_RETRY_WAITS_MS = [4_000, 8_000, 12_000];
+
+  async function silentStart(next: string) {
+    const { error: err } = await authClient.signIn.oauth2({
+      providerId: 'antasphere',
+      callbackURL: next,
+      // AS failures land back on this page as /login?error=<code>.
+      errorCallbackURL: '/login',
+      // Only the literal prompt=none pair passes the server whitelist.
+      additionalData: { prompt: 'none' }
+    });
+    return err ?? null;
   }
 
   let mode = $state<'password' | 'otp'>('password');

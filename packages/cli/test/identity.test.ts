@@ -199,10 +199,12 @@ const COMMANDS = [
   'workspaces',
   'workspace',
   // chassis: the subgroups of the workspace (the tool hangs link/unlink/brand
-  // off this same group, which is why it keeps its place here).
+  // off this same group, which is why it keeps its place here), then the
+  // owner's demo links.
   'projects',
   // chassis: the named groups of the workspace's people (PRDCT-2813)
   'teams',
+  'demo',
   // Slideless: decks, authoring, references, sharing, response files
   'list',
   'get',

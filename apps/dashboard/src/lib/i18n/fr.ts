@@ -105,6 +105,7 @@ export const fr: Record<keyof typeof en, string> = {
   // settings with tabs (PRDCT-2441)
   'settings.tabInstance': 'Instance',
   'settings.tabAccount': 'Mon compte',
+  'settings.tabDemo': 'Liens de démonstration',
   'settings.openAccount': 'Ouvrir mon compte',
   'account.languageTitle': 'Langue',
   'account.languageDescription': 'La langue de ce tableau de bord, gardée dans ce navigateur.',
@@ -330,6 +331,15 @@ export const fr: Record<keyof typeof en, string> = {
   'invite.errorWrongPassword': 'Mot de passe incorrect pour ce compte.',
   'invite.errorSignInFailed': 'Échec de la connexion.',
 
+  // ── Demo link (/demo, the demo pass) ─────────────────────────────────
+  'demo.eyebrow': 'Lien de démonstration',
+  'demo.title': 'Lien de démonstration',
+  'demo.signingIn': 'Connexion en cours…',
+  'demo.refused': 'Ce lien de démonstration n’est pas valide ou a expiré.',
+  'demo.rateLimited': 'Trop de tentatives depuis cette adresse. Patientez quelques minutes.',
+  'demo.banner':
+    'La connexion de démonstration est activée : un propriétaire de cet espace de travail peut ouvrir des comptes de démonstration sans leur mot de passe.',
+
   // ── OAuth consent ────────────────────────────────────────────────────
   'consent.invalidTitle': 'Demande d’autorisation invalide',
   'consent.invalidDescription':
@@ -544,6 +554,55 @@ export const fr: Record<keyof typeof en, string> = {
   'apiKeys.revokeConfirmTitle': 'Révoquer la clé API ?',
   'apiKeys.revokeConfirmDescription':
     '« {name} » cessera immédiatement de s’authentifier. Cette action est irréversible.',
+
+  // ── Demo links (settings, the demo pass) ─────────────────────────────
+  'demoLinks.lede': 'Des liens qui connectent un compte de démonstration sans son mot de passe.',
+  'demoLinks.intro':
+    'Un lien de démonstration connecte un membre de cet espace de travail sans son mot de passe, le temps d’une démonstration. Il n’ouvre que des adresses de démonstration (example.com, un domaine en .test, ou un domaine désigné par l’opérateur), jamais un autre propriétaire. Révoquer un lien met fin aux sessions qu’il a ouvertes.',
+  'demoLinks.create': 'Nouveau lien de démonstration',
+  'demoLinks.colPerson': 'Personne',
+  'demoLinks.colPage': 'Page',
+  'demoLinks.colExpires': 'Expire le',
+  'demoLinks.colLastUsed': 'Dernière utilisation',
+  'demoLinks.colUses': 'Utilisations',
+  'demoLinks.colState': 'État',
+  'demoLinks.stateLive': 'Actif',
+  'demoLinks.stateExpired': 'Expiré',
+  'demoLinks.stateRevoked': 'Révoqué',
+  'demoLinks.actionRevoke': 'Révoquer',
+  'demoLinks.searchPlaceholder': 'Rechercher un lien…',
+  'demoLinks.count': '{n} liens',
+  'demoLinks.countOne': '1 lien',
+  'demoLinks.empty': 'Aucun lien de démonstration pour l’instant.',
+  'demoLinks.loadFailed': 'Impossible de charger les liens de démonstration : {error}',
+  'demoLinks.createTitle': 'Nouveau lien de démonstration',
+  'demoLinks.createDescription': 'Le lien n’est affiché qu’une fois, juste après sa création.',
+  'demoLinks.memberLabel': 'Membre',
+  'demoLinks.memberPlaceholder': 'Choisissez un membre',
+  'demoLinks.membersLoadFailed': 'Impossible de charger les membres : {error}',
+  'demoLinks.pageLabel': 'Page',
+  'demoLinks.pageHint': 'Le chemin que le lien ouvre, par exemple /projects.',
+  'demoLinks.lifetimeLabel': 'Durée de validité',
+  'demoLinks.lifetimeHour': '1 heure',
+  'demoLinks.lifetimeDay': '1 jour',
+  'demoLinks.lifetimeDays': '{n} jours',
+  'demoLinks.errorNoMember': 'Choisissez le membre que le lien connecte',
+  'demoLinks.createFailed': 'Le lien de démonstration n’a pas pu être créé',
+  'demoLinks.asideEyebrow': 'Lien de démonstration',
+  'demoLinks.asideCaption': 'Un membre, une page, pour un temps limité.',
+  'demoLinks.secretAsideCaption':
+    'Affiché une seule fois. Transmettez-le à la personne qui mène la démonstration.',
+  'demoLinks.secretTitle': 'Copiez votre lien de démonstration',
+  'demoLinks.secretDescription': 'Il connecte {email} et ouvre {path}.',
+  'demoLinks.secretAria': 'Lien de démonstration',
+  'demoLinks.copyAria': 'Copier le lien de démonstration',
+  'demoLinks.copiedToast': 'Lien de démonstration copié dans le presse-papiers',
+  'demoLinks.secretWarning': 'Copiez-le maintenant : il ne sera plus affiché.',
+  'demoLinks.savedIt': 'Je l’ai copié',
+  'demoLinks.revokeConfirmTitle': 'Révoquer ce lien de démonstration ?',
+  'demoLinks.revokeConfirmDescription':
+    'Le lien pour {email} cesse de fonctionner, et chaque session qu’il a ouverte prend fin immédiatement.',
+  'demoLinks.revokedToast': 'Lien de démonstration pour {email} révoqué',
 
   // ── Members ──────────────────────────────────────────────────────────
   'members.title': 'Membres',
