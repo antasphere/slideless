@@ -330,6 +330,10 @@ export const fr: Record<keyof typeof en, string> = {
   'invite.createAndJoin': 'Créer le compte et rejoindre',
   'invite.errorWrongPassword': 'Mot de passe incorrect pour ce compte.',
   'invite.errorSignInFailed': 'Échec de la connexion.',
+  'invite.ssoIntro':
+    'Cette instance se connecte via Antasphere. Connectez-vous pour accepter votre invitation.',
+  'invite.ssoWrongAccount':
+    'Vous êtes connecté en tant que {current}, mais cette invitation est destinée à {email}. Connectez-vous avec le compte invité pour l’accepter.',
 
   // ── Demo link (/demo, the demo pass) ─────────────────────────────────
   'demo.eyebrow': 'Lien de démonstration',
@@ -409,8 +413,7 @@ export const fr: Record<keyof typeof en, string> = {
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Vue d’ensemble',
-  'overview.description': 'Votre instance auto-hébergée en un coup d’œil.',
-  'overview.descriptionCloud': 'Votre espace de travail en un coup d’œil.',
+  'overview.description': 'Votre espace de travail en un coup d’œil.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Membres actifs',
   'overview.filesCard': 'Fichiers',
@@ -625,11 +628,14 @@ export const fr: Record<keyof typeof en, string> = {
   'members.actionResetLink': 'Générer un lien de réinitialisation',
   'members.actionDeactivate': 'Désactiver',
   'members.actionReactivate': 'Réactiver',
+  'members.actionRemove': 'Retirer de l’espace de travail',
   'members.actionDelete': 'Supprimer le membre',
   'members.roleChanged': '{email} est désormais {role}',
   'members.roleChangeFailed': 'Échec du changement de rôle',
   'members.reactivatedToast': '{email} réactivé',
   'members.deactivatedToast': '{email} désactivé',
+  'members.removedToast': '{email} a été retiré de l’espace de travail',
+  'members.removeFailed': 'Impossible de retirer le membre',
   'members.deletedToast': '{email} a été supprimé',
   'members.resetOwnerOnly': 'Seul un propriétaire peut réinitialiser un propriétaire.',
   'members.resetLinkFailed': 'Échec du lien de réinitialisation',
@@ -659,6 +665,9 @@ export const fr: Record<keyof typeof en, string> = {
   'members.emailLinkAria': 'Lien de changement d’e-mail',
   'members.copyEmailLinkAria': 'Copier le lien de changement d’e-mail',
   'members.emailLinkCopied': 'Lien de changement d’e-mail copié dans le presse-papiers',
+  'members.removeConfirmTitle': 'Retirer de l’espace de travail ?',
+  'members.removeConfirmDescription':
+    '{email} perd l’accès à cet espace de travail, sa place dans chaque projet et chaque équipe, et les decks partagés avec cette personne. Son compte est conservé. De retour, elle repart comme membre, sans rien de tout cela.',
   'members.deleteConfirmTitle': 'Supprimer le membre ?',
   'members.deleteConfirmDescription':
     'Le compte, les sessions et les clés API de {email} sont supprimés définitivement. Les fichiers téléversés restent dans l’espace de travail ; l’historique d’audit est conservé anonymisé.',
@@ -890,6 +899,8 @@ export const fr: Record<keyof typeof en, string> = {
   'workspace.actionOpen': 'Ouvrir',
   'workspace.actionSettings': 'Réglages',
   'workspace.actionMakeDefault': 'Définir par défaut',
+  'workspace.defaultSetToast': '{workspace} est maintenant votre espace de travail par défaut',
+  'workspace.defaultSetFailed': 'Impossible de définir l’espace de travail par défaut',
   'workspace.actionIsDefault': 'Votre défaut',
   // gate pages: the small line over each title
   'gate.eyebrowSignup': 'Nouveau ici',

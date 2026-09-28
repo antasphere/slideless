@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import * as Card from '$lib/components/ui/card/index.js';
   import GateShell from '$lib/components/brand/GateShell.svelte';
@@ -9,9 +10,10 @@
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
-  import { api, PlatformApiError } from '$lib/api';
+  import { api, PlatformApiError, WORKSPACE_STORAGE_KEY } from '$lib/api';
   import { authClient, isTwoFactorRedirect } from '$lib/auth-client';
   import { refreshSession } from '$lib/session';
+  import { markAcceptOnReturn, takeAcceptOnReturn } from '$lib/invite-return';
   import NameFields from '$lib/components/shared/NameFields.svelte';
   import { joinPersonName } from '$lib/person-name';
   import { t } from '$lib/i18n';
@@ -20,6 +22,8 @@
 
   const token = $derived(data.token);
   const lookup = $derived(data.lookup);
+  // Cloud (D1): 'antasphere' advertised means the hub is the human entrance.
+  const hasAntasphere = $derived(data.instance.auth.methods.includes('antasphere'));
   // Already signed in as the invited account → one-click accept.
   const signedInMatch = $derived(data.me !== null && lookup !== null && data.me.user.email === lookup.email);
 
@@ -34,21 +38,66 @@
   let mode = $state<'create' | 'signin'>('create');
   let deadReason = $state<string | null>(null);
 
-  async function finish() {
+  // The return from "Sign in with Antasphere": accepted without a second
+  // click ONLY when this browser tab holds the mark the person's own click
+  // left for this invitation ($lib/invite-return.ts). Nothing in the address
+  // accepts; the mark is taken whatever the page then shows.
+  onMount(() => {
+    const asked = takeAcceptOnReturn(token);
+    if (asked && signedInMatch) void acceptAsSignedIn();
+  });
+
+  /**
+   * Land IN THE WORKSPACE THE INVITATION NAMES: a person who already belongs
+   * to another workspace (on cloud, always: their own organization is
+   * projected at sign-in) would otherwise open their default one. Full
+   * navigation, so the api client reboots with the persisted selection (the
+   * collaborator claim's pattern).
+   */
+  async function finish(workspaceId: string) {
+    try {
+      globalThis.localStorage?.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
+    } catch {
+      // Not persistable: the dashboard opens the default workspace; the
+      // membership stands either way.
+    }
     await refreshSession();
-    await goto('/');
+    window.location.assign('/');
   }
 
   async function acceptAsSignedIn() {
     error = null;
     loading = true;
     try {
-      await api.acceptInvitation({ token });
-      await finish();
+      const accepted = await api.acceptInvitation({ token });
+      await finish(accepted.workspaceId);
     } catch (e) {
       handleAcceptError(e);
     } finally {
       loading = false;
+    }
+  }
+
+  /** Cloud: through the hub, back to this exact page, then accept. */
+  async function signInWithAntasphere() {
+    error = null;
+    loading = true;
+    markAcceptOnReturn(token);
+    try {
+      const { error: err } = await authClient.signIn.oauth2({
+        providerId: 'antasphere',
+        callbackURL: `/invite/${token}`,
+        errorCallbackURL: `/invite/${token}`
+      });
+      if (err) {
+        loading = false;
+        error = err.message || t('invite.errorSignInFailed');
+      }
+      // Success answers { url, redirect: true } and the client navigates to
+      // the hub; keep `loading` on while the browser leaves the page.
+    } catch {
+      loading = false;
+      error = t('invite.errorSignInFailed');
     }
   }
 
@@ -69,8 +118,8 @@
         await goto(`/login?next=${encodeURIComponent(`/invite/${token}`)}`);
         return;
       }
-      await api.acceptInvitation({ token });
-      await finish();
+      const accepted = await api.acceptInvitation({ token });
+      await finish(accepted.workspaceId);
     } catch (e) {
       handleAcceptError(e);
     } finally {
@@ -87,14 +136,18 @@
     }
     loading = true;
     try {
-      await api.acceptInvitation({ token, name: joinPersonName(firstName, lastName), password });
+      const accepted = await api.acceptInvitation({
+        token,
+        name: joinPersonName(firstName, lastName),
+        password
+      });
       const { error: err } = await authClient.signIn.email({ email: lookup.email, password });
       if (err) {
         // Account exists and membership is granted — a manual login still works.
         await goto('/login');
         return;
       }
-      await finish();
+      await finish(accepted.workspaceId);
     } catch (e) {
       handleAcceptError(e);
     } finally {
@@ -110,6 +163,10 @@
       }
       if (e.status === 404) {
         deadReason = t('invite.deadGone');
+        return;
+      }
+      if (e.code === 'sso_required') {
+        error = t('invite.ssoIntro');
         return;
       }
       error = e.message;
@@ -155,6 +212,21 @@
           <FormError message={error} />
           <Button class="w-full" disabled={loading} onclick={() => void acceptAsSignedIn()}>
             {loading ? t('invite.accepting') : t('invite.accept')}
+          </Button>
+        {:else if hasAntasphere}
+          <!-- Cloud (D1): the hub is the only human entrance, for an existing
+               account and a new invitee alike (the SSO callback creates the
+               account and returns here, where the invitation is accepted). -->
+          {#if data.me !== null}
+            <p class="text-sm text-muted-foreground">
+              {t('invite.ssoWrongAccount', { current: data.me.user.email, email: lookup.email })}
+            </p>
+          {:else}
+            <p class="text-sm text-muted-foreground">{t('invite.ssoIntro')}</p>
+          {/if}
+          <FormError message={error} />
+          <Button class="w-full" disabled={loading} onclick={() => void signInWithAntasphere()}>
+            {loading ? t('invite.accepting') : t('login.signInWithAntasphere')}
           </Button>
         {:else if mode === 'signin'}
           <form

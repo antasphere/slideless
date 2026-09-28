@@ -76,6 +76,8 @@ candidates. An id is sent as it is, a name costs one extra request to look it
 up, and `workspace use` always saves the id. The saved selection applies only
 to the instance its profile names, and `slideless logout` removes it.
 `slideless whoami` shows the workspace the command ran in and what chose it.
+The server's default is yours to choose: `slideless workspace default <id or name>` on a
+self-hosted instance, your Antasphere account on the cloud, where the command answers with the page.
 A key pinned to one workspace only ever acts there: selecting another one is
 refused, and the error names the pin.
 A deck lives in one workspace: a deck id (a linked folder's, a pasted one)
@@ -875,6 +877,8 @@ slideless instance            # public discovery — no key needed
 slideless workspaces          # your workspaces: id, role, name; * = the one the commands run in, (default) = the server's
 slideless workspace use <id or name>   # save the selection on the profile (the id is what is stored)
 slideless workspace use --clear        # remove it: commands run in the server's default again
+slideless workspace default <id or name>   # self-hosted: choose the server's default, for every key and session of yours
+slideless workspace default --clear        # remove the choice: the workspace you joined first is the default again
 slideless files list [--all]
 slideless files upload <path> [--name <stored name>] [--content-type <type>]
 slideless files rm <id>

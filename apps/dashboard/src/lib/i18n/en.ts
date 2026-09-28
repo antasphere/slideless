@@ -325,6 +325,9 @@ export const en = {
   'invite.createAndJoin': 'Create account and join',
   'invite.errorWrongPassword': 'Wrong password for this account.',
   'invite.errorSignInFailed': 'Sign-in failed.',
+  'invite.ssoIntro': 'This instance signs in with Antasphere. Sign in to accept your invitation.',
+  'invite.ssoWrongAccount':
+    'You are signed in as {current}, but this invitation is for {email}. Sign in with the invited account to accept it.',
 
   // ── Demo link (/demo, the demo pass) ─────────────────────────────────
   'demo.eyebrow': 'Demo link',
@@ -401,8 +404,7 @@ export const en = {
 
   // ── Overview ─────────────────────────────────────────────────────────
   'overview.title': 'Overview',
-  'overview.description': 'Your self-hosted instance at a glance.',
-  'overview.descriptionCloud': 'Your workspace at a glance.',
+  'overview.description': 'Your workspace at a glance.',
   'overview.instanceCard': 'Instance',
   'overview.activeMembers': 'Active members',
   'overview.filesCard': 'Files',
@@ -611,11 +613,14 @@ export const en = {
   'members.actionResetLink': 'Generate reset link',
   'members.actionDeactivate': 'Deactivate',
   'members.actionReactivate': 'Reactivate',
+  'members.actionRemove': 'Remove from workspace',
   'members.actionDelete': 'Delete member',
   'members.roleChanged': '{email} is now {role}',
   'members.roleChangeFailed': 'Role change failed',
   'members.reactivatedToast': '{email} reactivated',
   'members.deactivatedToast': '{email} deactivated',
+  'members.removedToast': '{email} was removed from the workspace',
+  'members.removeFailed': 'Could not remove the member',
   'members.deletedToast': '{email} was deleted',
   'members.resetOwnerOnly': 'Only an owner can reset an owner.',
   'members.resetLinkFailed': 'Reset link failed',
@@ -643,6 +648,9 @@ export const en = {
   'members.emailLinkAria': 'Email change link',
   'members.copyEmailLinkAria': 'Copy email change link',
   'members.emailLinkCopied': 'Email change link copied to clipboard',
+  'members.removeConfirmTitle': 'Remove from the workspace?',
+  'members.removeConfirmDescription':
+    '{email} loses access to this workspace, their place in every project and every team, and the decks shared with them. Their account is kept. Brought back, they start as a member with none of these.',
   'members.deleteConfirmTitle': 'Delete member?',
   'members.deleteConfirmDescription':
     "{email}'s account, sessions, and API keys are removed permanently. Files they uploaded remain with the workspace; audit history is kept anonymized.",
@@ -870,6 +878,8 @@ export const en = {
   'workspace.actionOpen': 'Open',
   'workspace.actionSettings': 'Settings',
   'workspace.actionMakeDefault': 'Make default',
+  'workspace.defaultSetToast': '{workspace} is now your default workspace',
+  'workspace.defaultSetFailed': 'Could not set the default workspace',
   'workspace.actionIsDefault': 'Your default',
   // gate pages: the small line over each title
   'gate.eyebrowSignup': 'New here',
