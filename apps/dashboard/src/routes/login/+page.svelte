@@ -50,7 +50,10 @@
     params: page.url.searchParams,
     attemptMarker: readAttemptMarker(),
     now: Date.now(),
-    signedIn: false
+    // +page.ts already redirected any signed-in visitor (gate E), except on
+    // a relogin landing, where the signed-in visitor is the wrong person.
+    signedIn: data.relogin,
+    relogin: data.relogin
   });
   // The AS answered a silent attempt with the login_required family: the
   // hint promised a hub session that is not there — retire it so the next
@@ -73,6 +76,14 @@
     // journeys that outlive the OAuth state row (the signup detour).
     writePendingNext(pendingNextStorage(), next, Date.now());
     try {
+      // A relogin landing: the tool's own session is the person the account
+      // site no longer holds. The LOCAL sign-out ends it (never the hub's
+      // end-session, whose session is the right person now); a failure here
+      // falls through to the form rather than to the wrong person's decks.
+      if (decision.endOwnSession) {
+        await authClient.signOut();
+        await refreshSession();
+      }
       let err = await silentStart(next);
       // The sign-in library's own wall (a few starts per ten seconds per
       // address) is a wall of seconds: someone who opens several links in a

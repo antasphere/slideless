@@ -9,6 +9,7 @@ import {
   hasCookie,
   isAttemptMarkerFresh,
   isLoginRequiredError,
+  isReloginLanding,
   readAttemptMarker,
   writeAttemptMarker,
   writePendingNext,
@@ -34,6 +35,7 @@ function ctx(overrides: Partial<AutoConnectContext> = {}): AutoConnectContext {
     attemptMarker: null,
     now: NOW,
     signedIn: false,
+    relogin: false,
     ...overrides
   };
 }
@@ -50,7 +52,7 @@ function memoryStorage(seed: Record<string, string> = {}): StorageLike & { data:
 
 describe('evaluateAutoConnect — the gate table', () => {
   it('attempts when every gate is green', () => {
-    expect(evaluateAutoConnect(ctx())).toEqual({ attempt: true, clearStaleHint: false, signedOut: false });
+    expect(evaluateAutoConnect(ctx())).toEqual({ attempt: true, clearStaleHint: false, signedOut: false, endOwnSession: false });
   });
 
   it('gate A (posture): no auth.sso in discovery → never, even with a hint present (oss leakage pin)', () => {
@@ -107,6 +109,42 @@ describe('evaluateAutoConnect — the gate table', () => {
 
   it('gate E (session): a live signed-in bootstrap never attempts', () => {
     expect(evaluateAutoConnect(ctx({ signedIn: true })).blockedBy).toBe('live_session');
+  });
+});
+
+describe('evaluateAutoConnect — the relogin landing (the account site replaced its session)', () => {
+  it('a signed-in visitor on a relogin landing attempts, ending the tool’s own session first', () => {
+    const d = evaluateAutoConnect(ctx({ signedIn: true, relogin: true }));
+    expect(d.attempt).toBe(true);
+    expect(d.endOwnSession).toBe(true);
+    expect(d.blockedBy).toBeUndefined();
+  });
+  it('a signed-out visitor on a relogin landing attempts with nothing to end', () => {
+    const d = evaluateAutoConnect(ctx({ signedIn: false, relogin: true }));
+    expect(d).toMatchObject({ attempt: true, endOwnSession: false });
+  });
+  it('without the relogin key a signed-in visitor still never attempts (gate E unchanged)', () => {
+    expect(evaluateAutoConnect(ctx({ signedIn: true }))).toMatchObject({
+      attempt: false,
+      blockedBy: 'live_session',
+      endOwnSession: false
+    });
+  });
+  it('the other gates keep their say on a relogin landing: no hint, an error, a fresh marker each block', () => {
+    expect(evaluateAutoConnect(ctx({ relogin: true, signedIn: true, cookies: '' })).blockedBy).toBe('no_hint');
+    expect(
+      evaluateAutoConnect(ctx({ relogin: true, signedIn: true, params: new URLSearchParams('error=x') })).blockedBy
+    ).toBe('error_param');
+    expect(
+      evaluateAutoConnect(ctx({ relogin: true, signedIn: true, attemptMarker: String(NOW - 1_000) })).blockedBy
+    ).toBe('recent_attempt');
+  });
+  it('isReloginLanding: relogin=1 on a hub-federated instance only; self-hosted never sees it', () => {
+    expect(isReloginLanding(new URLSearchParams('next=%2Fdecks&relogin=1'), SSO)).toBe(true);
+    expect(isReloginLanding(new URLSearchParams('next=%2Fdecks'), SSO)).toBe(false);
+    expect(isReloginLanding(new URLSearchParams('relogin=yes'), SSO)).toBe(false);
+    expect(isReloginLanding(new URLSearchParams('relogin=1'), null)).toBe(false);
+    expect(isReloginLanding(new URLSearchParams('relogin=1'), undefined)).toBe(false);
   });
 });
 
