@@ -18,12 +18,17 @@ import type { MembershipRemovalHook } from '@antasphere/chassis-server';
  *
  * A row is matched by the account (a claimed grant carries it) or by the
  * address (a pending invite carries only that), never across workspaces.
+ * The pending deck invites the person ISSUED go too (round 2, N2): an invite
+ * they sent to another address of theirs is a way back in. The grants other
+ * people already hold through an invite of theirs stay: those are rights of
+ * those people, on a deck that stays in the workspace.
  * Revoked the way `CollaboratorService.revoke` does it: the row survives, it
  * stops authorizing, and a later invite re-mints it in place.
  */
 export const endDeckAccessOnRemoval: MembershipRemovalHook = async (tx, removed) => {
   let deckGrants = 0;
   let deckInvites = 0;
+  let deckInvitesIssued = 0;
   for (const { workspaceId, userId } of removed) {
     const [person] = await tx
       .select({ email: userTable.email })
@@ -50,6 +55,19 @@ export const endDeckAccessOnRemoval: MembershipRemovalHook = async (tx, removed)
       if (row.claimedAt) deckGrants += 1;
       else deckInvites += 1;
     }
+    const issued = await tx
+      .update(collaborators)
+      .set({ status: 'revoked', revokedAt: sql`now()` })
+      .where(
+        and(
+          eq(collaborators.workspaceId, workspaceId),
+          eq(collaborators.invitedBy, userId),
+          eq(collaborators.status, 'pending'),
+          isNull(collaborators.revokedAt)
+        )
+      )
+      .returning({ id: collaborators.id });
+    deckInvitesIssued += issued.length;
   }
-  return { deckGrants, deckInvites };
+  return { deckGrants, deckInvites, deckInvitesIssued };
 };

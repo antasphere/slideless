@@ -1750,3 +1750,13 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   pressed the button before leaving for the sign-in", and it read as that for anyone who was sent the
   link. What says "this person, in this tab, pressed the button" is state the page wrote itself at
   the click: session storage, one invitation, a short life, taken once.
+- **Closing one door of a kind is not closing the kind (verifier round 2, N1 and N2).** Round 1
+  found the deck invite that outlives a removal; the fix revoked deck invites and left the WORKSPACE
+  invitation, which reactivates the row at the role it names, and the invitations the removed person
+  had issued. The question to ask of a removal is not "which table did the finding name" but "what
+  can switch this row back on, and what did this person leave open": the accept, the claim, and
+  everything with their name in `invited_by`.
+- **A browser test that answers a route itself costs the instance nothing.** The suite spends the
+  ten invitation calls an hour the instance allows, so a test that opens a real invitation starves
+  the tests after it. `page.route` on the lookup and the accept lets the page run its own logic
+  against answers the test gives; what is tested is the page, which is what had no test.

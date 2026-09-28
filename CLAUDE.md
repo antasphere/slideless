@@ -289,20 +289,24 @@ deploys) + `dev` (day-to-day work).
 - **Taking a person out has three acts, and a removal is the same on both editions (PRDCT-2816)**:
   a PAUSE (`PATCH /members/{id}` `isActive: false`) keeps everything; a REMOVAL switches the
   membership row off, never deletes it, and in the same transaction deletes the person's project
-  grants and team seats and ends what the tool hangs on them in that workspace; the ERASURE
+  grants and team seats, revokes the open workspace invitations that name them or that they issued,
+  and ends what the tool hangs on them in that workspace; the ERASURE
   (`DELETE /members/{id}`) deletes the account. What a removal takes is stated ONCE,
   `deleteMembershipGrants` (`packages/chassis-server/src/members/removal.ts`), called by the hub
   reconcile's sweep (cloud, a hub organization) and by `POST /members/{id}/remove` (a workspace
   managed here: admin and above, an owner by an owner only, never oneself, the last-owner guard,
   `hub_managed` on a hub-origin workspace, deliberately UNLISTED in the machine scope allowlist like
   the erasure). The tool's half is the `membershipRemoval` slot: Slideless revokes the person's deck
-  invites AND deck grants of that workspace (`apps/server/src/collaborators/removal.ts`), matched by
-  account or by address. **A removed person never comes back by themselves, and never at the role
-  they held**: the route leaves the row at `member`; a pending deck invite is revoked because claiming
-  one switches an inactive membership back on (`api/collaborators.ts`), and that claim brings a paused
-  or removed person back as `member` whatever the row held. Only an act of the workspace brings a
-  person back: an admin's Reactivate, a workspace invitation (which names its role), a deck invite
-  made AFTER the removal. A new table or a new door that hangs a right on a person in a workspace
+  invites AND deck grants of that workspace, matched by account or by address, and the pending deck
+  invites they issued (`apps/server/src/collaborators/removal.ts`). **A removed person never comes back by themselves, and never at the role
+  they held**: the route leaves the row at `member`; every invitation open at the removal is revoked,
+  because accepting a workspace invitation or claiming a deck invite switches an inactive membership
+  back on (`invitations/service.ts`, `api/collaborators.ts`); and a deck claim brings a paused or
+  removed person back as `member` whatever the row held. Only an act of the workspace made AFTER the
+  removal brings a person back: an admin's Reactivate, a workspace invitation (which names its role),
+  a deck invite. On cloud, in a hub organization, the way back is the account site alone: a deck
+  invite made after the hub's removal switches the row on until the next reconcile pass sweeps it
+  again, the grant with it (verifier round 2, N3; the follow-up is PRDCT-2831). A new table or a new door that hangs a right on a person in a workspace
   joins the function or the slot. What a removal does NOT end: the person's own API keys (a key is
   the person's credential; one pinned to the workspace reaches nothing while the membership is off
   and works again once they are back) and the decks they own, which stay with the workspace.
