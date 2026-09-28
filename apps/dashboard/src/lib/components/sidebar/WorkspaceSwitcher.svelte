@@ -21,7 +21,10 @@
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-  import { switchWorkspace } from '$lib/api';
+  import { page } from '$app/state';
+  import { toast } from 'svelte-sonner';
+  import { api, errorMessage, switchWorkspace } from '$lib/api';
+  import { refreshSession } from '$lib/session';
   import { accentOf, look, resolveLook } from '$lib/look.svelte';
   import { theme } from '$lib/theme.svelte';
   import { roleTag } from '$lib/tags';
@@ -41,9 +44,12 @@
    * workspace, and the look follows (it is per workspace). Per-entry signals
    * come straight off /me: `hubOrigin` (Antasphere badge), `suspended`
    * (disabled + badge, visible but blocked), `default` (the selector-less
-   * default marker). The default org is a HUB-level per-user setting, so the
-   * "make default" action links out to the hub console (hubManageUrl); a
-   * local write would be overwritten by the next reconcile pass.
+   * default marker). The default is the person's own setting on both
+   * editions and only its source differs (PRDCT-2815): where the instance
+   * signs in with Antasphere it is set on the account site, so "Make
+   * default" links out to the hub console (hubManageUrl; a local write would
+   * be overwritten by the next reconcile pass); everywhere else the action
+   * sets it here.
    */
   interface Props {
     workspaces: MeResponse['workspaces'];
@@ -88,6 +94,25 @@
     // mixed toward the ink rather than derived here, and the badges read on
     // the shell's ink either way.
     return `--accent: ${accent}; --accent-soft: ${soft}; --wash: ${soft}`;
+  }
+
+  // Where the default is set. Read off discovery's sign-in methods, the
+  // signal the invitation and collaborator pages read, never the edition's name.
+  const defaultSetHere = $derived(!page.data.instance?.auth?.methods?.includes('antasphere'));
+  let settingDefault = $state(false);
+
+  async function makeDefault(workspace: MeResponse['workspaces'][number]) {
+    if (settingDefault) return;
+    settingDefault = true;
+    try {
+      await api.setDefaultWorkspace(workspace.id);
+      toast.success(t('workspace.defaultSetToast', { workspace: workspace.name }));
+      await refreshSession();
+    } catch (e) {
+      toast.error(errorMessage(e, t('workspace.defaultSetFailed')));
+    } finally {
+      settingDefault = false;
+    }
   }
 
   function pick(id: string) {
@@ -209,6 +234,18 @@
                   <Star class="!size-3.5 !text-[var(--accent)]" />
                   {t('workspace.actionIsDefault')}
                 </DropdownMenu.Item>
+              {:else if defaultSetHere}
+                {#if !workspace.suspended}
+                  <DropdownMenu.Item
+                    class="!gap-2.5"
+                    disabled={settingDefault}
+                    data-testid="workspace-make-default"
+                    onclick={() => void makeDefault(workspace)}
+                  >
+                    <Star class="!size-3.5 !text-[var(--muted)]" />
+                    {t('workspace.actionMakeDefault')}
+                  </DropdownMenu.Item>
+                {/if}
               {:else if workspace.hubOrigin && hubManageUrl}
                 <!-- The default org lives at the hub (per-user setting): change
                      it there; a local toggle would be stomped by the next reconcile. -->

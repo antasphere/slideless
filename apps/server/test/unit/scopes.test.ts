@@ -76,3 +76,33 @@ describe('requiredScopeFor — workspace creation (PRDCT-2444 / PRDCT-2443)', ()
     expect(requiredScopeFor('/api/v1/workspace/export', 'GET')).toBe('data:export');
   });
 });
+
+describe('requiredScopeFor — members stay closed to machines (ADR 014, PRDCT-2816)', () => {
+  const MEMBER = '/api/v1/members/11111111-2222-3333-4444-555555555555';
+
+  it('the account deletion and the removal are UNLISTED for every method: sessions only', () => {
+    for (const method of ['POST', 'GET', 'PUT', 'PATCH', 'DELETE']) {
+      expect(requiredScopeFor(MEMBER, method)).toBeNull();
+      expect(requiredScopeFor(`${MEMBER}/remove`, method)).toBeNull();
+    }
+  });
+});
+
+describe('requiredScopeFor — the default workspace (PRDCT-2815)', () => {
+  const PATH = '/api/v1/me/default-workspace';
+
+  it('PUT is listed under presentations:write', () => {
+    expect(requiredScopeFor(PATH, 'PUT')).toBe('presentations:write');
+  });
+
+  it('every other method on the path stays unlisted', () => {
+    for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+      expect(requiredScopeFor(PATH, method)).toBeNull();
+    }
+  });
+
+  it('a longer path and any other path under /me stay unlisted for PUT', () => {
+    expect(requiredScopeFor(`${PATH}/x`, 'PUT')).toBeNull();
+    expect(requiredScopeFor('/api/v1/me/anything', 'PUT')).toBeNull();
+  });
+});

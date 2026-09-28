@@ -703,3 +703,170 @@ describe('pinned after the verifier round', () => {
     expect(h.err()).toContain('looked in the workspace "Atelier Nord", selected by the --workspace flag');
   });
 });
+
+/**
+ * `slideless workspace default` (PRDCT-2815): the SERVER's default for the
+ * person, not the profile's selection. The fake answers PUT
+ * /me/default-workspace like the self-hosted handler (200 with the id, 404
+ * for a workspace not the person's), or with the refusal a test hands it.
+ */
+describe('slideless workspace default', () => {
+  const HUB_URL = 'https://account.antasphere.test/orgs';
+
+  function withDefault(
+    refusal?: ReturnType<typeof refuse> & { body: { error: { details?: unknown } } }
+  ): Route[] {
+    return [
+      ...instance(),
+      {
+        method: 'PUT',
+        path: /^\/api\/v1\/me\/default-workspace$/,
+        reply: ({ headers, body }) => {
+          const resolved = resolveWorkspace(headers);
+          if (!('id' in resolved)) return resolved;
+          if (refusal) return refusal;
+          const id = (body as { workspaceId: string | null }).workspaceId;
+          if (id !== null && !WORKSPACES.some((w) => w.id === id)) {
+            return refuse(404, 'not_found', 'Workspace not found');
+          }
+          return { body: { defaultWorkspaceId: id } };
+        }
+      }
+    ];
+  }
+
+  const puts = (h: ReturnType<typeof routedHarness>) =>
+    h.wire.filter((c) => c.method === 'PUT' && c.path === '/api/v1/me/default-workspace');
+
+  it('by name: resolves it against /me and sends the id', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', 'atelier nord'], h.io)).toBe(0);
+    expect(h.out()).toBe(
+      `"Atelier Nord" (${NORD}) is now your default workspace: a command naming none runs in it.\n`
+    );
+    expect(h.err()).toBe('');
+    expect(h.wire.map((c) => [c.method, c.path])).toEqual([
+      ['GET', '/api/v1/me'],
+      ['PUT', '/api/v1/me/default-workspace']
+    ]);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: NORD });
+  });
+
+  it('by id', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', NORD], h.io)).toBe(0);
+    expect(h.out()).toContain(`"Atelier Nord" (${NORD}) is now your default workspace`);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: NORD });
+  });
+
+  it('--clear sends null and says the first-joined workspace answers', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
+    expect(h.out()).toBe(
+      'No default workspace is chosen: a command naming none runs in the workspace you joined first.\n'
+    );
+    expect(puts(h)).toHaveLength(1);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
+  });
+
+  it('--json with a workspace: the id and the workspace', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', 'Atelier Nord', '--json'], h.io)).toBe(0);
+    expect(JSON.parse(h.out())).toEqual({
+      defaultWorkspaceId: NORD,
+      workspace: { id: NORD, name: 'Atelier Nord', role: 'member' }
+    });
+  });
+
+  it('--json with --clear: a null id and no workspace', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', '--clear', '--json'], h.io)).toBe(0);
+    expect(JSON.parse(h.out())).toEqual({ defaultWorkspaceId: null });
+  });
+
+  it('needs exactly one of a workspace or --clear', async () => {
+    const both = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', NORD, '--clear'], both.io)).toBe(1);
+    expect(both.err()).toContain('Pass exactly one of <workspace> (an id or a name) or --clear.');
+    const none = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default'], none.io)).toBe(1);
+    expect(none.err()).toContain('Pass exactly one of <workspace> (an id or a name) or --clear.');
+    expect([...both.wire, ...none.wire]).toEqual([]);
+  });
+
+  it('an unknown name lists the candidates and sets nothing', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', 'Nowhere'], h.io)).toBe(1);
+    expect(h.err()).toContain('"Nowhere" is not one of your workspaces');
+    expect(h.err()).toContain(`${NORD}  member  Atelier Nord`);
+    expect(puts(h)).toEqual([]);
+  });
+
+  it('never sends the saved selection, neither to /me nor with the PUT', async () => {
+    const h = routedHarness(withDefault(), await profileEnv(NORD));
+    expect(await run(['workspace', 'default', 'Acme'], h.io)).toBe(0);
+    expect(h.wire).toHaveLength(2);
+    expect(h.wire.map((c) => c.workspace)).toEqual([undefined, undefined]);
+  });
+
+  it('a saved selection naming another workspace: a Note on stderr says it wins', async () => {
+    const h = routedHarness(withDefault(), await profileEnv(ACME));
+    expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).toBe(0);
+    expect(h.err()).toMatch(/^Note: /);
+    expect(h.err()).toContain('profile "work"');
+    expect(h.err()).toContain('wins over the default');
+  });
+
+  it('--clear with a saved selection: a Note on stderr says the selection still wins', async () => {
+    const h = routedHarness(withDefault(), await profileEnv(ACME));
+    expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
+    expect(h.err()).toMatch(/^Note: /);
+    expect(h.err()).toContain('profile "work"');
+    expect(h.err()).toContain('wins over the default');
+  });
+
+  it('--clear with no saved selection: no note', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
+    expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
+    expect(h.err()).toBe('');
+  });
+
+  it('a saved selection naming the same workspace: no note', async () => {
+    const h = routedHarness(withDefault(), await profileEnv(NORD));
+    expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+  });
+
+  it('403 hub_managed: the account-site sentence with the url, pointing at workspace use', async () => {
+    const refusal = {
+      status: 403,
+      body: {
+        error: {
+          code: 'hub_managed',
+          message: 'Your default workspace is a setting of your Antasphere account — choose it there',
+          details: { manageUrl: HUB_URL }
+        }
+      }
+    };
+    const h = routedHarness(withDefault(refusal), await profileEnv());
+    expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).not.toBe(0);
+    expect(h.err()).toContain('Your default workspace is a setting of your Antasphere account');
+    expect(h.err()).toContain(HUB_URL);
+    expect(h.err()).toContain('slideless workspace use');
+    expect(h.out()).toBe('');
+  });
+
+  it('403 key_pinned: its own sentence', async () => {
+    const h = routedHarness(
+      withDefault(refuse(403, 'key_pinned', 'This key is pinned to one workspace')),
+      await profileEnv()
+    );
+    expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).not.toBe(0);
+    expect(h.err()).toContain(
+      'This key is pinned to one workspace and cannot change your default workspace. Use a key that is not pinned.'
+    );
+    expect(h.out()).toBe('');
+  });
+});

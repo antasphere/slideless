@@ -1738,3 +1738,48 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   Drizzle runs only migrations newer than the last applied, so it skipped the sibling's and replayed
   ours. Repair in one transaction: apply the skipped SQL, record it, move our row to the new
   timestamp (its hash is unchanged). Or `down -v` a throwaway stack.
+
+## The small gaps between the editions (PRDCT-2815 to PRDCT-2819, 2026-09-28)
+
+- **A rule that two editions share is a function, not two copies of three lines.** The hub's removal
+  lived inside the reconcile's sweep; giving self-hosted "the same removal" by copying its two deletes
+  into a route would have held until the next table hung on a membership row (the teams merge added
+  one the day before). `deleteMembershipGrants` is the one statement, and both callers run it in the
+  transaction that switches the row off.
+- **A setting of the person is not an event of the workspace the request happened to be in.** The
+  generic audit middleware writes into the principal's workspace; a default-workspace change recorded
+  there would tell workspace A that one of its members prefers workspace B. Setting no audit entry
+  in the handler is NOT enough: the middleware writes its generic row (method and path) for every
+  authenticated mutation unless the path is exempt in `isAuditExempt`. The handler's comment and the
+  invariant both said "no audit row" while every call wrote one; the test that counts the rows before
+  and after found it. The path is exempt now, the rule `POST /workspaces` already follows.
+- **A hidden form is not a closed route.** The cloud edition reported `emailChange: false` and the
+  dashboard hid the form, while `/change-email` stayed open to any signed-in caller. Discovery says
+  what the screens offer; only the before-hook says what the instance accepts.
+- **A page that finishes with `goto('/')` opens the person's default workspace, not the one they just
+  joined.** On cloud everyone has at least their own organization, so an accepted invitation landed
+  somewhere else. The invitation page now persists the accepted workspace and navigates in full, the
+  collaborator claim's pattern.
+- **`turbo typecheck lint` prints both failures in one stream; read to the end.** A lint error was
+  fixed and the typecheck error two lines below it was committed (e5867eb, fixed by 00c00a8).
+- **A removal that a pending invite can undo is not a removal (verifier round 1, F1).** The deck claim
+  switches an inactive membership back on, by design: a fresh deck invite is the workspace's own
+  re-invite. An invite made BEFORE the removal is not, and it let a removed admin come back alone, as
+  admin. Three things close it together: the removal revokes the person's deck invites and grants
+  (the `membershipRemoval` slot, since the chassis names no deck), the removal leaves the row at
+  `member`, and the claim never restores a role. Reading "what references the membership row" was not
+  enough to find it: the door was keyed on the ADDRESS, in the tool, outside the chassis tables.
+- **Intent in a URL is anyone's intent (verifier round 1, F2).** `?accept=1` was meant as "the person
+  pressed the button before leaving for the sign-in", and it read as that for anyone who was sent the
+  link. What says "this person, in this tab, pressed the button" is state the page wrote itself at
+  the click: session storage, one invitation, a short life, taken once.
+- **Closing one door of a kind is not closing the kind (verifier round 2, N1 and N2).** Round 1
+  found the deck invite that outlives a removal; the fix revoked deck invites and left the WORKSPACE
+  invitation, which reactivates the row at the role it names, and the invitations the removed person
+  had issued. The question to ask of a removal is not "which table did the finding name" but "what
+  can switch this row back on, and what did this person leave open": the accept, the claim, and
+  everything with their name in `invited_by`.
+- **A browser test that answers a route itself costs the instance nothing.** The suite spends the
+  ten invitation calls an hour the instance allows, so a test that opens a real invitation starves
+  the tests after it. `page.route` on the lookup and the accept lets the page run its own logic
+  against answers the test gives; what is tested is the page, which is what had no test.

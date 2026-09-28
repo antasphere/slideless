@@ -171,6 +171,33 @@
     }
   }
 
+  // ── Remove from the workspace (the membership off, the project grants and
+  //    team seats deleted, the account kept: PRDCT-2816) ──────────────────
+  let showRemoveDialog = $state(false);
+  let removeLoading = $state(false);
+  let removeTarget = $state<Member | null>(null);
+
+  function openRemoveDialog(member: Member) {
+    removeTarget = member;
+    showRemoveDialog = true;
+  }
+
+  async function submitRemove() {
+    if (!removeTarget) return;
+    removeLoading = true;
+    try {
+      await api.removeMember(removeTarget.id);
+      toast.success(t('members.removedToast', { email: removeTarget.email }));
+      showRemoveDialog = false;
+      removeTarget = null;
+      await list.refresh();
+    } catch (e) {
+      toast.error(errorMessage(e, t('members.removeFailed')));
+    } finally {
+      removeLoading = false;
+    }
+  }
+
   // ── Delete member (GDPR erasure; their files stay with the workspace) ──
   let showDeleteDialog = $state(false);
   let deleteLoading = $state(false);
@@ -282,6 +309,11 @@
         label: member.isActive ? t('members.actionDeactivate') : t('members.actionReactivate'),
         onclick: () => openActiveDialog(member),
         ...(member.isActive ? { variant: 'destructive' as const } : {})
+      });
+      actions.push({
+        label: t('members.actionRemove'),
+        onclick: () => openRemoveDialog(member),
+        variant: 'destructive'
       });
       actions.push({
         label: t('members.actionDelete'),
@@ -571,6 +603,19 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<ConfirmDialog
+  bind:open={showRemoveDialog}
+  title={t('members.removeConfirmTitle')}
+  description={t('members.removeConfirmDescription', { email: removeTarget?.email ?? '' })}
+  confirmLabel={t('members.actionRemove')}
+  onClose={() => {
+    showRemoveDialog = false;
+    removeTarget = null;
+  }}
+  onConfirm={() => void submitRemove()}
+  loading={removeLoading}
+/>
 
 <ConfirmDialog
   bind:open={showDeleteDialog}

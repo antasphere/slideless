@@ -13,6 +13,12 @@ workspace switcher in the sidebar lists them. For the API, the CLI and agents, t
 per-request choice: send `X-Workspace-Id: <workspace id>`, or leave it out to land in your default
 workspace. `GET /api/v1/me` lists the workspaces you can name and the one the request resolved to.
 
+Your default workspace is yours to choose. On a self-hosted instance, open the workspace switcher,
+rest on a workspace and pick **Make default**, or run `slideless workspace default <id or name>`;
+until you choose, the default is the workspace you joined first. On Slideless Cloud the default is a
+setting of your Antasphere account, chosen at `account.antasphere.com`. The dashboard opens the
+workspace you last worked in on that browser, and the default when it has none to remember.
+
 Being a member of a workspace is not a grant on its decks. Inside a workspace, a deck is readable by
 its owner, by the workspace's admins and owners, and by the collaborators invited on it
 ([Decks](artifact.md)).
@@ -101,5 +107,24 @@ organization.
 
 A workspace must keep at least one active owner, so the last owner cannot leave, be demoted or delete
 their account while they are the only one. An account that belongs to several workspaces cannot be
-deleted by an admin of one of them: that admin deactivates the membership instead, and the account
-stays with its other workspaces.
+deleted by an admin of one of them: that admin removes the person from the workspace instead, and
+the account stays with its other workspaces.
+
+An owner or an admin has three ways to take someone out, from the row's menu on the Members page:
+
+| Act                       | The membership | Their places in projects and teams, their deck invites and grants | The account |
+| ------------------------- | -------------- | ----------------------------------------------------------------- | ----------- |
+| **Deactivate**            | paused         | kept, and back on **Reactivate**                                  | kept        |
+| **Remove from workspace** | off            | ended                                                             | kept        |
+| **Delete member**         | deleted        | ended                                                             | erased      |
+
+A removed person is shown as inactive on the Members page, with the role Member whatever they held.
+Every invitation that was open for them, or that they had sent, is revoked with the removal. Only the
+workspace brings them back, by an act made after it: **Reactivate**, a new invitation, or an
+invitation on a deck. They come back as a member with no project, no team and no deck shared with them,
+and are added back where they are needed. The decks they own stay in the workspace, readable by its
+admins and owners. Their API keys are theirs and are not revoked: a key reaches the workspace again
+once the person is a member again, so revoke the keys too when that matters. On Slideless Cloud the
+members of an organization are removed at `account.antasphere.com`, with the same result here, and
+they come back the same way: a person who left an organization is added to it again on the account
+site, and an invitation on a deck does not bring them back.

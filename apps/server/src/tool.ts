@@ -37,6 +37,7 @@ import { linksOfDeck } from './presentations/links-of-deck.js';
 import { memberSeatHooks } from './presentations/member-seats.js';
 import { AnnotationService } from './annotations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
+import { endDeckAccessOnRemoval } from './collaborators/removal.js';
 import { ShareTokenService } from './sharing/service.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
 import { ShareTokenDownloadService } from './sharing/download-events.js';
@@ -526,6 +527,9 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         })
       };
     },
+
+    // A removed member's deck invites and deck grants end with the membership (PRDCT-2816).
+    membershipRemoval: endDeckAccessOnRemoval,
 
     // The chassis refusals that name the tool's domain, in Slideless's words (decks, presentations).
     copy: {
