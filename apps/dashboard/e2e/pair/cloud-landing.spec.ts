@@ -89,6 +89,39 @@ test('two demo links in one browser: the second lands as its own person on the t
   }
 });
 
+test('a relogin landing with no hub session ends the tool session and shows the form: the wrong person is never sent on', async ({
+  browser,
+  playwright
+}) => {
+  // The failure branch of the relogin landing (verifier round 2, G3): the
+  // tool holds A, the hub holds nobody. The page must end A's session before
+  // the silent start, so a refused start lands on the form with nobody signed
+  // in; before the fix the page kept A and gate E sent them on to `next`.
+  const owner = await playwright.request.newContext();
+  const links = await mintTwoLinks(owner);
+  await owner.dispose();
+
+  const context = await browser.newContext();
+  try {
+    await openLink(context, links.a);
+    expect(await whoAmI(context.request, SL!), 'the tool after A’s link').toBe(A);
+    // The hub's own session cookie only: the parent-domain hint stays, so the
+    // page takes the silent path and meets the hub's refusal.
+    await context.clearCookies({ domain: new URL(HUB!).hostname });
+    expect(await whoAmI(context.request, HUB!), 'the hub holds nobody').toBeNull();
+
+    const page = context.pages()[0]!;
+    await page.goto(`${SL}/login?next=%2Fdecks&relogin=1`);
+    await expect(page.getByRole('button', { name: 'Sign in with Antasphere' })).toBeVisible({
+      timeout: 30_000
+    });
+    expect(new URL(page.url()).pathname, 'still on the sign-in page').toBe('/login');
+    expect(await whoAmI(context.request, SL!), 'the tool holds nobody').toBeNull();
+  } finally {
+    await context.close();
+  }
+});
+
 test('a signed-in visitor on /login without the relogin key goes on to next, as before', async ({
   browser,
   playwright
