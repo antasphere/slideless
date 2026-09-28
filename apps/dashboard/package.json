@@ -11,6 +11,7 @@
     "typecheck": "rm -rf .svelte-kit/types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "eslint src",
     "test": "svelte-kit sync && vitest run --passWithNoTests",
+    "test:e2e:pair": "playwright test --config playwright.pair.config.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

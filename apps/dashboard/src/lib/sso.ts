@@ -251,6 +251,14 @@ export interface AutoConnectContext {
   now: number;
   /** Whether the bootstrap resolved a live signed-in user (gate E). */
   signedIn: boolean;
+  /**
+   * The landing came from the account site with `?relogin=1`: its session
+   * was just replaced there (a demo link opened for another person), so the
+   * signed-in visitor here is no longer who the hub says. Gate E does not
+   * hold, and the tool's OWN session is ended before the silent connect;
+   * the hub's is never touched. Absent from the URL: false.
+   */
+  relogin: boolean;
 }
 
 export type AutoConnectBlock =
@@ -273,6 +281,12 @@ export interface AutoConnectDecision {
   clearStaleHint: boolean;
   /** ?signed_out=1 landing — render the quiet notice. */
   signedOut: boolean;
+  /**
+   * A `relogin` landing found a signed-in visitor: end the tool's own
+   * session (the local sign-out, never the hub's end-session) before the
+   * silent connect, so the connect lands as the account site's person.
+   */
+  endOwnSession: boolean;
 }
 
 /**
@@ -291,7 +305,8 @@ export function evaluateAutoConnect(ctx: AutoConnectContext): AutoConnectDecisio
     attempt: false,
     blockedBy,
     clearStaleHint,
-    signedOut
+    signedOut,
+    endOwnSession: false
   });
 
   if (!ctx.sso || !ctx.methods.includes('antasphere')) return blocked('posture');
@@ -299,8 +314,27 @@ export function evaluateAutoConnect(ctx: AutoConnectContext): AutoConnectDecisio
   if (errorCode !== null) return blocked('error_param');
   if (signedOut) return blocked('signed_out');
   if (isAttemptMarkerFresh(ctx.attemptMarker, ctx.now)) return blocked('recent_attempt');
-  if (ctx.signedIn) return blocked('live_session');
-  return { attempt: true, clearStaleHint, signedOut };
+  // A relogin landing (gate E's one exception): the hub's session was just
+  // replaced, so the tool's own session is the WRONG person and is ended
+  // before the connect instead of being kept.
+  if (ctx.signedIn && !ctx.relogin) return blocked('live_session');
+  return { attempt: true, clearStaleHint, signedOut, endOwnSession: ctx.signedIn && ctx.relogin };
+}
+
+/** The query key the account site's demo landing sets when its session was just replaced. */
+export const SSO_RELOGIN_PARAM = 'relogin';
+
+/**
+ * Whether a login-page URL is a relogin landing: `?relogin=1` on a
+ * hub-federated instance (`sso` present). On a self-hosted instance there is
+ * no hub session to have been replaced, so the key means nothing there and
+ * the page behaves as if it were absent.
+ */
+export function isReloginLanding(
+  params: Pick<URLSearchParams, 'get'>,
+  sso: SsoDiscovery | null | undefined
+): boolean {
+  return Boolean(sso) && params.get(SSO_RELOGIN_PARAM) === '1';
 }
 
 // ── Bootstrap-scoped discovery cache ────────────────────────────────────────

@@ -78,6 +78,13 @@ out on their next click.
 
 The link itself is shown once, when it is made. The instance keeps no copy of it.
 
+## One person per browser window
+
+A link signs the whole browser in as its person, and signs out whoever it was
+signed in as before. There is no signing in as one person in one tab and another
+in the next. To show two people side by side, open the second link in another
+browser profile or in a private window.
+
 ## The banner
 
 While the switch is on, everyone signed in to the instance sees a banner saying

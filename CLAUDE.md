@@ -261,7 +261,16 @@ deploys) + `dev` (day-to-day work).
   the library's mount only while the switch is on) deletes it once the pass has expired or was
   revoked. A session a pass opened is a VISIT: the library's mount refuses it every path of
   `DEMO_SESSION_REFUSED_AUTH_PATHS` (the OAuth authorize included: a pass lands in no tool here),
-  `POST /api-keys`, `POST /workspaces` and the invitation accept refuse it, a pass's end (`endSessions`) takes the OAuth tokens and the
+  the API routes that mint a credential for anyone or make something the person keeps refuse it
+  with 403 `demo_session` from ONE list mounted once, right after the credential resolver
+  (`DEMO_SESSION_REFUSED_API_ROUTES` in `packages/chassis-server/src/identity/demo-pass-rules.ts`,
+  the mount in `packages/chassis-server/src/api/create-api.ts`), to which the tool appends its own
+  through the `demoSessionRefusedRoutes` slot (`apps/server/src/tool.ts`: the deck invite, whose
+  claim link seats an outsider), the invitation accept refusing it in its handler; two contract walks
+  (`packages/chassis-server/test/integration/demo-pass-rules.test.ts` over the chassis routes,
+  `apps/server/test/integration/demo-pass-rules.test.ts` over the product's and the chassis's with
+  `claimUrl` among the keys) fail on any route whose success answer carries a credential and is on
+  neither list nor named as excluded, a pass's end (`endSessions`) takes the OAuth tokens and the
   `demo_pass_sessions` rows tied to its sessions BEFORE the sessions, and the redeem judges the
   mint's refusals again; a pass session's sign-out and a person's own revoke of one end it the
   pass's way (`passSessionsRevokedBy`). A new sign-in-library plugin is reviewed against that list. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
@@ -336,7 +345,15 @@ deploys) + `dev` (day-to-day work).
   a deck invite. On cloud, in a hub organization, the way back is the account site alone: a deck
   invite made after the hub's removal switches the row on until the next reconcile pass sweeps it
   again, the grant with it (verifier round 2, N3; the follow-up is PRDCT-2831). A new table or a new door that hangs a right on a person in a workspace
-  joins the function or the slot. What a removal does NOT end: the person's own API keys (a key is
+  joins the function or the slot. A removal against a concurrent add: every add of something a
+  removal takes (a project grant, a team seat, a demo pass, the creator's grant under
+  `POST /projects`) re-reads the membership inside its own transaction under a share lock
+  (`holdLiveMembership`, `members/removal.ts`), so a removal's update waits for an add in flight and
+  an add after it sees the row off; the route runs `deleteMembershipGrants` a SECOND time after the
+  row is off, taking what an add in flight wrote; and a grant or seat add reads the existing row
+  before it inserts, answering the repeat without an insert, so a duplicate add never waits on the
+  removal's uncommitted delete (the deadlock of the verifier's round 1, F4).
+  `member-removal-race.test.ts` pins each arm. What a removal does NOT end: the person's own API keys (a key is
   the person's credential; one pinned to the workspace reaches nothing while the membership is off
   and works again once they are back), the decks they own and the share links they minted, which
   stay with the workspace.
