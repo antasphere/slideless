@@ -493,17 +493,21 @@ async function memberIdIn(owner: Page, workspaceId: string, email: string): Prom
  * only, so an invitation to the SECOND workspace (the first test of this
  * file) is one they can accept while signed in. Only the Accept click
  * accepts: `?accept=1` does not, and a session-storage mark written for
- * ANOTHER invitation does not either. The invitee is removed from the second
- * workspace at the end, so the projects that run after find them where smoke
- * left them.
+ * ANOTHER invitation does not either.
+ *
+ * The instance allows ten invitation lookups and acceptances an hour per
+ * address (the `inv-accept` bucket) and the suite's other projects spend
+ * seven: this test spends two (one page load, one acceptance), and the test
+ * after it, which removes the person this one brought in, spends none.
  */
 test('an invitation link never accepts by itself', async ({ page, browser }) => {
   await signInAsOwner(page);
   const secondId = await secondWorkspaceId(page);
 
+  // As an ADMIN, so the removal below has a role to take away.
   const invite = await page.request.post('/api/v1/invitations', {
     headers: { 'x-workspace-id': secondId },
-    data: { email: INVITEE.email, role: 'member' }
+    data: { email: INVITEE.email, role: 'admin' }
   });
   expect(invite.status()).toBe(201);
   const token = new URL((await invite.json()).acceptUrl).pathname.split('/invite/')[1]!;
@@ -522,22 +526,14 @@ test('an invitation link never accepts by itself', async ({ page, browser }) => 
     });
     const acceptButton = invitee.getByRole('button', { name: 'Accept invitation' });
 
-    await test.step('?accept=1 in the address: the page stays on the invitation, nothing is posted', async () => {
-      await invitee.goto(`/invite/${token}?accept=1`);
-      await expect(acceptButton).toBeVisible({ timeout: 20_000 });
-      await invitee.waitForLoadState('networkidle');
-      expect(new URL(invitee.url()).pathname).toBe(`/invite/${token}`);
-      expect(accepts).toHaveLength(0);
-    });
-
-    await test.step('a mark written for ANOTHER invitation, then a reload: still nothing posted', async () => {
+    await test.step('?accept=1 in the address and a mark for ANOTHER invitation: nothing is posted', async () => {
       await invitee.evaluate(
         (until) => {
           sessionStorage.setItem('platform.inviteAccept.other', String(until));
         },
         Date.now() + 5 * 60 * 1000
       );
-      await invitee.reload();
+      await invitee.goto(`/invite/${token}?accept=1`);
       await expect(acceptButton).toBeVisible({ timeout: 20_000 });
       await invitee.waitForLoadState('networkidle');
       expect(new URL(invitee.url()).pathname).toBe(`/invite/${token}`);
@@ -558,73 +554,38 @@ test('an invitation link never accepts by itself', async ({ page, browser }) => 
     });
   } finally {
     await context.close();
-    // Clean up: the invitee leaves the second workspace (or the open invitation goes).
-    const memberId = await memberIdIn(page, secondId, INVITEE.email);
-    if (memberId) {
-      const removed = await page.request.post(`/api/v1/members/${memberId}/remove`, {
-        headers: { 'x-workspace-id': secondId }
-      });
-      expect(removed.status()).toBe(200);
-    } else {
-      const listed = await page.request.get('/api/v1/invitations?limit=100', {
-        headers: { 'x-workspace-id': secondId }
-      });
-      const open = ((await listed.json()).invitations ?? []).find(
-        (i: { email: string }) => i.email === INVITEE.email
-      );
-      if (open) {
-        await page.request.delete(`/api/v1/invitations/${open.id}`, {
-          headers: { 'x-workspace-id': secondId }
-        });
-      }
-    }
   }
 });
 
 /**
  * PRDCT-2816: the owner removes a member from the Members page. The person is
- * made by the test itself, in the SECOND workspace (invited as an admin
- * through the API, accepted in a clean context), so the first workspace the
- * later projects walk keeps its roster. The removed row stays on the page,
- * Inactive, at the member role.
+ * the suite's INVITEE, an admin of the SECOND workspace since the test above,
+ * so the first workspace the later projects walk keeps its roster and the
+ * invitee is back where smoke left them: a member of the first workspace
+ * only. The removed row stays on the page, Inactive, at the member role.
  */
-test('a member is removed from the workspace from the Members page', async ({ page, browser }) => {
-  const LEAVER = {
-    name: 'Leaving Admin',
-    email: 'leaver-e2e@example.com',
-    password: 'leaver-password-123'
-  };
+test('a member is removed from the workspace from the Members page', async ({ page }) => {
   await signInAsOwner(page);
   const secondId = await secondWorkspaceId(page);
-
-  await test.step('the person is invited as an admin and accepts through the API', async () => {
-    const invite = await page.request.post('/api/v1/invitations', {
-      headers: { 'x-workspace-id': secondId },
-      data: { email: LEAVER.email, role: 'admin' }
-    });
-    expect(invite.status()).toBe(201);
-    const token = new URL((await invite.json()).acceptUrl).pathname.split('/invite/')[1];
-    const clean = await browser.newContext();
-    const accepted = await clean.request.post('/api/v1/invitations/accept', {
-      data: { token, name: LEAVER.name, password: LEAVER.password }
-    });
-    expect(accepted.status()).toBe(200);
-    await clean.close();
-  });
+  expect(
+    await memberIdIn(page, secondId, INVITEE.email),
+    'the test above leaves the invitee in the second workspace'
+  ).toBeTruthy();
+  const email = new RegExp(INVITEE.email.replace(/\./g, '\\.'));
 
   await test.step('the Members page of the second workspace lists them, active, as an admin', async () => {
     await page.evaluate((id) => localStorage.setItem('platform.workspaceId', id), secondId);
     await page.goto('/members');
     await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('workspace-switcher')).toContainText(SECOND);
-    const row = page.getByRole('row', { name: new RegExp(LEAVER.email.replace(/\./g, '\\.')) });
+    const row = page.getByRole('row', { name: email });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Admin');
     await expect(row).toContainText('Active');
   });
 
   await test.step('Remove from workspace: the dialog, the confirmation, the toast', async () => {
-    const row = page.getByRole('row', { name: new RegExp(LEAVER.email.replace(/\./g, '\\.')) });
+    const row = page.getByRole('row', { name: email });
     await row.getByRole('button', { name: 'Open menu' }).click();
     await page.getByRole('menuitem', { name: 'Remove from workspace' }).click();
     const dialog = page.getByRole('dialog', { name: 'Remove from the workspace?' });
@@ -636,17 +597,13 @@ test('a member is removed from the workspace from the Members page', async ({ pa
     );
     await dialog.getByRole('button', { name: 'Remove from workspace' }).click();
     expect((await removed).status()).toBe(200);
-    await expect(page.getByText(`${LEAVER.email} was removed from the workspace`)).toBeVisible();
+    await expect(page.getByText(`${INVITEE.email} was removed from the workspace`)).toBeVisible();
   });
 
   await test.step('the row reads Inactive, at the role Member', async () => {
-    const row = page.getByRole('row', { name: new RegExp(LEAVER.email.replace(/\./g, '\\.')) });
+    const row = page.getByRole('row', { name: email });
     await expect(row).toContainText('Inactive');
     await expect(row).toContainText('Member');
     await expect(row).not.toContainText('Admin');
   });
-
-  // Nothing to put back: the person exists only in the second workspace,
-  // where they now stay removed; the page's workspace choice lives in this
-  // test's own browser context.
 });
