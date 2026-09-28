@@ -1783,3 +1783,9 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   ten invitation calls an hour the instance allows, so a test that opens a real invitation starves
   the tests after it. `page.route` on the lookup and the accept lets the page run its own logic
   against answers the test gives; what is tested is the page, which is what had no test.
+- **"Flaky" is a claim, and a comparison settles it.** One test of the hub's team list went red in
+  the lane's full integration runs and green alone. The lane touches the file that test exercises, so
+  "older than this lane" was not known. Twelve runs alone on a clean `dev` and twelve on the lane's
+  head were all green; six runs each beside the same load on the machine were red on BOTH (8 failed
+  tests on `dev`, 7 on the head). The test counts reads inside a 250 ms window and fails when the
+  machine is busy, whatever the branch. Run the comparison before writing the word in a pull request.
