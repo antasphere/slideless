@@ -22,6 +22,7 @@ import { hubConfig, type ToolEnv } from '../env.js';
 import type { Logger } from '../logger.js';
 import type { Auth } from '../identity/index.js';
 import { demoSessionAuthRefusal } from '../identity/index.js';
+import { DemoPassService } from '../identity/demo-pass.js';
 import type { PlatformRegistry } from '../platform/index.js';
 import type {
   ApiContext,
@@ -572,20 +573,51 @@ export function createApiApp<
   // the library sees none. A live pass's session is a visit: the library
   // paths that would leave a credential, a grant or an account change behind
   // it are refused here (identity/demo-pass-rules.ts
-  // `DEMO_SESSION_REFUSED_AUTH_PATHS`).
+  // `DEMO_SESSION_REFUSED_AUTH_PATHS`). And the library's own session deletes
+  // (a pass session's sign-out, a person's own revoke of one) delete the
+  // session row only: those sessions are ended the pass's way first
+  // (`endSessions`), so their OAuth tokens and link rows go with them.
   if (demoSignIn) {
     const judge = demoSessionJudge(db);
+    const demoPassService = new DemoPassService(db);
     api.use('/auth/*', async (c, next) => {
       if (!c.req.header('cookie')) return next();
       const verdict = await judge(c.req.raw.headers);
+      const authPath = c.req.path.startsWith(AUTH_MOUNT) ? c.req.path.slice(AUTH_MOUNT.length) : c.req.path;
       if (verdict && verdict !== 'ended') {
-        const authPath = c.req.path.startsWith(AUTH_MOUNT) ? c.req.path.slice(AUTH_MOUNT.length) : c.req.path;
         if (demoSessionAuthRefusal(authPath)) {
           return c.json(
             err('demo_session', 'A session opened by a demo link cannot do this: sign in with your password'),
             403
           );
         }
+        // A pass session that signs itself out ends the pass's way; the
+        // library then answers as usual.
+        if (authPath === '/sign-out') await demoPassService.endSessions([verdict.sessionId]);
+      } else if (
+        authPath === '/revoke-session' ||
+        authPath === '/revoke-sessions' ||
+        authPath === '/revoke-other-sessions'
+      ) {
+        // A person's OWN session revoking a pass session (a pass session is
+        // refused these paths above). The body is read from a clone: the
+        // library gets the request untouched. The exact path compare loses
+        // nothing: the library's router answers 404 to any other spelling.
+        let bodyToken: string | null = null;
+        try {
+          const body: unknown = await c.req.raw.clone().json();
+          if (body && typeof body === 'object' && typeof (body as { token?: unknown }).token === 'string') {
+            bodyToken = (body as { token: string }).token;
+          }
+        } catch {
+          // No JSON body: nothing names a session (the library answers as it does).
+        }
+        const passSessions = await demoPassService.passSessionsRevokedBy(
+          authPath,
+          c.req.raw.headers,
+          bodyToken
+        );
+        if (passSessions.length > 0) await demoPassService.endSessions(passSessions);
       }
       return next();
     });

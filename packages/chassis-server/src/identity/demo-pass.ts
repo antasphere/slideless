@@ -286,6 +286,63 @@ export class DemoPassService {
     return 'ended';
   }
 
+  /**
+   * Pass sessions a revoke by this cookie's session is about to delete (the library's revoke-session(s) paths).
+   *
+   * The library's own `/revoke-session`, `/revoke-sessions` and
+   * `/revoke-other-sessions` delete session rows and nothing else: a pass
+   * session a person's own session revokes would leave its OAuth tokens
+   * (their link to it set null, out of `endSessions`' reach) and its
+   * `demo_pass_sessions` row behind. The `/auth/*` middleware asks this first
+   * and ends those sessions the pass's way before the library runs. The
+   * caller's session is found from the cookie's token part exactly as
+   * `judgeSession` does; a pass session never gets here (the middleware
+   * refuses it these paths). `/revoke-session`: the session whose token is
+   * the body's, the caller's own person's, and a pass's; `/revoke-sessions`:
+   * every pass session of that person; `/revoke-other-sessions`: the same,
+   * the caller's own session excepted. Any other path, or no session: none.
+   */
+  async passSessionsRevokedBy(
+    authPath: string,
+    headers: Headers,
+    bodyToken: string | null
+  ): Promise<string[]> {
+    if (
+      authPath !== '/revoke-session' &&
+      authPath !== '/revoke-sessions' &&
+      authPath !== '/revoke-other-sessions'
+    ) {
+      return [];
+    }
+    const cookie = getSessionCookie(headers);
+    if (!cookie) return [];
+    const token = cookie.split('.')[0];
+    if (!token) return [];
+    const [caller] = await this.db
+      .select({ id: sessionTable.id, userId: sessionTable.userId })
+      .from(sessionTable)
+      .where(eq(sessionTable.token, token))
+      .limit(1);
+    if (!caller) return [];
+    if (authPath === '/revoke-session') {
+      if (!bodyToken) return [];
+      const rows = await this.db
+        .select({ id: sessionTable.id })
+        .from(sessionTable)
+        .innerJoin(demoPassSessions, eq(demoPassSessions.sessionId, sessionTable.id))
+        .where(and(eq(sessionTable.token, bodyToken), eq(sessionTable.userId, caller.userId)))
+        .limit(1);
+      return rows.map((r) => r.id);
+    }
+    const rows = await this.db
+      .select({ id: sessionTable.id })
+      .from(sessionTable)
+      .innerJoin(demoPassSessions, eq(demoPassSessions.sessionId, sessionTable.id))
+      .where(eq(sessionTable.userId, caller.userId));
+    const ids = rows.map((r) => r.id);
+    return authPath === '/revoke-other-sessions' ? ids.filter((id) => id !== caller.id) : ids;
+  }
+
   /** The ids of the sessions a pass opened (its `demo_pass_sessions` rows). */
   private async sessionIdsOf(passId: string, conn: DbConn): Promise<string[]> {
     const rows = await conn

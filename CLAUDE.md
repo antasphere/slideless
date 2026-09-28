@@ -263,7 +263,8 @@ deploys) + `dev` (day-to-day work).
   `DEMO_SESSION_REFUSED_AUTH_PATHS` (the OAuth authorize included: a pass lands in no tool here),
   `POST /api-keys`, `POST /workspaces` and the invitation accept refuse it, a pass's end (`endSessions`) takes the OAuth tokens and the
   `demo_pass_sessions` rows tied to its sessions BEFORE the sessions, and the redeem judges the
-  mint's refusals again. A new sign-in-library plugin is reviewed against that list. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
+  mint's refusals again; a pass session's sign-out and a person's own revoke of one end it the
+  pass's way (`passSessionsRevokedBy`). A new sign-in-library plugin is reviewed against that list. Never on cloud: on `EDITION=cloud` the chassis registers no demo route and mints
   nothing, whatever the switch says (the hub owns identity).
 - **Cloud federation is USER-scoped and live (ADR 019, internal/federation.md "Live reconcile +
   grant")**: every hub read between logins is `GET <hub>/orgs` AS THE USER with that user's own

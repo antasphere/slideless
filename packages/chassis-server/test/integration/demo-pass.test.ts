@@ -941,4 +941,45 @@ describe('a demo link’s session leaves nothing behind', () => {
     expect(out.status).toBe(200);
     expect((await send(app, 'GET', '/me', { cookie })).status).toBe(401);
   });
+
+  /** The session rows and the link rows a pass opened. */
+  const leftOf = async (passId: string) => ({
+    links: (await app.db.pool.query(`SELECT session_id FROM demo_pass_sessions WHERE pass_id = $1`, [passId]))
+      .rows.length,
+    sessions: (
+      await app.db.pool.query(
+        `SELECT s.id FROM session s JOIN demo_pass_sessions d ON d.session_id = s.id WHERE d.pass_id = $1`,
+        [passId]
+      )
+    ).rows.length
+  });
+
+  it('w. a pass’s session that signs itself out ends the pass’s way: no link row and no session left', async () => {
+    await addMember('leaver', 'leaver@example.com', { signIn: false });
+    const minted = await mint(actors.owner!, { email: 'leaver@example.com' });
+    const cookie = extractCookie(await redeem(minted.secret));
+    expect(await leftOf(minted.id)).toEqual({ links: 1, sessions: 1 });
+
+    expect((await send(app, 'POST', '/auth/sign-out', { cookie }, {})).status).toBe(200);
+
+    expect(await leftOf(minted.id)).toEqual({ links: 0, sessions: 0 });
+  });
+
+  it('w2. the person’s own session revoking a pass’s session ends it the pass’s way: no link row left', async () => {
+    const actor = await addMember('revoker', 'revoker@example.com');
+    const minted = await mint(actors.owner!, { email: actor.email });
+    const cookie = extractCookie(await redeem(minted.secret));
+    const { rows } = await app.db.pool.query(
+      `SELECT s.token FROM session s JOIN demo_pass_sessions d ON d.session_id = s.id WHERE d.pass_id = $1`,
+      [minted.id]
+    );
+    expect(rows).toHaveLength(1);
+
+    const revoked = await send(app, 'POST', '/auth/revoke-session', actor, { token: rows[0].token });
+    expect(revoked.status).toBe(200);
+
+    expect(await leftOf(minted.id)).toEqual({ links: 0, sessions: 0 });
+    expect((await send(app, 'GET', '/me', { cookie })).status).toBe(401);
+    expect((await send(app, 'GET', '/me', actor)).status).toBe(200);
+  });
 });
