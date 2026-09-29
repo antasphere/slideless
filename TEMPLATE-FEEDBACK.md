@@ -1128,6 +1128,8 @@ calls for Romain, not template bugs. Nothing here is silently fixed.
 
 ## 29. The billing rail's phase 1 is chassis code to re-copy (PRDCT-2626)
 
+**Taken** by the template on 22 September 2026 (PRDCT-2648, lane H after the billing-rail wave), the fixes of lane D with it; the template's `LESSONS.md` carries both as "as Slideless learned it".
+
 The chassis packages gained the billing rail's declaration layer and gate on 2026-09-22 (the
 pay-per-use billing rail spec, §7): `chassis-contract/src/entitlements.ts` (the route declaration
 registry, the tier enum mirrored from the hub, the `entitlements` shape `GET /instance` shows, the
@@ -1152,6 +1154,8 @@ slot must return `BodyCap` objects, not hono middlewares.
 
 ## 30. The hub–tool wire check is chassis code to re-copy (PRDCT-2677, for PRDCT-2667)
 
+**Taken** by the template on 29 September 2026 (PRDCT-2862, the re-copy of the chassis at slideless@7714374): `wire.ts`, the `wire:check` script and the `hub-wire` CI job.
+
 The chassis's copies of the hub's messages drifted within a day (the check's third reason,
 `unpriceable`, read as an outage). The guard is now structural and in CI, and the tool template's
 re-copy (PRDCT-2667) must carry all of it: `packages/chassis-contract/src/wire.ts` (the hub's
@@ -1169,6 +1173,8 @@ contents:read on `antasphere/hub`), or it fails at the token mint. The template'
 
 ## 31. Count limits and conditional features are chassis code to re-copy (PRDCT-2702, for PRDCT-2667)
 
+**Taken** by the template on 29 September 2026 (PRDCT-2862, the same re-copy; PRDCT-2863 for the placeholder tool's own declarations).
+
 Phase 3 of the billing rail moved the chassis again, and the tool template's re-copy (PRDCT-2667,
 out of that wave) must carry it: `packages/chassis-contract/src/entitlements.ts` (`EntitlementRequest.body()`,
 `LimitDeclaration.value` async and nullable, `FeatureDeclaration { key, when }`, an entry-level
@@ -1178,10 +1184,12 @@ out of that wave) must carry it: `packages/chassis-contract/src/entitlements.ts`
 either hook), the slot guard reading `featureKeyOf`, and the unit cases under "a count limit and a
 conditional feature" in `test/unit/entitlement-gate.test.ts`. A template tool then declares a count
 limit as `{ key, value: async (ctx) => count + 1 | null }` and a premium option on a common route as
-`feature: { key, when }`. Nothing else in the chassis changed; `chassis-source.json` on the template
-still points at the phase 2 copy.
+`feature: { key, when }`. Nothing else in the chassis changed. (`chassis-source.json` on the template
+names slideless@7714374 since that re-copy.)
 
 ## 32. An optional external worker (PRDCT-2725; the Slideless renderer is the first case)
+
+**Taken as a pattern, not lifted** by the template on 29 September 2026 (PRDCT-2865): its `LESSONS.md` entry "An optional external worker, the pattern not yet lifted" carries Romain's ruling.
 
 Slideless needed a process the app image must not carry (a headless Chromium: 1.1 GB more image
 for a nice-to-have) that opens untrusted content and must therefore hold nothing of the app. The
