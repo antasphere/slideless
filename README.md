@@ -83,7 +83,7 @@ Fresh VPS? There is a one-liner installer — see [docs/self-hosting/install.md]
   can push new versions of one deck) and reviewer annotations captured
   straight from annotator share links into the owner's inbox.
 - **Agents as first-class users.** The `slideless` CLI
-  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 24 `slideless_`
+  ([docs/agents/cli.md](docs/agents/cli.md)), the `/mcp` endpoint with 41 `slideless_`
   tools ([docs/agents/mcp-connector.md](docs/agents/mcp-connector.md)), scoped `slk_` API
   keys, and a browserless email-OTP → API-key login. Start at
   [docs/getting-started/connect-an-agent.md](docs/getting-started/connect-an-agent.md).
@@ -104,7 +104,13 @@ here:
   service. A later release may let self-hosted CLIs remix the central
   catalog through its public read API; nothing in this repo depends on it.
 - **No billing or plans.** Entitlements default to allow-all with
-  instance-level caps (`MAX_FILE_SIZE_MB`, API quotas).
+  instance-level caps (`MAX_FILE_SIZE_MB`, API quotas): a self-hosted
+  instance meters nothing and no usage event leaves it. On the cloud edition
+  every metered action (the prices the `entitlements` slot declares, shown on
+  `GET /instance`) is posted to the hub under the organization's account, a
+  limit or a feature the account's plan does not allow answers
+  `403 plan_required` with the upgrade link, and an action the balance does
+  not cover answers `402 entitlement_denied` with the top-up link.
 - **No unified accounts.** The Antasphere cloud edition (hosted instances,
   central accounts) runs this same code with `EDITION=cloud`; the default
   `oss` edition has no hub surface and never contacts it.
@@ -143,6 +149,8 @@ here:
 pnpm install
 pnpm turbo build          # db → dashboard (into server public/) → server
 pnpm turbo lint typecheck test
+pnpm format:check                            # CI runs it too; `pnpm format` fixes
+pnpm --filter @slideless/server drift:check  # the auth-schema drift guard
 # Local Postgres: uncomment the db `ports:` mapping in docker-compose.yml first
 # (loopback-only), then:
 docker compose up -d db

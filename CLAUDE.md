@@ -20,7 +20,7 @@ deploys) + `dev` (day-to-day work).
   (`packages/contract/src/chassis.ts`), the `identity` slot of `slidelessTool`
   (`apps/server/src/tool.ts`; the deck-named sentences of the chassis sit in its `copy` slot) and
   `cliIdentity(IDENTITY)` in `packages/cli/src/cli.ts`. No `packages/chassis-*` file names the tool
-  (`git grep -i slideless -- 'packages/chassis-*'` returns nothing), and
+  (`git grep -il slideless -- ':(glob)packages/chassis-*/**'` returns nothing), and
   `apps/server/test/integration/identity-pins.test.ts` pins every visible value by its literal.
   What cannot read it at run time (package names, the `bin` key, the image reference, the Postgres
   role, env var names, the MCP tool-name literals) is listed in the project OS,
@@ -399,7 +399,8 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   gate, the idempotency claim and the audit middleware, before every handler) enforces it for the
   dashboard, the CLI and the MCP tools alike and emits the usage event after a 2xx; no handler checks
   or emits by hand, and `git grep -i 'files.maxBytes\|presentations.commit\|slideless' --
-'packages/chassis-*/src'` stays empty. Cloud order: feature → limit (403 `plan_required` + `details:
+':(glob)packages/chassis-*/src/**'` stays empty (a pathspec without `:(glob)` matches no file and
+  proves nothing). Cloud order: feature → limit (403 `plan_required` + `details:
 { key, plan, requiredPlan, upgradeUrl }`, the hub's organization page) → the credit check; oss:
   the credit check first (413 `entitlement_denied`, today's message byte for byte), then the
   `oss` value, and NO event (unmetered by construction). The event's `userId` is the hub's `sub`,
@@ -436,10 +437,11 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   credential has resolved (a scope-less key now meets the scope gate's 403 before the cap's 413). The upload action
   is metered in exact bytes and priced per mebibyte through `per` on the action (`5 credits per
 1,048,576 bytes`, PRDCT-2627), the boot refusing a route whose meter unit differs from its
-  action's. Phase 1: every account is `free`, the free upload cap IS `MAX_FILE_SIZE_MB` by
-  construction, credits are a no-op; the seed values are data to review before phase 2. The
-  federation drill's seventh leg (`scripts/federation-drill.sh`, Phase 8) is the regression test
-  of the pair: one metered action per surface read back from the hub's `usage_events`.
+  action's. The declared values are seeds: the hub's price book and plan rows win once staff has
+  seeded them, and the plan values themselves are stated below (phases 2 and 3). The federation
+  drill's Phase 8 (`scripts/federation-drill.sh`, its billing legs) is the regression test of the
+  pair: one metered action per surface read back from the hub's `usage_events`, then the price and
+  the plan refusals on a real hub.
 - **The hub owns the wire, the chassis's copies are checked against it (PRDCT-2677)**: the shapes the
   tools exchange with the hub live in the hub's contract and are published as its wire snapshot
   (`packages/contract/wire/hub-tool-messages.json` of the hub); `packages/chassis-contract/src/entitlements.ts`
@@ -606,6 +608,16 @@ pnpm --filter @slideless/server drift:check  # part 3 — the auth-schema drift 
 pnpm turbo test:integration                  # real Postgres via testcontainers; needs Docker
 cd apps/server && pnpm preview:emails        # render every email to a local review wall
 ```
+
+**A gate run that is a PROOF runs with `--force`**: `pnpm turbo lint typecheck test build --force` and
+`pnpm turbo test:integration --force`. Turbo's local cache is keyed on file content and shared by every
+checkout and worktree on a machine, so a green run whose `Cached:` line is not `0 cached` replayed
+another tree's result and proves nothing about this one. Read the `Cached:` line before you believe a
+green run. A lane's gates, a verifier's baseline and any figure written in a report are proofs. The
+same trap has a second form: `@slideless/contract`, `@slideless/db` and the chassis packages are
+consumed through their `dist` folder, so a test run after a source edit there reads the OLD code until
+the package is rebuilt. Rebuild before you believe a green test, above all when the edit was meant to
+turn it red. CI starts from an empty cache, so its commands carry no flag.
 
 The mail wall (`apps/server/scripts/previewEmails.ts`) is the same wall as the hub's and the
 sibling templates' — one family, so a change to one is a change to consider on the others.
