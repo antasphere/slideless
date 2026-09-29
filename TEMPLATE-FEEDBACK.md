@@ -1198,3 +1198,17 @@ its whole configuration, a Debian image with the worker's runtime and nothing el
 ruling: not generalised now; lift it when a second tool (or a `labs/services/` renderer shared by
 several) needs it, with the compose profile, the CI job that proves the worker's precondition in
 the image, and the release step that publishes the worker image beside the app's.
+
+## 33. A count hook's null ends the gate's judgement (PRDCT-2900, the template's entry of 29 September 2026)
+
+The template's own entry (a guest at an empty balance meets the credit check before the handler's
+guest refusal) is fixed here at the source, and the template takes it with its next re-copy of the
+chassis: `packages/chassis-server/src/entitlements/gate.ts` reads a count limit's value ONCE, before
+the plan, and on a metered account a `null` (or a throw) returns to the route with nothing judged
+(no feature, no plan, no credit check) and nothing metered, so a caller the handler refuses reads
+the handler's answer and never the organization's balance. The proof is
+`packages/chassis-server/test/integration/entitlements-null-hook.test.ts`, which carries its own tool
+(a metered create closed to guests) and runs in the chassis package only. A template helper that
+primes the plan with a request whose hook answers null stops priming: the template's prime is
+already an upload declared over the cap, which is what Slideless's `plan-limits.test.ts` now uses.
+The template's CLAUDE.md sentence "the plan gate judges nothing" can then say "the handler answers".

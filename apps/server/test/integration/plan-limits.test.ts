@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { FakeHub, type HubUserFixture } from '@antasphere/chassis-server/testing';
@@ -17,8 +17,9 @@ import * as sso from './sso-helpers.js';
  *
  * The plan read is stale-while-revalidate (PRDCT-2633): with a zero TTL a
  * change at the hub is served on the request AFTER the one that notices it,
- * so `setPlan` primes the cache with a request that changes nothing (a mint
- * on a deck that does not exist: 404, no event) and waits for the refresh.
+ * so `setPlan` primes the cache with a request that changes nothing (an
+ * upload declared over the cap: refused on every plan, nothing stored or
+ * metered) and waits for the refresh.
  */
 
 const OPERATOR = { email: 'operator@planlimits.test', name: 'Operator', password: 'operator-plan-pass-1' };
@@ -167,19 +168,31 @@ async function expectNothingPosted(org: string, actionKey: string, posted: numbe
 
 /**
  * Change the account's plan at the hub and make the instance read it: one
- * request that reads the plan and changes nothing (a mint on a deck that
- * does not exist answers 404 and emits nothing), then the refresh it
- * started behind it.
+ * request that reads the plan and changes nothing (an upload declared over
+ * the cap, refused on every plan), then the refresh it started behind it.
  */
 async function setPlan(person: Person, plan: 'free' | 'pro'): Promise<void> {
   hub.setEntitlements(person.org, { plan });
   const reads = () => hub.entitlementsRequests.filter((r) => r.accountRef === person.org).length;
   const before = reads();
-  const prime = await app.app.request(
-    `/api/v1/presentations/${randomUUID()}/tokens`,
-    json({ name: 'prime' }, { authorization: `Bearer ${person.key}` })
-  );
-  expect(prime.status).toBe(404);
+  // The body is dropped, nothing is stored or metered (the tool template's
+  // prime). A count hook's null ends the gate's judgement before the plan is read
+  // (PRDCT-2900), so a mint on no deck would never prime, and a helper must
+  // not lean on a refusal the suite pins elsewhere.
+  const prime = await app.app.request(`/api/v1/files?name=${encodeURIComponent('prime.txt')}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${person.key}`,
+      'content-type': 'text/plain',
+      'content-length': String(2 * 1024 * 1024 * 1024),
+      'x-forwarded-for': sso.nextIp()
+    },
+    body: 'prime'
+  });
+  expect(prime.status, await prime.clone().text()).toBe(403);
+  const refused = await readJson(prime);
+  expect(refused.error.code).toBe('plan_required');
+  expect(refused.error.details.key).toBe('files.maxBytes');
   await until(reads, (n) => n > before);
   await sleep(200);
 }
@@ -400,6 +413,12 @@ describe('the cap never says more than the handler would (ADR 013)', () => {
     const res = await mint(member, seatsDeck2, { name: 'probe' });
     expect(res.status, await res.clone().text()).toBe(404);
     expect(await liveShareLinks(seatsOwner, seatsDeck2)).toBe(10);
+    // With a password the route's feature applies too: a caller the count
+    // hook answers null for still reads the handler's 404, never the free
+    // plan's deck.password refusal (PRDCT-2900: a null ends the gate's
+    // judgement, the feature and the plan included).
+    const locked = await mint(member, seatsDeck2, { name: 'probe-pw', password: 'hunter22' });
+    expect(locked.status, await locked.clone().text()).toBe(404);
   });
 
   it('a plain member inviting an outsider on their own deck at the cap reads the handler’s refusal, never the cap', async () => {
