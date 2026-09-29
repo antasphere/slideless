@@ -984,11 +984,12 @@ export const presentationDuplicateRoute = createRoute({
 // tool's `entitlements` slot (apps/server/src/tool.ts), shown on
 // GET /instance. A route absent from this list is free and unmetered.
 //
-// Phase 1 prices nothing yet (credits are a no-op); every metered action
-// lands in the hub per user and per organization, which is what the data
-// compounds on before a price exists. The anonymous surfaces (a form
-// response through a share link) are NOT wired: no view is priced, and the
-// owner attribution of `forms.response` waits for its `actor` hook.
+// Every metered action lands in the hub per user and per organization, and
+// on a metered account the hub's credit check runs before the handler
+// (phase 2, PRDCT-2664). The two anonymous surfaces, a form response and a
+// form upload through a share link, are wired below with the owner's
+// `actor` hook (PRDCT-2634): the deck's owner pays, the viewer is never
+// identified. No view is priced.
 export const DECK_ACTIONS = {
   commit: 'presentations.commit',
   upload: 'files.upload',

@@ -1,54 +1,60 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it } from 'vitest';
+import type { McpToolContext } from '@antasphere/chassis-server/mcp';
+import { IDENTITY } from '@slideless/contract';
+import { registerSlidelessTools } from '../../src/mcp/tools.js';
 
 /**
  * PRDCT-2309: docs/agents/mcp-connector.md is what an MCP host's operator
  * reads to know which tools an instance serves. Its table must list every
- * tool `registerSlidelessTools` registers, and no other. The registration
- * source is read as text (each tool is one `server.registerTool('name', …)`
- * call), so the check needs no server, no database and no transport, and a
- * tool added or renamed in code fails here by name.
+ * tool `registerSlidelessTools` registers, and no other. Registration is
+ * run against a recording stand-in for the server (a tool is one
+ * `server.registerTool(name, …)` call and touches nothing else at that point),
+ * so the check needs no database and no transport, and a tool added or renamed
+ * in code fails here by name, whether or not its name is a literal.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TOOLS_SRC = resolve(HERE, '../../src/mcp/tools.ts');
+const PREFIX = IDENTITY.mcp.toolPrefix;
 const DOCS = resolve(HERE, '../../../../docs');
 const DOC_PATH = resolve(DOCS, 'agents/mcp-connector.md');
 /** The pages that announce the tool count in prose ("22 `slideless_` tools"). */
 const COUNT_PAGES = ['index.md', 'getting-started/connect-an-agent.md'].map((p) => resolve(DOCS, p));
 
 /**
- * Ten tools of the set are in no tool-side source: the chassis registers
- * `<toolPrefix>whoami` itself (`buildMcpServer`, PRDCT-2531) and, beside it,
- * the eleven PROJECT tools and the two team reads (PRDCT-2577 — a project is a chassis concept, so its
- * tools are the chassis'), all built from a prefix at run time. They are
- * named here by their literals, the names the docs carry.
+ * Fourteen tools of the set are not registered by `registerSlidelessTools`:
+ * the chassis registers `<toolPrefix>whoami` itself (`buildMcpServer`,
+ * PRDCT-2531) and, beside it, the eleven PROJECT tools (the nine on a project
+ * and its people, plus the two on a team's place on a project) and the two
+ * TEAM reads (PRDCT-2577 — a project and a team are chassis concepts, so their
+ * tools are the chassis'), all built from the prefix at run time. The docs
+ * carry them and the count includes them, so they are added here by name.
  */
 const CHASSIS_REGISTERED = [
-  'slideless_whoami',
-  'slideless_list_projects',
-  'slideless_get_project',
-  'slideless_list_project_members',
-  'slideless_create_project',
-  'slideless_update_project',
-  'slideless_archive_project',
-  'slideless_add_project_member',
-  'slideless_set_project_member_role',
-  'slideless_remove_project_member',
-  'slideless_set_project_team_role',
-  'slideless_remove_project_team',
-  'slideless_list_teams',
-  'slideless_list_team_members'
-];
+  'whoami',
+  'list_projects',
+  'get_project',
+  'list_project_members',
+  'create_project',
+  'update_project',
+  'archive_project',
+  'add_project_member',
+  'set_project_member_role',
+  'remove_project_member',
+  'set_project_team_role',
+  'remove_project_team',
+  'list_teams',
+  'list_team_members'
+].map((name) => `${PREFIX}${name}`);
 
 function registeredTools(): string[] {
-  const src = readFileSync(TOOLS_SRC, 'utf8');
-  return [
-    ...CHASSIS_REGISTERED,
-    ...[...src.matchAll(/registerTool\(\s*'(slideless_[a-z_]+)'/g)].map((m) => m[1]!)
-  ].sort();
+  const names: string[] = [...CHASSIS_REGISTERED];
+  const recorder = { registerTool: (name: string) => names.push(name) } as unknown as McpServer;
+  registerSlidelessTools(recorder, {} as McpToolContext);
+  return names.sort();
 }
 
 function documentedTools(doc: string): string[] {
@@ -60,8 +66,9 @@ describe('docs/agents/mcp-connector.md lists the registered tool set (PRDCT-2309
   const code = registeredTools();
   const documented = documentedTools(doc);
 
-  it('reads a tool set from the source at all', () => {
-    expect(code.length).toBeGreaterThan(10);
+  it('reads a tool set from the registration at all, every name under the one prefix', () => {
+    expect(code.length).toBeGreaterThan(CHASSIS_REGISTERED.length);
+    for (const name of code) expect(name.startsWith(PREFIX), name).toBe(true);
   });
 
   it('documents every registered tool', () => {

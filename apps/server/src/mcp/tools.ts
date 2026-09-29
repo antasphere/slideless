@@ -901,9 +901,9 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
   );
 
   // ── Projects (ADR 026): the deck side ──────────────────────────────────────
-  // A project is a chassis concept (its nine tools are the chassis', registered
-  // before this set); the LINK between a deck and a project, and a project's
-  // BRAND, are the deck domain's. The tiered answer of the API holds through
+  // A project is a chassis concept (its eleven tools and the two team reads
+  // are the chassis', registered before this set); the LINK between a deck
+  // and a project, and a project's BRAND, are the deck domain's. The tiered answer of the API holds through
   // every tool here: a deck or a project the caller cannot read answers not
   // found (404, never 403), then the role refusal, then the archived refusal.
 
