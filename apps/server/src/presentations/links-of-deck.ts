@@ -1,4 +1,6 @@
 import type { EntitlementRequest } from '@antasphere/chassis-contract';
+import { shareTokenCreateSchema } from '@slideless/contract';
+import { deckIdOf } from './member-seats.js';
 import type { DeckDomain } from '../tool.js';
 
 /**
@@ -12,14 +14,18 @@ import type { DeckDomain } from '../tool.js';
  * and a plan refusal must never say more than the handler would). No
  * principal, no domain, or a deck the caller may not write: null, the route
  * answers on its own; a lookup that throws is caught and logged by the gate.
+ * A deck id or a body the route's own schemas refuse is null BEFORE any lookup
+ * (PRDCT-2899): the validator's 400 answers, and a malformed id never reaches
+ * the database.
  */
 export function linksOfDeck(
   getTool: () => DeckDomain | null
 ): (ctx: EntitlementRequest) => Promise<number | null> {
   return async (ctx) => {
     const domain = getTool();
-    const deckId = ctx.params.id;
+    const deckId = deckIdOf(ctx);
     if (!domain || !deckId || !ctx.principal) return null;
+    if (!shareTokenCreateSchema.safeParse(await ctx.body()).success) return null;
     const deck = await domain.presentations.get(ctx.principal.workspaceId, deckId);
     if (!deck || !(await domain.presentations.canWrite(ctx.principal, deck))) return null;
     return (await domain.sharing.countLive(ctx.principal.workspaceId, deckId)) + 1;
