@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -14,12 +14,29 @@ import { describe, expect, it } from 'vitest';
  * Migration 0009 was once hand-stamped a day in the future, sorting 0010 below
  * it; this test would have caught it.
  */
-const journalPath = resolve(dirname(fileURLToPath(import.meta.url)), '../drizzle/meta/_journal.json');
+const drizzleDir = resolve(dirname(fileURLToPath(import.meta.url)), '../drizzle');
+const journalPath = resolve(drizzleDir, 'meta/_journal.json');
 const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
   entries: Array<{ idx: number; when: number; tag: string }>;
 };
 
 describe('drizzle migration journal', () => {
+  it('every journal entry has its .sql file and its snapshot, and every file on disk is in the journal', () => {
+    const tags = journal.entries.map((e) => e.tag);
+    // EVERY .sql file in the folder is a journal entry, with no exception list.
+    const sqlOnDisk = readdirSync(drizzleDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    expect(sqlOnDisk).toEqual(tags.map((t) => `${t}.sql`).sort());
+    const snapshotsOnDisk = readdirSync(resolve(drizzleDir, 'meta'))
+      .filter((f) => f.endsWith('_snapshot.json'))
+      .sort();
+    expect(snapshotsOnDisk).toEqual(tags.map((t) => `${t.slice(0, 4)}_snapshot.json`).sort());
+    // Nothing else lives in the folder: the runner reads the journal only, so a
+    // stray file would be a migration that silently never runs.
+    expect(readdirSync(drizzleDir).sort()).toEqual([...sqlOnDisk, 'meta'].sort());
+  });
+
   it('has strictly increasing `when` timestamps', () => {
     for (let i = 1; i < journal.entries.length; i++) {
       const prev = journal.entries[i - 1]!;

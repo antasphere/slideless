@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -321,9 +321,10 @@ try {
     'PASS: HTTPS, redirect, owner claim, sign-in, upload, deck picture, credential and data persistence.'
   );
 } finally {
-  // Only this script's disposable test project is removed.
+  // Only this script's disposable test project is removed. A failure before the compose file
+  // was written started nothing, and tearing down then would replace that error with its own.
   try {
-    compose('down', '-v', '--remove-orphans');
+    if (existsSync(composeFile)) compose('down', '-v', '--remove-orphans');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
