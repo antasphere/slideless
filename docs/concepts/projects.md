@@ -50,7 +50,7 @@ projects inside that workspace, and who is in them, stay in Slideless.
 
 ## A team as a member
 
-A team of the workspace (a named group of its people) can be a member of a project, and it holds a
+A team of the workspace ([a named group of its people](workspaces.md#a-workspace-holds-teams)) can be a member of a project, and it holds a
 role like a person does. Its members hold that role through the team: add someone to the team and
 they reach the project, remove them from the team and their access through it ends on the next
 request. When a person holds a role of their own and roles through one or more teams, the highest of
