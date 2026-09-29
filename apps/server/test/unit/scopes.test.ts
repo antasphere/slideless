@@ -106,3 +106,52 @@ describe('requiredScopeFor — the default workspace (PRDCT-2815)', () => {
     expect(requiredScopeFor('/api/v1/me/anything', 'PUT')).toBeNull();
   });
 });
+
+describe('requiredScopeFor — the chassis’s project routes, opened by the chassis rules', () => {
+  const PROJECT = '/api/v1/projects/11111111-2222-3333-4444-555555555555';
+
+  it('reads under presentations:read, writes under presentations:write, by exact shape', () => {
+    expect(requiredScopeFor('/api/v1/projects', 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor('/api/v1/projects', 'POST')).toBe('presentations:write');
+    expect(requiredScopeFor(PROJECT, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(PROJECT, 'PATCH')).toBe('presentations:write');
+    expect(requiredScopeFor(`${PROJECT}/archive`, 'POST')).toBe('presentations:write');
+    expect(requiredScopeFor(`${PROJECT}/members`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${PROJECT}/members`, 'POST')).toBe('presentations:write');
+    expect(requiredScopeFor(`${PROJECT}/members/usr_1`, 'DELETE')).toBe('presentations:write');
+  });
+
+  it('the brand is the one tool shape under /projects, by exact method', () => {
+    expect(requiredScopeFor(`${PROJECT}/brand`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${PROJECT}/brand`, 'PUT')).toBe('presentations:write');
+    expect(requiredScopeFor(`${PROJECT}/brand`, 'DELETE')).toBe('presentations:write');
+    expect(requiredScopeFor(`${PROJECT}/brand`, 'POST')).toBeNull();
+  });
+
+  it('an unknown shape under /projects stays fail-closed', () => {
+    expect(requiredScopeFor(`${PROJECT}/presentations`, 'GET')).toBeNull();
+    expect(requiredScopeFor(PROJECT, 'DELETE')).toBeNull();
+  });
+});
+
+describe('requiredScopeFor — the admin surfaces stay closed to machines', () => {
+  // A one-line rule opening one of these hands an owner's read key the audit log, the key list or
+  // a mint: none is listed, for any method (the tool template's pin, PRDCT-2901).
+  const ADMIN = [
+    '/api/v1/audit',
+    '/api/v1/api-keys',
+    '/api/v1/api-keys/11111111-2222-3333-4444-555555555555',
+    '/api/v1/demo/passes',
+    '/api/v1/invitations',
+    '/api/v1/members/11111111-2222-3333-4444-555555555555/reset-link',
+    '/api/v1/members/11111111-2222-3333-4444-555555555555/change-email-link',
+    '/api/v1/admin/break-glass/claim-ownership'
+  ];
+  it('every admin path is unlisted for every method', () => {
+    for (const path of ADMIN) {
+      for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+        expect(requiredScopeFor(path, method), `${method} ${path}`).toBeNull();
+      }
+    }
+  });
+});

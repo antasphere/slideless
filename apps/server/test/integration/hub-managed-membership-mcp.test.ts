@@ -114,7 +114,55 @@ describe('MCP is unaffected (zero MCP code changes)', () => {
   it('the tool surface exposes NO workspace-membership tool — only the two sanctioned LOCAL member surfaces', async () => {
     const result = await mcp('tools/list');
     const names = result.tools.map((t: { name: string }) => t.name);
-    expect(names.length).toBeGreaterThan(0);
+    // The whole set, sorted: the two chassis tools, then whoami, the chassis's
+    // project and team tools, the deck tools (the tool template's pin,
+    // PRDCT-2901). A tool that appears or disappears on a projected workspace
+    // fails here by name.
+    expect([...names].sort()).toEqual([
+      'get_me',
+      'list_files',
+      'slideless_add_project_member',
+      'slideless_add_share_token',
+      'slideless_archive_project',
+      'slideless_create_project',
+      'slideless_delete_presentation',
+      'slideless_download_version',
+      'slideless_get_agent_doc',
+      'slideless_get_default_reference',
+      'slideless_get_presentation',
+      'slideless_get_project',
+      'slideless_get_project_brand',
+      'slideless_get_version',
+      'slideless_invite_collaborator',
+      'slideless_link_presentation_to_project',
+      'slideless_list_annotations',
+      'slideless_list_collaborators',
+      'slideless_list_form_responses',
+      'slideless_list_presentations',
+      'slideless_list_project_members',
+      'slideless_list_projects',
+      'slideless_list_references',
+      'slideless_list_share_tokens',
+      'slideless_list_team_members',
+      'slideless_list_teams',
+      'slideless_list_token_views',
+      'slideless_list_versions',
+      'slideless_remove_project_member',
+      'slideless_remove_project_team',
+      'slideless_set_project_brand',
+      'slideless_set_project_member_role',
+      'slideless_set_project_team_role',
+      'slideless_set_token_version_mode',
+      'slideless_share_via_email',
+      'slideless_uninvite_collaborator',
+      'slideless_unlink_presentation_from_project',
+      'slideless_unshare_presentation',
+      'slideless_update_presentation',
+      'slideless_update_project',
+      'slideless_upload_html_presentation',
+      'slideless_upload_presentation_files',
+      'slideless_whoami'
+    ]);
     // Two surfaces name a member, and both are LOCAL on a projected workspace,
     // so neither is under the hub-managed gate: the per-deck collaborator pair
     // (ADR 013) and PROJECT membership (PRDCT-2577 — a project is a subgroup of
