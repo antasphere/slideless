@@ -41,7 +41,8 @@ push to `prod` publishes `next` and `sha-<commit>` for early testing.
 
 ## Rollback
 
-Take a backup before upgrading (`./scripts/backup.sh`). Rolling the image
+Take a backup before upgrading (`BACKUP_PASSPHRASE=… ./scripts/backup.sh`; the
+script refuses to run without the passphrase, [Backup and restore](../operations/backup-restore.md)). Rolling the image
 back works while the schema is compatible (additive migrations tolerate the
 previous app version). After a bad upgrade:
 

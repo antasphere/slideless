@@ -70,8 +70,9 @@ responsible for, and the rules that govern rendering user content.
   stricter rule: always `attachment`, whatever their type (see "The form
   surface and the files it takes" below).
 - **Retry-safe creates.** An `Idempotency-Key` header on the create POSTs
-  (API keys, invitations, reset and change-email links, upload sessions,
-  share-link creation, deck duplicate) replays the original response instead
+  (API keys, invitations, workspaces, projects, project members, reset and
+  change-email links, upload sessions, share-link creation, deck duplicate)
+  replays the original response instead
   of double-creating; cached responses are AES-256-GCM encrypted because
   they carry one-shot secrets.
 - **Auth-surface rate limits** (login per-IP+email, OTP per-IP+email, setup,
@@ -118,12 +119,13 @@ responsible for, and the rules that govern rendering user content.
   (only `/data` and `/tmp` writable), no secrets in image layers, CI image
   vulnerability scan gating every release.
 - **Zero phone-home.** No telemetry, no update check. The instance talks only
-  to what you configure: the mail driver (SMTP or Resend), an S3 bucket,
+  to what you configure: the mail driver (SMTP, Resend or Brevo), an S3 bucket,
   Redis, Google sign-in, an OTLP exporter (`OTEL_EXPORTER_OTLP_ENDPOINT`),
   and on the cloud edition the Antasphere hub.
 - **Workspace export + account deletion.** `GET /workspace/export` streams a
   zip of the workspace record, its member roster, invitations, workspace-pinned
-  API keys, the audit log (NDJSON), file metadata and every live blob
+  API keys, its projects, project members, teams, team members and project
+  teams, the audit log (NDJSON), file metadata and every live blob
   (invitation token hashes and API-key secret hashes never leave). **It is not
   yet a complete data-portability export:** decks, versions, share links,
   collaborators, annotations, form responses and view events are not in it;

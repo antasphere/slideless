@@ -28,6 +28,7 @@ From a checkout:
 ```bash
 pnpm --filter @antasphere/slideless... build
 node packages/cli/dist/bin.js --help
+node packages/cli/dist/bin.js --version   # the CLI's own version
 ```
 
 ## Configuration: profiles, flags, environment

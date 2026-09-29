@@ -77,7 +77,7 @@ answers with an index of the deck (its files and sizes, its downloads, its
 `push` is content-addressed (only missing blobs upload; a re-push of the
 same folder is a new immutable version), the first push writes
 `.slideless.json` into the folder so later pushes target the same deck, and
-`--json` on any command emits the wire shape for machine parsing. See
+`--json` on any command but `files download` emits the wire shape for machine parsing. See
 [cli.md](../agents/cli.md) for sharing flags (expiry, password, pin-to-version),
 collaborator grants, annotations export, and `slideless dev` (a local
 preview server with the exact viewer sandbox headers).

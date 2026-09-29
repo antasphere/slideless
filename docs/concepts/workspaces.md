@@ -31,6 +31,16 @@ give a few colleagues one client's decks without opening the rest. Any member cr
 its manager; the workspace's admins and owners act as managers on every project. On cloud the
 workspace roster is managed at Antasphere, but its projects stay in Slideless.
 
+## A workspace holds teams
+
+A team is a named group of the workspace's people, which a project can take as a member
+([Projects](projects.md#a-team-as-a-member)). Every member of the workspace reads the teams; an
+owner or an admin creates, renames and deletes them and seats people, from the People page or from
+the CLI (`slideless teams`, [CLI reference](../agents/cli.md#teams)). Deleting a team leaves its
+people in the workspace. On Slideless Cloud the teams of an organization are the ones defined at
+`account.antasphere.com`: they are read here, marked as Antasphere's, and managed there; putting
+one on a project is still done in Slideless.
+
 ## Creating another workspace
 
 The first workspace of a self-hosted instance is created at setup. After that, a signed-in person
@@ -126,7 +136,8 @@ and are added back where they are needed. The decks they own stay in the workspa
 admins and owners. Their API keys are theirs and are not revoked: a key reaches the workspace again
 once the person is a member again, so revoke the keys too when that matters. The share links they
 minted keep serving their decks, which stay in the workspace: revoke a link from the deck's page when
-it should stop. A demo link they minted, or one made for them, stops with the removal. On Slideless Cloud the
+it should stop. A demo link they minted, or one made for them, stops with the removal
+([Demo links](../self-hosting/demo-links.md)). On Slideless Cloud the
 members of an organization are removed at `account.antasphere.com`, with the same result here, and
 they come back the same way: a person who left an organization is added to it again on the account
 site, and an invitation on a deck does not bring them back.
