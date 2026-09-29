@@ -766,8 +766,8 @@ secret>` and harvested what visitors typed, straight through the official
   had been dead since PRDCT-1347 made the first-boot claim require a setup token: the harness
   passed `SETUP_TOKEN=''`, every dependent project failed at the wizard, and nobody saw it for
   two weeks. Now `playwright.config.ts` mints one token in the runner process, `stack-env.mjs`
-  boots the stack with it and `smoke.spec.ts` fills the field, which the wizard only reveals
-  AFTER the first refused submit (`tokenRequired` flips on the `invalid_setup_token` answer).
+  boots the stack with it and `smoke.spec.ts` fills the field, which the wizard shows from the
+  start since PRDCT-2389 (`apps/dashboard/src/routes/setup/+page.svelte`).
   Run the suite locally before shipping anything the smoke exercises; CI part 1 does not.
 - **Better Auth's own sign-in throttle, not ours, is what "Too many attempts" means in e2e.**
   Our `limiters.login` is 10 points per 15 minutes and consumes on FAILURE for sign-in; the
@@ -813,7 +813,6 @@ secret>` and harvested what visitors typed, straight through the official
   distinct "you may not use this blob" status would confirm that the
   workspace holds those exact bytes — the same reason a deck read answers
   404 and never 403.
-  \=======
 
 ## Signing-key durability (PRDCT-1379 port, 2026-08-12)
 
@@ -1800,3 +1799,46 @@ turbo build --filter=@slideless/contract`; the verifier's first run of a passwor
   head were all green; six runs each beside the same load on the machine were red on BOTH (8 failed
   tests on `dev`, 7 on the head). The test counts reads inside a 250 ms window and fails when the
   machine is busy, whatever the branch. Run the comparison before writing the word in a pull request.
+
+## Taken back from the tool template (PRDCT-2903, 2026-09-29, lane B of the audit wave)
+
+The template learned these on its own port of the chassis (main dbb16e6). They hold here word for
+word, since the chassis is the same code; the examples are Slideless's.
+
+- **A hook reads the body through the handler's own schema before it looks anything up.** A count
+  hook that keeps any non-empty string runs its lookups on a request the validator will refuse, and
+  at the cap it answers `plan_required` where the handler answers 400: the plan refusal says more
+  than the handler. The template's first cut also asked a predicate once per element of an
+  unbounded list, and threw on a value that is not a uuid. The seat and link hooks now parse the
+  WHOLE body (and the deck id) with the route's own schemas and answer null on a failure
+  (PRDCT-2899), so the validator's 400 follows with no lookup spent.
+- **A helper must not assert the property under test.** On the template, a verifier's mutation of
+  the count hook turned `plan-limits.test.ts` red on the plan switch's prime, a create asserted 404
+  inside the helper every switch runs, so the named cases never ran. Here the same helper primed the
+  plan with a link mint on no deck; once a count hook's null ended the gate's judgement
+  (PRDCT-2900), that prime read no plan and four cases timed out waiting for it. The prime is now an
+  upload declared over the instance cap: refused on every plan, the body dropped, nothing stored or
+  metered.
+- **The credit check's cache is sound through monotonicity, so a per-call action asks the hub once
+  per window.** A fresh allowed answer serves any smaller or equal quantity for thirty seconds and a
+  fresh denial any larger or equal one for five. A drill that wants the hub asked again uses a
+  LARGER quantity, never a second call of a per-call action, and a refusal leg waits the allowed
+  window out from the last allowed call, or the refusal reads as a success and the leg fails on a
+  rule that holds.
+- **A drill that inherits metered actions from earlier phases counts deltas, never totals.** Every
+  baseline drains the usage queue first and reads the counts, and the per-row assertions of a leg
+  are restricted to the event ids queued since the leg started.
+- **Only a size limit defers the body cap, and only a size limit demands a Content-Length.** Both
+  are keyed on `limit.value === declaredContentLength`; keyed on "any limit" they would park the
+  cap on a JSON route, drop the body and run a count's lookups on a request that could only answer
+  413, and refuse every `json()` request of the suites, which declare no size.
+- **The machine allowlist sees the pathname, never the query string.** A pin written as
+  `requiredScopeFor('/api/v1/presentations?project=…', 'GET')` tests a path no request carries; the
+  filter rides the list rule, and the pin is on the plain path.
+- **`--workspace <name>` in a CLI test costs a `GET /me` the routed harness does not answer.** A
+  name is looked up against the caller's workspaces before the command runs; a test that passes a
+  fake name fails on the unrouted `/me`. Pass the workspace id (a uuid is sent as it is).
+- **The chassis's MCP write tools say `confirm with the user first`; the deck tools say `Always
+confirm with the user before calling.`** A test that walks every write tool for the second sentence
+  goes red on the project tools the chassis registers under the tool's prefix. Scope such a walk to
+  the tool's own set, and pin the chassis's tools by name (`identity-pins.test.ts`).
