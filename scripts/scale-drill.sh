@@ -246,10 +246,12 @@ $(printf '%s' "$serial" | sort -n)
 EOF
 pass "lock hold intervals are strictly serialized (order:$order)"
 
-on_disk=$(ls "$REPO"/packages/db/drizzle/*.sql | wc -l | tr -d ' ')
+# The JOURNAL is what the runner applies (a .sql file it does not list is never
+# run), so the expected row count is the journal's, not a count of files.
+on_disk=$(grep -c '"tag":' "$REPO"/packages/db/drizzle/meta/_journal.json)
 applied=$(psqlq "SELECT count(*) FROM drizzle.__drizzle_migrations")
 dupes=$(psqlq "SELECT count(*) - count(DISTINCT hash) FROM drizzle.__drizzle_migrations")
-[ "$applied" = "$on_disk" ] || fail "migration journal has $applied rows, expected $on_disk (one per .sql file)"
+[ "$applied" = "$on_disk" ] || fail "migration journal has $applied rows, expected $on_disk (one per journal entry)"
 [ "$dupes" = "0" ] || fail "duplicate migration hashes in the journal: a second replica re-applied"
 pass "drizzle journal: $applied/$on_disk applied, 0 duplicates"
 
