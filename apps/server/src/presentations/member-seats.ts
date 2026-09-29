@@ -1,5 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { ActorRef, EntitlementRequest } from '@antasphere/chassis-contract';
+import { uuidParams } from '@antasphere/chassis-contract/routes';
+import { collaboratorClaimSchema, collaboratorInviteSchema } from '@slideless/contract';
 import { workspaces, type Db } from '@antasphere/chassis-db';
 import { canAdministerDeck } from './service.js';
 import type { DeckDomain } from '../tool.js';
@@ -97,14 +99,27 @@ function seatsAfterJoin(pool: SeatPool, email: string): number {
   return pool.members + (pool.memberEmails.has(email) ? 0 : 1);
 }
 
+/*
+ * The body and the deck id are read through the handler's OWN schemas before
+ * any lookup (PRDCT-2899, the tool template's lesson "a hook reads the body
+ * through the handler's own schema"): a request the validator will refuse is
+ * null here, so the validator's 400 answers it, never a plan refusal, and a
+ * deck id that is not a uuid never reaches the database.
+ */
 async function emailOf(ctx: EntitlementRequest): Promise<string | null> {
-  const body = (await ctx.body()) as { email?: unknown } | undefined;
-  return typeof body?.email === 'string' && body.email.trim() ? body.email.toLowerCase().trim() : null;
+  const parsed = collaboratorInviteSchema.safeParse(await ctx.body());
+  return parsed.success ? parsed.data.email.toLowerCase().trim() : null;
 }
 
 async function tokenOf(ctx: EntitlementRequest): Promise<string | null> {
-  const body = (await ctx.body()) as { token?: unknown } | undefined;
-  return typeof body?.token === 'string' && body.token ? body.token : null;
+  const parsed = collaboratorClaimSchema.safeParse(await ctx.body());
+  return parsed.success ? parsed.data.token : null;
+}
+
+/** The route's deck id, or null when the route's own params schema refuses it. */
+export function deckIdOf(ctx: EntitlementRequest): string | null {
+  const parsed = uuidParams.safeParse({ id: ctx.params.id });
+  return parsed.success ? parsed.data.id : null;
 }
 
 interface ClaimGrant {
@@ -150,7 +165,7 @@ export function memberSeatHooks(db: Db, getTool: () => DeckDomain | null) {
     collaboratorInviteSeats: async (ctx: EntitlementRequest): Promise<number | null> => {
       const domain = getTool();
       const email = await emailOf(ctx);
-      const deckId = ctx.params.id;
+      const deckId = deckIdOf(ctx);
       if (!domain || !ctx.principal || !email || !deckId) return null;
       const deck = await domain.presentations.get(ctx.principal.workspaceId, deckId);
       if (!deck || !(await domain.presentations.canRead(ctx.principal, deck))) return null;

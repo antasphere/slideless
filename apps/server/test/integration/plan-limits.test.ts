@@ -364,6 +364,12 @@ describe('the member cap at the collaborator invite', () => {
     await expectNothingPosted(ORG_SEATS, 'collaborators.invite', posted);
   });
 
+  it('at the cap, an address the validator refuses is the validator’s 400, never a plan refusal', async () => {
+    const res = await invite(seatsOwner, seatsDeck, 'not-an-address');
+    expect(res.status, await res.clone().text()).toBe(400);
+    expect((await readJson(res)).error.code).toBe('validation_error');
+  });
+
   it('an address already invited holds its seat: inviting it on another deck is not a plan refusal', async () => {
     const again = await invite(seatsOwner, seatsDeck2, 'a@seats.test');
     const body = await readJson(again);
@@ -797,6 +803,10 @@ describe('the links per deck', () => {
       expect(res.status, await res.clone().text()).toBe(201);
     }
     expect(await liveShareLinks(person, deckId)).toBe(10);
+    // At the cap, a body the validator refuses is its 400, never the count's
+    // refusal (PRDCT-2899: the hook parses the body with the route's schema).
+    const empty = await mint(person, deckId, { name: '' });
+    expect(empty.status, await empty.clone().text()).toBe(400);
     await expectPlanRequired(
       await mint(person, deckId, { name: 'link-11' }),
       ORG_LINKS,
