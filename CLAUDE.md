@@ -524,9 +524,12 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   body through `ctx.body()` and answer `null` for "nothing to judge"; a `feature` may be
   `{ key, when }`, judged BEFORE the plan is read so a condition that does not hold costs no hub
   read; an entry-level `actor` makes a limit-only PUBLIC door a viewer surface; a hook that throws
-  is logged at warn and judges nothing; only a SIZE limit defers the body cap, a count limit meets
-  the cap's 413 at once). The member cap is ONE seat pool (`presentations/member-seats.ts`: active
-  members of every origin, guests included, plus the addresses holding a seat without a
+  is logged at warn and judges nothing; on a metered account a count hook's `null` (or throw) ENDS
+  the gate's judgement of the request, feature, plan and price alike, and meters nothing, so a caller
+  the handler refuses (a guest at a guest-closed door) reads the handler's answer and never the
+  organization's balance (PRDCT-2900, `entitlements-null-hook.test.ts`); only a SIZE limit defers the
+  body cap, a count limit meets the cap's 413 at once). The member cap is ONE seat pool
+  (`presentations/member-seats.ts`: active members of every origin, guests included, plus the addresses holding a seat without a
   membership: a live pending collaborator grant, an ACTIVE grant not yet claimed into a
   membership, an open workspace invitation) at Slideless's TWO doors, the collaborator invite and
   the collaborator claim, each reporting the seats AFTER its act: the invite refuses the seat over
