@@ -27,14 +27,16 @@
 #      the user and projects it (owner, hubOrigin), the hub's audit row names
 #      the tool client, an slk_ key is refused; and the deploy-order fact:
 #      the hub refuses a sign-in that requests a scope it does not list.
-#   7. The billing rail, phase 1 (PRDCT-2625 + PRDCT-2626, Phase 8) — one
+#   7. The billing rail, phase 1 (PRDCT-2625 + PRDCT-2626, Phase 8b) — one
 #      metered action per surface (the dashboard session, an slk_ key, an
 #      OAuth bearer over MCP) lands in the hub's usage_events exactly once:
 #      the projected organization, the hub user, the channel, the action and
-#      the size; the same batch posted again by hand with the tool's own
-#      client-credentials token answers duplicate for every id; the owner
-#      reads the consumption per person on GET /billing/usage.
-#   8. The billing rail, phase 2 (PRDCT-2663 + PRDCT-2664, Phase 8's second
+#      the size, every figure a delta over a drained queue (the legs before
+#      it meter too); every event the tool ever queued, posted again by hand
+#      with the tool's own client-credentials token, answers duplicate for
+#      every id; the owner reads the consumption per person on GET
+#      /billing/usage, the hub's own count for the organization.
+#   8. The billing rail, phase 2 (PRDCT-2663 + PRDCT-2664, Phase 8b's second
 #      leg) — staff seeds the hub's price book from Slideless's own discovery
 #      (a second seed inserts nothing); the organization holds the 5,000
 #      sign-up grant; POST /usage/check with the machine token prices a 1 MiB
@@ -45,9 +47,37 @@
 #      prices it, its debit is on GET /billing/ledger and the balance moved;
 #      the hub slow beyond the check's budget still lets the action land
 #      (fail-open) with the posture on /metrics, healed by the next answer.
-#   9. Deck pictures on the cloud edition (PRDCT-2785, Phase 8, after the MCP
+#   9. Deck pictures on the cloud edition (PRDCT-2785, Phase 8b, after the MCP
 #      deck) — the deck an agent just pushed gets its still image from the
 #      renderer: its thumbnail route answers 200 with a WebP within a minute.
+#  10. The login reconcile (Phase 3) — the hub-origin memberships the login
+#      projected are exactly the organizations the hub lists for the person,
+#      no more, no fewer.
+#  11. Decks in a hub-origin workspace, and the live reconcile (Phase 3c) —
+#      the SSO session pushes a deck (asset, upload session, commit) into the
+#      projected workspace; the list there holds exactly it and the person's
+#      other workspace holds none; the slk_ key reads it and retitles it; a
+#      local membership mutation is refused hub_managed with the hub's
+#      manageUrl and leaves no row; an organization created AT THE HUB
+#      reaches GET /me on the next demand past the TTL, with no new login.
+#  12. The cloud closures of every non-hub credential entrance (Phase 4b) —
+#      the tool's CLI OTP mint, the emailOTP session surface, the password
+#      reset surface and the Google social provider are refused, and none of
+#      them mails a code.
+#  13. CLI connect (Phase 8) — the hub CLI login (a code read from Mailpit) →
+#      POST /sso/tool-token → POST /sso/cli-connect → a user-scoped,
+#      unpinned slk_ key (presentations:read + presentations:write) that
+#      reads the session's retitled deck, pushes one of its own and is
+#      refused GET /members; the exchange token is refused on replay; the
+#      browser grant Phase 5 left dead is healed without a browser.
+#  14. The free plan's refusal comes back (Phase 8b's third leg) — once the
+#      staff overrides are deleted, the locked link mint answers 403
+#      plan_required (deck.password) again after the plan cache turns over.
+#  15. Logout (Phase 9) — DELETE /cli/auth/key revokes exactly the presenting
+#      key (401 after, the other slk_ key still reads, a session refused the
+#      route); POST /sso/logout ends the browser session; the hub-side CLI
+#      logout cascades onto the offline grant, and the tool follows: the
+#      remaining slk_ key answers 401 hub_grant_expired.
 #
 # Phase 3 of the billing rail (PRDCT-2718) is proven by the billing campaign,
 # not by a leg here: scripts/billing-campaign.sh boots this same pair through
@@ -110,12 +140,15 @@ PROJECT=${FEDERATION_PROJECT:-slideless-federation}
 HUB_PORT=${FEDERATION_HUB_PORT:-3300}
 SL_PORT=${FEDERATION_SL_PORT:-3310}
 HOP_PORT=${FEDERATION_HOP_PORT:-8474}
+MAIL_PORT=${FEDERATION_MAIL_PORT:-8030}
 HUB_IMAGE=${FEDERATION_HUB_IMAGE:-antasphere-hub:federation-dev}
 SL_IMAGE=${FEDERATION_SL_IMAGE:-slideless:federation-dev}
 RENDERER_IMAGE=${FEDERATION_RENDERER_IMAGE:-slideless-renderer:federation-dev}
 HUB=http://hub.localhost:$HUB_PORT
 SL=http://slideless.localhost:$SL_PORT
 HOP=http://127.0.0.1:$HOP_PORT
+# Mailpit's API: the hub's CLI sign-in code (Phase 8) is read from it.
+MAIL=http://127.0.0.1:$MAIL_PORT
 SL_CLIENT_ID=tool-slideless-cloud
 SL_CLIENT_SECRET=federation-dev-client-secret-0001
 SECOND_CLIENT_ID=tool-drill-second
@@ -139,9 +172,9 @@ fail() {
 for bin in docker jq curl openssl; do
   command -v "$bin" >/dev/null || fail "required tool missing: $bin"
 done
-for port in "$HUB_PORT" "$SL_PORT" "$HOP_PORT"; do
+for port in "$HUB_PORT" "$SL_PORT" "$HOP_PORT" "$MAIL_PORT"; do
   if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$port/" 2>/dev/null; then
-    fail "port $port already answers — refusing to run (the harness needs $HUB_PORT, $SL_PORT and $HOP_PORT)"
+    fail "port $port already answers — refusing to run (the harness needs $HUB_PORT, $SL_PORT, $HOP_PORT and $MAIL_PORT)"
   fi
 done
 
@@ -277,6 +310,14 @@ grant_row=$(sldb "SELECT (refresh_token IS NOT NULL)::int FROM account WHERE pro
 read -r fam_total fam_live _ <<<"$(family "$SL_CLIENT_ID" "$HUB_USER_ID")"
 [ "$fam_total" = 1 ] && [ "$fam_live" = 1 ] || fail "expected exactly one live refresh row at the hub after login, got total=$fam_total live=$fam_live"
 pass "SSO login through the proxy hop: Slideless session + encrypted grant; hub family = 1 live row"
+# The login reconcile (fail-closed, as the user): what the hub lists for the
+# person is exactly what the login projected — one hub-origin membership per
+# organization, no more, no fewer.
+hub_org_ids=$("${CURL[@]}" -b "$HUB_JAR" "$HUB/api/v1/orgs" | jq -r '.orgs[].id' | LC_ALL=C sort | paste -sd, -)
+[ -n "$hub_org_ids" ] || fail "the hub lists no organization for the owner — the login reconcile has nothing to prove"
+projected_ids=$(sldb "SELECT w.central_account_id FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = '$SL_USER_ID' AND m.origin = 'hub' AND m.is_active" | LC_ALL=C sort | paste -sd, -)
+[ "$projected_ids" = "$hub_org_ids" ] || fail "the login reconcile projected '$projected_ids', the hub lists '$hub_org_ids'"
+pass "login reconcile: the hub-origin memberships project exactly the hub's organizations for the user ($hub_org_ids)"
 
 # ── Phase 3b — workspace creation through the hub (PRDCT-2443) ──────────────
 say "Phase 3b — a signed-in person creates a workspace: an organization at the hub, as them"
@@ -370,6 +411,87 @@ key_create=$("${CURL[@]}" -o "$SCRATCH/key-create.json" -w '%{http_code}' -X POS
 ! grep -q '"workspace"' "$SCRATCH/key-create.json" || fail "the 403 carries a workspace: $(cat "$SCRATCH/key-create.json")"
 pass "POST /workspaces with an slk_ key → 403 ($(jq -r '.error.code' "$SCRATCH/key-create.json"))"
 
+# ── Phase 3c — decks in the hub-origin workspace, and the live reconcile ─────
+say "Phase 3c — Slideless's own resource (decks) in the projected workspace, and the live reconcile"
+# A deck is pushed the way the CLI pushes one (scripts/hostinger-smoke.mjs does
+# the same three calls): the asset, an upload session, the commit with a
+# one-line manifest. Metered: the asset (files.upload, bytes) and the commit
+# (presentations.commit, one call); the upload session is not.
+deck_push() { # label title curl-auth-args → pushes a one-file deck in the drill workspace; prints the new presentation id
+  local label=$1 title=$2; shift 2
+  local html="$SCRATCH/deck-$label.html"
+  printf '<!doctype html><html><head><title>%s</title></head><body><h1>%s</h1></body></html>' "$title" "$label" >"$html"
+  local sha size status session_id
+  sha=$(openssl dgst -sha256 "$html" | sed 's/.*= //')
+  size=$(wc -c <"$html" | tr -d ' ')
+  status=$("${CURL[@]}" "$@" -o "$SCRATCH/deck-$label-asset.json" -w '%{http_code}' -X POST "$SL/api/v1/presentations/assets" \
+    -H "X-Workspace-Id: $WS_ID" -F "file=@$html;type=text/html;filename=index.html" -F "sha256=$sha")
+  [ "$status" = 201 ] || fail "deck push ($label): the asset upload answered $status: $(cat "$SCRATCH/deck-$label-asset.json")"
+  status=$("${CURL[@]}" "$@" -o "$SCRATCH/deck-$label-session.json" -w '%{http_code}' -X POST "$SL/api/v1/presentations/uploads" \
+    -H "X-Workspace-Id: $WS_ID" -H 'content-type: application/json' -d '{}')
+  [ "$status" = 201 ] || fail "deck push ($label): POST /presentations/uploads answered $status: $(cat "$SCRATCH/deck-$label-session.json")"
+  session_id=$(jq -r '.uploadSession.id // empty' "$SCRATCH/deck-$label-session.json")
+  [ -n "$session_id" ] || fail "deck push ($label): 201 without an upload session id: $(cat "$SCRATCH/deck-$label-session.json")"
+  jq -nc --arg title "$title" --arg sha "$sha" --argjson size "$size" \
+    '{title: $title, entryPath: "index.html", manifest: [{path: "index.html", sha256: $sha, sizeBytes: $size, contentType: "text/html"}]}' \
+    >"$SCRATCH/deck-$label-commit-body.json"
+  status=$("${CURL[@]}" "$@" -o "$SCRATCH/deck-$label-commit.json" -w '%{http_code}' -X POST "$SL/api/v1/presentations/uploads/$session_id/commit" \
+    -H "X-Workspace-Id: $WS_ID" -H 'content-type: application/json' -d @"$SCRATCH/deck-$label-commit-body.json")
+  [ "$status" = 201 ] || fail "deck push ($label): the commit answered $status: $(cat "$SCRATCH/deck-$label-commit.json")"
+  jq -e --arg t "$title" '(.presentation.id // "") != "" and .presentation.title == $t and .presentation.currentVersion == 1' \
+    "$SCRATCH/deck-$label-commit.json" >/dev/null || fail "deck push ($label): the commit's answer is not the deck at version 1: $(cat "$SCRATCH/deck-$label-commit.json")"
+  jq -r '.presentation.id' "$SCRATCH/deck-$label-commit.json"
+}
+DECK_ID=$(deck_push session "Drill session deck" -b "$SL_JAR" -H "Origin: $SL")
+pass "the SSO session pushes a deck into the hub-origin workspace: asset, upload session, commit → 201 ($DECK_ID)"
+list_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/decks-ws.json" -w '%{http_code}' -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations")
+[ "$list_status" = 200 ] && jq -e --arg id "$DECK_ID" '[.presentations[].id] == [$id]' "$SCRATCH/decks-ws.json" >/dev/null \
+  || fail "GET /presentations does not list exactly the pushed deck: $list_status $(cat "$SCRATCH/decks-ws.json")"
+# Tenancy: the person's OTHER hub-origin workspace (the hub's genesis
+# organization, projected at login) holds no deck.
+OTHER_WS_ID=$(jq -r --arg id "$WS_ID" '[.workspaces[] | select(.id != $id)][0].id // empty' "$SCRATCH/me-after.json")
+[ -n "$OTHER_WS_ID" ] || fail "GET /me lists no second workspace to read the deck from"
+other_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/decks-other.json" -w '%{http_code}' -H "X-Workspace-Id: $OTHER_WS_ID" "$SL/api/v1/presentations")
+[ "$other_status" = 200 ] && jq -e '.presentations == []' "$SCRATCH/decks-other.json" >/dev/null \
+  || fail "the deck leaked into workspace $OTHER_WS_ID: $other_status $(cat "$SCRATCH/decks-other.json")"
+pass "GET /presentations lists it back in $WS_ID and nothing in the person's other workspace ($OTHER_WS_ID)"
+# The slk_ key minted above carries presentations:read + presentations:write:
+# the scope allowlist opens the deck tree to it.
+DECK_TITLE="Drill session deck, retitled by the slk_ key"
+key_read=$("${CURL[@]}" -o "$SCRATCH/key-deck.json" -w '%{http_code}' -H "Authorization: Bearer $SLK" -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations/$DECK_ID")
+[ "$key_read" = 200 ] && jq -e --arg id "$DECK_ID" '.id == $id and .title == "Drill session deck"' "$SCRATCH/key-deck.json" >/dev/null \
+  || fail "GET /presentations/$DECK_ID with the slk_ key answered $key_read: $(cat "$SCRATCH/key-deck.json")"
+key_patch=$("${CURL[@]}" -o "$SCRATCH/key-patch.json" -w '%{http_code}' -X PATCH "$SL/api/v1/presentations/$DECK_ID" \
+  -H "Authorization: Bearer $SLK" -H "X-Workspace-Id: $WS_ID" -H 'content-type: application/json' \
+  -d "$(jq -nc --arg t "$DECK_TITLE" '{title: $t}')")
+[ "$key_patch" = 200 ] && jq -e --arg id "$DECK_ID" --arg t "$DECK_TITLE" '.id == $id and .title == $t' "$SCRATCH/key-patch.json" >/dev/null \
+  || fail "PATCH /presentations/$DECK_ID with the slk_ key answered $key_patch: $(cat "$SCRATCH/key-patch.json")"
+pass "the slk_ key (presentations:read, presentations:write) reads the deck and retitles it"
+
+# P7: the projected workspace's roster is the hub's. A local membership
+# mutation is refused with the pointer; the read stays.
+invite_status=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/invite.json" -w '%{http_code}' -X POST "$SL/api/v1/invitations" \
+  -H "Origin: $SL" -H "X-Workspace-Id: $WS_ID" -H 'content-type: application/json' -d '{"email":"invitee@drill.test","role":"member"}')
+[ "$invite_status" = 403 ] && jq -e --arg hub "$HUB" '.error.code == "hub_managed" and (.error.details.manageUrl | startswith($hub))' "$SCRATCH/invite.json" >/dev/null \
+  || fail "POST /invitations in a hub-origin workspace answered $invite_status (expected 403 hub_managed + manageUrl at the hub): $(cat "$SCRATCH/invite.json")"
+[ "$(sldb "SELECT count(*) FROM invitations WHERE workspace_id = '$WS_ID'")" = 0 ] || fail "the refused invitation left a row"
+pass "POST /invitations in the hub-origin workspace → 403 hub_managed, manageUrl $(jq -r '.error.details.manageUrl' "$SCRATCH/invite.json"), no row"
+
+# The live reconcile (ADR 019): an organization created AT THE HUB, outside
+# Slideless, reaches the person's workspace list on the next demand past the
+# ~10 s reconcile TTL — read as the user with the stored grant, no new login.
+hub_org_status=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/hub-org.json" -w '%{http_code}' -X POST "$HUB/api/v1/orgs" \
+  -H "Origin: $HUB" -H 'content-type: application/json' -d '{"name":"Hub-side Org"}')
+[ "$hub_org_status" = 201 ] || fail "POST /orgs at the hub (session) answered $hub_org_status: $(cat "$SCRATCH/hub-org.json")"
+[ "$(sldb "SELECT count(*) FROM workspaces WHERE name = 'Hub-side Org'")" = 0 ] || fail "'Hub-side Org' exists locally before any reconcile"
+sleep 11
+"${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/me-live.json" "$SL/api/v1/me"
+jq -e '[.workspaces[] | select(.name == "Hub-side Org" and .hubOrigin == true and .role == "owner")] | length == 1' "$SCRATCH/me-live.json" >/dev/null \
+  || fail "the live reconcile did not project 'Hub-side Org': $(jq -c '.workspaces // .' "$SCRATCH/me-live.json")"
+[ "$(jq -r '.workspaces | length' "$SCRATCH/me-live.json")" = "$((ws_before + 2))" ] \
+  || fail "GET /me lists $(jq -r '.workspaces | length' "$SCRATCH/me-live.json") workspaces, expected $((ws_before + 2))"
+pass "live reconcile: an organization created at the hub is projected on the next demand past the TTL (hubOrigin, owner) — same session, no login"
+
 # ── Phase 4 — AUTH-3: the provider grant is never handed out ────────────────
 say "Phase 4 — AUTH-3: the provider-grant routes are closed on cloud"
 for path in get-access-token refresh-token; do
@@ -384,6 +506,34 @@ for path in get-access-token refresh-token; do
   ! grep -qE 'accessToken|refreshToken|access_token' "$SCRATCH/pg.json" || fail "/auth/$path leaked token material"
 done
 pass "/auth/get-access-token and /auth/refresh-token answer 403 provider_grant_forbidden with no token material"
+
+# ── Phase 4b — D1/P8: no non-hub credential entrance on cloud ────────────────
+say "Phase 4b — every local credential entrance but the break-glass door is closed on cloud"
+closed() { # label expected_status expected_marker path json_body
+  local code
+  code=$("${CURL[@]}" -o "$SCRATCH/closed.json" -w '%{http_code}' -X POST "$SL/api/v1$4" \
+    -H "Origin: $SL" -H 'content-type: application/json' -d "$5")
+  [ "$code" = "$2" ] || fail "$1: POST $4 answered $code (expected $2): $(head -c 300 "$SCRATCH/closed.json")"
+  grep -q "$3" "$SCRATCH/closed.json" || fail "$1: POST $4 answered $2 without '$3': $(head -c 300 "$SCRATCH/closed.json")"
+  ! grep -qE '"(token|key|url)"' "$SCRATCH/closed.json" || fail "$1: the refusal carries a credential or a redirect: $(head -c 300 "$SCRATCH/closed.json")"
+}
+otp_body="{\"email\":\"$OWNER_EMAIL\",\"otp\":\"000000\"}"
+closed "CLI OTP mint, request leg" 403 cli_otp_disabled /cli/auth/request "{\"email\":\"$OWNER_EMAIL\"}"
+closed "CLI OTP mint, complete leg" 403 cli_otp_disabled /cli/auth/complete "$otp_body"
+pass "the tool's own CLI OTP mint answers 403 cli_otp_disabled on both legs (the cloud CLI door is /sso/cli-connect)"
+closed "emailOTP sign-in" 403 otp_signin_disabled /auth/sign-in/email-otp "$otp_body"
+closed "emailOTP send leg" 403 otp_signin_disabled /auth/email-otp/send-verification-otp "{\"email\":\"$OWNER_EMAIL\",\"type\":\"sign-in\"}"
+closed "emailOTP verify-email" 403 otp_signin_disabled /auth/email-otp/verify-email "$otp_body"
+pass "the emailOTP session surface answers 403 otp_signin_disabled (sign-in, send, verify-email)"
+closed "password reset request" 403 'Password reset is disabled' /auth/request-password-reset "{\"email\":\"$OWNER_EMAIL\"}"
+closed "password reset" 403 'Password reset is disabled' /auth/reset-password '{"newPassword":"drill-new-password-0001","token":"drill"}'
+closed "emailOTP password reset" 403 'Password reset is disabled' /auth/email-otp/reset-password "{\"email\":\"$OWNER_EMAIL\",\"otp\":\"000000\",\"password\":\"drill-new-password-0001\"}"
+pass "the password-reset surface answers 403 (request, reset, the emailOTP reset)"
+closed "Google social sign-in" 404 PROVIDER_NOT_FOUND /auth/sign-in/social '{"provider":"google","callbackURL":"/"}'
+pass "the Google social provider is not registered on cloud (404 PROVIDER_NOT_FOUND)"
+mails=$("${CURL[@]}" "$MAIL/api/v1/search?query=$(printf 'to:%s' "$OWNER_EMAIL" | jq -sRr @uri)" | jq -r '.messages | length')
+[ "$mails" = 0 ] || fail "a refused entrance still mailed the owner ($mails message(s) in Mailpit)"
+pass "none of the refused entrances mailed a code (Mailpit holds nothing for $OWNER_EMAIL)"
 
 # ── Phase 5 — CLOUD-2: the slow-but-alive hub ────────────────────────────────
 say "Phase 5 — CLOUD-2: a refresh that times out AFTER the hub rotated"
@@ -480,24 +630,108 @@ n=$(hubdb "SELECT count(*) FROM audit_log WHERE action = 'oidc.token' AND (metad
 [ "$n" = 1 ] || fail "expected exactly one audited rotation grace, saw $n"
 pass "audit rows: oidc.authorize + oidc.token present, instance-attributed; the refusals and the grace are on the record"
 
-# ── Phase 8 — the billing rail, phase 1 (PRDCT-2625 + PRDCT-2626) ──────────
-say "Phase 8 — one metered action per surface lands in the hub's usage_events, exactly once"
-# The drill's Phase 5 left the person's Slideless grant dead on purpose
-# (hub_grant_expired); a browser re-login heals it, so sign in again through
-# the hub session that is still alive. Same dance as Phase 3.
-initiate=$("${CURL[@]}" -c "$SL_JAR" -X POST "$SL/api/v1/auth/sign-in/oauth2" -H 'content-type: application/json' \
-  -d '{"providerId":"antasphere","callbackURL":"/"}')
-AUTHZ_URL=$(echo "$initiate" | jq -r '.url // empty')
-[ -n "$AUTHZ_URL" ] || fail "re-login: Slideless did not answer an authorize URL: $initiate"
-location=$("${CURL[@]}" -b "$HUB_JAR" -o /dev/null -w '%{redirect_url}' "$AUTHZ_URL")
-cb_status=$("${CURL[@]}" -b "$SL_JAR" -c "$SL_JAR" -o /dev/null -w '%{http_code}' "$location")
-[ "$cb_status" = 302 ] || fail "re-login: Slideless callback answered $cb_status"
-"${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/me8.json" -f "$SL/api/v1/me" || fail "re-login: no Slideless session"
-jq -e --arg id "$WS_ID" '.workspaces[] | select(.id == $id)' "$SCRATCH/me8.json" >/dev/null \
-  || fail "re-login: the drill workspace $WS_ID is not listed"
-pass "the person is signed in again after Phase 5 (a browser re-login heals hub_grant_expired)"
+# ── Phase 8 — CLI connect: one hub login, the tool's key without a second sign-in ──
+say "Phase 8 — CLI connect (antasphere login → POST /sso/tool-token → POST /sso/cli-connect)"
+# Rows of the CLI offline-grant family of (client, user) at the hub — the
+# hub's own discriminator (platform/offline-grants.ts): the root the exchange
+# stamped with the minting key, plus its session-less rotations without openid.
+offline_family() { # client_id user_id
+  hubdb "SELECT count(*) FROM oauth_refresh_token WHERE client_id = '$1' AND user_id = '$2' AND (api_key_id IS NOT NULL OR (session_id IS NULL AND 'offline_access' = ANY(scopes) AND NOT 'openid' = ANY(scopes)))"
+}
+# What `antasphere login` does, headless: the hub mails a code, the code buys
+# the person's ACCOUNT key (sso:exchange). The code is read from Mailpit.
+otp_req=$("${CURL[@]}" -o "$SCRATCH/otp-req.json" -w '%{http_code}' -X POST "$HUB/api/v1/cli/auth/request" \
+  -H 'content-type: application/json' -d "{\"email\":\"$OWNER_EMAIL\"}")
+[ "$otp_req" = 200 ] || fail "the hub's POST /cli/auth/request answered $otp_req: $(cat "$SCRATCH/otp-req.json")"
+OTP=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  OTP=$("${CURL[@]}" "$MAIL/api/v1/search?query=$(printf 'to:%s' "$OWNER_EMAIL" | jq -sRr @uri)" \
+    | jq -r '.messages[0].Subject // ""' | sed -n 's/^\([0-9]\{4,10\}\) .*/\1/p')
+  [ -n "$OTP" ] && break
+  sleep 1
+done
+[ -n "$OTP" ] || fail "no sign-in code for $OWNER_EMAIL reached Mailpit ($MAIL)"
+hubkey_status=$("${CURL[@]}" -o "$SCRATCH/hub-key.json" -w '%{http_code}' -X POST "$HUB/api/v1/cli/auth/complete" \
+  -H 'content-type: application/json' -d "{\"email\":\"$OWNER_EMAIL\",\"otp\":\"$OTP\",\"keyName\":\"drill cli\"}")
+[ "$hubkey_status" = 201 ] || fail "the hub's POST /cli/auth/complete answered $hubkey_status: $(jq -c '.error // .' "$SCRATCH/hub-key.json")"
+HUB_KEY=$(jq -r '.key' "$SCRATCH/hub-key.json")
+jq -e '.apiKey.scopes | index("sso:exchange")' "$SCRATCH/hub-key.json" >/dev/null || fail "the hub CLI key carries no sso:exchange: $(jq -c '.apiKey.scopes' "$SCRATCH/hub-key.json")"
+pass "hub CLI login (emailed code from Mailpit) → an account key carrying sso:exchange"
 
-before_rows=$(hubdb "SELECT count(*) FROM usage_events")
+tt_status=$("${CURL[@]}" -o "$SCRATCH/tool-token.json" -w '%{http_code}' -X POST "$HUB/api/v1/sso/tool-token" \
+  -H "Authorization: Bearer $HUB_KEY" -H 'content-type: application/json' -d "{\"resource\":\"$SL_RESOURCE\"}")
+[ "$tt_status" = 200 ] || fail "POST /sso/tool-token answered $tt_status: $(jq -c '.error // .' "$SCRATCH/tool-token.json")"
+jq -e '(.token | length > 0) and (.hubRefreshToken | length > 0)' "$SCRATCH/tool-token.json" >/dev/null || fail "the exchange answered no token pair"
+[ "$(offline_family "$SL_CLIENT_ID" "$HUB_USER_ID")" = 1 ] || fail "expected one offline-grant row at the hub after the exchange, got $(offline_family "$SL_CLIENT_ID" "$HUB_USER_ID")"
+pass "POST /sso/tool-token (resource $SL_RESOURCE) → a 120 s exchange token + the offline grant (one row at the hub)"
+
+# The browser session is still the one Phase 5 left: its grant is dead.
+"${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/pre-connect.json" "$SL/api/v1/me"
+grep -q hub_grant_expired "$SCRATCH/pre-connect.json" || fail "expected the browser session to still answer hub_grant_expired before the connect: $(cat "$SCRATCH/pre-connect.json")"
+jq '{token, hubRefreshToken}' "$SCRATCH/tool-token.json" >"$SCRATCH/connect-body.json"
+connect_status=$("${CURL[@]}" -o "$SCRATCH/connect.json" -w '%{http_code}' -X POST "$SL/api/v1/sso/cli-connect" \
+  -H 'content-type: application/json' -d @"$SCRATCH/connect-body.json")
+[ "$connect_status" = 201 ] || fail "POST /sso/cli-connect answered $connect_status: $(jq -c '.error // .' "$SCRATCH/connect.json")"
+CLI_KEY=$(jq -r '.key' "$SCRATCH/connect.json")
+CLI_KEY_ID=$(jq -r '.apiKey.id' "$SCRATCH/connect.json")
+case "$CLI_KEY" in slk_*) ;; *) fail "the connect minted no slk_ key" ;; esac
+jq -e --arg e "$OWNER_EMAIL" --arg u "$SL_USER_ID" \
+  '.user.email == $e and .user.id == $u and .apiKey.workspaceId == null and .workspaceId == null and (.apiKey.scopes | sort) == ["presentations:read", "presentations:write"]' \
+  "$SCRATCH/connect.json" >/dev/null || fail "the connect's key is not the SAME user's unpinned presentations key: $(jq -c '{user, apiKey}' "$SCRATCH/connect.json")"
+pass "POST /sso/cli-connect → 201: a user-scoped slk_ key (no workspace pin; presentations:read + presentations:write, never data:export) for the same local user as the browser login"
+audit_via=$(sldb "SELECT metadata->>'via' || ' ' || (metadata->>'grantChannel') FROM audit_log WHERE action = 'apikey.create' AND resource_id = '$CLI_KEY_ID'")
+[ "$audit_via" = "sso_cli_connect h3_exchange" ] || fail "the connect's apikey.create audit row reads '$audit_via'"
+pass "the tool's audit log: apikey.create via sso_cli_connect, grant channel h3_exchange"
+
+replay_status=$("${CURL[@]}" -o "$SCRATCH/connect-replay.json" -w '%{http_code}' -X POST "$SL/api/v1/sso/cli-connect" \
+  -H 'content-type: application/json' -d @"$SCRATCH/connect-body.json")
+[ "$replay_status" = 401 ] && jq -e '.error.code == "invalid_token" and (has("key") | not)' "$SCRATCH/connect-replay.json" >/dev/null \
+  || fail "the replayed exchange token answered $replay_status: $(cat "$SCRATCH/connect-replay.json")"
+[ "$(sldb "SELECT count(*) FROM api_keys WHERE created_by = '$SL_USER_ID' AND name LIKE 'Antasphere CLI %'")" = 1 ] || fail "the replay minted a second CLI key"
+pass "the same exchange token a second time → 401 invalid_token, no second key (the jti is one-time-use)"
+
+# The key works in the workspace the request names, on the tool's resource:
+# it reads the deck the session pushed (with the slk_ key's title) and pushes one.
+cli_read=$("${CURL[@]}" -o "$SCRATCH/cli-decks.json" -w '%{http_code}' -H "Authorization: Bearer $CLI_KEY" -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations")
+[ "$cli_read" = 200 ] && jq -e --arg id "$DECK_ID" --arg t "$DECK_TITLE" '[.presentations[].id] == [$id] and .presentations[0].title == $t' "$SCRATCH/cli-decks.json" >/dev/null \
+  || fail "GET /presentations with the CLI key answered $cli_read: $(cat "$SCRATCH/cli-decks.json")"
+CLI_DECK_ID=$(deck_push cli "Drill CLI deck" -H "Authorization: Bearer $CLI_KEY")
+cli_members=$("${CURL[@]}" -o "$SCRATCH/cli-members.json" -w '%{http_code}' -H "Authorization: Bearer $CLI_KEY" -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/members")
+[ "$cli_members" = 403 ] || fail "GET /members with the CLI key answered $cli_members (expected 403: outside the key's scopes' allowlist)"
+pass "the CLI key reads the session's deck in $WS_ID (X-Workspace-Id), pushes one ($CLI_DECK_ID), and is refused outside the deck tree (GET /members → 403 $(jq -r '.error.code' "$SCRATCH/cli-members.json"))"
+
+# The connect stored the exchange's offline grant on the account row: the
+# browser session Phase 5 left dead is healed without a browser.
+healed=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/healed.json" -w '%{http_code}' "$SL/api/v1/me")
+[ "$healed" = 200 ] && jq -e --arg e "$OWNER_EMAIL" '.user.email == $e' "$SCRATCH/healed.json" >/dev/null \
+  || fail "the browser session after the connect answered $healed: $(cat "$SCRATCH/healed.json")"
+jq -e --arg id "$WS_ID" '.workspaces[] | select(.id == $id)' "$SCRATCH/healed.json" >/dev/null \
+  || fail "the healed session does not list the drill workspace $WS_ID: $(jq -c '.workspaces' "$SCRATCH/healed.json")"
+read -r fam_total fam_live _ <<<"$(family "$SL_CLIENT_ID" "$HUB_USER_ID")"
+note "hub rows for ($SL_CLIENT_ID, user) after the connect: total=$fam_total live=$fam_live, of which offline family=$(offline_family "$SL_CLIENT_ID" "$HUB_USER_ID")"
+pass "the connect's grant replaced the dead one: the browser session answers 200 again and lists the drill workspace"
+
+# ── Phase 8b — the billing rail, phase 1 (PRDCT-2625 + PRDCT-2626) ─────────
+say "Phase 8b — one metered action per surface lands in the hub's usage_events, exactly once"
+# The legs before this one metered decks already (Phase 3c: one push by the
+# session; Phase 8: one by the CLI key, an asset and a commit each) and their
+# events may still be in flight: the baseline below is taken on a drained
+# queue, and every figure is a DELTA over it.
+drain_usage() { # label → waits up to 60 s for the usage queue to empty
+  local i pending=0
+  for i in $(seq 1 60); do
+    pending=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed', 'failed', 'cancelled')")
+    [ "$pending" = 0 ] && return 0
+    sleep 1
+  done
+  fail "the usage queue did not drain in 60 s $1 ($pending pending); is the poster reaching the hub?"
+}
+hub_events() { hubdb "SELECT count(*) FROM usage_events"; }
+
+drain_usage "before the first leg's baseline"
+jobs_before=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events'")
+before_rows=$(hub_events)
+leg_start=$(sldb "SELECT now()")
 metered() { # label file-content → uploads one asset in the drill workspace with the given curl auth args; prints sizeBytes
   local label=$1 content=$2; shift 2
   printf '%s' "$content" > "$SCRATCH/asset-$label.txt"
@@ -568,55 +802,56 @@ done
   || fail "the thumbnail route answered 200 with something that is not a WebP"
 pass "the agent's deck got its picture on the cloud edition: a $(wc -c < "$SCRATCH/thumb.webp" | tr -d ' ')-byte WebP after ${i} s"
 
-# What the gate queued, verbatim (the poster drains this queue to the hub).
-queued=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events'")
-[ "$queued" -ge 4 ] || fail "expected at least 4 queued usage events (3 uploads + 1 commit), the queue holds $queued"
-for i in $(seq 1 60); do
-  pending=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state NOT IN ('completed', 'failed', 'cancelled')")
-  [ "$pending" = 0 ] && break
-  sleep 1
-done
-[ "$pending" = 0 ] || fail "the usage queue did not drain in 60 s ($pending pending); is the poster reaching the hub?"
+# What the gate queued in this leg, exactly: 3 uploads + 1 commit (the poster
+# drains this queue to the hub).
+jobs_after=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events'")
+[ "$((jobs_after - jobs_before))" = 4 ] || fail "expected exactly 4 new usage jobs (3 uploads + 1 commit), the queue grew by $((jobs_after - jobs_before))"
+drain_usage "after the first leg's actions"
 failed=$(sldb "SELECT count(*) FROM pgboss.job WHERE name = 'usage-events' AND state = 'failed'")
 [ "$failed" = 0 ] || fail "$failed usage job(s) FAILED at the poster: $(applogs app | grep -i 'usage poster' | tail -3)"
-pass "the poster drained the queue to the hub ($queued events, none failed)"
+pass "the poster drained the queue to the hub (4 new events, none failed)"
 
-# The hub's side: every event landed, attributed to the projected
+# The hub's side: every event of this leg landed, attributed to the projected
 # organization, the hub user, the right channel, the right action and size.
-landed=$(hubdb "SELECT count(*) FROM usage_events WHERE account_id = (SELECT central_account_id FROM workspaces WHERE id = '$HUB_ORG_ID')")
-[ "$landed" = "$((before_rows + queued))" ] \
-  || fail "the hub holds $landed events for the organization, expected $((before_rows + queued)); the poster's log: $(applogs app | grep -i 'usage poster' | tail -3 | cut -c1-300); the hub's: $(hubdb "SELECT metadata::text FROM audit_log WHERE action = 'usage.ingest' ORDER BY created_at DESC LIMIT 2")"
-row() { hubdb "SELECT count(*) FROM usage_events WHERE via = '$1' AND action_key = '$2' AND quantity = $3 AND user_id = '$HUB_USER_ID' AND tool_slug = '$(hubdb "SELECT metadata->'tool'->>'slug' FROM oauth_client WHERE client_id = '$SL_CLIENT_ID'")' AND workspace_id = '$WS_ID'"; }
+landed=$(hub_events)
+[ "$landed" = "$((before_rows + 4))" ] \
+  || fail "the hub holds $landed events, expected $((before_rows + 4)); the poster's log: $(applogs app | grep -i 'usage poster' | tail -3 | cut -c1-300); the hub's: $(hubdb "SELECT metadata::text FROM audit_log WHERE action = 'usage.ingest' ORDER BY created_at DESC LIMIT 2")"
+LEG_IDS=$(sldb "SELECT string_agg(quote_literal(data->>'id'), ',') FROM pgboss.job WHERE name = 'usage-events' AND created_on >= '$leg_start'")
+[ -n "$LEG_IDS" ] || fail "no usage job of this leg in the queue"
+TOOL_SLUG=$(hubdb "SELECT metadata->'tool'->>'slug' FROM oauth_client WHERE client_id = '$SL_CLIENT_ID'")
+row() { hubdb "SELECT count(*) FROM usage_events WHERE id IN ($LEG_IDS) AND via = '$1' AND action_key = '$2' AND quantity = $3 AND user_id = '$HUB_USER_ID' AND tool_slug = '$TOOL_SLUG' AND workspace_id = '$WS_ID'"; }
 [ "$(row session files.upload "$SESSION_BYTES")" = 1 ] || fail "no session row for files.upload of $SESSION_BYTES bytes by $HUB_USER_ID"
 [ "$(row api_key files.upload "$KEY_BYTES")" = 1 ] || fail "no api_key row for files.upload of $KEY_BYTES bytes by $HUB_USER_ID"
 [ "$(row oauth files.upload "$MCP_BYTES")" = 1 ] || fail "no oauth row for files.upload of $MCP_BYTES bytes by $HUB_USER_ID"
 [ "$(row oauth presentations.commit 1)" = 1 ] || fail "no oauth row for presentations.commit by $HUB_USER_ID"
-pass "usage_events: session / api_key / oauth, files.upload $SESSION_BYTES / $KEY_BYTES / $MCP_BYTES bytes + presentations.commit 1 call, user $HUB_USER_ID, the org's account, the registry slug"
+pass "usage_events: session / api_key / oauth, files.upload $SESSION_BYTES / $KEY_BYTES / $MCP_BYTES bytes + presentations.commit 1 call, user $HUB_USER_ID, workspace $WS_ID, the registry slug $TOOL_SLUG"
 
-# At-least-once from the tool, exactly once at the hub: the same batch again,
-# by hand, with the tool's own machine token, answers duplicate for every id.
+# At-least-once from the tool, exactly once at the hub: every event the tool
+# ever queued, posted again by hand with its own machine token, answers duplicate.
 machine=$("${CURL[@]}" -o "$SCRATCH/machine.json" -w '%{http_code}' -X POST "$HUB/api/v1/auth/oauth2/token" \
   -u "$SL_CLIENT_ID:$SL_CLIENT_SECRET" -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=client_credentials --data-urlencode scope=usage:write --data-urlencode "resource=$HUB/mcp")
 [ "$machine" = 200 ] || fail "the tool's client_credentials mint answered $machine: $(cat "$SCRATCH/machine.json")"
 MACHINE_TOKEN=$(jq -r '.access_token' "$SCRATCH/machine.json")
-sldb "SELECT json_agg(data)::text FROM pgboss.job WHERE name = 'usage-events'" | jq '{events: .}' > "$SCRATCH/replay.json"
+sldb "SELECT json_agg(data)::text FROM pgboss.job WHERE name = 'usage-events'" | jq '{events: .}' >"$SCRATCH/replay-events.json"
+all_jobs=$(jq -r '.events | length' "$SCRATCH/replay-events.json")
 "${CURL[@]}" -o "$SCRATCH/replay-answer.json" -f -X POST "$HUB/api/v1/usage/events" -H "Authorization: Bearer $MACHINE_TOKEN" \
-  -H 'content-type: application/json' -d @"$SCRATCH/replay.json" || fail "the hand replay of the batch failed: $(cat "$SCRATCH/replay-answer.json")"
-jq -e --argjson n "$queued" '.duplicate == $n and .accepted == 0 and .rejected == 0' "$SCRATCH/replay-answer.json" >/dev/null \
-  || fail "the replay should answer duplicate for all $queued: $(cat "$SCRATCH/replay-answer.json")"
-[ "$(hubdb "SELECT count(*) FROM usage_events")" = "$landed" ] || fail "the replay wrote rows"
-pass "the same batch posted again with the tool's machine token: $queued duplicate, 0 accepted, no new row"
+  -H 'content-type: application/json' -d @"$SCRATCH/replay-events.json" || fail "the hand replay of the batch failed: $(cat "$SCRATCH/replay-answer.json")"
+jq -e --argjson n "$all_jobs" '.duplicate == $n and .accepted == 0 and .rejected == 0' "$SCRATCH/replay-answer.json" >/dev/null \
+  || fail "the replay should answer duplicate for all $all_jobs: $(cat "$SCRATCH/replay-answer.json")"
+[ "$(hub_events)" = "$landed" ] || fail "the replay wrote rows"
+pass "every queued event posted again with the tool's machine token: $all_jobs duplicate, 0 accepted, no new row"
 
 # The organization's owner reads the consumption per person.
+org_events=$(hubdb "SELECT count(*) FROM usage_events WHERE account_id = (SELECT central_account_id FROM workspaces WHERE id = '$HUB_ORG_ID')")
 usage=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/billing-usage.json" -w '%{http_code}' -H "X-Workspace-Id: $HUB_ORG_ID" "$HUB/api/v1/billing/usage")
 [ "$usage" = 200 ] || fail "GET /billing/usage as the owner answered $usage: $(cat "$SCRATCH/billing-usage.json")"
-jq -e --arg u "$HUB_USER_ID" --argjson n "$queued" '.byUser | length == 1 and .[0].userId == $u and .[0].events == $n' "$SCRATCH/billing-usage.json" >/dev/null \
-  || fail "the per-person view does not show $queued events for $HUB_USER_ID: $(jq -c '.byUser' "$SCRATCH/billing-usage.json")"
-pass "GET /billing/usage as the owner: one person, $HUB_USER_ID, $queued events"
+jq -e --arg u "$HUB_USER_ID" --argjson n "$org_events" '.byUser | length == 1 and .[0].userId == $u and .[0].events == $n' "$SCRATCH/billing-usage.json" >/dev/null \
+  || fail "the per-person view does not show $org_events events for $HUB_USER_ID: $(jq -c '.byUser' "$SCRATCH/billing-usage.json")"
+pass "GET /billing/usage as the owner: one person, $HUB_USER_ID, $org_events events (the hub's count for the organization's account)"
 
-# ── Phase 8, second leg — the billing rail, phase 2 (PRDCT-2663 + PRDCT-2664) ──
-say "Phase 8 — phase 2: the hub prices, the chassis asks before an action and refuses on the balance, the debit lands"
+# ── Phase 8b, second leg — the billing rail, phase 2 (PRDCT-2663 + PRDCT-2664) ──
+say "Phase 8b — phase 2: the hub prices, the chassis asks before an action and refuses on the balance, the debit lands"
 SL_METRICS_TOKEN=federation-dev-metrics-token-0001 # the drill overlay's
 idem() { printf 'Idempotency-Key: drill-%s' "$(openssl rand -hex 8)"; }
 metrics() { "${CURL[@]}" -f -H "Authorization: Bearer $SL_METRICS_TOKEN" "$SL/metrics"; }
@@ -744,8 +979,8 @@ HEALED_BYTES=$(metered healed "${BIGGER}z" -b "$SL_JAR" -H "Origin: $SL")
 metrics | grep -q '^usage_check_posture 0' || fail "usage_check_posture should read 0 once the hub answers again: $(metrics | grep usage_check_posture)"
 pass "hub slow beyond the check's budget: the upload ($SLOW_BYTES bytes) still lands, usage_check_posture 1 on /metrics; the next answered check ($HEALED_BYTES bytes) heals it to 0"
 
-# ── Phase 8, third leg — the billing rail, phase 3: free is limited (PRDCT-2702) ──
-say "Phase 8 — phase 3: the free workspace is refused what pro unlocks, at Slideless's door and at the hub's"
+# ── Phase 8b, third leg — the billing rail, phase 3: free is limited (PRDCT-2702) ──
+say "Phase 8b — phase 3: the free workspace is refused what pro unlocks, at Slideless's door and at the hub's"
 # The plan entitlements were seeded from Slideless's discovery with the price
 # book above (workspace.members 3, links.perDeck 10, deck.password off on
 # free), so the Drill Workspace is a free workspace with every limit declared.
@@ -854,4 +1089,72 @@ for id in "$CAP_OVERRIDE" "$PASSWORD_OVERRIDE"; do
     || fail "DELETE /admin/billing/entitlements/$id failed"
 done
 pass "the two overrides removed: the account is on free again"
+# Felt again once the plan cache turns over: the locked mint is refused as
+# before. Every attempt that still lands adds a link to the deck, and the free
+# plan's links.perDeck (10) is judged AFTER the feature, so the attempts are
+# spaced five seconds apart, not three: the cache turns over in about
+# thirty, well before the deck's links could reach the count cap and answer
+# the same 403 on the wrong key.
+status=0
+for i in $(seq 1 20); do
+  status=$(locked relocked -b "$SL_JAR" -H "Origin: $SL")
+  [ "$status" = 403 ] && break
+  [ "$status" = 201 ] || fail "the locked mint after the overrides were removed answered $status: $(cat "$SCRATCH/locked-relocked.json")"
+  sleep 5
+done
+[ "$status" = 403 ] || fail "a hundred seconds after the overrides were removed the locked mint still lands"
+plan_refused "$SCRATCH/locked-relocked.json" deck.password
+pass "the two overrides removed: the locked mint is refused again (403 plan_required, deck.password) once the plan cache has turned over (the links minted meanwhile stay)"
 fi # the second leg
+
+# ── Phase 9 — logout ─────────────────────────────────────────────────────────
+say "Phase 9 — logout: the CLI key revokes itself, the browser session ends, the hub logout takes the grant"
+sess_revoke=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/sess-revoke.json" -w '%{http_code}' -X DELETE "$SL/api/v1/cli/auth/key" -H "Origin: $SL")
+[ "$sess_revoke" = 403 ] || fail "DELETE /cli/auth/key with a SESSION answered $sess_revoke (expected 403): $(cat "$SCRATCH/sess-revoke.json")"
+revoke_status=$("${CURL[@]}" -o "$SCRATCH/revoke.json" -w '%{http_code}' -X DELETE "$SL/api/v1/cli/auth/key" -H "Authorization: Bearer $CLI_KEY")
+[ "$revoke_status" = 200 ] && jq -e --arg id "$CLI_KEY_ID" '.revoked == true and .id == $id' "$SCRATCH/revoke.json" >/dev/null \
+  || fail "DELETE /cli/auth/key with the CLI key answered $revoke_status: $(cat "$SCRATCH/revoke.json")"
+after_revoke=$("${CURL[@]}" -o "$SCRATCH/after-revoke.json" -w '%{http_code}' -H "Authorization: Bearer $CLI_KEY" -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations")
+[ "$after_revoke" = 401 ] || fail "the revoked CLI key still answers $after_revoke on GET /presentations: $(cat "$SCRATCH/after-revoke.json")"
+! grep -q '"presentations"' "$SCRATCH/after-revoke.json" || fail "the 401 carries presentations"
+pass "CLI logout: DELETE /cli/auth/key (the presenting key) → 200 revoked; the same key on GET /presentations → 401 ($(jq -r '.error.code' "$SCRATCH/after-revoke.json")); a session is refused the route (403)"
+other_key=$("${CURL[@]}" -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $SLK" -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations")
+[ "$other_key" = 200 ] || fail "the self-revoke reached another key of the same user: GET /presentations with the dashboard key answered $other_key"
+[ "$(sldb "SELECT count(*) FROM api_keys WHERE created_by = '$SL_USER_ID' AND revoked_at IS NOT NULL")" = 1 ] || fail "expected exactly one revoked key"
+pass "the self-revoke killed exactly itself: the user's other slk_ key still reads /presentations"
+
+# The browser: POST /sso/logout revokes the local session server-side and
+# hands back the hub's end-session URL (null when the hub leg cannot be built).
+logout_status=$("${CURL[@]}" -b "$SL_JAR" -c "$SL_JAR" -o "$SCRATCH/logout.json" -w '%{http_code}' -X POST "$SL/api/v1/sso/logout" \
+  -H "Origin: $SL" -H 'content-type: application/json' -d '{}')
+[ "$logout_status" = 200 ] && jq -e 'has("url")' "$SCRATCH/logout.json" >/dev/null || fail "POST /sso/logout answered $logout_status: $(cat "$SCRATCH/logout.json")"
+note "hub end-session URL: $(jq -r '.url // "null"' "$SCRATCH/logout.json" | cut -c1-120)"
+gone=$("${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/gone.json" -w '%{http_code}' "$SL/api/v1/me")
+[ "$gone" = 401 ] || fail "GET /me after the logout answered $gone: $(cat "$SCRATCH/gone.json")"
+[ "$(sldb "SELECT count(*) FROM session WHERE user_id = '$SL_USER_ID'")" = 0 ] || fail "the logout left a session row"
+key_logout=$("${CURL[@]}" -o /dev/null -w '%{http_code}' -X POST "$SL/api/v1/sso/logout" -H "Authorization: Bearer $SLK" -H 'content-type: application/json' -d '{}')
+[ "$key_logout" = 403 ] || fail "POST /sso/logout with an slk_ key answered $key_logout (expected 403: a credential never ends its user's sessions)"
+pass "browser logout: POST /sso/logout → 200, the session row is gone, GET /me → 401; an slk_ key is refused the route (403)"
+
+# `antasphere logout` at the hub: the account key revokes itself and the hub
+# cascades onto the offline grant that key minted (PRDCT-1387). The tool's
+# stored grant is then dead. The hub-audienced ACCESS token the tool already
+# holds is a JWT the hub verifies statelessly, so it lives out its own TTL;
+# the drill ends that TTL the way Phase 5 does (expire the stored token,
+# restart to drop the in-process cache) and the next demand must refresh.
+hub_logout=$("${CURL[@]}" -o "$SCRATCH/hub-logout.json" -w '%{http_code}' -X DELETE "$HUB/api/v1/cli/auth/key" -H "Authorization: Bearer $HUB_KEY")
+[ "$hub_logout" = 200 ] || fail "the hub's DELETE /cli/auth/key answered $hub_logout: $(cat "$SCRATCH/hub-logout.json")"
+hub_after=$("${CURL[@]}" -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HUB_KEY" "$HUB/api/v1/me")
+[ "$hub_after" = 401 ] || fail "the revoked hub key still answers $hub_after"
+[ "$(offline_family "$SL_CLIENT_ID" "$HUB_USER_ID")" = 0 ] || fail "the hub logout left $(offline_family "$SL_CLIENT_ID" "$HUB_USER_ID") offline-grant row(s) for $SL_CLIENT_ID"
+pass "hub CLI logout: the account key → 401, and the offline grant it minted for $SL_CLIENT_ID is gone (0 rows)"
+sldb "UPDATE account SET access_token_expires_at = now() - interval '1 hour' WHERE provider_id = 'antasphere' AND user_id = '$SL_USER_ID'" >/dev/null
+dc restart app >/dev/null 2>&1
+wait_ready app "$SL/healthz" 300
+dead_status=$("${CURL[@]}" -o "$SCRATCH/dead.json" -w '%{http_code}' -H "Authorization: Bearer $SLK" -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations")
+[ "$dead_status" = 401 ] && grep -q hub_grant_expired "$SCRATCH/dead.json" \
+  || fail "after the hub logout, the user's remaining key answered $dead_status (expected 401 hub_grant_expired): $(cat "$SCRATCH/dead.json")"
+! grep -q '"presentations"' "$SCRATCH/dead.json" || fail "the 401 carries presentations"
+dead=$(sldb "SELECT (refresh_token IS NULL)::int FROM account WHERE provider_id = 'antasphere' AND user_id = '$SL_USER_ID'")
+[ "$dead" = 1 ] || fail "Slideless did not mark the logged-out grant dead"
+pass "the tool follows: once its hub access token is spent the refresh is refused, the grant is marked dead, and the user's remaining slk_ key answers 401 hub_grant_expired"
