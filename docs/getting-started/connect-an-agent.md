@@ -26,29 +26,33 @@ pnpm --filter @antasphere/slideless... build
 alias slideless='node /path/to/slideless/packages/cli/dist/bin.js'
 ```
 
-The CLI has **no default URL** — every command resolves its target as
-`--api-url` flag → `SLIDELESS_URL` env → the saved profile's `baseUrl`, and
-errors if none is set. That is deliberate: a self-hosted CLI must name its
-instance instead of silently talking to the wrong host.
-
-**Sign in, option A — browserless OTP** (requires the instance to have an
-email driver). Signs in existing accounts only — sign-up stays closed:
+**Sign in on the cloud** (`slideless.antasphere.com`): one command, with
+your Antasphere account. The CLI runs on the cloud by default, so it needs no
+URL:
 
 ```bash
-slideless auth login-request  --api-url https://slides.example.com --email you@example.com
-slideless auth login-complete --api-url https://slides.example.com --email you@example.com --code 123456
+slideless login
 ```
 
-`login-complete` mints an `slk_` API key server-side (scopes
-`presentations:read` + `presentations:write`) and stores it as the active
-profile in `~/.config/antasphere/tools/slideless.json` (mode 600; the
-shared Antasphere CLI config home, see [cli.md](../agents/cli.md)).
+**Sign in on a self-hosted instance, with an email code** (requires the
+instance to have an email driver). It prompts for your email, then the code,
+and signs in existing accounts only — sign-up stays closed:
 
-**Sign in, option B — paste a dashboard key** (works with `EMAIL_DRIVER=none`,
-and required for accounts with 2FA). Mint the key in the dashboard: **API
-keys**, then **Create key**. Tick `presentations:write` there (the dialog
-pre-selects `presentations:read` only) so the key can push and share; the
-secret is shown once, right after creation. Then:
+```bash
+slideless login --api-url https://slides.example.com
+```
+
+It mints an `slk_` API key server-side (scopes `presentations:read` +
+`presentations:write`) and stores it on the instance's profile in
+`~/.config/antasphere/tools/slideless.json` (mode 600; the shared Antasphere
+CLI config home, see [cli.md](../agents/cli.md)). That profile becomes the
+active one, so later commands need no URL.
+
+**Sign in on a self-hosted instance, with a pasted key** (works with
+`EMAIL_DRIVER=none`, and required for accounts with 2FA). Mint the key in the
+dashboard: **API keys**, then **Create key**. Tick `presentations:write` there
+(the dialog pre-selects `presentations:read` only) so the key can push and
+share; the secret is shown once, right after creation. Then:
 
 ```bash
 slideless login --api-url https://slides.example.com --api-key slk_...

@@ -45,6 +45,9 @@ On cloud, your Antasphere organizations appear in Slideless as workspaces:
 - Changes propagate fast: being removed from an organization, a role
   change, or an organization suspension takes effect in Slideless within
   seconds — across the dashboard, API keys, and connected agents alike.
+- Some tools are opened to an organization by Antasphere alone (a
+  restricted tool). Such an instance refuses to create an organization, and
+  says so.
 
 People invited to a single deck (per-deck collaborators) do not need to be
 in your organization: they claim the invitation by signing in with
@@ -52,18 +55,23 @@ Antasphere and get access to that one deck only.
 
 ## The CLI: one login for the whole tool family
 
-On cloud you never run a Slideless-specific login. `antasphere login` signs
-in once for every Antasphere tool CLI; when the `slideless` CLI targets a
-cloud instance it exchanges that credential for its own instance key
-automatically and caches it:
+`slideless login` is the one command. It signs you in to Antasphere when this
+machine has no Antasphere login yet (your email, then the code sent to it),
+and ends in Slideless. `antasphere login` remains the entry for the whole
+tool family: after it, every Antasphere tool CLI is signed in, `slideless`
+included. The `slideless` CLI runs on the cloud by default, with no URL to
+pass:
 
 ```bash
-antasphere login                                       # once, for the whole tool family
-slideless list --api-url https://slideless.antasphere.com   # exchanges + caches on first use
-slideless list                                              # served from the cache
+slideless login                  # once: your Antasphere account, then Slideless
+slideless list                   # your default organization
+slideless list --org "Acme"      # another organization, for this command only
+slideless logout                 # revokes the Slideless key and forgets it
 ```
 
-The cached key identifies you, not one organization — a single key serves
-whatever organization you are working in — and `slideless logout` revokes
-it. On self-hosted instances the CLI keeps its own documented sign-in flows
+The key the CLI keeps identifies you, not one organization. `--org` names
+the organization one command runs in, by its name or by the id the account
+site shows; without it, the command runs in your Antasphere default
+organization. Nothing about the organization is saved on your machine. On
+self-hosted instances the CLI keeps its own documented sign-in flows
 ([cli.md](../agents/cli.md)) and never contacts Antasphere.

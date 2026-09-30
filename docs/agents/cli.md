@@ -1,8 +1,9 @@
 # The Slideless CLI
 
 `slideless` is the typed command-line client for a Slideless instance — the
-primary human/agent face of it. It signs in over email OTP (minting
-its own API key), pushes deck folders as immutable versions, pulls them back
+primary human/agent face of it. It signs in with your Antasphere account on
+the cloud, or with an email code or a key on a self-hosted instance. It
+pushes deck folders as immutable versions, pulls them back
 byte-exactly, manages share links and collaborators, and previews decks
 locally under the exact viewer sandbox. The model behind the commands (one
 deck as one artifact with a page of its own, immutable versions, links made
@@ -41,12 +42,16 @@ file `0600`:
 
 ```json
 {
-  "activeProfile": "default",
+  "activeProfile": "share",
   "profiles": {
-    "default": { "apiKey": "slk_…", "baseUrl": "https://slides.example.com" }
+    "share": { "apiKey": "slk_…", "baseUrl": "https://share.example.com", "email": "ada@example.com" },
+    "cloud": { "connectKeys": { "default": { "apiKey": "slk_…", "email": "ada@example.com" } } }
   }
 }
 ```
+
+Nothing in the file names a workspace: a command names its organization or its
+workspace itself (below).
 
 **Migrating from older builds**: the config used to live at
 `~/.config/slideless/config.json`. On first run, if that file still exists,
@@ -57,28 +62,64 @@ corollary: after `slideless config clear`, a still-present legacy file is
 imported again on the next run; delete `~/.config/slideless/config.json` too
 if you want a truly clean slate.
 
-Every command accepts `--api-url` (alias `--url`), `--api-key`, `--profile`,
-`--workspace`, and `--json`. Resolution order:
+**A profile is an instance.** Each profile names one Slideless instance by its
+`baseUrl` and holds how you sign in there: the instance's own key (`apiKey`),
+or the keys your Antasphere login was exchanged for there (`connectKeys`, one
+per Antasphere login). The profile `cloud` exists before anything is on disk:
+it is the Antasphere cloud, `https://slideless.antasphere.com`, and it carries
+no `baseUrl` because that is its default. So a command on a clean machine runs
+on the cloud. `--api-url https://share.example.com` selects the profile of that
+instance, or makes one named for its host (`share.example.com`; a local
+instance on port 3400 gets `localhost:3400`). A self-hosted instance is named
+once, as a profile. No command renames a profile: the config file is yours,
+and you can edit a name there. `slideless use <profile>` switches the active
+profile, and `slideless login` makes its profile the active one.
+`slideless profiles` lists them: the active mark, the name, the url, and how
+each signs in:
 
-| Setting   | 1st           | 2nd                   | 3rd                         | Otherwise                                                                     |
-| --------- | ------------- | --------------------- | --------------------------- | ----------------------------------------------------------------------------- |
-| Base URL  | `--api-url`   | `SLIDELESS_URL`       | profile `baseUrl`           | **error**                                                                     |
-| API key   | `--api-key`   | `SLIDELESS_API_KEY`   | profile `apiKey`            | hub connect (cloud, below) — else the public commands work and the rest error |
-| Workspace | `--workspace` | `SLIDELESS_WORKSPACE` | profile `activeWorkspaceId` | the server's default workspace                                                |
+```
+   localhost:3400  http://localhost:3400             slk_EVzvc7vX_…QKkI
+   cloud           https://slideless.antasphere.com  via Antasphere (ada@example.com)
+*  share           https://share.example.com         slk_GT2pAduD_…zobU
+```
 
-**Choosing the workspace**: an API key identifies a person, and a person can
-belong to several workspaces. `--workspace <id or name>` (or
-`SLIDELESS_WORKSPACE`, or the selection `slideless workspace use` saves on the
-profile) names the one a command runs in; with none, the server picks your
-default workspace. The value is a Slideless workspace id as `slideless
-workspaces` prints it, or a workspace name, matched without regard to case; a
-name that matches several workspaces, or none, is an error that lists the
-candidates. An id is sent as it is, a name costs one extra request to look it
-up, and `workspace use` always saves the id. The saved selection applies only
-to the instance its profile names, and `slideless logout` removes it.
-`slideless whoami` shows the workspace the command ran in and what chose it.
-The server's default is yours to choose: `slideless workspace default <id or name>` on a
-self-hosted instance, your Antasphere account on the cloud, where the command answers with the page.
+A profile with no key reads `(not signed in)`. Every command selects its
+profile in this order: `--profile <name>`, then the profile of the
+`--api-url` / `SLIDELESS_URL` instance, then the active profile (`use`), then
+`cloud`. A key cached by the Antasphere login is only ever sent to the
+instance its profile names.
+
+Every command accepts `--api-url` (alias `--url`), `--api-key`,
+`--api-key-stdin`, `--profile`, `--org`, `--workspace`, and `--json`.
+Resolution order:
+
+| Setting      | 1st           | 2nd                   | 3rd               | Otherwise                                                                              |
+| ------------ | ------------- | --------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| Base URL     | `--api-url`   | `SLIDELESS_URL`       | profile `baseUrl` | the cloud, `https://slideless.antasphere.com`                                          |
+| API key      | `--api-key`   | `SLIDELESS_API_KEY`   | profile `apiKey`  | the Antasphere login (cloud, below) — else the public commands work and the rest error |
+| Organization | `--org`       | `SLIDELESS_ORG`       | (nothing saved)   | your default organization                                                              |
+| Workspace    | `--workspace` | `SLIDELESS_WORKSPACE` | (nothing saved)   | the server's default workspace                                                         |
+
+**Choosing the organization or the workspace**: an API key identifies a
+person, and a person can belong to several workspaces. On the cloud, each
+workspace is an Antasphere organization. `--org <id or name>` (or
+`SLIDELESS_ORG`) names the organization a command runs in, by the id the
+account site shows or by its name; the instance maps it to its workspace.
+`--workspace <id or name>` (or `SLIDELESS_WORKSPACE`) names a workspace of the
+instance, by the Slideless workspace id `slideless workspaces` prints or by its
+name. A self-hosted instance has no organization ids, so there you use
+`--workspace`. Passing both is an error. A name is matched without regard to
+case; a name that matches several workspaces, or none, is an error that lists
+the candidates. An id is sent as it is, and a name costs one extra request to
+look it up. Nothing is saved on the machine: with no selection, the server
+picks your default workspace. The server's default is yours to choose:
+`slideless workspace default <id or name>` on a self-hosted instance; on the
+cloud it is a setting of your Antasphere account, and the command answers with
+the page. `slideless workspaces` lists your memberships, with
+`organization <id>` on the rows that have one. `slideless whoami` shows the
+workspace the command ran in, its organization id, what chose it, what the
+command signed in with, and the Antasphere login (used, not used and why, or
+`not connected`).
 A key pinned to one workspace only ever acts there: selecting another one is
 refused, and the error names the pin.
 A deck lives in one workspace: a deck id (a linked folder's, a pasted one)
@@ -95,89 +136,137 @@ carries it in the environment, and `share` / `share-email` take
 once per invocation — asking twice is a usage error rather than two commands
 silently sharing one secret.
 
-There is deliberately **no default URL**: a self-hosted CLI must name its
-instance explicitly (flag, env, or saved profile) rather than silently talking
-to the wrong host.
+### Cloud instances: one login for the whole family
 
-### Cloud instances: connect through `antasphere login`
-
-On an **Antasphere-cloud** instance you never run a Slideless-specific login.
-When no direct key resolves, the CLI asks discovery (`GET /api/v1/instance`)
-whether the instance signs in through the hub (`auth.methods` contains
-`antasphere`); if so, it exchanges the stored `antasphere login` credential
-for a **user-scoped** tool-local `slk_` key (hub → tool; see
-[Your Antasphere account](../getting-started/antasphere-account.md)) and
-caches it in the profile **per hub profile** (`connectKeys` — ONE
-key per hub account, valid for every org; the org is a per-request
-selection, never part of the credential):
+On an **Antasphere-cloud** instance you sign in with your Antasphere account,
+once for every Antasphere tool CLI. `antasphere login` is the family entry,
+and after it `slideless` needs no flag on a clean machine:
 
 ```bash
-antasphere login                       # once, for the whole tool family
-slideless list --api-url https://slideless.antasphere.com   # exchanges + caches on first use
-slideless list                                      # served from the cache — no hub call, no new key
+antasphere login     # once, for the whole tool family
+slideless list       # exchanges the Antasphere login for a Slideless key, caches it
+slideless list       # served from the cache — no hub call, no new key
 ```
 
-- The exchange names **no organization** (the hub credential identifies the
-  USER, never one org); a single cached key serves whatever org context is
-  active. Second and later runs make zero hub calls and mint nothing.
+`slideless login` alone does both: it signs you in to Antasphere when no
+Antasphere login is stored on this machine, then does the exchange (see
+[Sign in](#sign-in)).
+
+When no direct key resolves, the CLI asks discovery (`GET /api/v1/instance`)
+whether the instance signs in through the hub (`auth.methods` contains
+`antasphere`); if so, it exchanges the stored Antasphere login
+for a **user-scoped** tool-local `slk_` key (hub → tool; see
+[Your Antasphere account](../getting-started/antasphere-account.md)) and
+caches it in the profile **per Antasphere login** (`connectKeys` — ONE
+key per Antasphere account, valid for every organization; the organization is
+a per-command selection, `--org`, never part of the credential).
+
+- The exchange names **no organization** (the Antasphere login identifies the
+  USER, never one organization); a single cached key serves whatever
+  organization a command names. Second and later runs make zero hub calls and
+  mint nothing.
 - The hub key is sent to the **hub only**; the instance sees a short-lived
   user-scoped JWT (plus its own one-time offline grant, relayed once and
   never stored by the CLI) and answers with an ordinary local key.
-- A cached key is only ever replayed against the instance it was minted on
-  (the profile's `baseUrl` scopes the cache).
-- `slideless logout` on a hub-connected profile self-revokes the cached
-  key(s) server-side (`DELETE /cli/auth/key` — the presenting key revokes
-  exactly itself), then evicts them. An OLDER instance whose machine
-  allowlist predates the self-revoke refuses (403) and keeps the key
-  **valid server-side** — the CLI says so; revoke it from the dashboard. A
-  classic single-key profile logs out exactly as before.
+- A cached key is only ever sent to the instance its profile names (the
+  profile's `baseUrl` scopes the cache).
+- A cached key the instance refuses (401: revoked at Antasphere, a membership
+  removed) is evicted and exchanged again once, and the command is retried
+  once. The CLI says so on stderr:
+  `The cached key was refused; signed in again through Antasphere.`
+- When Antasphere refuses the exchange (for example, an organization not
+  granted the tool), the CLI prints Antasphere's own sentence and exits 3.
+  Exit 1 is a usage or wire error.
+- `slideless logout` revokes the cached key(s) server-side (see
+  [Sign in](#sign-in)), then forgets them.
 
-Self-hosted (`oss`) instances never take this branch: the flows above
-(`auth login-request`, `login`, `SLIDELESS_API_KEY`, `--api-key`) resolve
-exactly as documented, and the hub is never contacted.
+Self-hosted (`oss`) instances never take this branch: `slideless login` there
+is the instance's own email code or a pasted key, and the hub is never
+contacted.
 
 ## Sign in
 
-The OTP flow is the **self-host** entrance. On an Antasphere-cloud instance
-it refuses — the CLI detects cloud via discovery and steers you to
-`antasphere login` (see "Cloud instances" above); server-side the endpoints
-answer `403 cli_otp_disabled` (cloud instances are hub-login-only). The
-flow needs the instance to have a delivering email driver
-(`EMAIL_DRIVER=smtp|resend|brevo`); it signs in **existing accounts only** — sign-up
-stays closed (accounts enter via setup, workspace invitations, or
-collaborator claims):
+`slideless login` is the one sign-in command. With no URL it signs in on the
+selected profile: the active one, else the cloud. It makes its profile the
+active one.
+
+**On the cloud** it is your Antasphere account:
 
 ```bash
-slideless auth login-request  --api-url https://slides.example.com --email you@example.com
-slideless auth login-complete --api-url https://slides.example.com --email you@example.com --code 123456
+slideless login
 ```
 
-`login-complete` mints an `slk_` API key server-side (scopes
-`presentations:read` + `presentations:write`, never `data:export`) and stores
-it as the active profile; `--key-name <name>` names the key as the dashboard
-lists it, and `--expires-in-days <n>` gives it a TTL (it never expires
-otherwise). Accounts with 2FA enabled are refused
-(`two_factor_required`), and an instance with no email driver has no OTP at
-all — mint a key in the dashboard instead (**API keys**, **Create key**; tick
-`presentations:write`, which the dialog leaves unchecked, for push and share)
-and paste it:
+When no Antasphere login is stored on this machine, it asks your email and
+the code sent to it, inline (prompts `Antasphere email: ` and `Code: `;
+`--email` skips the first). This is the same sign-in `antasphere login` does,
+against `https://account.antasphere.com` (`ANTASPHERE_URL` overrides it), and
+the key is stored where `antasphere login` stores it, so every other
+Antasphere tool CLI is signed in too. It then exchanges that login for the
+Slideless key and ends with:
+
+```
+Signed in as Ada <ada@example.com> in Acme (organization …) on https://slideless.antasphere.com.
+Your workspaces: Acme, Beta. Pass --org <name> (or --workspace <name>) to work in another.
+```
+
+The second line appears only when you have several organizations. A stored
+Antasphere login that Antasphere no longer accepts is replaced once: the CLI
+says `The stored Antasphere login was rejected: signing in again.` and asks
+for the email and the code.
+
+**On a self-hosted instance** it is the instance's own email code, both legs
+in the one command:
 
 ```bash
-slideless login --api-url https://slides.example.com --api-key slk_…   # or pipe the key on stdin
+slideless login --api-url https://share.example.com                             # prompts Email: then Code:
+slideless login --api-url https://share.example.com --email you@example.com     # prompts Code: only
 ```
+
+The flow needs the instance to have a delivering email driver
+(`EMAIL_DRIVER=smtp|resend|brevo`); it signs in **existing accounts only** —
+sign-up stays closed (accounts enter via setup, workspace invitations, or
+collaborator claims). It mints an `slk_` API key server-side (scopes
+`presentations:read` + `presentations:write`, never `data:export`) and saves
+it on the instance's profile. Once that profile is active, `slideless login`
+alone signs in there again. Accounts with 2FA enabled are refused
+(`two_factor_required`), and an instance with no email driver has no email
+code at all. For those, mint a key in the dashboard (**API keys**,
+**Create key**; tick `presentations:write`, which the dialog leaves unchecked,
+for push and share) and paste it:
+
+```bash
+slideless login --api-url https://share.example.com --api-key slk_…
+pass show slideless | slideless login --api-url https://share.example.com --api-key-stdin
+```
+
+A pasted key must start with `slk_`, and the CLI checks it against the
+instance before it saves it. `--key-name <name>` names the key the sign-in
+mints, as the dashboard lists it, and `--expires-in-days <n>` gives it a TTL
+(it never expires otherwise). On the cloud that key is the Antasphere account
+key; on a self-hosted instance it is the instance key.
 
 Profile management:
 
 ```bash
-slideless whoami            # identity behind the resolved key
+slideless whoami            # identity, instance + profile, workspace + organization, what chose it,
+                            # what the command signed in with, the Antasphere login
 slideless verify            # exit 0 iff instance + key work
-slideless profiles          # list profiles (keys redacted)
-slideless use <profile>     # switch the active profile
-slideless logout            # forget the stored key (revoke server-side in the dashboard);
-                            # hub-connected profiles: revoke + evict the cached user-scoped key
+slideless profiles          # list profiles: active mark, name, url, how each signs in (keys redacted)
+slideless use <profile>     # switch the active profile (`use cloud` works before cloud is on disk)
+slideless logout            # revoke every key the profile holds on its instance, then forget them
 slideless config show       # config path + redacted contents
 slideless config clear      # delete the config file
 ```
+
+`slideless logout` works on the active profile, or the one `--profile` names.
+Every key the profile holds (its own key and each Antasphere login's key) is
+revoked on the instance the profile names, never on an `--api-url` one:
+`DELETE /cli/auth/key`, where the presenting key revokes exactly itself. Then
+the keys are forgotten. The profile stays, with its url. An older instance
+whose machine allowlist predates the self-revoke refuses it (403): the CLI
+says the key `STAYS VALID server-side; revoke it from the dashboard`, and
+forgets the local copy. The Antasphere login itself stays stored for the other
+tool CLIs.
 
 ## Author: push / pull / dev
 
@@ -875,9 +964,8 @@ slideless versions <id> [--all]  # version history, newest first (numbers line u
                                  # or the MCP tool slideless_get_version
 slideless delete <id>         # soft delete (links stop resolving)
 slideless instance            # public discovery — no key needed
-slideless workspaces          # your workspaces: id, role, name; * = the one the commands run in, (default) = the server's
-slideless workspace use <id or name>   # save the selection on the profile (the id is what is stored)
-slideless workspace use --clear        # remove it: commands run in the server's default again
+slideless workspaces          # your workspaces: id, role, name, organization id; * = the one the commands run in,
+                              # (default) = the server's
 slideless workspace default <id or name>   # self-hosted: choose the server's default, for every key and session of yours
 slideless workspace default --clear        # remove the choice: the workspace you joined first is the default again
 slideless files list [--all]
@@ -906,7 +994,9 @@ slideless completion fish | source      # fish
 ## Machine use
 
 Add `--json` to any command except `files download` for the wire shape; every error prints to stderr
-and exits non-zero. Typical agent loop:
+and exits non-zero: 1 for a usage or wire error, 3 when Antasphere refuses you (its own sentence
+is printed). On the cloud, the key variable is not needed once `slideless login` has run. Typical
+agent loop on a self-hosted instance:
 
 ```bash
 export SLIDELESS_URL=https://slides.example.com
@@ -919,18 +1009,19 @@ A `--json` push never opens a browser; hand `.url` (the deck's page on the
 instance, behind the owner's session) to the person, and mint a share link
 only when a recipient needs one.
 
-## Server endpoints behind `auth login-*`
+## Server endpoints behind `login`
 
-`POST /api/v1/cli/auth/request` and `POST /api/v1/cli/auth/complete` are
+The self-hosted email code of `slideless login` rides
+`POST /api/v1/cli/auth/request` and `POST /api/v1/cli/auth/complete`. They are
 public pre-auth endpoints (like `/setup`), riding the better-auth email-OTP
 plugin with `disableSignUp` — an unknown email gets a generic success and no
 mail (no account enumeration, no account creation), codes are attempt-limited
 (3) and both endpoints sit behind the instance's OTP/login rate walls. The
 key is returned exactly once; the flow's throwaway session is deleted
 server-side. Without an email driver both answer `400 otp_unavailable`; on
-the cloud edition both answer `403 cli_otp_disabled` (hub-only login — mint
-through `antasphere login` instead). `DELETE /cli/auth/key` is the logout
-counterpart on both editions: an authenticated route where the presenting
-API key revokes exactly ITSELF (machine-allowed under `presentations:write`
-in the fail-closed scope allowlist; sessions are refused — the dashboard is
-their key surface).
+the cloud edition both answer `403 cli_otp_disabled` (hub-only login: there
+`slideless login` signs in through the Antasphere account instead).
+`DELETE /api/v1/cli/auth/key` is the `logout` counterpart on both editions: an
+authenticated route where the presenting API key revokes exactly ITSELF
+(machine-allowed under `presentations:write` in the fail-closed scope
+allowlist; sessions are refused — the dashboard is their key surface).

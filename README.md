@@ -46,10 +46,10 @@ open http://localhost:3000
    slideless login --api-url http://localhost:3000 --api-key slk_...
    ```
 
-   When the instance has an email driver configured, agents and headless
-   machines can skip the dashboard entirely with the OTP flow
-   (`slideless auth login-request` / `login-complete` — see
-   [docs/agents/cli.md](docs/agents/cli.md)).
+   When the instance has an email driver configured (locally, Mailpit), agents
+   and headless machines can skip the dashboard entirely with the email-code
+   login: `slideless login --api-url http://localhost:3000` prompts for the
+   email, then the code (see [docs/agents/cli.md](docs/agents/cli.md)).
 
 3. **Push a deck and share it.**
 
