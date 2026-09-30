@@ -15,7 +15,7 @@ import { routedHarness } from './harness.js';
  *
  * The check is presence, not prose: a flag counts as documented when its
  * long form (`--no-bar`) appears anywhere in the page, and a command when
- * its full path (`files download`, `auth login-complete`) does. Wording is
+ * its full path (`files download`, `workspace default`) does. Wording is
  * the reader's business (the workstream's verifier), completeness is this
  * test's.
  */
@@ -23,7 +23,7 @@ import { routedHarness } from './harness.js';
 const DOC_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../../docs/agents/cli.md');
 
 interface Surface {
-  /** Full command paths: `push`, `auth login-complete`, `files download`. */
+  /** Full command paths: `push`, `workspace default`, `files download`. */
   commands: string[];
   /** Long flags per command path, `--flag` only (short aliases are extras). */
   flags: Array<{ command: string; flag: string }>;
@@ -107,7 +107,9 @@ describe('docs/agents/cli.md covers the command tree (PRDCT-2309)', () => {
       'share-email',
       'pin',
       'tokens',
-      'auth login-complete',
+      'login',
+      'logout',
+      'workspace default',
       'files download'
     ]) {
       expect(tree.commands, `expected command ${c}`).toContain(c);

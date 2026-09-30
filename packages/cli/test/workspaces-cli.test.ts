@@ -1,9 +1,8 @@
-import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { HUB_TOOL, saveConfig as saveCoreConfig } from '@antasphere/cli-core';
 import { run } from '../src/index.js';
-import { loadConfig, saveConfig } from '../src/cli.js';
+import { saveConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, type Route } from './harness.js';
 
 /**
@@ -27,6 +26,7 @@ const WORKSPACES = [
     name: 'Acme',
     role: 'owner',
     hubOrigin: false,
+    centralAccountId: null as string | null,
     look: { theme: null, pattern: null, field: null, grain: null },
     suspended: false,
     default: true
@@ -36,6 +36,7 @@ const WORKSPACES = [
     name: 'Atelier Nord',
     role: 'member',
     hubOrigin: false,
+    centralAccountId: null as string | null,
     look: { theme: null, pattern: null, field: null, grain: null },
     suspended: false,
     default: false
@@ -110,13 +111,10 @@ function instance(workspaces = WORKSPACES): Route[] {
   ];
 }
 
-/** A saved profile on the instance, optionally with a saved selection. */
-async function profileEnv(activeWorkspaceId?: string, baseUrl = URL): Promise<Record<string, string>> {
+/** A saved profile on the instance (nothing else is saved: a selection is per command). */
+async function profileEnv(baseUrl = URL): Promise<Record<string, string>> {
   const env = await tempConfigEnv();
-  saveConfig(env, {
-    activeProfile: 'work',
-    profiles: { work: { apiKey: KEY, baseUrl, ...(activeWorkspaceId ? { activeWorkspaceId } : {}) } }
-  });
+  saveConfig(env, { activeProfile: 'work', profiles: { work: { apiKey: KEY, baseUrl } } });
   return env;
 }
 
@@ -158,14 +156,8 @@ describe('a person in two workspaces lists two deck sets', () => {
     expect(titles(h.out())).toEqual(['Nord roadmap', 'Nord budget']);
   });
 
-  it('the profile field selects it', async () => {
-    const h = routedHarness(instance(), await profileEnv(NORD));
-    expect(await run(['list', '--json'], h.io)).toBe(0);
-    expect(titles(h.out())).toEqual(['Nord roadmap', 'Nord budget']);
-  });
-
-  it('the flag wins over the variable, and the variable over the profile', async () => {
-    const env = { ...(await profileEnv(NORD)), SLIDELESS_WORKSPACE: ACME };
+  it('the flag wins over the variable', async () => {
+    const env = { ...(await profileEnv()), SLIDELESS_WORKSPACE: ACME };
     const viaEnv = routedHarness(instance(), env);
     expect(await run(['list', '--json'], viaEnv.io)).toBe(0);
     expect(titles(viaEnv.out())).toEqual(['Acme pitch']);
@@ -175,12 +167,18 @@ describe('a person in two workspaces lists two deck sets', () => {
     expect(titles(viaFlag.out())).toEqual(['Nord roadmap', 'Nord budget']);
   });
 
-  it('the profile field is ignored when the request goes to another instance', async () => {
-    const h = routedHarness(instance(), await profileEnv(NORD));
-    expect(await run(['list', '--json', '--api-url', 'http://other'], h.io)).toBe(0);
+  it("the profile's key never travels to another instance named by --api-url", async () => {
+    // A profile IS an instance: --api-url http://other selects the profile of
+    // THAT instance (none saved: one made in memory, with no key), so the
+    // saved key stays home and the probe finds a self-hosted instance.
+    const h = routedHarness(instance(), await profileEnv());
+    expect(await run(['list', '--json', '--api-url', 'http://other'], h.io)).toBe(1);
     expect(h.wire).toEqual([
-      { method: 'GET', origin: 'http://other', path: '/api/v1/presentations', auth: `Bearer ${KEY}` }
+      { method: 'GET', origin: 'http://other', path: '/api/v1/instance', auth: undefined }
     ]);
+    expect(h.err()).toBe(
+      'Error: An API key is required. Sign in (`slideless login`), pass --api-key, or set SLIDELESS_API_KEY.\n'
+    );
   });
 
   it('files download, which bypasses the SDK client, carries the selection too', async () => {
@@ -192,11 +190,14 @@ describe('a person in two workspaces lists two deck sets', () => {
       },
       { method: 'GET', path: /^\/api\/v1\/files\/f1\/content$/, reply: () => ({ raw: new Response('hi') }) }
     ];
-    const env = await profileEnv(NORD);
+    const env = await profileEnv();
     const h = routedHarness(routes, env);
-    expect(await run(['files', 'download', 'f1', '--out', join(env.XDG_CONFIG_HOME!, 'a.txt')], h.io)).toBe(
-      0
-    );
+    expect(
+      await run(
+        ['files', 'download', 'f1', '--workspace', NORD, '--out', join(env.XDG_CONFIG_HOME!, 'a.txt')],
+        h.io
+      )
+    ).toBe(0);
     expect(h.wire.map((c) => [c.path, c.workspace])).toEqual([
       ['/api/v1/files/f1', NORD],
       ['/api/v1/files/f1/content', NORD]
@@ -224,20 +225,19 @@ describe('a selection that names nothing usable', () => {
   });
 
   it('an empty --workspace is a usage error and sends nothing', async () => {
-    const h = routedHarness(instance(), await profileEnv(NORD));
+    const h = routedHarness(instance(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: NORD });
     expect(await run(['list', '--workspace', ' '], h.io)).toBe(1);
     expect(h.err()).toContain('--workspace needs a workspace id or name');
     expect(h.wire).toEqual([]);
   });
 
   it("an id that is not yours: the server's 401 becomes a sentence that clears the key", async () => {
-    const h = routedHarness(instance(), await profileEnv(ELSEWHERE));
-    expect(await run(['list'], h.io)).toBe(1);
-    expect(h.err()).toContain(
-      `The workspace "${ELSEWHERE}" (selected by profile "work") is not one of yours`
+    const h = routedHarness(instance(), await profileEnv());
+    expect(await run(['list', '--workspace', ELSEWHERE], h.io)).toBe(1);
+    expect(h.err()).toBe(
+      `Error: The workspace "${ELSEWHERE}" (selected by the --workspace flag) is not one of yours on ${URL}; ` +
+        `the API key itself works. Yours:\n  ${ACME}  owner   Acme\n  ${NORD}  member  Atelier Nord\n`
     );
-    expect(h.err()).toContain('the API key itself works');
-    expect(h.err()).toContain('slideless workspace use --clear');
     expect(h.err()).not.toContain('check the key');
     // The probe is /me WITHOUT the selection.
     expect(h.wire.map((c) => [c.path, c.workspace])).toEqual([
@@ -283,10 +283,10 @@ describe('a deck id asked of another workspace', () => {
   };
 
   it('the 404 names the workspace that was asked, and what selected it', async () => {
-    const h = routedHarness([missing], await profileEnv(NORD));
-    expect(await run(['get', DECK.id], h.io)).toBe(1);
+    const h = routedHarness([missing], await profileEnv());
+    expect(await run(['get', DECK.id, '--workspace', NORD], h.io)).toBe(1);
     expect(h.err()).toBe(
-      `Error: Presentation not found (looked in the workspace "${NORD}", selected by profile "work")\n`
+      `Error: Presentation not found (looked in the workspace "${NORD}", selected by the --workspace flag)\n`
     );
   });
 
@@ -309,10 +309,19 @@ describe('whoami shows the workspace the command ran in, and what chose it', () 
       'env',
       'Atelier Nord'
     ],
-    ['the profile', [], {}, NORD, 'profile "work"', 'profile', 'Atelier Nord'],
-    ['nothing', [], {}, undefined, "the server's default", 'default', 'Acme']
-  ] as const)('chosen by %s', async (_label, args, extraEnv, saved, words, source, name) => {
-    const env = { ...(await profileEnv(saved)), ...extraEnv };
+    ['the --org flag', ['--org', NORD], {}, undefined, 'the --org flag', 'flag', 'Atelier Nord'],
+    [
+      'the org variable',
+      [],
+      { SLIDELESS_ORG: 'atelier nord' },
+      undefined,
+      'SLIDELESS_ORG',
+      'env',
+      'Atelier Nord'
+    ],
+    ['nothing', [], {}, undefined, "the server's default (nothing selected)", 'default', 'Acme']
+  ] as const)('chosen by %s', async (_label, args, extraEnv, _saved, words, source, name) => {
+    const env = { ...(await profileEnv()), ...extraEnv };
     const human = routedHarness(instance(), env);
     expect(await run(['whoami', ...args], human.io)).toBe(0);
     expect(human.out()).toContain(`workspace: ${name} (${name === 'Acme' ? ACME : NORD})`);
@@ -333,19 +342,23 @@ describe('whoami shows the workspace the command ran in, and what chose it', () 
 
 describe('slideless workspaces', () => {
   it('lists id, role and name, the default mark and the selected mark', async () => {
-    const h = routedHarness(instance(), await profileEnv(NORD));
-    expect(await run(['workspaces'], h.io)).toBe(0);
-    const lines = h.out().split('\n');
-    expect(lines[0]).toBe(`  ${ACME}  owner   Acme  (default)`);
-    expect(lines[1]).toBe(`* ${NORD}  member  Atelier Nord`);
-    expect(h.out()).toContain('chosen by profile "work"');
+    const h = routedHarness(instance(), await profileEnv());
+    expect(await run(['workspaces', '--workspace', NORD], h.io)).toBe(0);
+    expect(h.out()).toBe(
+      `  ${ACME}  owner   Acme  (default)\n` +
+        `* ${NORD}  member  Atelier Nord\n` +
+        '\n* = the workspace the commands run in, chosen by the --workspace flag\n' +
+        '(default) = what a request naming no workspace resolves to\n'
+    );
   });
 
   it('with nothing selected, the mark is on the workspace the server resolved', async () => {
     const h = routedHarness(instance(), await profileEnv());
     expect(await run(['workspaces'], h.io)).toBe(0);
     expect(h.out().split('\n')[0]).toBe(`* ${ACME}  owner   Acme  (default)`);
-    expect(h.out()).toContain('chosen by the server');
+    expect(h.out()).toContain(
+      '* = the workspace the commands run in, chosen by the server (nothing is selected; --org or --workspace selects one per command)\n'
+    );
   });
 
   it('--json carries the memberships, the selected id and the source', async () => {
@@ -355,10 +368,13 @@ describe('slideless workspaces', () => {
   });
 
   it('never sends the selection, so it still answers when the selection is stale, and says so', async () => {
-    const h = routedHarness(instance(), await profileEnv(ELSEWHERE));
+    const h = routedHarness(instance(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: ELSEWHERE });
     expect(await run(['workspaces'], h.io)).toBe(0);
     expect(h.wire).toEqual([{ method: 'GET', origin: URL, path: '/api/v1/me', auth: `Bearer ${KEY}` }]);
-    expect(h.err()).toContain(`"${ELSEWHERE}" (selected by profile "work") names none of these workspaces`);
+    expect(h.err()).toBe(
+      `Warning: "${ELSEWHERE}" (selected by SLIDELESS_WORKSPACE) names none of these workspaces, ` +
+        'so commands that use it are refused.\n'
+    );
     expect(
       h
         .out()
@@ -381,140 +397,6 @@ describe('slideless workspaces', () => {
     expect(await run(['workspaces'], h.io)).toBe(0);
     expect(h.out()).not.toContain('\u001b');
     expect(h.out()).toContain('member  Nord\n');
-  });
-});
-
-describe('slideless workspace use', () => {
-  it('saves the ID on the profile from a name, and later commands run there', async () => {
-    const env = await profileEnv();
-    const h = routedHarness(instance(), env);
-    expect(await run(['workspace', 'use', 'atelier nord'], h.io)).toBe(0);
-    expect(h.out()).toContain(`Profile "work" now runs in "Atelier Nord" (${NORD})`);
-    expect(loadConfig(env).profiles.work).toEqual({ apiKey: KEY, baseUrl: URL, activeWorkspaceId: NORD });
-
-    const after = routedHarness(instance(), env);
-    expect(await run(['list', '--json'], after.io)).toBe(0);
-    expect(titles(after.out())).toEqual(['Nord roadmap', 'Nord budget']);
-  });
-
-  it('keeps the config file private (0600)', async () => {
-    const env = await profileEnv();
-    expect(await run(['workspace', 'use', NORD], routedHarness(instance(), env).io)).toBe(0);
-    const file = join(env.XDG_CONFIG_HOME!, 'antasphere', 'tools', 'slideless.json');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(file, 'utf8')).profiles.work.activeWorkspaceId).toBe(NORD);
-  });
-
-  it('--json answers the profile, the id and the workspace', async () => {
-    const h = routedHarness(instance(), await profileEnv());
-    expect(await run(['workspace', 'use', NORD, '--json'], h.io)).toBe(0);
-    expect(JSON.parse(h.out())).toEqual({
-      profile: 'work',
-      activeWorkspaceId: NORD,
-      workspace: { id: NORD, name: 'Atelier Nord', role: 'member' }
-    });
-  });
-
-  it('refuses a workspace that is not yours and writes nothing', async () => {
-    const env = await profileEnv(ACME);
-    const h = routedHarness(instance(), env);
-    expect(await run(['workspace', 'use', ELSEWHERE], h.io)).toBe(1);
-    expect(h.err()).toContain('is not one of your workspaces');
-    expect(loadConfig(env).profiles.work?.activeWorkspaceId).toBe(ACME);
-  });
-
-  it('replaces a stale selection: the saved one is never sent while choosing', async () => {
-    const env = await profileEnv(ELSEWHERE);
-    const h = routedHarness(instance(), env);
-    expect(await run(['workspace', 'use', 'Acme'], h.io)).toBe(0);
-    expect(h.wire.map((c) => c.workspace)).toEqual([undefined]);
-    expect(loadConfig(env).profiles.work?.activeWorkspaceId).toBe(ACME);
-  });
-
-  it('--clear removes the field without a request', async () => {
-    const env = await profileEnv(NORD);
-    const h = routedHarness(instance(), env);
-    expect(await run(['workspace', 'use', '--clear'], h.io)).toBe(0);
-    expect(h.wire).toEqual([]);
-    expect(loadConfig(env).profiles.work).toEqual({ apiKey: KEY, baseUrl: URL });
-    expect(h.out()).toContain('selects no workspace');
-  });
-
-  it('writes the profile --profile names, not the active one', async () => {
-    const env = await profileEnv();
-    const config = loadConfig(env);
-    config.profiles.other = { apiKey: KEY, baseUrl: URL };
-    saveConfig(env, config);
-    expect(
-      await run(['workspace', 'use', NORD, '--profile', 'other'], routedHarness(instance(), env).io)
-    ).toBe(0);
-    expect(loadConfig(env).profiles.other?.activeWorkspaceId).toBe(NORD);
-    expect(loadConfig(env).profiles.work?.activeWorkspaceId).toBeUndefined();
-  });
-
-  it('needs exactly one of a workspace or --clear', async () => {
-    const both = routedHarness(instance(), await profileEnv());
-    expect(await run(['workspace', 'use', NORD, '--clear'], both.io)).toBe(1);
-    const none = routedHarness(instance(), await profileEnv());
-    expect(await run(['workspace', 'use'], none.io)).toBe(1);
-    expect(none.err()).toContain('exactly one of');
-    expect([...both.wire, ...none.wire]).toEqual([]);
-  });
-
-  it('needs a profile to write to', async () => {
-    const h = routedHarness(instance(), {
-      ...(await tempConfigEnv()),
-      SLIDELESS_URL: URL,
-      SLIDELESS_API_KEY: KEY
-    });
-    expect(await run(['workspace', 'use', NORD], h.io)).toBe(1);
-    expect(h.err()).toContain('No profile to save the selection on');
-  });
-
-  it('refuses to save an id looked up on another instance than the profile names', async () => {
-    const env = await profileEnv();
-    const h = routedHarness(instance(), env);
-    expect(await run(['workspace', 'use', NORD, '--api-url', 'http://other'], h.io)).toBe(1);
-    expect(h.err()).toContain('A workspace belongs to one instance');
-    expect(h.wire).toEqual([]);
-    expect(loadConfig(env).profiles.work?.activeWorkspaceId).toBeUndefined();
-  });
-
-  it('says so when SLIDELESS_WORKSPACE still wins over what was just saved', async () => {
-    const h = routedHarness(instance(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: ACME });
-    expect(await run(['workspace', 'use', NORD], h.io)).toBe(0);
-    expect(h.err()).toContain('SLIDELESS_WORKSPACE is set and wins over the profile');
-  });
-});
-
-describe('the selection goes with the identity', () => {
-  it('logout removes it', async () => {
-    const env = await profileEnv(NORD);
-    expect(await run(['logout'], routedHarness(instance(), env).io)).toBe(0);
-    expect(loadConfig(env).profiles.work).toEqual({ baseUrl: URL });
-  });
-
-  it('a login on the same instance keeps it; a login that moves the profile drops it', async () => {
-    const env = await profileEnv(NORD);
-    expect(
-      await run(['login', '--api-key', KEY, '--profile', 'work'], routedHarness(instance(), env).io)
-    ).toBe(0);
-    expect(loadConfig(env).profiles.work?.activeWorkspaceId).toBe(NORD);
-
-    const moved = routedHarness(instance(), env);
-    expect(
-      await run(['login', '--api-key', KEY, '--profile', 'work', '--api-url', 'http://other/'], moved.io)
-    ).toBe(0);
-    expect(loadConfig(env).profiles.work).toEqual({ apiKey: KEY, baseUrl: 'http://other' });
-  });
-
-  it('config show prints the saved selection', async () => {
-    const h = routedHarness(instance(), await profileEnv(NORD));
-    expect(await run(['config', 'show', '--json'], h.io)).toBe(0);
-    expect(
-      (JSON.parse(h.out()) as { profiles: Record<string, { activeWorkspaceId: string | null }> }).profiles
-        .work!.activeWorkspaceId
-    ).toBe(NORD);
   });
 });
 
@@ -617,76 +499,24 @@ describe('pinned after the verifier round', () => {
     });
   });
 
-  it('G1: workspace use re-reads the config before writing, so a key cached meanwhile survives', async () => {
-    const env = await profileEnv();
-    const routes = instance().map((r) =>
-      r.path.test('/api/v1/me')
-        ? {
-            ...r,
-            reply: (call: Parameters<Route['reply']>[0]) => {
-              // Something else wrote the profile between the read and the save.
-              const config = loadConfig(env);
-              config.profiles.work = {
-                ...config.profiles.work,
-                connectKeys: { hub: { apiKey: 'slk_cached_key' } }
-              };
-              saveConfig(env, config);
-              return r.reply(call);
-            }
-          }
-        : r
-    );
-    expect(await run(['workspace', 'use', NORD], routedHarness(routes, env).io)).toBe(0);
-    expect(loadConfig(env).profiles.work).toEqual({
-      apiKey: KEY,
-      baseUrl: URL,
-      connectKeys: { hub: { apiKey: 'slk_cached_key' } },
-      activeWorkspaceId: NORD
-    });
-  });
-
-  it('G5: the hub-connect logout drops the selection too', async () => {
-    const env = await tempConfigEnv();
-    saveConfig(env, {
-      activeProfile: 'work',
-      profiles: { work: { baseUrl: URL, connectKeys: { hub: { apiKey: KEY } }, activeWorkspaceId: NORD } }
-    });
-    const revoke: Route = {
-      method: 'DELETE',
-      path: /\/api\/v1\/cli\/auth\/key$/,
-      reply: () => ({ body: { revoked: true } })
-    };
-    expect(await run(['logout'], routedHarness([revoke], env).io)).toBe(0);
-    expect(loadConfig(env).profiles.work).toEqual({ baseUrl: URL });
-  });
-
-  it('G2: workspace use says so when the chosen workspace is suspended', async () => {
-    const list = [WORKSPACES[0]!, { ...WORKSPACES[1]!, suspended: true }];
-    const h = routedHarness(instance(list), await profileEnv());
-    expect(await run(['workspace', 'use', NORD], h.io)).toBe(0);
-    expect(h.out()).toContain('This workspace is suspended: requests into it are refused.');
-  });
-
-  it('G4: the stale-selection warning points at --clear for a profile selection only', async () => {
-    const viaProfile = routedHarness(instance(), await profileEnv(ELSEWHERE));
-    expect(await run(['workspaces'], viaProfile.io)).toBe(0);
-    expect(viaProfile.err()).toContain('Drop it with `slideless workspace use --clear`.');
-    const viaEnv = routedHarness(instance(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: ELSEWHERE });
-    expect(await run(['workspaces'], viaEnv.io)).toBe(0);
-    expect(viaEnv.err()).toContain('names none of these workspaces');
-    expect(viaEnv.err()).not.toContain('--clear');
-  });
-
-  it('G6: a saved selection with whitespace around it is sent trimmed', async () => {
-    const h = routedHarness(instance(), await profileEnv(`  ${NORD}\n`));
+  it('G6: a selection with whitespace around it is sent trimmed', async () => {
+    const h = routedHarness(instance(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: `  ${NORD}\n` });
     expect(await run(['list', '--json'], h.io)).toBe(0);
     expect(h.wire[0]?.workspace).toBe(NORD);
   });
 
   it('G7: an id typed in capitals still matches the membership', async () => {
-    const h = routedHarness(instance(), await profileEnv());
-    expect(await run(['workspace', 'use', NORD.toUpperCase(), '--json'], h.io)).toBe(0);
-    expect(JSON.parse(h.out()).activeWorkspaceId).toBe(NORD);
+    const routes: Route[] = [
+      ...instance(),
+      {
+        method: 'PUT',
+        path: /^\/api\/v1\/me\/default-workspace$/,
+        reply: ({ body }) => ({ body: { defaultWorkspaceId: (body as { workspaceId: string }).workspaceId } })
+      }
+    ];
+    const h = routedHarness(routes, await profileEnv());
+    expect(await run(['workspace', 'default', NORD.toUpperCase(), '--json'], h.io)).toBe(0);
+    expect(JSON.parse(h.out()).defaultWorkspaceId).toBe(NORD);
   });
 
   it('G9: the 404 hint echoes what the person typed, not the resolved id', async () => {
@@ -802,44 +632,44 @@ describe('slideless workspace default', () => {
     expect(puts(h)).toEqual([]);
   });
 
-  it('never sends the saved selection, neither to /me nor with the PUT', async () => {
-    const h = routedHarness(withDefault(), await profileEnv(NORD));
-    expect(await run(['workspace', 'default', 'Acme'], h.io)).toBe(0);
+  it('never sends the selection, neither to /me nor with the PUT', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', 'Acme', '--workspace', NORD], h.io)).toBe(0);
     expect(h.wire).toHaveLength(2);
     expect(h.wire.map((c) => c.workspace)).toEqual([undefined, undefined]);
   });
 
-  it('a saved selection naming another workspace: a Note on stderr says it wins', async () => {
-    const h = routedHarness(withDefault(), await profileEnv(ACME));
+  it('a selection naming another workspace: a Note on stderr says it wins', async () => {
+    const h = routedHarness(withDefault(), { ...(await profileEnv()), SLIDELESS_WORKSPACE: ACME });
     expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).toBe(0);
-    expect(h.err()).toMatch(/^Note: /);
-    expect(h.err()).toContain('profile "work"');
-    expect(h.err()).toContain('wins over the default');
+    expect(h.err()).toBe(
+      'Note: SLIDELESS_WORKSPACE selects another workspace and wins over the default while it is set.\n'
+    );
   });
 
-  it('--clear with a saved selection: a Note on stderr says the selection still wins', async () => {
-    const h = routedHarness(withDefault(), await profileEnv(ACME));
-    expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
+  it('--clear with a selection: a Note on stderr says the selection still wins', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', '--clear', '--org', ACME], h.io)).toBe(0);
     expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
-    expect(h.err()).toMatch(/^Note: /);
-    expect(h.err()).toContain('profile "work"');
-    expect(h.err()).toContain('wins over the default');
+    expect(h.err()).toBe(
+      'Note: the --org flag selects another workspace and wins over the default while it is set.\n'
+    );
   });
 
-  it('--clear with no saved selection: no note', async () => {
+  it('--clear with no selection: no note', async () => {
     const h = routedHarness(withDefault(), await profileEnv());
     expect(await run(['workspace', 'default', '--clear'], h.io)).toBe(0);
     expect(puts(h)[0]?.body).toEqual({ workspaceId: null });
     expect(h.err()).toBe('');
   });
 
-  it('a saved selection naming the same workspace: no note', async () => {
-    const h = routedHarness(withDefault(), await profileEnv(NORD));
-    expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).toBe(0);
+  it('a selection naming the same workspace: no note', async () => {
+    const h = routedHarness(withDefault(), await profileEnv());
+    expect(await run(['workspace', 'default', 'Atelier Nord', '--workspace', 'atelier nord'], h.io)).toBe(0);
     expect(h.err()).toBe('');
   });
 
-  it('403 hub_managed: the account-site sentence with the url, pointing at workspace use', async () => {
+  it('403 hub_managed: the account-site sentence with the url, pointing at --org', async () => {
     const refusal = {
       status: 403,
       body: {
@@ -852,9 +682,11 @@ describe('slideless workspace default', () => {
     };
     const h = routedHarness(withDefault(refusal), await profileEnv());
     expect(await run(['workspace', 'default', 'Atelier Nord'], h.io)).not.toBe(0);
-    expect(h.err()).toContain('Your default workspace is a setting of your Antasphere account');
-    expect(h.err()).toContain(HUB_URL);
-    expect(h.err()).toContain('slideless workspace use');
+    expect(h.err()).toBe(
+      `Error: Your default workspace is a setting of your Antasphere account: choose it on ${HUB_URL}\n` +
+        'To run one command elsewhere, pass --org <organization id or name>.\n'
+    );
+    expect(h.err()).not.toContain('workspace use');
     expect(h.out()).toBe('');
   });
 
@@ -868,5 +700,143 @@ describe('slideless workspace default', () => {
       'This key is pinned to one workspace and cannot change your default workspace. Use a key that is not pinned.'
     );
     expect(h.out()).toBe('');
+  });
+});
+
+/**
+ * PRDCT-2947: `--org` names an organization the Antasphere way, by the hub
+ * organization id the account site shows, or by its name. The fake answers
+ * like the cloud instance: a hub-origin workspace carries its
+ * `centralAccountId`, and `x-workspace-id` takes either the local id or the
+ * hub organization id (the server maps the latter itself).
+ */
+describe('--org names a hub organization', () => {
+  const ORG_ACME = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const ORG_NORD = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const HUB_ROWS = [
+    { ...WORKSPACES[0]!, hubOrigin: true, centralAccountId: ORG_ACME },
+    { ...WORKSPACES[1]!, hubOrigin: true, centralAccountId: ORG_NORD }
+  ];
+
+  function hubInstance(): Route[] {
+    const toLocal = (headers: Headers): Headers => {
+      const requested = headers.get('x-workspace-id');
+      const row = HUB_ROWS.find((w) => w.centralAccountId === requested);
+      const mapped = new Headers(headers);
+      if (row) mapped.set('x-workspace-id', row.id);
+      return mapped;
+    };
+    return instance(HUB_ROWS).map((r) => ({
+      ...r,
+      reply: (call: Parameters<Route['reply']>[0]) => r.reply({ ...call, headers: toLocal(call.headers) })
+    }));
+  }
+
+  it('by its hub id: sent as it is, with no extra request', async () => {
+    const h = routedHarness(hubInstance(), await profileEnv());
+    expect(await run(['list', '--json', '--org', ORG_NORD], h.io)).toBe(0);
+    expect(titles(h.out())).toEqual(['Nord roadmap', 'Nord budget']);
+    expect(h.wire).toEqual([
+      {
+        method: 'GET',
+        origin: URL,
+        path: '/api/v1/presentations',
+        auth: `Bearer ${KEY}`,
+        workspace: ORG_NORD
+      }
+    ]);
+  });
+
+  it('by its name: one /me, then the LOCAL id of the row', async () => {
+    const h = routedHarness(hubInstance(), await profileEnv());
+    expect(await run(['list', '--json', '--org', 'ATELIER NORD'], h.io)).toBe(0);
+    expect(titles(h.out())).toEqual(['Nord roadmap', 'Nord budget']);
+    expect(h.wire.map((c) => [c.path, c.workspace])).toEqual([
+      ['/api/v1/me', undefined],
+      ['/api/v1/presentations', NORD]
+    ]);
+  });
+
+  it('SLIDELESS_ORG does the same', async () => {
+    const h = routedHarness(hubInstance(), { ...(await profileEnv()), SLIDELESS_ORG: ORG_NORD });
+    expect(await run(['list', '--json'], h.io)).toBe(0);
+    expect(h.wire[0]?.workspace).toBe(ORG_NORD);
+  });
+
+  it('--org and --workspace at once is a usage error, nothing sent', async () => {
+    const h = routedHarness(hubInstance(), await profileEnv());
+    expect(await run(['list', '--org', ORG_NORD, '--workspace', NORD], h.io)).toBe(1);
+    expect(h.err()).toBe('Error: Pass --org or --workspace, not both.\n');
+    expect(h.wire).toEqual([]);
+  });
+
+  it('SLIDELESS_ORG and SLIDELESS_WORKSPACE at once is a usage error, nothing sent', async () => {
+    const h = routedHarness(hubInstance(), {
+      ...(await profileEnv()),
+      SLIDELESS_ORG: ORG_NORD,
+      SLIDELESS_WORKSPACE: NORD
+    });
+    expect(await run(['list'], h.io)).toBe(1);
+    expect(h.err()).toBe('Error: Set SLIDELESS_ORG or SLIDELESS_WORKSPACE, not both.\n');
+    expect(h.wire).toEqual([]);
+  });
+
+  it('an organization that is not yours: the 401 says organization, names --org, lists yours with their ids', async () => {
+    const h = routedHarness(hubInstance(), await profileEnv());
+    expect(await run(['list', '--org', ELSEWHERE], h.io)).toBe(1);
+    expect(h.err()).toBe(
+      `Error: The organization "${ELSEWHERE}" (selected by the --org flag) is not one of yours on ${URL}; ` +
+        'the API key itself works. Yours:\n' +
+        `  ${ACME}  owner   Acme  (organization ${ORG_ACME})\n` +
+        `  ${NORD}  member  Atelier Nord  (organization ${ORG_NORD})\n`
+    );
+  });
+
+  it('the 404 hint names the organization that was asked', async () => {
+    const routes: Route[] = [
+      ...hubInstance(),
+      {
+        method: 'GET',
+        path: /^\/api\/v1\/presentations\/[^/]+$/,
+        reply: () => refuse(404, 'not_found', 'Presentation not found')
+      }
+    ];
+    const h = routedHarness(routes, await profileEnv());
+    expect(await run(['get', DECK.id, '--org', 'Atelier Nord'], h.io)).toBe(1);
+    expect(h.err()).toBe(
+      'Error: Presentation not found (looked in the organization "Atelier Nord", selected by the --org flag)\n'
+    );
+  });
+
+  it('`workspaces` prints each organization id and the legend line for it', async () => {
+    const h = routedHarness(hubInstance(), await profileEnv());
+    expect(await run(['workspaces', '--org', ORG_NORD], h.io)).toBe(0);
+    expect(h.out()).toBe(
+      `  ${ACME}  owner   Acme  (default)  organization ${ORG_ACME}\n` +
+        `* ${NORD}  member  Atelier Nord  organization ${ORG_NORD}\n` +
+        '\n* = the workspace the commands run in, chosen by the --org flag\n' +
+        '(default) = what a request naming no workspace resolves to\n' +
+        'organization = the Antasphere id --org takes (or its name)\n'
+    );
+  });
+
+  it('`workspaces` prints no (default) line when no row is the default, no organization line without ids', async () => {
+    const rows = WORKSPACES.map((w) => ({ ...w, default: false }));
+    const h = routedHarness(instance(rows), await profileEnv());
+    expect(await run(['workspaces'], h.io)).toBe(0);
+    expect(h.out()).not.toContain('(default) =');
+    expect(h.out()).not.toContain('organization =');
+  });
+
+  it('whoami prints the organization line for a row that has one, and none otherwise', async () => {
+    const h = routedHarness(hubInstance(), await profileEnv());
+    expect(await run(['whoami', '--org', ORG_NORD], h.io)).toBe(0);
+    expect(h.out()).toContain(
+      `  workspace: Atelier Nord (${NORD})\n  organization: ${ORG_NORD}\n  chosen by: the --org flag\n`
+    );
+
+    const plain = routedHarness(instance(), await profileEnv());
+    expect(await run(['whoami'], plain.io)).toBe(0);
+    expect(plain.out()).not.toContain('organization:');
   });
 });

@@ -1,10 +1,15 @@
+import { statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { HUB_TOOL, loadConfig as loadCoreConfig } from '@antasphere/cli-core';
+import { redactKey } from '@antasphere/chassis-cli';
 import { run } from '../src/index.js';
-import { loadConfig, saveConfig } from '../src/cli.js';
+import { cli, loadConfig, saveConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './harness.js';
 
+const { configPath } = cli;
+
 /**
- * Profile resolution + the OTP auth pair, against a routed fake fetch and an
+ * Profile resolution + `login` (PRDCT-2947), against a routed fake fetch and an
  * isolated XDG_CONFIG_HOME. The real end-to-end (Mailpit OTP) runs in the
  * server integration suite and the E2E gate.
  */
@@ -12,6 +17,19 @@ import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './h
 const ME = {
   user: { id: 'u1', name: 'Ada', email: 'ada@x.co' },
   workspace: { id: 'w1', name: 'Acme' },
+  workspaces: [
+    {
+      id: 'w1',
+      name: 'Acme',
+      role: 'owner',
+      hubOrigin: false,
+      centralAccountId: null,
+      look: { theme: null, pattern: null, field: null, grain: null },
+      suspended: false,
+      default: true
+    }
+  ],
+  activeWorkspaceId: 'w1',
   role: 'owner',
   via: 'api_key',
   scopes: ['presentations:read', 'presentations:write'],
@@ -37,7 +55,7 @@ const MINTED = {
 
 const meRoute: Route = { method: 'GET', path: /\/api\/v1\/me$/, reply: () => ({ body: ME }) };
 
-/** Discovery payloads for the cloud probe (D1: cloud refuses the OTP pair). */
+/** Discovery payloads for the cloud probe (cloud signs in through Antasphere). */
 const instanceInfo = (edition: string, methods: string[]) => ({
   name: 'Inst',
   instanceId: 'i1',
@@ -59,98 +77,125 @@ const cloudInstanceRoute: Route = {
   reply: () => ({ body: instanceInfo('cloud', ['antasphere', 'api-key', 'oauth']) })
 };
 
-describe('auth login flow', () => {
-  it('login-request POSTs /cli/auth/request with the email (oss: the probe waves it through)', async () => {
-    const env = await tempConfigEnv();
-    const h = routedHarness(
-      [
-        ossInstanceRoute,
-        { method: 'POST', path: /\/api\/v1\/cli\/auth\/request$/, reply: () => ({ body: { sent: true } }) }
-      ],
-      env
-    );
-    const code = await run(
-      ['auth', 'login-request', '--email', 'ada@x.co', '--api-url', 'http://inst'],
-      h.io
-    );
-    expect(h.err()).toBe('');
-    expect(code).toBe(0);
-    // calls[0] is the advisory GET /instance cloud probe.
-    expect(h.calls[1]).toMatchObject({
+describe('login, the Slideless bytes (the generic cases are the chassis suite: login, logout, profiles)', () => {
+  /** A scripted prompt: answers in order, questions recorded. */
+  function scripted(h: ReturnType<typeof routedHarness>, answers: string[]): string[] {
+    const asked: string[] = [];
+    h.io.prompt = async (q) => {
+      asked.push(q);
+      return answers.shift() ?? '';
+    };
+    return asked;
+  }
+
+  const otpRoutes = (key: string, workspaceId: string | null): Route[] => [
+    { method: 'POST', path: /\/api\/v1\/cli\/auth\/request$/, reply: () => ({ body: { sent: true } }) },
+    {
       method: 'POST',
-      path: '/api/v1/cli/auth/request',
-      body: { email: 'ada@x.co' }
-    });
-    expect(h.out()).toContain('login-complete');
-  });
+      path: /\/api\/v1\/cli\/auth\/complete$/,
+      reply: () => ({ status: 201, body: { ...MINTED, key, workspaceId } })
+    }
+  ];
 
-  it('login-request proceeds when discovery is unavailable (older/unreachable instance)', async () => {
+  it('a pasted slk_ key: verified, saved on the instance profile, active', async () => {
     const env = await tempConfigEnv();
-    // No /instance route: the probe 404s and MUST fall through, unchanged.
-    const h = routedHarness(
-      [{ method: 'POST', path: /\/api\/v1\/cli\/auth\/request$/, reply: () => ({ body: { sent: true } }) }],
-      env
-    );
-    const code = await run(
-      ['auth', 'login-request', '--email', 'ada@x.co', '--api-url', 'http://inst'],
-      h.io
-    );
+    const h = routedHarness([meRoute], env);
+    expect(await run(['login', '--api-key', 'slk_paste_key', '--api-url', 'http://inst'], h.io)).toBe(0);
     expect(h.err()).toBe('');
-    expect(code).toBe(0);
-    expect(h.calls.map((c) => c.path)).toEqual(['/api/v1/instance', '/api/v1/cli/auth/request']);
+    expect(h.out()).toBe(
+      `Signed in as Ada <ada@x.co> in Acme on http://inst.\nKey saved to profile "inst" (${configPath(env)}).\n`
+    );
+    const config = loadConfig(env);
+    expect(config.activeProfile).toBe('inst');
+    expect(config.profiles.inst).toEqual({
+      apiKey: 'slk_paste_key',
+      baseUrl: 'http://inst',
+      email: 'ada@x.co'
+    });
   });
 
-  it('refuses the OTP pair against a CLOUD instance with `antasphere login` guidance', async () => {
+  it('a key of another tool is refused before any request', async () => {
     const env = await tempConfigEnv();
-    // Discovery says cloud: refuse BEFORE touching the (closed) endpoints —
-    // no dead OTP mail is requested, no raw server 403 is printed.
-    const h = routedHarness([cloudInstanceRoute], env);
-    const code = await run(
-      ['auth', 'login-request', '--email', 'ada@x.co', '--api-url', 'http://cloud'],
-      h.io
-    );
-    expect(code).toBe(1);
-    expect(h.err()).toContain('antasphere login');
-    expect(h.err()).toContain('connects automatically');
-    expect(h.calls.map((c) => c.path)).toEqual(['/api/v1/instance']); // probe only
-
-    const h2 = routedHarness([cloudInstanceRoute], env);
-    const code2 = await run(
-      ['auth', 'login-complete', '--email', 'ada@x.co', '--code', '123456', '--api-url', 'http://cloud'],
-      h2.io
-    );
-    expect(code2).toBe(1);
-    expect(h2.err()).toContain('antasphere login');
-    expect(h2.calls.map((c) => c.path)).toEqual(['/api/v1/instance']);
+    const h = routedHarness([meRoute], env);
+    expect(await run(['login', '--api-key', 'ant_hub_key', '--api-url', 'http://inst'], h.io)).toBe(1);
+    expect(h.err()).toBe('Error: That is not a Slideless key: it should start with slk_.\n');
+    expect(h.calls).toEqual([]);
   });
 
-  it('login-complete stores the minted key as the active profile (0600 config)', async () => {
+  it('self-hosted: the email code, both legs in one command', async () => {
     const env = await tempConfigEnv();
+    const h = routedHarness([ossInstanceRoute, ...otpRoutes(MINTED.key, 'w1'), meRoute], env);
+    const asked = scripted(h, ['ada@x.co', '123456']);
+    expect(await run(['login', '--api-url', 'http://inst'], h.io)).toBe(0);
+    expect(asked).toEqual(['Email: ', 'Code: ']);
+    expect(h.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'GET /api/v1/instance',
+      'POST /api/v1/cli/auth/request',
+      'POST /api/v1/cli/auth/complete',
+      'GET /api/v1/me'
+    ]);
+    expect(h.err()).toBe('A sign-in code was sent to ada@x.co (if that account exists on http://inst).\n');
+    expect(h.out()).toBe(
+      'Signed in as Ada <ada@x.co> in Acme on http://inst.\n' +
+        `API key "CLI login 2026-07-10" (${redactKey(MINTED.key)}) saved to profile "inst" (${configPath(env)}).\n`
+    );
+    expect(h.out()).not.toContain(MINTED.key);
+    expect(loadConfig(env).profiles.inst).toEqual({
+      apiKey: MINTED.key,
+      baseUrl: 'http://inst',
+      email: 'ada@x.co'
+    });
+    // The config file is private.
+    expect(statSync(configPath(env)!).mode & 0o777).toBe(0o600);
+  });
+
+  it('cloud: the Antasphere email code on the hub, then the exchange, ends in Slideless', async () => {
+    const HUB_KEY = 'ant_hubkey12_secretsecretsecret1234';
+    const SLK = 'slk_minted12_0123456789abcdefghijklmnopqrstuvwxyz';
+    const env = { ...(await tempConfigEnv()), ANTASPHERE_URL: 'http://hub' };
     const h = routedHarness(
       [
+        cloudInstanceRoute,
+        ...otpRoutes(HUB_KEY, 'org1'),
         {
           method: 'POST',
-          path: /\/api\/v1\/cli\/auth\/complete$/,
-          reply: ({ body }) => {
-            expect(body).toMatchObject({ email: 'ada@x.co', otp: '123456' });
-            return { status: 201, body: MINTED };
-          }
-        }
+          path: /\/api\/v1\/sso\/tool-token$/,
+          reply: () => ({
+            body: { token: 'jwt-1', expiresAt: '2026-07-13T00:02:00.000Z', hubRefreshToken: 'hrt-1' }
+          })
+        },
+        {
+          method: 'POST',
+          path: /\/api\/v1\/sso\/cli-connect$/,
+          reply: () => ({ status: 201, body: { ...MINTED, key: SLK, workspaceId: null } })
+        },
+        meRoute
       ],
       env
     );
-    const code = await run(
-      ['auth', 'login-complete', '--email', 'ada@x.co', '--code', '123456', '--api-url', 'http://inst'],
-      h.io
+    const asked = scripted(h, ['123456']);
+    expect(await run(['login', '--api-url', 'http://tool', '--email', 'ada@x.co'], h.io)).toBe(0);
+    expect(asked).toEqual(['Code: ']);
+    expect(h.wire.map((c) => `${c.method} ${c.origin}${c.path}`)).toEqual([
+      'GET http://tool/api/v1/instance',
+      'POST http://hub/api/v1/cli/auth/request',
+      'POST http://hub/api/v1/cli/auth/complete',
+      'GET http://tool/api/v1/instance',
+      'POST http://hub/api/v1/sso/tool-token',
+      'POST http://tool/api/v1/sso/cli-connect',
+      'GET http://tool/api/v1/me'
+    ]);
+    expect(h.err()).toContain(
+      'A sign-in code was sent to ada@x.co (if that Antasphere account can receive mail).\n'
     );
-    expect(h.err()).toBe('');
-    expect(code).toBe(0);
-    const config = loadConfig(env);
-    expect(config.activeProfile).toBe('default');
-    expect(config.profiles.default).toEqual({ apiKey: MINTED.key, baseUrl: 'http://inst' });
-    // The full key is never echoed, only its redacted form.
-    expect(h.out()).not.toContain(MINTED.key);
-    expect(h.out()).toContain('slk_abcdefgh_');
+    expect(h.out()).toBe('Signed in as Ada <ada@x.co> in Acme on http://tool.\n');
+    expect(loadCoreConfig(env, HUB_TOOL).profiles.default).toEqual({
+      apiKey: HUB_KEY,
+      baseUrl: 'http://hub',
+      email: 'ada@x.co',
+      workspaceId: 'org1'
+    });
+    expect(loadConfig(env).profiles.tool?.connectKeys?.default?.apiKey).toBe(SLK);
   });
 
   it('a saved profile feeds whoami without flags or env', async () => {
@@ -164,7 +209,7 @@ describe('auth login flow', () => {
     expect(h.err()).toBe('');
     expect(code).toBe(0);
     expect(h.out()).toContain('ada@x.co');
-    expect(h.out()).toContain('http://saved');
+    expect(h.out()).toContain('  instance:  http://saved (profile "work")');
   });
 
   it('flags beat env beats profile for the base URL', async () => {
@@ -173,55 +218,29 @@ describe('auth login flow', () => {
       activeProfile: 'p',
       profiles: { p: { apiKey: 'slk_k_s', baseUrl: 'http://profile' } }
     });
-    const h = routedHarness([meRoute], { ...env, SLIDELESS_URL: 'http://env' });
+    const h = routedHarness([meRoute], { ...env, SLIDELESS_URL: 'http://env', SLIDELESS_API_KEY: 'slk_e_e' });
     await run(['whoami'], h.io);
     expect(h.out()).toContain('http://env');
 
-    const h2 = routedHarness([meRoute], { ...env, SLIDELESS_URL: 'http://env' });
+    const h2 = routedHarness([meRoute], {
+      ...env,
+      SLIDELESS_URL: 'http://env',
+      SLIDELESS_API_KEY: 'slk_e_e'
+    });
     await run(['whoami', '--api-url', 'http://flag'], h2.io);
     expect(h2.out()).toContain('http://flag');
   });
 
-  it('--profile selects a named profile; unknown profiles error', async () => {
-    const env = await tempConfigEnv();
-    saveConfig(env, {
-      activeProfile: 'a',
-      profiles: {
-        a: { apiKey: 'slk_a_a', baseUrl: 'http://a' },
-        b: { apiKey: 'slk_b_b', baseUrl: 'http://b' }
-      }
-    });
-    const h = routedHarness([meRoute], env);
-    await run(['whoami', '--profile', 'b'], h.io);
-    expect(h.out()).toContain('http://b');
-
-    const h2 = routedHarness([], env);
-    const code = await run(['whoami', '--profile', 'nope'], h2.io);
-    expect(code).toBe(1);
-    expect(h2.err()).toContain('Unknown profile');
-  });
-
-  it('errors without any instance configured', async () => {
+  it('with nothing configured, a command goes to the Slideless cloud and asks for a sign-in', async () => {
     const env = await tempConfigEnv();
     const h = routedHarness([], env);
-    const code = await run(['list'], h.io);
-    expect(code).toBe(1);
-    expect(h.err()).toContain('No instance configured');
-    expect(h.calls).toHaveLength(0);
-  });
-
-  it('login verifies a pasted key before saving it', async () => {
-    const env = await tempConfigEnv();
-    const h = routedHarness([meRoute], env);
-    const code = await run(
-      ['login', '--api-key', 'slk_paste_key', '--api-url', 'http://inst', '--profile', 'pasted'],
-      h.io
+    expect(await run(['list'], h.io)).toBe(1);
+    expect(h.wire).toEqual([
+      { method: 'GET', origin: 'https://slideless.antasphere.com', path: '/api/v1/instance', auth: undefined }
+    ]);
+    expect(h.err()).toBe(
+      'Error: An API key is required. Sign in (`slideless login`), pass --api-key, or set SLIDELESS_API_KEY.\n'
     );
-    expect(h.err()).toBe('');
-    expect(code).toBe(0);
-    const config = loadConfig(env);
-    expect(config.activeProfile).toBe('pasted');
-    expect(config.profiles.pasted).toEqual({ apiKey: 'slk_paste_key', baseUrl: 'http://inst' });
   });
 
   it('use + profiles + logout manage the profile set', async () => {
@@ -235,19 +254,33 @@ describe('auth login flow', () => {
     });
     const h = routedHarness([], env);
     expect(await run(['use', 'b'], h.io)).toBe(0);
+    expect(h.out()).toBe('Active profile: b (http://b)\n');
     expect(loadConfig(env).activeProfile).toBe('b');
 
     const h2 = routedHarness([], env);
     expect(await run(['profiles'], h2.io)).toBe(0);
+    expect(h2.out()).toContain('https://slideless.antasphere.com');
     expect(h2.out()).toContain('http://a');
     expect(h2.out()).toContain('http://b');
     // Keys never appear in full.
     expect(h2.out()).not.toContain('slk_a_verylongkeyvalue123');
 
-    const h3 = routedHarness([], env);
+    const h3 = routedHarness(
+      [{ method: 'DELETE', path: /\/api\/v1\/cli\/auth\/key$/, reply: () => ({ body: { revoked: true } }) }],
+      env
+    );
     expect(await run(['logout'], h3.io)).toBe(0);
-    expect(loadConfig(env).profiles.b?.apiKey).toBeUndefined();
-    expect(loadConfig(env).profiles.b?.baseUrl).toBe('http://b');
+    expect(h3.wire).toEqual([
+      {
+        method: 'DELETE',
+        origin: 'http://b',
+        path: '/api/v1/cli/auth/key',
+        auth: 'Bearer slk_b_verylongkeyvalue456'
+      }
+    ]);
+    expect(h3.out()).toBe('Logged out of profile "b" on http://b (1 key revoked server-side).\n');
+    expect(loadConfig(env).profiles.b).toEqual({ baseUrl: 'http://b' });
+    expect(loadConfig(env).profiles.a?.apiKey).toBe('slk_a_verylongkeyvalue123');
   });
 
   it('config show redacts keys; config clear wipes the file', async () => {

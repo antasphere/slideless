@@ -38,6 +38,19 @@ const CLOUD_INSTANCE = {
 const ME = {
   user: { id: 'u1', name: 'Ada', email: 'ada@x.co' },
   workspace: { id: 'w1', name: 'Acme' },
+  workspaces: [
+    {
+      id: 'w1',
+      name: 'Acme',
+      role: 'owner',
+      hubOrigin: false,
+      centralAccountId: null,
+      look: { theme: null, pattern: null, field: null, grain: null },
+      suspended: false,
+      default: true
+    }
+  ],
+  activeWorkspaceId: 'w1',
   role: 'owner',
   via: 'api_key',
   scopes: ['presentations:read'],
@@ -115,9 +128,39 @@ describe('the Slideless identity, by its observable bytes', () => {
     );
     expect(await run(['list', '--api-url', 'http://tool'], h.io)).toBe(1);
     expect(h.err()).toBe(
-      'Error: This Slideless instance signs in through the Antasphere hub. Run `antasphere login` once, ' +
+      'Error: This Slideless instance signs in through Antasphere. Run `slideless login` once (or `antasphere login`), ' +
         'then retry — or pass --api-key <slk_…> / set SLIDELESS_API_KEY.\n'
     );
+  });
+
+  it('bin, envPrefix: the no-key sentence, whole', async () => {
+    const env = await tempConfigEnv();
+    const h = routedHarness([], env);
+    expect(await run(['list', '--api-url', 'http://x'], h.io)).toBe(1);
+    expect(h.err()).toBe(
+      'Error: An API key is required. Sign in (`slideless login`), pass --api-key, or set SLIDELESS_API_KEY.\n'
+    );
+  });
+
+  it('cloud.url: with nothing configured, a command probes https://slideless.antasphere.com', async () => {
+    const env = await tempConfigEnv();
+    const h = routedHarness([], env);
+    expect(await run(['list'], h.io)).toBe(1);
+    expect(h.wire).toEqual([
+      {
+        method: 'GET',
+        origin: 'https://slideless.antasphere.com',
+        path: '/api/v1/instance',
+        auth: undefined
+      }
+    ]);
+  });
+
+  it('bin: `slideless auth login-request` no longer exists', async () => {
+    const h = routedHarness([]);
+    expect(await run(['auth', 'login-request', '--email', 'a@x.co'], h.io)).toBe(1);
+    expect(h.err()).toContain("unknown command 'auth'");
+    expect(h.wire).toEqual([]);
   });
 
   it('bin again: the 401 hint names `slideless verify` (M18)', async () => {
@@ -188,7 +231,6 @@ describe("the tool's errorHint (F-3)", () => {
 /** Every top-level command, in the order `--help` and the completion scripts print them. */
 const COMMANDS = [
   // chassis: identity and profiles, then the workspace selection
-  'auth',
   'login',
   'logout',
   'whoami',
