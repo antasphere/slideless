@@ -1,76 +1,119 @@
 name: Publish CLI (npm)
 
-# Tokenless npm release of @antasphere/slideless via OIDC trusted publishing:
-# pushing a tag cli-vX.Y.Z publishes @antasphere/slideless@X.Y.Z from
-# packages/cli (the binary stays `slideless`). The cli-v prefix cannot collide
-# with release.yml (the Docker image release), whose tag trigger is 'v*' —
-# GitHub tag filters are anchored, so 'v*' never matches 'cli-v…' and
-# 'cli-v*.*.*' never matches 'v…'.
+# Tokenless npm release of @antasphere/slideless via OIDC trusted publishing,
+# from packages/cli (the binary stays `slideless`).
+#
+# ONE version per tool (2026-09-30): the CLI IS the app's version. `pnpm
+# release patch|minor|major` moves root, apps/server, packages/cli and the
+# CLI's VERSION constant together; the release guard and
+# packages/cli/test/version.test.ts refuse any drift. There is no separate
+# `cli-v*` tag any more: this workflow runs when release.yml (the "Release"
+# workflow) finishes SUCCESSFULLY on a push to prod — i.e. after its version
+# guard, smoke and scan gates passed — and publishes the version that commit
+# carries. A version npm already has (a docs-only promotion, a re-run) is
+# skipped with success, never re-published and never a failure.
+#
+# workflow_run, and not a `workflow_call` from release.yml, on purpose: npm's
+# trusted publisher matches the workflow file that REQUESTS the OIDC token,
+# and a called workflow's token names its caller. Run from workflow_run, the
+# token names this file, which is what npmjs.com is configured with: org
+# `antasphere`, repo `slideless`, workflow `publish-cli.yml` — keep the
+# filename. A workflow_run workflow runs from the DEFAULT branch's copy (prod
+# here), which is the branch every release lands on.
 #
 # There is no NPM_TOKEN anywhere — npm authenticates with a short-lived
-# credential minted from this workflow's OIDC identity, so the trusted
-# publisher configured on npmjs.com must name exactly: org `antasphere`,
-# repo `slideless`, workflow `publish-cli.yml`.
-#
-# Bootstrap: trusted publishing can only be configured on a package that
-# already exists, so the very FIRST publish of the name is manual
-# (`npm publish` from packages/cli while logged in). Every release after that
-# is this workflow, driven purely by the tag.
+# credential minted from this workflow's OIDC identity. The manual trigger
+# publishes the version on the chosen ref (same checks, same skip) for a
+# re-run after an npm outage.
 #
 # No explicit --provenance flag: npm hard-rejects provenance generation for
 # private source repositories, and this repo is private today. With trusted
 # publishing npm attaches provenance automatically once a repo is public.
-#
-# Install caveat: @antasphere/cli-core is pinned as a git dependency on the
-# private antasphere/cli-core repo, which this workflow's GITHUB_TOKEN cannot
-# read. Until cli-core is public (or the devDependency pin is switched to the
-# published npm version, the one-line swap documented in cli-core's README),
-# the install step below can only succeed where that repo is reachable.
 
 on:
-  push:
-    tags: ['cli-v*.*.*']
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [prod]
+  workflow_dispatch:
 
 permissions:
   id-token: write # the OIDC token npm exchanges for a publish credential
   contents: read
 
 concurrency:
-  group: publish-cli-${{ github.ref }}
+  group: publish-cli
+  cancel-in-progress: false
 
 jobs:
   publish:
+    # Only after the release gates passed; a failed or cancelled Release
+    # publishes nothing.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The commit the release ran on, never whatever prod points at now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: The CLI version is the app version
+        id: version
+        run: |
+          set -euo pipefail
+          ROOT_VERSION="$(node -p "require('./package.json').version")"
+          PKG_NAME="$(node -p "require('./packages/cli/package.json').name")"
+          PKG_VERSION="$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$PKG_VERSION" != "$ROOT_VERSION" ]; then
+            echo "::error::packages/cli is ${PKG_VERSION} but the app is ${ROOT_VERSION} — one version per tool: run \`pnpm release\`, never bump the CLI alone"
+            exit 1
+          fi
+          echo "name=$PKG_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Skip a version npm already has
+        id: exists
+        env:
+          NAME: ${{ steps.version.outputs.name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # `npm view` prints the version when it exists and fails (E404) when
+          # it does not; anything else it prints is not a match, so an npm
+          # hiccup falls through to the publish, which then fails loudly.
+          FOUND="$(npm view "${NAME}@${VERSION}" version 2>/dev/null || true)"
+          if [ "$FOUND" = "$VERSION" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "\`${NAME}@${VERSION}\` is already on npm — nothing to publish" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: pnpm/action-setup@v4 # pnpm version from package.json#packageManager
+        if: steps.exists.outputs.skip != 'true'
       - uses: actions/setup-node@v4
+        if: steps.exists.outputs.skip != 'true'
         with:
           node-version: 22
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
       # Trusted publishing needs npm >= 11.5.1; the runner image may lag.
       - run: npm install -g npm@latest
+        if: steps.exists.outputs.skip != 'true'
       - run: pnpm install --frozen-lockfile
-      - name: Verify tag matches packages/cli version
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#cli-v}"
-          PKG_VERSION="$(node -p "require('./packages/cli/package.json').version")"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} does not match packages/cli version ${PKG_VERSION} — bump packages/cli/package.json and retag"
-            exit 1
-          fi
+        if: steps.exists.outputs.skip != 'true'
       # Gate + build only the CLI and its workspace dependencies.
       - run: pnpm turbo lint typecheck test build --filter=@antasphere/slideless...
+        if: steps.exists.outputs.skip != 'true'
       - name: Verify the bundled binary reports the same version
+        if: steps.exists.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           BIN_VERSION="$(node packages/cli/dist/bin.js --version)"
-          PKG_VERSION="$(node -p "require('./packages/cli/package.json').version")"
-          if [ "$BIN_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::dist/bin.js --version reports ${BIN_VERSION} but package.json says ${PKG_VERSION} — keep VERSION in src/index.ts in sync"
+          if [ "$BIN_VERSION" != "$VERSION" ]; then
+            echo "::error::dist/bin.js --version reports ${BIN_VERSION} but package.json says ${VERSION} — keep VERSION in src/index.ts in sync (pnpm release moves it)"
             exit 1
           fi
       - run: npm publish --access public
+        if: steps.exists.outputs.skip != 'true'
         working-directory: packages/cli
       - name: Step summary
-        run: echo "Published \`@antasphere/slideless@${GITHUB_REF_NAME#cli-v}\` to npm (trusted publishing)" >> "$GITHUB_STEP_SUMMARY"
+        if: steps.exists.outputs.skip != 'true'
+        run: echo "Published \`${{ steps.version.outputs.name }}@${{ steps.version.outputs.version }}\` to npm (trusted publishing)" >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,6 @@
 {
   "name": "@antasphere/slideless",
-  "version": "0.5.0",
+  "version": "0.13.0",
   "description": "The Slideless CLI — push, share, pull, and preview decks on a Slideless instance",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

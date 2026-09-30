@@ -8,12 +8,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 /**
  * PRDCT-2340, tested as BEHAVIOR: the release script is run for real (a
  * child `node` process, exactly as `pnpm release` and release.yml run it)
- * against a throwaway git repository shaped like this one — the two version
- * files, a `dev` branch, an annotated tag on the last release, and, where the
+ * against a throwaway git repository shaped like this one — the version
+ * carriers, a `dev` branch, an annotated tag on the last release, and, where the
  * case needs one, a bare origin the tags are pushed to.
  *
  * The contract pinned here:
- *   - a bump moves BOTH package files together, at the TOP-LEVEL field even
+ *   - a bump moves every version carrier together (root, apps/server,
+ *     packages/cli and the CLI's VERSION constant — one version per tool), at the TOP-LEVEL field even
  *     when a nested "version" line sits above it, commits with the release
  *     subject and makes an ANNOTATED tag on that commit, leaving the tree
  *     clean; the file formatting survives byte for byte;
@@ -54,7 +55,12 @@ function configure(cwd: string) {
   gitIn(cwd, 'config', 'commit.gpgsign', 'false');
   gitIn(cwd, 'config', 'tag.gpgsign', 'false');
 }
-function writeVersionFiles(rootVersion: string, serverVersion: string = rootVersion) {
+function writeVersionFiles(
+  rootVersion: string,
+  serverVersion: string = rootVersion,
+  cliVersion: string = rootVersion,
+  cliConstant: string = cliVersion
+) {
   // Deliberately distinct shapes: the rewrite must touch the top-level version line only.
   writeFileSync(
     join(root, 'package.json'),
@@ -65,6 +71,22 @@ function writeVersionFiles(rootVersion: string, serverVersion: string = rootVers
     join(root, 'apps/server/package.json'),
     `{\n  "name": "@slideless/server",\n  "version": "${serverVersion}",\n  "dependencies": { "version": "not-this-one" }\n}\n`
   );
+  // The CLI ships at the app's number (one version per tool): its package and
+  // the VERSION constant its binary reports move with the other two.
+  mkdirSync(join(root, 'packages/cli/src'), { recursive: true });
+  writeFileSync(
+    join(root, 'packages/cli/package.json'),
+    `{\n  "name": "@antasphere/slideless",\n  "version": "${cliVersion}",\n  "bin": { "slideless": "./dist/bin.js" }\n}\n`
+  );
+  writeFileSync(
+    join(root, 'packages/cli/src/index.ts'),
+    `import { cli } from './cli.js';\n\nconst VERSION = '${cliConstant}';\n\nexport const program = cli(VERSION);\n`
+  );
+}
+function cliConstant(cwd: string = root) {
+  return readFileSync(join(cwd, 'packages/cli/src/index.ts'), 'utf8').match(
+    /^const VERSION = '([^']*)';$/m
+  )?.[1];
 }
 function version(file: string, cwd: string = root) {
   return (JSON.parse(readFileSync(join(cwd, file), 'utf8')) as { version: string }).version;
@@ -107,6 +129,14 @@ describe('pnpm release <kind>', () => {
     expect(r.status, r.stderr).toBe(0);
     expect(version('package.json')).toBe('0.4.0');
     expect(version('apps/server/package.json')).toBe('0.4.0');
+    expect(version('packages/cli/package.json')).toBe('0.4.0');
+    expect(cliConstant()).toBe('0.4.0');
+    expect(git('show', '--name-only', '--format=', 'HEAD').split('\n').sort()).toEqual([
+      'apps/server/package.json',
+      'package.json',
+      'packages/cli/package.json',
+      'packages/cli/src/index.ts'
+    ]);
     // Only the version line moved; the decoy "version" key under dependencies did not.
     expect(readFileSync(join(root, 'apps/server/package.json'), 'utf8')).toBe(
       before.replace('"version": "0.3.0"', '"version": "0.4.0"')
@@ -259,6 +289,20 @@ describe('pnpm release <kind>', () => {
     expect(r.stderr).toContain('disagree');
   });
 
+  it('refuses a CLI left on a series of its own, in its package or in its VERSION constant', () => {
+    writeVersionFiles('0.3.0', '0.3.0', '0.2.9');
+    git('commit', '-q', '-am', 'the CLI behind the app');
+    let r = run('patch');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('packages/cli/package.json 0.2.9');
+    writeVersionFiles('0.3.0', '0.3.0', '0.3.0', '0.2.9');
+    git('commit', '-q', '-am', 'the constant behind the package');
+    r = run('patch');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('packages/cli/src/index.ts 0.2.9');
+    expect(version('package.json')).toBe('0.3.0');
+  });
+
   it('refuses a tag that already exists locally', () => {
     git('tag', 'v0.3.1', 'HEAD');
     const r = run('patch');
@@ -326,6 +370,14 @@ describe('release guard (what release.yml runs first on every push)', () => {
   it('fails on disagreeing package files, the half-bump', () => {
     writeVersionFiles('0.4.0', '0.3.0');
     git('commit', '-q', '-am', 'half a bump');
+    const r = run('guard');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('disagree');
+  });
+
+  it('fails when the CLI version differs from the app version', () => {
+    writeVersionFiles('0.4.0', '0.4.0', '0.3.0');
+    git('commit', '-q', '-am', 'chore(release): slideless 0.4.0, the CLI forgotten');
     const r = run('guard');
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('disagree');

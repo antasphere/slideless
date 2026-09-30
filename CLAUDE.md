@@ -10,8 +10,8 @@ deploys) + `dev` (day-to-day work).
 ## Identity (fixed at instantiation)
 
 - npm scope `@slideless/*` for the internal workspace packages; the CLI is the one exception —
-  it publishes to npm as **`@antasphere/slideless`** (binary still `slideless`, released via
-  `.github/workflows/publish-cli.yml` on `cli-v*` tags — internal/cli-release.md). Env var prefix
+  it publishes to npm as **`@antasphere/slideless`** (binary still `slideless`) at the APP's
+  version — one version per tool, see "Deploying to prod". Env var prefix
   `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY` / `SLIDELESS_ORG` /
   `SLIDELESS_WORKSPACE`. The cloud home is `IDENTITY.cloud.url`
   (`https://slideless.antasphere.com`): the last step of the CLI's URL resolution, so a clean
@@ -602,14 +602,21 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
 ## Deploying to prod
 
 **First move the version** (PRDCT-2340): on a clean `dev`, `pnpm release patch|minor|major
-[--title "…"]` bumps the root and `apps/server` package files together, commits
+[--title "…"]` bumps the root, `apps/server` and `packages/cli` package files together (with the
+CLI's `VERSION` constant in `packages/cli/src/index.ts`), commits
 `chore(release): slideless X.Y.Z` and makes the annotated `vX.Y.Z` tag on it; push `dev` and the
 tag (`--push` does both). The kind is the human's call, never derived from commit subjects and
 never auto-incremented. The version is intrinsic to the image (PRDCT-1844), so this is the only
 place it moves; `release.yml`'s first job (`node scripts/release.mjs guard`) refuses a push whose
 package version already carries a v-tag on another commit, so a forgotten bump fails in twenty
-seconds instead of shipping a lookalike of the previous release. The CLI keeps its own series
-(`packages/cli`, `cli-v*` tags, `publish-cli.yml`).
+seconds instead of shipping a lookalike of the previous release.
+
+**The CLI ships with the app, at the app's version** (2026-09-30): there is no `cli-v*` tag and
+no bumping `packages/cli` by hand. `packages/cli/test/version.test.ts` (the `checks` job) and the
+release guard fail on any drift. When `release.yml` finishes successfully on a prod push,
+`publish-cli.yml` (its `workflow_run`) publishes `@antasphere/slideless@<version>` to npm with
+OIDC trusted publishing, and skips with success when npm already has that version. Keep the
+filename `publish-cli.yml`: npm's trusted publisher is configured on it.
 
 Then `git push origin origin/dev:refs/heads/prod` is the whole action (PRDCT-2326): `release.yml`
 publishes the image (smoke, scan, multi-arch build, ~20 min) and then dispatches the fleet
