@@ -490,15 +490,25 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     });
   });
 
-  it('rides the login rate-limit wall (per IP)', async () => {
+  it('11 connects from ONE address all pass (a room behind one Wi-Fi, PRDCT-2958 verifier F1)', async () => {
+    // On the login wall (10 per 15 minutes per address) the 11th `<tool>
+    // login` of a venue was refused. The connect has its own bucket, sized
+    // for a room (CLI_CONNECT_IP_LIMIT_PER_15_MIN, default 300): eleven
+    // people behind one address all get their key.
     const ip = sso.nextIp();
-    // The login wall is 10/15min per key; burn the bucket with rejects.
-    for (let i = 0; i < 10; i++) {
-      const res = await connect(app, 'x'.repeat(64), undefined, ip);
-      expect([401, 429]).toContain(res.status);
+    for (let i = 0; i < 11; i++) {
+      const person: HubUserFixture = {
+        sub: `hub-cli-room-${i}`,
+        email: `room-${i}@connect.test`,
+        workspaceId: ORG_ACME,
+        role: 'member',
+        workspaceName: 'Acme Corp'
+      };
+      const { token, hubRefreshToken } = await hub.signConnectToken(person, RESOURCE);
+      const res = await connect(app, token, hubRefreshToken, ip);
+      expect(res.status, `connect #${i + 1} from ${ip}`).toBe(201);
+      expect((await readJson(res)).key).toMatch(/^slk_/);
     }
-    const eleventh = await connect(app, 'x'.repeat(64), undefined, ip);
-    expect(eleventh.status).toBe(429);
   });
 
   it('refuses the trusted link onto an UNVERIFIED local email (403, no key)', async () => {
@@ -561,6 +571,55 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     expect(first.status).toBe(403);
     const replay = await connect(app, token);
     expect(replay.status).toBe(401);
+  });
+});
+
+describe('cloud edition: the connect wall is per address and bounded (CLI_CONNECT_IP_LIMIT_PER_15_MIN)', () => {
+  const LIMIT = 3;
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp(await createDatabase(container, 'sso_cli_connect_wall'), {
+      ...cloudEnv(),
+      CLI_CONNECT_IP_LIMIT_PER_15_MIN: String(LIMIT)
+    });
+    const res = await app.app.request(
+      '/api/v1/setup',
+      json({ setupToken: 'integration-test-setup-token', instanceName: 'Wall', owner: OWNER })
+    );
+    expect(res.status).toBe(201);
+  });
+
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('the per-address ceiling holds: CLI_CONNECT_IP_LIMIT_PER_15_MIN + 1 connects from one address, the last 429 rate_limited', async () => {
+    const ip = sso.nextIp();
+    const person = (i: number): HubUserFixture => ({
+      sub: `hub-cli-wall-${i}`,
+      email: `wall-${i}@connect.test`,
+      workspaceId: ORG_ACME,
+      role: 'member',
+      workspaceName: 'Acme Corp'
+    });
+    for (let i = 0; i < LIMIT; i++) {
+      const { token, hubRefreshToken } = await hub.signConnectToken(person(i), RESOURCE);
+      const res = await connect(app, token, hubRefreshToken, ip);
+      expect(res.status, `connect #${i + 1} from ${ip}`).toBe(201);
+    }
+    // A valid, never-presented token: the wall refuses it before the handler.
+    const last = person(LIMIT);
+    const { token, hubRefreshToken } = await hub.signConnectToken(last, RESOURCE);
+    const refused = await connect(app, token, hubRefreshToken, ip);
+    expect(refused.status).toBe(429);
+    expect((await readJson(refused)).error.code).toBe('rate_limited');
+    const { rows } = await app.db.pool.query(`SELECT id FROM "user" WHERE email = $1`, [last.email]);
+    expect(rows).toHaveLength(0); // nothing provisioned behind the wall
+
+    // The wall is per address: the same token from another address passes.
+    const elsewhere = await connect(app, token, hubRefreshToken, sso.nextIp());
+    expect(elsewhere.status).toBe(201);
   });
 });
 
