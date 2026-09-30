@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import { workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 import type { Logger } from '../logger.js';
-import type { PrincipalGate, PrincipalGateResult } from '../middleware/auth-context.js';
+import type { GateWorkspace, PrincipalGate, PrincipalGateResult } from '../middleware/auth-context.js';
 import type { HubOrgReconciler } from './hub-reconcile.js';
+import { resolveMembership } from './resolve-membership.js';
 
 /**
  * The cloud edition's post-resolution principal gate (user-scoped
@@ -24,7 +25,13 @@ import type { HubOrgReconciler } from './hub-reconcile.js';
  *    `GET /api/v1/me` — suspended is VISIBLE-BUT-BLOCKED, and /me is how
  *    the dashboard shows the suspended badge instead of stranding the user
  *    (the reason the PrincipalGate seam carries the request);
- *  - a role delta from the reconciled row applies to THIS request (D11).
+ *  - a role delta from the reconciled row applies to THIS request (D11);
+ *  - a request that SELECTED no workspace, on a credential that pins none,
+ *    runs in the person's default AS THE PASS LEFT IT: the resolver chose
+ *    the workspace before the pass ran, so a default moved at the hub
+ *    (`antasphere org use`) would land the very command that read it in the
+ *    old organization and only the next one in the new (PRDCT-2958, F2).
+ *    The membership is resolved again here and handed back as `workspace`.
  *
  * Guest and local-origin rows in a projected workspace skip hub enforcement
  * entirely EXCEPT the org-level suspension read — and that reads the
@@ -78,6 +85,23 @@ export class HubLiveGate {
       return { ok: false, status: 403, code: 'hub_unavailable', message: UNAVAILABLE_MESSAGE };
     }
 
+    // A selector-less request on an unpinned credential runs in the default
+    // membership as the pass above left it (the resolver read it before).
+    // The default is judged below exactly as the resolved one would be.
+    let moved: GateWorkspace | undefined;
+    if (request.selector === null && !principal.pinned) {
+      const fresh = await resolveMembership(this.deps.db, principal.userId, null);
+      if (fresh && fresh.workspaceId !== principal.workspaceId) {
+        moved = {
+          workspaceId: fresh.workspaceId,
+          role: fresh.role,
+          origin: fresh.origin,
+          accountRef: fresh.accountRef
+        };
+      }
+    }
+    const workspaceId = moved?.workspaceId ?? principal.workspaceId;
+
     // Judge the FRESHLY RECONCILED local rows (the pass above may have
     // swept the membership, synced the role, or flipped hub_status).
     const [row] = await this.deps.db
@@ -89,10 +113,7 @@ export class HubLiveGate {
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
       .where(
-        and(
-          eq(workspaceMembers.userId, principal.userId),
-          eq(workspaceMembers.workspaceId, principal.workspaceId)
-        )
+        and(eq(workspaceMembers.userId, principal.userId), eq(workspaceMembers.workspaceId, workspaceId))
       )
       .limit(1);
     if (!row || !row.isActive) {
@@ -111,6 +132,9 @@ export class HubLiveGate {
     }
     // A role delta from the reconciled row applies to THIS request (D11):
     // a demoted admin loses admin surfaces now, a promotion lands now.
+    if (moved) {
+      return { ok: true, workspace: { ...moved, role: row.role } };
+    }
     if (row.role !== principal.role) {
       return { ok: true, role: row.role };
     }
