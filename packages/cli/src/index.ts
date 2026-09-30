@@ -20,17 +20,21 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  * instance-portable, human tables by default and `--json` everywhere; any
  * error prints to stderr and exits non-zero.
  *
- * Resolution order (documented in docs/agents/cli.md):
- *   base URL: --api-url (alias --url) → SLIDELESS_URL → profile baseUrl → error
+ * Resolution order (documented in docs/agents/cli.md; a profile is an
+ * instance, cli-core 0.5.0):
+ *   profile:  --profile → the profile of --api-url / SLIDELESS_URL → the
+ *             active profile (`slideless use`) → the implicit `cloud` profile
+ *   base URL: --api-url (alias --url) → SLIDELESS_URL → profile baseUrl
+ *             → https://slideless.antasphere.com (the cloud)
  *   API key:  --api-key → SLIDELESS_API_KEY → profile apiKey
- *             → cached hub-connect key (cloud instances; user-scoped —
- *               one per hub profile, valid for every org)
- *             → connect-on-demand: `antasphere login` exchanged for an slk_ key
- *   workspace: --workspace → SLIDELESS_WORKSPACE → profile activeWorkspaceId
- *             → none sent (the server's default membership)
+ *             → the hub-connect key cached on the profile (cloud instances;
+ *               user-scoped — one per hub login, valid for every org)
+ *             → connect-on-demand: the Antasphere login exchanged for an slk_ key
+ *   workspace: --org / --workspace → SLIDELESS_ORG / SLIDELESS_WORKSPACE
+ *             → none sent (the server's default organization)
  */
 
-const VERSION = '0.4.1';
+const VERSION = '0.5.0';
 
 /**
  * The Slideless command groups, handed to the chassis program, which places

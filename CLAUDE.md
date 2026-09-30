@@ -12,7 +12,10 @@ deploys) + `dev` (day-to-day work).
 - npm scope `@slideless/*` for the internal workspace packages; the CLI is the one exception —
   it publishes to npm as **`@antasphere/slideless`** (binary still `slideless`, released via
   `.github/workflows/publish-cli.yml` on `cli-v*` tags — internal/cli-release.md). Env var prefix
-  `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY`.
+  `SLIDELESS_` — the CLI reads `SLIDELESS_URL` / `SLIDELESS_API_KEY` / `SLIDELESS_ORG` /
+  `SLIDELESS_WORKSPACE`. The cloud home is `IDENTITY.cloud.url`
+  (`https://slideless.antasphere.com`): the last step of the CLI's URL resolution, so a clean
+  machine needs no flag.
 - **One definition**: `packages/contract/src/identity.ts` (`IDENTITY`, typed by `ToolIdentity` of
   `@antasphere/chassis-contract`) spells the slug, the display name, the key prefix, the three
   scopes, the CLI's binary and env prefix, the MCP server name and tool prefix, the OTel service
@@ -129,6 +132,31 @@ deploys) + `dev` (day-to-day work).
   identity token in `X-Serverless-Authorization` (`SLIDELESS_RENDERER_GOOGLE_AUTH`,
   `thumbnails/google-id-token.ts`) while the shared secret keeps `Authorization`: a token in
   `Authorization` would take the secret's place and the renderer would refuse it.
+- **One login that ends in the tool, a profile is an instance, the organization named the hub's
+  way (PRDCT-2947, PRDCT-2446, cli-core 0.5.0)**: the chassis CLI resolves its URL flag → env →
+  profile → `identity.cloud.url`, selects the profile the same way (`--profile` → the profile of
+  the URL, made in memory and named for the host when none is saved → the active one → the
+  implicit `cloud`), and never pins `default` silently; a hub-connect key is used only against the
+  instance its profile names. `<bin> login` is the ONE sign-in: on a cloud instance the hub's
+  email code inline when no `antasphere login` is stored (the key written on the hub profile
+  exactly as that CLI writes it, `ANTASPHERE_URL` or `account.antasphere.com`), then the
+  exchange, then `/me`; on self-hosted the instance OTP in one command, or a pasted key. `auth
+login-request`/`login-complete` and `workspace use` are gone. `logout` REVOKES every key the
+  profile holds (`DELETE /cli/auth/key` on the profile's own origin, never a flag URL) before
+  forgetting it, and says when the instance refused (403: the key stays valid). `--org <hub org id
+or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing saved on the
+  machine: the server's `X-Workspace-Id` takes a hub organization id, matched on
+  `workspaces.central_account_id` INSIDE the one membership rule
+  (`identity/resolve-membership.ts`, so sessions, keys and OAuth bearers all take it; inert on
+  oss), a pinned key's own hub id is not a `workspace_mismatch`, and the rows of `/me` carry
+  `centralAccountId` (the person's own organization ids; the older "never on the wire" rule was
+  reversed for this). A 401 on a cached hub key evicts it and re-exchanges ONCE (cli-core
+  `refreshConnectKey`, the request replayed once); a hub refusal at the exchange (`CliConnectError`
+  `refusal`) prints the hub's sentence and exits 3, exit 1 is a usage or wire error.
+  `TOOL_RESTRICTED=true` (chassis env) makes the CLOUD edition refuse `POST /workspaces` with 403
+  `restricted_tool` through the ONE creation rule (`/me.canCreateWorkspace` false too) and advertise
+  `restricted: true` in discovery; inert on self-hosted. Every `packages/chassis-*` change here is
+  what lane C re-copies into the template and the hackathon: keep it tool-neutral.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **The viewer origin is a real boundary, never a trust grant (PRDCT-1352)**: with

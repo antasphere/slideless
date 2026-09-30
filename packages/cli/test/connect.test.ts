@@ -207,13 +207,16 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
     expect(JSON.parse(h.out())).toEqual({ presentations: [], nextCursor: null });
     expect(h.err()).toContain('Connected to http://tool as ada@x.co');
 
-    // Cached per (tool, hub profile) + the fresh profile pinned to the
-    // instance; the relayed grant is never persisted client-side.
+    // Cached per (tool, hub profile) on the profile of the instance, named
+    // for its host (a profile IS an instance, cli-core 0.5.0) and made active
+    // because the tool had no profile at all; the relayed grant is never
+    // persisted client-side.
     const cfg = loadConfig(env);
-    expect(cfg.activeProfile).toBe('default');
-    expect(cfg.profiles.default?.baseUrl).toBe('http://tool');
-    expect(cfg.profiles.default?.apiKey).toBeUndefined(); // the legacy slot is untouched
-    expect(cfg.profiles.default?.connectKeys?.default).toMatchObject({
+    expect(Object.keys(cfg.profiles)).toEqual(['tool']);
+    expect(cfg.activeProfile).toBe('tool');
+    expect(cfg.profiles.tool?.baseUrl).toBe('http://tool');
+    expect(cfg.profiles.tool?.apiKey).toBeUndefined(); // the tool's own login slot is untouched
+    expect(cfg.profiles.tool?.connectKeys?.default).toMatchObject({
       apiKey: SLK,
       email: 'ada@x.co'
     });
@@ -240,18 +243,12 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
         default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_cached_key' } } }
       }
     });
-    // The hub-side org context changed since the mint (`antasphere org use`):
-    // the key identifies the USER — no org ever selects or misses the cache.
+    // The hub login's default organization changed since the mint: the key
+    // identifies the USER — no org ever selects or misses the cache.
     saveCoreConfig(env, HUB_TOOL, {
       activeProfile: 'default',
       profiles: {
-        default: {
-          apiKey: HUB_KEY,
-          baseUrl: 'http://hub',
-          email: 'ada@x.co',
-          workspaceId: 'org1',
-          activeWorkspaceId: 'org2'
-        }
+        default: { apiKey: HUB_KEY, baseUrl: 'http://hub', email: 'ada@x.co', workspaceId: 'org2' }
       }
     });
     const h = routedHarness([decksRoute], env);
@@ -415,19 +412,50 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
       env
     );
     expect(await run(['logout', '--json'], h.io)).toBe(0);
-    expect(h.err()).toContain('STAYS VALID');
-    expect(h.err()).toContain('endpoint_not_allowed');
+    expect(h.err()).toBe(
+      'The instance refused to revoke the key of the Antasphere login "default" (endpoint_not_allowed): ' +
+        'it STAYS VALID server-side; revoke it from the dashboard. Forgetting the local copy.\n'
+    );
     expect(h.err()).not.toContain('already unusable');
-    expect(JSON.parse(h.out())).toMatchObject({
+    expect(JSON.parse(h.out())).toEqual({
       profile: 'default',
+      baseUrl: 'http://tool',
+      revoked: 0,
+      refused: 1,
       hubProfiles: ['default'],
-      revoked: false,
-      evicted: true
+      forgotten: true
     });
     expect(loadConfig(env).profiles.default?.connectKeys).toBeUndefined();
   });
 
-  it('logout revokes against the profile instance, never a flag/env URL', async () => {
+  it('the human summary of a refused revoke says the key stays valid', async () => {
+    const env = await tempConfigEnv();
+    saveConfig(env, {
+      activeProfile: 'default',
+      profiles: {
+        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+      }
+    });
+    const h = routedHarness(
+      [
+        {
+          method: 'DELETE',
+          path: /\/api\/v1\/cli\/auth\/key$/,
+          reply: () => ({
+            status: 403,
+            body: { error: { code: 'endpoint_not_allowed', message: 'not available' } }
+          })
+        }
+      ],
+      env
+    );
+    expect(await run(['logout'], h.io)).toBe(0);
+    expect(h.out()).toBe(
+      'Logged out of profile "default" on http://tool — 1 key could NOT be revoked and stay valid.\n'
+    );
+  });
+
+  it('logout revokes against the profile instance, never the URL variable', async () => {
     const env = await tempConfigEnv();
     seedHubLogin(env, 'org1');
     saveConfig(env, {
@@ -441,17 +469,33 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
       path: /\/api\/v1\/cli\/auth\/key$/,
       reply: () => ({ body: { revoked: true, id: 'k1' } })
     };
-    // A stray SLIDELESS_URL (or --api-url) pointing somewhere else must not
-    // receive the cached key — the self-revoke belongs to the minting host.
+    // A stray SLIDELESS_URL pointing somewhere else must not receive the
+    // cached key: `--profile` names the profile, and the self-revoke belongs
+    // to the host the profile names.
     const h = routedHarness([revokeRoute], { ...env, SLIDELESS_URL: 'http://other' });
-    expect(await run(['logout', '--api-url', 'http://elsewhere'], h.io)).toBe(0);
+    expect(await run(['logout', '--profile', 'default'], h.io)).toBe(0);
     expect(h.wire).toEqual([
       { method: 'DELETE', origin: 'http://tool', path: '/api/v1/cli/auth/key', auth: 'Bearer slk_one_key' }
     ]);
     expect(loadConfig(env).profiles.default?.connectKeys).toBeUndefined();
   });
 
-  it('classic logout is untouched when the profile holds its own key (hub cache preserved)', async () => {
+  it('logout --api-url selects the profile of THAT instance: none saved, nothing to log out of, nothing sent', async () => {
+    const env = await tempConfigEnv();
+    saveConfig(env, {
+      activeProfile: 'default',
+      profiles: {
+        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+      }
+    });
+    const h = routedHarness([], env);
+    expect(await run(['logout', '--api-url', 'http://elsewhere'], h.io)).toBe(1);
+    expect(h.err()).toBe('Error: No profile to log out of.\n');
+    expect(h.wire).toEqual([]);
+    expect(loadConfig(env).profiles.default?.connectKeys?.default?.apiKey).toBe('slk_one_key');
+  });
+
+  it('logout revokes the profile key AND the cached hub key, both on the profile instance', async () => {
     const env = await tempConfigEnv();
     saveConfig(env, {
       activeProfile: 'default',
@@ -459,16 +503,31 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
         default: {
           apiKey: 'slk_classic_key',
           baseUrl: 'http://tool',
+          email: 'ada@x.co',
           connectKeys: { default: { apiKey: 'slk_one_key' } }
         }
       }
     });
-    const h = routedHarness([], env);
+    const revokeRoute: Route = {
+      method: 'DELETE',
+      path: /\/api\/v1\/cli\/auth\/key$/,
+      reply: () => ({ body: { revoked: true, id: 'k1' } })
+    };
+    const h = routedHarness([revokeRoute], env);
     expect(await run(['logout'], h.io)).toBe(0);
-    expect(h.calls).toHaveLength(0); // classic logout never talks to the network
+    expect(h.wire).toEqual([
+      { method: 'DELETE', origin: 'http://tool', path: '/api/v1/cli/auth/key', auth: 'Bearer slk_one_key' },
+      {
+        method: 'DELETE',
+        origin: 'http://tool',
+        path: '/api/v1/cli/auth/key',
+        auth: 'Bearer slk_classic_key'
+      }
+    ]);
+    expect(h.out()).toBe('Logged out of profile "default" on http://tool (2 keys revoked server-side).\n');
     const cfg = loadConfig(env);
-    expect(cfg.profiles.default?.apiKey).toBeUndefined();
-    expect(cfg.profiles.default?.connectKeys?.default?.apiKey).toBe('slk_one_key');
+    // The profile stays, with its instance: only the credentials go.
+    expect(cfg.profiles.default).toEqual({ baseUrl: 'http://tool' });
   });
 
   it('a cached cloud key never travels to a different instance named by --api-url', async () => {
