@@ -349,6 +349,8 @@ export function createContext<TClient extends ChassisClient<string>>(input: {
     return {
       tool: identity.tool,
       toolBaseUrl: ctx.baseUrl,
+      // A profile with no baseUrl of its own is at the cloud URL (cli-core 0.5.0).
+      cloudUrl: identity.cloudUrl,
       profileName: ctx.profileName ?? CLOUD_PROFILE,
       env: io.env,
       // Thread the injected fetch so the probe + exchange stay on the test
