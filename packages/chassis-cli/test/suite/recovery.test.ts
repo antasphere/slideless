@@ -207,6 +207,31 @@ describe('a refused selection is not a dead key (verifier round 1, F2)', () => {
     expect(loadConfig(env).profiles.work?.connectKeys?.default?.apiKey).toBe(NEW);
   });
 
+  it('F10: a bare /me probe with no answer keeps the key: no eviction, no exchange, the 401 stands', async () => {
+    const env = await cachedEnv();
+    const h = routedHarness(
+      [
+        filesFor([]),
+        {
+          method: 'GET',
+          path: /\/api\/v1\/me$/,
+          reply: () => {
+            throw new TypeError('fetch failed');
+          }
+        },
+        cloudInstanceRoute,
+        ...exchangeRoutes([NEW])
+      ],
+      env
+    );
+    expect(await run(['files', 'list', '--org', NOT_MINE], h.io)).toBe(1);
+    expect(h.wire.some((c) => c.path.endsWith('/sso/tool-token'))).toBe(false);
+    expect(h.wire.some((c) => c.path.endsWith('/sso/cli-connect'))).toBe(false);
+    expect(h.wire.filter((c) => c.path.endsWith('/api/v1/files'))).toHaveLength(1);
+    expect(loadConfig(env).profiles.work?.connectKeys?.default?.apiKey).toBe(OLD);
+    expect(h.err()).not.toContain('The cached key was refused');
+  });
+
   it('without a selection there is no probe: the recovery runs on the first 401', async () => {
     const env = await cachedEnv();
     const h = routedHarness([filesFor([NEW]), cloudInstanceRoute, ...exchangeRoutes([NEW])], env);

@@ -12,6 +12,7 @@ import {
   normalizeUrl,
   probeToolInstance,
   resolveBaseUrl,
+  sameInstance,
   selectProfile,
   saveConfig as saveCoreConfig,
   type CliProfile
@@ -231,6 +232,17 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
       const ctx = resolveContext(cmd, io);
       const profileName = ctx.profileName ?? CLOUD_PROFILE;
       const { baseUrl } = ctx;
+      // A profile is an instance, and a login never repoints one (verifier
+      // round 2, F9): a saved profile named with --profile while --api-url
+      // (or the URL variable) names another instance is refused before any
+      // request, so no key of that profile ever travels to the other origin.
+      const saved = ctx.config.profiles[profileName];
+      if (saved && !sameInstance(profileUrl(saved), baseUrl)) {
+        throw new CliUsageError(
+          `Profile "${profileName}" is the instance ${profileUrl(saved)}, and this login targets ${baseUrl}. ` +
+            `Drop --profile to sign in on the profile of ${baseUrl}, or drop --api-url to sign in on "${profileName}".`
+        );
+      }
 
       // A pasted key: `--api-key`, `--api-key-stdin` (already spent in
       // index.ts; reuse that read), or the key variable. Verified before it
@@ -280,7 +292,12 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
           ? loadConfig(io.env).profiles[profileName]?.connectKeys?.[hub.name]
           : undefined;
         if (stale && hub.name) {
-          const auth = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
+          // Revoked on the instance the key was minted for, the profile's own
+          // (the same rule as logout), never on a flag URL.
+          const auth = new CliAuthClient({
+            baseUrl: profileUrl(loadConfig(io.env).profiles[profileName]),
+            ...(io.fetch ? { fetch: io.fetch } : {})
+          });
           await auth.revoke(stale.apiKey).catch(() => undefined);
           removeConnectKey(io.env, profileName, hub.name);
         }

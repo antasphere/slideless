@@ -390,7 +390,10 @@ export function createContext<TClient extends ChassisClient<string>>(input: {
         const probe = await base(`${ctx.baseUrl}/api/v1/me`, {
           headers: { authorization: `Bearer ${ctx.apiKey}` }
         }).catch(() => null);
-        if (probe?.ok) return res;
+        // Only a probe that ANSWERS 401 proves the key dead (verifier round 2,
+        // F10): a probe with no answer, or any other status, keeps the key and
+        // lets the 401 stand.
+        if (!probe || probe.status !== 401) return res;
       }
       const outcome = await refreshConnectKey(connectOptions(ctx));
       if (outcome.outcome === 'not_cloud') return res;

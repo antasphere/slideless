@@ -495,6 +495,38 @@ describe('login on the cloud: the Antasphere sign-in, then the exchange', () => 
     });
   });
 
+  it('F9: --profile naming another instance than --api-url is refused before any request, and nothing moves', async () => {
+    const env = await hubEnv();
+    seedHubLogin(env);
+    const cached = key('cached');
+    saveConfig(env, {
+      activeProfile: 'work',
+      profiles: { work: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: cached } } } }
+    });
+    const before = JSON.stringify(loadConfig(env));
+    const h = routedHarness([cloudInstanceRoute, ...exchangeRoutes([key('tool')]), meRoute()], env);
+    expect(await run(['login', '--profile', 'work', '--api-url', 'http://other'], h.io)).toBe(1);
+    expect(h.wire).toEqual([]);
+    expect(h.err()).toBe(
+      'Error: Profile "work" is the instance http://tool, and this login targets http://other. ' +
+        'Drop --profile to sign in on the profile of http://other, or drop --api-url to sign in on "work".\n'
+    );
+    expect(JSON.stringify(loadConfig(env))).toBe(before);
+  });
+
+  it('F9: the same refusal for a pasted key: the profile is never repointed and the key goes nowhere', async () => {
+    const env = await hubEnv();
+    const own = `${K}_ownkey12_0123456789abcdefghij`;
+    const pasted = `${K}_pasted12_0123456789abcdefghij`;
+    saveConfig(env, { activeProfile: 'work', profiles: { work: { baseUrl: 'http://tool', apiKey: own } } });
+    const h = routedHarness([meRoute()], env);
+    expect(
+      await run(['login', '--profile', 'work', '--api-url', 'http://other', '--api-key', pasted], h.io)
+    ).toBe(1);
+    expect(h.wire).toEqual([]);
+    expect(loadConfig(env).profiles.work).toEqual({ baseUrl: 'http://tool', apiKey: own });
+  });
+
   it('the hub profile keeps the name the hub CLI made active', async () => {
     const env = await hubEnv();
     saveCoreConfig(env, HUB_TOOL, { activeProfile: 'work', profiles: { work: { baseUrl: HUB } } });
