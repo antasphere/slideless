@@ -12,8 +12,12 @@
  *
  *   node scripts/release.mjs patch|minor|major [--title "…"] [--push] [--dry-run]
  *
- *     On a clean `dev` checkout: bumps the root and apps/server package.json
- *     together (they are pinned equal by env.test.ts and by release.yml),
+ *     On a clean `dev` checkout: bumps the root, apps/server and packages/cli
+ *     package.json together, with the CLI's reported `VERSION` constant
+ *     (packages/cli/src/index.ts) — ONE version per tool: the npm CLI is
+ *     released with the app, never on a series of its own. They are pinned
+ *     equal by env.test.ts, packages/cli/test/version.test.ts and this
+ *     script's guard (release.yml's first job). It
  *     commits `chore(release): slideless X.Y.Z[ — title]`, and makes the
  *     ANNOTATED tag vX.Y.Z on that commit (the docs site seeds its changelog
  *     entry from the tag's subject). It pushes nothing unless --push (dev +
@@ -33,15 +37,25 @@
  *     and refuses a shallow checkout outright, since "no tag here" would then
  *     mean "no tag fetched", and a gate that passes on missing data is no gate.
  *
- * The CLI has its own series (packages/cli, `cli-v*`, publish-cli.yml) and is
- * deliberately not touched here.
+ *     The guard also refuses when the version carriers disagree (a half-bumped
+ *     release), so a CLI left behind the app fails before anything ships.
+ *
+ * The CLI is published from the same number: publish-cli.yml runs after
+ * release.yml succeeds on a push to prod and publishes packages/cli at this
+ * version, skipping cleanly when npm already has it. There is no `cli-v*` tag.
  */
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const VERSION_FILES = ['package.json', 'apps/server/package.json'];
+const VERSION_FILES = ['package.json', 'apps/server/package.json', 'packages/cli/package.json'];
+/**
+ * Source constants that carry the version too: the CLI's `--version` answer is
+ * a literal in its entry (publish-cli.yml checks the built binary against the
+ * package). Each must hold exactly one match; the bump rewrites it in place.
+ */
+const VERSION_CONSTANTS = [{ file: 'packages/cli/src/index.ts', pattern: /^const VERSION = '([^']*)';$/m }];
 const RELEASE_BRANCH = 'dev';
 const KINDS = ['patch', 'minor', 'major'];
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -77,6 +91,19 @@ function readVersion(root) {
     if (typeof parsed.version !== 'string') fail(`${f} has no top-level "version" field`);
     return { file: f, version: parsed.version };
   });
+  for (const { file, pattern } of VERSION_CONSTANTS) {
+    let raw;
+    try {
+      raw = readFileSync(join(root, file), 'utf8');
+    } catch (e) {
+      fail(`${file} cannot be read: ${e.message}`);
+    }
+    const global = new RegExp(pattern.source, 'gm');
+    const matches = [...raw.matchAll(global)];
+    if (matches.length !== 1)
+      fail(`${file}: expected exactly one line matching ${pattern}, found ${matches.length}`);
+    seen.push({ file, version: matches[0][1] });
+  }
   const versions = new Set(seen.map((s) => s.version));
   if (versions.size !== 1) {
     fail(
@@ -130,8 +157,8 @@ function lineDepths(raw) {
  * is the one carrying the current value at depth 1, the root object's own
  * field (a nested `"version"` under `pnpm.overrides` or `dependencies` sits
  * deeper, however it is indented); the result is re-parsed and must read
- * `next` at the top level, or nothing is written. Both files are prepared
- * before either is touched.
+ * `next` at the top level, or nothing is written. Every file (the version
+ * constants included) is prepared before any is touched.
  */
 function writeVersion(root, current, next) {
   const prepared = VERSION_FILES.map((f) => {
@@ -155,6 +182,14 @@ function writeVersion(root, current, next) {
     }
     return { path, updated };
   });
+  for (const { file, pattern } of VERSION_CONSTANTS) {
+    const path = join(root, file);
+    const raw = readFileSync(path, 'utf8');
+    const updated = raw.replace(pattern, (line) => line.replace(`'${current}'`, `'${next}'`));
+    if (updated.match(pattern)?.[1] !== next)
+      fail(`${file}: rewriting the version constant to ${next} failed; nothing written`);
+    prepared.push({ path, updated });
+  }
   for (const { path, updated } of prepared) writeFileSync(path, updated);
 }
 
@@ -248,7 +283,7 @@ function release(root, { kind, title, push, dryRun }) {
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { root }).out;
   if (branch !== RELEASE_BRANCH) fail(`releases are cut on ${RELEASE_BRANCH}, this checkout is on ${branch}`);
   // Tracked changes block; untracked files (scratch, build leftovers) do not —
-  // they never reach the release commit, which adds the two version files only.
+  // they never reach the release commit, which adds the version carriers only.
   const dirty = git(['status', '--porcelain', '--untracked-files=no'], { root }).out;
   if (dirty) fail(`the working tree is not clean:\n${dirty}`);
 
@@ -259,7 +294,9 @@ function release(root, { kind, title, push, dryRun }) {
   if (hasOrigin(root) && remoteTagTarget(root, tag) !== null) fail(`${tag} already exists on origin`);
 
   const subject = `chore(release): slideless ${next}${title ? ` — ${title}` : ''}`;
-  console.log(`${current} → ${next}  (${VERSION_FILES.join(', ')})`);
+  console.log(
+    `${current} → ${next}  (${[...VERSION_FILES, ...VERSION_CONSTANTS.map((c) => c.file)].join(', ')})`
+  );
   console.log(`commit  ${subject}`);
   console.log(`tag     ${tag} (annotated)`);
   if (dryRun) {
@@ -268,7 +305,7 @@ function release(root, { kind, title, push, dryRun }) {
   }
 
   writeVersion(root, current, next);
-  git(['add', ...VERSION_FILES], { root });
+  git(['add', ...VERSION_FILES, ...VERSION_CONSTANTS.map((c) => c.file)], { root });
   git(['commit', '-q', '-m', subject], { root });
   git(['tag', '-a', tag, '-m', subject], { root });
   const sha = git(['rev-parse', '--short', 'HEAD'], { root }).out;

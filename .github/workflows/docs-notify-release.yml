@@ -5,7 +5,7 @@ name: Notify docs site (release)
 
 on:
   push:
-    tags: ['v*', 'cli-v*']
+    tags: ['v*'] # the CLI ships at the app's version: no separate cli-v* tag
 
 jobs:
   notify:
