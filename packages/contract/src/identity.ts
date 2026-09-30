@@ -21,6 +21,7 @@ export const IDENTITY = {
     dataExport: 'data:export'
   },
   cliKeyScopesLabel: 'presentations:read+write',
+  cloud: { url: 'https://slideless.antasphere.com' },
   cli: {
     bin: 'slideless',
     envPrefix: 'SLIDELESS',
