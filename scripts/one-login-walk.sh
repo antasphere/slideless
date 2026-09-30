@@ -717,5 +717,40 @@ echo "$ERR" | grep -q "at " && fail "the failure reads as a stack trace: $ERR"
 REMOVED_SENTENCE=$(echo "$ERR" | head -2 | tr '\n' ' ')
 pass "step 6b: the member removed at the hub fails the next Slideless command in that organization with a sentence, exit $RC: $REMOVED_SENTENCE"
 
+
+# ── Step 9 — a room behind one address ───────────────────────────────────────
+# Tomorrow's shape (PRDCT-2958 findings F5, verifier F1 and F2): every
+# participant signs in from one venue Wi-Fi, one client address. Twelve people
+# of the granted organization run `hackathon login` from twelve laptops on this
+# one address; before the fixes the 6th code request (hub), the 11th connect
+# (the tool) and the room after ten wrong codes (hub) were refused.
+say "Step 9 — a room behind one address: twelve people sign in to the hackathon, ten wrong codes do not lock the room"
+STEP="step 9"
+ROOM=12
+for i in $(seq 1 $ROOM); do
+  email="room-$i@ol-e.test"
+  inv=$("${CURL[@]}" -b "$HUB_JAR" -o "$SCRATCH/room-inv.json" -w '%{http_code}' -X POST "$HUB/api/v1/invitations" -H "Origin: $HUB" -H "X-Workspace-Id: $ORG_A_ID" -H 'content-type: application/json' -d "{\"email\":\"$email\",\"role\":\"member\"}")
+  [ "$inv" = 201 ] || fail "inviting $email answered $inv: $(cat "$SCRATCH/room-inv.json")"
+  tok=$(jq -r '.acceptUrl | split("/") | last' "$SCRATCH/room-inv.json")
+  acc=$("${CURL[@]}" -o "$SCRATCH/room-acc.json" -w '%{http_code}' -X POST "$HUB/api/v1/invitations/accept" -H "Origin: $HUB" -H 'content-type: application/json' -d "{\"token\":\"$tok\",\"name\":\"Room $i\",\"password\":\"$MEMBER_PASSWORD\"}")
+  [ "$acc" = 200 ] || fail "accepting the invitation of $email answered $acc: $(cat "$SCRATCH/room-acc.json")"
+done
+note "$ROOM people invited into $ORG_A_NAME and their invitations accepted, all from one address"
+# Ten wrong codes typed in the room, one each by ten people, before anyone signs in.
+for i in $(seq 1 10); do
+  "${CURL[@]}" -o /dev/null -X POST "$HUB/api/v1/cli/auth/request" -H 'content-type: application/json' -d "{\"email\":\"room-$i@ol-e.test\"}"
+  wrong=$("${CURL[@]}" -o "$SCRATCH/room-wrong.json" -w '%{http_code}' -X POST "$HUB/api/v1/cli/auth/complete" -H 'content-type: application/json' -d "{\"email\":\"room-$i@ol-e.test\",\"otp\":\"000000\"}")
+  case "$wrong" in 401|400) ;; *) fail "a wrong code for room-$i answered $wrong: $(cat "$SCRATCH/room-wrong.json")" ;; esac
+done
+note "ten wrong codes typed by ten people from the one address"
+for i in $(seq 1 $ROOM); do
+  home "room-$i"
+  hk_login "room-$i@ol-e.test"
+  [ "$RC" = 0 ] || fail "participant $i of the room: hackathon login exited $RC: $ERR"
+  echo "$OUT" | jq -e --arg e "room-$i@ol-e.test" '.user.email == $e' >/dev/null || fail "participant $i: $OUT"
+done
+[ "$(hkdb "SELECT count(*) FROM api_keys k JOIN \"user\" u ON u.id = k.created_by WHERE u.email LIKE 'room-%' AND k.revoked_at IS NULL")" = "$ROOM" ] || fail "expected one live hackathon key per participant of the room"
+pass "step 9: $ROOM participants behind one address signed in to the hackathon after ten wrong codes in the room: every sign-in code, every completion and every connect answered"
+
 STEP=""
 say "Every step passed"
