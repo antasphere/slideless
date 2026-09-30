@@ -226,6 +226,32 @@ describe('API keys', () => {
   });
 });
 
+describe('the hub id is matched without regard to case (verifier round 1, F6)', () => {
+  const UPPER_A = ORG_A.toUpperCase();
+
+  it('the upper-case spelling differs from the stored one (the test means something)', () => {
+    expect(UPPER_A).not.toBe(ORG_A);
+  });
+
+  it('a session naming ORG_A in upper case → ORG_A’s projection', async () => {
+    const res = await me({ cookie: hanaCookie, 'x-workspace-id': UPPER_A });
+    expect(res.status).toBe(200);
+    expect((await readJson(res)).activeWorkspaceId).toBe(orgALocalId);
+  });
+
+  it('an unpinned key naming ORG_A in upper case → ORG_A’s projection', async () => {
+    const res = await me({ authorization: `Bearer ${unpinnedKey}`, 'x-workspace-id': UPPER_A });
+    expect(res.status).toBe(200);
+    expect((await readJson(res)).activeWorkspaceId).toBe(orgALocalId);
+  });
+
+  it('the key pinned to ORG_A takes the upper-case hub id as its pin', async () => {
+    const res = await me({ authorization: `Bearer ${pinnedKey}`, 'x-workspace-id': UPPER_A });
+    expect(res.status).toBe(200);
+    expect((await readJson(res)).activeWorkspaceId).toBe(orgALocalId);
+  });
+});
+
 describe('OAuth bearer', () => {
   it('ORG_A hub id → ORG_A’s projection', async () => {
     const bearer = await sso.oauthBearer(app, hanaCookie);

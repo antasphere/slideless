@@ -29,8 +29,6 @@ import {
 const { configPath, loadConfig, saveConfig } = cli;
 const { envPrefix: P, keyPrefix: K, displayName, cloudUrl } = cli.identity;
 
-const TWO = [wsRow('w1', 'Acme', { default: true }), wsRow('w2', 'Beta')];
-
 /** A scripted prompt: answers in order, questions recorded. */
 function scripted(h: ReturnType<typeof routedHarness>, answers: string[]): string[] {
   const asked: string[] = [];
@@ -59,17 +57,51 @@ describe('login with a pasted key', () => {
     expect(config.profiles).toEqual({ inst: { apiKey: pasted, baseUrl: 'http://inst', email: 'ada@x.co' } });
   });
 
-  it(`reads the key from ${P}_API_KEY too, and lists the workspaces when there are two`, async () => {
+  it(`${P}_API_KEY is never taken as a paste: on a self-hosted instance the email code runs (verifier round 1, F8)`, async () => {
     const env = await tempConfigEnv();
-    const pasted = key('envkey');
-    const h = routedHarness([meRoute(meBody({ workspaces: TWO }))], { ...env, [`${P}_API_KEY`]: pasted });
-    expect(await run(['login', '--api-url', 'http://localhost:3400'], h.io)).toBe(0);
-    expect(h.out()).toBe(
-      'Signed in as Ada <ada@x.co> in Acme on http://localhost:3400.\n' +
-        `Key saved to profile "localhost:3400" (${configPath(env)}).\n` +
-        'Your workspaces: Acme, Beta. Pass --org <name> (or --workspace <name>) to work in another.\n'
-    );
-    expect(loadConfig(env).profiles['localhost:3400']?.apiKey).toBe(pasted);
+    const inShell = key('envkey');
+    const minted = key('minted');
+    const h = routedHarness([ossInstanceRoute, ...otpRoutes(minted), meRoute()], {
+      ...env,
+      [`${P}_API_KEY`]: inShell
+    });
+    scripted(h, ['123456']);
+    expect(await run(['login', '--api-url', 'http://inst', '--email', 'ada@x.co'], h.io)).toBe(0);
+    expect(h.wire.map((c) => `${c.method} ${c.path} ${c.auth ?? '-'}`)).toEqual([
+      'GET /api/v1/instance -',
+      'POST /api/v1/cli/auth/request -',
+      'POST /api/v1/cli/auth/complete -',
+      `GET /api/v1/me Bearer ${minted}`
+    ]);
+    expect(loadConfig(env).profiles.inst).toEqual({
+      apiKey: minted,
+      baseUrl: 'http://inst',
+      email: 'ada@x.co'
+    });
+    expect(JSON.stringify(loadConfig(env))).not.toContain(inShell);
+  });
+
+  it(`${P}_API_KEY is never taken as a paste: on the cloud the Antasphere path runs`, async () => {
+    const env = { ...(await tempConfigEnv()), ANTASPHERE_URL: HUB };
+    seedHubLogin(env);
+    const inShell = key('envkey');
+    const minted = key('tool');
+    const h = routedHarness([cloudInstanceRoute, ...exchangeRoutes([minted]), meRoute()], {
+      ...env,
+      [`${P}_API_KEY`]: inShell
+    });
+    expect(await run(['login', '--api-url', 'http://tool', '--email', 'ada@x.co'], h.io)).toBe(0);
+    expect(h.wire.map((c) => `${c.method} ${c.origin}${c.path} ${c.auth ?? '-'}`)).toEqual([
+      'GET http://tool/api/v1/instance -',
+      'GET http://tool/api/v1/instance -',
+      `POST ${HUB}/api/v1/sso/tool-token Bearer ${HUB_KEY}`,
+      'POST http://tool/api/v1/sso/cli-connect -',
+      `GET http://tool/api/v1/me Bearer ${minted}`
+    ]);
+    const tool = loadConfig(env).profiles.tool;
+    expect(tool?.apiKey).toBeUndefined();
+    expect(tool?.connectKeys?.default?.apiKey).toBe(minted);
+    expect(JSON.stringify(loadConfig(env))).not.toContain(inShell);
   });
 
   it('reads the key from --api-key-stdin', async () => {
@@ -295,20 +327,22 @@ describe('login on the cloud: the Antasphere sign-in, then the exchange', () => 
       `Signed in as Ada <ada@x.co> in Acme (organization ${ORG}) on http://tool.\n` +
         'Your workspaces: Acme, Beta. Pass --org <name> (or --workspace <name>) to work in another.\n'
     );
-    // The hub profile: exactly what `antasphere login` writes.
+    // The hub profile: exactly what `antasphere login` writes, named the hub
+    // CLI's way (cli-core `selectProfile`: ANTASPHERE_URL=http://hub makes
+    // the profile of that host, `hub`).
     expect(loadCoreConfig(env, HUB_TOOL)).toEqual({
-      activeProfile: 'default',
-      profiles: { default: { apiKey: HUB_KEY, baseUrl: HUB, email: 'ada@x.co', workspaceId: ORG } }
+      activeProfile: 'hub',
+      profiles: { hub: { apiKey: HUB_KEY, baseUrl: HUB, email: 'ada@x.co', workspaceId: ORG } }
     });
     // The tool's key is cached on the instance profile, which is the active one.
     const config = loadConfig(env);
     expect(config.activeProfile).toBe('tool');
     expect(config.profiles.tool?.baseUrl).toBe('http://tool');
     expect(config.profiles.tool?.apiKey).toBeUndefined();
-    expect(config.profiles.tool?.connectKeys?.default).toMatchObject({ apiKey: minted, email: 'ada@x.co' });
+    expect(config.profiles.tool?.connectKeys?.hub).toMatchObject({ apiKey: minted, email: 'ada@x.co' });
   });
 
-  it('the hub URL defaults to account.antasphere.com', async () => {
+  it('a clean machine: the hub profile `cloud` at account.antasphere.com', async () => {
     const env = await tempConfigEnv();
     const h = routedHarness(
       [cloudInstanceRoute, ...otpRoutes(HUB_KEY, ORG), ...exchangeRoutes([key('tool')]), meRoute()],
@@ -320,7 +354,145 @@ describe('login on the cloud: the Antasphere sign-in, then the exchange', () => 
       origin: 'https://account.antasphere.com',
       path: '/api/v1/cli/auth/request'
     });
-    expect(loadCoreConfig(env, HUB_TOOL).profiles.default?.baseUrl).toBe('https://account.antasphere.com');
+    expect(loadCoreConfig(env, HUB_TOOL)).toEqual({
+      activeProfile: 'cloud',
+      profiles: {
+        cloud: {
+          apiKey: HUB_KEY,
+          baseUrl: 'https://account.antasphere.com',
+          email: 'ada@x.co',
+          workspaceId: ORG
+        }
+      }
+    });
+    expect(loadConfig(env).profiles.tool?.connectKeys?.cloud?.apiKey).toBe(key('tool'));
+  });
+
+  it('a stored hub login the hub rejects, with no ANTASPHERE_URL: re-signs in at the STORED hub URL, and the profile keeps its other fields', async () => {
+    const env = await tempConfigEnv();
+    saveCoreConfig(env, HUB_TOOL, {
+      activeProfile: 'default',
+      profiles: {
+        default: {
+          apiKey: HUB_KEY,
+          baseUrl: HUB,
+          email: 'ada@x.co',
+          connectKeys: { other: { apiKey: 'kept' } },
+          // A field this CLI does not know: the hub CLI's spread keeps it, so must this one.
+          label: 'mine'
+        } as Record<string, unknown>,
+        spare: { baseUrl: 'http://spare' }
+      }
+    });
+    const fresh = 'ant_freshkey_secretsecretsecret1234';
+    const h = routedHarness(
+      [
+        cloudInstanceRoute,
+        ...otpRoutes(fresh, ORG),
+        ...exchangeRoutes([key('tool')], {
+          toolToken: (n) =>
+            n === 1
+              ? { status: 401, body: { error: { code: 'unauthenticated', message: 'bad key' } } }
+              : undefined
+        }),
+        meRoute()
+      ],
+      env
+    );
+    scripted(h, ['123456']);
+    expect(await run(['login', '--api-url', 'http://tool', '--email', 'ada@x.co'], h.io)).toBe(0);
+    expect(h.err()).toContain('The stored Antasphere login was rejected: signing in again.\n');
+    expect(h.wire.filter((c) => c.path.startsWith('/api/v1/cli/auth/')).map((c) => c.origin)).toEqual([
+      HUB,
+      HUB
+    ]);
+    expect(h.wire.some((c) => c.origin === 'https://account.antasphere.com')).toBe(false);
+    expect(loadCoreConfig(env, HUB_TOOL)).toEqual({
+      activeProfile: 'default',
+      profiles: {
+        default: {
+          apiKey: fresh,
+          baseUrl: HUB,
+          email: 'ada@x.co',
+          workspaceId: ORG,
+          connectKeys: { other: { apiKey: 'kept' } },
+          label: 'mine'
+        },
+        spare: { baseUrl: 'http://spare' }
+      }
+    });
+    expect(loadConfig(env).profiles.tool?.connectKeys?.default?.apiKey).toBe(key('tool'));
+  });
+
+  it('a login revokes and replaces a cached key the instance no longer accepts (verifier round 1, F3)', async () => {
+    const env = await hubEnv();
+    seedHubLogin(env);
+    const dead = key('dead');
+    const minted = key('tool');
+    saveConfig(env, {
+      activeProfile: 'tool',
+      profiles: { tool: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: dead } } } }
+    });
+    const refused = {
+      status: 401,
+      body: { error: { code: 'invalid_api_key', message: 'API key not recognized' } }
+    };
+    const bearer = (headers: Headers) => headers.get('authorization')?.replace(/^Bearer\s+/, '');
+    const h = routedHarness(
+      [
+        cloudInstanceRoute,
+        { method: 'DELETE', path: /\/api\/v1\/cli\/auth\/key$/, reply: () => refused },
+        ...exchangeRoutes([minted]),
+        {
+          method: 'GET',
+          path: /\/api\/v1\/me$/,
+          reply: ({ headers }) => (bearer(headers) === minted ? { body: meBody() } : refused)
+        }
+      ],
+      env
+    );
+    expect(await run(['login', '--api-url', 'http://tool'], h.io)).toBe(0);
+    expect(h.wire.map((c) => `${c.method} ${c.origin}${c.path} ${c.auth ?? '-'}`)).toEqual([
+      'GET http://tool/api/v1/instance -',
+      `DELETE http://tool/api/v1/cli/auth/key Bearer ${dead}`,
+      'GET http://tool/api/v1/instance -',
+      `POST ${HUB}/api/v1/sso/tool-token Bearer ${HUB_KEY}`,
+      'POST http://tool/api/v1/sso/cli-connect -',
+      `GET http://tool/api/v1/me Bearer ${minted}`
+    ]);
+    const tool = loadConfig(env).profiles.tool;
+    expect(Object.keys(tool?.connectKeys ?? {})).toEqual(['default']);
+    expect(tool?.connectKeys?.default?.apiKey).toBe(minted);
+    expect(JSON.stringify(loadConfig(env))).not.toContain(dead);
+  });
+
+  it('a login with a live cached key revokes it too, and ends with one new key on the profile', async () => {
+    const env = await hubEnv();
+    seedHubLogin(env);
+    const live = key('live');
+    const minted = key('tool');
+    saveConfig(env, {
+      activeProfile: 'tool',
+      profiles: { tool: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: live } } } }
+    });
+    const h = routedHarness(
+      [
+        cloudInstanceRoute,
+        { method: 'DELETE', path: /\/api\/v1\/cli\/auth\/key$/, reply: () => ({ body: { revoked: true } }) },
+        ...exchangeRoutes([minted]),
+        meRoute()
+      ],
+      env
+    );
+    expect(await run(['login', '--api-url', 'http://tool'], h.io)).toBe(0);
+    expect(h.wire.filter((c) => c.method === 'DELETE')).toEqual([
+      { method: 'DELETE', origin: 'http://tool', path: '/api/v1/cli/auth/key', auth: `Bearer ${live}` }
+    ]);
+    expect(h.wire.filter((c) => c.path.endsWith('/sso/cli-connect'))).toHaveLength(1);
+    expect(h.wire.at(-1)).toMatchObject({ path: '/api/v1/me', auth: `Bearer ${minted}` });
+    expect(loadConfig(env).profiles.tool?.connectKeys).toEqual({
+      default: expect.objectContaining({ apiKey: minted })
+    });
   });
 
   it('the hub profile keeps the name the hub CLI made active', async () => {

@@ -34,7 +34,7 @@ export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
  *             → none sent (the server's default organization)
  */
 
-const VERSION = '0.4.1';
+const VERSION = '0.5.0';
 
 /**
  * The Slideless command groups, handed to the chassis program, which places

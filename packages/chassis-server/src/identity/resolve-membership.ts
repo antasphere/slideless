@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, or } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import { user as userTable, workspaceMembers, workspaces, type Db } from '@antasphere/chassis-db';
 
 /**
@@ -84,7 +84,14 @@ export async function resolveMembership(
         eq(workspaceMembers.userId, userId),
         eq(workspaceMembers.isActive, true),
         ...(requested
-          ? [or(eq(workspaceMembers.workspaceId, requested), eq(workspaces.centralAccountId, requested))]
+          ? [
+              or(
+                eq(workspaceMembers.workspaceId, requested),
+                // Case-blind like the uuid arm and the pin check (verifier
+                // round 1, F6): the column is text, the selector a uuid.
+                sql`lower(${workspaces.centralAccountId}) = lower(${requested})`
+              )
+            ]
           : [])
       )
     )

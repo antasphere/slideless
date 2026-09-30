@@ -189,13 +189,16 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       'A sign-in code was sent to ada@x.co (if that Antasphere account can receive mail).\n'
     );
     expect(h.out()).toBe('Signed in as Ada <ada@x.co> in Acme on http://tool.\n');
-    expect(loadCoreConfig(env, HUB_TOOL).profiles.default).toEqual({
+    // The hub profile is named the hub CLI's way (cli-core `selectProfile`):
+    // ANTASPHERE_URL=http://hub selects the profile of that host, `hub`.
+    expect(loadCoreConfig(env, HUB_TOOL).activeProfile).toBe('hub');
+    expect(loadCoreConfig(env, HUB_TOOL).profiles.hub).toEqual({
       apiKey: HUB_KEY,
       baseUrl: 'http://hub',
       email: 'ada@x.co',
       workspaceId: 'org1'
     });
-    expect(loadConfig(env).profiles.tool?.connectKeys?.default?.apiKey).toBe(SLK);
+    expect(loadConfig(env).profiles.tool?.connectKeys?.hub?.apiKey).toBe(SLK);
   });
 
   it('a saved profile feeds whoami without flags or env', async () => {

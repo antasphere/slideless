@@ -6,7 +6,9 @@ import {
   type MeResponse,
   type MeWorkspace
 } from '@antasphere/chassis-cli';
-import { cli } from '@chassis-cli-test/host';
+import { routedHarness, tempConfigEnv } from '@antasphere/chassis-cli/testing';
+import { cli, run } from '@chassis-cli-test/host';
+import { filesRoute, key, meBody, meRoute, wsRow } from './signin-fixtures.js';
 
 // The kit's workspace functions, and the literals that spell the tool (its identity).
 const { describeSelection, describeSource, explainRefusal, pickWorkspaceSelection } = cli.workspace;
@@ -359,5 +361,42 @@ describe('explaining a refusal the selection caused', () => {
         baseUrl: URL
       })
     ).toBeNull();
+  });
+});
+
+describe('the selection on the wire: a name is looked up, an id is sent as it is (verifier round 1, N3)', () => {
+  const ORG_OF_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const ROWS = [
+    wsRow(A, 'Acme', { default: true }),
+    wsRow(B, 'Beta', { hubOrigin: true, centralAccountId: ORG_OF_B })
+  ];
+
+  async function signedIn(): Promise<Record<string, string>> {
+    const env = await tempConfigEnv();
+    cli.saveConfig(env, {
+      activeProfile: 'inst',
+      profiles: { inst: { apiKey: key('work'), baseUrl: 'http://inst' } }
+    });
+    return env;
+  }
+
+  it.each([
+    ['--workspace <name>', ['--workspace', 'beta']],
+    ['--org <name>', ['--org', 'Beta']]
+  ] as const)('%s: one bare /me, then the LOCAL id as x-workspace-id', async (_label, args) => {
+    const h = routedHarness([meRoute(meBody({ workspaces: ROWS })), filesRoute], await signedIn());
+    expect(await run(['files', 'list', ...args], h.io)).toBe(0);
+    expect(h.wire.map((c) => `${c.method} ${c.path} ${c.workspace ?? '-'}`)).toEqual([
+      'GET /api/v1/me -',
+      `GET /api/v1/files ${B}`
+    ]);
+  });
+
+  it('--org <hub organization id>: sent as it is, no lookup (the server maps it)', async () => {
+    const h = routedHarness([meRoute(meBody({ workspaces: ROWS })), filesRoute], await signedIn());
+    expect(await run(['files', 'list', '--org', ORG_OF_B], h.io)).toBe(0);
+    expect(h.wire.map((c) => `${c.method} ${c.path} ${c.workspace ?? '-'}`)).toEqual([
+      `GET /api/v1/files ${ORG_OF_B}`
+    ]);
   });
 });

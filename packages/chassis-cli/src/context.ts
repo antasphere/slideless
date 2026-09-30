@@ -285,11 +285,15 @@ export function createContext<TClient extends ChassisClient<string>>(input: {
       profile,
       cloudUrl: identity.cloudUrl
     });
+    // A profile's own key is sent only to the instance the profile names
+    // (verifier round 1, F5): `--profile a --api-url <b>` must never hand
+    // a's key to b, exactly as the connect cache below never does.
+    const sameProfileInstance = sameInstance(profileUrl(profile), baseUrl);
     let apiKey = resolveApiKey({
       flag: opts.apiKey ?? stdinApiKeys.get(io),
       env: io.env,
       envVar: `${identity.envPrefix}_API_KEY`,
-      profile
+      profile: sameProfileInstance ? profile : undefined
     });
     let credentialSource: CredentialSource =
       opts.apiKey !== undefined || stdinApiKeys.get(io) !== undefined
@@ -299,7 +303,7 @@ export function createContext<TClient extends ChassisClient<string>>(input: {
           : apiKey
             ? 'profile'
             : 'none';
-    if (!apiKey && sameInstance(profileUrl(profile), baseUrl)) {
+    if (!apiKey && sameProfileInstance) {
       // No direct key: the connect cache's slot is the ACTIVE hub profile
       // (what `antasphere login` stored) — org-independent by design.
       const hub = activeHubProfile(io.env);
@@ -376,6 +380,18 @@ export function createContext<TClient extends ChassisClient<string>>(input: {
       const res = await base(input, init);
       if (res.status !== 401 || recovered || ctx.credentialSource !== 'hub-cache') return res;
       recovered = true;
+      // A 401 under a workspace selection may be the SELECTION's refusal:
+      // the server answers a workspace the person does not belong to exactly
+      // like an unknown key (no oracle). Ask `/me` once without it; when the
+      // key answers there, it is alive and nothing is evicted, exchanged or
+      // replayed (verifier round 1, F2: a refused --org leaked a live key per
+      // command). The runner then explains the refusal.
+      if (ctx.workspaceId !== undefined && ctx.apiKey) {
+        const probe = await base(`${ctx.baseUrl}/api/v1/me`, {
+          headers: { authorization: `Bearer ${ctx.apiKey}` }
+        }).catch(() => null);
+        if (probe?.ok) return res;
+      }
       const outcome = await refreshConnectKey(connectOptions(ctx));
       if (outcome.outcome === 'not_cloud') return res;
       ctx.apiKey = outcome.key;

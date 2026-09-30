@@ -164,7 +164,7 @@ export function createWorkspace(identity: CliIdentity): CliWorkspace {
     return undefined;
   }
 
-  /** How a selection reads in a sentence: `the --org flag`, `SLIDELESS_WORKSPACE`. */
+  /** How a selection reads in a sentence: `the --org flag`, `<PREFIX>_WORKSPACE`. */
   function describeSelection(selection: Pick<WorkspaceSelection, 'source' | 'kind'>): string {
     if (selection.source === 'flag')
       return selection.kind === 'org' ? 'the --org flag' : 'the --workspace flag';

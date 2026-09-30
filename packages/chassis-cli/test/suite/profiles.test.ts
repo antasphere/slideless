@@ -139,6 +139,35 @@ describe('which profile a command runs on', () => {
     ]);
   });
 
+  it("--profile's own key never goes to the other instance --api-url names (verifier round 1, F5)", async () => {
+    const env = await tempConfigEnv();
+    saveConfig(env, { profiles: { oss: { apiKey: key('oss'), baseUrl: 'http://oss' } } });
+    const h = routedHarness([ossInstanceRoute, filesRoute, meRoute()], env);
+    expect(await run(['files', 'list', '--profile', 'oss', '--api-url', 'http://cloud'], h.io)).toBe(1);
+    expect(h.wire).toEqual([
+      { method: 'GET', origin: 'http://cloud', path: '/api/v1/instance', auth: undefined }
+    ]);
+    expect(h.wire.some((c) => c.auth?.includes(key('oss')))).toBe(false);
+    expect(h.err()).toContain(
+      `An API key is required. Sign in (\`${bin} login\`), pass --api-key, or set ${P}_API_KEY.`
+    );
+  });
+
+  it.each([
+    ['the --api-key flag', ['--api-key', key('flag')], {}],
+    ['the key variable', [], { [`${P}_API_KEY`]: key('flag') }]
+  ] as const)('%s still goes to any URL', async (_label, args, extraEnv) => {
+    const env = await tempConfigEnv();
+    saveConfig(env, { profiles: { oss: { apiKey: key('oss'), baseUrl: 'http://oss' } } });
+    const h = routedHarness([filesRoute], { ...env, ...extraEnv });
+    expect(await run(['files', 'list', '--profile', 'oss', '--api-url', 'http://cloud', ...args], h.io)).toBe(
+      0
+    );
+    expect(h.wire).toEqual([
+      { method: 'GET', origin: 'http://cloud', path: '/api/v1/files', auth: `Bearer ${key('flag')}` }
+    ]);
+  });
+
   it('else the active profile', async () => {
     const env = await tempConfigEnv();
     saveConfig(env, {

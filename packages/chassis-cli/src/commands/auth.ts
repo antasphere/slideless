@@ -11,6 +11,8 @@ import {
   loadConfig as loadCoreConfig,
   normalizeUrl,
   probeToolInstance,
+  resolveBaseUrl,
+  selectProfile,
   saveConfig as saveCoreConfig,
   type CliProfile
 } from '@antasphere/cli-core';
@@ -46,9 +48,6 @@ import type { MeResponse } from '../workspace.js';
 /** The hub a tool CLI signs in against inline: the same variable the hub CLI reads. */
 const HUB_URL_ENV = 'ANTASPHERE_URL';
 const DEFAULT_HUB_URL = 'https://account.antasphere.com';
-
-/** The name a hub profile gets when the hub CLI never made one (its own default). */
-const DEFAULT_HUB_PROFILE = 'default';
 
 interface AuthGlobals {
   apiUrl?: string;
@@ -153,7 +152,24 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
    * hub profile exactly as that CLI writes it, so the two logins are one.
    */
   async function hubLogin(opts: LoginOpts): Promise<{ email: string; profile: string }> {
-    const hubUrl = normalizeUrl(io.env[HUB_URL_ENV] ?? DEFAULT_HUB_URL);
+    // The hub profile the hub CLI would use, resolved its way (verifier
+    // round 1, F4): ANTASPHERE_URL selects the profile of that hub, else the
+    // active one, else the implicit `cloud` at account.antasphere.com; the
+    // URL is the variable, else that profile's own, else the default. A
+    // stored hub URL is never repointed at the production hub.
+    const hubConfig = loadCoreConfig(io.env, HUB_TOOL);
+    const selected = selectProfile({
+      config: hubConfig,
+      apiUrl: io.env[HUB_URL_ENV],
+      cloudUrl: DEFAULT_HUB_URL
+    });
+    const profile = selected.name ?? CLOUD_PROFILE;
+    const hubUrl = resolveBaseUrl({
+      env: io.env,
+      envVar: HUB_URL_ENV,
+      profile: selected.profile,
+      cloudUrl: DEFAULT_HUB_URL
+    });
     const auth = new CliAuthClient({ baseUrl: hubUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
     const email = opts.email ?? (await ask(io, 'Antasphere email: '));
     await auth.request({ email });
@@ -165,16 +181,18 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
       ...(opts.keyName ? { keyName: opts.keyName } : {}),
       ...(opts.expiresInDays ? { expiresInDays: opts.expiresInDays } : {})
     });
-    const hubConfig = loadCoreConfig(io.env, HUB_TOOL);
-    const profile = hubConfig.activeProfile ?? DEFAULT_HUB_PROFILE;
-    hubConfig.profiles[profile] = {
+    // Only the key's own fields move, exactly as `antasphere login` writes
+    // them; whatever else the profile holds stays.
+    const fresh = loadCoreConfig(io.env, HUB_TOOL);
+    fresh.profiles[profile] = {
+      ...fresh.profiles[profile],
       apiKey: completed.key,
       baseUrl: hubUrl,
       email: completed.user.email,
       workspaceId: completed.workspaceId
     };
-    hubConfig.activeProfile = profile;
-    saveCoreConfig(io.env, HUB_TOOL, hubConfig);
+    fresh.activeProfile = profile;
+    saveCoreConfig(io.env, HUB_TOOL, fresh);
     return { email: completed.user.email, profile };
   }
 
@@ -218,7 +236,9 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
       // index.ts; reuse that read), or the key variable. Verified before it
       // is stored. A profile key is NOT a paste: `login` on a profile that
       // already holds one re-runs the sign-in the person asked for.
-      const pasted = globals.apiKey ?? stdinApiKey(io) ?? io.env[`${identity.envPrefix}_API_KEY`];
+      // A paste is an act: `--api-key` or `--api-key-stdin`, never the key
+      // variable a shell or a CI job happens to carry (verifier round 1, F8).
+      const pasted = globals.apiKey ?? stdinApiKey(io);
       if (pasted !== undefined) {
         if (!pasted.startsWith(`${identity.keyPrefix}_`)) {
           throw new CliUsageError(
@@ -251,11 +271,24 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
         // stores it, so every other tool CLI is signed in too.
         let hub = activeHubProfile(io.env);
         if (!hub.profile?.apiKey) await hubLogin(opts);
+        // A login is an explicit re-sign-in (verifier round 1, F3): the key
+        // cached on this profile is revoked on its instance (best effort: a
+        // dead one answers 401) and forgotten, and the exchange runs afresh,
+        // so a stale cached key never survives a login.
+        hub = activeHubProfile(io.env);
+        const stale = hub.name
+          ? loadConfig(io.env).profiles[profileName]?.connectKeys?.[hub.name]
+          : undefined;
+        if (stale && hub.name) {
+          const auth = new CliAuthClient({ baseUrl, ...(io.fetch ? { fetch: io.fetch } : {}) });
+          await auth.revoke(stale.apiKey).catch(() => undefined);
+          removeConnectKey(io.env, profileName, hub.name);
+        }
         // The exchange, then the tool's own answer. A stored hub key the hub
         // no longer accepts is replaced by a fresh sign-in, once.
         let outcome;
         try {
-          outcome = await connectOnDemand({ ...connectOptions(ctx), profileName });
+          outcome = await connectOnDemand({ ...connectOptions(ctx), profileName, cached: false });
         } catch (e) {
           if (!(e instanceof CoreUsageError) || !/rejected/.test(e.message)) throw e;
           io.err.write('The stored Antasphere login was rejected: signing in again.\n');
@@ -274,7 +307,7 @@ export function registerAuthCommands<TClient extends ChassisClient<string>>(
             profile: profileName,
             baseUrl,
             via: 'antasphere',
-            hubProfile: hub.name ?? DEFAULT_HUB_PROFILE,
+            hubProfile: hub.name ?? CLOUD_PROFILE,
             user: me.user,
             workspace: me.workspace,
             workspaces: me.workspaces,
