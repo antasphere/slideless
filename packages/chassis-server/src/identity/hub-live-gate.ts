@@ -85,25 +85,58 @@ export class HubLiveGate {
       return { ok: false, status: 403, code: 'hub_unavailable', message: UNAVAILABLE_MESSAGE };
     }
 
+    // Judge the FRESHLY RECONCILED local rows (the pass above may have
+    // swept the membership, synced the role, or flipped hub_status).
+    const row = await this.memberRow(principal.userId, principal.workspaceId);
+    if (!row || !row.isActive) {
+      // Resolution saw an active row moments ago; the reconcile swept it —
+      // the hub no longer asserts this membership. Every later request dies
+      // at resolution itself (plain 401); THIS one carries the reason. A
+      // swept membership is never papered over by a move to another
+      // workspace below: the person learns what happened.
+      return {
+        ok: false,
+        status: 401,
+        code: 'membership_revoked',
+        message: 'Your membership of this organization was removed on Antasphere'
+      };
+    }
+
     // A selector-less request on an unpinned credential runs in the default
-    // membership as the pass above left it (the resolver read it before).
-    // The default is judged below exactly as the resolved one would be.
-    let moved: GateWorkspace | undefined;
+    // membership as the pass above left it (the resolver read it before, so
+    // a default moved at the hub would land THIS request in the old one).
+    // The moved-to workspace is judged exactly as the resolved one is.
     if (request.selector === null && !principal.pinned) {
       const fresh = await resolveMembership(this.deps.db, principal.userId, null);
       if (fresh && fresh.workspaceId !== principal.workspaceId) {
-        moved = {
-          workspaceId: fresh.workspaceId,
-          role: fresh.role,
-          origin: fresh.origin,
-          accountRef: fresh.accountRef
-        };
+        const target = await this.memberRow(principal.userId, fresh.workspaceId);
+        if (target?.isActive) {
+          if (target.hubStatus === 'suspended' && !isMeRead(request)) {
+            return { ok: false, status: 403, code: 'account_suspended', message: SUSPENDED_MESSAGE };
+          }
+          const moved: GateWorkspace = {
+            workspaceId: fresh.workspaceId,
+            role: target.role,
+            origin: fresh.origin,
+            accountRef: fresh.accountRef
+          };
+          return { ok: true, workspace: moved };
+        }
       }
     }
-    const workspaceId = moved?.workspaceId ?? principal.workspaceId;
 
-    // Judge the FRESHLY RECONCILED local rows (the pass above may have
-    // swept the membership, synced the role, or flipped hub_status).
+    if (row.hubStatus === 'suspended' && !isMeRead(request)) {
+      return { ok: false, status: 403, code: 'account_suspended', message: SUSPENDED_MESSAGE };
+    }
+    // A role delta from the reconciled row applies to THIS request (D11):
+    // a demoted admin loses admin surfaces now, a promotion lands now.
+    if (row.role !== principal.role) {
+      return { ok: true, role: row.role };
+    }
+    return { ok: true };
+  };
+
+  private async memberRow(userId: string, workspaceId: string) {
     const [row] = await this.deps.db
       .select({
         role: workspaceMembers.role,
@@ -112,34 +145,10 @@ export class HubLiveGate {
       })
       .from(workspaceMembers)
       .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
-      .where(
-        and(eq(workspaceMembers.userId, principal.userId), eq(workspaceMembers.workspaceId, workspaceId))
-      )
+      .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, workspaceId)))
       .limit(1);
-    if (!row || !row.isActive) {
-      // Resolution saw an active row moments ago; the reconcile swept it —
-      // the hub no longer asserts this membership. Every later request dies
-      // at resolution itself (plain 401); THIS one carries the reason.
-      return {
-        ok: false,
-        status: 401,
-        code: 'membership_revoked',
-        message: 'Your membership of this organization was removed on Antasphere'
-      };
-    }
-    if (row.hubStatus === 'suspended' && !isMeRead(request)) {
-      return { ok: false, status: 403, code: 'account_suspended', message: SUSPENDED_MESSAGE };
-    }
-    // A role delta from the reconciled row applies to THIS request (D11):
-    // a demoted admin loses admin surfaces now, a promotion lands now.
-    if (moved) {
-      return { ok: true, workspace: { ...moved, role: row.role } };
-    }
-    if (row.role !== principal.role) {
-      return { ok: true, role: row.role };
-    }
-    return { ok: true };
-  };
+    return row;
+  }
 
   private async assertOrgActive(
     workspaceId: string,
