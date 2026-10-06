@@ -209,8 +209,17 @@ async function cancelPending(client: Queryable, queue: string, ref: TimerRef): P
     where = 'singleton_key = $2';
     value = ref.key;
   }
-  const res = await client.query(CANCEL_PENDING(where), [queue, value]);
+  // The disarm FIRST, then the withdraw (verifier round 2, F7): pg-boss's fail
+  // path deletes the active row and re-inserts it as `retry` under the same
+  // key. Disarm first either takes the row lock before that fail (which then
+  // waits for the commit and computes `failed` on the disarmed row) or runs
+  // after it, and the withdraw, a new statement with a new snapshot, then
+  // sees the re-inserted `retry` row and cancels it. In the other order both
+  // statements could miss the row, one round trip wide. A replace whose
+  // insert then fails rolls the disarm back with it: the old run keeps its
+  // retries, a failed replace changes nothing.
   await client.query(DISARM_ACTIVE(where), [queue, value]);
+  const res = await client.query(CANCEL_PENDING(where), [queue, value]);
   return res.rowCount ?? 0;
 }
 

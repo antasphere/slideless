@@ -214,14 +214,15 @@ describe('schedule with a key runs one transaction on a client of its own', () =
     );
     expect(pool.connect).toHaveBeenCalledTimes(1);
     const statements = client.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/)[0]);
-    // The withdraw of the pending timer, then the disarm of a running one (its retries taken away).
+    // The disarm of a running timer (its retries taken away) FIRST, then the withdraw of the pending one:
+    // in that order pg-boss's fail path cannot slip its retry row between the two (verifier round 2, F7).
     expect(statements).toEqual(['BEGIN', 'SELECT', 'UPDATE', 'UPDATE', 'COMMIT']);
     expect(client.query.mock.calls[1]?.[1]).toEqual([TIMER_KEY_LOCK_CLASS, 'things-timer\u001fk1']);
     expect(client.query.mock.calls[2]?.[1]).toEqual(['things-timer', 'k1']);
-    expect(String(client.query.mock.calls[2]?.[0])).toContain("state IN ('created', 'retry')");
+    expect(String(client.query.mock.calls[2]?.[0])).toContain('SET retry_limit = retry_count');
+    expect(String(client.query.mock.calls[2]?.[0])).toContain("state = 'active'");
     expect(client.query.mock.calls[3]?.[1]).toEqual(['things-timer', 'k1']);
-    expect(String(client.query.mock.calls[3]?.[0])).toContain('SET retry_limit = retry_count');
-    expect(String(client.query.mock.calls[3]?.[0])).toContain("state = 'active'");
+    expect(String(client.query.mock.calls[3]?.[0])).toContain("state IN ('created', 'retry')");
     const options = send.mock.calls[0]?.[2] as unknown as PgBoss.SendOptions & {
       db: { executeSql: (t: string, v: unknown[]) => Promise<unknown> };
     };
@@ -265,18 +266,20 @@ describe('cancel refuses a malformed call before any IO', () => {
     expect(pool.connect).not.toHaveBeenCalled();
   });
 
-  it('a well-formed cancel answers the PENDING rows withdrawn, and disarms a running one', async () => {
+  it('a well-formed cancel disarms a running timer first, then answers the PENDING rows withdrawn', async () => {
     const { pool, timers } = fakes();
-    pool.query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
-    await expect(timers.cancel('things-timer', { id: JOB_ID })).resolves.toBe(1);
-    expect(pool.query.mock.calls[0]?.[1]).toEqual(['things-timer', JOB_ID]);
-    expect(String(pool.query.mock.calls[0]?.[0])).toContain("state IN ('created', 'retry')");
-    expect(pool.query.mock.calls[1]?.[1]).toEqual(['things-timer', JOB_ID]);
-    expect(String(pool.query.mock.calls[1]?.[0])).toContain('SET retry_limit = retry_count');
-    // The disarm's row count is not the answer: a running timer is not withdrawn.
     pool.query
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    await expect(timers.cancel('things-timer', { id: JOB_ID })).resolves.toBe(1);
+    expect(pool.query.mock.calls[0]?.[1]).toEqual(['things-timer', JOB_ID]);
+    expect(String(pool.query.mock.calls[0]?.[0])).toContain('SET retry_limit = retry_count');
+    expect(pool.query.mock.calls[1]?.[1]).toEqual(['things-timer', JOB_ID]);
+    expect(String(pool.query.mock.calls[1]?.[0])).toContain("state IN ('created', 'retry')");
+    // The disarm's row count is not the answer: a running timer is not withdrawn.
+    pool.query
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] });
     await expect(timers.cancel('things-timer', { key: 'k1' })).resolves.toBe(0);
     expect(pool.query.mock.calls[2]?.[1]).toEqual(['things-timer', 'k1']);
     expect(pool.query.mock.calls[3]?.[1]).toEqual(['things-timer', 'k1']);
