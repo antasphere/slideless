@@ -25,8 +25,15 @@ the prose). Keep the order: an agent cites "page 4" and the prose's page map mus
 
 ## Rules on every page
 
-- **Size.** 1280 × 720 CSS pixels per page (`@page { size: 1280px 720px; margin: 0 }`), unless the
-  company's own decks use another ratio.
+- **Size and paging.** 1280 × 720 CSS pixels per page (`@page { size: 1280px 720px; margin: 0 }`),
+  unless the company's own decks use another ratio. The deck shows **one page at a time**, never a
+  vertical scroll of pages: a fixed stage of that size, scaled to the viewport
+  (`transform: scale(min(innerWidth / 1280, innerHeight / 720))`, set on resize), the pages stacked
+  on it with only the active one visible, a short fade with a slight slide between pages (about
+  400 ms, none under `prefers-reduced-motion`), the arrow keys, space, a click on either half and a
+  swipe to move, the page number in the URL hash so a page can be linked, and a small counter.
+  Plain HTML, CSS and a few lines of script, no library. In `@media print` the stage is unscaled
+  and every page is visible in flow with a page break after it, so the PDF export keeps them all.
 - **Fonts as data URIs.** The viewer serves a bundle under a CSP sandbox with no CORS headers, and
   a page in a sandbox has an opaque origin, so an `@font-face` pointing at a relative file fails
   silently and the page falls back to a system face. Inline every face:
