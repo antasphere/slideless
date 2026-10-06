@@ -3,6 +3,7 @@ import type PgBoss from 'pg-boss';
 import type pg from 'pg';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import {
+  MAX_IN_SECONDS,
   PgBossTimers,
   TIMER_KEY_LOCK_CLASS,
   TimerError,
@@ -83,10 +84,19 @@ describe('startAfterOf', () => {
     expectInvalidSync(() => startAfterOf({ at: '2030-01-01T00:00:00Z' } as unknown as TimerOptions));
   });
 
-  it('refuses a negative, NaN or infinite delay', () => {
+  it('refuses a negative, NaN, infinite or over-a-century delay; takes the cap itself', () => {
     expectInvalidSync(() => startAfterOf({ inSeconds: -1 }));
     expectInvalidSync(() => startAfterOf({ inSeconds: Number.NaN }));
     expectInvalidSync(() => startAfterOf({ inSeconds: Number.POSITIVE_INFINITY }));
+    expectInvalidSync(() => startAfterOf({ inSeconds: MAX_IN_SECONDS + 1 }));
+    expect(startAfterOf({ inSeconds: MAX_IN_SECONDS })).toBe(MAX_IN_SECONDS);
+  });
+
+  it('takes a payload with a null prototype and nested Dates (JSON takes them)', async () => {
+    const { send, timers } = fakes();
+    await timers.schedule('things-timer', Object.create(null) as object, { inSeconds: 1 });
+    await timers.schedule('things-timer', { at: new Date() }, { inSeconds: 1 });
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -97,6 +107,18 @@ describe('schedule refuses a malformed call before any IO', () => {
     ['a null payload', (t) => t.schedule('things-timer', null as unknown as object, { inSeconds: 1 })],
     ['a string payload', (t) => t.schedule('things-timer', 'x' as unknown as object, { inSeconds: 1 })],
     ['a number payload', (t) => t.schedule('things-timer', 42 as unknown as object, { inSeconds: 1 })],
+    ['an array payload', (t) => t.schedule('things-timer', [1, 2] as unknown as object, { inSeconds: 1 })],
+    ['a Date payload', (t) => t.schedule('things-timer', new Date(), { inSeconds: 1 })],
+    ['a bigint inside the payload', (t) => t.schedule('things-timer', { n: 1n }, { inSeconds: 1 })],
+    [
+      'a circular payload',
+      (t) => {
+        const data: Record<string, unknown> = {};
+        data.self = data;
+        return t.schedule('things-timer', data, { inSeconds: 1 });
+      }
+    ],
+    ['a delay over a hundred years', (t) => t.schedule('things-timer', {}, { inSeconds: 1e21 })],
     ['no `at` and no `inSeconds`', (t) => t.schedule('things-timer', {}, {} as TimerOptions)],
     ['an empty key', (t) => t.schedule('things-timer', {}, { inSeconds: 1, key: '' })],
     [
@@ -192,9 +214,14 @@ describe('schedule with a key runs one transaction on a client of its own', () =
     );
     expect(pool.connect).toHaveBeenCalledTimes(1);
     const statements = client.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/)[0]);
-    expect(statements).toEqual(['BEGIN', 'SELECT', 'UPDATE', 'COMMIT']);
+    // The withdraw of the pending timer, then the disarm of a running one (its retries taken away).
+    expect(statements).toEqual(['BEGIN', 'SELECT', 'UPDATE', 'UPDATE', 'COMMIT']);
     expect(client.query.mock.calls[1]?.[1]).toEqual([TIMER_KEY_LOCK_CLASS, 'things-timer\u001fk1']);
     expect(client.query.mock.calls[2]?.[1]).toEqual(['things-timer', 'k1']);
+    expect(String(client.query.mock.calls[2]?.[0])).toContain("state IN ('created', 'retry')");
+    expect(client.query.mock.calls[3]?.[1]).toEqual(['things-timer', 'k1']);
+    expect(String(client.query.mock.calls[3]?.[0])).toContain('SET retry_limit = retry_count');
+    expect(String(client.query.mock.calls[3]?.[0])).toContain("state = 'active'");
     const options = send.mock.calls[0]?.[2] as unknown as PgBoss.SendOptions & {
       db: { executeSql: (t: string, v: unknown[]) => Promise<unknown> };
     };
@@ -238,12 +265,20 @@ describe('cancel refuses a malformed call before any IO', () => {
     expect(pool.connect).not.toHaveBeenCalled();
   });
 
-  it('a well-formed cancel answers the rows withdrawn', async () => {
+  it('a well-formed cancel answers the PENDING rows withdrawn, and disarms a running one', async () => {
     const { pool, timers } = fakes();
     pool.query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     await expect(timers.cancel('things-timer', { id: JOB_ID })).resolves.toBe(1);
     expect(pool.query.mock.calls[0]?.[1]).toEqual(['things-timer', JOB_ID]);
+    expect(String(pool.query.mock.calls[0]?.[0])).toContain("state IN ('created', 'retry')");
+    expect(pool.query.mock.calls[1]?.[1]).toEqual(['things-timer', JOB_ID]);
+    expect(String(pool.query.mock.calls[1]?.[0])).toContain('SET retry_limit = retry_count');
+    // The disarm's row count is not the answer: a running timer is not withdrawn.
+    pool.query
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
     await expect(timers.cancel('things-timer', { key: 'k1' })).resolves.toBe(0);
-    expect(pool.query.mock.calls[1]?.[1]).toEqual(['things-timer', 'k1']);
+    expect(pool.query.mock.calls[2]?.[1]).toEqual(['things-timer', 'k1']);
+    expect(pool.query.mock.calls[3]?.[1]).toEqual(['things-timer', 'k1']);
   });
 });

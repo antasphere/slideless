@@ -33,6 +33,8 @@ const STEP_MS = 200;
 interface TimerData {
   n: number | string;
   fail?: boolean;
+  /** How long the handler holds the run, in ms (a running timer for the replace and cancel cases). */
+  holdMs?: number;
 }
 
 interface Run {
@@ -49,6 +51,7 @@ const timerJob: JobDeclaration<TimerData> = {
   queue: TIMER_QUEUE,
   async handler(data, job) {
     runs.push({ data, job, at: Date.now() });
+    if (data?.holdMs) await sleep(data.holdMs);
     if (data?.fail === true) {
       const n = String(data.n);
       if (!failedOnce.has(n)) {
@@ -98,7 +101,9 @@ let mainUrl: string;
 let app: TimersApp;
 const extraApps: TimersApp[] = [];
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function waitFor<T>(label: string, probe: () => Promise<T | undefined> | T | undefined): Promise<T> {
   const deadline = Date.now() + DEADLINE_MS;
@@ -308,6 +313,52 @@ describe('one-off timers on a declared queue', () => {
     expect(run.at).toBeGreaterThan(stoppedAt);
     expect(runsOf('k')).toHaveLength(1);
   }, 120_000);
+
+  it('m. a replace during a RUNNING keyed timer whose run then fails: the old run ends failed, never retry; one pending under the key', async () => {
+    // retry: one more attempt a minute later, which the replace must take away.
+    const first = await app.jobs.timers.schedule(
+      TIMER_QUEUE,
+      { n: 'm-old', fail: true, holdMs: 3000 },
+      { inSeconds: 0, key: 'k-m', retry: { limit: 1, delaySeconds: 60 } }
+    );
+    await waitFor('m-old running', async () => ((await stateOf(first)) === 'active' ? true : undefined));
+    const second = await app.jobs.timers.schedule(
+      TIMER_QUEUE,
+      { n: 'm-new' },
+      { inSeconds: 120, key: 'k-m' }
+    );
+    await waitFor('m-old failed', async () => ((await stateOf(first)) === 'failed' ? true : undefined));
+    expect(await countByKey('k-m', ['created', 'retry'])).toBe(1);
+    expect(await stateOf(second)).toBe('created');
+    expect(runsOf('m-old')).toHaveLength(1);
+    await expect(app.jobs.timers.cancel(TIMER_QUEUE, { key: 'k-m' })).resolves.toBe(1);
+  }, 40_000);
+
+  it('n. a cancel during a RUNNING timer withdraws nothing (0, still active), then the run completes; a cancel by id takes a failing run’s retry away', async () => {
+    const running = await app.jobs.timers.schedule(
+      TIMER_QUEUE,
+      { n: 'n-run', holdMs: 4000 },
+      { inSeconds: 0, key: 'k-n' }
+    );
+    await waitFor('n-run running', async () => ((await stateOf(running)) === 'active' ? true : undefined));
+    await expect(app.jobs.timers.cancel(TIMER_QUEUE, { id: running })).resolves.toBe(0);
+    await expect(app.jobs.timers.cancel(TIMER_QUEUE, { key: 'k-n' })).resolves.toBe(0);
+    expect(await stateOf(running)).toBe('active');
+    await waitFor('n-run completed', async () =>
+      (await stateOf(running)) === 'completed' ? true : undefined
+    );
+    expect(runsOf('n-run')).toHaveLength(1);
+
+    const failing = await app.jobs.timers.schedule(
+      TIMER_QUEUE,
+      { n: 'n-fail', fail: true, holdMs: 3000 },
+      { inSeconds: 0, retry: { limit: 2, delaySeconds: 60 } }
+    );
+    await waitFor('n-fail running', async () => ((await stateOf(failing)) === 'active' ? true : undefined));
+    await expect(app.jobs.timers.cancel(TIMER_QUEUE, { id: failing })).resolves.toBe(0);
+    await waitFor('n-fail failed', async () => ((await stateOf(failing)) === 'failed' ? true : undefined));
+    expect(runsOf('n-fail')).toHaveLength(1);
+  }, 40_000);
 
   it('l. an api-role replica schedules and cancels; the all-role replica runs the timer', async () => {
     const api = await createTestApp(mainUrl, { SERVICE_ROLE: 'api' });

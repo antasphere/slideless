@@ -16,6 +16,7 @@ export {
   type TimerRetry,
   type TimerWhen,
   type Timers,
+  MAX_IN_SECONDS,
   PGBOSS_SCHEMA,
   PgBossTimers,
   TIMER_KEY_LOCK_CLASS,
