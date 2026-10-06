@@ -1,0 +1,14 @@
+{
+  "name": "slideless",
+  "version": "0.1.0",
+  "description": "Slideless agent skills: /brand creates a workspace brand from a company's own material (its website, its files), authors decks under the workspace's brand, and offers to generalise a session's changes back into the brand.",
+  "author": {
+    "name": "Antasphere",
+    "email": "team@antasphere.com",
+    "url": "https://github.com/antasphere"
+  },
+  "homepage": "https://docs.antasphere.com/slideless",
+  "repository": "https://github.com/antasphere/slideless",
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": ["slideless", "brand", "reference", "deck", "presentation", "agent-skills"]
+}

@@ -11,3 +11,5 @@ data
 docs
 *.md
 apps/server/public/*
+plugin
+.claude-plugin
