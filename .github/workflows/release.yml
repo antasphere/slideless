@@ -15,6 +15,8 @@ on:
     # test drags a no-op release behind it (2026-09-21).
     paths-ignore:
       - 'docs/**'
+      - 'plugin/**'
+      - '.claude-plugin/**'
       - 'deploy/**'
       - 'scripts/hostinger-template.test.mjs'
       - 'scripts/hostinger-smoke.mjs'

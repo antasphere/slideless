@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "slideless",
+  "description": "Slideless agent skills",
+  "owner": { "name": "Antasphere", "email": "team@antasphere.com", "url": "https://github.com/antasphere" },
+  "plugins": [
+    {
+      "name": "slideless",
+      "source": "./plugin",
+      "description": "The Slideless agent skills: brand (create a workspace brand from a company's material, author decks under a brand, generalise a session's changes back into it)",
+      "license": "SEE LICENSE IN LICENSE"
+    }
+  ]
+}

@@ -39,23 +39,24 @@ deploys) + `dev` (day-to-day work).
 
 ## Layout
 
-| Path                                | What                                                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `apps/server`                       | The single deployable: Hono API, identity, MCP, jobs, storage                                              |
-| `apps/server/src/tool.ts`           | The Slideless tool definition: the deck domain plugged into the chassis' named slots                       |
-| `apps/dashboard`                    | SvelteKit SPA, built into and served by the server image                                                   |
-| `packages/chassis-db`               | The generic tables, the generated `auth-schema.ts`, the migration runner                                   |
-| `packages/chassis-contract`         | The generic zod schemas + route contracts                                                                  |
-| `packages/chassis-server`           | The generic server: identity, federation, middleware, routers, jobs, MCP kit; entry `createPlatform(tool)` |
-| `packages/chassis-sdk`              | The generic typed client (`ChassisClient`); `PlatformClient` extends it                                    |
-| `packages/chassis-cli`              | The generic CLI: profiles, context, `safe-write.ts`, generic commands; entry `defineCli(definition)`       |
-| `packages/db`                       | drizzle schema (the deck tables) + migrations (the one history, chassis tables included)                   |
-| `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard                                             |
-| `packages/sdk`                      | Typed client over the contract (hand-written today)                                                        |
-| `packages/cli`                      | The `slideless` binary: the deck commands over `packages/chassis-cli`, one bundle (docs/agents/cli.md)     |
-| `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                                                                   |
-| `docs/`                             | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract    |
-| `internal/`                         | Engineering docs + ADRs (`internal/decisions/`), never published                                           |
+| Path                                | What                                                                                                                                                                                    |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server`                       | The single deployable: Hono API, identity, MCP, jobs, storage                                                                                                                           |
+| `apps/server/src/tool.ts`           | The Slideless tool definition: the deck domain plugged into the chassis' named slots                                                                                                    |
+| `apps/dashboard`                    | SvelteKit SPA, built into and served by the server image                                                                                                                                |
+| `packages/chassis-db`               | The generic tables, the generated `auth-schema.ts`, the migration runner                                                                                                                |
+| `packages/chassis-contract`         | The generic zod schemas + route contracts                                                                                                                                               |
+| `packages/chassis-server`           | The generic server: identity, federation, middleware, routers, jobs, MCP kit; entry `createPlatform(tool)`                                                                              |
+| `packages/chassis-sdk`              | The generic typed client (`ChassisClient`); `PlatformClient` extends it                                                                                                                 |
+| `packages/chassis-cli`              | The generic CLI: profiles, context, `safe-write.ts`, generic commands; entry `defineCli(definition)`                                                                                    |
+| `packages/db`                       | drizzle schema (the deck tables) + migrations (the one history, chassis tables included)                                                                                                |
+| `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard                                                                                                                          |
+| `packages/sdk`                      | Typed client over the contract (hand-written today)                                                                                                                                     |
+| `packages/cli`                      | The `slideless` binary: the deck commands over `packages/chassis-cli`, one bundle (docs/agents/cli.md)                                                                                  |
+| `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                                                                                                                                                |
+| `docs/`                             | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract                                                                                 |
+| `plugin/`                           | The `slideless` agent plugin (Open Plugin v1): the skills that run in an operator's agent session (`/brand`); exposed by the root `.claude-plugin/marketplace.json`, never in the image |
+| `internal/`                         | Engineering docs + ADRs (`internal/decisions/`), never published                                                                                                                        |
 
 ## Invariants — never regress these
 
