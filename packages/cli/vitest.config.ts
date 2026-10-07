@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,10 @@ const chassis = realpathSync(
   dirname(dirname(createRequire(import.meta.url).resolve('@antasphere/chassis-cli')))
 );
 const suite = join(chassis, 'test/suite');
+// A suite that moved or emptied would leave this run green on the app's files alone: refuse it.
+if (!existsSync(suite) || !readdirSync(suite).some((file) => file.endsWith('.test.ts'))) {
+  throw new Error(`${suite} holds no *.test.ts: the installed chassis no longer ships its suite there`);
+}
 
 /**
  * This package's own tests, plus the CHASSIS SUITE

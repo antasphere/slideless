@@ -13,7 +13,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
-const script = join(dirname(fileURLToPath(import.meta.url)), 'check-chassis-version.mjs');
+// CHASSIS_CHECK_SCRIPT points the suite at another copy of the check (a mutated one, to prove a case goes red).
+const script =
+  process.env.CHASSIS_CHECK_SCRIPT ??
+  join(dirname(fileURLToPath(import.meta.url)), 'check-chassis-version.mjs');
 const PIN = '1.0.0';
 const INTEGRITY = `sha512-${'A'.repeat(86)}==`;
 
@@ -22,14 +25,18 @@ const json = (value) => JSON.stringify(value, null, 2) + '\n';
 function lockfile({
   serverSpecifier = PIN,
   serverVersion = `${PIN}(hono@4.12.27)`,
-  serverResolution = `{integrity: ${INTEGRITY}}`
+  serverResolution = `{integrity: ${INTEGRITY}}`,
+  snapshotContract = `${PIN}(hono@4.12.27)`,
+  dbImporter = true,
+  dbPackage = true,
+  topLevel = ''
 } = {}) {
   return `lockfileVersion: '9.0'
 
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
-
+${topLevel}
 importers:
 
   .:
@@ -47,20 +54,28 @@ importers:
         specifier: ${serverSpecifier}
         version: ${serverVersion}
 
-  packages/db:
+${
+  dbImporter
+    ? `  packages/db:
     devDependencies:
       '@antasphere/chassis-db':
         specifier: ${PIN}
         version: ${PIN}
-
+`
+    : ''
+}
 packages:
 
   '@antasphere/chassis-contract@${PIN}':
     resolution: {integrity: ${INTEGRITY}}
-
+${
+  dbPackage
+    ? `
   '@antasphere/chassis-db@${PIN}':
     resolution: {integrity: ${INTEGRITY}}
-
+`
+    : ''
+}
   '@antasphere/chassis-server@${PIN}':
     resolution: ${serverResolution}
 
@@ -75,7 +90,7 @@ snapshots:
 
   '@antasphere/chassis-server@${PIN}(hono@4.12.27)':
     dependencies:
-      '@antasphere/chassis-contract': ${PIN}(hono@4.12.27)
+      '@antasphere/chassis-contract': ${snapshotContract}
       '@antasphere/chassis-db': ${PIN}
 
   prettier@3.9.4: {}
@@ -190,6 +205,47 @@ describe('(a) pin: one exact version in every package.json', () => {
       'the workspace declares the chassis at 2 versions (1.0.0, 1.0.1)'
     );
   });
+
+  test('a range under peerDependencies', () => {
+    const files = fixture();
+    files['packages/db/package.json'] = json({
+      name: '@app/db',
+      devDependencies: { '@antasphere/chassis-db': PIN },
+      peerDependencies: { '@antasphere/chassis-server': '^1.0.0' }
+    });
+    assertFails(
+      files,
+      'pin',
+      'packages/db/package.json declares @antasphere/chassis-server as "^1.0.0", not an exact version'
+    );
+  });
+
+  test('a range under optionalDependencies', () => {
+    const files = fixture();
+    files['packages/db/package.json'] = json({
+      name: '@app/db',
+      devDependencies: { '@antasphere/chassis-db': PIN },
+      optionalDependencies: { '@antasphere/chassis-sdk': '~1.0.0' }
+    });
+    assertFails(
+      files,
+      'pin',
+      'packages/db/package.json declares @antasphere/chassis-sdk as "~1.0.0", not an exact version'
+    );
+  });
+
+  test('a package in the scope that is not one of the five', () => {
+    const files = fixture();
+    files['packages/db/package.json'] = json({
+      name: '@app/db',
+      devDependencies: { '@antasphere/chassis-db': PIN, '@antasphere/chassis-xyz': PIN }
+    });
+    assertFails(
+      files,
+      'pin',
+      'packages/db/package.json declares @antasphere/chassis-xyz, which is not a chassis package'
+    );
+  });
 });
 
 describe('(b) lockfile: the pinned version, from the registry', () => {
@@ -226,6 +282,38 @@ describe('(b) lockfile: the pinned version, from the registry', () => {
       "without the registry's integrity"
     );
   });
+
+  test('an importer resolved to a prerelease of the pin', () => {
+    assertFails(
+      fixture({ lock: lockfile({ serverVersion: `${PIN}-next.1` }) }),
+      'lockfile',
+      'importer apps/server @antasphere/chassis-server resolves to 1.0.0-next.1, not 1.0.0'
+    );
+  });
+
+  test('a declaring package with no importer entry', () => {
+    assertFails(
+      fixture({ lock: lockfile({ dbImporter: false }) }),
+      'lockfile',
+      'pnpm-lock.yaml has no entry for @antasphere/chassis-db in packages/db'
+    );
+  });
+
+  test('a declared package with no package entry at the pin', () => {
+    assertFails(
+      fixture({ lock: lockfile({ dbPackage: false }) }),
+      'lockfile',
+      'pnpm-lock.yaml has no package entry @antasphere/chassis-db@1.0.0'
+    );
+  });
+
+  test('a snapshot where one chassis package depends on another at another version', () => {
+    assertFails(
+      fixture({ lock: lockfile({ snapshotContract: '1.0.1' }) }),
+      'lockfile',
+      'pnpm-lock.yaml snapshot depends on @antasphere/chassis-contract at 1.0.1, not 1.0.0'
+    );
+  });
 });
 
 describe('(c) patch: nothing patches or overrides the chassis', () => {
@@ -255,6 +343,27 @@ describe('(c) patch: nothing patches or overrides the chassis', () => {
       pnpm: { patchedDependencies: { '@antasphere/chassis-db@1.0.0': 'patches/db.patch' } }
     });
     assertFails(files, 'patch', 'package.json pnpm.patchedDependencies names a chassis package');
+  });
+
+  test('an override in pnpm-lock.yaml', () => {
+    assertFails(
+      fixture({ lock: lockfile({ topLevel: "\noverrides:\n  '@antasphere/chassis-server': 1.0.0\n" }) }),
+      'patch',
+      "pnpm-lock.yaml overrides names a chassis package: '@antasphere/chassis-server': 1.0.0"
+    );
+  });
+
+  test('a patched dependency in pnpm-lock.yaml', () => {
+    assertFails(
+      fixture({
+        lock: lockfile({
+          topLevel:
+            "\npatchedDependencies:\n  '@antasphere/chassis-server@1.0.0':\n    hash: abc123\n    path: patches/chassis.patch\n"
+        })
+      }),
+      'patch',
+      "pnpm-lock.yaml patchedDependencies names a chassis package: '@antasphere/chassis-server@1.0.0':"
+    );
   });
 });
 

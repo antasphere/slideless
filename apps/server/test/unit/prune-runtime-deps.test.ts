@@ -38,7 +38,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
  *     deny-list extension must not weaken.
  */
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const script = join(repoRoot, 'scripts', 'prune-runtime-deps.mjs');
+// PRUNE_RUNTIME_DEPS_SCRIPT points the suite at another copy of the script (a mutated one, to prove a case goes red).
+const script = process.env.PRUNE_RUNTIME_DEPS_SCRIPT ?? join(repoRoot, 'scripts', 'prune-runtime-deps.mjs');
 
 let root: string;
 let store: string;
@@ -269,6 +270,47 @@ describe('prune-runtime-deps: deny-list + orphan pass', () => {
     const res = run();
     expect(res.status).toBe(1);
     expect(res.stderr).toMatch(/declared dependency of chassis no longer resolves: ioredis/);
+  });
+
+  it('follows the declaration into a registry chassis package: its declared dependencies must resolve too', () => {
+    // the chassis since it is a dependency: `.pnpm/@antasphere+chassis-…` store entries, peers in the
+    // entry name; chassis-server declares the lazy driver and a second chassis package
+    const server = '@antasphere+chassis-server@1.0.0_hono@4.12.27';
+    const contract = '@antasphere+chassis-contract@1.0.0_hono@4.12.27';
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'app', dependencies: { hono: '1', '@antasphere/chassis-server': '1.0.0' } })
+    );
+    pkg(server, '@antasphere/chassis-server', {
+      dependencies: { ioredis: '5', '@antasphere/chassis-contract': '1.0.0' }
+    });
+    pkg(contract, '@antasphere/chassis-contract', { dependencies: { hono: '1' } });
+    pkg('ioredis@5.0.0', 'ioredis');
+    link(server, 'ioredis', 'ioredis@5.0.0');
+    link(server, '@antasphere/chassis-contract', contract);
+    link(contract, 'hono', 'hono@1.0.0');
+    // the deployed package's scoped top-level link, relative like pnpm writes it
+    const at = join(root, 'node_modules', '@antasphere', 'chassis-server');
+    mkdirSync(dirname(at), { recursive: true });
+    symlinkSync(
+      relative(dirname(at), join(store, server, 'node_modules', '@antasphere', 'chassis-server')),
+      at
+    );
+
+    const ok = run();
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout).toMatch(
+      /all 5 declared dependencies resolve \(the deployed package \+ 2 workspace or chassis package\(s\)\)/
+    );
+    expect(existsSync(join(store, server))).toBe(true);
+
+    rmSync(join(store, server, 'node_modules', 'ioredis'));
+    rmSync(join(store, 'ioredis@5.0.0'), { recursive: true });
+    const res = run();
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(
+      /declared dependency of @antasphere\/chassis-server no longer resolves: ioredis/
+    );
   });
 
   it('still fails the build when --boot-check cannot load the runtime graph', () => {
