@@ -23,8 +23,9 @@
  *   3. absence — no deny-listed package may survive anywhere (a pnpm store
  *                layout change or a vendored nested copy fails the build)
  *   4. deps    — every `dependencies` entry of the deployed package, and of
- *                every workspace package it ships (the chassis packages
- *                declare what they import), must resolve to a real directory
+ *                every workspace package and chassis package it ships (the
+ *                chassis packages declare what they import), must resolve to
+ *                a real directory
  *                (guards the lazily imported drivers a graph load never
  *                touches: ioredis, nodemailer, resend, the OTLP exporter)
  *   5. load    — `node dist/index.js --boot-check` makes Node resolve and
@@ -286,14 +287,16 @@ console.log(`sweep: removed ${unlinkedDangling} dangling symlink(s) (prune, orph
 // ── 4. every declared prod dependency must still resolve ───────────────────
 // The deployed package's own `dependencies`, then — transitively — those of
 // every WORKSPACE package it ships (`pnpm deploy --legacy` injects them as
-// `.pnpm/<name>@file+…` store entries). The lazily imported drivers are
-// declared by the chassis package that imports them, not by the app, so the
-// guard follows the declaration to where it lives.
+// `.pnpm/<name>@file+…` store entries) and of every CHASSIS package (registry
+// packages since the chassis is a dependency: `.pnpm/@antasphere+chassis-…`
+// store entries). The lazily imported drivers are declared by the chassis
+// package that imports them, not by the app, so the guard follows the
+// declaration to where it lives.
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 let depCount = 0;
 let depFailures = 0;
 const depQueue = [{ owner: null, manifest: pkg, nm: nodeModules }];
-const seenWorkspace = new Set();
+const followed = new Set();
 while (depQueue.length > 0) {
   const { owner, manifest, nm } = depQueue.shift();
   for (const dep of Object.keys(manifest.dependencies ?? {})) {
@@ -302,8 +305,9 @@ while (depQueue.length > 0) {
       const real = realpathSync(join(nm, dep));
       const depManifest = JSON.parse(readFileSync(join(real, 'package.json'), 'utf8'));
       const entry = storeDirOf(real);
-      if (entry && entry.includes('@file+') && !seenWorkspace.has(entry)) {
-        seenWorkspace.add(entry);
+      const shipped = entry && (entry.includes('@file+') || entry.startsWith('@antasphere+chassis-'));
+      if (shipped && !followed.has(entry)) {
+        followed.add(entry);
         depQueue.push({ owner: dep, manifest: depManifest, nm: join(storeReal, entry, 'node_modules') });
       }
     } catch {
@@ -314,7 +318,7 @@ while (depQueue.length > 0) {
 }
 if (depFailures === 0) {
   console.log(
-    `deps: all ${depCount} declared dependencies resolve (the deployed package + ${seenWorkspace.size} workspace package(s))`
+    `deps: all ${depCount} declared dependencies resolve (the deployed package + ${followed.size} workspace or chassis package(s))`
   );
 }
 

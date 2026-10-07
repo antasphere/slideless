@@ -19,6 +19,7 @@
     "test:e2e": "turbo run test:e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "chassis:check": "node scripts/check-chassis-version.mjs",
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {

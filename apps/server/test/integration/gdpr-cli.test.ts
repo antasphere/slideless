@@ -20,7 +20,7 @@ import {
 /**
  * GDPR export (M5), the CLI leg: the `slideless export` command against a
  * real listening server. Split out of gdpr.test.ts when that file became part
- * of the chassis suite (`packages/chassis-server/test/integration`): the CLI is
+ * of the chassis suite (`@antasphere/chassis-server/test/integration`): the CLI is
  * the Slideless product's, so this `it` stays with the app. Same fixtures the
  * original ran on: an owner, one live blob, one soft-deleted file, and an
  * owner-minted key pinned to the workspace carrying data:export only.

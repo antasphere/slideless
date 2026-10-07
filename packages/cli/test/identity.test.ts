@@ -9,13 +9,13 @@ import { routedHarness, tempConfigEnv, type Route } from './harness.js';
  * The Slideless instantiation of the CLI chassis, pinned by RAW BYTES
  * (PRDCT-2530, verifier F-4 / F-2 / F-3 / M18).
  *
- * The chassis suite (`packages/chassis-cli/test/suite`) reads the tool's
+ * The chassis suite (`@antasphere/chassis-cli/test/suite`) reads the tool's
  * identity from the kit under test, which is right for a suite that runs under
  * two hosts and wrong as the only net: a wrong VALUE in `src/cli.ts` moves the
  * fixture together with the bug. So this file NEVER reads `cli.identity` and
  * never imports `src/cli.ts`: every expectation below is a literal, and each of
  * the six identity fields is proven by something a person can observe.
- * `packages/chassis-cli/test/host/identity.test.ts` is the mirror for the
+ * `@antasphere/chassis-cli/test/host/identity.test.ts` is the mirror for the
  * minimal `things` tool.
  */
 

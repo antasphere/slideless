@@ -13,7 +13,7 @@ import { DECK, routedHarness, VERSION_ROW, type Route } from './harness.js';
  * first push; `slideless open` opens the linked deck's page. The opener is
  * injected (`io.openUrl`) so nothing is spawned here; the TTY signal is
  * `io.out.isTTY`, exactly what `process.stdout` carries. The opener itself is
- * the chassis suite's (`packages/chassis-cli/test/suite/open.test.ts`).
+ * the chassis suite's (`@antasphere/chassis-cli/test/suite/open.test.ts`).
  */
 
 const SESSION_ID = '33333333-3333-3333-3333-333333333333';

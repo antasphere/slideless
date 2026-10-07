@@ -26,7 +26,7 @@ import { signInAsOwner } from './accounts';
  * Every assertion is a PAIR: a control is asserted PRESENT for whoever may
  * use it and ABSENT (`toHaveCount(0)`) for whoever may not. The dashboard's
  * reading of the rules is `$lib/projects/can.ts`; the server's is the tiered
- * 404 / 403 / 409 of `packages/chassis-server/src/api/projects.ts`.
+ * 404 / 403 / 409 of `@antasphere/chassis-server/src/api/projects.ts`.
  *
  * GUESTS ARE OUT OF SCOPE, deliberately: the e2e suite has no guest fixture
  * (a guest is minted by the per-deck collaborator claim path, D2), so the
