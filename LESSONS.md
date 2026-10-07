@@ -1842,3 +1842,8 @@ word, since the chassis is the same code; the examples are Slideless's.
 confirm with the user before calling.`** A test that walks every write tool for the second sentence
   goes red on the project tools the chassis registers under the tool's prefix. Scope such a walk to
   the tool's own set, and pin the chassis's tools by name (`identity-pins.test.ts`).
+- **7 October 2026 — the chassis left this repository (PRDCT-3268).** Slideless was the source of
+  the five `packages/chassis-*` packages; they now live in `antasphere/chassis` and are published on
+  npm as `@antasphere/chassis-*`. Slideless installs them at one pinned version like every tool,
+  `pnpm chassis:check` holds the pin, and a chassis change is a pull request and a release there,
+  then a version bump here.

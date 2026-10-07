@@ -25,7 +25,7 @@ import { DECK, routedHarness, VERSION_ROW, type Route } from './harness.js';
  * control sequences reaching the owner's terminal from a share recipient.
  *
  * The generic half (`files download`, the sanitizer itself, `--api-key-stdin`)
- * is the chassis suite, `packages/chassis-cli/test/suite/security.test.ts`,
+ * is the chassis suite, `@antasphere/chassis-cli/test/suite/security.test.ts`,
  * which this package runs too (vitest.config.ts).
  */
 

@@ -5,7 +5,7 @@ import { createDatabase, createTestApp, startPostgres, type TestApp } from './he
 /**
  * M5, the viewer leg of the metrics pin (PRIV-1). Split out of
  * observability.test.ts when that file became part of the chassis suite
- * (`packages/chassis-server/test/integration`): the `/v/:secret` route is the
+ * (`@antasphere/chassis-server/test/integration`): the `/v/:secret` route is the
  * deck viewer's, so this `it` stays with the app. Same fixture the original
  * ran on: an instance booted with a METRICS_TOKEN.
  */

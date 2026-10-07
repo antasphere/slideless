@@ -9,7 +9,7 @@ import * as sso from './sso-helpers.js';
  * changes — tools re-enter /api/v1 in-process, so the membership gating and
  * the new /me signals apply to them as to any caller. Split out of
  * hub-managed-membership.test.ts when that file became part of the chassis
- * suite (`packages/chassis-server/test/integration`): these three `it`s call
+ * suite (`@antasphere/chassis-server/test/integration`): these three `it`s call
  * the deck MCP tools, so they stay with the app. Same fixtures the original
  * ran on: a cloud instance, a hub owner whose first SSO login projects ORG_A,
  * and that owner's API key pinned to the projected workspace.

@@ -54,15 +54,7 @@ export default tseslint.config(
   },
   {
     // Dependency direction: nothing imports the server.
-    files: [
-      'packages/sdk/**/*.ts',
-      'packages/contract/**/*.ts',
-      'packages/db/**/*.ts',
-      'packages/chassis-db/**/*.ts',
-      'packages/chassis-contract/**/*.ts',
-      'packages/chassis-server/**/*.ts',
-      'packages/chassis-sdk/**/*.ts'
-    ],
+    files: ['packages/sdk/**/*.ts', 'packages/contract/**/*.ts', 'packages/db/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -106,93 +98,6 @@ export default tseslint.config(
                 '@antasphere/chassis-contract/routes',
                 '@antasphere/chassis-contract/routes/*'
               ],
-              message: 'The routes entry pulls Hono — clients import the contract root only.'
-            },
-            {
-              group: ['@antasphere/chassis-server', '@antasphere/chassis-server/*'],
-              message: 'The chassis server is server-side code — clients never import it.'
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    // The chassis never names the tool: a `packages/chassis-*` package is the
-    // generic half, consumed BY the tool's packages and never the reverse.
-    // (This block replaces the "nothing imports the server" rule above for
-    // these files — `@slideless/*` covers the server too.)
-    files: ['packages/chassis-*/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@slideless/*'],
-              message:
-                'The chassis never names the tool: packages/chassis-* may not import @slideless/* (the tool depends on the chassis, never the reverse).'
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    // The chassis client is the client side of the split AND a chassis
-    // package: both restrictions, stated together because a later
-    // `no-restricted-imports` block replaces an earlier one for the same file.
-    // Its tests are left to the block above: the route-coverage test reads the
-    // routes entry, as the tool SDK's own does.
-    files: ['packages/chassis-sdk/src/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@slideless/*'],
-              message:
-                'The chassis never names the tool: packages/chassis-* may not import @slideless/* (the tool depends on the chassis, never the reverse).'
-            },
-            {
-              group: ['@antasphere/chassis-db', '@antasphere/chassis-db/*'],
-              message: 'Clients never touch the database layer.'
-            },
-            {
-              group: ['@antasphere/chassis-contract/routes', '@antasphere/chassis-contract/routes/*'],
-              message: 'The routes entry pulls Hono — clients import the contract root only.'
-            },
-            {
-              group: ['@antasphere/chassis-server', '@antasphere/chassis-server/*'],
-              message: 'The chassis server is server-side code — clients never import it.'
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    // The chassis CLI is a client too, and a chassis package: the same pair of
-    // restrictions as the chassis client above, stated whole for the same
-    // reason (a later `no-restricted-imports` block replaces an earlier one).
-    files: ['packages/chassis-cli/src/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@slideless/*'],
-              message:
-                'The chassis never names the tool: packages/chassis-* may not import @slideless/* (the tool depends on the chassis, never the reverse).'
-            },
-            {
-              group: ['@antasphere/chassis-db', '@antasphere/chassis-db/*'],
-              message: 'Clients never touch the database layer.'
-            },
-            {
-              group: ['@antasphere/chassis-contract/routes', '@antasphere/chassis-contract/routes/*'],
               message: 'The routes entry pulls Hono — clients import the contract root only.'
             },
             {

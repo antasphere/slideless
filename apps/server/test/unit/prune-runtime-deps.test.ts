@@ -261,7 +261,7 @@ describe('prune-runtime-deps: deny-list + orphan pass', () => {
     const ok = run();
     expect(ok.status, ok.stderr).toBe(0);
     expect(ok.stdout).toMatch(
-      /all 3 declared dependencies resolve \(the deployed package \+ 1 workspace package/
+      /all 3 declared dependencies resolve \(the deployed package \+ 1 workspace or chassis package/
     );
 
     rmSync(join(store, chassis, 'node_modules', 'ioredis'));

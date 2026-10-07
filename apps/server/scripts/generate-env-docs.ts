@@ -12,10 +12,11 @@ import { envSchema } from '../src/env.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // The doc comments live beside the keys: the deck keys in the app's env.ts, the
-// generic ones in the chassis package's (read as SOURCE — dist carries no comments).
+// generic ones in the installed chassis package's, resolved from apps/server (read as
+// SOURCE — dist carries no comments; the package ships its src).
 const envSource = (
   await Promise.all(
-    ['../src/env.ts', '../../../packages/chassis-server/src/env.ts'].map((p) =>
+    ['../src/env.ts', '../node_modules/@antasphere/chassis-server/src/env.ts'].map((p) =>
       readFile(join(here, p), 'utf8')
     )
   )

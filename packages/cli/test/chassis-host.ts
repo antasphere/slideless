@@ -4,7 +4,7 @@ import { cli as slidelessCli } from '../src/cli.js';
 import { run as slidelessRun } from '../src/index.js';
 
 /**
- * The Slideless host of the chassis suite (`packages/chassis-cli/test/suite`,
+ * The Slideless host of the chassis suite (`@antasphere/chassis-cli/test/suite`,
  * run a second time by this package's vitest config): the real kit
  * (`src/cli.ts`) and the real runner, which binds the Slideless command groups
  * and `VERSION` (`src/index.ts`). The identity it carries gives those files

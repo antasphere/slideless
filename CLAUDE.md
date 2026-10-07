@@ -22,14 +22,14 @@ deploys) + `dev` (day-to-day work).
   name and the image name ONCE. It feeds the three existing inputs: `defineChassisContract`
   (`packages/contract/src/chassis.ts`), the `identity` slot of `slidelessTool`
   (`apps/server/src/tool.ts`; the deck-named sentences of the chassis sit in its `copy` slot) and
-  `cliIdentity(IDENTITY)` in `packages/cli/src/cli.ts`. No `packages/chassis-*` file names the tool
-  (`git grep -il slideless -- ':(glob)packages/chassis-*/**'` returns nothing), and
+  `cliIdentity(IDENTITY)` in `packages/cli/src/cli.ts`. No chassis file names the tool (the chassis
+  repository's `git grep -il slideless -- packages` returns nothing), and
   `apps/server/test/integration/identity-pins.test.ts` pins every visible value by its literal.
   What cannot read it at run time (package names, the `bin` key, the image reference, the Postgres
   role, env var names, the MCP tool-name literals) is listed in the project OS,
   `knowledge/internal/identity-audit-server-and-packages.md`.
 - API key prefix `slk` (`IDENTITY.apiKeyPrefix`; `ApiKeyService` in
-  `packages/chassis-server/src/apikeys/service.ts` takes it as a required constructor value, with
+  `@antasphere/chassis-server/src/apikeys/service.ts` takes it as a required constructor value, with
   no chassis default).
 - Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
 - License: fair-code under the Sustainable Use License 1.0, licensor Antasphere (`LICENSE`; every
@@ -39,27 +39,55 @@ deploys) + `dev` (day-to-day work).
 
 ## Layout
 
-| Path                                | What                                                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `apps/server`                       | The single deployable: Hono API, identity, MCP, jobs, storage                                              |
-| `apps/server/src/tool.ts`           | The Slideless tool definition: the deck domain plugged into the chassis' named slots                       |
-| `apps/dashboard`                    | SvelteKit SPA, built into and served by the server image                                                   |
-| `packages/chassis-db`               | The generic tables, the generated `auth-schema.ts`, the migration runner                                   |
-| `packages/chassis-contract`         | The generic zod schemas + route contracts                                                                  |
-| `packages/chassis-server`           | The generic server: identity, federation, middleware, routers, jobs, MCP kit; entry `createPlatform(tool)` |
-| `packages/chassis-sdk`              | The generic typed client (`ChassisClient`); `PlatformClient` extends it                                    |
-| `packages/chassis-cli`              | The generic CLI: profiles, context, `safe-write.ts`, generic commands; entry `defineCli(definition)`       |
-| `packages/db`                       | drizzle schema (the deck tables) + migrations (the one history, chassis tables included)                   |
-| `packages/contract`                 | zod schemas + route contracts shared by server, SDK, dashboard                                             |
-| `packages/sdk`                      | Typed client over the contract (hand-written today)                                                        |
-| `packages/cli`                      | The `slideless` binary: the deck commands over `packages/chassis-cli`, one bundle (docs/agents/cli.md)     |
-| `Dockerfile` + `docker-compose.yml` | The shipped image and the operator stack                                                                   |
-| `docs/`                             | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract    |
-| `internal/`                         | Engineering docs + ADRs (`internal/decisions/`), never published                                           |
+| Path                                               | What                                                                                                                                   |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server`                                      | The single deployable: Hono API, identity, MCP, jobs, storage                                                                          |
+| `apps/server/src/tool.ts`                          | The Slideless tool definition: the deck domain plugged into the chassis' named slots                                                   |
+| `apps/dashboard`                                   | SvelteKit SPA, built into and served by the server image                                                                               |
+| `@antasphere/chassis-{db,contract,server,sdk,cli}` | The chassis, installed from npm at one pinned version (antasphere/chassis, its own repository since 7 October 2026); never edited here |
+| `packages/db`                                      | drizzle schema (the deck tables) + migrations (the one history, chassis tables included)                                               |
+| `packages/contract`                                | zod schemas + route contracts shared by server, SDK, dashboard                                                                         |
+| `packages/sdk`                                     | Typed client over the contract (hand-written today)                                                                                    |
+| `packages/cli`                                     | The `slideless` binary: the deck commands over `@antasphere/chassis-cli`, one bundle (docs/agents/cli.md)                              |
+| `Dockerfile` + `docker-compose.yml`                | The shipped image and the operator stack                                                                                               |
+| `docs/`                                            | PUBLIC docs only — synced to the docs site; subfolders = sidebar groups, `docs/nav.yml` is the contract                                |
+| `internal/`                                        | Engineering docs + ADRs (`internal/decisions/`), never published                                                                       |
+
+## The chassis is a dependency
+
+- The chassis is the five packages `@antasphere/chassis-{db,contract,server,sdk,cli}`, published on npm,
+  public, from `antasphere/chassis` (checkout `labs/products/antasphere/tools/chassis`, its `CLAUDE.md`) and
+  installed at ONE pinned version, the same exact string in every package that depends on them
+  (`"1.0.0"`, never a range, never `workspace:`, never `link:`). Nothing of it lives in this repository.
+- Never edit the chassis from here: not under `node_modules`, not through `patchedDependencies`, not
+  through an override. A change the tool needs there is a chassis change: a pull request on
+  `antasphere/chassis`, a release there, then a version bump here. The guard is `pnpm chassis:check`
+  (`node scripts/check-chassis-version.mjs`): one version everywhere, resolved from the registry in the
+  lockfile, nothing patching it, no copy left in the tree. It is the first step of CI's `checks` job.
+- Upgrading: `pnpm up -r "@antasphere/chassis-*@X.Y.Z"`, then the gates. A bump that changes the auth
+  schema is answered by regenerating `apps/server/scripts/auth-schema.snapshot.ts` from the installed
+  `@antasphere/chassis-db/src/auth-schema.ts` (`drift:check` says so) and writing the matching
+  migration as the next entry of `packages/db/drizzle`; a bump that adds a chassis table lands its
+  migration the same way; the baseline is never edited.
+- Developing a chassis change against this tool before it is published: build the chassis checkout,
+  then from this root `pnpm link ../../chassis/packages/chassis-server` (and the siblings you touch).
+  pnpm writes `link:` into `package.json` and the lockfile while you work;
+  `git checkout package.json pnpm-lock.yaml && pnpm install` puts the registry version back before you
+  commit, and `pnpm chassis:check` refuses a `link:` left behind.
+- No registry token: the packages are public. `pnpm install` on a machine, in CI and in the Docker
+  build reaches them like any other dependency.
+- The chassis suites still run here, from the installed package, against this tool's own host:
+  `@antasphere/chassis-server/test/integration` under `apps/server/vitest.integration.config.ts`
+  (`@chassis-test/host` is `apps/server/test/integration/chassis-host.ts`) and
+  `@antasphere/chassis-cli/test/suite` under `packages/cli/vitest.config.ts`. The two source audits of
+  the routers (no dead HEAD registration, one OpenAPI document registration) are this tool's own,
+  `apps/server/test/unit/api-registrations.test.ts`; the chassis audits its own routers in its repository.
+- Code under `apps/` and `packages/` imports the chassis by its package names only; the chassis never
+  imports `@slideless/*`.
 
 ## Invariants — never regress these
 
-- **Fail-closed scope allowlist** (`packages/chassis-server/src/middleware/scopes.ts`, the deck rules in `apps/server/src/middleware/scopes.ts`): machine principals (API
+- **Fail-closed scope allowlist** (`@antasphere/chassis-server/src/middleware/scopes.ts`, the deck rules in `apps/server/src/middleware/scopes.ts`): machine principals (API
   keys, OAuth tokens) reach ONLY allowlisted routes; anything unlisted 403s. New endpoints stay
   unreachable to machines until consciously opened.
 - **Closed sign-up needs three switches**: the `/sign-up` hook, `disableSignUp` on the emailOTP
@@ -71,22 +99,22 @@ deploys) + `dev` (day-to-day work).
 - **Migrations run under a session-scoped `pg_advisory_lock` on a dedicated client** — multi-replica
   safe. Never switch to a transaction-scoped lock.
 - **Auth schema drift guard**: any Better Auth config change that alters the schema must regenerate
-  `packages/chassis-db/src/auth-schema.ts` + the snapshot via the pinned CLI, plus an additive drizzle
-  migration. CI's `drift:check` gates it.
+  `@antasphere/chassis-db/src/auth-schema.ts` (in the chassis repository, then released) + the
+  snapshot here via the pinned CLI, plus an additive drizzle migration. CI's `drift:check` gates it.
 - **A deck bundle is untrusted input on the CLIENT side too (PRDCT-1353)**: manifest paths are
   the names `slideless pull` writes onto a developer's disk, so `assetPathSchema`
   (`packages/contract`) refuses dot-prefixed segments and `package.json`/lockfiles at COMMIT —
   never loosen it back to "traversal-safe" alone (`isTraversalSafeAssetPath` is the separate,
   weaker rule the viewer's manifest LOOKUP uses, where no filesystem is involved). The CLI then
   re-checks every path at PULL, caps each blob at the manifest's `sizeBytes`, verifies its sha256
-  before writing, and writes through `packages/chassis-cli/src/safe-write.ts` only: lexical containment + a `realpath`
+  before writing, and writes through `@antasphere/chassis-cli/src/safe-write.ts` only: lexical containment + a `realpath`
   parent check + `O_NOFOLLOW` + a forced 0644 (an `O_TRUNC` write PRESERVES an existing file's
   mode). `files download` uses the BASENAME of the server-chosen name inside a chosen directory.
   `slideless dev` is a real containment boundary: `realpath` re-check, dotfile paths 404, and a
   `Host` allowlist (the DNS-rebinding guard). Every non-`--json` sink goes through
-  `sanitizeForTty` (`packages/chassis-cli/src/context.ts`) — `--json` stays byte-exact and must never be routed through it.
+  `sanitizeForTty` (`@antasphere/chassis-cli/src/context.ts`) — `--json` stays byte-exact and must never be routed through it.
 - **A tombstone the boot cannot replay closes the service (PRDCT-1809)**: the erasure replay in
-  `packages/chassis-server/src/boot.ts` runs under `withAllLastOwnerGuards` (nothing touched on a refusal — Better Auth's
+  `@antasphere/chassis-server/src/boot.ts` runs under `withAllLastOwnerGuards` (nothing touched on a refusal — Better Auth's
   cascade drops account rows before the user row, so an unguarded refusal half-erases), and a
   refused tombstone sets `state.closed`, which answers 503 `service_closed` on every route but
   `/healthz`, `/readyz`, `/metrics`, plus a `user.erasure_replay_refused` audit row. Never
@@ -155,8 +183,9 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   `refusal`) prints the hub's sentence and exits 3, exit 1 is a usage or wire error.
   `TOOL_RESTRICTED=true` (chassis env) makes the CLOUD edition refuse `POST /workspaces` with 403
   `restricted_tool` through the ONE creation rule (`/me.canCreateWorkspace` false too) and advertise
-  `restricted: true` in discovery; inert on self-hosted. Every `packages/chassis-*` change here is
-  what lane C re-copies into the template and the hackathon: keep it tool-neutral.
+  `restricted: true` in discovery; inert on self-hosted. A chassis change is a pull request on
+  `antasphere/chassis`, a release there, then `pnpm up -r "@antasphere/chassis-*@X.Y.Z"` here gated
+  by `pnpm chassis:check`: keep it tool-neutral.
 - **Never render user content on the app origin** — files are served `attachment` + `nosniff`
   (docs/security/security.md).
 - **The viewer origin is a real boundary, never a trust grant (PRDCT-1352)**: with
@@ -180,7 +209,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
 - **A deck linked to a project is read by the project's members, in the read rule's THREE
   homes at once (ADR 026)**: `canReadDeck`, the list's WHERE and `blobReadScope` each call
   `deckProjectReadPredicate` (`apps/server/src/presentations/projects.ts`), itself the chassis'
-  `projectGrantPredicate` (`packages/chassis-server/src/projects/access.ts`, the ONE statement
+  `projectGrantPredicate` (`@antasphere/chassis-server/src/projects/access.ts`, the ONE statement
   of who holds a grant: guest refused on the principal and on the row, live membership, one
   workspace, the role ladder, the operator view, the archived-write rule) over
   `presentation_projects`. Change one home, change all three; `deck-projects.test.ts` pins each
@@ -192,7 +221,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   (never under `hub_managed`), a guest is never a project member (403 `guest_forbidden` on the
   whole `/projects` subtree), and a grant dies with the workspace membership it rides on (the
   foreign key's cascade; the hub sweep deletes the grants itself since it only deactivates).
-  Nothing under `packages/chassis-*` names a deck, a brand or Slideless.
+  Nothing in the chassis (`@antasphere/chassis-*`) names a deck, a brand or Slideless.
 - **The BLOB surface carries the same policy (SL-B1, ADR 013 amendment)**: the generic
   `/files` routes — list, `GET /files/{id}`, `GET|HEAD /files/{id}/content`, DELETE — apply
   `blobReadScope` (`presentations/service.ts`), the SQL form of `canReadDeck`: blobs you
@@ -218,7 +247,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   claim endpoint answers `sso_required` instead of minting local-password accounts).
 - **Cloud closes the local password-reset surface (P8, ADR 017)**: on `EDITION=cloud`, every
   reset-shaped route — `/request-password-reset`, `/reset-password` (POST + tokened GET), the
-  emailOTP reset trio — answers 403 (before-hook in `packages/chassis-server/src/identity/better-auth.ts`;
+  emailOTP reset trio — answers 403 (before-hook in `@antasphere/chassis-server/src/identity/better-auth.ts`;
   `sendResetPassword` never wired there), and the admin `/members/{id}/reset-link` mint refuses
   `password_reset_disabled`. A hub-JIT user must never be able to SET a local password and
   sidestep SSO. `/sign-in/email` stays WIRED on both editions (the break-glass operator door,
@@ -237,17 +266,17 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   named-key revoke. `/sso/cli-connect` (the sanctioned cloud CLI mint) and `/sign-in/email`
   are untouched; oss keeps OTP login + CLI mint unchanged. **The Google social provider is the
   third non-SSO session entrance and is closed the same way**: `socialProviders.google` is
-  registered only when NOT cloud (`!hubSso` in `packages/chassis-server/src/identity/better-auth.ts`), so a cloud instance
+  registered only when NOT cloud (`!hubSso` in `@antasphere/chassis-server/src/identity/better-auth.ts`), so a cloud instance
   with `GOOGLE_CLIENT_ID`/`SECRET` set still leaves `/sign-in/social` unregistered (404
   `PROVIDER_NOT_FOUND`) — by construction, not by leaving the env unset. Rule: no non-SSO
   session entrance on cloud except the break-glass `/sign-in/email`; oss keeps Google social
   when configured.
 - **No route ever hands a caller a PROVIDER GRANT, on either edition (PRDCT-1354, AUTH-3/AUTH-7)**:
   Better Auth's own `/get-access-token` and `/refresh-token` answer 403 `provider_grant_forbidden`
-  from the same before-hook (`isProviderGrantPath` in `packages/chassis-server/src/identity/better-auth.ts` — re-verify the
+  from the same before-hook (`isProviderGrantPath` in `@antasphere/chassis-server/src/identity/better-auth.ts` — re-verify the
   enumeration on ANY Better Auth bump). Both returned the caller's stored grant in PLAINTEXT, which
   makes `encryptOAuthTokens: true` pointless, and the `/auth/*` mount is registered BEFORE
-  `authContext` (`packages/chassis-server/src/api/create-api.ts`), so neither saw the scope allowlist, the per-principal quota, the
+  `authContext` (`@antasphere/chassis-server/src/api/create-api.ts`), so neither saw the scope allowlist, the per-principal quota, the
   idempotency claim, or the audit log. On cloud that grant IS the hub grant (ADR 019), and
   `/refresh-token` rotated it OUTSIDE the `pg_advisory_lock(7432004, hashtext(userId))`
   single-flight, which the hub's RFC 9700 reuse detection turns into a grant-family-killing event
@@ -259,7 +288,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   AUTH-1/2/8)**: `POST /members/{id}/reset-link` and `/members/{id}/change-email-link` both mint
   a SIGN-IN-EQUIVALENT bearer for a target (LESSONS.md M6), and a `user` row is instance-GLOBAL —
   so the mint's blast radius is every workspace the target belongs to. Both are `requireRole('owner')`,
-  both run `mintRefusal` (`packages/chassis-server/src/accounts/mint-refusal.ts`, shared with the demo pass mint), and both refuse an `origin='guest'` target
+  both run `mintRefusal` (`@antasphere/chassis-server/src/accounts/mint-refusal.ts`, shared with the demo pass mint), and both refuse an `origin='guest'` target
   (`guest_target` — a per-deck outsider's account is not the host tenant's to recover, D2) and any
   target holding a membership in ANOTHER workspace (`cross_workspace_target`). Both also carry the
   cloud closure (`password_reset_disabled` / `email_change_disabled`) and both are idempotency
@@ -275,11 +304,11 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   `DEMO_SIGN_IN_HOSTS`, and a malformed entry in either list refuses too. Minting, listing and
   revoking are an OWNER act from a SESSION only (`requireRole('owner')` + `sessions_only`); the
   paths are in nothing in the scope allowlist, ever, so no API key or OAuth bearer reaches them,
-  and the CLI's `demo` commands sign in as the owner (`chassis-cli/src/owner-session.ts`) rather
+  and the CLI's `demo` commands sign in as the owner (`@antasphere/chassis-cli/src/owner-session.ts`) rather
   than open that door. A pass opens only an address `isDemoAddress` accepts (the reserved example
   and test domains, or `DEMO_SIGN_IN_EMAIL_DOMAINS`), never another owner, never an account with a
   second factor, and it runs the SAME `mintRefusal` as the reset link
-  (`packages/chassis-server/src/accounts/mint-refusal.ts`: `guest_target`,
+  (`@antasphere/chassis-server/src/accounts/mint-refusal.ts`: `guest_target`,
   `cross_workspace_target`). Every dead pass (unknown, expired, revoked, the person gone or no
   longer a member, the address no longer a demonstration one, a second factor since) answers ONE
   401 `invalid_demo_pass`, same body. The redeem is an endpoint of the sign-in library itself
@@ -291,11 +320,11 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   `DEMO_SESSION_REFUSED_AUTH_PATHS` (the OAuth authorize included: a pass lands in no tool here),
   the API routes that mint a credential for anyone or make something the person keeps refuse it
   with 403 `demo_session` from ONE list mounted once, right after the credential resolver
-  (`DEMO_SESSION_REFUSED_API_ROUTES` in `packages/chassis-server/src/identity/demo-pass-rules.ts`,
-  the mount in `packages/chassis-server/src/api/create-api.ts`), to which the tool appends its own
+  (`DEMO_SESSION_REFUSED_API_ROUTES` in `@antasphere/chassis-server/src/identity/demo-pass-rules.ts`,
+  the mount in `@antasphere/chassis-server/src/api/create-api.ts`), to which the tool appends its own
   through the `demoSessionRefusedRoutes` slot (`apps/server/src/tool.ts`: the deck invite, whose
   claim link seats an outsider), the invitation accept refusing it in its handler; two contract walks
-  (`packages/chassis-server/test/integration/demo-pass-rules.test.ts` over the chassis routes,
+  (`@antasphere/chassis-server/test/integration/demo-pass-rules.test.ts` over the chassis routes,
   `apps/server/test/integration/demo-pass-rules.test.ts` over the product's and the chassis's with
   `claimUrl` among the keys) fail on any route whose success answer carries a credential and is on
   neither list nor named as excluded, a pass's end (`endSessions`) takes the OAuth tokens and the
@@ -322,7 +351,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   a browser SSO re-login heals), stale-beyond-15-min + failing hub → 403 `hub_unavailable`,
   swept membership → 401 `membership_revoked`, `hub_status='suspended'` → 403
   `account_suspended` (GET /me exempt — visible-but-blocked). **Orphan-purge HARD CONSTRAINT**
-  (`packages/chassis-server/src/jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
+  (`@antasphere/chassis-server/src/jobs/pgboss.ts`): never delete an `antasphere` account row while leaving an `origin='hub'`
   membership row — whole-user delete or nothing, else the reconciler's fail-open `no_link`
   branch becomes reachable for hub-origin principals.
 - **A concept lives on both editions with the same tables, routes and screens; only its SOURCE
@@ -358,7 +387,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   what the tool hangs on them in that workspace; the caller runs that BEFORE it switches the row
   off, the lock order of an invitation's accept (round 3, F2); the ERASURE
   (`DELETE /members/{id}`) deletes the account. What a removal takes is stated ONCE,
-  `deleteMembershipGrants` (`packages/chassis-server/src/members/removal.ts`), called by the hub
+  `deleteMembershipGrants` (`@antasphere/chassis-server/src/members/removal.ts`), called by the hub
   reconcile's sweep (cloud, a hub organization) and by `POST /members/{id}/remove` (a workspace
   managed here: admin and above, an owner by an owner only, never oneself, the last-owner guard,
   `hub_managed` on a hub-origin workspace, deliberately UNLISTED in the machine scope allowlist like
@@ -410,7 +439,7 @@ or name>` (`<PREFIX>_ORG`) beside `--workspace` (both = usage error), nothing sa
   Better Auth bump), beside the owner's change-email link already closed there. The tokened
   `GET /verify-email` stays open: it also lands the address verification.
 - **Cloud sign-in requests `orgs:create`, and THE HUB DEPLOYS FIRST (PRDCT-2443)**: the scope list
-  is stated once (`HUB_SSO_SCOPES`, `packages/chassis-server/src/identity/hub-sso.ts`): `openid profile email offline_access
+  is stated once (`HUB_SSO_SCOPES`, `@antasphere/chassis-server/src/identity/hub-sso.ts`): `openid profile email offline_access
 account:read orgs:create`. The hub's authorize endpoint refuses an unknown requested scope with
   `invalid_scope`, which fails the WHOLE sign-in for every user, so a scope is added here only
   AFTER the hub lists it for the tool client. `orgs:create` is the hub's dedicated scope for
@@ -423,10 +452,10 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   `DECK_ROUTE_ENTITLEMENTS` (`packages/contract/src/routes/index.ts`, built from the route objects;
   a duplicate throws) and the tool's `entitlements` slot (`apps/server/src/tool.ts`) carries the
   credits, the per-tier limits and the features, shown on `GET /instance`. ONE gate
-  (`packages/chassis-server/src/entitlements/gate.ts`, registered in `create-api.ts` after the scope
+  (`@antasphere/chassis-server/src/entitlements/gate.ts`, registered in `create-api.ts` after the scope
   gate, the idempotency claim and the audit middleware, before every handler) enforces it for the
   dashboard, the CLI and the MCP tools alike and emits the usage event after a 2xx; no handler checks
-  or emits by hand, and `git grep -i 'files.maxBytes\|presentations.commit\|slideless' --
+  or emits by hand, and in the chassis repository `git grep -i 'files.maxBytes\|presentations.commit\|slideless' --
 ':(glob)packages/chassis-*/src/**'` stays empty (a pathspec without `:(glob)` matches no file and
   proves nothing). Cloud order: feature → limit (403 `plan_required` + `details:
 { key, plan, requiredPlan, upgradeUrl }`, the hub's organization page) → the credit check; oss:
@@ -472,14 +501,14 @@ account:read orgs:create`. The hub's authorize endpoint refuses an unknown reque
   the plan refusals on a real hub.
 - **The hub owns the wire, the chassis's copies are checked against it (PRDCT-2677)**: the shapes the
   tools exchange with the hub live in the hub's contract and are published as its wire snapshot
-  (`packages/contract/wire/hub-tool-messages.json` of the hub); `packages/chassis-contract/src/entitlements.ts`
-  mirrors them, and `pnpm --filter @antasphere/chassis-contract wire:check` (the `hub-wire` CI job,
-  against the hub's `dev`) fails on any difference. The check's `unpriceable` reason is a 413
+  (`packages/contract/wire/hub-tool-messages.json` of the hub); `@antasphere/chassis-contract/src/entitlements.ts`
+  mirrors them, and `pnpm --filter @antasphere/chassis-contract wire:check` (the `hub-wire` CI job of
+  the chassis repository, against the hub's `dev`) fails on any difference. The check's `unpriceable` reason is a 413
   `entitlement_denied` refusal with the price and the balance and no top-up link (a link would draw
   the dashboard's and the CLI's top-up card), never an outage.
 - **The chassis asks the hub before a priced action, and refuses on its answer (PRDCT-2664, phase 2
   of the billing rail, spec §7 steps 3 and 4)**: on a metered account (cloud, an `accountRef`) the
-  gate's third step is `HubCreditCheck` (`packages/chassis-server/src/entitlements/check.ts`), one
+  gate's third step is `HubCreditCheck` (`@antasphere/chassis-server/src/entitlements/check.ts`), one
   `POST <hub>/api/v1/usage/check` `{ accountRef, actionKey, quantity, unit }` with the machine token,
   the answer read with the contract's copy (`usageCheckSchema`). The LOCAL credit service (`AllowAllEntitlements`,
   the env cap) is never consulted on a metered account: the plan limit is its cap there. A denial is
@@ -593,7 +622,7 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
   change-email-link — answers 403 `hub_managed` + `details.manageUrl`
-  (`packages/chassis-server/src/middleware/hub-managed.ts`, keyed on `principal.accountRef`, method-keyed non-GET). READS stay
+  (`@antasphere/chassis-server/src/middleware/hub-managed.ts`, keyed on `principal.accountRef`, method-keyed non-GET). READS stay
   (`GET /members`, invitation list/lookup); the per-deck collaborator surface stays the sanctioned
   local path; cloud-LOCAL workspaces (operator's, deck-guest hosts) and oss are untouched. The
   dashboard adapts off `/me`'s `workspace.hubOrigin`/`origin`/`hubManageUrl`, never
@@ -649,9 +678,9 @@ cd apps/server && pnpm preview:emails        # render every email to a local rev
 checkout and worktree on a machine, so a green run whose `Cached:` line is not `0 cached` replayed
 another tree's result and proves nothing about this one. Read the `Cached:` line before you believe a
 green run. A lane's gates, a verifier's baseline and any figure written in a report are proofs. The
-same trap has a second form: `@slideless/contract`, `@slideless/db` and the chassis packages are
-consumed through their `dist` folder, so a test run after a source edit there reads the OLD code until
-the package is rebuilt. Rebuild before you believe a green test, above all when the edit was meant to
+same trap has a second form: `@slideless/contract` and `@slideless/db` are consumed through their
+`dist` folder (the chassis packages too, installed built from npm), so a test run after a source edit
+there reads the OLD code until the package is rebuilt. Rebuild before you believe a green test, above all when the edit was meant to
 turn it red. CI starts from an empty cache, so its commands carry no flag.
 
 The mail wall (`apps/server/scripts/previewEmails.ts`) is the same wall as the hub's and the
@@ -661,7 +690,7 @@ nothing is ever sent. A new mail means a new `TemplateSpec` in its `catalogue()`
 reader-facing `when` copy; the builders stay env-free (urls, names and dates arrive as
 parameters), which is what lets `tsx` render them standalone.
 
-The mails' layout is `packages/chassis-server/src/email/shell.ts`, carried BYTE-IDENTICAL by the
+The mails' layout is `@antasphere/chassis-server/src/email/shell.ts`, carried BYTE-IDENTICAL by the
 hub's `apps/server/src/email/shell.ts` (`cmp` the two before closing a mail task). The five
 account mails are the chassis's `email/templates.ts`: they spell no product, the name comes from
 `identity.displayName` and the three phrases that are a tool's own from the `copy.mail` slot

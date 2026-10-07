@@ -2,7 +2,8 @@
 # CI drift guard: a Better Auth upgrade that changes the expected table shape
 # must fail the build until someone regenerates the schema AND writes the
 # matching migration. Compares the pinned CLI's current output against the
-# committed snapshot (which mirrors packages/chassis-db/src/auth-schema.ts).
+# committed snapshot (which mirrors the installed chassis's
+# node_modules/@antasphere/chassis-db/src/auth-schema.ts).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -20,20 +21,25 @@ pnpm exec better-auth generate --config scripts/auth-schema-config.ts --output "
 # file lives outside the repo and would otherwise get prettier defaults.
 pnpm exec prettier --config "$(pwd)/../../.prettierrc" --log-level silent --write "$out"
 
-# The snapshot is only a proxy: the file the server actually compiles against
-# is packages/chassis-db/src/auth-schema.ts. A hand edit to one and not the other
-# passed this guard silently (verifier finding, 2026-08-29) — pin them equal.
-if ! diff -u ../../packages/chassis-db/src/auth-schema.ts scripts/auth-schema.snapshot.ts; then
+# The snapshot is only a proxy: the file the server actually runs against is the
+# installed chassis's auth-schema.ts (@antasphere/chassis-db, linked here by pnpm).
+# A hand edit to one and not the other passed this guard silently (verifier
+# finding, 2026-08-29) — pin them equal.
+chassis_auth_schema=node_modules/@antasphere/chassis-db/src/auth-schema.ts
+if ! diff -u "$chassis_auth_schema" scripts/auth-schema.snapshot.ts; then
   echo ""
-  echo "packages/chassis-db/src/auth-schema.ts and scripts/auth-schema.snapshot.ts differ."
-  echo "They must be the same file: regenerate both from the pinned CLI."
+  echo "scripts/auth-schema.snapshot.ts differs from the installed chassis's $chassis_auth_schema."
+  echo "The snapshot must equal the installed chassis's file. A chassis upgrade that changes the"
+  echo "auth schema is answered here: regenerate the snapshot from the pinned CLI, write the"
+  echo "matching migration in packages/db/drizzle, and re-run."
   exit 1
 fi
 
 if ! diff -u scripts/auth-schema.snapshot.ts "$out"; then
   echo ""
   echo "Better Auth schema drift detected."
-  echo "Regenerate packages/chassis-db/src/auth-schema.ts + scripts/auth-schema.snapshot.ts,"
+  echo "The chassis's auth-schema.ts is the chassis's: regenerate it in the chassis repository and"
+  echo "publish, move the pin, regenerate scripts/auth-schema.snapshot.ts from the pinned CLI,"
   echo "write the corresponding migration in packages/db/drizzle, and re-run."
   exit 1
 fi

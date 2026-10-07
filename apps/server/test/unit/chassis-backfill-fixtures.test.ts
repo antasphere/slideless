@@ -5,16 +5,21 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The chassis suite runs two backfill statements from fixtures it OWNS
- * (`packages/chassis-server/test/fixtures`, PRDCT-2544), so that no chassis
- * test names one of Slideless's migration files. A copy can drift: this test
- * is the Slideless half of the bargain. Each fixture, minus its `--# ` header,
- * must stay byte-equal to the part of the real migration it mirrors. A
- * migration is never edited once shipped, so red here means the FIXTURE moved.
+ * (`@antasphere/chassis-server/test/fixtures`, PRDCT-2544, read here from the
+ * installed package, which ships its test folder), so that no chassis test
+ * names one of Slideless's migration files. A copy can drift: this test is the
+ * Slideless half of the bargain. Each fixture, minus its `--# ` header, must
+ * stay byte-equal to the part of the real migration it mirrors. A migration is
+ * never edited once shipped, so red here means the FIXTURE moved (a chassis
+ * upgrade that changes one is answered by a migration here, never by an edit).
  */
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const migration = (name: string) => readFileSync(join(repoRoot, 'packages/db/drizzle', name), 'utf8');
 const fixture = (name: string) => {
-  const text = readFileSync(join(repoRoot, 'packages/chassis-server/test/fixtures', name), 'utf8');
+  const text = readFileSync(
+    join(repoRoot, 'apps/server/node_modules/@antasphere/chassis-server/test/fixtures', name),
+    'utf8'
+  );
   const body = text.replace(/^(?:--# .*\n)+/, '');
   // The header exists and is the only thing removed.
   expect(body.length).toBeLessThan(text.length);
