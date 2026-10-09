@@ -34,7 +34,11 @@ export function requireMember(
     // it falls through to the login redirect, where "Sign in with
     // Antasphere" is exactly the re-auth that heals it.
     if (meError) redirect(307, '/suspended');
-    const next = url.pathname === '/' ? '' : `?next=${encodeURIComponent(url.pathname + url.search)}`;
+    // The root with no query needs no `next`; a root that carries one (the
+    // organization a hub tool card named, `/?org=…`, PRDCT-3321) keeps it,
+    // so the landing survives the sign-in and the callback lands on it.
+    const bare = url.pathname === '/' && !url.search;
+    const next = bare ? '' : `?next=${encodeURIComponent(url.pathname + url.search)}`;
     redirect(307, `/login${next}`);
   }
   if (!me.workspace || !me.role || !me.origin || !me.activeWorkspaceId) {
