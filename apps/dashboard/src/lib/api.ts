@@ -41,6 +41,20 @@ export function switchWorkspace(workspaceId: string, to?: string): void {
   else window.location.reload();
 }
 
+/**
+ * Remember a workspace the bootstrap just resolved (the organization a hub
+ * tool card named on the way in, PRDCT-3321): persist + apply to the
+ * client, no reload — the bootstrap that called this is the first read.
+ */
+export function rememberWorkspace(workspaceId: string): void {
+  try {
+    globalThis.localStorage?.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
+  } catch {
+    // Not persistable — the client still carries it for this visit.
+  }
+  api.setWorkspace(workspaceId);
+}
+
 /** Drop a stale selection (revoked membership, deleted workspace) — no reload. */
 export function clearWorkspaceSelection(): void {
   try {

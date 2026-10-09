@@ -1,4 +1,5 @@
 import type { InstanceInfo } from '@antasphere/chassis-contract';
+import { withoutOrgLanding } from '$lib/org-landing';
 import { safeNext } from '$lib/utils';
 
 /**
@@ -197,7 +198,10 @@ export function writePendingNext(
   now: number
 ): void {
   if (!storage) return;
-  const value = safeNext(next);
+  // The organization a hub tool card named (`?org=…`) rides the sign-in's
+  // own callback, never this memory: a root carrying only the landing is
+  // the root, and must not clobber a deeper destination (PRDCT-3321).
+  const value = withoutOrgLanding(safeNext(next));
   try {
     if (value === '/') {
       const existing = parsePendingNext(storage.getItem(SSO_PENDING_NEXT_KEY), now);

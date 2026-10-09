@@ -1,5 +1,12 @@
-import { api, clearWorkspaceSelection, storedWorkspaceId, PlatformApiError } from '$lib/api';
+import {
+  api,
+  clearWorkspaceSelection,
+  rememberWorkspace,
+  storedWorkspaceId,
+  PlatformApiError
+} from '$lib/api';
 import { initLocale } from '$lib/i18n';
+import { readOrgLanding } from '$lib/org-landing';
 import { clearAttemptMarker, setSsoDiscovery } from '$lib/sso';
 import type { MeResponse } from '@slideless/contract';
 import type { LayoutLoad } from './$types';
@@ -31,10 +38,16 @@ export const prerender = false;
  * neutral splash before anything renders. Route guards read the result:
  * setupRequired → /setup, session → app, no session → /login.
  */
-export const load: LayoutLoad = async () => {
+export const load: LayoutLoad = async ({ url, untrack }) => {
   // Fix the UI locale for this page load (and mirror it onto <html lang>)
   // before any component renders — t() stays synchronous everywhere.
   initLocale();
+
+  // The organization a hub tool card named on the way in (`?org=<hub
+  // organization id>`, PRDCT-3321), read once: untracked, so this bootstrap
+  // never re-runs on a later navigation's query. The root layout strips the
+  // parameter from the address once the landing is applied.
+  const landing = untrack(() => readOrgLanding(url.searchParams));
 
   const instance = await api.instance();
   // Record the SSO discovery for the edition-adaptive modules (logout,
@@ -55,7 +68,23 @@ export const load: LayoutLoad = async () => {
           meError = hubGateError(e) ?? meError;
           return null;
         });
-      me = await fetchMe();
+      if (landing) {
+        // Select the named organization for this read: the server resolves
+        // a hub organization id against the caller's own active memberships
+        // and fails closed on any other. Resolved, it is remembered by its
+        // LOCAL id like a switch in the sidebar; refused (not a member, a
+        // tool this organization does not open), the landing is dropped
+        // and the bootstrap goes on with the stored selection.
+        api.setWorkspace(landing);
+        me = await fetchMe();
+        if (me?.activeWorkspaceId) rememberWorkspace(me.activeWorkspaceId);
+        else {
+          me = null;
+          meError = null;
+          api.setWorkspace(storedWorkspaceId());
+        }
+      }
+      if (!me) me = await fetchMe();
       if (!me && storedWorkspaceId()) {
         // Stale persisted workspace (membership revoked, workspace gone):
         // X-Workspace-Id fails closed server-side. Self-heal — drop the

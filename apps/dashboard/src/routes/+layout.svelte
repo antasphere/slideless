@@ -1,12 +1,13 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
-  import { goto, onNavigate } from '$app/navigation';
+  import { goto, onNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { Toaster } from '$lib/components/ui/sonner/index.js';
   import PageGrain from '$lib/components/brand/PageGrain.svelte';
   import { createHintWatch } from '$lib/hint-watch';
   import { consumePendingNext, pendingNextStorage } from '$lib/sso';
+  import { readOrgLanding, withoutOrgLanding } from '$lib/org-landing';
   import { signOutToLogin } from '$lib/session';
   import { tool } from '$lib/tool';
 
@@ -56,6 +57,14 @@
 
   onMount(() => {
     document.getElementById('splash')?.remove();
+
+    // The landing a hub tool card named (`?org=…`) was applied by the root
+    // load: off the address now, so a reload or a copied link does not
+    // re-select it (PRDCT-3321). Signed-out visitors keep it — the login
+    // bounce carries it to the callback.
+    if (data?.me && readOrgLanding(page.url.searchParams)) {
+      replaceState(withoutOrgLanding(`${page.url.pathname}${page.url.search}${page.url.hash}`), page.state);
+    }
 
     // SL-4 hint-watch: on bootstrap + every visibilitychange→visible
     // (throttled), a signed-in ssoOnly user whose hub hint cookie vanished
