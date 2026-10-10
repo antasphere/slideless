@@ -9,6 +9,11 @@ onlyBuiltDependencies:
 # `pnpm.overrides` from package.json (it warned on every call and ignored the block,
 # so the lockfile alone held them). The Better Auth ones are ADR 001.
 overrides:
+  # One zod in the tree: @antasphere/contract (through chassis-contract 1.0.1) would otherwise
+  # resolve @hono/zod-openapi 1.6.3 + zod 4.6.5 beside the 4.4.3 everything else uses, and a
+  # schema composed across two zod copies fails at runtime and in tsc (2026-10-10).
+  zod: '4.4.3'
+  '@hono/zod-openapi': '1.4.0'
   better-auth@1.6.22>@better-auth/core: '1.6.22'
   '@better-auth/oauth-provider@1.6.22>@better-auth/core': '1.6.22'
   better-call@1.3.7>@better-fetch/fetch: '1.3.1'
