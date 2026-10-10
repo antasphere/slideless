@@ -26,7 +26,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@antasphere/chassis-db": "1.0.0",
+    "@antasphere/chassis-db": "1.0.1",
     "@opentelemetry/api": "^1.9.1",
     "drizzle-orm": "^0.45.1",
     "pg": "^8.16.0"
