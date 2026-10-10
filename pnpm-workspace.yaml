@@ -9,6 +9,10 @@ onlyBuiltDependencies:
 # `pnpm.overrides` from package.json (it warned on every call and ignored the block,
 # so the lockfile alone held them). The Better Auth ones are ADR 001.
 overrides:
+  # Two advisories published after 0.13.3 shipped, caught by the release's Trivy gate on 2026-10-10:
+  # CVE-2026-104850 (@modelcontextprotocol/sdk < 1.31.0, HIGH) and CVE-2026-90711 (proxy-addr < 2.0.8, CRITICAL).
+  '@modelcontextprotocol/sdk@1': '>=1.31.0'
+  'proxy-addr@2': '>=2.0.8'
   # One zod in the tree: @antasphere/contract (through chassis-contract 1.0.1) would otherwise
   # resolve @hono/zod-openapi 1.6.3 + zod 4.6.5 beside the 4.4.3 everything else uses, and a
   # schema composed across two zod copies fails at runtime and in tsc (2026-10-10).
