@@ -61,6 +61,7 @@ jobs:
           context: .
           load: true
           tags: slideless-smoke:test
+          build-args: OS_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Compose up + exercise the platform flow
@@ -125,6 +126,7 @@ jobs:
           context: .
           load: true
           tags: slideless-scan:test
+          build-args: OS_REFRESH=${{ github.run_id }}
           cache-from: type=gha
       # Run Trivy from its own container rather than the marketplace action,
       # whose binary-installer step is flaky on GitHub runners. GITHUB_TOKEN
@@ -231,6 +233,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: OS_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
