@@ -55,7 +55,13 @@ FROM node:22-alpine
 # image's OS packages up to Alpine's current fixes: the Trivy HIGH gate in
 # release.yml scans this final stage, and the node:22-alpine tag lags the
 # Alpine security feed (same pattern as the hub, 2026-08-28).
-RUN apk upgrade --no-cache && apk add --no-cache tini wget \
+# OS_REFRESH busts THIS layer's build cache on every release (release.yml passes
+# the run id): the CI builds reuse a GitHub Actions layer cache, and an
+# unchanged `apk upgrade` line was replayed from before Alpine shipped a fix,
+# so the image kept a patched package's old version and the Trivy gate refused
+# it (pcre2, CVE-2026-103111, 2026-10-10). Every other layer stays cached.
+ARG OS_REFRESH=local
+RUN echo "os refresh: ${OS_REFRESH}" && apk upgrade --no-cache && apk add --no-cache tini wget \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
            /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
            /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v* \
