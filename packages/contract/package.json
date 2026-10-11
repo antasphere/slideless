@@ -21,7 +21,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@antasphere/chassis-contract": "1.0.1",
+    "@antasphere/chassis-contract": "1.0.2",
     "@hono/zod-openapi": "^1.4.0",
     "zod": "^4.1.0"
   },
