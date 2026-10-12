@@ -45,6 +45,40 @@ export function appFact(app: Pick<AppEntry, 'firstUsedAt' | 'lastUsedAt'>): stri
   return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
+// ── The rail's fold ─────────────────────────────────────────────────────────
+
+/** "Antasphere Finance" reads "Finance" in the fold: every row is the company's. */
+export function shortAppName(name: string): string {
+  return name.replace(/^antasph[eè]re\s+/iu, '');
+}
+
+export interface FoldRow {
+  key: string;
+  name: string;
+  /** Where the row opens, in a new tab; null on this tool's own row, which is never a link. */
+  href: string | null;
+  /** This tool: named like the others, marked as where the reader is. */
+  current: boolean;
+}
+
+/**
+ * The rows the rail unfolds under the Apps entry: the account first when the list names it,
+ * then the tools in the list's order, each named without the company's name in front. This
+ * tool's own row carries no address: the reader is already here, and a link to it would open
+ * the dashboard again in another tab.
+ */
+export function foldRows(list: Pick<AppsList, 'apps' | 'hub'>): FoldRow[] {
+  const apps = list.apps.map((app) => ({
+    key: app.slug,
+    name: shortAppName(app.name),
+    href: app.current ? null : app.launchUrl,
+    current: app.current
+  }));
+  return list.hub
+    ? [{ key: 'hub', name: shortAppName(list.hub.name), href: list.hub.url, current: false }, ...apps]
+    : apps;
+}
+
 // ── One read for the page and the rail ───────────────────────────────────────
 
 let pending: Promise<AppsList> | null = null;

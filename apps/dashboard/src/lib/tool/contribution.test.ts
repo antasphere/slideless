@@ -27,6 +27,10 @@ const { listScope } = await import('$lib/stores/pagedList.svelte');
  * would say so.
  */
 describe('the menu', () => {
+  it('the overview is about decks alone: the shell adds no members or files figures after the tool’s', () => {
+    expect(tool.overview.shellStats).toBe(false);
+  });
+
   it('a member gets decks and the library under Decks, Projects and Settings under Workspace, Apps under Antasphere; no Workspace and no System group', () => {
     const nav = buildNav({ role: 'member', origin: 'local' });
     expect(nav.primary.map((i) => [i.id, i.href, i.pattern])).toEqual([

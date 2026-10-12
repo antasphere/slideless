@@ -20,7 +20,7 @@
   import Users from '@lucide/svelte/icons/users';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { stagger } from '$lib/stagger';
-  import { loadApps } from '$lib/tool/apps';
+  import { foldRows, loadApps } from '$lib/tool/apps';
   import { t } from '$lib/i18n';
   import type { NavItem } from '$lib/nav';
   import type { AppsList } from '@slideless/contract';
@@ -29,6 +29,7 @@
   let { item }: { item: NavItem } = $props();
 
   const ICONS: Record<string, Component> = {
+    hub: CircleUser,
     finance: Landmark,
     hiring: Users,
     meet: CalendarClock,
@@ -46,31 +47,11 @@
       .catch(() => (failed = true));
   });
 
-  // "Antasphere Finance" reads "Finance" in the fold: every row is the company's
-  const shortName = (name: string) => name.replace(/^antasph[eè]re\s+/iu, '');
-
-  const rows = $derived.by(() => {
-    if (!list) return [];
-    const apps = list.apps.map((app) => ({
-      key: app.slug,
-      name: shortName(app.name),
-      href: app.launchUrl,
-      icon: ICONS[app.slug] ?? LayoutGrid,
-      current: app.current
-    }));
-    return list.hub
-      ? [
-          {
-            key: 'hub',
-            name: shortName(list.hub.name),
-            href: list.hub.url,
-            icon: CircleUser,
-            current: false
-          },
-          ...apps
-        ]
-      : apps;
-  });
+  // the rows (lib/tool/apps.ts, foldRows: the account first, the names without the company's,
+  // this tool's own row with no address), each with its drawing
+  const rows = $derived(
+    list ? foldRows(list).map((row) => ({ ...row, icon: ICONS[row.key] ?? LayoutGrid })) : []
+  );
 </script>
 
 <!-- the sub-list keeps its left line and indent, not the margin on its right -->
@@ -90,7 +71,7 @@
     <div use:stagger class="contents">
       {#each rows as row (row.key)}
         <Sidebar.MenuSubItem>
-          {#if row.current}
+          {#if row.href === null}
             <span class="here" title={t('apps.here')}>
               <row.icon />
               <span class="min-w-0 truncate">{row.name}</span>

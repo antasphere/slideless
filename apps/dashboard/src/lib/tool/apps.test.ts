@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appFact, appSentence, hereFirst } from './apps';
+import { appFact, appSentence, foldRows, hereFirst } from './apps';
 import { en } from './i18n/en';
 import { fr } from './i18n/fr';
 
@@ -49,5 +49,46 @@ describe('hereFirst', () => {
       { slug: 'meet', current: false }
     ];
     expect(hereFirst(list).map((a) => a.slug)).toEqual(['wiki', 'crm', 'meet']);
+  });
+});
+
+describe('foldRows', () => {
+  const entry = (slug: string, name: string, current = false) => ({
+    slug,
+    name,
+    launchUrl: `https://${slug}.example.com`,
+    description: null,
+    connected: false,
+    firstUsedAt: null,
+    lastUsedAt: null,
+    current
+  });
+
+  it('puts the account first, then the tools in the list’s order, named without the company in front', () => {
+    const rows = foldRows({
+      apps: [entry('finance', 'Antasphere Finance'), entry('slideless', 'Slideless', true)],
+      hub: { url: 'https://account.example.com', name: 'Antasphere Account' }
+    });
+    expect(rows.map((r) => [r.key, r.name])).toEqual([
+      ['hub', 'Account'],
+      ['finance', 'Finance'],
+      ['slideless', 'Slideless']
+    ]);
+  });
+
+  it('gives every other row its address, and this tool’s own row none: the reader is already here', () => {
+    const rows = foldRows({
+      apps: [entry('finance', 'Antasphere Finance'), entry('slideless', 'Slideless', true)],
+      hub: null
+    });
+    expect(rows.find((r) => r.key === 'finance')).toMatchObject({
+      href: 'https://finance.example.com',
+      current: false
+    });
+    expect(rows.find((r) => r.key === 'slideless')).toMatchObject({ href: null, current: true });
+  });
+
+  it('lists no account row when the instance knows none', () => {
+    expect(foldRows({ apps: [], hub: null })).toEqual([]);
   });
 });

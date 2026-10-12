@@ -14,7 +14,11 @@
     href: string;
     label: string;
     count?: number;
-    /** Lights the tab on a page under it (a team's own page lights Teams); the exact path lights it otherwise. */
+    /**
+     * Lights the tab on a page under it (a team's own page lights Teams); the exact path lights it
+     * otherwise. `false` keeps it dark on its own path: tabs that live in the query (the hub's
+     * billing tabs) would otherwise all light their shared path.
+     */
     on?: boolean;
     /** Sits apart at the bar's right end (Settings' own tab among the pages it gathers). */
     end?: boolean;
@@ -48,7 +52,7 @@
 <nav class="bar" aria-label={label} data-section-bar use:stuck>
   <div class="tabs" bind:this={row}>
     {#each tabs as tab (tab.href)}
-      {@const on = tab.on || page.url.pathname === tab.href}
+      {@const on = tab.on ?? page.url.pathname === tab.href}
       <a href={tab.href} class="tab" class:on class:end={tab.end} aria-current={on ? 'page' : undefined}>
         {tab.label}
         {#if tab.count}<span class="count">{tab.count}</span>{/if}
