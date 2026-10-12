@@ -4,13 +4,15 @@ import KeyRound from '@lucide/svelte/icons/key-round';
 import Folder from '@lucide/svelte/icons/folder';
 import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
-import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import FolderKanban from '@lucide/svelte/icons/folder-kanban';
 import type { Component } from 'svelte';
 import type { WorkspaceRole } from '@antasphere/chassis-contract';
 import type { MeResponse } from '@slideless/contract';
+import type { NavBadge } from '$lib/nav-badge';
 import { t } from '$lib/i18n';
 import { tool } from '$lib/tool';
+
+export { badgeView, type NavBadge } from '$lib/nav-badge';
 
 /**
  * The dashboard's one navigation model (PRDCT-2436). The desk sidebar, the
@@ -31,6 +33,11 @@ export interface NavItem {
   tabs?: { href: string; label: string }[];
   /** The drawing the section's tile carries: a key of the brand's pattern library. */
   pattern: string;
+  /**
+   * Something new in the section (a count, a dot), set by the tool and drawn by the
+   * sidebar, the phone tab bar and the workspace tiles (components/shell/NavBadge.svelte).
+   */
+  badge?: NavBadge;
 }
 
 export interface NavModel {
@@ -141,37 +148,21 @@ export function isActive(item: Pick<NavItem, 'href' | 'also'>, path: string): bo
   return [item.href, ...(item.also ?? [])].some((p) => path === p || path.startsWith(p + '/'));
 }
 
-/** The everyday sections a phone keeps as tabs; the tool's other sections fold behind the workspace entry. */
-const PHONE_TABS = new Set(['overview', 'projects', ...tool.phoneTabs]);
+/** How many of the tool's sections a phone keeps as thumbs beside the overview: four thumbs and the Menu fill the bar. */
+export const PHONE_TOOL_TABS_MAX = 3;
 
-/** The sections the phone's workspace entry opens: the references, then the administration. */
+/** The everyday sections a phone keeps as thumbs: the overview, then the tool's own, at most three. */
+const PHONE_TABS = new Set(['overview', ...tool.phoneTabs.slice(0, PHONE_TOOL_TABS_MAX)]);
+
+/** The sections the phone's tab bar has no room for, as the workspace page lists them: the rest of the rail, then the administration. */
 export function behindWorkspace(nav: NavModel): NavItem[] {
-  return [
-    ...nav.primary.filter((i) => !PHONE_TABS.has(i.id)),
-    ...nav.workspace,
-    ...nav.system.filter((i) => i.id !== 'settings')
-  ];
+  return [...nav.primary.filter((i) => !PHONE_TABS.has(i.id)), ...nav.workspace, ...nav.system];
 }
 
 /**
- * The phone tab bar: the everyday sections (the overview, the tool's own,
- * the projects), the workspace behind one entry (the tool's other sections
- * included: six thumb tabs do not fit the bar), the settings.
+ * The phone tab bar: the overview and the tool's thumbs, in the rail's order, four at most;
+ * the bar itself adds the Menu thumb (PhoneTabBar), which opens the whole rail as a drawer.
  */
 export function phoneTabs(nav: NavModel): NavItem[] {
-  const settings = nav.system.find((i) => i.id === 'settings');
-  const behind = behindWorkspace(nav);
-  return [
-    ...nav.primary.filter((i) => PHONE_TABS.has(i.id)),
-    {
-      id: 'workspace',
-      title: t('nav.workspace'),
-      blurb: '',
-      href: '/workspace',
-      icon: LayoutGrid,
-      also: behind.flatMap((i) => [i.href, ...(i.also ?? [])]),
-      pattern: 'crosses'
-    },
-    ...(settings ? [settings] : [])
-  ];
+  return nav.primary.filter((i) => PHONE_TABS.has(i.id));
 }

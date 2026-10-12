@@ -19,6 +19,7 @@
   import { warmLists } from '$lib/stores/warmLists';
   import { demoSignInOn } from '$lib/demo-link';
   import { t } from '$lib/i18n';
+  import { tool } from '$lib/tool';
 
   let { data, children } = $props();
 
@@ -74,19 +75,26 @@
     canCreateWorkspace={data.me.canCreateWorkspace}
   />
   <Sidebar.Inset class="app-plate">
-    <!-- a phone has no sidebar: its own header, and the tab bar below -->
+    <!-- a phone has no sidebar on screen: its own header, the tab bar below, and the
+         sidebar as a drawer behind the bar's Menu thumb -->
     <PhoneTopBar
       name={workspaceName}
       workspaceId={data.me.activeWorkspaceId ?? ''}
       title={head.gone ? pageName : undefined}
       user={{ name: data.me.user.name, email: data.me.user.email }}
-    />
+    >
+      {#if tool.chrome?.TopBar}<tool.chrome.TopBar me={data.me} compact />{/if}
+    </PhoneTopBar>
     <header
       class="top-bar hidden h-11 shrink-0 items-center gap-3 px-1.5 md:flex"
       data-stuck={head.gone ? '' : undefined}
     >
       <Sidebar.Trigger />
       <TopCrumbs items={trail} shown={head.gone && trail.length > 0} />
+      <!-- the tool's piece of the bar, at its right: status labels, quick actions -->
+      {#if tool.chrome?.TopBar}
+        <div class="ml-auto flex min-w-0 items-center"><tool.chrome.TopBar me={data.me} /></div>
+      {/if}
     </header>
     <main class="app-main flex-1 overflow-y-auto px-4 pt-5 md:px-8 md:pt-2" use:head.attach>
       <div class="mx-auto w-full max-w-6xl">

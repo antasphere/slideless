@@ -1,5 +1,6 @@
 import type { Component } from 'svelte';
 import type { StatDrawingKind } from '$lib/components/brand/StatDrawing.svelte';
+import type { MemberMe } from '$lib/member-guard';
 import type { NavFacts, NavItem } from '$lib/nav';
 import type { Project } from '$lib/projects/types';
 
@@ -19,7 +20,12 @@ export interface ToolContribution<M extends ToolOverview = ToolOverview> {
   nav(facts: Required<NavFacts>): NavItem[];
   /** Its sections that come after the shell's Projects entry: what the everyday ones are made from. */
   navAfter(facts: Required<NavFacts>): NavItem[];
-  /** The ids of its sections a phone keeps as thumb tabs beside the overview. */
+  /**
+   * The ids of its sections a phone keeps as thumb tabs beside the overview, in the rail's
+   * order, three at most (the bar holds the overview, these and the Menu thumb that opens
+   * the whole rail as a drawer; DESIGN.md, "Phone"). The shell's Projects entry is a thumb
+   * only when it is named here.
+   */
   phoneTabs: string[];
   /** First path segments of its signed-out pages, which turn like the gate's own. */
   gateRoutes: string[];
@@ -41,6 +47,17 @@ export interface ToolContribution<M extends ToolOverview = ToolOverview> {
      * the piece shows a control only to who may use it.
      */
     Resources: Component<{ project: Project }>;
+  };
+  /** Optional: a tool with nothing to keep on screen leaves it out. */
+  chrome?: {
+    /**
+     * The tool's piece of the app's top bar, on every page: the shell renders
+     * it at the bar's right (the sidebar's toggle and the path stay left), and
+     * in the phone's header with `compact` set, where it keeps its essentials
+     * (a status, a notifications bell). It holds its own status labels and
+     * quick actions; the shell gives it the signed-in member.
+     */
+    TopBar?: Component<{ me: MemberMe; compact?: boolean }>;
   };
   overview: {
     /**

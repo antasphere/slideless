@@ -632,6 +632,38 @@ test.describe('Projects — the shell section, four people and two widths', () =
         await expect(tabbar.getByRole('link', { name: 'Projects' })).toBeVisible();
       });
 
+      await test.step('the Menu thumb opens the whole rail as a drawer, and a tap on an entry closes it', async () => {
+        // PRDCT-3413: at most four thumbs (here the overview, Decks, Projects), then Menu
+        const tabbar = page.getByRole('navigation', { name: 'Main navigation' });
+        await expect(tabbar.getByRole('link')).toHaveCount(3);
+        await tabbar.getByRole('button', { name: 'Menu' }).click();
+        const drawer = page.getByRole('dialog');
+        await expect(drawer).toBeVisible();
+        // the rail as the desk shows it: the categories, every entry, the docs card, the account
+        for (const label of ['Workspace', 'System']) {
+          await expect(drawer.locator('[data-sidebar="group-label"]', { hasText: label })).toBeVisible();
+        }
+        for (const name of [
+          'Overview',
+          'Decks',
+          'Projects',
+          'Library',
+          'People',
+          'API keys',
+          'Files',
+          'Settings'
+        ]) {
+          await expect(drawer.getByRole('link', { name, exact: true })).toBeVisible();
+        }
+        await expect(drawer.getByRole('link', { name: /Read the docs/ })).toBeVisible();
+        await expect(drawer.getByText(MANAGER.email)).toBeVisible();
+        await drawer.getByRole('link', { name: 'Settings', exact: true }).click();
+        await expect(page).toHaveURL(/\/settings$/);
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        // a page the bar has no thumb for lights the Menu thumb
+        await expect(tabbar.getByRole('button', { name: 'Menu' })).toHaveAttribute('aria-current', 'page');
+      });
+
       await test.step('the tab opens the list, and the seeded project is a card on it', async () => {
         await page
           .getByRole('navigation', { name: 'Main navigation' })

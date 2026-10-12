@@ -100,5 +100,12 @@
     .sheet-close:disabled {
       pointer-events: none;
     }
+    /* a reader who asked for no motion gets the panel in place, no slide */
+    @media (prefers-reduced-motion: reduce) {
+      .sheet-surface,
+      .sheet-overlay {
+        animation-duration: 1ms !important;
+      }
+    }
   }
 </style>

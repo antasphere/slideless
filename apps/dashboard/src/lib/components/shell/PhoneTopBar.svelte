@@ -4,6 +4,7 @@
      own header has scrolled away the workspace's name gives its place to the
      page's, and takes it back when the header returns. */
   import BrandTile from '$lib/components/sidebar/BrandTile.svelte';
+  import type { Snippet } from 'svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -13,9 +14,11 @@
     /** The open page's name, set while its own header is out of view. */
     title?: string;
     user: { name: string; email: string };
+    /** The tool's compact piece of the bar (its status, its notifications), between the names and the account. */
+    children?: Snippet;
   }
 
-  let { name, workspaceId = '', title, user }: Props = $props();
+  let { name, workspaceId = '', title, user, children }: Props = $props();
 
   // the last title stays in place while it fades out
   let shownTitle = $state('');
@@ -43,6 +46,7 @@
       <span class="truncate" class:away={!title} aria-hidden={title ? undefined : 'true'}>{shownTitle}</span>
     </span>
   </a>
+  {#if children}<div class="extra">{@render children()}</div>{/if}
   <a href="/account" class="me" aria-label={t('nav.myAccount')}>{initials}</a>
 </header>
 
@@ -76,6 +80,12 @@
   .names > .away {
     opacity: 0;
     transform: translateY(4px);
+  }
+  .extra {
+    display: flex;
+    flex: none;
+    align-items: center;
+    margin-left: auto;
   }
   .me {
     display: flex;
