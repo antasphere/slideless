@@ -640,19 +640,11 @@ test.describe('Projects — the shell section, four people and two widths', () =
         const drawer = page.getByRole('dialog');
         await expect(drawer).toBeVisible();
         // the rail as the desk shows it: the categories, every entry, the docs card, the account
-        for (const label of ['Workspace', 'System']) {
+        // (PRDCT-3437: no System group any more; People, API keys and Files are tabs of Settings)
+        for (const label of ['Decks', 'Workspace', 'Antasphere']) {
           await expect(drawer.locator('[data-sidebar="group-label"]', { hasText: label })).toBeVisible();
         }
-        for (const name of [
-          'Overview',
-          'Decks',
-          'Projects',
-          'Library',
-          'People',
-          'API keys',
-          'Files',
-          'Settings'
-        ]) {
+        for (const name of ['Overview', 'Decks', 'Library', 'Projects', 'Settings', 'Apps']) {
           await expect(drawer.getByRole('link', { name, exact: true })).toBeVisible();
         }
         await expect(drawer.getByRole('link', { name: /Read the docs/ })).toBeVisible();
@@ -796,7 +788,9 @@ test.describe('Projects — the shell section, four people and two widths', () =
     await expect(rowMenu(owner, EDITOR.email)).toBeVisible({ timeout: 20_000 });
 
     await owner.goto('/members');
-    await expect(owner.getByRole('heading', { name: 'Members' })).toBeVisible({ timeout: 20_000 });
+    // Members is a page of Settings (PRDCT-3437): h1 Settings on the band, the page's own name in an h2
+    await expect(owner.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible({ timeout: 20_000 });
+    await expect(owner.getByRole('heading', { name: 'Members', level: 2 })).toBeAttached();
     const row = owner.getByRole('row', { name: new RegExp(EDITOR.email.replace(/\./g, '\\.')) });
     await expect(row).toContainText('Active');
     await row.getByRole('button', { name: 'Open menu' }).click();
