@@ -16,6 +16,7 @@
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Landmark from '@lucide/svelte/icons/landmark';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import Presentation from '@lucide/svelte/icons/presentation';
   import Users from '@lucide/svelte/icons/users';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { stagger } from '$lib/stagger';
@@ -32,7 +33,9 @@
     hiring: Users,
     meet: CalendarClock,
     crm: Contact,
-    steward: KeyRound
+    steward: KeyRound,
+    // this tool's own row carries the rail's Decks icon
+    slideless: Presentation
   };
 
   let list = $state<AppsList | null>(null);
