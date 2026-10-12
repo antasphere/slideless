@@ -198,7 +198,7 @@
 </svelte:head>
 
 <SectionHero
-  eyebrow={t('nav.workspace')}
+  eyebrow={t('nav.groupDecks')}
   title={t('nav.library')}
   lede={brand ? t('refs.brandsDescription') : t('refs.templatesDescription')}
   pageTitle={title}

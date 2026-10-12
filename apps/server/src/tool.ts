@@ -15,10 +15,21 @@ import {
   ssoCliConnectRoute,
   workspaceExportRoute
 } from '@slideless/contract/routes';
-import type { BodyCap, BootOverrides, BootResult, ToolDefinition } from '@antasphere/chassis-server';
+import type {
+  BodyCap,
+  BootOverrides,
+  BootResult,
+  ServiceCore,
+  ToolDefinition
+} from '@antasphere/chassis-server';
+import {
+  DEFAULT_FEDERATION_DIALS,
+  HubGrantService,
+  hubApiResource
+} from '@antasphere/chassis-server/identity';
 import { makeClientIp, rateLimit } from '@antasphere/chassis-server/middleware';
 import { MAIL_COPY } from './email/brand.js';
-import { deckEnvExtension, type DeckEnvShape } from './env.js';
+import { deckEnvExtension, hubConfig, type DeckEnvShape } from './env.js';
 import { INTRINSIC_VERSION } from './version.js';
 import { findMigrationsFolder, publicDir } from './runtime.js';
 import { CLI_KEY_SCOPES, OAUTH_SCOPES, requiredScopeFor } from './middleware/scopes.js';
@@ -53,6 +64,8 @@ import { ThumbnailService, type ThumbnailDials } from './thumbnails/service.js';
 import type { RendererClient } from './thumbnails/renderer-client.js';
 import { rendererClientFor } from './thumbnails/boot.js';
 import { rendererRoutes } from './thumbnails/routes.js';
+import { registerAppsRoutes } from './apps/routes.js';
+import { AppsService } from './apps/service.js';
 
 /**
  * The Slideless tool definition: what the deck domain plugs into the chassis
@@ -79,6 +92,8 @@ export interface DeckDomain {
   annotations: AnnotationService;
   /** The still image of each deck version (PRDCT-2725): the queue, the handoff to the renderer, its callbacks. Test seams: `idle()`, `sweep()`. */
   thumbnails: ThumbnailService;
+  /** The Apps page's list: the organization's other tools, from the hub as the person or the operator's file. */
+  apps: AppsService;
 }
 
 /** The deck domain's test seams (`BootOverrides.tool`). */
@@ -103,6 +118,39 @@ type DeckBucket = keyof typeof deckBuckets;
 
 export type SlidelessBootOverrides = BootOverrides<DeckOverrides>;
 export type SlidelessBootResult = BootResult<DeckEnvShape, DeckDomain, DeckEvents>;
+
+/**
+ * The person's hub grant, for the Apps page (cloud only, null on oss). The
+ * chassis builds its own `HubGrantService` at boot and hands the tool none
+ * (no `services` field, no API context field carries a token), so the page
+ * builds a second one over the SAME stored grant, the same encryption key
+ * (the auth secret, which Better Auth's string-secret config uses) and the
+ * same cross-replica refresh lock: to the grant it is one more replica. Its
+ * metrics register nowhere.
+ */
+function appsHubTokens(
+  core: Pick<ServiceCore<DeckEnvShape, DeckEvents, DeckOverrides>, 'db' | 'env' | 'logger' | 'authSecret'>
+): HubGrantService | null {
+  const hub = hubConfig(core.env);
+  if (!hub) return null;
+  const dials = DEFAULT_FEDERATION_DIALS;
+  return new HubGrantService({
+    db: core.db,
+    issuerUrl: hub.issuerUrl,
+    clientId: hub.clientId,
+    clientSecret: hub.clientSecret,
+    tokenResource: hubApiResource(hub.issuerUrl),
+    key: () => Promise.resolve(core.authSecret),
+    connectionString: core.env.DATABASE_URL,
+    logger: core.logger,
+    dials: {
+      accessSkewMs: dials.accessSkewMs,
+      tokenTimeoutMs: dials.tokenTimeoutMs,
+      introspectTimeoutMs: dials.tokenTimeoutMs,
+      lockWatchdogMs: dials.lockWatchdogMs
+    }
+  });
+}
 
 export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket, DeckEvents, DeckOverrides> =
   {
@@ -130,7 +178,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       }
     },
 
-    services: ({ db, env, logger, storage, pepperRegistry, email, events, overrides }) => {
+    services: ({ db, env, logger, storage, pepperRegistry, email, events, authSecret, overrides }) => {
       // Share-token secrets ride the SAME versioned pepper registry as API keys
       // (ADR 008): sha256(secret + pepper), fail-closed across rotations.
       const sharing = new ShareTokenService(db, pepperRegistry);
@@ -200,7 +248,18 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         collaborators: collaboratorService,
         presentations: presentationService,
         annotations: annotationService,
-        thumbnails
+        thumbnails,
+        // The Apps page's list (`GET /apps`): the organization's other tools, from
+        // the hub as the person on the cloud edition, else the operator's file.
+        apps: new AppsService({
+          db,
+          logger,
+          edition: env.EDITION,
+          hubIssuerUrl: env.HUB_ISSUER_URL,
+          appsFile: env.APPS_FILE,
+          selfSlug: IDENTITY.slug,
+          tokens: appsHubTokens({ db, env, logger, authSecret })
+        })
       };
     },
 
@@ -389,6 +448,9 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           passwordLimiter: limiters.viewerPassword,
           clientIp
         });
+        // The Apps page's one route, a browser session's alone (no rule of the
+        // scope allowlist opens it): `./apps/routes.ts`.
+        registerAppsRoutes(api, deps.apps);
       }
     },
 

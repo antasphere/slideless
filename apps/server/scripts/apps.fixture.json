@@ -1,0 +1,9 @@
+[
+  { "slug": "account", "name": "Antasphere Account", "launchUrl": "https://account.antasphere.com" },
+  { "slug": "finance", "name": "Antasphere Finance", "launchUrl": "https://finance.antasphere.com" },
+  { "slug": "hiring", "name": "Antasphere Hiring", "launchUrl": "https://hiring.antasphere.com" },
+  { "slug": "meet", "name": "Antasphere Meet", "launchUrl": "https://meet.antasphere.com" },
+  { "slug": "crm", "name": "Antasphere CRM", "launchUrl": "https://crm.antasphere.com" },
+  { "slug": "steward", "name": "Antasphere Steward", "launchUrl": "https://steward.antasphere.com" },
+  { "slug": "slideless", "name": "Slideless", "launchUrl": "http://localhost:5173" }
+]

@@ -1,5 +1,6 @@
 import Presentation from '@lucide/svelte/icons/presentation';
 import Library from '@lucide/svelte/icons/library';
+import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import type { ToolContribution } from '$lib/contribution';
 import { api } from '$lib/api';
 import { t } from '$lib/i18n';
@@ -8,6 +9,7 @@ import { createDeckOverview, type DeckOverview } from './overview.svelte';
 import RecentDecks from './components/overview/RecentDecks.svelte';
 import DefaultBrandTile from './components/overview/DefaultBrandTile.svelte';
 import ProjectDecks from './components/projects/ProjectDecks.svelte';
+import AppsFold from './components/apps/AppsFold.svelte';
 
 /**
  * What Slideless gives the shell: the one door into the tool's half
@@ -15,22 +17,19 @@ import ProjectDecks from './components/projects/ProjectDecks.svelte';
  * door, `./i18n`.
  */
 export const tool: ToolContribution<DeckOverview> = {
-  nav() {
+  // The tool's everyday sections under its own rail category, Decks (DESIGN.md, "The rail").
+  nav({ origin }) {
     return [
       // The product first: decks are what this instance is for.
       {
         id: 'decks',
+        group: t('nav.groupDecks'),
         title: t('nav.decks'),
         blurb: t('nav.blurb.decks'),
         href: '/decks',
         icon: Presentation,
         pattern: 'slides'
-      }
-    ];
-  },
-
-  navAfter({ origin }) {
-    return [
+      },
       // The library (PRDCT-2583): the decks the workspace keeps to make other
       // decks from, brands and templates as the two tabs of one entry, each at
       // the address it always had. A guest reads no workspace reference (a guest
@@ -40,6 +39,7 @@ export const tool: ToolContribution<DeckOverview> = {
         : [
             {
               id: 'library',
+              group: t('nav.groupDecks'),
               title: t('nav.library'),
               blurb: t('nav.blurb.library'),
               href: '/brands',
@@ -55,9 +55,34 @@ export const tool: ToolContribution<DeckOverview> = {
     ];
   },
 
+  // After the shell's Projects entry: the organization's other tools (the Apps
+  // page, `GET /apps`), the last of the tool's entries: Settings follows it.
+  // Its fold lists them in the rail. A guest is not offered it.
+  navAfter({ origin }) {
+    return origin === 'guest'
+      ? []
+      : [
+          {
+            id: 'apps',
+            group: t('nav.groupApps'),
+            fold: AppsFold,
+            title: t('apps.nav'),
+            blurb: t('apps.navBlurb'),
+            href: '/apps',
+            icon: LayoutGrid,
+            pattern: 'crosses'
+          }
+        ];
+  },
+
   // The phone's thumbs beside the overview: the decks and the shell's Projects; the Menu
   // thumb opens the rest of the rail (DESIGN.md, "Phone").
   phoneTabs: ['decks', 'projects'],
+
+  // No Workspace and no System group in the rail: People, API keys, Files and
+  // the audit log are tabs of Settings, the rail's last entry, under the
+  // Workspace category with Projects (DESIGN.md, "The rail").
+  workspaceNav: 'none',
 
   // The collaborator's claim page, /collab/{token}.
   gateRoutes: ['collab'],
@@ -109,6 +134,8 @@ export const tool: ToolContribution<DeckOverview> = {
   },
 
   overview: {
+    // the overview is about the decks: the shell adds no members or files figures
+    shellStats: false,
     create: createDeckOverview,
     Recent: RecentDecks,
     Tile: DefaultBrandTile
