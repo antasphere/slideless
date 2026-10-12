@@ -139,8 +139,8 @@
                   <ChevronDown />
                 </Sidebar.MenuAction>
                 {#if foldOpen(item)}
-                  <!-- once unfolded, the rows come into view: the rail scrolls to them when the
-                       footer's cards would otherwise hide them -->
+                  <!-- once unfolded, the rows come into view: the rail scrolls to them when they
+                       land below its visible height -->
                   <div
                     class="fold"
                     transition:reveal={{ scale: 1.6 }}
@@ -159,9 +159,14 @@
         </Sidebar.Menu>
       </Sidebar.Group>
     {/each}
+    <!-- the docs card rides inside the rail's scrolling area, after the last category, so an
+         open fold can never push an entry under it: on a tall rail it sits at the foot (the
+         margin takes the room), on a short one it scrolls with the entries -->
+    <div class="mt-auto pl-1 pb-1">
+      <DocsCard />
+    </div>
   </Sidebar.Content>
   <Sidebar.Footer>
-    <DocsCard />
     <NavUser {user} {role} {workspaceName} />
   </Sidebar.Footer>
 </Sidebar.Root>

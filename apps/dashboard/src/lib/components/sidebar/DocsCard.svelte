@@ -14,8 +14,9 @@
      under it, after it in the keyboard order.
 
      It folds away with the rail: collapsed to icons there is no room for a
-     card, and the docs are one click away in the help. It gives way under
-     940px of window height too, where the rail needs the room.
+     card, and the docs are one click away in the help. It sits inside the
+     rail's scrolling area (AppSidebar), after the last category, so the rail's
+     entries are never hidden under it whatever the window's height.
 
      An × in the top right corner, shown under the hand or to the keyboard,
      puts the card away, folding it shut, remembered per browser
@@ -276,13 +277,6 @@
     .page,
     .front {
       transition: none;
-    }
-  }
-  /* a short desk window keeps the rail's entries and lets the card go (the docs stay in the
-     help); the phone's drawer has the whole height and keeps it */
-  @media (max-height: 940px) and (min-width: 768px) {
-    .docs-card {
-      display: none;
     }
   }
 </style>
