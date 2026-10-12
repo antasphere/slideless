@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import SubTabs from '$lib/components/shared/SubTabs.svelte';
+  import { settingsTabs, type SettingsFacts } from '$lib/settings-tabs';
   import { Tag } from '$lib/components/ui/tag';
   import { stateTag } from '$lib/tags';
   import { type ColumnDef } from '@tanstack/table-core';
@@ -238,14 +241,17 @@
   </a>
 {/snippet}
 
+<!-- People is a tab of Settings: the Settings bar stays on top, the people pages under it -->
 <SectionHero
-  eyebrow={t('nav.workspace')}
-  title={t('nav.people')}
+  eyebrow={t('nav.system')}
+  title={t('nav.settings')}
   lede={t('teams.description')}
   pageTitle={t('teams.title')}
-  {tabs}
+  tabs={settingsTabs(page.data as unknown as SettingsFacts, page.url.pathname)}
   drawing="graph"
 />
+
+<SubTabs {tabs} label={t('nav.people')} />
 
 {#if hubManaged}
   <div class="notice mb-6 flex-wrap items-center justify-between gap-3 px-4 py-3" in:appear>

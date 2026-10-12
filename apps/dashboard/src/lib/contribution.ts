@@ -27,6 +27,17 @@ export interface ToolContribution<M extends ToolOverview = ToolOverview> {
    * only when it is named here.
    */
   phoneTabs: string[];
+  /**
+   * The tool's own tabs of the Settings section (a connection, an integration): listed after
+   * the workspace's Files tab, lighting the Settings entry of the rail. Absent, none.
+   */
+  settingsTabs?: () => { href: string; label: string }[];
+  /**
+   * Who sees the workspace's administration (People, API keys, Files) in the rail: `everyone`
+   * (the default), `admins` (owners and admins; everyone else reaches them as Settings tabs), or
+   * `none`. Settings always carries them as tabs.
+   */
+  workspaceNav?: 'everyone' | 'admins' | 'none';
   /** First path segments of its signed-out pages, which turn like the gate's own. */
   gateRoutes: string[];
   /** Its lists the shell warms once the app is idle (see stores/warmLists.ts). */
@@ -70,6 +81,12 @@ export interface ToolContribution<M extends ToolOverview = ToolOverview> {
     Recent: Component<{ model: M }>;
     /** The first of the two lower tiles. */
     Tile: Component<{ model: M }>;
+    /**
+     * Whether the shell adds its own figures (the active members, the files) after the
+     * tool's. A tool whose overview is about its own domain alone says `false`; absent, the
+     * shell adds them.
+     */
+    shellStats?: boolean;
   };
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { settingsTabs, type SettingsFacts } from '$lib/settings-tabs';
   import { Tag } from '$lib/components/ui/tag';
   import { viaTag } from '$lib/tags';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
@@ -190,7 +191,9 @@
 
 <SectionHero
   eyebrow={t('nav.system')}
-  title={t('audit.title')}
+  title={t('nav.settings')}
+  pageTitle={t('audit.title')}
+  tabs={settingsTabs(page.data as unknown as SettingsFacts, page.url.pathname)}
   lede={t('audit.description')}
   drawing="harmonic"
 />

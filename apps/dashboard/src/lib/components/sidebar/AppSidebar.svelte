@@ -4,7 +4,9 @@
   import NavUser from './NavUser.svelte';
   import DocsCard from './DocsCard.svelte';
   import NavBadge from '$lib/components/shell/NavBadge.svelte';
-  import { buildNav, isActive as navActive } from '$lib/nav';
+  import { buildNav, type NavItem, isActive as navActive } from '$lib/nav';
+  import { reveal } from '$lib/components/ui/reveal/index.js';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { t } from '$lib/i18n';
   import BrandTile from './BrandTile.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
@@ -48,16 +50,37 @@
   // Invitations are a tab of the people section, so nothing here depends on
   // whether the workspace is a hub projection any more.
   const nav = $derived(buildNav({ role, origin }));
-  const navGroups = $derived([
-    { label: '', items: nav.primary },
-    { label: t('nav.workspace'), items: nav.workspace },
-    { label: t('nav.system'), items: nav.system }
-  ]);
+  // The everyday sections under their categories (NavItem.group), each drawn where it is first
+  // met, the unlabelled ones (the overview) first; then the administration groups, when a tool
+  // keeps them on the rail. A group with nothing in it draws no heading.
+  const navGroups = $derived.by(() => {
+    const groups: { label: string; items: NavItem[] }[] = [];
+    for (const item of nav.primary) {
+      const label = item.group ?? '';
+      let group = groups.find((g) => g.label === label);
+      if (!group) {
+        group = { label, items: [] };
+        if (label === '') groups.unshift(group);
+        else groups.push(group);
+      }
+      group.items.push(item);
+    }
+    return [
+      ...groups,
+      { label: t('nav.workspace'), items: nav.workspace },
+      { label: t('nav.system'), items: nav.system }
+    ].filter((g) => g.items.length > 0);
+  });
 
   // Use the navigation target as soon as a click starts a navigation, so the
   // selected highlight flips immediately instead of waiting for the page load
   // (the dashboard-template's instant-nav-highlight refinement).
   const currentPath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
+
+  // An entry with a fold (NavItem.fold) opens under its chevron; it opens by itself while its
+  // own page is on screen, and stays as the hand left it after that.
+  let folds = $state<Record<string, boolean>>({});
+  const foldOpen = (item: NavItem) => folds[item.id] ?? navActive(item, currentPath);
 </script>
 
 <Sidebar.Root variant="inset" collapsible="icon">
@@ -105,6 +128,32 @@
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
+              {#if item.fold}
+                <Sidebar.MenuAction
+                  aria-expanded={foldOpen(item)}
+                  aria-label={item.title}
+                  onclick={() => (folds[item.id] = !foldOpen(item))}
+                  class="fold-toggle"
+                  data-open={foldOpen(item) ? '' : undefined}
+                >
+                  <ChevronDown />
+                </Sidebar.MenuAction>
+                {#if foldOpen(item)}
+                  <!-- once unfolded, the rows come into view: the rail scrolls to them when the
+                       footer's cards would otherwise hide them -->
+                  <div
+                    class="fold"
+                    transition:reveal={{ scale: 1.6 }}
+                    onintroend={(e) =>
+                      (e.currentTarget as HTMLElement).scrollIntoView({
+                        block: 'end',
+                        behavior: 'smooth'
+                      })}
+                  >
+                    <item.fold {item} />
+                  </div>
+                {/if}
+              {/if}
             </Sidebar.MenuItem>
           {/each}
         </Sidebar.Menu>
@@ -118,6 +167,16 @@
 </Sidebar.Root>
 
 <style>
+  /* the chevron turns as the fold opens; the fold itself is gone on the icon rail */
+  :global(.fold-toggle svg) {
+    transition: transform var(--motion-duration) var(--motion-ease);
+  }
+  :global(.fold-toggle[data-open] svg) {
+    transform: rotate(180deg);
+  }
+  :global([data-collapsible='icon']) .fold {
+    display: none;
+  }
   /* the nav word travels with the rail: out fast, in on the rail's curve */
   .nav-label {
     opacity: 1;

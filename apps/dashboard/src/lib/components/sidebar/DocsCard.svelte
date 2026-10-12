@@ -14,15 +14,38 @@
      under it, after it in the keyboard order.
 
      It folds away with the rail: collapsed to icons there is no room for a
-     card, and the docs are one click away in the welcome and the help. */
+     card, and the docs are one click away in the help. It gives way under
+     940px of window height too, where the rail needs the room.
+
+     An × in the top right corner, shown under the hand or to the keyboard,
+     puts the card away, folding it shut, remembered per browser
+     (`docs-card-hidden`). */
   import { page } from '$app/state';
   import Check from '@lucide/svelte/icons/check';
   import Copy from '@lucide/svelte/icons/copy';
-  import ExternalLink from '@lucide/svelte/icons/external-link';
+  import X from '@lucide/svelte/icons/x';
+  import { slide } from 'svelte/transition';
+  import { cubicInOut } from 'svelte/easing';
   import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button/index.js';
   import { DOCS_URL, agentPrompt } from '$lib/docs';
   import { t } from '$lib/i18n';
+
+  const HIDDEN_KEY = 'docs-card-hidden';
+  let hidden = $state(false);
+  try {
+    hidden = localStorage.getItem(HIDDEN_KEY) === '1';
+  } catch {
+    // no storage: the card shows
+  }
+  function hide() {
+    hidden = true;
+    try {
+      localStorage.setItem(HIDDEN_KEY, '1');
+    } catch {
+      // the card goes for this visit only
+    }
+  }
 
   let copied = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -44,37 +67,45 @@
   $effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="docs-card sheet group-data-[collapsible=icon]:hidden" data-docs-card>
-  <a class="plate-link" href={DOCS_URL} target="_blank" rel="noreferrer">
-    <span class="head">
-      <span class="drawing-box" aria-hidden="true">
-        <svg viewBox="0 0 96 96" class="drawing">
-          <!-- the docs: two pages behind, one in front carrying the lines, and
-             the ringed dot on the line a reader is on -->
-          <rect class="bx page page-l" x="24" y="30" width="46" height="40" rx="4" />
-          <rect class="bx page page-r" x="24" y="30" width="46" height="40" rx="4" />
-          <g class="front">
-            <rect class="bx bx--front" x="24" y="30" width="46" height="40" rx="4" />
-            <line class="ln ln--thin" x1="32" y1="41" x2="56" y2="41" />
-            <line class="ln ln--c" x1="32" y1="49" x2="48" y2="49" />
-            <line class="ln ln--thin" x1="32" y1="57" x2="60" y2="57" />
-            <circle class="ring ring--c" cx="61" cy="49" r="4" />
-            <circle class="dot dot--c" cx="61" cy="49" r="1.6" />
-          </g>
-        </svg>
+{#if !hidden}
+  <div
+    class="docs-card sheet group-data-[collapsible=icon]:hidden"
+    data-docs-card
+    out:slide={{ duration: 320, easing: cubicInOut }}
+  >
+    <button type="button" class="close" aria-label={t('docsCard.hide')} onclick={hide}>
+      <X class="size-3.5" />
+    </button>
+    <a class="plate" href={DOCS_URL} target="_blank" rel="noreferrer">
+      <span class="head">
+        <span class="drawing-box" aria-hidden="true">
+          <svg viewBox="0 0 96 96" class="drawing">
+            <!-- the docs: two pages behind, one in front carrying the lines, and
+               the ringed dot on the line a reader is on -->
+            <rect class="bx page page-l" x="24" y="30" width="46" height="40" rx="4" />
+            <rect class="bx page page-r" x="24" y="30" width="46" height="40" rx="4" />
+            <g class="front">
+              <rect class="bx bx--front" x="24" y="30" width="46" height="40" rx="4" />
+              <line class="ln ln--thin" x1="32" y1="41" x2="56" y2="41" />
+              <line class="ln ln--c" x1="32" y1="49" x2="48" y2="49" />
+              <line class="ln ln--thin" x1="32" y1="57" x2="60" y2="57" />
+              <circle class="ring ring--c" cx="61" cy="49" r="4" />
+              <circle class="dot dot--c" cx="61" cy="49" r="1.6" />
+            </g>
+          </svg>
+        </span>
+        <span class="title">{t('docsCard.title')}</span>
       </span>
-      <span class="title">{t('docsCard.title')}</span>
-      <ExternalLink class="go size-3.5" aria-hidden="true" />
-    </span>
-    <span class="body">{t('docsCard.body')}</span>
-  </a>
-  <div class="acts">
-    <Button variant="outline" size="xs" onclick={() => void copyPrompt()} data-copied={copied || undefined}>
-      {#if copied}<Check class="text-[var(--ok)]" />{:else}<Copy />{/if}
-      {copied ? t('docsCard.copiedShort') : t('docsCard.copyPrompt')}
-    </Button>
+      <span class="body">{t('docsCard.body')}</span>
+    </a>
+    <div class="acts">
+      <Button variant="outline" size="xs" onclick={() => void copyPrompt()} data-copied={copied || undefined}>
+        {#if copied}<Check class="text-[var(--ok)]" />{:else}<Copy />{/if}
+        {copied ? t('docsCard.copiedShort') : t('docsCard.copyPrompt')}
+      </Button>
+    </div>
   </div>
-</div>
+{/if}
 
 <style>
   .docs-card {
@@ -88,17 +119,40 @@
       box-shadow var(--motion-duration) var(--motion-ease);
   }
   @media (hover: hover) {
-    .docs-card:has(.plate-link:hover) {
+    .docs-card:hover {
       border-color: color-mix(in oklab, var(--accent) 38%, var(--hairline));
       box-shadow: var(--shadow-md);
     }
   }
-  /* the ring belongs to the card, not to the anchor inside it */
-  .docs-card:has(.plate-link:focus-visible) {
-    outline: 2px solid var(--focus);
-    outline-offset: 3px;
+  .close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--muted);
+    /* shown under the hand (and to the keyboard), never at rest */
+    opacity: 0;
+    transition:
+      opacity var(--motion-duration) var(--motion-ease),
+      background-color var(--motion-duration) var(--motion-ease);
   }
-  .plate-link {
+  .docs-card:hover .close,
+  .docs-card:focus-within .close,
+  .close:focus-visible {
+    opacity: 1;
+  }
+  .close:hover,
+  .close:focus-visible {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+    color: var(--ink);
+  }
+  .plate {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -106,9 +160,6 @@
     border-radius: inherit;
     color: inherit;
     text-decoration: none;
-  }
-  .plate-link:focus-visible {
-    outline: none;
   }
   /* the drawing and the title on one line: the mark of the thing, then its
      name, the way every other card in the app opens */
@@ -123,23 +174,6 @@
     height: 30px;
     /* the drawing's one colour: the accent, as on the overview's tiles */
     --c: var(--accent);
-  }
-  /* the glyph that says this leaves the app: it arrives under the hand
-     rather than sitting on the card permanently */
-  .head :global(.go) {
-    margin-left: auto;
-    flex: none;
-    color: var(--muted);
-    opacity: 0;
-    transition: opacity var(--motion-duration) var(--motion-ease);
-  }
-  @media (hover: hover) {
-    .plate-link:hover :global(.go) {
-      opacity: 1;
-    }
-  }
-  .plate-link:focus-visible :global(.go) {
-    opacity: 1;
   }
   .title {
     font-family: var(--display);
@@ -157,6 +191,8 @@
   }
   .acts {
     position: relative;
+    display: grid;
+    gap: 6px;
     padding: 14px 12px 12px;
   }
   .acts :global(button) {
@@ -229,18 +265,24 @@
     transform: rotate(7deg);
   }
   @media (hover: hover) {
-    .docs-card:has(.plate-link:hover) .page-l {
+    .docs-card:hover .page-l {
       transform: rotate(-13deg);
     }
-    .docs-card:has(.plate-link:hover) .page-r {
+    .docs-card:hover .page-r {
       transform: rotate(13deg);
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .page,
-    .front,
-    .head :global(.go) {
+    .front {
       transition: none;
+    }
+  }
+  /* a short desk window keeps the rail's entries and lets the card go (the docs stay in the
+     help); the phone's drawer has the whole height and keeps it */
+  @media (max-height: 940px) and (min-width: 768px) {
+    .docs-card {
+      display: none;
     }
   }
 </style>

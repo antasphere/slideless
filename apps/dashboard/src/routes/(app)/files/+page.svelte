@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import { settingsTabs, type SettingsFacts } from '$lib/settings-tabs';
   import { Tag } from '$lib/components/ui/tag';
   import { fileTag } from '$lib/tags';
   import Plus from '@lucide/svelte/icons/plus';
@@ -145,8 +147,10 @@
 </script>
 
 <SectionHero
-  eyebrow={t('nav.workspace')}
-  title={t('files.title')}
+  eyebrow={t('nav.system')}
+  title={t('nav.settings')}
+  pageTitle={t('files.title')}
+  tabs={settingsTabs(page.data as unknown as SettingsFacts, page.url.pathname)}
   lede={t('files.description')}
   drawing="contour"
 />

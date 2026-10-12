@@ -34,6 +34,18 @@ export interface NavItem {
   /** The drawing the section's tile carries: a key of the brand's pattern library. */
   pattern: string;
   /**
+   * The category the rail lists the section under (a label over its run of entries): the
+   * tool's everyday sections name theirs, the shell's Projects and Settings sit under the
+   * workspace's. An entry without one (the overview) stays at the top, unlabelled. Groups
+   * are drawn in the order they are first met.
+   */
+  group?: string;
+  /**
+   * What the rail unfolds under the entry when it is opened (a chevron beside the entry):
+   * a component the tool gives, rendered as the entry's sub-menu. The entry stays a link.
+   */
+  fold?: Component<{ item: NavItem }>;
+  /**
    * Something new in the section (a count, a dot), set by the tool and drawn by the
    * sidebar, the phone tab bar and the workspace tiles (components/shell/NavBadge.svelte).
    */
@@ -55,7 +67,7 @@ export interface NavFacts {
 
 export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
   const isAdmin = role === 'owner' || role === 'admin';
-  // A guest is an external per-deck collaborator (D2): the member roster and
+  // A guest is an external person granted one object of the tool (D2): the member roster and
   // the generic files surface answer 403 guest_forbidden, so they are not offered.
   const isGuest = origin === 'guest';
 
@@ -81,14 +93,22 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
             blurb: t('nav.blurb.projects'),
             href: '/projects',
             icon: FolderKanban,
-            pattern: 'truss'
+            pattern: 'truss',
+            group: t('nav.workspace')
           }
         ]),
     ...tool.navAfter({ role, origin })
   ];
 
+  // The workspace's administration (People, API keys, Files) is always a set of Settings tabs; the
+  // rail shows it too as the tool says (`workspaceNav`): `admins` keeps it for owners and admins,
+  // `none` drops it, the System group with it, and Settings closes the everyday sections.
+  const railWorkspace = tool.workspaceNav ?? 'everyone';
+  const showWorkspace = railWorkspace === 'everyone' || (railWorkspace === 'admins' && isAdmin);
+  const showSystem = railWorkspace !== 'none';
+
   const workspace: NavItem[] = [];
-  if (!isGuest) {
+  if (showWorkspace && !isGuest) {
     workspace.push({
       id: 'members',
       title: t('nav.people'),
@@ -100,15 +120,16 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       pattern: 'blooms'
     });
   }
-  workspace.push({
-    id: 'api-keys',
-    title: t('nav.apiKeys'),
-    blurb: t('nav.blurb.apiKeys'),
-    href: '/api-keys',
-    icon: KeyRound,
-    pattern: 'gears'
-  });
-  if (!isGuest) {
+  if (showWorkspace)
+    workspace.push({
+      id: 'api-keys',
+      title: t('nav.apiKeys'),
+      blurb: t('nav.blurb.apiKeys'),
+      href: '/api-keys',
+      icon: KeyRound,
+      pattern: 'gears'
+    });
+  if (showWorkspace && !isGuest) {
     workspace.push({
       id: 'files',
       title: t('nav.files'),
@@ -120,7 +141,7 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
   }
 
   const system: NavItem[] = [];
-  if (isAdmin) {
+  if (showSystem && isAdmin) {
     system.push({
       id: 'audit',
       title: t('nav.auditLog'),
@@ -130,15 +151,23 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       pattern: 'written'
     });
   }
-  system.push({
+  const settings: NavItem = {
     id: 'settings',
     title: t('nav.settings'),
     blurb: t('nav.blurb.settings'),
     href: '/settings',
     icon: Settings,
-    also: ['/account'],
+    // the workspace's pages (and the audit log) light Settings only when the rail does not list them
+    also: [
+      '/account',
+      ...(tool.settingsTabs?.().map((tab) => tab.href) ?? []),
+      ...(showWorkspace ? [] : ['/members', '/invitations', '/teams', '/api-keys', '/files']),
+      ...(showSystem ? [] : ['/audit'])
+    ],
     pattern: 'weave'
-  });
+  };
+  if (showSystem) system.push(settings);
+  else primary.push({ ...settings, group: t('nav.workspace') });
 
   return { primary, workspace, system };
 }

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import { settingsTabs, type SettingsFacts } from '$lib/settings-tabs';
   import { Tag, TagList } from '$lib/components/ui/tag';
   import { scopeTag, stateTag } from '$lib/tags';
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
@@ -212,8 +214,10 @@
 </script>
 
 <SectionHero
-  eyebrow={t('nav.workspace')}
-  title={t('apiKeys.title')}
+  eyebrow={t('nav.system')}
+  title={t('nav.settings')}
+  pageTitle={t('apiKeys.title')}
+  tabs={settingsTabs(page.data as unknown as SettingsFacts, page.url.pathname)}
   lede={t('apiKeys.description')}
   drawing="lattice"
 />

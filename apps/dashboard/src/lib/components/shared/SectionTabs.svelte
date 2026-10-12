@@ -5,7 +5,8 @@
      the page's ground, no box, one hairline under it. When the page scrolls
      it stays at the top of the scroll container, in that same ground made
      opaque, so nothing reads through. Each tab is a link, so the back button,
-     a reload and a shared URL all land on the right tab. */
+     a reload and a shared URL all land on the right tab. On a narrow screen
+     the row scrolls sideways, and the lit tab is brought into view. */
   import { page } from '$app/state';
   import { stuck } from './stuck';
 
@@ -15,6 +16,8 @@
     count?: number;
     /** Lights the tab on a page under it (a team's own page lights Teams); the exact path lights it otherwise. */
     on?: boolean;
+    /** Sits apart at the bar's right end (Settings' own tab among the pages it gathers). */
+    end?: boolean;
   }
   interface Props {
     tabs: Tab[];
@@ -22,15 +25,31 @@
   }
 
   let { tabs, label }: Props = $props();
+
+  let row: HTMLDivElement | undefined = $state();
+
+  // the lit tab in view when the row is wider than the screen (a phone on
+  // My account or Demo links): scroll the row, never the page
+  $effect(() => {
+    void page.url.pathname;
+    void tabs;
+    const box = row;
+    const lit = box?.querySelector<HTMLElement>('.on');
+    if (!box || !lit) return;
+    const outer = box.getBoundingClientRect();
+    const inner = lit.getBoundingClientRect();
+    if (inner.left < outer.left) box.scrollLeft += inner.left - outer.left - 16;
+    else if (inner.right > outer.right) box.scrollLeft += inner.right - outer.right + 16;
+  });
 </script>
 
 <!-- `data-section-bar` is what tells the tables under it how far down to stick
      (app.css: --sticky-top) -->
 <nav class="bar" aria-label={label} data-section-bar use:stuck>
-  <div class="tabs">
+  <div class="tabs" bind:this={row}>
     {#each tabs as tab (tab.href)}
       {@const on = tab.on || page.url.pathname === tab.href}
-      <a href={tab.href} class="tab" class:on aria-current={on ? 'page' : undefined}>
+      <a href={tab.href} class="tab" class:on class:end={tab.end} aria-current={on ? 'page' : undefined}>
         {tab.label}
         {#if tab.count}<span class="count">{tab.count}</span>{/if}
       </a>
@@ -39,6 +58,9 @@
 </nav>
 
 <style>
+  .tab.end {
+    margin-left: auto;
+  }
   .bar {
     position: sticky;
     /* flush against the top of the scroll container, over its top padding (app.css) */
@@ -65,6 +87,7 @@
   }
   .tabs {
     display: flex;
+    flex: 1;
     gap: 24px;
     min-width: 0;
     overflow-x: auto;
