@@ -1170,33 +1170,36 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       pinnedVersion = v;
     }
 
-    const { row, secret } = await sharing.create({
-      workspaceId: principal.workspaceId,
-      presentationId: id,
-      createdBy: principal.userId,
-      name: body.name,
-      // SECURITY: the PUBLIC create path mints NORMAL tokens, always —
-      // visible in the sharing panel, counted in view stats — whatever the
-      // caller names them (even "Dashboard preview"). The 'preview' marker
-      // is reachable only through the owner/admin-gated preview-token route
-      // below; were it name- or body-derived, any deck writer (a dev
-      // collaborator included) could mint a concealed, stat-silent link.
-      purpose: 'share',
-      pinnedVersion,
-      canAnnotate: body.canAnnotate,
-      canSubmitForms: body.canSubmitForms,
-      canDownload: body.canDownload,
-      showBar: body.showBar,
-      // PRDCT-2328: the contract default is ON (a named link IS its
-      // recipient's response); the column default stays OFF for every link
-      // minted before the switch existed.
-      remembersResponses: body.remembersResponses,
-      canUploadFiles: body.canUploadFiles,
-      canExportPdf: body.canExportPdf,
-      badgePosition: body.badgePosition ?? null,
-      expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
-      passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
-    });
+    const { row, secret } = await sharing.create(
+      {
+        workspaceId: principal.workspaceId,
+        presentationId: id,
+        createdBy: principal.userId,
+        name: body.name,
+        // SECURITY: the PUBLIC create path mints NORMAL tokens, always —
+        // visible in the sharing panel, counted in view stats — whatever the
+        // caller names them (even "Dashboard preview"). The 'preview' marker
+        // is reachable only through the owner/admin-gated preview-token route
+        // below; were it name- or body-derived, any deck writer (a dev
+        // collaborator included) could mint a concealed, stat-silent link.
+        purpose: 'share',
+        pinnedVersion,
+        canAnnotate: body.canAnnotate,
+        canSubmitForms: body.canSubmitForms,
+        canDownload: body.canDownload,
+        showBar: body.showBar,
+        // PRDCT-2328: the contract default is ON (a named link IS its
+        // recipient's response); the column default stays OFF for every link
+        // minted before the switch existed.
+        remembersResponses: body.remembersResponses,
+        canUploadFiles: body.canUploadFiles,
+        canExportPdf: body.canExportPdf,
+        badgePosition: body.badgePosition ?? null,
+        expiresAt: body.expiresAt !== undefined ? new Date(body.expiresAt) : null,
+        passwordHash: body.password !== undefined ? await hashViewerPassword(body.password) : null
+      },
+      (tx, created) => deckWebhooks.shareLinkIn(tx, 'share_link.created', created)
+    );
     // An explicit badge choice becomes the deck's remembered default, so the
     // next annotator link on this deck inherits it — but only when the link
     // actually annotates: a view-only create carrying the field must not
@@ -1225,7 +1228,6 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         expiresAt: row.expiresAt?.toISOString() ?? null
       }
     });
-    await deckWebhooks.shareLink('share_link.created', row);
     // The secret + URL appear ONLY in this response (hash-only storage).
     return c.json({ shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) }, 201);
   });
@@ -1372,13 +1374,16 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       set.passwordHash = patch.password === null ? null : await hashViewerPassword(patch.password);
     }
 
-    const updated = Object.keys(set).length > 0 ? await sharing.update(token.id, set) : token;
-    if (!updated) return c.json(err('not_found', 'Share token not found'), 404);
     // `changed` names the columns this PATCH wrote, the audit row's list
-    // (`passwordHash` for the password); an empty PATCH wrote nothing and says nothing.
-    if (Object.keys(set).length > 0) {
-      await deckWebhooks.shareLink('share_link.updated', updated, { changed: Object.keys(set) });
-    }
+    // (`passwordHash` for the password); an empty PATCH wrote nothing and
+    // says nothing. The event rides the write's own transaction.
+    const updated =
+      Object.keys(set).length > 0
+        ? await sharing.update(token.id, set, (tx, row) =>
+            deckWebhooks.shareLinkIn(tx, 'share_link.updated', row, { changed: Object.keys(set) })
+          )
+        : token;
+    if (!updated) return c.json(err('not_found', 'Share token not found'), 404);
 
     c.set('audit', {
       action: 'presentation.share_token_update',
@@ -1409,11 +1414,11 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         403
       );
     }
-    const revoked = (await sharing.revoke(token.id)) ?? token;
-    // Only the revoke that landed says so (the service's revoke is idempotent).
-    if (token.revokedAt === null && revoked.revokedAt !== null) {
-      await deckWebhooks.shareLink('share_link.revoked', revoked);
-    }
+    // The service runs the hook only for the revoke that landed (idempotent), inside its transaction.
+    const revoked =
+      (await sharing.revoke(token.id, (tx, row) =>
+        deckWebhooks.shareLinkIn(tx, 'share_link.revoked', row)
+      )) ?? token;
     c.set('audit', {
       action: 'presentation.share_token_revoke',
       resourceType: 'share_token',
@@ -1476,8 +1481,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       logger.error({ err: e }, 'share email failed (token unchanged, old link still valid)');
       return c.json({ shareToken: shareTokenToWire(token), emailSent: false }, 200);
     }
-    const updated = (await sharing.update(token.id, { tokenHash: minted.tokenHash })) ?? token;
-    await deckWebhooks.shareLink('share_link.sent', updated, { recipient: body.email });
+    const updated =
+      (await sharing.update(token.id, { tokenHash: minted.tokenHash }, (tx, row) =>
+        deckWebhooks.shareLinkIn(tx, 'share_link.sent', row, { recipient: body.email })
+      )) ?? token;
 
     c.set('audit', {
       action: 'presentation.share_token_send',

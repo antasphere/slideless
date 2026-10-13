@@ -91,7 +91,28 @@ export class DeckWebhooks {
     }
   }
 
-  /** A `share_link.*` event; a dashboard preview link never emits. */
+  /**
+   * A `share_link.*` event INSIDE the write's transaction (the share-token
+   * service's write hook): the event is durable with the mint, the change,
+   * the revoke or the send it reports. A dashboard preview link never emits.
+   */
+  async shareLinkIn(
+    tx: DbConn,
+    type: 'share_link.created' | 'share_link.updated' | 'share_link.revoked' | 'share_link.sent',
+    token: ShareTokenRow,
+    extra: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (token.purpose === 'preview') return;
+    await emitDeckEvent(this.webhooks, tx, {
+      workspaceId: token.workspaceId,
+      type,
+      deckId: token.presentationId,
+      linkId: token.id,
+      data: { ...shareLinkFacts(token), ...extra }
+    });
+  }
+
+  /** A `share_link.*` event after a write the service made on its own handle; a dashboard preview link never emits. */
   async shareLink(
     type: 'share_link.created' | 'share_link.updated' | 'share_link.revoked' | 'share_link.sent',
     token: ShareTokenRow,
