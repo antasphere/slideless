@@ -443,11 +443,14 @@ describe('the API key prefix and the scope vocabulary', () => {
     expect(key).toMatch(/^slk_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{20,}$/);
   });
 
-  it('the mint takes the three scope names and answers with them', async () => {
+  it('the mint takes the four scope names and answers with them', async () => {
     const res = await app.app.request(
       '/api/v1/api-keys',
       json(
-        { name: 'pins-all', scopes: ['presentations:read', 'presentations:write', 'data:export'] },
+        {
+          name: 'pins-all',
+          scopes: ['presentations:read', 'presentations:write', 'data:export', 'webhooks:manage']
+        },
         { cookie: ownerCookie }
       )
     );
@@ -455,7 +458,8 @@ describe('the API key prefix and the scope vocabulary', () => {
     expect([...(await readJson(res)).apiKey.scopes].sort()).toEqual([
       'data:export',
       'presentations:read',
-      'presentations:write'
+      'presentations:write',
+      'webhooks:manage'
     ]);
   });
 

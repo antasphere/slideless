@@ -320,7 +320,10 @@ describe('discovery carries the plan values', () => {
     const action = (key: string) => info.entitlements.actions.find((a: { key: string }) => a.key === key);
     // The seed ruling of 24 September 2026.
     expect(action('forms.response')).toMatchObject({ creditsPerUnit: 1, unit: 'call' });
-    expect(info.entitlements.limits['workspace.members']).toEqual({ oss: null, free: 3, pro: null });
+    // Free 5 since Romain's ruling of 13 October 2026 (3 before).
+    expect(info.entitlements.limits['workspace.members']).toEqual({ oss: null, free: 5, pro: null });
+    expect(info.entitlements.limits['webhooks.perWorkspace']).toEqual({ oss: null, free: 5, pro: 25 });
+    expect(info.entitlements.features.webhooks).toEqual({ free: true, pro: true });
     expect(info.entitlements.limits['links.perDeck']).toEqual({ oss: null, free: 10, pro: null });
     expect(info.entitlements.features['deck.password']).toEqual({ free: false, pro: true });
     expect(info.entitlements.features.custom_domain).toEqual({ free: false, pro: true });

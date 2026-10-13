@@ -18,7 +18,9 @@ import { IDENTITY } from './identity.js';
  * from it and exported under the name it has always had.
  */
 const { read, write, dataExport } = IDENTITY.scopes;
-export const chassisContract = defineChassisContract({ scopes: [read, write, dataExport] });
+export const chassisContract = defineChassisContract({
+  scopes: [read, write, dataExport, IDENTITY.scopes.webhooks]
+});
 
 /**
  * Generic scopes; products define their own (e.g. products:read).

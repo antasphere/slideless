@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { createDb } from '@slideless/db';
-import { IDENTITY } from '@slideless/contract';
+import { DECK_WEBHOOK_EVENTS, DECK_WEBHOOK_SUBJECTS, IDENTITY } from '@slideless/contract';
 import {
   apiKeyCreateRoute,
   apiKeyRevokeRoute,
@@ -46,6 +46,7 @@ import { blobReadScope, PresentationService } from './presentations/service.js';
 import { formOwnerActor } from './presentations/form-owner-actor.js';
 import { linksOfDeck } from './presentations/links-of-deck.js';
 import { memberSeatHooks } from './presentations/member-seats.js';
+import { webhookEndpointsAfterCreate } from './presentations/webhook-seats.js';
 import { AnnotationService } from './annotations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { endDeckAccessOnRemoval } from './collaborators/removal.js';
@@ -572,23 +573,32 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         ],
         limits: {
           [DECK_LIMITS.fileBytes]: { oss: capBytes, free: freeUploadBytes, pro: capBytes },
-          [DECK_LIMITS.workspaceMembers]: { oss: null, free: 3, pro: null },
-          [DECK_LIMITS.linksPerDeck]: { oss: null, free: 10, pro: null }
+          // Free 5 (Romain's ruling of 13 October 2026, from 3), pro unlimited.
+          [DECK_LIMITS.workspaceMembers]: { oss: null, free: 5, pro: null },
+          [DECK_LIMITS.linksPerDeck]: { oss: null, free: 10, pro: null },
+          // Webhook endpoints per workspace (PRDCT-3482): free 5, pro 25, self-hosted unlimited; seeds the hub's rows override.
+          [DECK_LIMITS.webhooksPerWorkspace]: { oss: null, free: 5, pro: 25 }
         },
         features: {
           [DECK_FEATURES.customDomain]: { free: false, pro: true },
-          [DECK_FEATURES.deckPassword]: { free: false, pro: true }
+          [DECK_FEATURES.deckPassword]: { free: false, pro: true },
+          [DECK_FEATURES.webhooks]: { free: true, pro: true }
         },
         // The hooks the declarations need (PRDCT-2702): the member seats at
         // the four doors, the deck's live links, the form owner. Each reads
         // the domain late, at request time.
         routes: deckRouteEntitlements({
           formOwner: formOwnerActor(db, getTool),
+          webhookEndpointsAfterCreate: webhookEndpointsAfterCreate(db),
           ...memberSeatHooks(db, getTool),
           linksOfDeck: linksOfDeck(getTool)
         })
       };
     },
+
+    // The webhook event catalog (PRDCT-3483): the deck's life as the outside world may subscribe to it,
+    // stated once in @slideless/contract (the zod schemas), served on GET /webhooks/events by the chassis.
+    webhooks: { subjects: DECK_WEBHOOK_SUBJECTS, events: DECK_WEBHOOK_EVENTS },
 
     // A removed member's deck invites and deck grants end with the membership (PRDCT-2816).
     membershipRemoval: endDeckAccessOnRemoval,
