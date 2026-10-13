@@ -28,10 +28,12 @@ import {
 const OWNER = { email: 'owner@view-hooks.test', name: 'Hooks Owner', password: 'view-hooks-owner-pass-1' };
 /**
  * Long enough for the fifty views of the grouped test to land inside one
- * window on a slow machine (about 1.5 s here), short enough to keep the
- * suite quick; the test checks the views did fit before it asserts.
+ * window on a loaded machine (about 1.5 s alone, several seconds under the
+ * whole integration run beside it), short enough to keep the suite quick;
+ * the forty-nine views go in concurrent batches, and the test checks the
+ * views did fit before it asserts.
  */
-const WINDOW_MS = 8000;
+const WINDOW_MS = 15_000;
 const DOC_NAV = { accept: 'text/html' };
 const CHROME_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) ' +
@@ -287,11 +289,15 @@ describe('the grouped event', () => {
     expect(first.subjects).toEqual({ deckId, projectIds: [projectId], shareLinkId: link.id });
 
     // Forty-nine more inside the window: they arm one timer and send nothing yet.
-    for (let i = 0; i < 49; i++) {
-      await view(link.secret, {
-        placement: 'rest',
-        ...(i % 2 === 0 ? { referer: 'https://docs.example.com/page?q=dropped' } : {})
-      });
+    for (let batch = 0; batch < 49; batch += 7) {
+      await Promise.all(
+        Array.from({ length: Math.min(7, 49 - batch) }, (_, k) => batch + k).map((i) =>
+          view(link.secret, {
+            placement: 'rest',
+            ...(i % 2 === 0 ? { referer: 'https://docs.example.com/page?q=dropped' } : {})
+          })
+        )
+      );
     }
     // The fifty views fitted in one window (else the figures below mean nothing).
     expect(Date.now() - started).toBeLessThan(WINDOW_MS - 1000);
