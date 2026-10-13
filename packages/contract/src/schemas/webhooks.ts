@@ -20,9 +20,11 @@ import { z } from 'zod';
 /** The three filterable subjects: an endpoint narrows its subscription to a list of ids per subject. */
 export const DECK_WEBHOOK_SUBJECTS = {
   deck: { field: 'deckId', description: 'A deck, by id' },
+  // A list on every event, the chassis's project events included: a deck belongs to several.
   project: {
     field: 'projectIds',
-    description: 'The projects a deck belongs to, by id (a list on deck events)'
+    description: 'The projects a deck belongs to, by id (always a list)',
+    list: true
   },
   link: { field: 'shareLinkId', description: 'A share link, by id' }
 } as const;

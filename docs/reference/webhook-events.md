@@ -27,14 +27,14 @@ The ids in the examples are made up; the dates are fixed.
 ## Subjects
 
 A subject is what an event is about. An endpoint's filters name a subject by its key and list the ids it
-accepts; the envelope carries the subject's value under its field, one id or a list of ids. Read both
-shapes: a field holds one id on some events and a list on others.
+accepts; the envelope carries the subject's value under its field. A subject's shape never varies:
+`deckId` and `shareLinkId` hold one id, `projectIds` always holds a list, on every event that carries it.
 
-| Key       | Envelope field         | What it is                                                    |
-| --------- | ---------------------- | ------------------------------------------------------------- |
-| `project` | `subjects.projectIds`  | The projects a deck belongs to, by id (a list on deck events) |
-| `deck`    | `subjects.deckId`      | A deck, by id                                                 |
-| `link`    | `subjects.shareLinkId` | A share link, by id                                           |
+| Key       | Envelope field         | What it is                                            |
+| --------- | ---------------------- | ----------------------------------------------------- |
+| `project` | `subjects.projectIds`  | The projects a deck belongs to, by id (always a list) |
+| `deck`    | `subjects.deckId`      | A deck, by id                                         |
+| `link`    | `subjects.shareLinkId` | A share link, by id                                   |
 
 An event that does not carry a subject never matches a filter on it: an endpoint filtered on a deck
 receives no `member.joined`.
@@ -44,8 +44,8 @@ receives no `member.joined`.
 | Type                      | Subjects                  | What happened                                                                                                                                                                                                          |
 | ------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `webhook.ping`            | none                      | A test delivery, sent on request from the endpoint page or the API.                                                                                                                                                    |
-| `member.joined`           | none                      | A person joined the workspace (setup, an accepted invitation, a claimed grant).                                                                                                                                        |
-| `member.removed`          | none                      | A person was removed from the workspace.                                                                                                                                                                               |
+| `member.joined`           | none                      | A person joined the workspace by accepting an invitation.                                                                                                                                                              |
+| `member.removed`          | none                      | A person was removed from the workspace by an owner or an admin.                                                                                                                                                       |
 | `workspace.created`       | none                      | A workspace was created from inside the product.                                                                                                                                                                       |
 | `apikey.created`          | none                      | An API key was created in the workspace.                                                                                                                                                                               |
 | `apikey.revoked`          | none                      | An API key of the workspace was revoked.                                                                                                                                                                               |
@@ -108,7 +108,7 @@ Subjects: none. A filter on any subject excludes it.
 
 ### `member.joined`
 
-A person joined the workspace (setup, an accepted invitation, a claimed grant).
+A person joined the workspace by accepting an invitation.
 
 Subjects: none. A filter on any subject excludes it.
 
@@ -134,7 +134,7 @@ Subjects: none. A filter on any subject excludes it.
 
 ### `member.removed`
 
-A person was removed from the workspace.
+A person was removed from the workspace by an owner or an admin.
 
 Subjects: none. A filter on any subject excludes it.
 

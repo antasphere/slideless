@@ -1380,7 +1380,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const updated =
       Object.keys(set).length > 0
         ? await sharing.update(token.id, set, (tx, row) =>
-            deckWebhooks.shareLinkIn(tx, 'share_link.updated', row, { changed: Object.keys(set) })
+            deckWebhooks.shareLinkIn(tx, 'share_link.updated', row, { changed: Object.keys(patch) })
           )
         : token;
     if (!updated) return c.json(err('not_found', 'Share token not found'), 404);
