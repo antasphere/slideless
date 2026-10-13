@@ -156,6 +156,19 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'set when the team comes from the Antasphere account site. Pass a team `id` as `teamId` to ' +
     'slideless_list_team_members or slideless_add_project_member. When nextCursor is non-null, ' +
     'call again with cursor set to it.',
+  // The webhook tools (PRDCT-3482), the chassis's, between the team reads and the deck set.
+  slideless_webhook_events:
+    'The event catalog of this instance: every event type it delivers to webhooks. A webhook is a URL an organization registers to be told, by a signed HTTP POST, when something happens (for example `thing.created`). Returns { subjects: [{ key, field, description }], events: [{ type, description, subjects, schema }] } — `subjects` are what an event is about (the key a filter uses, and the field of the envelope’s `subjects` its value is written under: one id or a list of ids), `schema` is the JSON Schema of the event’s `data`. Each entry of `events` is an exact event type (`thing.created`), a family (`thing.*`) or everything (`*`). Read this before slideless_create_webhook. Every member may read it.',
+  slideless_create_webhook:
+    'Register a webhook — confirm with the user first (URL and events included). A webhook is a URL an organization registers to be told, by a signed HTTP POST, when something happens (for example `thing.created`). Only an owner or an admin of the organization manages webhooks, reads included. Each entry of `events` is an exact event type (`thing.created`), a family (`thing.*`) or everything (`*`). The types are checked against slideless_webhook_events, and the keys of `filters` are the catalog’s subject keys. The answer is the endpoint plus its signing `secret` (`whsec_…`), shown ONCE and never again: give it to the receiver, which verifies every delivery’s Standard Webhooks signature with it, and never store it anywhere else. A lost secret is replaced by slideless_rotate_webhook_secret.',
+  slideless_get_webhook:
+    'Read one webhook, without its secret. Only an owner or an admin of the organization manages webhooks, reads included. Returns the endpoint as slideless_list_webhooks shows it. A webhook of another organization answers not found.',
+  slideless_delete_webhook:
+    'Delete a webhook and its whole delivery history — confirm with the user first; nothing more is sent to it and this cannot be undone. Only an owner or an admin of the organization manages webhooks, reads included. To pause it instead, call slideless_update_webhook with enabled set to false. Returns a last snapshot of the deleted endpoint.',
+  slideless_get_webhook_delivery:
+    'Read one delivery of a webhook, with the payload as sent and its latest attempt. Only an owner or an admin of the organization manages webhooks, reads included. Returns the delivery as slideless_list_webhook_deliveries shows it.',
+  slideless_redeliver_webhook:
+    'Send one delivery’s event to its webhook again, as a new delivery — confirm with the user first. Only an owner or an admin of the organization manages webhooks, reads included. The new delivery carries the same `eventId` (the receiver’s dedupe key) and the same payload, and is queued: read its outcome later with slideless_get_webhook_delivery. Returns the new delivery.',
   slideless_list_presentations:
     'List the presentations (decks) this credential can read, newest first — deck reads are ' +
     'private: owners and workspace admins see the workspace, others see owned decks, active ' +
@@ -546,6 +559,17 @@ describe('the MCP surface', () => {
       'slideless_remove_project_team',
       'slideless_list_teams',
       'slideless_list_team_members',
+      'slideless_webhook_events',
+      'slideless_list_webhooks',
+      'slideless_create_webhook',
+      'slideless_get_webhook',
+      'slideless_update_webhook',
+      'slideless_delete_webhook',
+      'slideless_rotate_webhook_secret',
+      'slideless_test_webhook',
+      'slideless_list_webhook_deliveries',
+      'slideless_get_webhook_delivery',
+      'slideless_redeliver_webhook',
       'slideless_list_presentations',
       'slideless_get_presentation',
       'slideless_list_versions',

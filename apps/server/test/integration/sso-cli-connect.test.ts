@@ -128,7 +128,11 @@ describe('cloud edition: POST /sso/cli-connect', () => {
     // The one-shot key: slk_, the CLI grant, never data:export — and
     // USER-scoped: no workspace pin anywhere in the response.
     expect(body.key).toMatch(/^slk_/);
-    expect(body.apiKey.scopes.sort()).toEqual(['presentations:read', 'presentations:write']);
+    expect(body.apiKey.scopes.sort()).toEqual([
+      'presentations:read',
+      'presentations:write',
+      'webhooks:manage'
+    ]);
     expect(body.apiKey.scopes).not.toContain('data:export');
     expect(body.apiKey.name).toMatch(/^Antasphere CLI \d{4}-\d{2}-\d{2}$/);
     expect(body.apiKey.expiresAt).toBeNull();
@@ -175,7 +179,9 @@ describe('cloud edition: POST /sso/cli-connect', () => {
       `SELECT workspace_id, scopes FROM api_keys WHERE created_by = $1`,
       [users[0].id]
     );
-    expect(keys).toEqual([{ workspace_id: null, scopes: ['presentations:read', 'presentations:write'] }]);
+    expect(keys).toEqual([
+      { workspace_id: null, scopes: ['presentations:read', 'presentations:write', 'webhooks:manage'] }
+    ]);
 
     // The reconcile redeemed the grant at the hub with OUR client
     // credentials and the hub-API resource (the tokenResource seam).
