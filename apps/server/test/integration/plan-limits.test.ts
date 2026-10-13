@@ -1060,4 +1060,24 @@ describe('the webhook endpoints per workspace (PRDCT-3482)', () => {
     expect(list.status).toBe(200);
     expect((await readJson(list)).webhooks).toHaveLength(5);
   });
+
+  it('a plain member at the cap reads the handler’s 403 forbidden, never plan_required (verifier round 1, S7)', async () => {
+    const member = await hubPerson({
+      sub: 'hub-plan-hooks-member',
+      email: 'member@hooks.test',
+      name: 'Hooks Member',
+      workspaceId: ORG_HOOKS,
+      role: 'member',
+      workspaceName: 'Org hub-plan-hooks'
+    });
+    expect(member.workspaceId).toBe(person.workspaceId);
+    const res = await app.app.request(
+      '/api/v1/webhooks',
+      json({ url: 'https://hooks.example.com/plan-member', events: ['webhook.ping'] }, dashboard(member))
+    );
+    expect(res.status, await res.clone().text()).toBe(403);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(body.error.details).toBeUndefined();
+  });
 });

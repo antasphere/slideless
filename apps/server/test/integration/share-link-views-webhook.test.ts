@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
-import { shareTokenViewWindows } from '@slideless/db';
+import { shareTokenViews, shareTokenViewWindows } from '@slideless/db';
 import {
   createDatabase,
   createTestApp,
@@ -329,6 +329,40 @@ describe('the grouped event', () => {
     const third = await waitFor('the next window’s first event', () => eventsOf(link.id)[2]);
     expect(third.data).toMatchObject({ views: 1, placements: ['again'] });
     expect(await windowRow(link.id)).toMatchObject({ pending: false, countAtStart: 51 });
+  }, 60_000);
+
+  it('the grouped count is the link’s counter, never the analytics rows: rows purged before the flush, still views 49 (verifier round 1, S3)', async () => {
+    const link = await mintLink('Counted');
+    const started = Date.now();
+    await view(link.secret);
+    await waitFor('the first event', () => eventsOf(link.id)[0]);
+    for (let batch = 0; batch < 49; batch += 7) {
+      await Promise.all(
+        Array.from({ length: Math.min(7, 49 - batch) }).map(() => view(link.secret, { placement: 'purged' }))
+      );
+    }
+    // The fifty views fitted in one window, and the flush has not fired yet.
+    expect(Date.now() - started).toBeLessThan(WINDOW_MS - 1000);
+    expect(await windowRow(link.id)).toMatchObject({ pending: true, countAtStart: 1 });
+    expect(eventsOf(link.id)).toHaveLength(1);
+
+    // Every analytics row of the link goes (a purge, or inserts that failed): the counter stays.
+    const rowsOf = async () =>
+      (
+        await app.db.db
+          .select({ id: shareTokenViews.id })
+          .from(shareTokenViews)
+          .where(eq(shareTokenViews.shareTokenId, link.id))
+      ).length;
+    await waitFor('the fifty analytics rows', async () => (await rowsOf()) === 50);
+    await app.db.db.delete(shareTokenViews).where(eq(shareTokenViews.shareTokenId, link.id));
+    expect(await rowsOf()).toBe(0);
+    expect(await windowRow(link.id)).toMatchObject({ pending: true });
+
+    const second = await waitFor('the grouped event', () => eventsOf(link.id)[1]);
+    expect(second.data.views).toBe(49);
+    expect(Date.parse(second.data.firstViewAt)).toBeLessThanOrEqual(Date.parse(second.data.lastViewAt));
+    expect(second.subjects).toEqual({ deckId, projectIds: [projectId], shareLinkId: link.id });
   }, 60_000);
 
   it('neither the preview link nor the silent one ever emitted', () => {

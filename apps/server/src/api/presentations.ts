@@ -1374,9 +1374,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       set.passwordHash = patch.password === null ? null : await hashViewerPassword(patch.password);
     }
 
-    // `changed` names the columns this PATCH wrote, the audit row's list
-    // (`passwordHash` for the password); an empty PATCH wrote nothing and
-    // says nothing. The event rides the write's own transaction.
+    // The audit row's `changed` names the columns this PATCH wrote (`passwordHash`
+    // for the password); the webhook's `changed` names the request's FIELDS (the
+    // wire's names, verifier round 1). An empty PATCH wrote nothing and says
+    // nothing. The event rides the write's own transaction.
     const updated =
       Object.keys(set).length > 0
         ? await sharing.update(token.id, set, (tx, row) =>

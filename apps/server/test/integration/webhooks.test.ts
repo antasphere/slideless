@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq } from 'drizzle-orm';
-import { webhookDeliveries } from '@antasphere/chassis-db';
+import { webhookDeliveries, workspaceMembers } from '@antasphere/chassis-db';
 import { verifyWebhookSignature } from '@antasphere/chassis-server/webhooks';
 import { DECK_WEBHOOK_EVENTS, DECK_WEBHOOK_EVENT_TYPES, DECK_WEBHOOK_SUBJECTS } from '@slideless/contract';
 import {
@@ -405,11 +405,30 @@ describe('the catalog and the endpoint', () => {
     for (const type of ['webhook.ping', 'project.created']) expect(types, type).toContain(type);
     expect(catalog.subjects).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: 'project', field: 'projectIds' }),
-        expect.objectContaining({ key: 'deck', field: 'deckId' }),
-        expect.objectContaining({ key: 'link', field: 'shareLinkId' })
+        // The project subject is a list on every event (verifier round 1, MN2); the other two are one id.
+        expect.objectContaining({ key: 'project', field: 'projectIds', list: true }),
+        expect.objectContaining({ key: 'deck', field: 'deckId', list: false }),
+        expect.objectContaining({ key: 'link', field: 'shareLinkId', list: false })
       ])
     );
+  });
+
+  it('a subscription is checked against the catalog: an unknown type and an unknown subject key are 400, nothing stored (verifier round 1, MN1)', async () => {
+    const before = (await expectStatus(await send('GET', '/webhooks'), 200)).webhooks.length as number;
+    const typo = await send('POST', '/webhooks', { url: `${base}/typo`, events: ['deck.nonexistent'] });
+    expect(typo.status).toBe(400);
+    expect((await readJson(typo)).error.code).toBe('unknown_event');
+    const family = await send('POST', '/webhooks', { url: `${base}/typo`, events: ['nothing.*'] });
+    expect(family.status).toBe(400);
+    expect((await readJson(family)).error.code).toBe('unknown_event');
+    const subject = await send('POST', '/webhooks', {
+      url: `${base}/typo`,
+      events: ['deck.*'],
+      filters: { bogus: ['x'] }
+    });
+    expect(subject.status).toBe(400);
+    expect((await readJson(subject)).error.code).toBe('unknown_subject');
+    expect((await expectStatus(await send('GET', '/webhooks'), 200)).webhooks).toHaveLength(before);
   });
 
   it('the webhook.create audit row never carries the secret', async () => {
@@ -436,6 +455,7 @@ describe('the deck events', () => {
       deckId,
       projectIds: [projectId]
     });
+    expect(Array.isArray(created.subjects.projectIds), 'deck.created: projectIds is a list').toBe(true);
     expect(created.data).toMatchObject({
       title: 'Hooked Deck',
       version: 1,
@@ -557,6 +577,49 @@ describe('the share link events', () => {
       shareLinkId: sent.id
     });
     expect(event.data.recipient).toBe('client@example.org');
+  });
+
+  it('share_link.updated names the request’s fields: password, then name, never passwordHash (verifier round 1, N4)', async () => {
+    const l = await mintLink(deckId, { name: 'Changed fields' });
+    const subjects = { deckId, projectIds: [projectId], shareLinkId: l.id };
+    await expectStatus(
+      await send('PATCH', `/presentations/${deckId}/tokens/${l.id}`, { password: 'a-long-password' }),
+      200
+    );
+    const pw = await expectEvent(
+      'share_link.updated',
+      (e) => e.data.linkId === l.id && e.data.name === 'Changed fields',
+      subjects
+    );
+    expect(pw.data.changed).toEqual(['password']);
+    expect(pw.data.hasPassword).toBe(true);
+    await expectStatus(await send('PATCH', `/presentations/${deckId}/tokens/${l.id}`, { name: 'x' }), 200);
+    const nm = await expectEvent(
+      'share_link.updated',
+      (e) => e.data.linkId === l.id && e.data.name === 'x',
+      subjects
+    );
+    expect(nm.data.changed).toEqual(['name']);
+  });
+
+  it('a preview link’s revoke emits nothing (verifier round 1, S1)', async () => {
+    const preview = await expectStatus(await send('POST', `/presentations/${deckId}/preview-token`, {}), 201);
+    const previewId = preview.shareToken.id as string;
+    const revoked = await expectStatus(
+      await send('DELETE', `/presentations/${deckId}/tokens/${previewId}`),
+      200
+    );
+    expect(revoked.revokedAt).toBeTruthy();
+    // A positive control after it: once this link's revoke is in, the preview's would be too.
+    const control = await mintLink(deckId, { name: 'Revoke control' });
+    await expectStatus(await send('DELETE', `/presentations/${deckId}/tokens/${control.id}`), 200);
+    await waitFor(
+      'the control link’s revoke',
+      () => at('/all', 'share_link.revoked', (e) => e.data.linkId === control.id)[0]
+    );
+    await settle(3000);
+    expect(at('/all', 'share_link.revoked', (e) => e.data.linkId === previewId)).toHaveLength(0);
+    expect(received.filter((r) => r.body.subjects.shareLinkId === previewId)).toHaveLength(0);
   });
 
   it('share_link.viewed: a counted view sends the first event at once', async () => {
@@ -717,6 +780,28 @@ describe('the collaborator events', () => {
     });
     expect(rv.data).toMatchObject({ deckId, collaboratorId, email: COLLAB.email });
   });
+
+  it('a member’s removal revokes their deck grant, and the revoke is delivered (verifier round 1, S13)', async () => {
+    const email = 'colleague@hooks.test';
+    const signedUp = await app.auth.api.signUpEmail({
+      body: { email, password: 'colleague-pass-0001', name: 'Colleague' }
+    });
+    const [member] = await app.db.db
+      .insert(workspaceMembers)
+      .values({ workspaceId, userId: signedUp.user.id, role: 'member', origin: 'local' })
+      .returning({ id: workspaceMembers.id });
+    const invited = await expectStatus(
+      await send('POST', `/presentations/${deckId}/collaborators`, { email }),
+      201
+    );
+    const grantId = invited.collaborator.id as string;
+    await expectStatus(await send('POST', `/members/${member!.id}/remove`), 200);
+    const rv = await expectEvent('collaborator.revoked', (e) => e.data.collaboratorId === grantId, {
+      deckId,
+      projectIds: [projectId]
+    });
+    expect(rv.data).toMatchObject({ deckId, collaboratorId: grantId, email });
+  });
 });
 
 describe('the annotation events', () => {
@@ -845,6 +930,27 @@ describe('a write that did not land says nothing', () => {
     );
     await settle();
     expect(at('/all', 'deck.version_committed', (e) => e.data.deckId === racer)).toHaveLength(1);
+  });
+});
+
+describe('the chassis’s project events carry the project subject as a list (verifier round 1, MN2)', () => {
+  it('project.created and project.archived: subjects.projectIds is an array of the one project', async () => {
+    const created = await expectStatus(await send('POST', '/projects', { name: 'Listed' }), 201);
+    const id = created.id as string;
+    await expectStatus(await send('POST', `/projects/${id}/archive`), 200);
+    for (const type of ['project.created', 'project.archived']) {
+      const hit = await waitFor(`${type} at /all`, () => at('/all', type, (e) => e.data.projectId === id)[0]);
+      const headers = {
+        id: hit.headers['webhook-id'] as string,
+        timestamp: hit.headers['webhook-timestamp'] as string,
+        signature: hit.headers['webhook-signature'] as string
+      };
+      expect(verifyWebhookSignature(all.secret, headers, hit.raw), `${type}: signature`).toBe(true);
+      expect(hit.body.workspaceId).toBe(workspaceId);
+      expect(Array.isArray(hit.body.subjects.projectIds), `${type}: projectIds is a list`).toBe(true);
+      expect(hit.body.subjects, `${type}: subjects`).toEqual({ projectIds: [id] });
+      expect(hit.body.data).toMatchObject({ projectId: id, name: 'Listed' });
+    }
   });
 });
 
