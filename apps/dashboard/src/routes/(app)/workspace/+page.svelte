@@ -1,12 +1,14 @@
 <script lang="ts">
   /* The workspace page (PRDCT-2436): everything that administers the
      workspace, as large tiles with a plain sentence each. It is what the
-     phone's tab bar opens in place of six sidebar entries; on a desk the
+     phone's tab bar has no room for (the drawer behind its Menu thumb lists
+     the same), kept for the phone's workspace switcher; on a desk the
      sidebar lists the same sections and this page is one click from it. */
   import PageHeader from '$lib/components/shared/PageHeader.svelte';
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import WorkspaceSwitcher from '$lib/components/sidebar/WorkspaceSwitcher.svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import NavBadge from '$lib/components/shell/NavBadge.svelte';
   import { behindWorkspace, buildNav } from '$lib/nav';
   import { seedOf } from '$lib/brand/seed';
   import { t } from '$lib/i18n';
@@ -57,6 +59,7 @@
         </h2>
         <p class="mt-1 text-[13.5px] leading-snug text-muted-foreground">{tile.blurb}</p>
       </div>
+      <NavBadge badge={tile.badge} />
       <ChevronRight class="size-4 shrink-0 text-muted-foreground" />
     </a>
   {/each}

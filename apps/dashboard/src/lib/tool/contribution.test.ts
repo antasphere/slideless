@@ -14,7 +14,7 @@ vi.mock('$lib/api', async (original) => ({
 }));
 
 const { tool } = await import('./index');
-const { behindWorkspace, buildNav, isActive, phoneTabs } = await import('$lib/nav');
+const { PHONE_TOOL_TABS_MAX, behindWorkspace, buildNav, isActive, phoneTabs } = await import('$lib/nav');
 const { pathCrumbs } = await import('$lib/components/shell/path');
 const { actionFamilies } = await import('$lib/components/audit/audit-filters');
 const { createDeckOverview } = await import('./overview.svelte');
@@ -80,26 +80,22 @@ describe('the menu', () => {
     ]);
   });
 
-  it('a phone keeps decks and projects as thumb tabs and folds the library behind the workspace entry', () => {
+  it('a phone keeps decks and projects as thumbs beside the overview, four at most; the Menu thumb opens the rest', () => {
+    expect(tool.phoneTabs).toEqual(['decks', 'projects']);
+    expect(tool.phoneTabs.length).toBeLessThanOrEqual(PHONE_TOOL_TABS_MAX);
     const nav = buildNav({ role: 'owner', origin: 'local' });
-    expect(phoneTabs(nav).map((i) => i.id)).toEqual([
-      'overview',
-      'decks',
-      'projects',
-      'workspace',
-      'settings'
-    ]);
+    const tabs = phoneTabs(nav);
+    expect(tabs.map((i) => i.id)).toEqual(['overview', 'decks', 'projects']);
+    expect(tabs.length).toBeLessThanOrEqual(PHONE_TOOL_TABS_MAX + 1);
+    // what the bar has no room for, as the workspace page lists it: the drawer shows the whole rail
     expect(behindWorkspace(nav).map((i) => i.id)).toEqual([
       'library',
       'members',
       'api-keys',
       'files',
-      'audit'
+      'audit',
+      'settings'
     ]);
-    const workspace = phoneTabs(nav).find((i) => i.id === 'workspace')!;
-    expect(workspace.also).toEqual(expect.arrayContaining(['/brands', '/templates']));
-    expect(workspace.also).not.toContain('/decks');
-    expect(workspace.also).not.toContain('/projects');
   });
 });
 

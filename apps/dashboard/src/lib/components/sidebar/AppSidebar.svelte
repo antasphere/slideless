@@ -3,6 +3,7 @@
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import NavUser from './NavUser.svelte';
   import DocsCard from './DocsCard.svelte';
+  import NavBadge from '$lib/components/shell/NavBadge.svelte';
   import { buildNav, isActive as navActive } from '$lib/nav';
   import { t } from '$lib/i18n';
   import BrandTile from './BrandTile.svelte';
@@ -99,7 +100,8 @@
                          cut it mid-glyph. The icon never moves: it is the
                          button's first child at a fixed 16px, and the box's
                          padding animates on the rail's own curve. -->
-                    <span class="nav-label">{item.title}</span>
+                    <span class="nav-label min-w-0 truncate">{item.title}</span>
+                    <NavBadge badge={item.badge} class="nav-item-badge ml-auto" />
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
@@ -124,6 +126,20 @@
   :global([data-collapsible='icon']) .nav-label {
     opacity: 0;
     transition: opacity 90ms ease-in;
+  }
+  /* on the icon rail the badge sits on the icon's corner, as a dot */
+  :global([data-collapsible='icon'] [data-sidebar='menu-button']) {
+    position: relative;
+  }
+  :global([data-collapsible='icon'] [data-sidebar='menu-button'] .nav-item-badge) {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 8px;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    font-size: 0;
   }
   @media (prefers-reduced-motion: reduce) {
     .nav-label {

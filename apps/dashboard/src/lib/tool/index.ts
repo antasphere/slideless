@@ -55,8 +55,9 @@ export const tool: ToolContribution<DeckOverview> = {
     ];
   },
 
-  // The library folds behind the phone's workspace entry: the bar keeps the everyday sections.
-  phoneTabs: ['decks'],
+  // The phone's thumbs beside the overview: the decks and the shell's Projects; the Menu
+  // thumb opens the rest of the rail (DESIGN.md, "Phone").
+  phoneTabs: ['decks', 'projects'],
 
   // The collaborator's claim page, /collab/{token}.
   gateRoutes: ['collab'],

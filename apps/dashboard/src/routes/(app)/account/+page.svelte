@@ -335,7 +335,8 @@
      user-authored: text interpolation only. -->
 <div class="who sheet mb-6">
   <span class="disc">{initials}</span>
-  <div class="min-w-0 flex-1">
+  <!-- a basis for the words, so on a phone the chips wrap under them rather than squeeze them -->
+  <div class="min-w-0 flex-[1_1_12rem]">
     <p
       class="truncate font-display text-[22px] font-normal leading-tight tracking-[-0.01em] text-[var(--ink)]"
     >
