@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type { Db } from '@antasphere/chassis-db';
+import type { Db, DbConn } from '@antasphere/chassis-db';
+import type { WebhookEmitter } from '@antasphere/chassis-server';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';
 import { blobKey } from '@antasphere/chassis-server/storage';
 import type { Logger } from '@antasphere/chassis-server/logger';
@@ -12,6 +13,7 @@ import {
   presentationVersionThumbnails,
   type PresentationVersionThumbnailRow
 } from '@slideless/db';
+import { emitDeckEvent } from '../presentations/deck-webhooks.js';
 import type { RendererClient } from './renderer-client.js';
 
 /**
@@ -74,7 +76,16 @@ export interface ThumbnailServiceOptions {
   logger: Logger;
   /** null = no renderer configured: this instance makes no images. */
   renderer: RendererClient | null;
+  /** The webhook emitter (PRDCT-3483): `thumbnail.rendered` / `.failed` ride the row update's transaction. */
+  webhooks: WebhookEmitter;
   dials?: Partial<ThumbnailDials>;
+}
+
+/** The ids of a thumbnail row an outcome landed on. */
+interface ThumbnailOutcomeRow {
+  version_id: string;
+  workspace_id: string;
+  presentation_id: string;
 }
 
 /**
@@ -119,6 +130,7 @@ export class ThumbnailService {
   private readonly storage: StorageDriver;
   private readonly logger: Logger;
   private readonly renderer: RendererClient | null;
+  private readonly webhooks: WebhookEmitter;
   private readonly dials: ThumbnailDials;
   private draining: Promise<number> | null = null;
   private again = false;
@@ -130,6 +142,7 @@ export class ThumbnailService {
     this.storage = opts.storage;
     this.logger = opts.logger;
     this.renderer = opts.renderer;
+    this.webhooks = opts.webhooks;
     this.dials = { ...DEFAULT_DIALS, ...opts.dials };
   }
 
@@ -285,13 +298,43 @@ export class ThumbnailService {
 
   /** A pending row whose claims ran out (its captures never came back) is failed, never claimed again. */
   private async giveUpExhausted(): Promise<void> {
-    await this.db.execute(sql`
-      UPDATE presentation_version_thumbnails
-         SET state = 'failed', lease_until = NULL, claim_token_hash = NULL, updated_at = now(),
-             error = coalesce(error, 'the renderer never answered')
-       WHERE state = 'pending'
-         AND attempts >= ${MAX_ATTEMPTS}
-         AND (lease_until IS NULL OR lease_until < now())`);
+    await this.db.transaction(async (tx) => {
+      const res = await tx.execute(sql`
+        UPDATE presentation_version_thumbnails
+           SET state = 'failed', lease_until = NULL, claim_token_hash = NULL, updated_at = now(),
+               error = coalesce(error, 'the renderer never answered')
+         WHERE state = 'pending'
+           AND attempts >= ${MAX_ATTEMPTS}
+           AND (lease_until IS NULL OR lease_until < now())
+        RETURNING version_id, workspace_id, presentation_id`);
+      for (const row of res.rows as unknown as ThumbnailOutcomeRow[]) {
+        await this.emitOutcome(tx, 'thumbnail.failed', row);
+      }
+    });
+  }
+
+  /**
+   * `thumbnail.rendered` / `thumbnail.failed` (PRDCT-3483) on the row
+   * update's own transaction: a version's image is ready, or given up for
+   * good (a retry is not a failure, nothing is said for it).
+   */
+  private async emitOutcome(
+    tx: DbConn,
+    type: 'thumbnail.rendered' | 'thumbnail.failed',
+    row: ThumbnailOutcomeRow
+  ): Promise<void> {
+    const [version] = await tx
+      .select({ version: presentationVersions.version })
+      .from(presentationVersions)
+      .where(eq(presentationVersions.id, row.version_id))
+      .limit(1);
+    if (!version) return;
+    await emitDeckEvent(this.webhooks, tx, {
+      workspaceId: row.workspace_id,
+      type,
+      deckId: row.presentation_id,
+      data: { deckId: row.presentation_id, versionId: row.version_id, version: version.version }
+    });
   }
 
   /** Versions handed to a renderer whose answer is still to come, instance-wide. */
@@ -445,13 +488,19 @@ export class ThumbnailService {
       contentType: 'image/webp',
       sizeBytes: opts.webp.length
     });
-    const res = await this.db.execute(sql`
-      UPDATE presentation_version_thumbnails
-         SET state = 'ready', storage_key = ${key}, size_bytes = ${opts.webp.length},
-             lease_until = NULL, claim_token_hash = NULL, error = NULL, updated_at = now()
-       WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}
-       RETURNING version_id`);
-    if (res.rows.length === 0) return 'rejected';
+    const landed = await this.db.transaction(async (tx) => {
+      const res = await tx.execute(sql`
+        UPDATE presentation_version_thumbnails
+           SET state = 'ready', storage_key = ${key}, size_bytes = ${opts.webp.length},
+               lease_until = NULL, claim_token_hash = NULL, error = NULL, updated_at = now()
+         WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}
+         RETURNING version_id, workspace_id, presentation_id`);
+      const outcome = res.rows[0] as unknown as ThumbnailOutcomeRow | undefined;
+      if (!outcome) return false;
+      await this.emitOutcome(tx, 'thumbnail.rendered', outcome);
+      return true;
+    });
+    if (!landed) return 'rejected';
     this.logger.info({ versionId: row.versionId, sizeBytes: opts.webp.length }, 'thumbnails: image landed');
     this.kick();
     return 'stored';
@@ -479,18 +528,23 @@ export class ThumbnailService {
     const hash = hashToken(opts.token);
     const exhausted = row.attempts >= MAX_ATTEMPTS;
     const waitSeconds = opts.transient ? this.dials.backoffSeconds : this.dials.retryDelaySeconds;
-    await this.db.execute(
-      exhausted
-        ? sql`
-        UPDATE presentation_version_thumbnails
-           SET state = 'failed', lease_until = NULL, claim_token_hash = NULL, error = ${message}, updated_at = now()
-         WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}`
-        : sql`
+    if (exhausted) {
+      await this.db.transaction(async (tx) => {
+        const res = await tx.execute(sql`
+          UPDATE presentation_version_thumbnails
+             SET state = 'failed', lease_until = NULL, claim_token_hash = NULL, error = ${message}, updated_at = now()
+           WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}
+           RETURNING version_id, workspace_id, presentation_id`);
+        const outcome = res.rows[0] as unknown as ThumbnailOutcomeRow | undefined;
+        if (outcome) await this.emitOutcome(tx, 'thumbnail.failed', outcome);
+      });
+    } else {
+      await this.db.execute(sql`
         UPDATE presentation_version_thumbnails
            SET lease_until = now() + make_interval(secs => ${waitSeconds}),
                claim_token_hash = NULL, error = ${message}, updated_at = now()
-         WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}`
-    );
+         WHERE version_id = ${row.versionId} AND state = 'pending' AND claim_token_hash = ${hash}`);
+    }
     this.logger.warn(
       { versionId: row.versionId, attempt: row.attempts, err: message, transient: opts.transient === true },
       exhausted ? 'thumbnails: capture failed, giving up' : 'thumbnails: capture failed, will retry'

@@ -30,6 +30,7 @@ describe('the demo links tab', () => {
     expect(hrefs(on)).toEqual([
       '/members',
       '/api-keys',
+      '/webhooks',
       '/files',
       '/audit',
       '/settings/instance',
@@ -45,6 +46,7 @@ describe('the demo links tab', () => {
     expect(hrefs(facts({}))).toEqual([
       '/members',
       '/api-keys',
+      '/webhooks',
       '/files',
       '/audit',
       '/settings/instance',
@@ -70,6 +72,17 @@ describe('the workspace tabs', () => {
   it('a member gets no audit log; an admin does', () => {
     expect(hrefs(facts({ role: 'member' }))).not.toContain('/audit');
     expect(hrefs(facts({ role: 'admin' }))).toContain('/audit');
+  });
+
+  it('the webhooks sit right after the API keys, for an owner or an admin only', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      const tabs = hrefs(facts({ role }));
+      expect(tabs[tabs.indexOf('/api-keys') + 1], role).toBe('/webhooks');
+    }
+    for (const role of ['member', null] as const) {
+      expect(hrefs(facts({ role })), String(role)).not.toContain('/webhooks');
+    }
+    expect(hrefs(facts({ role: 'admin', origin: 'guest' }))).not.toContain('/webhooks');
   });
 
   it('a guest is offered neither the roster nor the files', () => {

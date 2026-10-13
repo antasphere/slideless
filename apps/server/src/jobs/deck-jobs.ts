@@ -5,9 +5,11 @@ import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
 import { purgeShareTokenViews } from '../sharing/view-events.js';
 import { purgeShareTokenDownloads } from '../sharing/download-events.js';
+import { SHARE_LINK_VIEW_WINDOW_QUEUE, type ShareLinkViewWindowJob } from '../sharing/view-webhooks.js';
 
 /**
- * The deck domain's jobs (three nightly purges and the minute thumbnail sweep), declared to the chassis job runtime
+ * The deck domain's jobs (three nightly purges, the minute thumbnail sweep and the
+ * `share_link.viewed` window's flush timer), declared to the chassis job runtime
  * (`createJobs(…, deckJobs(…))`), which installs their queues inside its
  * advisory-lock section and registers their pollers where they always ran.
  */
@@ -36,6 +38,8 @@ export interface DeckJobsDeps {
   purgeFormUploads: () => Promise<number>;
   /** The still-image capture's drain (PRDCT-2725), owned by the thumbnail service: resolved at RUN time. */
   sweepThumbnails: () => Promise<void>;
+  /** The grouped `share_link.viewed` window's flush (PRDCT-3483), owned by the view webhooks service: resolved at RUN time. */
+  flushViewWindow: (tokenId: string) => Promise<void>;
 }
 
 export function deckJobs({
@@ -43,7 +47,8 @@ export function deckJobs({
   db,
   logger,
   purgeFormUploads,
-  sweepThumbnails
+  sweepThumbnails,
+  flushViewWindow
 }: DeckJobsDeps): JobDeclaration[] {
   const viewRetentionDays = env.VIEW_EVENTS_RETENTION_DAYS;
   return [
@@ -78,6 +83,16 @@ export function deckJobs({
       schedule: { cron: '* * * * *' },
       handler: async () => {
         await sweepThumbnails();
+      }
+    },
+    // The `share_link.viewed` window's flush (PRDCT-3483): no schedule, the
+    // queue a one-off timer rides. The second view of a link's window arms it
+    // at the window's end (`sharing/view-webhooks.ts`); the run emits the
+    // views grouped since the first and closes the window.
+    {
+      queue: SHARE_LINK_VIEW_WINDOW_QUEUE,
+      handler: async (data: ShareLinkViewWindowJob | null) => {
+        if (data?.tokenId) await flushViewWindow(data.tokenId);
       }
     },
     // Per-view analytics retention (PRDCT-1313): share_token_views grows one

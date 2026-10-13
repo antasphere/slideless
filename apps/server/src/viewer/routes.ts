@@ -19,6 +19,7 @@ import { encodeContentDisposition } from '@antasphere/chassis-server/files';
 import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 import { attachmentsZipFilename, serveAttachmentsZip } from '../presentations/attachments.js';
 import type { PresentationService } from '../presentations/service.js';
+import type { DeckWebhooks } from '../presentations/deck-webhooks.js';
 import type { ShareTokenDownloadService } from '../sharing/download-events.js';
 import type { ShareTokenService } from '../sharing/service.js';
 import {
@@ -106,6 +107,12 @@ export interface ViewerDeps {
   /** Per-download events + the link's download counter (PRDCT-2278), one transaction. */
   downloads: ShareTokenDownloadService;
   presentations: PresentationService;
+  /**
+   * `attachment.downloaded` (PRDCT-3483), emitted on the handle right after
+   * the download record: the record (`sharing/download-events.ts`) runs its
+   * own transaction and swallows its own failure.
+   */
+  deckWebhooks: DeckWebhooks;
   fileService: FileService;
   storage: StorageDriver;
   logger: Logger;
@@ -629,22 +636,28 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
       token.purpose !== 'preview' &&
       (deps.viewDedupeWindowMs === 0 || !hasValidViewedCookie(c, token.id));
     if (counted) {
-      await sharing.recordEntryView(token.id, deck.id);
-      // Per-view analytics event (PRDCT-1313), under EXACTLY the counted
-      // gate above so events and counters can never disagree. Everything
-      // stored is computed server-side here: referrer HOST only (never the
-      // URL), the sanitized `?p=` placement label, a coarse browser family.
-      // NO IP, NO geo — fixed privacy posture. record() is best-effort
-      // (AuditService.write posture): a failed insert logs and the response
-      // still goes out — the counter increment above already committed.
-      await deps.views.record({
+      // Everything stored is computed server-side here: referrer HOST only
+      // (never the URL), the sanitized `?p=` placement label, a coarse
+      // browser family. NO IP, NO geo — fixed privacy posture.
+      const viewFacts = {
         workspaceId: token.workspaceId,
-        presentationId: deck.id,
-        shareTokenId: token.id,
         version: version.version,
         referrerHost: viewReferrerHost(c.req.header('referer')),
         placement: viewPlacement(c.req.query('p')),
         uaFamily: viewUaFamily(c.req.header('user-agent'))
+      };
+      // The count, and in its transaction the grouped `share_link.viewed`
+      // webhook's window step (PRDCT-3483), which sees the same facts.
+      await sharing.recordEntryView(token.id, deck.id, viewFacts);
+      // Per-view analytics event (PRDCT-1313), under EXACTLY the counted
+      // gate above so events and counters can never disagree. record() is
+      // best-effort (AuditService.write posture): a failed insert logs and
+      // the response still goes out — the counter increment above already
+      // committed.
+      await deps.views.record({
+        ...viewFacts,
+        presentationId: deck.id,
+        shareTokenId: token.id
       });
     }
 
@@ -780,6 +793,13 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
         version: version.version,
         name: null
       });
+      await deps.deckWebhooks.emitAfterWrite({
+        workspaceId: token.workspaceId,
+        type: 'attachment.downloaded',
+        deckId: deck.id,
+        linkId: token.id,
+        data: { deckId: deck.id, linkId: token.id, version: version.version, name: null }
+      });
     }
     return res;
   });
@@ -835,6 +855,13 @@ export function viewerRoutes(deps: ViewerDeps): Hono {
         shareTokenId: token.id,
         version: version.version,
         name
+      });
+      await deps.deckWebhooks.emitAfterWrite({
+        workspaceId: token.workspaceId,
+        type: 'attachment.downloaded',
+        deckId: deck.id,
+        linkId: token.id,
+        data: { deckId: deck.id, linkId: token.id, version: version.version, name }
       });
     }
     return res;

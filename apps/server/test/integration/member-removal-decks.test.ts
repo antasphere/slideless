@@ -501,7 +501,9 @@ describe('a removal ends the deck invites and grants in the workspace (self-host
     const i2 = await oss.inviteOnDeck(deck, owner, h2.email);
     const removed = [h1, h2].map((who) => ({ memberId: who.memberId, workspaceId, userId: who.userId }));
 
-    const counts = await app.db.db.transaction((tx) => endDeckAccessOnRemoval(tx, removed));
+    const counts = await app.db.db.transaction((tx) =>
+      endDeckAccessOnRemoval(tx, removed, { webhooks: app.webhooks })
+    );
     expect(counts).toEqual({ deckGrants: 0, deckInvites: 2, deckInvitesIssued: 0 });
     for (const id of [i1.grantId, i2.grantId]) {
       expect(await oss.grantRow(id)).toMatchObject({ status: 'revoked' });

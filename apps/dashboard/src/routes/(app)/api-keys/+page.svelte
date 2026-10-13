@@ -30,7 +30,7 @@
   import { formatDate, formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
-  import type { ApiKeyInfo, Scope } from '@slideless/contract';
+  import { IDENTITY, type ApiKeyInfo, type Scope } from '@slideless/contract';
 
   const list = createPagedList<ApiKeyInfo>(
     async (p) => {
@@ -63,6 +63,8 @@
   let scopeWrite = $state(false);
   // Deliberately unchecked by default: full-workspace export is an opt-in.
   let scopeExport = $state(false);
+  // Managing the workspace's webhooks: an opt-in too, and it only works for an owner's or an admin's key.
+  let scopeWebhooks = $state(false);
   let expiresIn = $state('never');
 
   // ── Secret dialog: shown exactly once, never retrievable again ────────
@@ -74,15 +76,18 @@
     scopeRead = true;
     scopeWrite = false;
     scopeExport = false;
+    scopeWebhooks = false;
     expiresIn = 'never';
     showCreateDialog = true;
   }
 
   async function submitCreate() {
+    // the scope names are the tool's identity, spelled once (`IDENTITY.scopes`)
     const scopes: Scope[] = [
-      ...(scopeRead ? (['presentations:read'] as const) : []),
-      ...(scopeWrite ? (['presentations:write'] as const) : []),
-      ...(scopeExport ? (['data:export'] as const) : [])
+      ...(scopeRead ? [IDENTITY.scopes.read] : []),
+      ...(scopeWrite ? [IDENTITY.scopes.write] : []),
+      ...(scopeExport ? [IDENTITY.scopes.dataExport] : []),
+      ...(scopeWebhooks ? [IDENTITY.scopes.webhooks] : [])
     ];
     if (scopes.length === 0) {
       toast.error(t('apiKeys.errorNoScope'));
@@ -307,24 +312,31 @@
     <div class="choices">
       {@render scopeOption(
         'scope-read',
-        'presentations:read',
+        IDENTITY.scopes.read,
         t('apiKeys.scopeReadDesc'),
         scopeRead,
         (v) => (scopeRead = v)
       )}
       {@render scopeOption(
         'scope-write',
-        'presentations:write',
+        IDENTITY.scopes.write,
         t('apiKeys.scopeWriteDesc'),
         scopeWrite,
         (v) => (scopeWrite = v)
       )}
       {@render scopeOption(
         'scope-export',
-        'data:export',
+        IDENTITY.scopes.dataExport,
         t('apiKeys.scopeExportDesc'),
         scopeExport,
         (v) => (scopeExport = v)
+      )}
+      {@render scopeOption(
+        'scope-webhooks',
+        IDENTITY.scopes.webhooks,
+        t('apiKeys.scopeWebhooksDesc'),
+        scopeWebhooks,
+        (v) => (scopeWebhooks = v)
       )}
     </div>
   </fieldset>

@@ -15,6 +15,7 @@ groups:
       - concepts/links
       - concepts/attachments
       - concepts/references
+      - concepts/webhooks
   - title: Agents
     pages:
       - agents/cli
@@ -44,6 +45,8 @@ groups:
     pages:
       - security/security
       - security/viewer-security-model
+      - security/webhook-signatures
   - title: Reference
     pages:
       - reference/env-reference
+      - reference/webhook-events

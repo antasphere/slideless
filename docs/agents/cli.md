@@ -976,6 +976,68 @@ slideless files download <id> --out ./exact/path.bin   # …or a path you choose
 slideless export [-o file]    # workspace zip (key needs the opt-in data:export scope)
 ```
 
+## Webhooks
+
+A webhook is a URL the workspace registers to be told, by a signed `POST`, when something happens:
+a version pushed, a link opened, a form answered. [Webhooks](../concepts/webhooks.md) is the model,
+[Webhook events](../reference/webhook-events.md) the event types, and
+[Webhook signatures](../security/webhook-signatures.md) how a receiver checks a delivery.
+
+```bash
+slideless webhooks events                       # the catalog: every event type, its subjects, what it means
+slideless webhooks list                         # the workspace's endpoints (every page)
+slideless webhooks create https://hooks.example.com/slideless --event form.response_submitted --filter deck=<id>
+slideless webhooks create https://hooks.example.com/all --event 'deck.*' --event share_link.viewed \
+  --description "CRM sync" --filter project=<projectId> --filter project=<otherProjectId>
+slideless webhooks create https://hooks.example.com/later --event '*' --disabled   # registered switched off
+slideless webhooks get <id>                     # one endpoint: events, filters, failures, last delivery
+slideless webhooks update <id> --endpoint-url https://hooks.example.com/v2
+slideless webhooks update <id> --event deck.created --event deck.deleted   # replaces the events
+slideless webhooks update <id> --filter link=<linkId>                       # replaces the filters
+slideless webhooks update <id> --clear-filters --description "Everything"
+slideless webhooks update <id> --disable        # pause it; --enable switches it back on
+slideless webhooks test <id>                    # a signed webhook.ping now; exit 1 when not delivered
+slideless webhooks rotate-secret <id>           # a new secret, printed once; the old one signs 24 h more
+slideless webhooks deliveries <id>              # one page of deliveries, newest first
+slideless webhooks deliveries <id> --status held --limit 20
+slideless webhooks deliveries <id> --cursor <cursor>   # the next page, as the previous one printed it
+slideless webhooks delivery <id> <deliveryId>   # one delivery (--json: the payload as sent)
+slideless webhooks redeliver <id> <deliveryId>  # the same event again, same event id, as a new delivery
+slideless webhooks delete <id>                  # the endpoint and its delivery history
+```
+
+**Who.** An owner or an admin manages the webhooks; every member reads the catalog
+(`webhooks events`). The key `slideless login` makes carries the `webhooks:manage` scope these
+commands need; a key from the API keys page needs it among its scopes. A refusal reads as a
+sentence: `Only an owner or an admin manages webhooks.`, `This key cannot manage webhooks: create
+one with the webhooks:manage scope on the API keys page.`
+
+**create** takes the URL as its argument and at least one `--event`: an exact type
+(`form.response_submitted`), a family (`deck.*`) or everything (`*`), repeatable; quote the ones
+with a `*` so the shell leaves them alone. `--filter <subject>=<id>` narrows the endpoint to a
+`deck`, a `project` or a `link`, repeatable: several ids on the same subject match any of them,
+different subjects must all match. `--description` is a note for the people who manage it, and
+`--disabled` registers it switched off. The answer prints the signing secret (`whsec_…`) **once**:
+store it then, it is never shown again.
+
+**update** changes only what is passed. The endpoint's address is `--endpoint-url` here (the
+program's own `--url` names the instance), `--event` and `--filter` replace the whole list,
+`--clear-filters` removes every filter, and `--enable` / `--disable` switch it on and off. Switching
+on an endpoint the instance switched off after repeated failures clears its failure count.
+
+**test** sends a signed `webhook.ping` at once and prints the outcome (`Ping delivered, HTTP 204`);
+when the ping was not delivered, the command exits 1, so a script can gate on it. **rotate-secret**
+prints the new secret once and the date until which the previous one keeps signing.
+
+**deliveries** lists one page of an endpoint's deliveries, newest first: `--status` keeps one of
+`pending`, `delivered`, `failed`, `held`, `--limit` sets the page size (1 to 100, 50 by default),
+and `--cursor` resumes from the `More: --cursor …` line the previous page printed. **delivery**
+shows one, and **redeliver** queues its event again as a new delivery with the same event id, which
+is the receiver's dedupe key.
+
+Every command takes `--json`: the API's answer verbatim, the secret included on `create` and
+`rotate-secret`.
+
 ## Paging
 
 Every listing command (`list`, `versions`, `tokens`, `views`, `responses`,

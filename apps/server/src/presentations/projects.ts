@@ -1,4 +1,5 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import { presentationProjects } from '@slideless/db';
 import type { Principal } from '@antasphere/chassis-contract';
 import type { DbConn } from '@antasphere/chassis-db';
 import { projectGrantPredicate } from '@antasphere/chassis-server/projects';
@@ -82,4 +83,20 @@ export function writesDeckThroughProject(
 ): Promise<boolean> {
   if (principal.origin === 'guest') return Promise.resolve(false);
   return holds(conn, deckProjectWritePredicate(principal, sql`${deckId}::uuid`));
+}
+
+/**
+ * The deck's CURRENT project ids, read on `conn` (the transaction of the
+ * write an event reports, so the list is the one that write sees): the
+ * `project` subject of every deck webhook event (PRDCT-3483). No access
+ * rule here: an event is the workspace's, and the endpoint filter is an id
+ * list, never a read grant.
+ */
+export async function projectIdsOf(conn: DbConn, deckId: string): Promise<string[]> {
+  const rows = await conn
+    .select({ projectId: presentationProjects.projectId })
+    .from(presentationProjects)
+    .where(eq(presentationProjects.presentationId, deckId))
+    .orderBy(presentationProjects.projectId);
+  return rows.map((r) => r.projectId);
 }

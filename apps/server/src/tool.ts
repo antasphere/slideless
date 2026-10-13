@@ -50,6 +50,8 @@ import { webhookEndpointsAfterCreate } from './presentations/webhook-seats.js';
 import { AnnotationService } from './annotations/service.js';
 import { CollaboratorService } from './collaborators/service.js';
 import { endDeckAccessOnRemoval } from './collaborators/removal.js';
+import { ShareLinkViewWebhooks } from './sharing/view-webhooks.js';
+import { DeckWebhooks } from './presentations/deck-webhooks.js';
 import { ShareTokenService } from './sharing/service.js';
 import { ShareTokenViewService } from './sharing/view-events.js';
 import { ShareTokenDownloadService } from './sharing/download-events.js';
@@ -83,6 +85,8 @@ const err = (code: string, message: string) => ({ error: { code, message } });
 export interface DeckDomain {
   /** Share tokens (Phase 4) — shared with the public viewer. */
   sharing: ShareTokenService;
+  /** The grouped `share_link.viewed` webhook (PRDCT-3483): the window step of a counted view, and the timer's flush. */
+  viewWebhooks: ShareLinkViewWebhooks;
   forms: FormResponseService;
   formUploads: FormUploadService;
   /** Owner notifications for form responses (PRDCT-2330). Test seam: `drain()` awaits in-flight owner mails. */
@@ -95,6 +99,13 @@ export interface DeckDomain {
   thumbnails: ThumbnailService;
   /** The Apps page's list: the organization's other tools, from the hub as the person or the operator's file. */
   apps: AppsService;
+  /**
+   * The deck events whose write runs outside a transaction this tool reaches
+   * (PRDCT-3483): the share links and the attachment downloads, emitted on
+   * the handle right after the write. Every other deck event is emitted by
+   * its service inside the write's own transaction.
+   */
+  deckWebhooks: DeckWebhooks;
 }
 
 /** The deck domain's test seams (`BootOverrides.tool`). */
@@ -113,6 +124,8 @@ export interface DeckOverrides {
   rendererClient?: RendererClient | null;
   /** Shrinks the lease, retry and backoff of the image queue for the tests. Production runs the fixed defaults. */
   thumbnailDials?: Partial<ThumbnailDials>;
+  /** Shrinks the `share_link.viewed` grouping window (five minutes in production) so a suite sees the flush in seconds. */
+  viewWebhookWindowMs?: number;
 }
 
 type DeckBucket = keyof typeof deckBuckets;
@@ -179,10 +192,32 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       }
     },
 
-    services: ({ db, env, logger, storage, pepperRegistry, email, events, authSecret, overrides }) => {
+    services: ({
+      db,
+      env,
+      logger,
+      storage,
+      pepperRegistry,
+      email,
+      events,
+      authSecret,
+      webhooks,
+      timers,
+      overrides
+    }) => {
       // Share-token secrets ride the SAME versioned pepper registry as API keys
       // (ADR 008): sha256(secret + pepper), fail-closed across rotations.
-      const sharing = new ShareTokenService(db, pepperRegistry);
+      // The grouped `share_link.viewed` webhook (PRDCT-3483): the first view of a
+      // link at once, then at most one event per link per five minutes, the
+      // window step inside the view's own transaction.
+      const viewWebhooks = new ShareLinkViewWebhooks({
+        db,
+        webhooks,
+        timers,
+        logger,
+        windowMs: overrides?.viewWebhookWindowMs
+      });
+      const sharing = new ShareTokenService(db, pepperRegistry, viewWebhooks);
 
       // Form file uploads (PRDCT-2403): what respondents drop into a form's file
       // fields — stored apart from the workspace's content-addressed files,
@@ -192,11 +227,12 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         storage,
         join(env.DATA_DIR, 'tmp'),
         logger,
-        formUploadCaps(env)
+        formUploadCaps(env),
+        webhooks
       );
       // Form-response edit secrets: the same credential pattern one level down
       // (ADR 022) — one registry, one rotation story for every peppered secret.
-      const forms = new FormResponseService(db, pepperRegistry, formUploads);
+      const forms = new FormResponseService(db, pepperRegistry, formUploads, webhooks);
       // Owner mails on new and edited responses (PRDCT-2330): fire-and-forget
       // after the viewer write, per-deck switch, one mail per deck per window.
       const formsNotifier = new FormResponseNotifier({
@@ -213,7 +249,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       // a workspace invitation or the collaborator claim endpoint) sweeps every
       // live pending grant addressed to its email. The event bus isolates
       // failures; the sweep is idempotent against the claim endpoint's own.
-      const collaboratorService = new CollaboratorService(db);
+      const collaboratorService = new CollaboratorService(db, webhooks);
       events.on('user.created', async ({ userId, email: userEmail }) => {
         const claimed = await collaboratorService.claimAllPendingForEmail(userEmail, userId);
         if (claimed > 0) {
@@ -223,8 +259,8 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
 
       // Presentation domain (ADR 011): Phases 3 (upload/versioning/pull),
       // 4 (sharing + viewer), and 5 (collaborators/annotations) are all live.
-      const presentationService = new PresentationService(db);
-      const annotationService = new AnnotationService(db);
+      const presentationService = new PresentationService(db, webhooks);
+      const annotationService = new AnnotationService(db, webhooks);
 
       // The still image of each deck version (PRDCT-2725): handed to the
       // optional renderer container, fire and forget; null = no renderer,
@@ -238,11 +274,13 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         storage,
         logger,
         renderer,
+        webhooks,
         ...(overrides?.thumbnailDials ? { dials: overrides.thumbnailDials } : {})
       });
 
       return {
         sharing,
+        viewWebhooks,
         forms,
         formUploads,
         formsNotifier,
@@ -250,6 +288,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         presentations: presentationService,
         annotations: annotationService,
         thumbnails,
+        deckWebhooks: new DeckWebhooks(db, webhooks, logger),
         // The Apps page's list (`GET /apps`): the organization's other tools, from
         // the hub as the person on the cloud edition, else the operator's file.
         apps: new AppsService({
@@ -274,6 +313,9 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         purgeFormUploads: async () => (await getTool()?.formUploads.purgeUnattached()) ?? 0,
         sweepThumbnails: async () => {
           await getTool()?.thumbnails.sweep();
+        },
+        flushViewWindow: async (tokenId) => {
+          await getTool()?.viewWebhooks.flush(tokenId);
         }
       }),
 
@@ -385,7 +427,8 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           registry,
           env,
           email,
-          logger
+          logger,
+          deckWebhooks: deps.deckWebhooks
         });
         // Collaborator routes AFTER registerPresentationRoutes: the /presentations
         // requireAuth gates registered there must precede these handlers.
@@ -475,7 +518,7 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
       // /internal/renderer/. A wrong key answers 401 and nothing else.
       publicRoutes: (
         { db, env, logger, storage, fileService, email, limiters, authSecret },
-        { sharing, formUploads, thumbnails }
+        { sharing, formUploads, thumbnails, presentations, deckWebhooks }
       ) =>
         new Hono().route('/', rendererRoutes({ thumbnails, logger })).route(
           '/',
@@ -483,7 +526,8 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
             sharing,
             views: new ShareTokenViewService(db, logger),
             downloads: new ShareTokenDownloadService(db, logger),
-            presentations: new PresentationService(db),
+            presentations,
+            deckWebhooks,
             fileService,
             storage,
             logger,

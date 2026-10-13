@@ -10,6 +10,7 @@ import {
 } from '@slideless/db';
 import type { PepperRegistry } from '@antasphere/chassis-server/apikeys';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
+import type { ShareLinkViewFacts, ShareLinkViewWebhooks } from './view-webhooks.js';
 
 /**
  * Per-recipient share tokens (Phase 4). The recipient credential is a
@@ -53,7 +54,9 @@ export interface MintedShareSecret {
 export class ShareTokenService {
   constructor(
     private readonly db: Db,
-    private readonly peppers: PepperRegistry
+    private readonly peppers: PepperRegistry,
+    /** The grouped `share_link.viewed` webhook (PRDCT-3483); absent = no view events. */
+    private readonly viewWebhooks?: ShareLinkViewWebhooks
   ) {}
 
   /** Mint a fresh secret + its stored hash under the CURRENT pepper version. */
@@ -255,18 +258,33 @@ export class ShareTokenService {
   /**
    * Entry-view accounting, atomic increments in one transaction: the TOKEN's
    * access stats and the deck's total. Fired ONLY when the viewer serves the
-   * ENTRY HTML — never per asset, never for password-gate challenges.
+   * ENTRY HTML — never per asset, never for password-gate challenges. The
+   * `share_link.viewed` webhook's window step rides the same transaction
+   * (`view-webhooks.ts`): a view nobody listens to costs it one cached lookup.
    */
-  async recordEntryView(tokenId: string, presentationId: string): Promise<void> {
+  async recordEntryView(
+    tokenId: string,
+    presentationId: string,
+    facts?: Omit<ShareLinkViewFacts, 'tokenId' | 'deckId' | 'accessCountNow'>
+  ): Promise<void> {
     await this.db.transaction(async (tx) => {
-      await tx
+      const [counted] = await tx
         .update(shareTokens)
         .set({ accessCount: sql`${shareTokens.accessCount} + 1`, lastAccessedAt: sql`now()` })
-        .where(eq(shareTokens.id, tokenId));
+        .where(eq(shareTokens.id, tokenId))
+        .returning({ accessCount: shareTokens.accessCount });
       await tx
         .update(presentations)
         .set({ totalViews: sql`${presentations.totalViews} + 1`, lastViewedAt: sql`now()` })
         .where(eq(presentations.id, presentationId));
+      if (this.viewWebhooks && facts && counted) {
+        await this.viewWebhooks.onView(tx, {
+          ...facts,
+          tokenId,
+          deckId: presentationId,
+          accessCountNow: counted.accessCount
+        });
+      }
     });
   }
 

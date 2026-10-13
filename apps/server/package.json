@@ -12,6 +12,7 @@
     "build": "tsup",
     "dev": "tsx watch src/index.ts",
     "preview:emails": "tsx scripts/previewEmails.ts",
+    "docs:webhook-events": "tsx scripts/webhookEventsDoc.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "vitest run --dir test/unit",

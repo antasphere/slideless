@@ -204,7 +204,7 @@ export const DECK_WEBHOOK_EVENTS: readonly DeckWebhookEvent[] = [
   },
   {
     type: 'form.response_deleted',
-    description: 'A deck’s owner deleted a form response.',
+    description: 'A form response was deleted from the dashboard.',
     subjects: ['deck', 'project'],
     data: z.object({ deckId: id, responseId: id })
   },

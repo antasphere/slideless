@@ -862,7 +862,7 @@ describe('the OpenAPI document', () => {
 
   it('spells the scope names in the two summaries that carry them', () => {
     expect(doc.paths['/cli/auth/complete'].post.summary).toBe(
-      'Verify a sign-in code and mint an API key (shown once, presentations:read+write)'
+      'Verify a sign-in code and mint an API key (shown once, presentations:read+write, webhooks:manage)'
     );
     expect(doc.paths['/workspace/export'].get.summary).toBe(
       'Full workspace export as a streamed zip (admin+; keys need data:export)'

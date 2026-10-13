@@ -514,7 +514,10 @@ describe('G1 regression — the user.created hook races the claim endpoint (idem
     expect(status).toBe('active');
 
     // Same user: claim-success (the endpoint's membership block proceeds).
-    const service = new (await import('../../src/collaborators/service.js')).CollaboratorService(app.db.db);
+    const service = new (await import('../../src/collaborators/service.js')).CollaboratorService(
+      app.db.db,
+      app.webhooks
+    );
     const sameUser = await service.claim(grantId, userId);
     expect(sameUser).not.toBeNull();
     expect(sameUser!.status).toBe('active');

@@ -61,6 +61,7 @@ import type { PresentationRow, PresentationVersionRow, UploadSessionRow } from '
 import type { Env } from '../env.js';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { DeckRegistry } from '../platform/deck-events.js';
+import type { DeckWebhooks } from '../presentations/deck-webhooks.js';
 import type { EmailDriver } from '@antasphere/chassis-server/email';
 import { buildShareEmail } from '../email/deck-templates.js';
 import type { FileService } from '@antasphere/chassis-server/files';
@@ -160,6 +161,8 @@ export interface PresentationRouteDeps {
   env: Pick<Env, 'MAX_FILE_SIZE_MB' | 'PUBLIC_BASE_URL' | 'VIEWER_BASE_URL'>;
   email: EmailDriver;
   logger: Logger;
+  /** The share-link events (PRDCT-3483): `sharing/service.ts` writes on its own handle, so these follow the write. */
+  deckWebhooks: DeckWebhooks;
 }
 
 export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationRouteDeps): void {
@@ -176,7 +179,8 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     registry,
     env,
     email,
-    logger
+    logger,
+    deckWebhooks
   } = deps;
   const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
 
@@ -1221,6 +1225,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
         expiresAt: row.expiresAt?.toISOString() ?? null
       }
     });
+    await deckWebhooks.shareLink('share_link.created', row);
     // The secret + URL appear ONLY in this response (hash-only storage).
     return c.json({ shareToken: shareTokenToWire(row), secret, url: buildViewerUrl(env, secret) }, 201);
   });
@@ -1369,6 +1374,11 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
 
     const updated = Object.keys(set).length > 0 ? await sharing.update(token.id, set) : token;
     if (!updated) return c.json(err('not_found', 'Share token not found'), 404);
+    // `changed` names the columns this PATCH wrote, the audit row's list
+    // (`passwordHash` for the password); an empty PATCH wrote nothing and says nothing.
+    if (Object.keys(set).length > 0) {
+      await deckWebhooks.shareLink('share_link.updated', updated, { changed: Object.keys(set) });
+    }
 
     c.set('audit', {
       action: 'presentation.share_token_update',
@@ -1400,6 +1410,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       );
     }
     const revoked = (await sharing.revoke(token.id)) ?? token;
+    // Only the revoke that landed says so (the service's revoke is idempotent).
+    if (token.revokedAt === null && revoked.revokedAt !== null) {
+      await deckWebhooks.shareLink('share_link.revoked', revoked);
+    }
     c.set('audit', {
       action: 'presentation.share_token_revoke',
       resourceType: 'share_token',
@@ -1463,6 +1477,7 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       return c.json({ shareToken: shareTokenToWire(token), emailSent: false }, 200);
     }
     const updated = (await sharing.update(token.id, { tokenHash: minted.tokenHash })) ?? token;
+    await deckWebhooks.shareLink('share_link.sent', updated, { recipient: body.email });
 
     c.set('audit', {
       action: 'presentation.share_token_send',
