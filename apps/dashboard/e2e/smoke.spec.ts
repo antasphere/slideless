@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { INSTANCE_NAME, INVITEE, OWNER } from './accounts';
 
 /**
@@ -8,9 +8,27 @@ import { INSTANCE_NAME, INVITEE, OWNER } from './accounts';
  * deep-link cold load → sign out → sign back in → consent page fail-closed
  * check. (The full OAuth dance is covered by server integration tests.)
  *
+ * The workspace's administration is not in the rail (PRDCT-3437, the tool
+ * template's DESIGN.md, "The rail"): People, API keys, Files and the Audit log
+ * are tabs of the one Settings section, reached from the rail's Settings entry
+ * and the section's bar (`nav[data-section-bar]`); People holds its own second
+ * bar (SubTabs, a nav named People) for Members, Teams and Invitations. Each of
+ * those pages names the section on its band (h1 Settings) and itself in an h2
+ * for assistive technology.
+ *
  * The owner account it creates is reused by the `decks` project
  * (decks.spec.ts), which depends on this one.
  */
+
+/** The rail (the desk sidebar): where the sections are opened. */
+function rail(page: Page) {
+  return page.locator('[data-sidebar="sidebar"]');
+}
+
+/** The Settings section's bar: its tabs (People, API keys, Files, the Audit log, …). */
+function sectionBar(page: Page) {
+  return page.locator('nav[data-section-bar]');
+}
 
 test('fresh instance: setup → key → invite → audit → re-login', async ({ page, browser, request }) => {
   await test.step('health endpoint answers', async () => {
@@ -35,8 +53,17 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
   });
 
   await test.step('create an API key and see the secret exactly once', async () => {
-    await page.getByRole('link', { name: 'API keys', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'API keys' })).toBeVisible();
+    // API keys is a tab of Settings: the rail's Settings entry, then the section's bar.
+    await rail(page).getByRole('link', { name: 'Settings', exact: true }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await sectionBar(page).getByRole('link', { name: 'API keys', exact: true }).click();
+    await expect(page).toHaveURL(/\/api-keys$/);
+    await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'API keys', level: 2 })).toBeAttached();
+    await expect(sectionBar(page).getByRole('link', { name: 'API keys', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
     await page.getByRole('button', { name: 'Create key' }).click();
     const dialog = page.getByRole('dialog').filter({ hasText: 'Create API key' });
     await dialog.getByLabel('Name').fill('smoke-key');
@@ -54,10 +81,24 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
 
   let inviteUrl = '';
   await test.step('create an invitation and get the copyable link', async () => {
-    // Invitations are a tab of the people section (PRDCT-2436), not a sidebar entry.
-    await page.getByRole('link', { name: 'People', exact: true }).click();
-    await page.getByRole('link', { name: 'Invitations', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Invitations' })).toBeVisible();
+    // Invitations are a tab of the people section (PRDCT-2436), itself a tab of
+    // Settings: People in the section's bar, then Invitations in People's own bar.
+    await sectionBar(page).getByRole('link', { name: 'People', exact: true }).click();
+    await expect(page).toHaveURL(/\/members$/);
+    const people = page.getByRole('navigation', { name: 'People', exact: true });
+    await expect(people.getByRole('link')).toHaveText(['Members', 'Teams', 'Invitations']);
+    await people.getByRole('link', { name: 'Invitations', exact: true }).click();
+    await expect(page).toHaveURL(/\/invitations$/);
+    await expect(page.getByRole('heading', { name: 'Invitations', level: 2 })).toBeAttached();
+    await expect(people.getByRole('link', { name: 'Invitations', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    // People stays lit in the section's bar on all three of its pages
+    await expect(sectionBar(page).getByRole('link', { name: 'People', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
     await page.getByRole('button', { name: 'Invite member' }).click();
     const dialog = page.getByRole('dialog').filter({ hasText: 'Invite a member' });
     await dialog.getByLabel('Email').fill(INVITEE.email);
@@ -87,8 +128,10 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
   });
 
   await test.step('audit log shows the trail', async () => {
-    await page.getByRole('link', { name: 'Audit log' }).click();
-    await expect(page.getByRole('heading', { name: 'Audit log' })).toBeVisible();
+    // The Audit log is a tab of Settings too (an owner's and an admin's).
+    await sectionBar(page).getByRole('link', { name: 'Audit log', exact: true }).click();
+    await expect(page).toHaveURL(/\/audit$/);
+    await expect(page.getByRole('heading', { name: 'Audit log', level: 2 })).toBeAttached();
     await expect(page.getByText('apikey.create').first()).toBeVisible();
     await expect(page.getByText('invitation.create').first()).toBeVisible();
     await expect(page.getByText('invitation.accept').first()).toBeVisible();
@@ -96,7 +139,8 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
 
   await test.step('deep link cold-loads the SPA on /members', async () => {
     await page.goto('/members');
-    await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Members', level: 2 })).toBeAttached();
     await expect(page.getByRole('cell', { name: OWNER.email })).toBeVisible();
     await expect(page.getByRole('cell', { name: INVITEE.email })).toBeVisible();
   });

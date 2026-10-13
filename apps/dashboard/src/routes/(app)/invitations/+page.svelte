@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import SubTabs from '$lib/components/shared/SubTabs.svelte';
+  import { settingsTabs, type SettingsFacts } from '$lib/settings-tabs';
   import { hubLinkHere } from '$lib/hub-links';
   import { peopleTabs } from '$lib/people-tabs';
   import { Tag } from '$lib/components/ui/tag';
@@ -207,14 +210,17 @@
   const tabs = $derived(peopleTabs(data.me));
 </script>
 
+<!-- People is a tab of Settings: the Settings bar stays on top, the people pages under it -->
 <SectionHero
-  eyebrow={t('nav.workspace')}
-  title={t('nav.people')}
+  eyebrow={t('nav.system')}
+  title={t('nav.settings')}
   lede={t('invitations.description')}
   pageTitle={t('invitations.title')}
-  {tabs}
+  tabs={settingsTabs(page.data as unknown as SettingsFacts, page.url.pathname)}
   drawing="graph"
 />
+
+<SubTabs {tabs} label={t('nav.people')} />
 
 {#snippet inviteAction()}
   <Button onclick={openCreateDialog} size="sm" class="h-8 gap-1.5">

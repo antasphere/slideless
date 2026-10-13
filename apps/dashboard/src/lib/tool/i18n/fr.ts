@@ -13,6 +13,7 @@ import type { en } from './en';
 export const fr: Record<keyof typeof en, string> = {
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',
+  'nav.groupDecks': 'Decks',
   // the shell, desk and phone (PRDCT-2436)
   // decks as cards, the overview (PRDCT-2437, PRDCT-2439)
   'decks.noOpens': 'Pas encore ouverte',
@@ -648,5 +649,31 @@ export const fr: Record<keyof typeof en, string> = {
   'deckProjects.addToProject': 'Ajouter à un projet',
   'deckProjects.addToProjectTitle': 'Ajouter cette présentation à un projet',
   'deckProjects.addToProjectDescription':
-    'Les projets où vous êtes éditeur ou responsable. Les membres du projet choisi pourront lire cette présentation.'
+    'Les projets où vous êtes éditeur ou responsable. Les membres du projet choisi pourront lire cette présentation.',
+  // ── La page Apps et son pli dans le rail (repris du modèle d’outil) ──
+  'nav.groupApps': 'Antasphere',
+  'apps.nav': 'Apps',
+  'apps.navBlurb': 'Les autres outils de votre organisation.',
+  'apps.eyebrow': 'Antasphere',
+  'apps.title': 'Apps',
+  'apps.lede': 'Les outils de votre organisation, et le compte qui vous y connecte.',
+  'apps.open': 'Ouvrir',
+  'apps.openHub': 'Ouvrir votre compte',
+  'apps.openLabel': 'Ouvrir {name} dans un nouvel onglet',
+  'apps.here': 'Vous êtes ici',
+  'apps.desc.finance': 'Le grand livre : les clients, leurs contrats et les échéances qui les règlent.',
+  'apps.desc.hiring': 'Les postes à pourvoir, et chaque candidat à travers ses étapes.',
+  'apps.desc.meet': 'Les liens de réservation, vos disponibilités et les rendez-vous pris.',
+  'apps.desc.crm': 'Les entreprises, les personnes et le fil de chaque échange.',
+  'apps.desc.steward': 'Le registre de l’espace de travail : ses dépôts et qui peut y accéder.',
+  'apps.descHub': 'Votre connexion, vos organisations et qui utilise quel outil.',
+  'apps.descHere': 'Vous êtes ici : les decks de votre espace, leurs liens de partage et leurs formulaires.',
+  'apps.descGeneric': 'Un autre outil de votre organisation.',
+  'apps.connectedSince': 'Connecté depuis le {date}',
+  'apps.lastUsed': 'dernière utilisation le {date}',
+  'apps.emptyTitle': 'Aucune autre app n’est listée ici',
+  'apps.emptyBody':
+    'Cette instance ne liste aucun autre outil. Son opérateur les liste dans un fichier JSON indiqué par {key}.',
+  'apps.loadError': 'Les apps n’ont pas pu être chargées.',
+  'apps.foldEmpty': 'Voir les apps'
 };

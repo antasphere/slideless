@@ -170,7 +170,9 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
     c.downloadFormResponseFilesZip(SAMPLE_ID, SAMPLE_CHILD_ID),
   'GET /presentations/{id}/responses/{responseId}/files/{fileId}': (c) =>
     c.downloadFormResponseFile(SAMPLE_ID, SAMPLE_CHILD_ID, SAMPLE_FILE_ID),
-  'DELETE /presentations/{id}/responses/{responseId}': (c) => c.deleteFormResponse(SAMPLE_ID, SAMPLE_CHILD_ID)
+  'DELETE /presentations/{id}/responses/{responseId}': (c) =>
+    c.deleteFormResponse(SAMPLE_ID, SAMPLE_CHILD_ID),
+  'GET /apps': (c) => c.apps()
 };
 
 interface ContractRoute {

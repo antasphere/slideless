@@ -263,6 +263,8 @@ export const en = {
   'docsCard.title': 'Read the docs',
   'docsCard.body': 'The concepts, the CLI, the MCP connector, and a prompt for your agent.',
   'docsCard.read': 'Open the docs',
+  'docsCard.open': 'Open the docs',
+  'docsCard.hide': 'Hide',
   'docsCard.copyPrompt': 'Copy agent prompt',
   'docsCard.copiedShort': 'Copied',
   'docsCard.copied': 'The agent prompt is on your clipboard — paste it into your agent.',

@@ -5,6 +5,7 @@ import {
   buildEnvSchema,
   httpUrl,
   numeric,
+  optionalString,
   parseEnv as parseChassisEnv,
   type EnvExtension,
   type EnvOptions,
@@ -52,7 +53,9 @@ const deckEnvShape = {
   /** Total weight, in MB, of the form uploads ONE deck can hold (attached and not yet submitted together). Past it the upload route answers 403 `uploads_full` until the owner deletes responses. The bound on what a share link can write to the instance's disk. */
   FORMS_MAX_UPLOADS_MB_PER_DECK: numeric(z.coerce.number().int().min(1).default(5120)),
   /** Days of per-view share-link analytics events (share_token_views: when a link was opened, referring site host, placement label, browser family — never IPs or full URLs) to keep. Nightly purge at 03:00; 0 = keep forever. */
-  VIEW_EVENTS_RETENTION_DAYS: numeric(z.coerce.number().int().min(0).default(90))
+  VIEW_EVENTS_RETENTION_DAYS: numeric(z.coerce.number().int().min(0).default(90)),
+  /** A JSON file listing the other tools of the organization for the Apps page: `[{ "slug": "finance", "name": "Antasphere Finance", "launchUrl": "https://finance.example.com", "description": "optional sentence" }]`. Read on a self-hosted instance (`EDITION=oss`), and on the cloud edition when the hub cannot be asked (the cloud edition otherwise asks the hub as the person). Every `launchUrl` must be http(s); an entry that is not is left out, with a warning in the log. Absent: the Apps page lists no other tool. */
+  APPS_FILE: optionalString(z.string().min(1).max(1000))
 };
 
 export type DeckEnvShape = typeof deckEnvShape;
@@ -70,7 +73,8 @@ export const deckEnvExtension: EnvExtension<DeckEnvShape> = {
     FORMS_MAX_UPLOAD_MB: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_FILES_PER_RESPONSE: 'MAX_FILE_SIZE_MB',
     FORMS_MAX_UPLOADS_MB_PER_DECK: 'MAX_FILE_SIZE_MB',
-    VIEW_EVENTS_RETENTION_DAYS: 'AUDIT_RETENTION_DAYS'
+    VIEW_EVENTS_RETENTION_DAYS: 'AUDIT_RETENTION_DAYS',
+    APPS_FILE: 'MAX_FILE_SIZE_MB'
   },
   refine: (env, ctx) => {
     // A renderer without its secret would take no job (the renderer refuses

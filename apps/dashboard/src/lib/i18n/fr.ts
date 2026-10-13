@@ -267,6 +267,8 @@ export const fr: Record<keyof typeof en, string> = {
   'docsCard.title': 'Lire la documentation',
   'docsCard.body': 'Les concepts, le CLI, le connecteur MCP, et un prompt pour votre agent.',
   'docsCard.read': 'Ouvrir la doc',
+  'docsCard.open': 'Ouvrir la documentation',
+  'docsCard.hide': 'Masquer',
   'docsCard.copyPrompt': 'Copier le prompt agent',
   'docsCard.copiedShort': 'Copié',
   'docsCard.copied': 'Le prompt agent est dans votre presse-papiers : collez-le dans votre agent.',

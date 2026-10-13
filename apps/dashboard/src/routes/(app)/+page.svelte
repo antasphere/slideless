@@ -81,7 +81,7 @@
   // One drawing and one colour per figure, each colour one of the brand's own themes.
   const stats = $derived([
     ...toolOverview.stats,
-    ...(isGuest
+    ...(isGuest || tool.overview.shellStats === false
       ? []
       : [
           {

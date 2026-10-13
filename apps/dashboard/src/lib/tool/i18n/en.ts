@@ -7,6 +7,7 @@
 export const en = {
   // ── Navigation / sidebar ─────────────────────────────────────────────
   'nav.decks': 'Decks',
+  'nav.groupDecks': 'Decks',
   // the shell, desk and phone (PRDCT-2436)
   // decks as cards, the overview (PRDCT-2437, PRDCT-2439)
   'decks.noOpens': 'Not opened yet',
@@ -619,5 +620,31 @@ export const en = {
   'deckProjects.addToProject': 'Add to a project',
   'deckProjects.addToProjectTitle': 'Add this deck to a project',
   'deckProjects.addToProjectDescription':
-    'The projects where you are an editor or a manager. The members of the project you choose will be able to read this deck.'
+    'The projects where you are an editor or a manager. The members of the project you choose will be able to read this deck.',
+  // ── The Apps page and its fold in the rail (from the tool template) ──
+  'nav.groupApps': 'Antasphere',
+  'apps.nav': 'Apps',
+  'apps.navBlurb': 'The other tools of your organization.',
+  'apps.eyebrow': 'Antasphere',
+  'apps.title': 'Apps',
+  'apps.lede': 'The tools of your organization, and the account that signs you in.',
+  'apps.open': 'Open',
+  'apps.openHub': 'Open your account',
+  'apps.openLabel': 'Open {name} in a new tab',
+  'apps.here': 'You are here',
+  'apps.desc.finance': 'The ledger: the clients, their contracts and the milestones that pay them.',
+  'apps.desc.hiring': 'The jobs you hire for, and each candidate through its stages.',
+  'apps.desc.meet': 'Booking links, your availability and the meetings people book.',
+  'apps.desc.crm': 'Companies, people and the timeline of every exchange.',
+  'apps.desc.steward': 'The workspace’s register: its repositories and who may reach them.',
+  'apps.descHub': 'Your sign-in, your organizations and who may use which tool.',
+  'apps.descHere': 'Where you are: the decks of your workspace, their share links and their forms.',
+  'apps.descGeneric': 'Another tool of your organization.',
+  'apps.connectedSince': 'Connected since {date}',
+  'apps.lastUsed': 'last used {date}',
+  'apps.emptyTitle': 'No other app is listed here',
+  'apps.emptyBody':
+    'This instance lists no other tool. Its operator lists them in a JSON file named by {key}.',
+  'apps.loadError': 'The apps could not be loaded.',
+  'apps.foldEmpty': 'See the apps'
 } as const;

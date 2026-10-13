@@ -27,36 +27,85 @@ const { listScope } = await import('$lib/stores/pagedList.svelte');
  * would say so.
  */
 describe('the menu', () => {
-  it('a member gets decks, projects and the library, right after the overview', () => {
+  it('the overview is about decks alone: the shell adds no members or files figures after the tool’s', () => {
+    expect(tool.overview.shellStats).toBe(false);
+  });
+
+  it('a member gets decks and the library under Decks, Projects and Settings under Workspace, Apps under Antasphere; no Workspace and no System group', () => {
     const nav = buildNav({ role: 'member', origin: 'local' });
     expect(nav.primary.map((i) => [i.id, i.href, i.pattern])).toEqual([
       ['overview', '/', 'rings'],
       ['decks', '/decks', 'slides'],
+      ['library', '/brands', 'aurora'],
       ['projects', '/projects', 'truss'],
-      ['library', '/brands', 'aurora']
+      ['apps', '/apps', 'crosses'],
+      ['settings', '/settings', 'weave']
     ]);
     expect(nav.primary[1].icon).toBe(Presentation);
     for (const item of nav.primary.slice(1)) expect(item.title && item.blurb).toBeTruthy();
+    // the categories: the overview unlabelled, the decks and their library under Decks, the
+    // shell's two under the workspace's, the organization's other tools under Antasphere
+    expect(nav.primary.map((i) => i.group)).toEqual([
+      undefined,
+      'Decks',
+      'Decks',
+      'Workspace',
+      'Antasphere',
+      'Workspace'
+    ]);
+    // the administration is a set of Settings tabs, not entries of the rail (workspaceNav: 'none')
+    expect(tool.workspaceNav).toBe('none');
+    expect(nav.workspace).toEqual([]);
+    expect(nav.system).toEqual([]);
+    expect(nav.primary.at(-1)?.also).toEqual([
+      '/account',
+      '/members',
+      '/invitations',
+      '/teams',
+      '/api-keys',
+      '/files',
+      '/audit'
+    ]);
+    expect(buildNav({ role: 'owner', origin: 'local' }).system).toEqual([]);
   });
 
-  // PRDCT-2583: the four entries, pinned for every role and origin. A
-  // guest's role is locked to member, the other two rows hold the rule anyway.
+  // PRDCT-2583, then the rail in categories (PRDCT-3437): the entries, pinned for every role and
+  // origin. A guest's role is locked to member, the other two rows hold the rule anyway.
   it.each([
-    ['owner', 'local', ['overview', 'decks', 'projects', 'library']],
-    ['admin', 'local', ['overview', 'decks', 'projects', 'library']],
-    ['member', 'local', ['overview', 'decks', 'projects', 'library']],
-    ['owner', 'hub', ['overview', 'decks', 'projects', 'library']],
-    ['admin', 'hub', ['overview', 'decks', 'projects', 'library']],
-    ['member', 'hub', ['overview', 'decks', 'projects', 'library']],
-    ['owner', 'guest', ['overview', 'decks']],
-    ['admin', 'guest', ['overview', 'decks']],
-    ['member', 'guest', ['overview', 'decks']]
+    ['owner', 'local', ['overview', 'decks', 'library', 'projects', 'apps', 'settings']],
+    ['admin', 'local', ['overview', 'decks', 'library', 'projects', 'apps', 'settings']],
+    ['member', 'local', ['overview', 'decks', 'library', 'projects', 'apps', 'settings']],
+    ['owner', 'hub', ['overview', 'decks', 'library', 'projects', 'apps', 'settings']],
+    ['admin', 'hub', ['overview', 'decks', 'library', 'projects', 'apps', 'settings']],
+    ['member', 'hub', ['overview', 'decks', 'library', 'projects', 'apps', 'settings']],
+    ['owner', 'guest', ['overview', 'decks', 'settings']],
+    ['admin', 'guest', ['overview', 'decks', 'settings']],
+    ['member', 'guest', ['overview', 'decks', 'settings']]
   ] as const)('%s, origin %s: %j', (role, origin, ids) => {
     expect(buildNav({ role, origin }).primary.map((i) => i.id)).toEqual(ids);
   });
 
+  it('after the projects comes the Apps entry, with its fold; a guest is not offered it', () => {
+    const after = tool.navAfter({ role: 'member', origin: 'local' });
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({
+      id: 'apps',
+      group: 'Antasphere',
+      title: 'Apps',
+      href: '/apps',
+      pattern: 'crosses'
+    });
+    expect(after[0].fold).toBeTruthy();
+    expect(tool.navAfter({ role: 'member', origin: 'guest' })).toEqual([]);
+  });
+
+  it('Slideless has no connection, so it names no Settings tab of its own', () => {
+    expect(tool.settingsTabs).toBeUndefined();
+  });
+
   it('the library is one entry lit on both of its tabs, at the addresses they always had', () => {
     const library = buildNav({ role: 'member', origin: 'local' }).primary.find((i) => i.id === 'library')!;
+    expect(library.group).toBe('Decks');
     expect([library.href, ...(library.also ?? [])]).toEqual(['/brands', '/templates']);
     expect(isActive(library, '/brands')).toBe(true);
     expect(isActive(library, '/templates')).toBe(true);
@@ -71,12 +120,13 @@ describe('the menu', () => {
     expect(pathCrumbs(nav, '/brands')).toHaveLength(2);
   });
 
-  it('a guest reads no workspace reference and joins no project: decks only', () => {
+  it('a guest reads no workspace reference, joins no project and is offered no Apps: decks alone', () => {
     expect(tool.nav({ role: 'member', origin: 'guest' }).map((i) => i.id)).toEqual(['decks']);
     expect(tool.navAfter({ role: 'member', origin: 'guest' })).toEqual([]);
     expect(buildNav({ role: 'member', origin: 'guest' }).primary.map((i) => i.id)).toEqual([
       'overview',
-      'decks'
+      'decks',
+      'settings'
     ]);
   });
 
@@ -88,14 +138,7 @@ describe('the menu', () => {
     expect(tabs.map((i) => i.id)).toEqual(['overview', 'decks', 'projects']);
     expect(tabs.length).toBeLessThanOrEqual(PHONE_TOOL_TABS_MAX + 1);
     // what the bar has no room for, as the workspace page lists it: the drawer shows the whole rail
-    expect(behindWorkspace(nav).map((i) => i.id)).toEqual([
-      'library',
-      'members',
-      'api-keys',
-      'files',
-      'audit',
-      'settings'
-    ]);
+    expect(behindWorkspace(nav).map((i) => i.id)).toEqual(['library', 'apps', 'settings']);
   });
 });
 

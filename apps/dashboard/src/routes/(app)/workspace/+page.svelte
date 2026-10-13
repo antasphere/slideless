@@ -1,10 +1,9 @@
 <script lang="ts">
-  /* The workspace page (PRDCT-2436): everything that administers the
-     workspace, as large tiles with a plain sentence each. It is what the
-     phone's tab bar has no room for (the drawer behind its Menu thumb lists
-     the same), kept for the phone's workspace switcher; on a desk the
-     sidebar lists the same sections and this page is one click from it. */
-  import PageHeader from '$lib/components/shared/PageHeader.svelte';
+  /* The workspace page (PRDCT-2436): what the phone's tab bar has no room
+     for (the drawer behind its Menu thumb lists the same), as large tiles with a plain sentence each, under the hero every
+     workspace page opens on (the category, the workspace's name, one
+     sentence). On a desk the rail lists the same entries. */
+  import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import PatternCanvas from '$lib/components/brand/PatternCanvas.svelte';
   import WorkspaceSwitcher from '$lib/components/sidebar/WorkspaceSwitcher.svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -25,7 +24,13 @@
 
 <svelte:head><title>{t('nav.workspace')} · {data.instance.name}</title></svelte:head>
 
-<PageHeader title={t('nav.workspace')} description={t('workspace.description')} />
+<SectionHero
+  eyebrow={t('nav.workspace')}
+  title={data.me.workspace.name}
+  lede={t('workspace.description')}
+  drawing="latitudes"
+  seed={20261011}
+/>
 
 {#if several}
   <div class="mb-6 max-w-sm md:hidden">

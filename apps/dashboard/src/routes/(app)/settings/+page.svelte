@@ -111,7 +111,7 @@
   eyebrow={t('nav.system')}
   title={t('nav.settings')}
   lede={t('settings.workspaceLede')}
-  pageTitle={t('settings.tabWorkspace')}
+  pageTitle={t('nav.settings')}
   tabs={settingsTabs(data)}
   drawing="meridians"
 />
