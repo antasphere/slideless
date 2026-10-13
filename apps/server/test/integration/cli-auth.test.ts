@@ -139,7 +139,12 @@ describe('CLI auth: OTP request → key mint', () => {
     const body = await readJson(completed);
     expect(body.key).toMatch(/^slk_/);
     expect(body.apiKey.name).toBe('test key');
-    expect(body.apiKey.scopes.sort()).toEqual(['presentations:read', 'presentations:write']);
+    // The webhooks scope rides the CLI key like read and write (Romain, 13 October 2026).
+    expect(body.apiKey.scopes.sort()).toEqual([
+      'presentations:read',
+      'presentations:write',
+      'webhooks:manage'
+    ]);
     expect(body.apiKey.expiresAt).toBeNull();
     expect(body.user.email).toBe(OWNER.email);
 
