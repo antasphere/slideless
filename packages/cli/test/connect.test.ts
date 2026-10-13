@@ -240,7 +240,10 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
     saveConfig(env, {
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_cached_key' } } }
+        default: {
+          baseUrl: 'http://tool',
+          connectKeys: { default: { apiKey: 'slk_cached_key', email: 'ada@x.co' } }
+        }
       }
     });
     // The hub login's default organization changed since the mint: the key
@@ -271,7 +274,10 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
     saveConfig(env, {
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_cached_key' } } }
+        default: {
+          baseUrl: 'http://tool',
+          connectKeys: { default: { apiKey: 'slk_cached_key', email: 'ada@x.co' } }
+        }
       }
     });
     const h = routedHarness([decksRoute], env);

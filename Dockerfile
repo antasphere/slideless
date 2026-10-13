@@ -11,6 +11,8 @@ COPY packages/sdk/package.json packages/sdk/package.json
 COPY packages/cli/package.json packages/cli/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY apps/dashboard/package.json apps/dashboard/package.json
+# The CLI package's prepack copies the license beside its binary (packages/cli).
+COPY LICENSE ./
 RUN pnpm install --frozen-lockfile
 
 COPY packages ./packages
@@ -29,7 +31,17 @@ RUN pnpm --filter @slideless/db build \
  && pnpm --filter @slideless/dashboard build \
  && pnpm --filter @slideless/server build \
  && pnpm --filter @slideless/server deploy --prod --legacy /out \
- && cp -r packages/db/drizzle /out/drizzle
+ && cp -r packages/db/drizzle /out/drizzle \
+# The tool's own CLI package, packed into the image (PRDCT-3312): the server
+# serves it to a member the hub lets in (`POST /api/v1/cli/package`, chassis
+# ≥ the version that reads CLI_PACKAGE_DIR) and names it on `GET /instance`
+# (`cli: { name, version }`), so the team CLI installs and updates it with
+# nothing published anywhere. One folder: the tarball under a fixed name and
+# the package's own package.json beside it. The pack runs the package's
+# prepack, so the bundled binary is built here, not copied from the host.
+ && pnpm --filter @antasphere/slideless pack --pack-destination /out/cli \
+ && mv /out/cli/*.tgz /out/cli/package.tgz \
+ && cp packages/cli/package.json /out/cli/package.json
 
 # Prune build-time tooling that pnpm's peer resolution drags into the prod
 # tree: drizzle-kit (migrations ship pre-generated, applied via drizzle-orm)
@@ -68,6 +80,9 @@ RUN echo "os refresh: ${OS_REFRESH}" && apk upgrade --no-cache && apk add --no-c
  && mkdir -p /data && chown node:node /data
 WORKDIR /app
 ENV NODE_ENV=production
+# Where the image keeps the tool's CLI package (see the pack step above); a
+# chassis without the route ignores it, a chassis with it serves the folder.
+ENV CLI_PACKAGE_DIR=/app/cli
 # No APP_VERSION arg/env: the version is intrinsic (PRDCT-1844) — the server
 # bundle bakes it in from package.json at build, so a plain `docker build`
 # reports the true semver. Operators can still override with `-e APP_VERSION`.
