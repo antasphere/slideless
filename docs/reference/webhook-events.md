@@ -47,8 +47,8 @@ receives no `member.joined`.
 | `member.joined`           | none                      | A person joined the workspace by accepting an invitation.                                                                                                                                                              |
 | `member.removed`          | none                      | A person was removed from the workspace by an owner or an admin.                                                                                                                                                       |
 | `workspace.created`       | none                      | A workspace was created from inside the product.                                                                                                                                                                       |
-| `apikey.created`          | none                      | An API key was created in the workspace.                                                                                                                                                                               |
-| `apikey.revoked`          | none                      | An API key of the workspace was revoked.                                                                                                                                                                               |
+| `apikey.created`          | none                      | An API key was created on the API keys page or through the API (not the command line’s own sign-in key).                                                                                                               |
+| `apikey.revoked`          | none                      | An API key of the workspace was revoked from the API keys page or through the API (not a key revoking itself at logout).                                                                                               |
 | `project.created`         | `project`                 | A project was created in the workspace.                                                                                                                                                                                |
 | `project.archived`        | `project`                 | A project of the workspace was archived.                                                                                                                                                                               |
 | `deck.created`            | `deck`, `project`         | A deck was created: its first version was pushed, or a deck was duplicated.                                                                                                                                            |
@@ -186,7 +186,7 @@ Subjects: none. A filter on any subject excludes it.
 
 ### `apikey.created`
 
-An API key was created in the workspace.
+An API key was created on the API keys page or through the API (not the command line’s own sign-in key).
 
 Subjects: none. A filter on any subject excludes it.
 
@@ -210,7 +210,7 @@ Subjects: none. A filter on any subject excludes it.
 
 ### `apikey.revoked`
 
-An API key of the workspace was revoked.
+An API key of the workspace was revoked from the API keys page or through the API (not a key revoking itself at logout).
 
 Subjects: none. A filter on any subject excludes it.
 
