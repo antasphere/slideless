@@ -12,7 +12,11 @@ import { IDENTITY } from '@slideless/contract';
  * hints of its own API codes, bound ONCE so the slideless_ tool set (tools.ts)
  * keeps calling `checkScope(principal, scope)` and `wrapToolErrors(fn)`.
  */
-export const DECK_MCP_SCOPES = { read: IDENTITY.scopes.read, write: IDENTITY.scopes.write } as const;
+export const DECK_MCP_SCOPES = {
+  read: IDENTITY.scopes.read,
+  write: IDENTITY.scopes.write,
+  webhooks: IDENTITY.scopes.webhooks
+} as const;
 
 export const DECK_ERROR_HINTS: ErrorHints = {
   // ── Presentation domain (the slideless_ tool set) ──────────────────────────

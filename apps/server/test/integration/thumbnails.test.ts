@@ -790,7 +790,8 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
         db: app.db.db,
         storage: base,
         logger: app.logger,
-        renderer: other
+        renderer: other,
+        webhooks: app.webhooks
       });
       const racing = new ThumbnailService({
         db: app.db.db,
@@ -804,7 +805,8 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
           }
         } as typeof base,
         logger: app.logger,
-        renderer: fake
+        renderer: fake,
+        webhooks: app.webhooks
       });
       expect(await racing.complete({ job: vid, token: first.token, webp: FAKE_WEBP })).toBe('rejected');
       const row = await c.row(vid);
@@ -897,7 +899,8 @@ describe('a renderer takes the jobs (a fake playing the protocol)', () => {
       db: app.db.db,
       storage: createStorageDriver(app.env),
       logger: app.logger,
-      renderer: other
+      renderer: other,
+      webhooks: app.webhooks
     });
     try {
       await Promise.all([app.tool.thumbnails.sweep(), second.sweep()]);

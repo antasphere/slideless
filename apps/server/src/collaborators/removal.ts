@@ -2,6 +2,23 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { user as userTable } from '@antasphere/chassis-db';
 import { collaborators } from '@slideless/db';
 import type { MembershipRemovalHook } from '@antasphere/chassis-server';
+import { emitCollaboratorEvent } from './service.js';
+
+/**
+ * The webhook emitter the removal reports through (PRDCT-3483), bound by the
+ * `services` slot at boot (`apps/server/src/tool.ts`). The chassis's
+ * `membershipRemoval` slot receives the chassis's emitter as its third
+ * argument (`MembershipRemovalContext`), so the revocations report inside
+ * the removal's own transaction.
+ */
+const revokedGrantColumns = {
+  id: collaborators.id,
+  workspaceId: collaborators.workspaceId,
+  presentationId: collaborators.presentationId,
+  email: collaborators.email,
+  userId: collaborators.userId,
+  claimedAt: collaborators.claimedAt
+};
 
 /**
  * Slideless's half of a member's removal (the chassis's `membershipRemoval`
@@ -25,7 +42,7 @@ import type { MembershipRemovalHook } from '@antasphere/chassis-server';
  * Revoked the way `CollaboratorService.revoke` does it: the row survives, it
  * stops authorizing, and a later invite re-mints it in place.
  */
-export const endDeckAccessOnRemoval: MembershipRemovalHook = async (tx, removed) => {
+export const endDeckAccessOnRemoval: MembershipRemovalHook = async (tx, removed, { webhooks }) => {
   let deckGrants = 0;
   let deckInvites = 0;
   let deckInvitesIssued = 0;
@@ -50,7 +67,7 @@ export const endDeckAccessOnRemoval: MembershipRemovalHook = async (tx, removed)
             : eq(collaborators.userId, userId)
         )
       )
-      .returning({ claimedAt: collaborators.claimedAt });
+      .returning(revokedGrantColumns);
     for (const row of rows) {
       if (row.claimedAt) deckGrants += 1;
       else deckInvites += 1;
@@ -66,8 +83,14 @@ export const endDeckAccessOnRemoval: MembershipRemovalHook = async (tx, removed)
           isNull(collaborators.revokedAt)
         )
       )
-      .returning({ id: collaborators.id });
+      .returning(revokedGrantColumns);
     deckInvitesIssued += issued.length;
+    // One `collaborator.revoked` per grant the removal ended, in its own
+    // transaction (PRDCT-3483): the person's grants and invites, and the
+    // pending invites they issued.
+    for (const grant of [...rows, ...issued]) {
+      await emitCollaboratorEvent(webhooks, tx, 'collaborator.revoked', grant);
+    }
   }
   return { deckGrants, deckInvites, deckInvitesIssued };
 };

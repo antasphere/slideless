@@ -24,6 +24,7 @@ import {
   type PresentationsListType,
   type Reference
 } from '@slideless/contract';
+import type { WebhookEmitter } from '@antasphere/chassis-server';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 import { PROJECTS_ID, projectGrantPredicate, projectRole } from '@antasphere/chassis-server/projects';
 import {
@@ -33,6 +34,7 @@ import {
   readsDeckThroughProject,
   writesDeckThroughProject
 } from './projects.js';
+import { emitDeckEvent } from './deck-webhooks.js';
 
 /** A version list row: the summary columns plus its per-version counts (PRDCT-2308). */
 export type VersionSummaryRow = Omit<PresentationVersionRow, 'manifest'> & {
@@ -122,7 +124,11 @@ export type DuplicateResult =
  * counter only ever advances under the optimistic-concurrency check.
  */
 export class PresentationService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** The webhook emitter (PRDCT-3483): every deck event is emitted INSIDE the transaction of its write. */
+    private readonly webhooks: WebhookEmitter
+  ) {}
 
   // ── Upload sessions ────────────────────────────────────────────────────────
 
@@ -406,6 +412,30 @@ export class PresentationService {
         .set({ consumedAt: new Date() })
         .where(eq(uploadSessions.id, session.id));
 
+      // The deck's first events (PRDCT-3483), in this transaction: the
+      // creation, then one link per project it was born in.
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: opts.workspaceId,
+        type: 'deck.created',
+        deckId: presentation!.id,
+        data: {
+          deckId: presentation!.id,
+          title: presentation!.title,
+          version: 1,
+          projectIds,
+          ownerUserId: presentation!.ownerUserId,
+          remixedFrom: null
+        }
+      });
+      for (const projectId of projectIds) {
+        await emitDeckEvent(this.webhooks, tx, {
+          workspaceId: opts.workspaceId,
+          type: 'deck.project_linked',
+          deckId: presentation!.id,
+          data: { deckId: presentation!.id, projectId }
+        });
+      }
+
       return { ok: true, presentation: presentation!, version: version! };
     });
   }
@@ -571,6 +601,23 @@ export class PresentationService {
         .where(eq(presentations.id, deck.id))
         .returning();
 
+      // The pushed version (PRDCT-3483), in this transaction. `authorRole` is
+      // the role the version is RECORDED under (`created_by_role`): 'owner'
+      // for the deck owner and workspace admins, 'dev' for a per-deck
+      // collaborator and for a project editor or manager.
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: opts.workspaceId,
+        type: 'deck.version_committed',
+        deckId: deck.id,
+        data: {
+          deckId: deck.id,
+          version: newVersion,
+          title: updated!.title,
+          authorUserId: opts.principal.userId,
+          authorRole
+        }
+      });
+
       const audienceReset = stoppedBeingReference && deck.audience === 'workspace';
       const defaultDropped = (stoppedBeingReference || typeChanged) && deck.isDefaultReference;
       return {
@@ -695,6 +742,20 @@ export class PresentationService {
           createdByRole: 'owner'
         })
         .returning();
+      // A duplicate is a creation (PRDCT-3483): the copy is born in no project.
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: opts.workspaceId,
+        type: 'deck.created',
+        deckId: presentation!.id,
+        data: {
+          deckId: presentation!.id,
+          title: presentation!.title,
+          version: 1,
+          projectIds: [],
+          ownerUserId: presentation!.ownerUserId,
+          remixedFrom: source.id
+        }
+      });
       return { ok: true, presentation: presentation!, version: version!, sourceVersion: wanted };
     });
   }
@@ -904,6 +965,18 @@ export class PresentationService {
         })
         .where(eq(presentations.id, deck.id))
         .returning();
+      // `fields` names what the PATCH carried, the audit row's own list (PRDCT-3483).
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId,
+        type: 'deck.updated',
+        deckId: deck.id,
+        data: {
+          deckId: deck.id,
+          fields: Object.entries(patch)
+            .filter(([, value]) => value !== undefined)
+            .map(([field]) => field)
+        }
+      });
       return { ok: true, presentation: row!, displacedDefaultIds };
     });
   }
@@ -989,29 +1062,51 @@ export class PresentationService {
         .for('share')
         .limit(1);
       if (!project || project.archivedAt !== null) return 'archived';
-      await tx
+      const inserted = await tx
         .insert(presentationProjects)
         .values({ presentationId: deck.id, projectId, workspaceId: deck.workspaceId, addedBy })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ projectId: presentationProjects.projectId });
+      // A repeat link changes nothing and says nothing (PRDCT-3483).
+      if (inserted.length > 0) {
+        await emitDeckEvent(this.webhooks, tx, {
+          workspaceId: deck.workspaceId,
+          type: 'deck.project_linked',
+          deckId: deck.id,
+          data: { deckId: deck.id, projectId }
+        });
+      }
       return 'linked';
     });
   }
 
   /** Take a deck out of a project (its brand flag goes with the link). False when it was not linked. */
   async unlinkProject(workspaceId: string, deckId: string, projectId: string): Promise<boolean> {
-    // The workspace clause is a habit of every write in this file, kept
-    // here too although both ids were workspace-checked by the handler.
-    const removed = await this.db
-      .delete(presentationProjects)
-      .where(
-        and(
-          eq(presentationProjects.workspaceId, workspaceId),
-          eq(presentationProjects.presentationId, deckId),
-          eq(presentationProjects.projectId, projectId)
+    return this.db.transaction(async (tx) => {
+      // The workspace clause is a habit of every write in this file, kept
+      // here too although both ids were workspace-checked by the handler.
+      const removed = await tx
+        .delete(presentationProjects)
+        .where(
+          and(
+            eq(presentationProjects.workspaceId, workspaceId),
+            eq(presentationProjects.presentationId, deckId),
+            eq(presentationProjects.projectId, projectId)
+          )
         )
-      )
-      .returning({ projectId: presentationProjects.projectId });
-    return removed.length > 0;
+        .returning({ projectId: presentationProjects.projectId });
+      if (removed.length === 0) return false;
+      // The project it left is named in the `project` subject too, so an
+      // endpoint filtered on that project hears the deck leave it (PRDCT-3483).
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId,
+        type: 'deck.project_unlinked',
+        deckId,
+        alsoProjectIds: [projectId],
+        data: { deckId, projectId }
+      });
+      return true;
+    });
   }
 
   /** The deck flagged as the project's brand, or null. Read access to it is the caller's to check. */
@@ -1303,12 +1398,22 @@ export class PresentationService {
    * unique index that already ignores deleted rows.
    */
   async softDelete(deck: PresentationRow): Promise<PresentationRow> {
-    const [row] = await this.db
-      .update(presentations)
-      .set({ deletedAt: new Date(), isDefaultReference: false, updatedAt: new Date() })
-      .where(and(eq(presentations.id, deck.id), isNull(presentations.deletedAt)))
-      .returning();
-    return row ?? deck;
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(presentations)
+        .set({ deletedAt: new Date(), isDefaultReference: false, updatedAt: new Date() })
+        .where(and(eq(presentations.id, deck.id), isNull(presentations.deletedAt)))
+        .returning();
+      if (!row) return deck;
+      // Only the delete that landed says so (a racing second delete matched nothing).
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: row.workspaceId,
+        type: 'deck.deleted',
+        deckId: row.id,
+        data: { deckId: row.id, title: row.title }
+      });
+      return row;
+    });
   }
 
   // ── Blob-delete guard (ADR 011 sharp edge) ─────────────────────────────────

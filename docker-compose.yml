@@ -69,6 +69,12 @@ services:
       - DEMO_SIGN_IN=${DEMO_SIGN_IN:-false}
       - DEMO_SIGN_IN_HOSTS=${DEMO_SIGN_IN_HOSTS:-}
       - DEMO_SIGN_IN_EMAIL_DOMAINS=${DEMO_SIGN_IN_EMAIL_DOMAINS:-}
+      # Outbound webhooks (PRDCT-3482). Default: an endpoint never reaches a
+      # private, loopback or link-local address; `true` opens them for a
+      # receiver on your own network (an n8n on the LAN). Never on the cloud
+      # edition. The delivery log is kept 30 days; 0 keeps it forever.
+      - WEBHOOKS_ALLOW_PRIVATE_NETWORKS=${WEBHOOKS_ALLOW_PRIVATE_NETWORKS:-false}
+      - WEBHOOK_DELIVERY_RETENTION_DAYS=${WEBHOOK_DELIVERY_RETENTION_DAYS:-30}
       # OTLP/HTTP endpoint for trace export. Unset = no export (zero phone-home).
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # The optional renderer container that makes the still image of each

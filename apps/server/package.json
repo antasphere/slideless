@@ -12,6 +12,7 @@
     "build": "tsup",
     "dev": "tsx watch src/index.ts",
     "preview:emails": "tsx scripts/previewEmails.ts",
+    "docs:webhook-events": "tsx scripts/webhookEventsDoc.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "vitest run --dir test/unit",
@@ -20,9 +21,9 @@
     "docs:env": "tsx scripts/generate-env-docs.ts && prettier --write ../../docs/reference/env-reference.md"
   },
   "dependencies": {
-    "@antasphere/chassis-contract": "1.1.0",
-    "@antasphere/chassis-db": "1.1.0",
-    "@antasphere/chassis-server": "1.1.0",
+    "@antasphere/chassis-contract": "1.2.0",
+    "@antasphere/chassis-db": "1.2.0",
+    "@antasphere/chassis-server": "1.2.0",
     "@better-auth/oauth-provider": "1.6.22",
     "@hono/node-server": "^1.14.0",
     "@hono/zod-openapi": "^1.4.0",

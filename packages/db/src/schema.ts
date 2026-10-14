@@ -797,6 +797,44 @@ export const shareTokenDownloads = pgTable(
 );
 
 /**
+ * The grouping window of the `share_link.viewed` webhook (PRDCT-3483, Romain's
+ * ruling of 13 October 2026): the first counted view of a link is emitted at
+ * once, then at most one event per link per window (five minutes) carries the
+ * views counted since. One row per link with a window OPEN, and only while a
+ * workspace endpoint listens: a view nobody listens to writes nothing here.
+ * The row is opened by the view that emits at once, armed by the first view
+ * after it (`pending`, a keyed one-off timer due at `window_until`), and
+ * deleted by the timer's flush, so the next view opens a new window. The
+ * count of the grouped views is the link's own counter
+ * (`share_tokens.access_count` minus `count_at_start`), the facts are read
+ * from `share_token_views` from `since` on: nothing here names a viewer.
+ * The link's, the deck's and the workspace's deletion cascade the row away.
+ */
+export const shareTokenViewWindows = pgTable('share_token_view_windows', {
+  shareTokenId: uuid('share_token_id')
+    .primaryKey()
+    .references(() => shareTokens.id, { onDelete: 'cascade' }),
+  workspaceId: uuid('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  presentationId: uuid('presentation_id')
+    .notNull()
+    .references(() => presentations.id, { onDelete: 'cascade' }),
+  /** When the current window ends: the flush's timer is due then. */
+  windowUntil: timestamp('window_until', { withTimezone: true }).notNull(),
+  /**
+   * From when the flush reads the grouped views' facts: the window's first
+   * view at the opening, moved to the arming view's time when the timer is
+   * armed (the first view's facts already went out with its own event).
+   */
+  since: timestamp('since', { withTimezone: true }).notNull(),
+  /** The link's `access_count` right after the view that opened the window was counted. */
+  countAtStart: integer('count_at_start').notNull(),
+  /** A timer is armed for this window: later views in it only add to the count. */
+  pending: boolean('pending').notNull().default(false)
+});
+
+/**
  * Transient reservation for new-deck uploads (~1 h): mints the future
  * presentation id up front so asset uploads and the final commit share one
  * handle. `presentation_id` deliberately has NO foreign key — the
@@ -888,5 +926,6 @@ export type FormResponseFileRow = typeof formResponseFiles.$inferSelect;
 export type FormResponseMailStateRow = typeof formResponseMailState.$inferSelect;
 export type ShareTokenViewRow = typeof shareTokenViews.$inferSelect;
 export type ShareTokenDownloadRow = typeof shareTokenDownloads.$inferSelect;
+export type ShareTokenViewWindowRow = typeof shareTokenViewWindows.$inferSelect;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;
 export type PresentationVersionThumbnailRow = typeof presentationVersionThumbnails.$inferSelect;

@@ -155,3 +155,20 @@ describe('requiredScopeFor — the admin surfaces stay closed to machines', () =
     }
   });
 });
+
+describe('requiredScopeFor — webhooks (PRDCT-3482, PRDCT-3483)', () => {
+  const HOOK = '/api/v1/webhooks/11111111-2222-3333-4444-555555555555';
+
+  it('the endpoints, their deliveries and every write need webhooks:manage', () => {
+    expect(requiredScopeFor('/api/v1/webhooks', 'GET')).toBe('webhooks:manage');
+    expect(requiredScopeFor('/api/v1/webhooks', 'POST')).toBe('webhooks:manage');
+    expect(requiredScopeFor(HOOK, 'GET')).toBe('webhooks:manage');
+    expect(requiredScopeFor(HOOK, 'PATCH')).toBe('webhooks:manage');
+    expect(requiredScopeFor(HOOK, 'DELETE')).toBe('webhooks:manage');
+    expect(requiredScopeFor(`${HOOK}/deliveries`, 'GET')).toBe('webhooks:manage');
+  });
+
+  it('the catalog is a read under presentations:read, never webhooks:manage', () => {
+    expect(requiredScopeFor('/api/v1/webhooks/events', 'GET')).toBe('presentations:read');
+  });
+});

@@ -7,10 +7,12 @@
   import Eye from '@lucide/svelte/icons/eye';
   import Pencil from '@lucide/svelte/icons/pencil';
   import UserRound from '@lucide/svelte/icons/user-round';
+  import Webhook from '@lucide/svelte/icons/webhook';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import FormError from '$lib/components/shared/FormError.svelte';
   import { safeHttpUrl } from '$lib/utils.js';
   import { t } from '$lib/i18n';
+  import { IDENTITY } from '@slideless/contract';
 
   /**
    * OAuth consent screen. The query string carries the SIGNED authorize
@@ -98,10 +100,14 @@
 
   const scopeLines = $derived.by(() => {
     const lines: { icon: typeof Eye; text: string }[] = [];
-    if (scopes.includes('presentations:read')) lines.push({ icon: Eye, text: t('consent.scopeRead') });
-    if (scopes.includes('presentations:write')) lines.push({ icon: Pencil, text: t('consent.scopeWrite') });
-    if (scopes.includes('data:export')) {
+    // the scope names are the tool's identity, spelled once (`IDENTITY.scopes`)
+    if (scopes.includes(IDENTITY.scopes.read)) lines.push({ icon: Eye, text: t('consent.scopeRead') });
+    if (scopes.includes(IDENTITY.scopes.write)) lines.push({ icon: Pencil, text: t('consent.scopeWrite') });
+    if (scopes.includes(IDENTITY.scopes.dataExport)) {
       lines.push({ icon: Download, text: t('consent.scopeExport') });
+    }
+    if (scopes.includes(IDENTITY.scopes.webhooks)) {
+      lines.push({ icon: Webhook, text: t('consent.scopeWebhooks') });
     }
     if (
       scopes.includes('openid') ||

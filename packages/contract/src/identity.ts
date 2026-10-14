@@ -18,9 +18,11 @@ export const IDENTITY = {
   scopes: {
     read: 'presentations:read',
     write: 'presentations:write',
-    dataExport: 'data:export'
+    dataExport: 'data:export',
+    // Managing the workspace's webhook endpoints (PRDCT-3482): on the CLI key like read and write (Romain, 13 October 2026).
+    webhooks: 'webhooks:manage'
   },
-  cliKeyScopesLabel: 'presentations:read+write',
+  cliKeyScopesLabel: 'presentations:read+write, webhooks:manage',
   cloud: { url: 'https://slideless.antasphere.com' },
   cli: {
     bin: 'slideless',

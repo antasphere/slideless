@@ -11,9 +11,11 @@ import {
   type FormResponseFileSnapshot
 } from '@slideless/db';
 import { FORM_FILE_NAME_MAX_CHARS, type FormSubmitFiles } from '@slideless/contract';
+import type { WebhookEmitter } from '@antasphere/chassis-server';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import { spoolUpload } from '@antasphere/chassis-server/files';
 import type { StorageDriver } from '@antasphere/chassis-server/storage';
+import { emitDeckEvent } from '../presentations/deck-webhooks.js';
 
 /**
  * FORM FILE UPLOADS (PRDCT-2403) — the bytes a share-link respondent drops
@@ -163,7 +165,9 @@ export class FormUploadService {
     private readonly storage: StorageDriver,
     private readonly spoolDir: string,
     private readonly logger: Logger,
-    readonly caps: FormUploadCaps
+    readonly caps: FormUploadCaps,
+    /** The webhook emitter (PRDCT-3483): `form.file_uploaded` rides the upload row's transaction. */
+    private readonly webhooks: WebhookEmitter
   ) {}
 
   /** Bytes the deck's form uploads weigh now, pending included (they hold disk too). */
@@ -232,6 +236,20 @@ export class FormUploadService {
             })
             .returning();
           if (!row) throw new Error('form upload insert failed');
+          await emitDeckEvent(this.webhooks, tx, {
+            workspaceId: opts.workspaceId,
+            type: 'form.file_uploaded',
+            deckId: opts.presentationId,
+            linkId: opts.shareTokenId,
+            data: {
+              deckId: opts.presentationId,
+              formName: opts.formName,
+              linkId: opts.shareTokenId,
+              uploadId: row.id,
+              name: row.filename,
+              sizeBytes: row.sizeBytes
+            }
+          });
           return row;
         });
       } catch (e) {

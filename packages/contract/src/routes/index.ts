@@ -16,7 +16,8 @@ import {
   idempotencyHeaders,
   jsonBody,
   jsonRequestBody,
-  uuidParams
+  uuidParams,
+  webhookCreateRoute
 } from '@antasphere/chassis-contract/routes';
 import { chassisContract } from '../chassis.js';
 import { IDENTITY } from '../identity.js';
@@ -1051,6 +1052,12 @@ export interface DeckActorHooks {
   /** The owner of the deck behind `ctx.params.secret`, or null when the secret resolves to nothing. */
   formOwner: (ctx: EntitlementRequest) => Promise<ActorRef | null>;
   /**
+   * The workspace's webhook endpoints AFTER this registration (PRDCT-3482),
+   * judged only for a caller the handler would let act (an owner or an
+   * admin); null for anyone else, so the handler's own refusal answers.
+   */
+  webhookEndpointsAfterCreate: (ctx: EntitlementRequest) => Promise<number | null>;
+  /**
    * The member cap at Slideless's two doors, the collaborator invite and the
    * collaborator claim (PRDCT-2702): the seats of a workspace are its active
    * members of every origin (guests included) plus the addresses that hold
@@ -1087,12 +1094,16 @@ export async function sharePasswordSet(ctx: EntitlementRequest): Promise<boolean
 export const DECK_LIMITS = {
   fileBytes: 'files.maxBytes',
   workspaceMembers: 'workspace.members',
-  linksPerDeck: 'links.perDeck'
+  linksPerDeck: 'links.perDeck',
+  /** Webhook endpoints per workspace (PRDCT-3482): free 5, pro 25, self-hosted unlimited. */
+  webhooksPerWorkspace: 'webhooks.perWorkspace'
 } as const;
 
 export const DECK_FEATURES = {
   customDomain: 'custom_domain',
-  deckPassword: 'deck.password'
+  deckPassword: 'deck.password',
+  /** Outbound webhooks, on both tiers (the limit above is what differs). */
+  webhooks: 'webhooks'
 } as const;
 
 /**
@@ -1160,6 +1171,15 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
         quantity: auditedSizeBytes,
         actor: actors.formOwner
       }
+    },
+    // A webhook endpoint (PRDCT-3482): the chassis's own route, priced by
+    // the tool's declaration (a price is a declaration on the route and the
+    // chassis names no key): the feature on both tiers, the count against
+    // the per-workspace limit.
+    {
+      route: webhookCreateRoute,
+      feature: DECK_FEATURES.webhooks,
+      limit: { key: DECK_LIMITS.webhooksPerWorkspace, value: actors.webhookEndpointsAfterCreate }
     }
   ]);
 }
@@ -1167,6 +1187,7 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
 /** The declarations with hooks that resolve nothing: what a client reads; the server builds its own with `deckRouteEntitlements`. */
 export const DECK_ROUTE_ENTITLEMENTS = deckRouteEntitlements({
   formOwner: async () => null,
+  webhookEndpointsAfterCreate: async () => null,
   collaboratorInviteSeats: async () => null,
   collaboratorClaimActor: async () => null,
   collaboratorClaimSeats: async () => null,

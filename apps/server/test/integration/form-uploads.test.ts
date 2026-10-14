@@ -738,7 +738,8 @@ describe('edits, removals and the bytes behind them', () => {
       createStorageDriver(app.env),
       `${app.env.DATA_DIR}/tmp`,
       app.logger,
-      formUploadCaps(app.env)
+      formUploadCaps(app.env),
+      app.webhooks
     );
     expect(await service.purgeUnattached()).toBeGreaterThanOrEqual(1);
     const left = (await fileRows()).map((r) => r.id);
@@ -770,7 +771,8 @@ describe('a deleted deck', () => {
       storage,
       `${app.env.DATA_DIR}/tmp`,
       app.logger,
-      formUploadCaps(app.env)
+      formUploadCaps(app.env),
+      app.webhooks
     );
     const [row] = await app.db.db.select().from(formResponseFiles).where(eq(formResponseFiles.id, f.id));
 
@@ -877,7 +879,8 @@ describe("the deck's upload total", () => {
       gated,
       `${app.env.DATA_DIR}/tmp`,
       app.logger,
-      formUploadCaps(app.env)
+      formUploadCaps(app.env),
+      app.webhooks
     );
     const [token] = await app.db.db.select().from(shareTokens).where(eq(shareTokens.id, link.id));
     const results = await Promise.allSettled(

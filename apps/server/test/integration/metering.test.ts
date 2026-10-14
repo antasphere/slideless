@@ -235,12 +235,16 @@ describe('discovery carries the Slideless seed', () => {
       // What discovery advertises is what the instance serves (PRDCT-2653):
       // the pro value IS the operator's cap (100 MB by default here).
       'files.maxBytes': { oss: 100 * 1024 * 1024, free: 100 * 1024 * 1024, pro: 100 * 1024 * 1024 },
-      'workspace.members': { oss: null, free: 3, pro: null },
-      'links.perDeck': { oss: null, free: 10, pro: null }
+      // Free 5 since Romain's ruling of 13 October 2026 (3 before).
+      'workspace.members': { oss: null, free: 5, pro: null },
+      'links.perDeck': { oss: null, free: 10, pro: null },
+      // Webhook endpoints per workspace (PRDCT-3482): free 5, pro 25.
+      'webhooks.perWorkspace': { oss: null, free: 5, pro: 25 }
     });
     expect(info.entitlements.features).toEqual({
       custom_domain: { free: false, pro: true },
-      'deck.password': { free: false, pro: true }
+      'deck.password': { free: false, pro: true },
+      webhooks: { free: true, pro: true }
     });
   });
 

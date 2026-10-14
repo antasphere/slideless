@@ -172,7 +172,14 @@ async function expectNothingPosted(org: string, actionKey: string, posted: numbe
  * the cap, refused on every plan), then the refresh it started behind it.
  */
 async function setPlan(person: Person, plan: 'free' | 'pro'): Promise<void> {
-  hub.setEntitlements(person.org, { plan });
+  // The hub's plan rows win over the tool's seed: the member-cap scenarios
+  // below were written on a free cap of 3 and keep that arithmetic through
+  // the hub's own row, while the seed moved to 5 (Romain, 13 October 2026)
+  // and the discovery test pins the seed. The other limits read the seed.
+  hub.setEntitlements(person.org, {
+    plan,
+    ...(plan === 'free' ? { limits: { 'workspace.members': 3 } } : {})
+  });
   const reads = () => hub.entitlementsRequests.filter((r) => r.accountRef === person.org).length;
   const before = reads();
   // The body is dropped, nothing is stored or metered (the tool template's
@@ -287,6 +294,25 @@ beforeAll(async () => {
     startPostgres(),
     FakeHub.start({ clientId: 'tool-slideless-cloud', clientSecret: HUB_SECRET })
   ]);
+  // The hub's plan rows win over the tool's seed: every organization of this
+  // file starts on free with the member cap the suite was written on (3),
+  // while the seed moved to 5 (Romain, 13 October 2026; the discovery test
+  // below pins the seed). `setPlan` keeps the row through the plan changes.
+  for (const org of [
+    ORG_SEATS,
+    ORG_LINKS,
+    ORG_PASSWORD,
+    ORG_SURFACES,
+    ORG_SWEPT,
+    ORG_TEAM,
+    ORG_SWEPT_GUEST,
+    ORG_JOIN,
+    ORG_INACTIVE,
+    ORG_EXPIRED,
+    ORG_SEATED
+  ]) {
+    hub.setEntitlements(org, { plan: 'free', limits: { 'workspace.members': 3 } });
+  }
   app = await createTestApp(
     await createDatabase(container, 'plan_limits_cloud'),
     {
@@ -320,7 +346,10 @@ describe('discovery carries the plan values', () => {
     const action = (key: string) => info.entitlements.actions.find((a: { key: string }) => a.key === key);
     // The seed ruling of 24 September 2026.
     expect(action('forms.response')).toMatchObject({ creditsPerUnit: 1, unit: 'call' });
-    expect(info.entitlements.limits['workspace.members']).toEqual({ oss: null, free: 3, pro: null });
+    // Free 5 since Romain's ruling of 13 October 2026 (3 before).
+    expect(info.entitlements.limits['workspace.members']).toEqual({ oss: null, free: 5, pro: null });
+    expect(info.entitlements.limits['webhooks.perWorkspace']).toEqual({ oss: null, free: 5, pro: 25 });
+    expect(info.entitlements.features.webhooks).toEqual({ free: true, pro: true });
     expect(info.entitlements.limits['links.perDeck']).toEqual({ oss: null, free: 10, pro: null });
     expect(info.entitlements.features['deck.password']).toEqual({ free: false, pro: true });
     expect(info.entitlements.features.custom_domain).toEqual({ free: false, pro: true });
@@ -1000,5 +1029,55 @@ describe('a pro account passes all of it', () => {
     expect(locked.status, await locked.clone().text()).toBe(201);
     expect((await readJson(locked)).shareToken.hasPassword).toBe(true);
     expect(await liveShareLinks(person, deckId)).toBe(12);
+  });
+});
+
+describe('the webhook endpoints per workspace (PRDCT-3482)', () => {
+  const ORG_HOOKS = '88888888-aaaa-4bbb-8ccc-0000000000f1';
+  const HOOKS_MESSAGE = 'webhooks.perWorkspace is limited to 5 on the free plan; the pro plan allows it';
+  let person: Person;
+
+  beforeAll(async () => {
+    person = await hubPerson(owner('hub-plan-hooks', ORG_HOOKS, 'hooks@planlimits.test'));
+  });
+
+  // Subscribed to the test ping alone: nothing in this suite emits one, so no delivery leaves.
+  const createHook = (n: number) =>
+    app.app.request(
+      '/api/v1/webhooks',
+      json({ url: `https://hooks.example.com/plan-${n}`, events: ['webhook.ping'] }, dashboard(person))
+    );
+
+  it('five endpoints are created on free, the sixth is refused with the upgrade link', async () => {
+    for (let n = 1; n <= 5; n++) {
+      const res = await createHook(n);
+      expect(res.status, await res.clone().text()).toBe(201);
+    }
+    await expectPlanRequired(await createHook(6), ORG_HOOKS, 'webhooks.perWorkspace', HOOKS_MESSAGE);
+    const list = await app.app.request('/api/v1/webhooks', {
+      headers: { ...dashboard(person), 'x-forwarded-for': sso.nextIp() }
+    });
+    expect(list.status).toBe(200);
+    expect((await readJson(list)).webhooks).toHaveLength(5);
+  });
+
+  it('a plain member at the cap reads the handler’s 403 forbidden, never plan_required (verifier round 1, S7)', async () => {
+    const member = await hubPerson({
+      sub: 'hub-plan-hooks-member',
+      email: 'member@hooks.test',
+      name: 'Hooks Member',
+      workspaceId: ORG_HOOKS,
+      role: 'member',
+      workspaceName: 'Org hub-plan-hooks'
+    });
+    expect(member.workspaceId).toBe(person.workspaceId);
+    const res = await app.app.request(
+      '/api/v1/webhooks',
+      json({ url: 'https://hooks.example.com/plan-member', events: ['webhook.ping'] }, dashboard(member))
+    );
+    expect(res.status, await res.clone().text()).toBe(403);
+    const body = await readJson(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(body.error.details).toBeUndefined();
   });
 });

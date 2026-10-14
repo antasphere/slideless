@@ -25,12 +25,14 @@ const DOC_PATH = resolve(DOCS, 'agents/mcp-connector.md');
 const COUNT_PAGES = ['index.md', 'getting-started/connect-an-agent.md'].map((p) => resolve(DOCS, p));
 
 /**
- * Fourteen tools of the set are not registered by `registerSlidelessTools`:
+ * Twenty-five tools of the set are not registered by `registerSlidelessTools`:
  * the chassis registers `<toolPrefix>whoami` itself (`buildMcpServer`,
  * PRDCT-2531) and, beside it, the eleven PROJECT tools (the nine on a project
- * and its people, plus the two on a team's place on a project) and the two
+ * and its people, plus the two on a team's place on a project), the two
  * TEAM reads (PRDCT-2577 — a project and a team are chassis concepts, so their
- * tools are the chassis'), all built from the prefix at run time. The docs
+ * tools are the chassis') and the eleven WEBHOOK tools (PRDCT-3482, registered
+ * because the identity declares a webhooks scope: a webhook endpoint is a
+ * chassis concept too), all built from the prefix at run time. The docs
  * carry them and the count includes them, so they are added here by name.
  */
 const CHASSIS_REGISTERED = [
@@ -47,7 +49,18 @@ const CHASSIS_REGISTERED = [
   'set_project_team_role',
   'remove_project_team',
   'list_teams',
-  'list_team_members'
+  'list_team_members',
+  'webhook_events',
+  'list_webhooks',
+  'create_webhook',
+  'get_webhook',
+  'update_webhook',
+  'delete_webhook',
+  'rotate_webhook_secret',
+  'test_webhook',
+  'list_webhook_deliveries',
+  'get_webhook_delivery',
+  'redeliver_webhook'
 ].map((name) => `${PREFIX}${name}`);
 
 function registeredTools(): string[] {

@@ -33,6 +33,7 @@ const SAMPLE_MANIFEST = [
 /** A Better Auth user id: text, never a uuid. */
 const SAMPLE_USER_ID = 'usr_projects_coverage';
 const SAMPLE_TEAM_ID = '7b0c3d1e-2f4a-4b6c-8d9e-0f1a2b3c4d5e';
+const SAMPLE_DELIVERY_ID = '9c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
 
 const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /instance': (c) => c.instance(),
@@ -105,6 +106,19 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /teams/{id}/members': (c) => c.teamMembers(SAMPLE_ID),
   'POST /teams/{id}/members': (c) => c.addTeamMember(SAMPLE_ID, { email: 'a@b.co' }),
   'DELETE /teams/{id}/members/{userId}': (c) => c.removeTeamMember(SAMPLE_ID, SAMPLE_USER_ID),
+  // Webhooks (PRDCT-3482): the chassis's eleven routes, served by the chassis client the SDK extends.
+  'GET /webhooks': (c) => c.webhooks(),
+  'GET /webhooks/events': (c) => c.webhookEvents(),
+  'POST /webhooks': (c) => c.createWebhook({ url: 'https://example.com/hook', events: ['deck.*'] }),
+  'GET /webhooks/{id}': (c) => c.webhook(SAMPLE_ID),
+  'PATCH /webhooks/{id}': (c) => c.updateWebhook(SAMPLE_ID, { description: 'x' }),
+  'DELETE /webhooks/{id}': (c) => c.deleteWebhook(SAMPLE_ID),
+  'POST /webhooks/{id}/rotate-secret': (c) => c.rotateWebhookSecret(SAMPLE_ID),
+  'POST /webhooks/{id}/test': (c) => c.testWebhook(SAMPLE_ID),
+  'GET /webhooks/{id}/deliveries': (c) => c.webhookDeliveries(SAMPLE_ID),
+  'GET /webhooks/{id}/deliveries/{deliveryId}': (c) => c.webhookDelivery(SAMPLE_ID, SAMPLE_DELIVERY_ID),
+  'POST /webhooks/{id}/deliveries/{deliveryId}/redeliver': (c) =>
+    c.redeliverWebhook(SAMPLE_ID, SAMPLE_DELIVERY_ID),
   // The chassis' demo pass routes, inherited by PlatformClient.
   'GET /demo/passes': (c) => c.demoPasses(),
   'POST /demo/passes': (c) => c.mintDemoPass({ email: 'a@example.com' }),
@@ -222,6 +236,7 @@ function expectedPath(contractPath: string): string {
     .replace(/\{(tokenId|collaboratorId|annotationId|responseId|projectId)\}/, SAMPLE_CHILD_ID)
     .replace('{userId}', SAMPLE_USER_ID)
     .replace('{teamId}', SAMPLE_TEAM_ID)
+    .replace('{deliveryId}', SAMPLE_DELIVERY_ID)
     .replace('{fileId}', SAMPLE_FILE_ID)
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)

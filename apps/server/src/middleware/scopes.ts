@@ -12,7 +12,7 @@ import { createScopeAllowlist, type ScopeRule } from '@antasphere/chassis-server
 export type { Scope };
 
 /** The three scope names, spelled ONCE in the tool's identity (`packages/contract/src/identity.ts`). */
-const { read: READ, write: WRITE, dataExport: DATA_EXPORT } = IDENTITY.scopes;
+const { read: READ, write: WRITE, dataExport: DATA_EXPORT, webhooks: WEBHOOKS } = IDENTITY.scopes;
 
 /**
  * Products rename presentations:read / presentations:write to their domain's scopes — also in
@@ -27,11 +27,14 @@ export const OAUTH_SCOPES = [
   WRITE,
   // Full-workspace export download — a deliberate opt-in, never implied by
   // presentations:read (see middleware/scopes.ts).
-  DATA_EXPORT
+  DATA_EXPORT,
+  // The workspace's webhook endpoints (PRDCT-3482): a standing read of the
+  // workspace to a URL, its own scope, owner or admin on top.
+  WEBHOOKS
 ] as const;
 
-/** The CLI key's fixed grant — the agent surface, never data:export. */
-export const CLI_KEY_SCOPES = [READ, WRITE] as const;
+/** The CLI key's fixed grant — the agent surface, never data:export; the webhooks scope rides it like read and write (Romain, 13 October 2026). */
+export const CLI_KEY_SCOPES = [READ, WRITE, WEBHOOKS] as const;
 
 const PROJECT_BRAND_RE = /^\/api\/v1\/projects\/[0-9a-fA-F-]{36}\/brand$/;
 
@@ -88,5 +91,6 @@ export const requiredScopeFor = createScopeAllowlist<Scope>({
   read: READ,
   write: WRITE,
   dataExport: DATA_EXPORT,
+  webhooks: WEBHOOKS,
   rules: deckRules
 });

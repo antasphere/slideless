@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { Db } from '@antasphere/chassis-db';
+import type { Db, DbConn } from '@antasphere/chassis-db';
 import {
   presentations,
   shareTokens,
@@ -10,6 +10,7 @@ import {
 } from '@slideless/db';
 import type { PepperRegistry } from '@antasphere/chassis-server/apikeys';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
+import type { ShareLinkViewFacts, ShareLinkViewWebhooks } from './view-webhooks.js';
 
 /**
  * Per-recipient share tokens (Phase 4). The recipient credential is a
@@ -50,10 +51,15 @@ export interface MintedShareSecret {
   tokenHash: string;
 }
 
+/** What a share-token write runs INSIDE its own transaction, with the row as written: the webhook of the act (PRDCT-3483). */
+export type ShareTokenWriteHook = (tx: DbConn, row: ShareTokenRow) => Promise<void>;
+
 export class ShareTokenService {
   constructor(
     private readonly db: Db,
-    private readonly peppers: PepperRegistry
+    private readonly peppers: PepperRegistry,
+    /** The grouped `share_link.viewed` webhook (PRDCT-3483); absent = no view events. */
+    private readonly viewWebhooks?: ShareLinkViewWebhooks
   ) {}
 
   /** Mint a fresh secret + its stored hash under the CURRENT pepper version. */
@@ -66,79 +72,87 @@ export class ShareTokenService {
     return { secret, tokenHash: hashSecret(secret, pepper) };
   }
 
-  async create(opts: {
-    workspaceId: string;
-    presentationId: string;
-    createdBy: string;
-    name: string;
-    /**
-     * SECURITY: set by the HANDLER from its code path, never from request
-     * input. Only the dedicated preview-token route (owner/admin gated)
-     * passes 'preview'; the public token-create route always passes 'share'.
-     */
-    purpose: ShareTokenPurpose;
-    pinnedVersion: number | null;
-    canAnnotate: boolean;
-    /** Forms default ON (share route) — the preview mint passes false. */
-    canSubmitForms: boolean;
-    /**
-     * Downloads default ON (share route, PRDCT-2278); the preview mint
-     * passes true too — an owner's preview shows what a default link shows,
-     * and preview downloads are never counted (viewer/routes.ts).
-     */
-    canDownload: boolean;
-    /**
-     * The recipient top bar, default ON (share route, PRDCT-2281); the
-     * preview mint passes true too — the owner's preview shows what a
-     * default link shows.
-     */
-    showBar: boolean;
-    /**
-     * The link remembers its answers (PRDCT-2328). The share route passes
-     * the contract default (true); the preview mint passes false — and the
-     * remembering resolver refuses previews by purpose regardless.
-     */
-    remembersResponses: boolean;
-    /**
-     * Respondents may upload files into the form's file fields (PRDCT-2403).
-     * The share route passes the contract default (true); the preview mint
-     * passes false, and the upload route refuses previews by purpose too.
-     */
-    canUploadFiles: boolean;
-    /**
-     * The recipient may export the deck to PDF from the viewer (PRDCT-2668).
-     * The share route passes the contract default (true); the preview mint
-     * passes true too (the owner prints their own deck).
-     */
-    canExportPdf: boolean;
-    /** Explicit badge slot for this link, or null = inherit the deck default. */
-    badgePosition: BadgePosition | null;
-    expiresAt: Date | null;
-    passwordHash: string | null;
-  }): Promise<{ row: ShareTokenRow; secret: string }> {
+  async create(
+    opts: {
+      workspaceId: string;
+      presentationId: string;
+      createdBy: string;
+      name: string;
+      /**
+       * SECURITY: set by the HANDLER from its code path, never from request
+       * input. Only the dedicated preview-token route (owner/admin gated)
+       * passes 'preview'; the public token-create route always passes 'share'.
+       */
+      purpose: ShareTokenPurpose;
+      pinnedVersion: number | null;
+      canAnnotate: boolean;
+      /** Forms default ON (share route) — the preview mint passes false. */
+      canSubmitForms: boolean;
+      /**
+       * Downloads default ON (share route, PRDCT-2278); the preview mint
+       * passes true too — an owner's preview shows what a default link shows,
+       * and preview downloads are never counted (viewer/routes.ts).
+       */
+      canDownload: boolean;
+      /**
+       * The recipient top bar, default ON (share route, PRDCT-2281); the
+       * preview mint passes true too — the owner's preview shows what a
+       * default link shows.
+       */
+      showBar: boolean;
+      /**
+       * The link remembers its answers (PRDCT-2328). The share route passes
+       * the contract default (true); the preview mint passes false — and the
+       * remembering resolver refuses previews by purpose regardless.
+       */
+      remembersResponses: boolean;
+      /**
+       * Respondents may upload files into the form's file fields (PRDCT-2403).
+       * The share route passes the contract default (true); the preview mint
+       * passes false, and the upload route refuses previews by purpose too.
+       */
+      canUploadFiles: boolean;
+      /**
+       * The recipient may export the deck to PDF from the viewer (PRDCT-2668).
+       * The share route passes the contract default (true); the preview mint
+       * passes true too (the owner prints their own deck).
+       */
+      canExportPdf: boolean;
+      /** Explicit badge slot for this link, or null = inherit the deck default. */
+      badgePosition: BadgePosition | null;
+      expiresAt: Date | null;
+      passwordHash: string | null;
+    },
+    inTx?: ShareTokenWriteHook
+  ): Promise<{ row: ShareTokenRow; secret: string }> {
     const { secret, tokenHash } = this.mintSecret();
-    const [row] = await this.db
-      .insert(shareTokens)
-      .values({
-        workspaceId: opts.workspaceId,
-        presentationId: opts.presentationId,
-        name: opts.name,
-        purpose: opts.purpose,
-        tokenHash,
-        pinnedVersion: opts.pinnedVersion,
-        canAnnotate: opts.canAnnotate,
-        canSubmitForms: opts.canSubmitForms,
-        canDownload: opts.canDownload,
-        showBar: opts.showBar,
-        remembersResponses: opts.remembersResponses,
-        canUploadFiles: opts.canUploadFiles,
-        canExportPdf: opts.canExportPdf,
-        badgePosition: opts.badgePosition,
-        expiresAt: opts.expiresAt,
-        passwordHash: opts.passwordHash,
-        createdBy: opts.createdBy
-      })
-      .returning();
+    const row = await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(shareTokens)
+        .values({
+          workspaceId: opts.workspaceId,
+          presentationId: opts.presentationId,
+          name: opts.name,
+          purpose: opts.purpose,
+          tokenHash,
+          pinnedVersion: opts.pinnedVersion,
+          canAnnotate: opts.canAnnotate,
+          canSubmitForms: opts.canSubmitForms,
+          canDownload: opts.canDownload,
+          showBar: opts.showBar,
+          remembersResponses: opts.remembersResponses,
+          canUploadFiles: opts.canUploadFiles,
+          canExportPdf: opts.canExportPdf,
+          badgePosition: opts.badgePosition,
+          expiresAt: opts.expiresAt,
+          passwordHash: opts.passwordHash,
+          createdBy: opts.createdBy
+        })
+        .returning();
+      // The write's own transaction: a webhook of the mint rides it (PRDCT-3483).
+      if (inTx) await inTx(tx, inserted!);
+      return inserted!;
+    });
     if (!row) throw new Error('share token insert failed');
     return { row, secret };
   }
@@ -215,19 +229,31 @@ export class ShareTokenService {
   }
 
   /** Apply a pre-computed patch; returns the updated row (null = gone). */
-  async update(tokenId: string, set: Partial<ShareTokenRow>): Promise<ShareTokenRow | null> {
-    const [row] = await this.db.update(shareTokens).set(set).where(eq(shareTokens.id, tokenId)).returning();
-    return row ?? null;
+  async update(
+    tokenId: string,
+    set: Partial<ShareTokenRow>,
+    inTx?: ShareTokenWriteHook
+  ): Promise<ShareTokenRow | null> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.update(shareTokens).set(set).where(eq(shareTokens.id, tokenId)).returning();
+      if (row && inTx) await inTx(tx, row);
+      return row ?? null;
+    });
   }
 
   /** Soft revoke (idempotent): access stats survive, the viewer answers 403. */
-  async revoke(tokenId: string): Promise<ShareTokenRow | null> {
-    await this.db
-      .update(shareTokens)
-      .set({ revokedAt: sql`now()` })
-      .where(and(eq(shareTokens.id, tokenId), sql`${shareTokens.revokedAt} IS NULL`));
-    const [row] = await this.db.select().from(shareTokens).where(eq(shareTokens.id, tokenId)).limit(1);
-    return row ?? null;
+  async revoke(tokenId: string, inTx?: ShareTokenWriteHook): Promise<ShareTokenRow | null> {
+    return this.db.transaction(async (tx) => {
+      const [landed] = await tx
+        .update(shareTokens)
+        .set({ revokedAt: sql`now()` })
+        .where(and(eq(shareTokens.id, tokenId), sql`${shareTokens.revokedAt} IS NULL`))
+        .returning();
+      // Only the revoke that landed says so (idempotent: a second call writes nothing and tells nobody).
+      if (landed && inTx) await inTx(tx, landed);
+      const [row] = await tx.select().from(shareTokens).where(eq(shareTokens.id, tokenId)).limit(1);
+      return row ?? null;
+    });
   }
 
   /**
@@ -255,18 +281,33 @@ export class ShareTokenService {
   /**
    * Entry-view accounting, atomic increments in one transaction: the TOKEN's
    * access stats and the deck's total. Fired ONLY when the viewer serves the
-   * ENTRY HTML — never per asset, never for password-gate challenges.
+   * ENTRY HTML — never per asset, never for password-gate challenges. The
+   * `share_link.viewed` webhook's window step rides the same transaction
+   * (`view-webhooks.ts`): a view nobody listens to costs it one cached lookup.
    */
-  async recordEntryView(tokenId: string, presentationId: string): Promise<void> {
+  async recordEntryView(
+    tokenId: string,
+    presentationId: string,
+    facts?: Omit<ShareLinkViewFacts, 'tokenId' | 'deckId' | 'accessCountNow'>
+  ): Promise<void> {
     await this.db.transaction(async (tx) => {
-      await tx
+      const [counted] = await tx
         .update(shareTokens)
         .set({ accessCount: sql`${shareTokens.accessCount} + 1`, lastAccessedAt: sql`now()` })
-        .where(eq(shareTokens.id, tokenId));
+        .where(eq(shareTokens.id, tokenId))
+        .returning({ accessCount: shareTokens.accessCount });
       await tx
         .update(presentations)
         .set({ totalViews: sql`${presentations.totalViews} + 1`, lastViewedAt: sql`now()` })
         .where(eq(presentations.id, presentationId));
+      if (this.viewWebhooks && facts && counted) {
+        await this.viewWebhooks.onView(tx, {
+          ...facts,
+          tokenId,
+          deckId: presentationId,
+          accessCountNow: counted.accessCount
+        });
+      }
     });
   }
 

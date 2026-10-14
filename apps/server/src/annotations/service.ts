@@ -1,8 +1,10 @@
 import { and, asc, desc, eq, exists, isNull, or, sql } from 'drizzle-orm';
-import type { Db } from '@antasphere/chassis-db';
+import type { Db, DbConn } from '@antasphere/chassis-db';
+import type { WebhookEmitter } from '@antasphere/chassis-server';
 import { annotations, collaborators, presentations, type AnnotationRow } from '@slideless/db';
 import type { Principal } from '@antasphere/chassis-contract';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
+import { emitDeckEvent } from '../presentations/deck-webhooks.js';
 
 /**
  * Reviewer annotations (Phase 5). Rows anchor to (presentation, version)
@@ -18,8 +20,37 @@ export interface AnnotationFilters {
   status?: 'open' | 'resolved' | undefined;
 }
 
+/**
+ * One `annotation.*` event (PRDCT-3483) on the write's own connection. The
+ * `link` subject is the link a viewer annotated through, `[]` for a member's.
+ */
+function emitAnnotationEvent(
+  webhooks: WebhookEmitter,
+  conn: DbConn,
+  type: 'annotation.created' | 'annotation.resolved' | 'annotation.deleted',
+  row: AnnotationRow
+): Promise<string | null> {
+  return emitDeckEvent(webhooks, conn, {
+    workspaceId: row.workspaceId,
+    type,
+    deckId: row.presentationId,
+    linkId: row.shareTokenId,
+    data: {
+      deckId: row.presentationId,
+      version: row.version,
+      annotationId: row.id,
+      linkId: row.shareTokenId,
+      authorName: row.authorName
+    }
+  });
+}
+
 export class AnnotationService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** The webhook emitter (PRDCT-3483): each annotation event rides its write's transaction. */
+    private readonly webhooks: WebhookEmitter
+  ) {}
 
   async create(opts: {
     workspaceId: string;
@@ -31,21 +62,24 @@ export class AnnotationService {
     selection: Record<string, unknown>;
     body: string;
   }): Promise<AnnotationRow> {
-    const [row] = await this.db
-      .insert(annotations)
-      .values({
-        workspaceId: opts.workspaceId,
-        presentationId: opts.presentationId,
-        version: opts.version,
-        shareTokenId: opts.shareTokenId,
-        authorUserId: opts.authorUserId,
-        authorName: opts.authorName,
-        selection: opts.selection,
-        body: opts.body
-      })
-      .returning();
-    if (!row) throw new Error('annotation insert failed');
-    return row;
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(annotations)
+        .values({
+          workspaceId: opts.workspaceId,
+          presentationId: opts.presentationId,
+          version: opts.version,
+          shareTokenId: opts.shareTokenId,
+          authorUserId: opts.authorUserId,
+          authorName: opts.authorName,
+          selection: opts.selection,
+          body: opts.body
+        })
+        .returning();
+      if (!row) throw new Error('annotation insert failed');
+      await emitAnnotationEvent(this.webhooks, tx, 'annotation.created', row);
+      return row;
+    });
   }
 
   async get(
@@ -194,18 +228,33 @@ export class AnnotationService {
     const set: Partial<AnnotationRow> = { updatedAt: new Date() };
     if (patch.body !== undefined) set.body = patch.body;
     if (patch.status !== undefined) set.status = patch.status;
-    const [row] = await this.db
-      .update(annotations)
-      .set(set)
-      .where(eq(annotations.id, annotationId))
-      .returning();
-    return row ?? null;
+    return this.db.transaction(async (tx) => {
+      // The status BEFORE this write, under the row lock: only the move from
+      // open to resolved is `annotation.resolved` (PRDCT-3483), never a
+      // repeat, a body edit or a reopen.
+      const [before] = await tx
+        .select({ status: annotations.status })
+        .from(annotations)
+        .where(eq(annotations.id, annotationId))
+        .for('update')
+        .limit(1);
+      const [row] = await tx.update(annotations).set(set).where(eq(annotations.id, annotationId)).returning();
+      if (!row) return null;
+      if (before?.status !== 'resolved' && row.status === 'resolved') {
+        await emitAnnotationEvent(this.webhooks, tx, 'annotation.resolved', row);
+      }
+      return row;
+    });
   }
 
   /** Hard delete; returns the final snapshot (null = already gone). */
   async delete(annotationId: string): Promise<AnnotationRow | null> {
-    const [row] = await this.db.delete(annotations).where(eq(annotations.id, annotationId)).returning();
-    return row ?? null;
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.delete(annotations).where(eq(annotations.id, annotationId)).returning();
+      if (!row) return null;
+      await emitAnnotationEvent(this.webhooks, tx, 'annotation.deleted', row);
+      return row;
+    });
   }
 }
 

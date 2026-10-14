@@ -63,6 +63,7 @@ describe('the menu', () => {
       '/invitations',
       '/teams',
       '/api-keys',
+      '/webhooks',
       '/files',
       '/audit'
     ]);

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, gte, inArray, lt, max, sql } from 'drizzle-orm';
-import type { Db } from '@antasphere/chassis-db';
+import type { Db, DbConn } from '@antasphere/chassis-db';
+import type { WebhookEmitter } from '@antasphere/chassis-server';
 import {
   formResponseMailState,
   formResponseVersions,
@@ -15,6 +16,7 @@ import {
 import type { FormResponsePayload, FormSubmitFiles } from '@slideless/contract';
 import type { PepperRegistry } from '@antasphere/chassis-server/apikeys';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
+import { emitDeckEvent } from '../presentations/deck-webhooks.js';
 import { formFileSnapshot, type FormUploadService } from './uploads.js';
 
 /**
@@ -155,11 +157,47 @@ export interface FormResponseSummaryBucket {
   lastResponseAt: Date;
 }
 
+/**
+ * One `form.response_submitted` / `form.response_edited` event (PRDCT-3483)
+ * on the write's own connection: the row as written, its answers verbatim
+ * (the `payload` column) and the files it holds after the write. The `link`
+ * subject is the response's link, `[]` when it has none (the link was
+ * deleted since: the column is `set null`).
+ */
+function emitResponseEvent(
+  webhooks: WebhookEmitter,
+  conn: DbConn,
+  type: 'form.response_submitted' | 'form.response_edited',
+  row: FormResponseRow,
+  files: FormResponseFileRow[]
+): Promise<string | null> {
+  return emitDeckEvent(webhooks, conn, {
+    workspaceId: row.workspaceId,
+    type,
+    deckId: row.presentationId,
+    linkId: row.shareTokenId,
+    data: {
+      deckId: row.presentationId,
+      formName: row.formName,
+      responseId: row.id,
+      revision: row.revision,
+      linkId: row.shareTokenId,
+      version: row.version,
+      source: row.source,
+      placement: row.placement,
+      answers: row.payload,
+      files: files.map((f) => ({ id: f.id, name: f.filename, sizeBytes: f.sizeBytes }))
+    }
+  });
+}
+
 export class FormResponseService {
   constructor(
     private readonly db: Db,
     private readonly peppers: PepperRegistry,
-    private readonly uploads: FormUploadService
+    private readonly uploads: FormUploadService,
+    /** The webhook emitter (PRDCT-3483): each response event rides its write's transaction. */
+    private readonly webhooks: WebhookEmitter
   ) {}
 
   /**
@@ -215,6 +253,9 @@ export class FormResponseService {
         files: formFileSnapshot(claimed.current),
         createdAt: inserted.createdAt
       });
+      // A new response (PRDCT-3483). A remembering link's racing loser rolls
+      // back here, its event with it, and reports as the winner's edit.
+      await emitResponseEvent(this.webhooks, tx, 'form.response_submitted', inserted, claimed.current);
       return inserted;
     });
     return { row, editSecret };
@@ -383,6 +424,9 @@ export class FormResponseService {
             )
           );
       }
+      // Every new revision of an existing response is an edit (PRDCT-3483):
+      // through the edit secret, or a remembering link's next submit.
+      await emitResponseEvent(this.webhooks, tx, 'form.response_edited', row, current);
       return row;
     });
     if (detached.length > 0) await this.uploads.remove(detached);
@@ -596,11 +640,21 @@ export class FormResponseService {
    * purge sweep, never a reason to fail the delete.
    */
   async delete(responseId: string): Promise<{ row: FormResponseRow; files: FormResponseFileRow[] } | null> {
-    const files = await this.uploads.listForResponse(responseId);
-    const [row] = await this.db.delete(formResponses).where(eq(formResponses.id, responseId)).returning();
-    if (!row) return null;
-    if (files.length > 0) await this.uploads.remove(files);
-    return { row, files };
+    const deleted = await this.db.transaction(async (tx) => {
+      const files = await this.uploads.listForResponse(responseId, tx);
+      const [row] = await tx.delete(formResponses).where(eq(formResponses.id, responseId)).returning();
+      if (!row) return null;
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: row.workspaceId,
+        type: 'form.response_deleted',
+        deckId: row.presentationId,
+        data: { deckId: row.presentationId, responseId: row.id }
+      });
+      return { row, files };
+    });
+    if (!deleted) return null;
+    if (deleted.files.length > 0) await this.uploads.remove(deleted.files);
+    return deleted;
   }
 }
 

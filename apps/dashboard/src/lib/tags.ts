@@ -14,6 +14,7 @@ import User from '@lucide/svelte/icons/user';
 import Eye from '@lucide/svelte/icons/eye';
 import PenLine from '@lucide/svelte/icons/pen-line';
 import Download from '@lucide/svelte/icons/download';
+import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 import FileText from '@lucide/svelte/icons/file-text';
 import FileImage from '@lucide/svelte/icons/image';
 import FileCode from '@lucide/svelte/icons/file-code';
@@ -77,8 +78,10 @@ export function projectRoleTag(role: string): TagSpec {
 /** `presentations:read` reads as what it touches, then what it may do with it. */
 export function scopeTag(scope: string): TagSpec {
   const [what, verb = ''] = scope.split(':');
-  const tone: TagTone = verb === 'read' ? 'green' : verb === 'write' ? 'clay' : 'violet';
-  const icon = verb === 'read' ? Eye : verb === 'write' ? PenLine : Download;
+  const tone: TagTone =
+    verb === 'read' ? 'green' : verb === 'write' ? 'clay' : verb === 'manage' ? 'indigo' : 'violet';
+  const icon =
+    verb === 'read' ? Eye : verb === 'write' ? PenLine : verb === 'manage' ? SlidersHorizontal : Download;
   return { label: what, detail: verb, tone, icon, title: scope };
 }
 

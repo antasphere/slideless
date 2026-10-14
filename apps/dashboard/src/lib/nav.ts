@@ -1,6 +1,7 @@
 import House from '@lucide/svelte/icons/house';
 import Users from '@lucide/svelte/icons/users';
 import KeyRound from '@lucide/svelte/icons/key-round';
+import Webhook from '@lucide/svelte/icons/webhook';
 import Folder from '@lucide/svelte/icons/folder';
 import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
@@ -129,6 +130,17 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       icon: KeyRound,
       pattern: 'gears'
     });
+  // The webhooks (PRDCT-3484): a standing read of the workspace to a URL, an owner's or an admin's.
+  if (showWorkspace && isAdmin && !isGuest) {
+    workspace.push({
+      id: 'webhooks',
+      title: t('nav.webhooks'),
+      blurb: t('nav.blurb.webhooks'),
+      href: '/webhooks',
+      icon: Webhook,
+      pattern: 'sonar'
+    });
+  }
   if (showWorkspace && !isGuest) {
     workspace.push({
       id: 'files',
@@ -161,7 +173,7 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
     also: [
       '/account',
       ...(tool.settingsTabs?.().map((tab) => tab.href) ?? []),
-      ...(showWorkspace ? [] : ['/members', '/invitations', '/teams', '/api-keys', '/files']),
+      ...(showWorkspace ? [] : ['/members', '/invitations', '/teams', '/api-keys', '/webhooks', '/files']),
       ...(showSystem ? [] : ['/audit'])
     ],
     pattern: 'weave'

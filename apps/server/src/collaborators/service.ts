@@ -2,7 +2,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import type { Db, DbConn } from '@antasphere/chassis-db';
 import { collaborators, type CollaboratorRow } from '@slideless/db';
+import type { WebhookEmitter } from '@antasphere/chassis-server';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
+import { emitDeckEvent } from '../presentations/deck-webhooks.js';
 
 /**
  * Per-deck dev grants (Phase 5). The invitations pattern applied to decks:
@@ -45,8 +47,35 @@ export class CollaboratorError extends Error {
   }
 }
 
+/**
+ * One `collaborator.*` event (PRDCT-3483) on the write's own connection:
+ * the grant as it stands after the write (`userId` null on a pending invite).
+ */
+export function emitCollaboratorEvent(
+  webhooks: WebhookEmitter,
+  conn: DbConn,
+  type: 'collaborator.invited' | 'collaborator.revoked' | 'collaborator.claimed',
+  grant: Pick<CollaboratorRow, 'id' | 'workspaceId' | 'presentationId' | 'email' | 'userId'>
+): Promise<string | null> {
+  return emitDeckEvent(webhooks, conn, {
+    workspaceId: grant.workspaceId,
+    type,
+    deckId: grant.presentationId,
+    data: {
+      deckId: grant.presentationId,
+      collaboratorId: grant.id,
+      email: grant.email,
+      userId: grant.userId
+    }
+  });
+}
+
 export class CollaboratorService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** The webhook emitter (PRDCT-3483): each grant event rides its write's transaction. */
+    private readonly webhooks: WebhookEmitter
+  ) {}
 
   /**
    * Invite an email as a dev collaborator on a deck. Refuses an ACTIVE grant
@@ -99,6 +128,7 @@ export class CollaboratorService {
           .set(freshGrant)
           .where(eq(collaborators.id, existing.id))
           .returning();
+        await emitCollaboratorEvent(this.webhooks, tx, 'collaborator.invited', updated!);
         return updated!;
       }
 
@@ -113,6 +143,7 @@ export class CollaboratorService {
           ...freshGrant
         })
         .returning();
+      await emitCollaboratorEvent(this.webhooks, tx, 'collaborator.invited', inserted!);
       return inserted!;
     });
 
@@ -226,18 +257,24 @@ export class CollaboratorService {
    * their deck reachable.
    */
   async claim(grantId: string, userId: string): Promise<CollaboratorRow | null> {
-    const [row] = await this.db
-      .update(collaborators)
-      .set({ status: 'active', userId, claimedAt: sql`now()` })
-      .where(
-        and(
-          eq(collaborators.id, grantId),
-          eq(collaborators.status, 'pending'),
-          isNull(collaborators.revokedAt),
-          sql`${collaborators.claimExpiresAt} > now()`
+    const row = await this.db.transaction(async (tx) => {
+      const [flipped] = await tx
+        .update(collaborators)
+        .set({ status: 'active', userId, claimedAt: sql`now()` })
+        .where(
+          and(
+            eq(collaborators.id, grantId),
+            eq(collaborators.status, 'pending'),
+            isNull(collaborators.revokedAt),
+            sql`${collaborators.claimExpiresAt} > now()`
+          )
         )
-      )
-      .returning();
+        .returning();
+      // Only the claim that flipped the grant says so (PRDCT-3483): the
+      // idempotent re-read below is a claim the sweep already reported.
+      if (flipped) await emitCollaboratorEvent(this.webhooks, tx, 'collaborator.claimed', flipped);
+      return flipped;
+    });
     if (row) return row;
     // Pending-only update matched nothing: re-read for the idempotent case.
     // If the sweep's UPDATE held the row lock, ours re-evaluated after its
@@ -258,29 +295,43 @@ export class CollaboratorService {
    * explicit claim, so one claim never leaves sibling grants dangling.
    */
   async claimAllPendingForEmail(email: string, userId: string): Promise<number> {
-    const rows = await this.db
-      .update(collaborators)
-      .set({ status: 'active', userId, claimedAt: sql`now()` })
-      .where(
-        and(
-          eq(collaborators.email, email.toLowerCase().trim()),
-          eq(collaborators.status, 'pending'),
-          isNull(collaborators.revokedAt),
-          sql`${collaborators.claimExpiresAt} > now()`
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(collaborators)
+        .set({ status: 'active', userId, claimedAt: sql`now()` })
+        .where(
+          and(
+            eq(collaborators.email, email.toLowerCase().trim()),
+            eq(collaborators.status, 'pending'),
+            isNull(collaborators.revokedAt),
+            sql`${collaborators.claimExpiresAt} > now()`
+          )
         )
-      )
-      .returning({ id: collaborators.id });
-    return rows.length;
+        .returning();
+      // One `collaborator.claimed` per grant the sweep flipped (PRDCT-3483).
+      for (const row of rows) {
+        await emitCollaboratorEvent(this.webhooks, tx, 'collaborator.claimed', row);
+      }
+      return rows.length;
+    });
   }
 
   /** Soft revoke (idempotent): the grant stops authorizing, the row survives. */
   async revoke(grantId: string): Promise<CollaboratorRow | null> {
-    await this.db
-      .update(collaborators)
-      .set({ status: 'revoked', revokedAt: sql`now()` })
-      .where(and(eq(collaborators.id, grantId), sql`${collaborators.revokedAt} IS NULL`));
-    const [row] = await this.db.select().from(collaborators).where(eq(collaborators.id, grantId)).limit(1);
-    return row ?? null;
+    return this.db.transaction(async (tx) => {
+      const [revoked] = await tx
+        .update(collaborators)
+        .set({ status: 'revoked', revokedAt: sql`now()` })
+        .where(and(eq(collaborators.id, grantId), sql`${collaborators.revokedAt} IS NULL`))
+        .returning();
+      if (revoked) {
+        // Only the revoke that landed says so; a repeat changes nothing (PRDCT-3483).
+        await emitCollaboratorEvent(this.webhooks, tx, 'collaborator.revoked', revoked);
+        return revoked;
+      }
+      const [row] = await tx.select().from(collaborators).where(eq(collaborators.id, grantId)).limit(1);
+      return row ?? null;
+    });
   }
 
   async get(
