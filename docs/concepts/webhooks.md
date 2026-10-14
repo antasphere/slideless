@@ -167,7 +167,7 @@ The URL is `https://` (or `http://` on a self-hosted instance; the cloud accepts
 on the scheme's default port, without a user name or password in it. Its host must resolve to
 public internet addresses only: every address the name resolves to is checked at each delivery,
 and a webhook never reaches the instance's own network (localhost, private ranges, link-local
-addresses, the cloud metadata address). A refused URL answers `url_refused` with the reason.
+addresses, the cloud metadata address). A refused URL answers `url_refused` with the reason. An event type or family the catalog does not list answers `unknown_event`, a filter key that is not a subject answers `unknown_subject`: read `GET /webhooks/events` (or `slideless webhooks events`) for the exact names.
 
 **Self-hosting next to your tools.** An operator who wants a webhook to reach a service on the same
 network, an n8n on the LAN for example, sets `WEBHOOKS_ALLOW_PRIVATE_NETWORKS=true`. Private,

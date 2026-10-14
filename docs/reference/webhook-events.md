@@ -253,7 +253,7 @@ Subjects: `project` (`subjects.projectIds`).
   "occurredAt": "2026-10-13T09:30:00.000Z",
   "workspaceId": "c6409e21-663b-41bf-966f-fd3f6fde5c36",
   "subjects": {
-    "projectIds": "5328eb51-71a5-43e1-afd7-fb665c97be6d"
+    "projectIds": ["5328eb51-71a5-43e1-afd7-fb665c97be6d"]
   },
   "data": {
     "projectId": "5328eb51-71a5-43e1-afd7-fb665c97be6d",
@@ -282,7 +282,7 @@ Subjects: `project` (`subjects.projectIds`).
   "occurredAt": "2026-10-13T09:30:00.000Z",
   "workspaceId": "c6409e21-663b-41bf-966f-fd3f6fde5c36",
   "subjects": {
-    "projectIds": "5328eb51-71a5-43e1-afd7-fb665c97be6d"
+    "projectIds": ["5328eb51-71a5-43e1-afd7-fb665c97be6d"]
   },
   "data": {
     "projectId": "5328eb51-71a5-43e1-afd7-fb665c97be6d",
@@ -443,7 +443,7 @@ Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
   "workspaceId": "c6409e21-663b-41bf-966f-fd3f6fde5c36",
   "subjects": {
     "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
-    "projectIds": "5328eb51-71a5-43e1-afd7-fb665c97be6d"
+    "projectIds": ["5328eb51-71a5-43e1-afd7-fb665c97be6d"]
   },
   "data": {
     "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
@@ -472,7 +472,7 @@ Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
   "workspaceId": "c6409e21-663b-41bf-966f-fd3f6fde5c36",
   "subjects": {
     "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
-    "projectIds": "5328eb51-71a5-43e1-afd7-fb665c97be6d"
+    "projectIds": ["5328eb51-71a5-43e1-afd7-fb665c97be6d"]
   },
   "data": {
     "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",

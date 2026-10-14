@@ -225,16 +225,16 @@ function typeOf(schema: z.ZodType): string {
 }
 
 /**
- * The value a subject takes in the envelope: the data's own field when it
- * carries it (`projectIds` on `deck.created`), else the data's `<key>Id`
- * (`deckId`, `linkId`, a chassis project event's one `projectId`), else a
- * list of one id for a field that holds a list.
+ * The value a subject takes in the envelope, shaped by the catalog's own
+ * `list` flag (verifier round 2, MN-R2-1: never guessed from a name): the
+ * data's own field when it carries it (`projectIds` on `deck.created`), else
+ * the data's `<key>Id` (`deckId`, `linkId`, a chassis project event's one
+ * `projectId`), else a fresh id; a list subject always answers an array.
  */
-function subjectValue(key: string, field: string, data: Record<string, unknown>): unknown {
-  if (data[field] !== undefined) return data[field];
-  const own = data[`${key}Id`];
-  if (own !== undefined) return own;
-  return field.endsWith('s') ? [uuidFor(key)] : uuidFor(key);
+function subjectValue(key: string, field: string, list: boolean, data: Record<string, unknown>): unknown {
+  const raw = data[field] !== undefined ? data[field] : (data[`${key}Id`] ?? uuidFor(key));
+  if (list) return Array.isArray(raw) ? raw : [raw];
+  return Array.isArray(raw) ? raw[0] : raw;
 }
 
 // ── The page ─────────────────────────────────────────────────────────────────
@@ -309,8 +309,8 @@ export async function renderWebhookEventsDoc(): Promise<string> {
     const data = example(event.data, 'data', event.type) as Record<string, unknown>;
     const envelopeSubjects = Object.fromEntries(
       event.subjects.map((key) => {
-        const field = catalog.subjects[key]!.field;
-        return [field, subjectValue(key, field, data)];
+        const subject = catalog.subjects[key]!;
+        return [subject.field, subjectValue(key, subject.field, subject.list === true, data)];
       })
     );
     const envelope = {
