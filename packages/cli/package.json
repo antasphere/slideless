@@ -39,12 +39,12 @@
     "@antasphere/chassis-cli": "1.1.0",
     "@antasphere/chassis-contract": "1.1.0",
     "@antasphere/chassis-sdk": "1.1.0",
-    "@antasphere/cli-core": "^0.5.0",
+    "@antasphere/cli-core": "^0.6.0",
     "@slideless/contract": "workspace:*",
     "@slideless/sdk": "workspace:*",
     "@types/node": "^22.15.0",
     "commander": "^12.1.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "vitest": "^3.2.0"
   }
 }
