@@ -158,7 +158,7 @@ jobs:
       # The hub is private: mint a short-lived token from the
       # antasphere-federation-drill GitHub App (contents:read on antasphere/hub)
       # rather than carry a personal token that expires every 90 days.
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v3
         id: hub-checkout
         with:
           app-id: ${{ secrets.FEDERATION_DRILL_APP_ID }}
