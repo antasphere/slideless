@@ -276,7 +276,7 @@ jobs:
       # GitHub App (contents: write, installed on the fleet repository alone): its key
       # never expires, and each run mints a one-hour token from it — the same shape as
       # the docs-sync app in docs-notify.yml.
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v3
         if: github.ref == 'refs/heads/prod'
         id: fleet
         with:
