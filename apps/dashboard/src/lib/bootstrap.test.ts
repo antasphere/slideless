@@ -115,6 +115,46 @@ describe('bootstrap: the common paths cost one round trip', () => {
   });
 });
 
+describe('bootstrap: nothing of a dropped read outlives the bootstrap', () => {
+  it('a signed-out landing leaves the client on the stored selection, and the next bootstrap reads it', async () => {
+    // The password sign-in re-runs the root load on the SAME client (invalidateAll).
+    let signedIn = false;
+    const f = fakeApi({
+      session: false,
+      me: (w) =>
+        w === 'hub-org-x' ? unauthenticated() : { activeWorkspaceId: w ?? 'w-default', name: 'Ada' }
+    });
+    f.api.session = async () => (signedIn ? { user: { id: 'u1' } } : null);
+    f.api.setWorkspace('w-stored');
+    const sel = fakeSelection('w-stored', f.api);
+    const first = await bootstrap(f.api, sel.selection, 'hub-org-x');
+    expect(first.me).toBeNull();
+    expect(first.meError).toBeNull();
+    expect(f.selected()).toBe('w-stored');
+    expect(sel.log).toEqual([]);
+    signedIn = true;
+    const second = await bootstrap(f.api, sel.selection, null);
+    expect(second.me?.activeWorkspaceId).toBe('w-stored');
+    expect(sel.selection.stored()).toBe('w-stored');
+    expect(sel.log).toEqual([]);
+  });
+
+  it('a signed-out visitor whose dropped read met the hub refusal reads as plainly signed out', async () => {
+    const f = fakeApi({ session: false, me: () => hubDown() });
+    const out = await bootstrap(f.api, fakeSelection(null).selection, null);
+    expect(out.me).toBeNull();
+    expect(out.meError).toBeNull();
+  });
+
+  it('a not-set-up instance with a landing leaves the client selection alone', async () => {
+    const f = fakeApi({ setupRequired: true, me: () => ({ activeWorkspaceId: 'x', name: 'Ada' }) });
+    f.api.setWorkspace('w-stored');
+    const out = await bootstrap(f.api, fakeSelection('w-stored', f.api).selection, 'hub-org-1');
+    expect(out.me).toBeNull();
+    expect(f.selected()).toBe('w-stored');
+  });
+});
+
 describe('bootstrap: the two repairs cost a second round trip', () => {
   it('a landing the server resolves is remembered by its local id', async () => {
     const f = fakeApi({

@@ -93,7 +93,16 @@ export async function bootstrap<
   ]);
 
   let me: TMe | null = null;
-  if (!instance.setupRequired && session?.user) {
+  if (instance.setupRequired || !session?.user) {
+    // Nobody is signed in (or the instance is not set up): the landing read
+    // above is dropped, and so is the selection it put on the client, which
+    // would otherwise outlive this bootstrap and drive the next one (the
+    // password sign-in re-runs the root load on the same client). A
+    // refusal the dropped read met is nobody's refusal either.
+    if (landing) api.setWorkspace(selection.stored());
+    return { instance, me: null, meError: null };
+  }
+  {
     // A session without a live membership (deactivated member) counts as
     // signed out — /me is the source of truth for role + workspace. A
     // hub-gate refusal (suspended org / hub down, cloud edition) is NOT
