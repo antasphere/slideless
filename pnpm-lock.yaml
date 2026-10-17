@@ -67,8 +67,8 @@ importers:
   apps/dashboard:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@slideless/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -162,14 +162,14 @@ importers:
   apps/server:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@antasphere/chassis-db':
-        specifier: 1.2.0
-        version: 1.2.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
+        specifier: 1.3.0
+        version: 1.3.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
       '@antasphere/chassis-server':
-        specifier: 1.2.0
-        version: 1.2.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.4.3))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        specifier: 1.3.0
+        version: 1.3.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.4.3))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       '@better-auth/oauth-provider':
         specifier: 1.6.22
         version: 1.6.22(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0))(pg@8.22.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.4.3))
@@ -262,14 +262,14 @@ importers:
   packages/cli:
     devDependencies:
       '@antasphere/chassis-cli':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@antasphere/chassis-contract':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@antasphere/chassis-sdk':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@antasphere/cli-core':
         specifier: ^0.5.0
         version: 0.5.0
@@ -295,8 +295,8 @@ importers:
   packages/contract:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@hono/zod-openapi':
         specifier: 1.4.0
         version: 1.4.0(hono@4.12.27)(zod@4.4.3)
@@ -311,8 +311,8 @@ importers:
   packages/db:
     dependencies:
       '@antasphere/chassis-db':
-        specifier: 1.2.0
-        version: 1.2.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
+        specifier: 1.3.0
+        version: 1.3.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -336,11 +336,11 @@ importers:
   packages/sdk:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@antasphere/chassis-sdk':
-        specifier: 1.2.0
-        version: 1.2.0(hono@4.12.27)
+        specifier: 1.3.0
+        version: 1.3.0(hono@4.12.27)
       '@slideless/contract':
         specifier: workspace:*
         version: link:../contract
@@ -355,20 +355,20 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@antasphere/chassis-cli@1.2.0':
-    resolution: {integrity: sha512-Kdc+rAIkyGbiQ6qJ9jLdszWIxvqcC6DGU2RrvZ278GQoTqvEcCTPRX2cTIK/B/g5l1gMjzK6lOR7MrUI4StBVw==}
+  '@antasphere/chassis-cli@1.3.0':
+    resolution: {integrity: sha512-bZZW2uUu8fJgywWXrISXhpdA1eu2ulou1+emwUoLkYgT8bQbq33EFB464xjWantJaYW8asENserCA/fxymYZhg==}
 
-  '@antasphere/chassis-contract@1.2.0':
-    resolution: {integrity: sha512-DZp2zPEzssRvpGMrhw4SnQ/6Pp3/lwQ5x487HIVsvufuJ4N9D+6Ryhy00wJ8mpUFmSGgG9bUVRSgvv/bBlMAPg==}
+  '@antasphere/chassis-contract@1.3.0':
+    resolution: {integrity: sha512-fxo0gy+JTmnzmruX1/ZpHrVCqusUhswkyEbub+WHaYEGISxuJvk1h07z8fMo3YbtBR7EYrdFsAob7q+k5h0JVA==}
 
-  '@antasphere/chassis-db@1.2.0':
-    resolution: {integrity: sha512-9sP2I7Ns+CyGbsTKSBsPxkkbmTVuciU0VVtU7mFB5W6Db5CFSlO/cW8qK6FVk3Hzpl+DmxXyDIEe4vvZsC3pMg==}
+  '@antasphere/chassis-db@1.3.0':
+    resolution: {integrity: sha512-lNBSanbpuQhbzYqol5e9SHnHldVqCZdRxvXdNy/q8l3mWh0eVZBI9ziWwpAV2IffkwzpCdL5G+ck8/5XybgKtA==}
 
-  '@antasphere/chassis-sdk@1.2.0':
-    resolution: {integrity: sha512-NoaiqqLu2ywjSoPVe/V5TfmRbcTEN2aCAyEh5T/fa+BK0NHV69f0NTIpO6Y6Lv/wAaKzpR2C/Dr4apuaV5N6mg==}
+  '@antasphere/chassis-sdk@1.3.0':
+    resolution: {integrity: sha512-FJ91H981l3pWWY3k4dVxB8GcOoFtvTg15FaOTZVo7T7h1+07z6bQujwXox6rCnPfulW63BDoBgThWiMfHQzEoQ==}
 
-  '@antasphere/chassis-server@1.2.0':
-    resolution: {integrity: sha512-eBRVtYXCDlHRQZOGSP9UXoAOwUKV0MBvAJOrMp2OuMTxtWlzDGuGDf3/6TeQ9evXhlnYme8fw0DXdRea0f0RVQ==}
+  '@antasphere/chassis-server@1.3.0':
+    resolution: {integrity: sha512-eZZIe29PMjiU1D5ninNuJfUI1mY84t/5uQ5GYR9Pj7QlKq5UYESV6dCRkxR1P7FtjDD4r5A/NqIA3FsInAcs+w==}
 
   '@antasphere/cli-core@0.5.0':
     resolution: {integrity: sha512-aV0/rttHWVMIgaNVk20T6tONNlNQQG2kY+fiGkUt7DxA8q4X1YWx8EqYzp2I1vkUerMW74C5n/wbAkes1kO2fw==}
@@ -391,8 +391,8 @@ packages:
     resolution: {integrity: sha512-CcAkVyEUKGngbEqJdVdSc53Iy52+XzVL5NIcTen2BlK8UByNC1DThVtf5VKSrNzyA+SqyTvs+3S+knVBbOUizQ==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/client-s3@3.1151.0':
-    resolution: {integrity: sha512-Kg20OP7F+rrWMFjPv/aCsNUt/qDbvh1bLJFQM8k/8fnxowR/DA67qL5KHzWWN5gwJCYplS3KQde6P/knOB+lxg==}
+  '@aws-sdk/client-s3@3.1152.0':
+    resolution: {integrity: sha512-oI1+ZaM6pSOwZazu4nAb7rL8ug7LSjg31tDoJqRB9MooRqqWCf/qvkIZqne1mRA3xK3slg6K0RNWXaJYHbWLvg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.978.3':
@@ -431,11 +431,11 @@ packages:
     resolution: {integrity: sha512-TJF25Ndwy2HxcVj6oxMgp8qVlJAawlExHYBXqhuC6Zt2m+A7WpdkjBD6QglNbiArlteYljZHEY3R7KKmno6ISA==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/lib-storage@3.1151.0':
-    resolution: {integrity: sha512-U/Op002Z+YnhQZResojFzadhHf3+QEzAytupELeii/EmjXsTgMWRXeTwL7ixTYInEvkLIXQOPwBFcdXEgrQ7Og==}
+  '@aws-sdk/lib-storage@3.1152.0':
+    resolution: {integrity: sha512-UU1fDLKBd8az+4AmNx30ggnA4D4HolUd1MxT/J6ka76qKcckI0IxjAy6FpX/vwiUf2KDNxxN2YX0cfwjMqzWoQ==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
-      '@aws-sdk/client-s3': ^3.1151.0
+      '@aws-sdk/client-s3': ^3.1152.0
 
   '@aws-sdk/middleware-sdk-s3@3.972.79':
     resolution: {integrity: sha512-UfgAQosf4IEXldMsyntVuHsJnaQzlH6pmkOr6dQy7CaOYSlGz3mWiW4Di7XfQ/kPJP6xE7oMshz1V0E8RqGdRg==}
@@ -3807,8 +3807,8 @@ packages:
     resolution: {integrity: sha512-J6l92tKHX6w8Jy5nO1Vuc01NoIiRGi/d6qBKVxh+IQ8Cr3b6HbVNfKiF8ZpFKufTwpwxMmce2W3iQZ861ZRyTg==}
     engines: {node: '>=18'}
 
-  nodemailer@10.1.1:
-    resolution: {integrity: sha512-pbqZRoeYUO+1E8TJ/11WeY4D2EVujj1hsYjz3qff/vUFDtGnmi7p3iqzTFslYOfQ6PnjVcWxx/CIUSHCSrO/QA==}
+  nodemailer@10.1.2:
+    resolution: {integrity: sha512-rnQn9Rzh8RAwcp42MVsIvxbsv6YZ2a2/av+uyJ/LPU1+2QSlrRgFsWWZTKenyRUqkIl8urOI0c4+CEcmFdsvQw==}
     engines: {node: '>=20.0.0'}
 
   normalize-path@3.0.0:
@@ -4272,8 +4272,8 @@ packages:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
     engines: {node: '>=0.10.0'}
 
-  resend@6.32.1:
-    resolution: {integrity: sha512-Z9DxkIZt5uvVNkjxjc+r4rCPI0MdDIJ7H+GvU50o9GkhrD0tVTwP6caE8KYEco90sos312l6R72jAEMCBFBiFQ==}
+  resend@6.34.1:
+    resolution: {integrity: sha512-3jo/j1WAW7CBkE6pzK4qLjZCfHRLIhY3ph3x/wzU+MN51cSw3EtReGce8S1cA1R0ipNDOdFYU5Lmt5r563lvYw==}
     engines: {node: '>=20'}
     peerDependencies:
       '@react-email/render': '*'
@@ -4971,16 +4971,16 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@antasphere/chassis-cli@1.2.0(hono@4.12.27)':
+  '@antasphere/chassis-cli@1.3.0(hono@4.12.27)':
     dependencies:
-      '@antasphere/chassis-contract': 1.2.0(hono@4.12.27)
-      '@antasphere/chassis-sdk': 1.2.0(hono@4.12.27)
+      '@antasphere/chassis-contract': 1.3.0(hono@4.12.27)
+      '@antasphere/chassis-sdk': 1.3.0(hono@4.12.27)
       '@antasphere/cli-core': 0.6.0
       commander: 12.1.0
     transitivePeerDependencies:
       - hono
 
-  '@antasphere/chassis-contract@1.2.0(hono@4.12.27)':
+  '@antasphere/chassis-contract@1.3.0(hono@4.12.27)':
     dependencies:
       '@antasphere/contract': 0.16.5(hono@4.12.27)
       '@hono/zod-openapi': 1.4.0(hono@4.12.27)(zod@4.4.3)
@@ -4988,7 +4988,7 @@ snapshots:
     transitivePeerDependencies:
       - hono
 
-  '@antasphere/chassis-db@1.2.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)':
+  '@antasphere/chassis-db@1.3.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0)
@@ -5023,18 +5023,18 @@ snapshots:
       - sql.js
       - sqlite3
 
-  '@antasphere/chassis-sdk@1.2.0(hono@4.12.27)':
+  '@antasphere/chassis-sdk@1.3.0(hono@4.12.27)':
     dependencies:
-      '@antasphere/chassis-contract': 1.2.0(hono@4.12.27)
+      '@antasphere/chassis-contract': 1.3.0(hono@4.12.27)
     transitivePeerDependencies:
       - hono
 
-  '@antasphere/chassis-server@1.2.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.4.3))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))':
+  '@antasphere/chassis-server@1.3.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.4.3))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
-      '@antasphere/chassis-contract': 1.2.0(hono@4.12.27)
-      '@antasphere/chassis-db': 1.2.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
-      '@aws-sdk/client-s3': 3.1151.0
-      '@aws-sdk/lib-storage': 3.1151.0(@aws-sdk/client-s3@3.1151.0)
+      '@antasphere/chassis-contract': 1.3.0(hono@4.12.27)
+      '@antasphere/chassis-db': 1.3.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
+      '@aws-sdk/client-s3': 3.1152.0
+      '@aws-sdk/lib-storage': 3.1152.0(@aws-sdk/client-s3@3.1152.0)
       '@better-auth/oauth-provider': 1.6.22(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0))(pg@8.22.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.4.3))
       '@hono/mcp': 0.3.0(@modelcontextprotocol/sdk@1.32.1(zod@4.4.3))(hono-rate-limiter@0.5.3(hono@4.12.27))(hono@4.12.27)(zod@4.4.3)
       '@hono/node-server': 1.19.14(hono@4.12.27)
@@ -5050,13 +5050,13 @@ snapshots:
       hono: 4.12.27
       ioredis: 5.11.1
       jose: 6.2.3
-      nodemailer: 10.1.1
+      nodemailer: 10.1.2
       pg: 8.22.0
       pg-boss: 10.4.2
       pino: 9.14.0
       prom-client: 15.1.3
       rate-limiter-flexible: 7.4.0
-      resend: 6.32.1
+      resend: 6.34.1
       ulid: 3.0.2
       yazl: 3.3.1
       zod: 4.4.3
@@ -5135,7 +5135,7 @@ snapshots:
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
-  '@aws-sdk/client-s3@3.1151.0':
+  '@aws-sdk/client-s3@3.1152.0':
     dependencies:
       '@aws-sdk/checksums': 3.1001.3
       '@aws-sdk/core': 3.978.3
@@ -5244,9 +5244,9 @@ snapshots:
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
-  '@aws-sdk/lib-storage@3.1151.0(@aws-sdk/client-s3@3.1151.0)':
+  '@aws-sdk/lib-storage@3.1152.0(@aws-sdk/client-s3@3.1152.0)':
     dependencies:
-      '@aws-sdk/client-s3': 3.1151.0
+      '@aws-sdk/client-s3': 3.1152.0
       '@smithy/core': 3.36.0
       '@smithy/types': 4.19.0
       buffer: 5.6.0
@@ -8507,7 +8507,7 @@ snapshots:
 
   node-releases@2.0.50: {}
 
-  nodemailer@10.1.1: {}
+  nodemailer@10.1.2: {}
 
   normalize-path@3.0.0: {}
 
@@ -8984,7 +8984,7 @@ snapshots:
 
   require-from-string@2.0.2: {}
 
-  resend@6.32.1:
+  resend@6.34.1:
     dependencies:
       postal-mime: 2.7.6
       standardwebhooks: 1.1.1

@@ -21,9 +21,9 @@
     "docs:env": "tsx scripts/generate-env-docs.ts && prettier --write ../../docs/reference/env-reference.md"
   },
   "dependencies": {
-    "@antasphere/chassis-contract": "1.2.0",
-    "@antasphere/chassis-db": "1.2.0",
-    "@antasphere/chassis-server": "1.2.0",
+    "@antasphere/chassis-contract": "1.3.0",
+    "@antasphere/chassis-db": "1.3.0",
+    "@antasphere/chassis-server": "1.3.0",
     "@better-auth/oauth-provider": "1.6.22",
     "@hono/node-server": "^1.14.0",
     "@hono/zod-openapi": "^1.4.0",

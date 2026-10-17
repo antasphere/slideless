@@ -9,6 +9,10 @@ const config = {
       pages: '../server/public',
       assets: '../server/public',
       fallback: 'index.html',
+      // A .br and a .gz sibling beside every asset: the server serves them
+      // in place of the file when the browser accepts the encoding, and
+      // compresses nothing at runtime (PRDCT-3584).
+      precompress: true,
       strict: false
     })
   }
