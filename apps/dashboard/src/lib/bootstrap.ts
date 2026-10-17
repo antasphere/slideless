@@ -102,32 +102,31 @@ export async function bootstrap<
     if (landing) api.setWorkspace(selection.stored());
     return { instance, me: null, meError: null };
   }
-  {
-    // A session without a live membership (deactivated member) counts as
-    // signed out — /me is the source of truth for role + workspace. A
-    // hub-gate refusal (suspended org / hub down, cloud edition) is NOT
-    // "signed out": remembered so the shell can say why (/suspended).
-    me = firstMe;
-    if (landing) {
-      // Resolved, the landing is remembered by its LOCAL id like a switch in
-      // the sidebar; refused (not a member, a tool this organization does not
-      // open), it is dropped and the bootstrap goes on with the stored
-      // selection.
-      if (me?.activeWorkspaceId) selection.remember(me.activeWorkspaceId);
-      else {
-        me = null;
-        meError = null;
-        api.setWorkspace(selection.stored());
-        me = await readMe();
-      }
-    }
-    if (!me && selection.stored()) {
-      // Stale persisted workspace (membership revoked, workspace gone):
-      // X-Workspace-Id fails closed server-side. Self-heal — drop the
-      // selection and retry once against the server default.
-      selection.clear();
+
+  // A session without a live membership (deactivated member) counts as
+  // signed out — /me is the source of truth for role + workspace. A
+  // hub-gate refusal (suspended org / hub down, cloud edition) is NOT
+  // "signed out": remembered so the shell can say why (/suspended).
+  me = firstMe;
+  if (landing) {
+    // Resolved, the landing is remembered by its LOCAL id like a switch in
+    // the sidebar; refused (not a member, a tool this organization does not
+    // open), it is dropped and the bootstrap goes on with the stored
+    // selection.
+    if (me?.activeWorkspaceId) selection.remember(me.activeWorkspaceId);
+    else {
+      me = null;
+      meError = null;
+      api.setWorkspace(selection.stored());
       me = await readMe();
     }
+  }
+  if (!me && selection.stored()) {
+    // Stale persisted workspace (membership revoked, workspace gone):
+    // X-Workspace-Id fails closed server-side. Self-heal — drop the
+    // selection and retry once against the server default.
+    selection.clear();
+    me = await readMe();
   }
 
   return { instance, me, meError: me ? null : meError };
