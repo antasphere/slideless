@@ -2,42 +2,27 @@
      sub-entries, each opening its tool in a new tab, the account first, this
      tool marked as where the reader is. One read shared with the Apps page
      (`loadApps`); while it loads, three faint rows hold the room; with nothing
-     to list, one quiet line sends to the page. The names come from the hub or
+     to list, one quiet line sends to the page, and says the organization is
+     suspended when the hub said so. The names come from the hub or
      the operator's file and render as text, here without the company's name in
-     front (the Apps page keeps it). The rows stand at the rail's own height,
+     front (the Apps page keeps it), by name; the icon is the registry's
+     descriptor (PRDCT-3493). The rows stand at the rail's own height,
      words and icons at its size, and reach its right edge. -->
 <script lang="ts">
-  import type { Component } from 'svelte';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
-  import CalendarClock from '@lucide/svelte/icons/calendar-clock';
   import Check from '@lucide/svelte/icons/check';
   import CircleUser from '@lucide/svelte/icons/circle-user';
-  import Contact from '@lucide/svelte/icons/contact';
-  import KeyRound from '@lucide/svelte/icons/key-round';
-  import Landmark from '@lucide/svelte/icons/landmark';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Presentation from '@lucide/svelte/icons/presentation';
-  import Users from '@lucide/svelte/icons/users';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import { stagger } from '$lib/stagger';
-  import { foldRows, loadApps } from '$lib/tool/apps';
+  import ToolIcon from '$lib/tool/components/apps/ToolIcon.svelte';
+  import { loadApps, shortName, sortApps } from '$lib/tool/apps';
   import { t } from '$lib/i18n';
   import type { NavItem } from '$lib/nav';
-  import type { AppsList } from '@slideless/contract';
+  import type { AppsList } from '@antasphere/chassis-contract';
 
   // the entry the fold hangs under: the sidebar hands it, and the list names it
   let { item }: { item: NavItem } = $props();
-
-  const ICONS: Record<string, Component> = {
-    hub: CircleUser,
-    finance: Landmark,
-    hiring: Users,
-    meet: CalendarClock,
-    crm: Contact,
-    steward: KeyRound,
-    // this tool's own row carries the rail's Decks icon
-    slideless: Presentation
-  };
 
   let list = $state<AppsList | null>(null);
   let failed = $state(false);
@@ -47,11 +32,33 @@
       .catch(() => (failed = true));
   });
 
-  // the rows (lib/tool/apps.ts, foldRows: the account first, the names without the company's,
-  // this tool's own row with no address), each with its drawing
-  const rows = $derived(
-    list ? foldRows(list).map((row) => ({ ...row, icon: ICONS[row.key] ?? LayoutGrid })) : []
-  );
+  // the hub suspended the organization: the tools' rows give way to one line, the account's row stays
+  const suspended = $derived(list?.organization?.status === 'suspended');
+
+  // "Antasphere Finance" reads "Finance" in the fold: every row is the company's; the rows
+  // by name, the icon the registry's descriptor names (PRDCT-3493), the grid for none
+  const rows = $derived.by(() => {
+    if (!list) return [];
+    const apps = sortApps(list.apps).map((app) => ({
+      key: app.slug,
+      name: shortName(app.name),
+      href: app.launchUrl,
+      icon: app.descriptor?.icon ?? null,
+      current: app.current
+    }));
+    return list.hub
+      ? [
+          {
+            key: 'hub',
+            name: shortName(list.hub.name),
+            href: list.hub.url,
+            icon: 'account',
+            current: false
+          },
+          ...apps
+        ]
+      : apps;
+  });
 </script>
 
 <!-- the sub-list keeps its left line and indent, not the margin on its right -->
@@ -62,30 +69,42 @@
     {/each}
   {:else if rows.length === 0}
     <Sidebar.MenuSubItem>
-      <Sidebar.MenuSubButton href="/apps" class="h-9 text-muted-foreground">
+      <Sidebar.MenuSubButton href="/apps" class="h-9 text-muted-foreground" data-testid="apps-fold-empty">
         <LayoutGrid />
         <span>{t('apps.foldEmpty')}</span>
       </Sidebar.MenuSubButton>
     </Sidebar.MenuSubItem>
   {:else}
     <div use:stagger class="contents">
-      {#each rows as row (row.key)}
+      {#each suspended ? rows.filter((r) => r.key === 'hub') : rows as row (row.key)}
         <Sidebar.MenuSubItem>
-          {#if row.href === null}
+          {#if row.current}
             <span class="here" title={t('apps.here')}>
-              <row.icon />
+              {#if row.icon === 'account'}<CircleUser />{:else}<ToolIcon name={row.icon} />{/if}
               <span class="min-w-0 truncate">{row.name}</span>
               <Check class="mark" />
             </span>
           {:else}
             <Sidebar.MenuSubButton href={row.href} target="_blank" rel="noopener" class="row h-9">
-              <row.icon />
+              {#if row.icon === 'account'}<CircleUser />{:else}<ToolIcon name={row.icon} />{/if}
               <span class="min-w-0 truncate">{row.name}</span>
               <ArrowUpRight class="out" />
             </Sidebar.MenuSubButton>
           {/if}
         </Sidebar.MenuSubItem>
       {/each}
+      {#if suspended}
+        <Sidebar.MenuSubItem>
+          <Sidebar.MenuSubButton
+            href="/apps"
+            class="h-9 text-muted-foreground"
+            data-testid="apps-fold-suspended"
+          >
+            <LayoutGrid />
+            <span>{t('apps.foldSuspended')}</span>
+          </Sidebar.MenuSubButton>
+        </Sidebar.MenuSubItem>
+      {/if}
     </div>
   {/if}
 </Sidebar.MenuSub>

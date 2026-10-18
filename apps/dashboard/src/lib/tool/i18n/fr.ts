@@ -661,13 +661,8 @@ export const fr: Record<keyof typeof en, string> = {
   'apps.openHub': 'Ouvrir votre compte',
   'apps.openLabel': 'Ouvrir {name} dans un nouvel onglet',
   'apps.here': 'Vous êtes ici',
-  'apps.desc.finance': 'Le grand livre : les clients, leurs contrats et les échéances qui les règlent.',
-  'apps.desc.hiring': 'Les postes à pourvoir, et chaque candidat à travers ses étapes.',
-  'apps.desc.meet': 'Les liens de réservation, vos disponibilités et les rendez-vous pris.',
-  'apps.desc.crm': 'Les entreprises, les personnes et le fil de chaque échange.',
-  'apps.desc.steward': 'Le registre de l’espace de travail : ses dépôts et qui peut y accéder.',
   'apps.descHub': 'Votre connexion, vos organisations et qui utilise quel outil.',
-  'apps.descHere': 'Vous êtes ici : les decks de votre espace, leurs liens de partage et leurs formulaires.',
+  'apps.descHere': 'Des présentations écrites en texte, rendues en diapositives et partagées par lien.',
   'apps.descGeneric': 'Un autre outil de votre organisation.',
   'apps.connectedSince': 'Connecté depuis le {date}',
   'apps.lastUsed': 'dernière utilisation le {date}',
@@ -675,5 +670,10 @@ export const fr: Record<keyof typeof en, string> = {
   'apps.emptyBody':
     'Cette instance ne liste aucun autre outil. Son opérateur les liste dans un fichier JSON indiqué par {key}.',
   'apps.loadError': 'Les apps n’ont pas pu être chargées.',
-  'apps.foldEmpty': 'Voir les apps'
+  'apps.foldEmpty': 'Voir les apps',
+  'apps.foldSuspended': 'Organisation suspendue',
+  'apps.suspendedTitle': '{name} est suspendue',
+  'apps.suspendedTitleGeneric': 'Votre organisation est suspendue',
+  'apps.suspendedBody':
+    'Votre organisation est suspendue sur votre compte, ses outils sont donc fermés. L’équipe du compte la rouvre.'
 };

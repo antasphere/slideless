@@ -79,7 +79,6 @@ import {
   annotationsListSchema,
   annotationUpdateSchema
 } from '../schemas/annotations.js';
-import { appsListSchema } from '../schemas/apps.js';
 
 /**
  * Server-only entry: route contracts for @hono/zod-openapi. Importing this
@@ -973,25 +972,6 @@ export const presentationDuplicateRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Idempotency conflict')
-  }
-});
-
-// ── Apps ─────────────────────────────────────────────────────────────────────
-// The other tools of the person's organization (the Apps page). A browser
-// session's alone: no rule of the scope allowlist opens it, so an API key or an
-// OAuth token answers 403 (fail-closed); the cloud edition asks the hub as the
-// person, with their own grant.
-
-export const appsListRoute = createRoute({
-  method: 'get',
-  path: '/apps',
-  tags: ['apps'],
-  summary:
-    'The other tools of the organization the caller may open, and the account that signs them in (browser session only)',
-  responses: {
-    200: jsonBody(appsListSchema, 'The tools, the hub, and where the list came from'),
-    401: errorResponses[401],
-    403: errorResponses[403]
   }
 });
 

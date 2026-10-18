@@ -1,38 +1,44 @@
-import type { AppEntry, AppsList } from '@slideless/contract';
+import type { AppEntry, AppsList } from '@antasphere/chassis-contract';
 import { formatDate } from '$lib/format';
 import { api } from '$lib/api';
 import { t } from '$lib/i18n';
 
 /**
- * The Apps page's words for one card: the sentence and the quiet facts line.
- * The list itself comes from the SDK's `api.apps()` (`GET /apps`, a session's
- * alone), read by the page.
+ * The Apps page's words for one card: the sentence and the quiet facts line,
+ * and the order the fold and the page show the tools in. The list itself
+ * comes from the chassis (`api.apps()`, `GET /apps`, a session's alone): the
+ * hub's catalogue as the person sees it, each tool with the descriptor its
+ * registry entry declares once (PRDCT-3493), so this file knows no tool by
+ * name.
  */
-
-/** The tools the page knows a sentence for (both languages, `apps.desc.*`). */
-const KNOWN = {
-  finance: 'apps.desc.finance',
-  hiring: 'apps.desc.hiring',
-  meet: 'apps.desc.meet',
-  crm: 'apps.desc.crm',
-  steward: 'apps.desc.steward'
-} as const;
 
 /**
- * The card's sentence: the page's own for a known tool, this tool's own sentence on its
- * own card (`apps.descHere`: a tool born from the template rewrites it), else the
- * operator's description, else a generic one.
+ * The card's sentence: the registry's description when the descriptor has
+ * one, this tool's own sentence on its own card otherwise (`apps.descHere`: a
+ * tool born from the template rewrites it), else a generic one.
  */
-export function appSentence(app: Pick<AppEntry, 'slug' | 'description'> & { current?: boolean }): string {
-  const key = KNOWN[app.slug as keyof typeof KNOWN];
-  if (key) return t(key);
+export function appSentence(app: Pick<AppEntry, 'descriptor'> & { current?: boolean }): string {
+  if (app.descriptor?.description) return app.descriptor.description;
   if (app.current) return t('apps.descHere');
-  return app.description ?? t('apps.descGeneric');
+  return t('apps.descGeneric');
 }
 
-/** The page's order: this tool's own card first (after the account's), the others as the list gives them. */
-export function hereFirst<T extends { current: boolean }>(apps: readonly T[]): T[] {
-  return [...apps.filter((a) => a.current), ...apps.filter((a) => !a.current)];
+/** "Antasphere Finance" sorts and reads as "Finance": every tool is the company's. */
+export function shortName(name: string): string {
+  return name.replace(/^antasph[eè]re\s+/iu, '');
+}
+
+/** The rows by short name, the locale's way, case and accents ignored; the input left alone. */
+export function sortApps<T extends { name: string }>(apps: readonly T[]): T[] {
+  return [...apps].sort((a, b) =>
+    shortName(a.name).localeCompare(shortName(b.name), undefined, { sensitivity: 'base' })
+  );
+}
+
+/** The page's order: this tool's own card first (after the account's), the others by name. */
+export function hereFirst<T extends { current: boolean; name: string }>(apps: readonly T[]): T[] {
+  const sorted = sortApps(apps);
+  return [...sorted.filter((a) => a.current), ...sorted.filter((a) => !a.current)];
 }
 
 /** The quiet line under the sentence: connected since, last used; null when the list says neither. */
@@ -43,40 +49,6 @@ export function appFact(app: Pick<AppEntry, 'firstUsedAt' | 'lastUsedAt'>): stri
   if (parts.length === 0) return null;
   const line = parts.join(' · ');
   return line.charAt(0).toUpperCase() + line.slice(1);
-}
-
-// ── The rail's fold ─────────────────────────────────────────────────────────
-
-/** "Antasphere Finance" reads "Finance" in the fold: every row is the company's. */
-export function shortAppName(name: string): string {
-  return name.replace(/^antasph[eè]re\s+/iu, '');
-}
-
-export interface FoldRow {
-  key: string;
-  name: string;
-  /** Where the row opens, in a new tab; null on this tool's own row, which is never a link. */
-  href: string | null;
-  /** This tool: named like the others, marked as where the reader is. */
-  current: boolean;
-}
-
-/**
- * The rows the rail unfolds under the Apps entry: the account first when the list names it,
- * then the tools in the list's order, each named without the company's name in front. This
- * tool's own row carries no address: the reader is already here, and a link to it would open
- * the dashboard again in another tab.
- */
-export function foldRows(list: Pick<AppsList, 'apps' | 'hub'>): FoldRow[] {
-  const apps = list.apps.map((app) => ({
-    key: app.slug,
-    name: shortAppName(app.name),
-    href: app.current ? null : app.launchUrl,
-    current: app.current
-  }));
-  return list.hub
-    ? [{ key: 'hub', name: shortAppName(list.hub.name), href: list.hub.url, current: false }, ...apps]
-    : apps;
 }
 
 // ── One read for the page and the rail ───────────────────────────────────────

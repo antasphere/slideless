@@ -6,7 +6,6 @@ import {
 } from '@antasphere/chassis-sdk';
 import type {
   Annotation,
-  AppsList,
   AnnotationCreate,
   AnnotationStatus,
   AnnotationUpdate,
@@ -717,14 +716,5 @@ export class PlatformClient extends ChassisClient<Scope> {
       'DELETE',
       `/presentations/${encodeURIComponent(id)}/responses/${encodeURIComponent(responseId)}`
     );
-  }
-
-  // ── Apps ──────────────────────────────────────────────────────────────────
-  // The other tools of the organization: a browser session's alone (an API key
-  // or an OAuth token is refused 403). `me()` is the chassis client's.
-
-  /** The tools the caller may open, the account that signs them in, and where the list came from. */
-  apps(): Promise<AppsList> {
-    return this.request('GET', '/apps');
   }
 }
