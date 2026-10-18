@@ -1,5 +1,6 @@
 <!-- One app on the Apps page: a plate band with the tool's drawing
-     (AppDrawing), its name in the display serif, one sentence on what it is,
+     (AppDrawing, the registry descriptor's name), its name in the display
+     serif, one sentence on what it is (the descriptor's),
      a quiet line of facts when the hub knows them (connected since, last
      used), and the way in: Open, in a new tab, or "You are here" on this very
      tool. The account's card is the same card with the hub's drawing. On
@@ -14,6 +15,10 @@
   interface Props {
     slug: string;
     name: string;
+    /** The registry's drawing name (`TOOL_DRAWINGS`); absent, this tool's own concept or a monogram. */
+    drawing?: string | null;
+    /** The registry's accent (`#rrggbb`), the card's and the drawing's; absent, the page's. */
+    accent?: string | null;
     sentence: string;
     /** The quiet line under the sentence (connected since, last used), or null. */
     fact?: string | null;
@@ -24,12 +29,25 @@
     action: string;
   }
 
-  let { slug, name, sentence, fact = null, href, current = false, action }: Props = $props();
+  let {
+    slug,
+    name,
+    drawing = null,
+    accent = null,
+    sentence,
+    fact = null,
+    href,
+    current = false,
+    action
+  }: Props = $props();
+
+  // the accent is the hub's validated #rrggbb, never anything else, so it may set the variable
+  const style = $derived(accent && /^#[0-9a-fA-F]{6}$/.test(accent) ? `--accent: ${accent}` : undefined);
 </script>
 
-<article class="card" class:current data-testid="app-card" data-app={slug}>
+<article class="card" class:current data-testid="app-card" data-app={slug} {style}>
   <div class="band">
-    <AppDrawing {slug} {name} {current} />
+    <AppDrawing {drawing} {name} {current} />
   </div>
 
   <div class="body">

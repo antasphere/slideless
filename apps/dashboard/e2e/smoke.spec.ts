@@ -5,8 +5,9 @@ import { INSTANCE_NAME, INVITEE, OWNER } from './accounts';
  * One end-to-end pass over a FRESH instance (empty database):
  * setup wizard → app → API key (secret shown once) → invitation (copyable
  * link) → invite acceptance in a second, cookie-less context → audit trail →
- * deep-link cold load → sign out → sign back in → consent page fail-closed
- * check. (The full OAuth dance is covered by server integration tests.)
+ * deep-link cold load → the Apps page → sign out → sign back in → consent
+ * page fail-closed check. (The full OAuth dance is covered by server
+ * integration tests.)
  *
  * The workspace's administration is not in the rail (PRDCT-3437, the tool
  * template's DESIGN.md, "The rail"): People, API keys, Files and the Audit log
@@ -150,6 +151,22 @@ test('fresh instance: setup → key → invite → audit → re-login', async ({
     // workspace and gets the menu with ONE workspace too. With creation closed
     // the plain instance-name header stays: workspaces.spec.ts pins that side.
     await expect(page.getByTestId('workspace-switcher')).toContainText(INSTANCE_NAME);
+  });
+
+  await test.step("the rail's Apps entry opens the Apps page (the tool template's DESIGN.md, §4)", async () => {
+    await rail(page).getByRole('link', { name: 'Apps', exact: true }).first().click();
+    await expect(page).toHaveURL(/\/apps$/);
+    await expect(page.getByRole('heading', { name: 'Apps', level: 1 })).toBeVisible();
+    // The stack sets no APPS_FILE and is self-hosted: the list is `source: 'none'`,
+    // so the grid holds no card, not even this tool's "You are here" one, and the
+    // empty plate names the setting.
+    await expect(page.getByTestId('apps-grid')).toBeAttached();
+    await expect(page.getByTestId('app-card')).toHaveCount(0);
+    await expect(page.getByTestId('app-here')).toHaveCount(0);
+    const empty = page.getByTestId('apps-empty');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText('No other app is listed here');
+    await expect(empty).toContainText('APPS_FILE');
   });
 
   await test.step('sign out, then sign back in', async () => {

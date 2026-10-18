@@ -632,13 +632,8 @@ export const en = {
   'apps.openHub': 'Open your account',
   'apps.openLabel': 'Open {name} in a new tab',
   'apps.here': 'You are here',
-  'apps.desc.finance': 'The ledger: the clients, their contracts and the milestones that pay them.',
-  'apps.desc.hiring': 'The jobs you hire for, and each candidate through its stages.',
-  'apps.desc.meet': 'Booking links, your availability and the meetings people book.',
-  'apps.desc.crm': 'Companies, people and the timeline of every exchange.',
-  'apps.desc.steward': 'The workspace’s register: its repositories and who may reach them.',
   'apps.descHub': 'Your sign-in, your organizations and who may use which tool.',
-  'apps.descHere': 'Where you are: the decks of your workspace, their share links and their forms.',
+  'apps.descHere': 'Decks written as text, rendered as slides and shared by link.',
   'apps.descGeneric': 'Another tool of your organization.',
   'apps.connectedSince': 'Connected since {date}',
   'apps.lastUsed': 'last used {date}',
@@ -646,5 +641,10 @@ export const en = {
   'apps.emptyBody':
     'This instance lists no other tool. Its operator lists them in a JSON file named by {key}.',
   'apps.loadError': 'The apps could not be loaded.',
-  'apps.foldEmpty': 'See the apps'
+  'apps.foldEmpty': 'See the apps',
+  'apps.foldSuspended': 'Organization suspended',
+  'apps.suspendedTitle': '{name} is suspended',
+  'apps.suspendedTitleGeneric': 'Your organization is suspended',
+  'apps.suspendedBody':
+    'Your organization is suspended on your account, so its tools are closed. The account’s staff reopen it.'
 } as const;

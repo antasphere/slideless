@@ -1,10 +1,12 @@
 <!-- The Apps page: the other tools of the person's organization, and the
      account that signs them in. One card per tool they may open (AppCard),
-     the account's first, then this tool's own, which says "You are here"
-     and draws this tool's concept. The list
+     the account's first, then this tool's own, which says "You are here",
+     then the others by name; each draws and says what its registry
+     descriptor declares (PRDCT-3493). The list
      is the server's (`GET /apps`): on the cloud edition the hub asked as the
      person, on a self-hosted instance the operator's file. When neither
-     lists anything, a plate says so and names the setting. -->
+     lists anything, a plate says so and names the setting; when the hub says
+     the organization is suspended, the plate says that instead. -->
 <script lang="ts">
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton/index.js';
@@ -15,7 +17,7 @@
   import { errorMessage } from '$lib/api';
   import { loadApps } from '$lib/tool/apps';
   import { t } from '$lib/i18n';
-  import type { AppsList } from '@slideless/contract';
+  import type { AppsList } from '@antasphere/chassis-contract';
 
   let { data } = $props();
 
@@ -38,6 +40,8 @@
   // the empty plate's sentence names the setting, set apart as code
   const KEY_MARK = '\u0000';
   const emptyBody = $derived(t('apps.emptyBody', { key: KEY_MARK }).split(KEY_MARK));
+  // the hub suspended the organization: the list is empty by rule, the plate says so
+  const suspended = $derived(list?.organization?.status === 'suspended' ? list.organization : null);
 </script>
 
 <svelte:head>
@@ -60,6 +64,7 @@
       <AppCard
         slug="hub"
         name={list.hub.name}
+        drawing="rings"
         sentence={t('apps.descHub')}
         href={list.hub.url}
         action={t('apps.openHub')}
@@ -69,6 +74,8 @@
       <AppCard
         slug={app.slug}
         name={app.name}
+        drawing={app.descriptor?.drawing}
+        accent={app.descriptor?.accent}
         sentence={appSentence(app)}
         fact={appFact(app)}
         href={app.launchUrl}
@@ -78,9 +85,21 @@
     {/each}
   </div>
 
-  {#if list.apps.length === 0}
+  {#if suspended}
+    <section class="empty" class:alone={!list.hub} in:appear data-testid="apps-suspended">
+      <div class="empty-drawing"><AppDrawing name="?" /></div>
+      <div>
+        <h2 class="empty-title">
+          {suspended.name
+            ? t('apps.suspendedTitle', { name: suspended.name })
+            : t('apps.suspendedTitleGeneric')}
+        </h2>
+        <p class="empty-body">{t('apps.suspendedBody')}</p>
+      </div>
+    </section>
+  {:else if list.apps.length === 0}
     <section class="empty" class:alone={!list.hub} in:appear data-testid="apps-empty">
-      <div class="empty-drawing"><AppDrawing slug="other" name="?" /></div>
+      <div class="empty-drawing"><AppDrawing name="?" /></div>
       <div>
         <h2 class="empty-title">{t('apps.emptyTitle')}</h2>
         <p class="empty-body">{emptyBody[0]}<code>APPS_FILE</code>{emptyBody[1] ?? ''}</p>

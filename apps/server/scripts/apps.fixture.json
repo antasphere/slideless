@@ -1,9 +1,84 @@
 [
-  { "slug": "account", "name": "Antasphere Account", "launchUrl": "https://account.antasphere.com" },
-  { "slug": "finance", "name": "Antasphere Finance", "launchUrl": "https://finance.antasphere.com" },
-  { "slug": "hiring", "name": "Antasphere Hiring", "launchUrl": "https://hiring.antasphere.com" },
-  { "slug": "meet", "name": "Antasphere Meet", "launchUrl": "https://meet.antasphere.com" },
-  { "slug": "crm", "name": "Antasphere CRM", "launchUrl": "https://crm.antasphere.com" },
-  { "slug": "steward", "name": "Antasphere Steward", "launchUrl": "https://steward.antasphere.com" },
-  { "slug": "slideless", "name": "Slideless", "launchUrl": "http://localhost:5173" }
+  {
+    "slug": "account",
+    "name": "Antasphere Account",
+    "launchUrl": "https://account.antasphere.com"
+  },
+  {
+    "slug": "finance",
+    "name": "Antasphere Finance",
+    "launchUrl": "https://finance.antasphere.com",
+    "description": "The ledger: the clients, their contracts and the milestones that pay them.",
+    "icon": "landmark",
+    "drawing": "ledger",
+    "accent": "#B5542A"
+  },
+  {
+    "slug": "hiring",
+    "name": "Antasphere Hiring",
+    "launchUrl": "https://hiring.antasphere.com",
+    "description": "The jobs you hire for, and each candidate through its stages.",
+    "icon": "users",
+    "drawing": "funnel",
+    "accent": "#2F6B8F"
+  },
+  {
+    "slug": "meet",
+    "name": "Antasphere Meet",
+    "launchUrl": "https://meet.antasphere.com",
+    "description": "Booking links, your availability and the meetings people book.",
+    "icon": "calendar-clock",
+    "drawing": "clock-sheet",
+    "accent": "#4E7D4A"
+  },
+  {
+    "slug": "crm",
+    "name": "Antasphere CRM",
+    "launchUrl": "https://crm.antasphere.com",
+    "description": "Companies, people and the timeline of every exchange.",
+    "icon": "contact",
+    "drawing": "cards",
+    "accent": "#8A5A9E"
+  },
+  {
+    "slug": "steward",
+    "name": "Antasphere Steward",
+    "launchUrl": "https://steward.antasphere.com",
+    "description": "The workspace’s register: its repositories and who may reach them.",
+    "icon": "key-round",
+    "drawing": "tree-key",
+    "accent": "#A3762B"
+  },
+  {
+    "slug": "mail",
+    "name": "Antasphere Mail",
+    "launchUrl": "https://mail.antasphere.com",
+    "description": "Your inbox, sorted and answered with the project it belongs to.",
+    "icon": "mail",
+    "drawing": "envelopes",
+    "accent": "#3B6FB6"
+  },
+  {
+    "slug": "sign",
+    "name": "Antasphere Sign",
+    "launchUrl": "https://sign.antasphere.com",
+    "description": "Documents sent for signature, and the signed copy filed.",
+    "icon": "pen-line",
+    "drawing": "signature",
+    "accent": "#6B4E9E"
+  },
+  {
+    "slug": "exos",
+    "name": "Exos",
+    "launchUrl": "https://exos.antasphere.com",
+    "description": "The studio’s projects, their tasks and the record of every lane.",
+    "icon": "layers",
+    "drawing": "lanes",
+    "accent": "#2A7F8F"
+  },
+  {
+    "slug": "slideless",
+    "name": "Slideless",
+    "launchUrl": "http://localhost:5173"
+  }
 ]

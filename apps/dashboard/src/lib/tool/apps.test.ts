@@ -1,29 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { appFact, appSentence, foldRows, hereFirst } from './apps';
+import { TOOL_DRAWINGS, TOOL_ICONS } from '@antasphere/chassis-contract';
+import { appFact, appSentence, hereFirst, shortName, sortApps } from './apps';
+import { TOOL_ICON_COMPONENTS, toolIconComponent } from './components/apps/ToolIcon.svelte';
+import { DRAWN_KINDS } from './components/apps/AppDrawing.svelte';
 import { en } from './i18n/en';
 import { fr } from './i18n/fr';
 
-/** The Apps page's words for one card: the sentence per known tool, the operator's, the generic; the facts. */
+/** The Apps page's words for one card: the registry's sentence, this tool's own, the generic; the facts. */
 describe('appSentence', () => {
-  it('says what a known tool is, whatever the file says', () => {
-    expect(appSentence({ slug: 'finance', description: 'ignored' })).toBe(en['apps.desc.finance']);
-    expect(appSentence({ slug: 'steward', description: null })).toBe(en['apps.desc.steward']);
+  it('says what the registry says of a tool, whatever its slug', () => {
+    expect(appSentence({ descriptor: { description: 'The ledger.' } })).toBe('The ledger.');
+    expect(appSentence({ descriptor: { description: 'The ledger.' }, current: true })).toBe('The ledger.');
   });
 
-  it('gives this tool’s own card its own sentence, never the generic one', () => {
-    expect(appSentence({ slug: 'wiki', description: null, current: true })).toBe(en['apps.descHere']);
-    expect(appSentence({ slug: 'meet', description: null, current: true })).toBe(en['apps.desc.meet']);
+  it('gives this tool’s own card its own sentence when the registry says nothing, else the generic one', () => {
+    expect(appSentence({ descriptor: undefined, current: true })).toBe(en['apps.descHere']);
+    expect(appSentence({ descriptor: { icon: 'mail' }, current: true })).toBe(en['apps.descHere']);
+    expect(appSentence({ descriptor: undefined })).toBe('Another tool of your organization.');
   });
 
-  it('takes the operator’s description for another tool, else a generic sentence', () => {
-    expect(appSentence({ slug: 'wiki', description: 'Our notes.' })).toBe('Our notes.');
-    expect(appSentence({ slug: 'wiki', description: null })).toBe('Another tool of your organization.');
-  });
-
-  it('has every sentence in both languages, the French with its typography', () => {
+  it('knows no tool by name: every sentence of the page is in both languages, the French with its typography', () => {
     const keys = Object.keys(en).filter((k) => k.startsWith('apps.'));
+    expect(keys.some((k) => k.startsWith('apps.desc.'))).toBe(false);
     expect(Object.keys(fr).filter((k) => k.startsWith('apps.'))).toEqual(keys);
-    expect(fr['apps.desc.finance']).toContain('livre :');
     for (const key of keys) expect(fr[key as keyof typeof fr], key).not.toMatch(/ [?!:;]|'/);
   });
 });
@@ -41,54 +40,41 @@ describe('appFact', () => {
   });
 });
 
-describe('hereFirst', () => {
-  it('puts this tool’s own card first and keeps the others in the list’s order', () => {
-    const list = [
-      { slug: 'crm', current: false },
-      { slug: 'wiki', current: true },
-      { slug: 'meet', current: false }
-    ];
-    expect(hereFirst(list).map((a) => a.slug)).toEqual(['wiki', 'crm', 'meet']);
+/** The order the fold and the page show the tools in: by name, the company's prefix ignored. */
+describe('sortApps and hereFirst', () => {
+  const list = [
+    { slug: 'sign', name: 'Antasphere Sign', current: false },
+    { slug: 'exos', name: 'Exos', current: false },
+    { slug: 'mail', name: 'Antasphere Mail', current: false },
+    { slug: 'wiki', name: 'Wiki', current: true },
+    { slug: 'finance', name: 'antasphère finance', current: false }
+  ];
+
+  it('sorts by short name, case and accents ignored, whatever the list’s order', () => {
+    expect(sortApps(list).map((a) => a.slug)).toEqual(['exos', 'finance', 'mail', 'sign', 'wiki']);
+    expect(list[0]!.slug).toBe('sign');
+  });
+
+  it('puts this tool’s own card first and keeps the others by name', () => {
+    expect(hereFirst(list).map((a) => a.slug)).toEqual(['wiki', 'exos', 'finance', 'mail', 'sign']);
+  });
+
+  it('drops the company prefix for the short name only', () => {
+    expect(shortName('Antasphere Finance')).toBe('Finance');
+    expect(shortName('Exos')).toBe('Exos');
   });
 });
 
-describe('foldRows', () => {
-  const entry = (slug: string, name: string, current = false) => ({
-    slug,
-    name,
-    launchUrl: `https://${slug}.example.com`,
-    description: null,
-    connected: false,
-    firstUsedAt: null,
-    lastUsedAt: null,
-    current
+/** Every icon and every drawing the contract allows has a component here, and nothing else is claimed. */
+describe('the icon map, the drawings and the contract agree', () => {
+  it('one icon component per name of TOOL_ICONS, the grid for an unknown or missing name', () => {
+    expect(Object.keys(TOOL_ICON_COMPONENTS).sort()).toEqual([...TOOL_ICONS].sort());
+    expect(toolIconComponent(undefined)).toBe(TOOL_ICON_COMPONENTS['layout-grid']);
+    expect(toolIconComponent('skull')).toBe(TOOL_ICON_COMPONENTS['layout-grid']);
+    expect(toolIconComponent('mail')).toBe(TOOL_ICON_COMPONENTS.mail);
   });
 
-  it('puts the account first, then the tools in the list’s order, named without the company in front', () => {
-    const rows = foldRows({
-      apps: [entry('finance', 'Antasphere Finance'), entry('slideless', 'Slideless', true)],
-      hub: { url: 'https://account.example.com', name: 'Antasphere Account' }
-    });
-    expect(rows.map((r) => [r.key, r.name])).toEqual([
-      ['hub', 'Account'],
-      ['finance', 'Finance'],
-      ['slideless', 'Slideless']
-    ]);
-  });
-
-  it('gives every other row its address, and this tool’s own row none: the reader is already here', () => {
-    const rows = foldRows({
-      apps: [entry('finance', 'Antasphere Finance'), entry('slideless', 'Slideless', true)],
-      hub: null
-    });
-    expect(rows.find((r) => r.key === 'finance')).toMatchObject({
-      href: 'https://finance.example.com',
-      current: false
-    });
-    expect(rows.find((r) => r.key === 'slideless')).toMatchObject({ href: null, current: true });
-  });
-
-  it('lists no account row when the instance knows none', () => {
-    expect(foldRows({ apps: [], hub: null })).toEqual([]);
+  it('one drawing per name of TOOL_DRAWINGS', () => {
+    expect([...DRAWN_KINDS].sort()).toEqual([...TOOL_DRAWINGS].sort());
   });
 });
