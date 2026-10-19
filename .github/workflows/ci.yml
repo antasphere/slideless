@@ -248,11 +248,11 @@ jobs:
   # checkout needs a token that can read antasphere/hub
   # (minted per run by the antasphere-federation-drill GitHub App, which has
   # contents:read on antasphere/hub).
-  # Slideless holds the App secrets (FEDERATION_DRILL_APP_ID/KEY), so the drill
-  # is armed here without the template's FEDERATION_DRILL variable.
+  # Armed by the repository variable FEDERATION_DRILL=true once the drill passes
+  # on dev (the App secrets exist); unarmed, the job is skipped, never red.
   federation-drill:
     needs: [changes]
-    if: ${{ github.event_name != 'push' && needs.changes.outputs.image == 'true' }}
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.image == 'true' && vars.FEDERATION_DRILL == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

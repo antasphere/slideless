@@ -4,7 +4,7 @@
     "sha": "2d807556da868122b13b81cd31fb512ccd6be343"
   },
   "files": {
-    ".github/workflows/ci.yml": "9a3b714099daff26b27bd57eb2f84ae1f362eb1c07e20909c7d30e18fe888562",
+    ".github/workflows/ci.yml": "73e759e08e0b4157d7401c3df015037ac6c55dfd914a4086a92f5cde37f5f65a",
     ".github/workflows/docs-notify-release.yml": "1529d2b749d233038c62da36f1d35cbbebde82ff828fa3ffe57dfe7585e62d49",
     ".github/workflows/docs-notify.yml": "e47c3b8e301958dfc7f88c215eaab8be60433b2b09900549411e5694d584be9e",
     ".github/workflows/hostinger-pages.yml": "84ce1b3eee0c922a73b7faac431b6854d71ff8b617df936f13b5270384d2d613",
