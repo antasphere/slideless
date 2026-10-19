@@ -1,14 +1,81 @@
 name: CI
 
+# One run per change (PRDCT-3592). The pull request is where a change is proved:
+# every job runs there. A push to the working branch (main here, dev in a tool
+# born from the template) runs the checks alone, the guard that the squash is
+# sane; a release bump (`chore(release): …`) runs nothing, since release.yml on
+# prod proves the very tree it ships; a prod push is release.yml's alone. The
+# drills build an image and run only when what they prove changed (the
+# Dockerfile, the compose files, the server, the deploy files): a `changes` job
+# reads the diff first and the others read its answer. The chassis's shipped
+# integration suite (hundreds of tests, a quarter of an hour) runs only when a
+# chassis pin moved; the tool's own integration tests run on every pull request.
+# A manual run proves everything, whatever changed.
+#
+# Measured before this shape, the night of 17 to 18 October 2026, two lanes on
+# sixteen repositories: four full runs per change, four image builds per push,
+# 7,169 job-minutes, queues of 26 minutes behind the plan's concurrency cap.
+# `pnpm workflows:check` says when a tool's copy of these files drifted from the
+# template's record (scripts/check-workflows.mjs).
+
 on:
   push:
-    # Slideless follows the workspace branch model: prod (default, deploys)
-    # + dev (day-to-day). The template's main-only trigger would never fire.
-    branches: [prod, dev]
+    # The template has one branch, main. A tool born from it writes [dev]: its
+    # prod push is release.yml's.
+    branches: [dev]
   pull_request:
+  workflow_dispatch:
+
+# A newer push on the same pull request or branch cancels the run in flight.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # What changed, read once: every other job's `if` reads these three answers.
+  # A manual run answers true to all three. A push whose message says it is a
+  # release bump stops here: nothing else runs on it.
+  # Slideless's own paths: the renderer (apps/renderer, and the seccomp profile
+  # it runs under) is an image too, built by the renderer job, the hostinger
+  # rehearsal and the federation drill.
+  changes:
+    if: ${{ !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release)')) }}
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+      chassis: ${{ steps.diff.outputs.chassis }}
+      hostinger: ${{ steps.diff.outputs.hostinger }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          everything=false
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ -z "${BASE:-}" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            everything=true
+          elif ! git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null; then
+            everything=true
+          fi
+          if [ "$everything" = true ]; then
+            files=""
+          else
+            files="$(git diff --name-only "$BASE" HEAD)"
+          fi
+          answer() {
+            # $1 the output name, the rest the path patterns (grep -E on the changed paths)
+            name="$1"; shift
+            if [ "$everything" = true ]; then echo "$name=true" >> "$GITHUB_OUTPUT"; echo "$name: every job runs (a manual run, or no base to diff against)"; return; fi
+            if printf '%s\n' "$files" | grep -qE "$(IFS='|'; echo "$*")"; then echo "$name=true" >> "$GITHUB_OUTPUT"; echo "$name: changed"; else echo "$name=false" >> "$GITHUB_OUTPUT"; echo "$name: unchanged"; fi
+          }
+          answer image '^Dockerfile$' '^\.dockerignore$' '^docker-compose' '^apps/server/' '^apps/renderer/' '^deploy/seccomp-chromium\.json$' '^packages/' '^pnpm-lock\.yaml$' '^pnpm-workspace\.yaml$' '^package\.json$' '^scripts/(scale-drill\.sh|federation-drill\.sh|prune-runtime-deps\.mjs)$'
+          answer chassis '(^|/)package\.json$' '^pnpm-lock\.yaml$'
+          answer hostinger '^Dockerfile$' '^apps/renderer/' '^deploy/hostinger/' '^scripts/hostinger-' '^install\.sh$' '^update\.sh$'
+
+  # Every push and pull request: the gates that need no image.
   checks:
+    needs: [changes]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +86,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm chassis:check
+      - run: pnpm workflows:check && node --test scripts/check-workflows.test.mjs
       # The renderer's real-Chromium unit cases (apps/renderer/test) run
       # against this headless shell; without it they skip, saying why.
       - run: pnpm --filter @slideless/renderer exec playwright-core install --with-deps chromium-headless-shell
@@ -39,7 +107,10 @@ jobs:
   # profile forbids the user namespaces that sandbox needs, so the renderer
   # runs under deploy/seccomp-chromium.json (the default plus those calls),
   # and without it the self-check exits 3 instead of running unsandboxed.
+  # Pull requests only, when an image changed.
   renderer:
+    needs: [changes]
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.image == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,8 +137,14 @@ jobs:
           echo "exit code without the profile: $code"
           test "$code" -eq 3
 
+  # Pull requests only. The chassis's shipped suite rides along when a chassis
+  # pin moved (CHASSIS_SUITE, read by apps/server/vitest.integration.config.ts).
   integration:
+    needs: [changes]
+    if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
+    env:
+      CHASSIS_SUITE: ${{ needs.changes.outputs.chassis == 'true' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -77,9 +154,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build --filter=@slideless/db --filter=@slideless/server --filter=@antasphere/slideless
+      - run: echo "CHASSIS_SUITE=$CHASSIS_SUITE (1 when a chassis pin moved, the shipped suite rides along; 0 the tool's own tests alone)"
       - run: pnpm turbo test:integration
 
+  # Pull requests only, when the distribution changed.
   hostinger:
+    needs: [changes]
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.hostinger == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,7 +201,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The published image is rehearsed as soon as one exists. The job READS the state from
+      # deploy/hostinger/docker-compose.yml: `:unreleased` means the tool has published nothing,
+      # and the run says so in a notice. Any other reference is a digest pin (the template test
+      # above refuses the rest) and is rehearsed. Nothing here is switched by hand.
+      - name: Is there a published image to rehearse?
+        id: release
+        run: |
+          if grep -qE '^\s+image: ghcr\.io/[a-z0-9-]+/[a-z0-9-]+:unreleased$' deploy/hostinger/docker-compose.yml; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No release yet (deploy/hostinger/docker-compose.yml says :unreleased): the rehearsal on the published image does not run."
+          else
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Exercise the pinned distribution image
+        if: steps.release.outputs.released == 'true'
         run: node scripts/hostinger-smoke.mjs
 
   # The Profile B rehearsal: a real multi-replica stack (advisory-lock
@@ -128,6 +223,8 @@ jobs:
   # limits + the in-memory contrast, the api/worker SERVICE_ROLE split).
   # Same script as the local drill — docs/operations/scaling.md.
   scale-drill:
+    needs: [changes]
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.image == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -151,7 +248,11 @@ jobs:
   # checkout needs a token that can read antasphere/hub
   # (minted per run by the antasphere-federation-drill GitHub App, which has
   # contents:read on antasphere/hub).
+  # Slideless holds the App secrets (FEDERATION_DRILL_APP_ID/KEY), so the drill
+  # is armed here without the template's FEDERATION_DRILL variable.
   federation-drill:
+    needs: [changes]
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.image == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

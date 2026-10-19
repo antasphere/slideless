@@ -20,11 +20,13 @@
     },
     "test:integration": {
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      "env": ["CHASSIS_SUITE"]
     },
     "@slideless/server#test:integration": {
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      "env": ["CHASSIS_SUITE"]
     },
     "test:e2e": {
       "cache": false,

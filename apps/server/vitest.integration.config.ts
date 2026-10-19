@@ -12,8 +12,12 @@ const chassis = realpathSync(
   dirname(dirname(createRequire(import.meta.url).resolve('@antasphere/chassis-server')))
 );
 const suite = join(chassis, 'test/integration');
+// The chassis suite rides along unless CHASSIS_SUITE=0 says the run is the tool's own
+// tests alone (CI sets it so on a pull request that moved no chassis pin, PRDCT-3592);
+// locally it is always on.
+const withChassis = process.env.CHASSIS_SUITE !== '0';
 // A suite that moved or emptied would leave this run green on the app's files alone: refuse it.
-if (!existsSync(suite) || !readdirSync(suite).some((file) => file.endsWith('.test.ts'))) {
+if (withChassis && (!existsSync(suite) || !readdirSync(suite).some((file) => file.endsWith('.test.ts')))) {
   throw new Error(`${suite} holds no *.test.ts: the installed chassis no longer ships its suite there`);
 }
 
@@ -43,7 +47,7 @@ export default mergeConfig(
       }
     },
     test: {
-      include: ['test/integration/**/*.test.ts', `${suite}/**/*.test.ts`],
+      include: ['test/integration/**/*.test.ts', ...(withChassis ? [`${suite}/**/*.test.ts`] : [])],
       exclude: [
         `${suite}/empty-tool.test.ts`,
         `${suite}/entitlements-null-hook.test.ts`,

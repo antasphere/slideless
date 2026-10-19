@@ -21,7 +21,9 @@ on:
       - '.github/workflows/hostinger-pages.yml'
       - '.github/workflows/docs-notify.yml'
       - '.github/workflows/docs-notify-release.yml'
-    tags: ['v*']
+    # No tag trigger (PRDCT-3592): the version's aliases (X.Y.Z, X.Y, X, latest) ride on the
+    # prod push itself when the v-tag on origin points at the promoted commit, which
+    # `pnpm release --push` guarantees; a tag push rebuilt the same image a second time.
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
@@ -177,22 +179,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The version is intrinsic (PRDCT-1844): the image bakes it in from
-      # package.json. The tag is a CHECK against that source, never the
-      # source — a v-tag whose number disagrees fails loudly here instead of
-      # silently relabelling the image.
-      - name: v-tag must match package.json
-        if: startsWith(github.ref, 'refs/tags/v')
+      # package.json, and apps/server's copy must agree (the unit-suite drift
+      # pin does not run here, so this binds them). The version's aliases
+      # (X.Y.Z, X.Y, X, latest) are published on THIS push when the v-tag on
+      # origin points at this very commit: `pnpm release --push` tags before the
+      # promotion, so a released commit carries its aliases from the first
+      # build and a tag push builds nothing (PRDCT-3592). A promotion without
+      # the tag gets `next` and `sha-…` alone and says so.
+      - name: The version and its aliases
+        id: aliases
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
-          root="$(node -p "require('./package.json').version")"
+          version="$(node -p "require('./package.json').version")"
           server="$(node -p "require('./apps/server/package.json').version")"
-          # The image bakes apps/server's copy; root is the canonical source.
-          # All three must agree — the unit-suite drift pin does not run on
-          # the tag-push path, so this check binds them here.
-          if [ "$tag" != "$root" ] || [ "$root" != "$server" ]; then
-            echo "::error::tag v${tag} vs root package.json ${root} vs apps/server/package.json ${server} — all three must agree; bump both package.json files or retag"
+          if [ "$version" != "$server" ]; then
+            echo "::error::package.json ${version} vs apps/server/package.json ${server} — both must agree; run pnpm release"
             exit 1
+          fi
+          tagged="$(git ls-remote --tags origin "refs/tags/v${version}^{}" | cut -f1)"
+          [ -n "$tagged" ] || tagged="$(git ls-remote --tags origin "refs/tags/v${version}" | cut -f1)"
+          if [ "$tagged" = "$GITHUB_SHA" ]; then
+            major="${version%%.*}"; rest="${version#*.}"; minor="${rest%%.*}"
+            echo "tags=${IMAGE}:${version},${IMAGE}:${major}.${minor},${IMAGE}:${major},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+            echo "v${version} points at this commit: the aliases are published with it"
+          else
+            echo "tags=" >> "$GITHUB_OUTPUT"
+            echo "::notice::no v${version} tag on this commit (a promotion without pnpm release): next and sha- only"
           fi
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -205,14 +217,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # prod → next + sha-…; tag vX.Y.Z → X.Y.Z, X.Y, X, latest
+          # prod → next + sha-…; the version's aliases come from the step above
           tags: |
             type=raw,value=next,enable={{is_default_branch}}
             type=sha,prefix=sha-
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       # amd64 only. The arm64 leg built under QEMU emulation and on 2026-09-15 it died
       # mid-`pnpm install` with `qemu: uncaught target signal 4 (Illegal instruction) -
       # core dumped` — and buildx never saw an error, so the step HUNG rather than
@@ -231,7 +239,9 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ steps.aliases.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: OS_REFRESH=${{ github.run_id }}
           cache-from: type=gha
@@ -240,6 +250,25 @@ jobs:
       # The renderer image (PRDCT-2725), published beside the app under the
       # same tags as ghcr.io/<repo>-renderer. The fleet dispatch below hands its
       # digest over with the app's, and the fleet rolls both (PRDCT-2785).
+      # The renderer's version aliases: the same rule as the app's above, on the
+      # renderer's image name.
+      - name: The renderer's version aliases
+        id: renderer-aliases
+        env:
+          RENDERER_IMAGE: ${{ env.IMAGE }}-renderer
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tagged="$(git ls-remote --tags origin "refs/tags/v${version}^{}" | cut -f1)"
+          [ -n "$tagged" ] || tagged="$(git ls-remote --tags origin "refs/tags/v${version}" | cut -f1)"
+          if [ "$tagged" = "$GITHUB_SHA" ]; then
+            major="${version%%.*}"; rest="${version#*.}"; minor="${rest%%.*}"
+            echo "tags=${RENDERER_IMAGE}:${version},${RENDERER_IMAGE}:${major}.${minor},${RENDERER_IMAGE}:${major},${RENDERER_IMAGE}:latest" >> "$GITHUB_OUTPUT"
+            echo "v${version} points at this commit: the renderer's aliases are published with it"
+          else
+            echo "tags=" >> "$GITHUB_OUTPUT"
+            echo "::notice::no v${version} tag on this commit (a promotion without pnpm release): the renderer gets next and sha- only"
+          fi
       - id: renderer-meta
         uses: docker/metadata-action@v5
         with:
@@ -247,13 +276,10 @@ jobs:
           # The action titles every image after the repository; keep the Dockerfile's own.
           labels: |
             org.opencontainers.image.title=slideless-renderer
+          # prod → next + sha-…; the version's aliases come from the step above
           tags: |
             type=raw,value=next,enable={{is_default_branch}}
             type=sha,prefix=sha-
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       - name: Build + push the renderer
         id: renderer-build
         uses: docker/build-push-action@v6
@@ -262,7 +288,9 @@ jobs:
           file: apps/renderer/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.renderer-meta.outputs.tags }}
+          tags: |
+            ${{ steps.renderer-meta.outputs.tags }}
+            ${{ steps.renderer-aliases.outputs.tags }}
           labels: ${{ steps.renderer-meta.outputs.labels }}
           cache-from: type=gha,scope=renderer
           cache-to: type=gha,mode=max,scope=renderer
