@@ -669,6 +669,7 @@ pnpm install
 pnpm turbo lint typecheck test build         # the CI gate, part 1
 pnpm format:check                            # part 2 — CI runs this too; `pnpm format` fixes
 pnpm --filter @slideless/server drift:check  # part 3 — the auth-schema drift guard
+pnpm workflows:check && node --test scripts/check-workflows.test.mjs  # checks job: the workflow files against workflows-source.json
 pnpm turbo test:integration                  # real Postgres via testcontainers; needs Docker
 cd apps/server && pnpm preview:emails        # render every email to a local review wall
 ```

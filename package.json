@@ -20,6 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "chassis:check": "node scripts/check-chassis-version.mjs",
+    "workflows:check": "node scripts/check-workflows.mjs",
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {
