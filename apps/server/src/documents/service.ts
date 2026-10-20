@@ -540,12 +540,13 @@ const fail = (failure: DocumentFailure): DocumentWrite => ({ ok: false, failure 
 
 /**
  * The data block in the rendered entry: a JSON script before `</head>` (else
- * before `<body`, else at the top), `</` and `<!--` escaped so no data value
- * can close the script early. The viewer's sandbox leaves the deck's own
+ * before `<body`, else at the top), every `<` escaped as \u003c so no data
+ * value can close the script early and the block still parses as JSON. The viewer's sandbox leaves the deck's own
  * script free to read it; an export or a pull keeps it with the page.
  */
 export function withDataBlock(html: string, data: Record<string, unknown>): string {
-  const json = JSON.stringify(data).replace(/<\//g, '<\\/').replace(/<!--/g, '<\\!--');
+  // `<` as \u003c keeps the JSON valid for JSON.parse and makes `</script>` and `<!--` inert.
+  const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   const block = `<script type="application/json" id="${DATA_BLOCK_ID}">${json}</script>`;
   const head = html.search(/<\/head\s*>/i);
   if (head !== -1) return html.slice(0, head) + block + html.slice(head);
