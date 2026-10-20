@@ -81,6 +81,17 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'PATCH /presentations/{id}': (c) => c.updatePresentation(SAMPLE_ID, { title: 'T' }),
   'DELETE /presentations/{id}': (c) => c.deletePresentation(SAMPLE_ID),
   'POST /presentations/{id}/duplicate': (c) => c.duplicatePresentation(SAMPLE_ID),
+  // Data-bound templates (PRDCT-3641).
+  'GET /presentations/{id}/schema': (c) => c.templateSchema(SAMPLE_ID),
+  'PUT /presentations/{id}/schema': (c) => c.setTemplateSchema(SAMPLE_ID, { schema: { version: '1' } }),
+  'POST /presentations/{id}/instances': (c) => c.createDocument(SAMPLE_ID, { data: {} }),
+  'GET /presentations/{id}/data': (c) => c.documentData(SAMPLE_ID),
+  'PUT /presentations/{id}/data': (c) => c.replaceDocumentData(SAMPLE_ID, {}),
+  'PATCH /presentations/{id}/data': (c) => c.mergeDocumentData(SAMPLE_ID, {}),
+  'GET /presentations/{id}/data/versions': (c) => c.documentDataVersions(SAMPLE_ID),
+  'GET /presentations/{id}/data/versions/{version}': (c) => c.documentDataVersion(SAMPLE_ID, SAMPLE_VERSION),
+  'GET /presentations/{id}/answers': (c) => c.documentAnswers(SAMPLE_ID),
+  'POST /presentations/{id}/upgrade': (c) => c.upgradeDocument(SAMPLE_ID),
   'PUT /presentations/{id}/projects/{projectId}': (c) =>
     c.linkPresentationProject(SAMPLE_ID, SAMPLE_CHILD_ID),
   'DELETE /presentations/{id}/projects/{projectId}': (c) =>

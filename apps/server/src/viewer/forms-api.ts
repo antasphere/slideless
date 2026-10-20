@@ -12,7 +12,7 @@ import {
   formSubmitFilesSchema
 } from '@slideless/contract';
 import { isValidMediaType } from '@antasphere/chassis-contract';
-import type { FormResponseRow } from '@slideless/db';
+import type { FormResponseRow, ShareTokenRow } from '@slideless/db';
 import type { Logger } from '@antasphere/chassis-server/logger';
 import type { Env } from '../env.js';
 import type { PresentationService } from '../presentations/service.js';
@@ -143,6 +143,8 @@ const formEmailBody = z.object({
   email: z.email()
 });
 
+import type { DocumentService } from '../documents/service.js';
+
 const err = (code: string, message: string) => ({ error: { code, message } });
 
 export interface ViewerFormDeps {
@@ -167,9 +169,43 @@ export interface ViewerFormDeps {
   uploads: FormUploadService;
   /** File uploads and pending-upload removals consume here (per IP + token). */
   formUploadLimiter: RateLimiterAbstract;
+  /** Documents (PRDCT-3641): a response on a document lands in its data and re-renders it. */
+  documents: DocumentService;
 }
 
 export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps): void {
+  /**
+   * The answers mirror (PRDCT-3641): after a response landed, write it into
+   * the document's data and render again. Awaited, so the respondent's
+   * answer comes back once the page shows it; a failure is logged at error
+   * level and never reaches the respondent, whose response is stored.
+   */
+  const mirrorAnswer = async (row: FormResponseRow, token: ShareTokenRow): Promise<void> => {
+    try {
+      const result = await deps.documents.applyAnswer({
+        workspaceId: row.workspaceId,
+        presentationId: row.presentationId,
+        formName: row.formName,
+        fields: row.payload,
+        link: { id: token.id, name: token.name },
+        responseId: row.id,
+        revision: row.revision,
+        at: row.updatedAt
+      });
+      if (result && !result.ok) {
+        deps.logger.error(
+          { presentationId: row.presentationId, responseId: row.id, failure: result.failure },
+          'documents: the answer could not be written into the data'
+        );
+      }
+    } catch (e) {
+      deps.logger.error(
+        { err: e, presentationId: row.presentationId, responseId: row.id },
+        'documents: the answer could not be written into the data'
+      );
+    }
+  };
+
   const { sharing, presentations, forms, authSecret, clientIp, uploads } = deps;
 
   async function resolveSubmitter(
@@ -452,6 +488,7 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
         created ? 'viewer form response created (remembered)' : 'viewer form response updated (remembered)'
       );
       deps.notifier.fire({ kind: created ? 'new' : 'edited', row, shareTokenName: token.name });
+      await mirrorAnswer(row, token);
       // No edit secret on the wire: the LINK is the handle, and the
       // respondent wire never carries a revision or a history.
       return c.json(
@@ -481,6 +518,7 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       'viewer form response created'
     );
     deps.notifier.fire({ kind: 'new', row, shareTokenName: token.name });
+    await mirrorAnswer(row, token);
     // `emailSent` stays on the wire (the runtime and the tests read it) but
     // is now always false on create: the leg-3 auto-mail is gone with leg 3
     // — it bypassed the email limiter entirely and turned every replayed
@@ -597,6 +635,7 @@ export function registerViewerFormRoutes(api: OpenAPIHono, deps: ViewerFormDeps)
       'viewer form response updated'
     );
     deps.notifier.fire({ kind: 'edited', row: updated, shareTokenName: view.token.name });
+    await mirrorAnswer(updated, view.token);
     return c.json({ response: await respondentWire(updated) }, 200);
   });
 

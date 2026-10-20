@@ -29,7 +29,9 @@ import { isDeckAuditExempt } from './audit/deck-exempt.js';
 import { deckJobs } from './jobs/deck-jobs.js';
 import { slidelessMcp } from './mcp/index.js';
 import type { DeckEvents } from './platform/deck-events.js';
-import { registerPresentationRoutes } from './api/presentations.js';
+import { presentationToWire, registerPresentationRoutes, versionToWire } from './api/presentations.js';
+import { registerDocumentRoutes } from './api/documents.js';
+import { DocumentService } from './documents/service.js';
 import { registerCollaboratorRoutes } from './api/collaborators.js';
 import { blobReadScope, PresentationService } from './presentations/service.js';
 import { formOwnerActor } from './presentations/form-owner-actor.js';
@@ -345,6 +347,18 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
         const { db, env, auth, email, audit, registry, logger, limiters, clientIp, hubSso } = ctx;
         const presentationService = deps.presentations;
         const annotationService = deps.annotations;
+        // Documents (PRDCT-3641): built here because the chassis's file
+        // service, which stores the rendered pages, exists at the routes
+        // slot; the viewer's form routes take the same instance for the
+        // answers that re-render a document.
+        const documents = new DocumentService({
+          db,
+          storage: ctx.storage,
+          fileService: ctx.fileService,
+          presentations: presentationService,
+          logger,
+          onVersion: () => deps.thumbnails.kick()
+        });
         registerPresentationRoutes(api, {
           service: presentationService,
           sharing: deps.sharing,
@@ -360,6 +374,21 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           email,
           logger,
           deckWebhooks: deps.deckWebhooks
+        });
+        // The document routes (PRDCT-3641), after the deck routes for the same reason.
+        registerDocumentRoutes(api, {
+          db,
+          presentations: presentationService,
+          documents,
+          storage: ctx.storage,
+          registry,
+          logger,
+          wire: async (principal, deck) =>
+            presentationToWire(
+              deck,
+              (await presentationService.projectsOf(principal, [deck.id])).get(deck.id) ?? []
+            ),
+          versionToWire
         });
         // Collaborator routes AFTER registerPresentationRoutes: the /presentations
         // requireAuth gates registered there must precede these handlers.
@@ -407,7 +436,8 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           clientIp,
           notifier: deps.formsNotifier,
           uploads: deps.formUploads,
-          formUploadLimiter: limiters.viewerFormUpload
+          formUploadLimiter: limiters.viewerFormUpload,
+          documents
         });
         // The PUBLIC viewer-token attachments list (PRDCT-2278): the read-only
         // third sibling — same resolver, same containment. Unknown-secret probes

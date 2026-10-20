@@ -18,12 +18,15 @@ import {
 import type { Principal, ProjectRole } from '@antasphere/chassis-contract';
 import {
   AGENT_DOC_PATH,
+  canonicalJson,
+  changedPaths,
   isAttachmentPath,
   type Audience,
   type ManifestEntry,
   type PresentationsListType,
   type Reference
 } from '@slideless/contract';
+import type { TemplateContract } from './data-contract.js';
 import type { WebhookEmitter } from '@antasphere/chassis-server';
 import { cursorRowId, keysetBefore, pageOf } from '@antasphere/chassis-server/util';
 import { PROJECTS_ID, projectGrantPredicate, projectRole } from '@antasphere/chassis-server/projects';
@@ -65,7 +68,23 @@ export type SessionCommitFailure =
   | { code: 'project_not_found'; projectId: string };
 
 export type VersionCommitFailure =
-  ManifestFailure | { code: 'not_found' } | { code: 'version_conflict'; currentVersion: number };
+  | ManifestFailure
+  | { code: 'not_found' }
+  | { code: 'version_conflict'; currentVersion: number }
+  /** PRDCT-3641: the template's schema.json changed but its `version` did not. */
+  | { code: 'schema_version_unchanged'; version: string };
+
+/**
+ * A document write's failures (PRDCT-3641): the handler maps each to 404 / 400.
+ * The data was validated and rendered by the caller; what can still fail
+ * here is the deck and the blobs.
+ */
+export type DocumentCommitFailure =
+  ManifestFailure | { code: 'not_found' } | { code: 'project_not_found'; projectId: string };
+export type DocumentCommitResult = CommitSuccess | { ok: false; failure: DocumentCommitFailure };
+
+/** Who commits a document version: a principal, or the server itself on a form answer (recorded as the owner). */
+export type DocumentCommitter = { principal: Principal } | { system: { ownerUserId: string | null } };
 
 export interface CommitSuccess {
   ok: true;
@@ -220,11 +239,12 @@ export class PresentationService {
   private async lockAndResolveBlobs(
     tx: DbConn,
     workspaceId: string,
-    principal: Principal,
+    /** `null` = the server itself (a document re-rendered on a form answer, PRDCT-3641): every live blob of the workspace resolves. */
+    principal: Principal | null,
     manifest: ManifestEntry[]
   ): Promise<{ missing: string[]; sizeBySha: Map<string, number> }> {
     const unique = [...new Set(manifest.map((e) => e.sha256))];
-    const scope = blobReadScope(principal);
+    const scope = principal ? blobReadScope(principal) : undefined;
     const present = await tx
       .select({ sha256: files.sha256, sizeBytes: files.sizeBytes })
       .from(files)
@@ -306,6 +326,8 @@ export class PresentationService {
      * the caller cannot read and one they may not link into look the same.
      */
     projectIds?: string[] | undefined;
+    /** The template's data contract (PRDCT-3641), read by the caller before the transaction; null = none. */
+    dataContract?: TemplateContract | null | undefined;
   }): Promise<SessionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -393,6 +415,7 @@ export class PresentationService {
           referenceType: opts.reference.reference?.type ?? null,
           reference: opts.reference.reference,
           referenceWarning: opts.reference.warning,
+          ...contractColumns(opts.dataContract ?? null),
           createdBy: opts.principal.userId,
           createdByRole: 'owner'
         })
@@ -460,6 +483,8 @@ export class PresentationService {
     hasForms: boolean;
     /** See commitUploadSession — ADR 025. */
     reference: CommitReference;
+    /** See commitUploadSession — PRDCT-3641. */
+    dataContract?: TemplateContract | null | undefined;
   }): Promise<VersionCommitResult> {
     const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
     if (shapeFailure) return { ok: false, failure: shapeFailure };
@@ -501,6 +526,32 @@ export class PresentationService {
       }
       if (deck.currentVersion !== opts.expectedBaseVersion) {
         return { ok: false, failure: { code: 'version_conflict', currentVersion: deck.currentVersion } };
+      }
+      // PRDCT-3641: a schema that changed must say so in its `version`, since
+      // documents pin a template version and an upgrade compares the two.
+      const contract = opts.dataContract ?? null;
+      if (contract && deck.currentVersion > 0) {
+        const [current] = await tx
+          .select({ dataSchema: presentationVersions.dataSchema })
+          .from(presentationVersions)
+          .where(
+            and(
+              eq(presentationVersions.presentationId, deck.id),
+              eq(presentationVersions.version, deck.currentVersion)
+            )
+          )
+          .limit(1);
+        const previous = current?.dataSchema ?? null;
+        if (
+          previous &&
+          canonicalJson(previous) !== canonicalJson(contract.schema) &&
+          String(previous['version']).trim() === contract.schemaVersion
+        ) {
+          return {
+            ok: false,
+            failure: { code: 'schema_version_unchanged', version: contract.schemaVersion }
+          };
+        }
       }
 
       const { missing, sizeBySha } = await this.lockAndResolveBlobs(
@@ -577,6 +628,7 @@ export class PresentationService {
           referenceType: newType,
           reference: opts.reference.reference,
           referenceWarning,
+          ...contractColumns(contract),
           createdBy: opts.principal.userId,
           // 'owner' for the deck owner / workspace admins, 'dev' for an
           // active per-deck collaborator (resolved above, in-transaction).
@@ -718,7 +770,12 @@ export class PresentationService {
           // (the column defaults) — the copy is the caller's own deck.
           referenceType: sourceVersion.referenceType,
           reference: sourceVersion.reference,
-          remixedFrom: source.id
+          remixedFrom: source.id,
+          // A duplicate of a document is a document on the same template
+          // version, its data the copied version's (PRDCT-3641).
+          templateId: sourceVersion.documentData ? source.templateId : null,
+          templateVersion: sourceVersion.documentData ? sourceVersion.templateVersion : null,
+          documentData: sourceVersion.documentData ?? null
         })
         .returning();
       const [version] = await tx
@@ -736,6 +793,17 @@ export class PresentationService {
           hasDownloads: stamped.hasDownloads,
           referenceType: sourceVersion.referenceType,
           reference: sourceVersion.reference,
+          dataSchema: sourceVersion.dataSchema,
+          dataSample: sourceVersion.dataSample,
+          dataBindings: sourceVersion.dataBindings,
+          ...(sourceVersion.documentData
+            ? {
+                documentData: sourceVersion.documentData,
+                templateVersion: sourceVersion.templateVersion,
+                dataSource: 'create' as const,
+                dataChanged: changedPaths(null, sourceVersion.documentData)
+              }
+            : {}),
           createdBy: opts.principal.userId,
           // The copy is the caller's own deck: they own it, so they commit
           // its first version as 'owner' whatever their role on the source.
@@ -758,6 +826,310 @@ export class PresentationService {
       });
       return { ok: true, presentation: presentation!, version: version!, sourceVersion: wanted };
     });
+  }
+
+  // ── Documents (PRDCT-3641) ─────────────────────────────────────────────────
+
+  /**
+   * A document's first version: a new deck pinned to a template version,
+   * its files the RENDERED manifest the caller built (the template's blobs
+   * plus the resolved pages it uploaded), its data mirrored on the deck and
+   * on the version. The caller validated the data and rendered the pages;
+   * this transaction resolves the blobs under the caller's read scope (the
+   * template's blobs are readable because the template is, SL-B1), links
+   * the projects like an upload commit (ADR 026) and emits the creation
+   * and the first push.
+   */
+  async createDocument(opts: {
+    workspaceId: string;
+    principal: Principal;
+    template: PresentationRow;
+    templateVersion: number;
+    title: string;
+    entryPath: string;
+    manifest: ManifestEntry[];
+    hasForms: boolean;
+    data: Record<string, unknown>;
+    projectIds?: string[] | undefined;
+  }): Promise<DocumentCommitResult> {
+    const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
+    if (shapeFailure) return { ok: false, failure: shapeFailure };
+    return this.db.transaction(async (tx): Promise<DocumentCommitResult> => {
+      const projectIds = [...new Set(opts.projectIds ?? [])];
+      if (projectIds.length > 0) {
+        await tx
+          .select({ id: projects.id })
+          .from(projects)
+          .where(and(inArray(projects.id, projectIds), eq(projects.workspaceId, opts.workspaceId)))
+          .for('share');
+      }
+      for (const projectId of projectIds) {
+        if (!(await canLinkIntoProject(tx, opts.principal, projectId))) {
+          return { ok: false, failure: { code: 'project_not_found', projectId } };
+        }
+      }
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(
+        tx,
+        opts.workspaceId,
+        opts.principal,
+        opts.manifest
+      );
+      if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
+      const stamped = this.stampManifest(opts.manifest, sizeBySha);
+      const [presentation] = await tx
+        .insert(presentations)
+        .values({
+          workspaceId: opts.workspaceId,
+          ownerUserId: opts.principal.userId,
+          title: opts.title,
+          kind: opts.template.kind,
+          interactive: opts.template.interactive,
+          currentVersion: 1,
+          entryPath: opts.entryPath,
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
+          templateId: opts.template.id,
+          templateVersion: opts.templateVersion,
+          documentData: opts.data
+        })
+        .returning();
+      const [version] = await tx
+        .insert(presentationVersions)
+        .values({
+          workspaceId: opts.workspaceId,
+          presentationId: presentation!.id,
+          version: 1,
+          entryPath: opts.entryPath,
+          manifest: stamped.manifest,
+          sizeBytes: stamped.sizeBytes,
+          fileCount: stamped.fileCount,
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
+          documentData: opts.data,
+          templateVersion: opts.templateVersion,
+          dataSource: 'create',
+          dataChanged: changedPaths(null, opts.data),
+          createdBy: opts.principal.userId,
+          createdByRole: 'owner'
+        })
+        .returning();
+      if (projectIds.length > 0) {
+        await tx.insert(presentationProjects).values(
+          projectIds.map((projectId) => ({
+            presentationId: presentation!.id,
+            projectId,
+            workspaceId: opts.workspaceId,
+            addedBy: opts.principal.userId
+          }))
+        );
+      }
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: opts.workspaceId,
+        type: 'deck.created',
+        deckId: presentation!.id,
+        data: {
+          deckId: presentation!.id,
+          title: presentation!.title,
+          version: 1,
+          projectIds,
+          ownerUserId: presentation!.ownerUserId,
+          remixedFrom: null
+        }
+      });
+      for (const projectId of projectIds) {
+        await emitDeckEvent(this.webhooks, tx, {
+          workspaceId: opts.workspaceId,
+          type: 'deck.project_linked',
+          deckId: presentation!.id,
+          data: { deckId: presentation!.id, projectId }
+        });
+      }
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: opts.workspaceId,
+        type: 'document.pushed',
+        deckId: presentation!.id,
+        data: {
+          deckId: presentation!.id,
+          version: 1,
+          templateId: opts.template.id,
+          templateVersion: opts.templateVersion,
+          source: 'create',
+          changed: version!.dataChanged ?? [],
+          authorUserId: opts.principal.userId
+        }
+      });
+      return { ok: true, presentation: presentation!, version: version! };
+    });
+  }
+
+  /**
+   * A document's next version, written by a push, an upgrade or a form
+   * answer. The caller holds the document's advisory lock (DocumentService)
+   * and rendered the pages against the data it computed under it, so no
+   * optimistic base version is needed here: the deck row is still locked
+   * FOR UPDATE for the mirror. A system committer (the answer path) is
+   * recorded as the owner and resolves blobs without a read scope: every sha
+   * is the template's or one the server just uploaded.
+   */
+  async commitDocumentVersion(opts: {
+    workspaceId: string;
+    committer: DocumentCommitter;
+    presentationId: string;
+    entryPath: string;
+    manifest: ManifestEntry[];
+    hasForms: boolean;
+    data: Record<string, unknown>;
+    previousData: Record<string, unknown> | null;
+    templateVersion: number;
+    source: 'push' | 'answer' | 'upgrade';
+    /** On an answer: the share link's recipient label, and the link for the event. */
+    answered?:
+      | { by: string | null; linkId: string | null; formName: string; responseId: string; revision: number }
+      | undefined;
+    conn?: DbConn | undefined;
+  }): Promise<DocumentCommitResult> {
+    const shapeFailure = this.validateManifestShape(opts.entryPath, opts.manifest);
+    if (shapeFailure) return { ok: false, failure: shapeFailure };
+    const run = async (tx: DbConn): Promise<DocumentCommitResult> => {
+      const [deck] = await tx
+        .select()
+        .from(presentations)
+        .where(
+          and(
+            eq(presentations.id, opts.presentationId),
+            eq(presentations.workspaceId, opts.workspaceId),
+            isNull(presentations.deletedAt)
+          )
+        )
+        .for('update')
+        .limit(1);
+      if (!deck || deck.templateId === null) return { ok: false, failure: { code: 'not_found' } };
+      const principal = 'principal' in opts.committer ? opts.committer.principal : null;
+      let authorRole: VersionAuthorRole = 'owner';
+      if (principal) {
+        if (canAdministerDeck(principal, deck)) authorRole = 'owner';
+        else if (
+          (await isActiveDevCollaborator(tx, deck.id, principal.userId)) ||
+          (await writesDeckThroughProject(tx, principal, deck.id))
+        )
+          authorRole = 'dev';
+        else return { ok: false, failure: { code: 'not_found' } };
+      }
+      const { missing, sizeBySha } = await this.lockAndResolveBlobs(
+        tx,
+        opts.workspaceId,
+        principal,
+        opts.manifest
+      );
+      if (missing.length > 0) return { ok: false, failure: { code: 'missing_blobs', missing } };
+      const stamped = this.stampManifest(opts.manifest, sizeBySha);
+      const newVersion = deck.currentVersion + 1;
+      const createdBy = principal
+        ? principal.userId
+        : (opts.committer as { system: { ownerUserId: string | null } }).system.ownerUserId;
+      const changed = changedPaths(opts.previousData, opts.data);
+      const [version] = await tx
+        .insert(presentationVersions)
+        .values({
+          workspaceId: opts.workspaceId,
+          presentationId: deck.id,
+          version: newVersion,
+          entryPath: opts.entryPath,
+          manifest: stamped.manifest,
+          sizeBytes: stamped.sizeBytes,
+          fileCount: stamped.fileCount,
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
+          documentData: opts.data,
+          templateVersion: opts.templateVersion,
+          dataSource: opts.source,
+          dataChanged: changed,
+          dataAnsweredBy: opts.answered?.by ?? null,
+          createdBy,
+          createdByRole: authorRole
+        })
+        .returning();
+      const [updated] = await tx
+        .update(presentations)
+        .set({
+          currentVersion: newVersion,
+          entryPath: opts.entryPath,
+          hasAgentDoc: stamped.hasAgentDoc,
+          hasForms: opts.hasForms,
+          hasDownloads: stamped.hasDownloads,
+          documentData: opts.data,
+          templateVersion: opts.templateVersion,
+          updatedAt: new Date()
+        })
+        .where(eq(presentations.id, deck.id))
+        .returning();
+      await emitDeckEvent(this.webhooks, tx, {
+        workspaceId: opts.workspaceId,
+        type: 'deck.version_committed',
+        deckId: deck.id,
+        data: {
+          deckId: deck.id,
+          version: newVersion,
+          title: updated!.title,
+          authorUserId: createdBy,
+          authorRole
+        }
+      });
+      if (opts.source === 'answer' && opts.answered) {
+        await emitDeckEvent(this.webhooks, tx, {
+          workspaceId: opts.workspaceId,
+          type: 'document.answered',
+          deckId: deck.id,
+          linkId: opts.answered.linkId,
+          data: {
+            deckId: deck.id,
+            version: newVersion,
+            formName: opts.answered.formName,
+            responseId: opts.answered.responseId,
+            revision: opts.answered.revision,
+            linkId: opts.answered.linkId,
+            answeredBy: opts.answered.by,
+            changed
+          }
+        });
+      } else {
+        await emitDeckEvent(this.webhooks, tx, {
+          workspaceId: opts.workspaceId,
+          type: 'document.pushed',
+          deckId: deck.id,
+          data: {
+            deckId: deck.id,
+            version: newVersion,
+            templateId: deck.templateId,
+            templateVersion: opts.templateVersion,
+            source: opts.source,
+            changed,
+            authorUserId: createdBy
+          }
+        });
+      }
+      return { ok: true, presentation: updated!, version: version! };
+    };
+    return opts.conn ? run(opts.conn) : this.db.transaction(run);
+  }
+
+  /** The documents made from a template, newest first (the Data tab's list and the delete's warning). */
+  async documentsOf(workspaceId: string, templateId: string, limit = 50): Promise<PresentationRow[]> {
+    return this.db
+      .select()
+      .from(presentations)
+      .where(
+        and(
+          eq(presentations.workspaceId, workspaceId),
+          eq(presentations.templateId, templateId),
+          isNull(presentations.deletedAt)
+        )
+      )
+      .orderBy(desc(presentations.createdAt))
+      .limit(limit);
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -1256,6 +1628,14 @@ export class PresentationService {
         referenceType: presentationVersions.referenceType,
         reference: presentationVersions.reference,
         referenceWarning: presentationVersions.referenceWarning,
+        dataSchema: presentationVersions.dataSchema,
+        dataSample: presentationVersions.dataSample,
+        dataBindings: presentationVersions.dataBindings,
+        documentData: presentationVersions.documentData,
+        templateVersion: presentationVersions.templateVersion,
+        dataSource: presentationVersions.dataSource,
+        dataChanged: presentationVersions.dataChanged,
+        dataAnsweredBy: presentationVersions.dataAnsweredBy,
         createdBy: presentationVersions.createdBy,
         createdByRole: presentationVersions.createdByRole,
         createdAt: presentationVersions.createdAt
@@ -1622,4 +2002,14 @@ export function blobReadScope(principal: Principal): SQL | undefined {
         AND pv.manifest @> jsonb_build_array(jsonb_build_object('sha256', ${files.sha256}))
     )
   )`;
+}
+
+/** The template contract's columns on a version row (PRDCT-3641): the three mirrors, or nothing. */
+function contractColumns(contract: TemplateContract | null): {
+  dataSchema?: Record<string, unknown>;
+  dataSample?: Record<string, unknown> | null;
+  dataBindings?: string[];
+} {
+  if (!contract) return {};
+  return { dataSchema: contract.schema, dataSample: contract.sample, dataBindings: contract.bindings };
 }

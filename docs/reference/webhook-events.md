@@ -75,6 +75,8 @@ receives no `member.joined`.
 | `annotation.deleted`      | `deck`, `project`         | An annotation was deleted.                                                                                                                                                                                             |
 | `thumbnail.rendered`      | `deck`, `project`         | The still image of a deck version is ready.                                                                                                                                                                            |
 | `thumbnail.failed`        | `deck`, `project`         | The still image of a deck version could not be made.                                                                                                                                                                   |
+| `document.pushed`         | `deck`, `project`         | A document’s data was written (created, pushed, or moved to a newer template version) and a new version rendered; `changed` names the top-level keys that moved.                                                       |
+| `document.answered`       | `deck`, `project`, `link` | A form inside a document was answered and the answer landed in the document’s data (`answers.<form>`); the response itself is in `form.response_submitted`.                                                            |
 
 ## `webhook.*`
 
@@ -1173,6 +1175,89 @@ Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
     "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
     "versionId": "e3d79f36-2839-4319-b188-d5affbe0b149",
     "version": 2
+  },
+  "attempt": 1
+}
+```
+
+## `document.*`
+
+### `document.pushed`
+
+A document’s data was written (created, pushed, or moved to a newer template version) and a new version rendered; `changed` names the top-level keys that moved.
+
+Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
+
+| Field             | Type           |
+| ----------------- | -------------- |
+| `deckId`          | string         |
+| `version`         | integer        |
+| `templateId`      | string         |
+| `templateVersion` | integer        |
+| `source`          | any            |
+| `changed`         | list of string |
+| `authorUserId`    | string or null |
+
+```json
+{
+  "id": "27c8100f-b994-474b-b7a0-e75972878bd1",
+  "type": "document.pushed",
+  "occurredAt": "2026-10-13T09:30:00.000Z",
+  "workspaceId": "c6409e21-663b-41bf-966f-fd3f6fde5c36",
+  "subjects": {
+    "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
+    "projectIds": ["5328eb51-71a5-43e1-afd7-fb665c97be6d"]
+  },
+  "data": {
+    "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
+    "version": 2,
+    "templateId": "83e7aff3-d0ab-42ac-be3e-935650af8338",
+    "templateVersion": 1,
+    "source": null,
+    "changed": ["expiresAt"],
+    "authorUserId": "e26290b7-b1c7-4735-b0ab-1081694c47d6"
+  },
+  "attempt": 1
+}
+```
+
+### `document.answered`
+
+A form inside a document was answered and the answer landed in the document’s data (`answers.<form>`); the response itself is in `form.response_submitted`.
+
+Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`), `link` (`subjects.shareLinkId`).
+
+| Field        | Type           |
+| ------------ | -------------- |
+| `deckId`     | string         |
+| `version`    | integer        |
+| `formName`   | string         |
+| `responseId` | string         |
+| `revision`   | integer        |
+| `linkId`     | string or null |
+| `answeredBy` | string or null |
+| `changed`    | list of string |
+
+```json
+{
+  "id": "d5ddd5fb-885e-4dba-965a-76c9734ef49a",
+  "type": "document.answered",
+  "occurredAt": "2026-10-13T09:30:00.000Z",
+  "workspaceId": "c6409e21-663b-41bf-966f-fd3f6fde5c36",
+  "subjects": {
+    "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
+    "projectIds": ["5328eb51-71a5-43e1-afd7-fb665c97be6d"],
+    "shareLinkId": "d5de1f6a-55d9-42f1-b8d2-b3c1729ccf47"
+  },
+  "data": {
+    "deckId": "2b3f5197-cc10-4055-add1-5da2a0f05528",
+    "version": 2,
+    "formName": "feedback",
+    "responseId": "bbf56563-7fe1-435d-9295-300ba1fed135",
+    "revision": 1,
+    "linkId": "d5de1f6a-55d9-42f1-b8d2-b3c1729ccf47",
+    "answeredBy": "answeredBy",
+    "changed": ["expiresAt"]
   },
   "attempt": 1
 }
