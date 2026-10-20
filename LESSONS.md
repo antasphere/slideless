@@ -1847,3 +1847,15 @@ confirm with the user before calling.`** A test that walks every write tool for 
   npm as `@antasphere/chassis-*`. Slideless installs them at one pinned version like every tool,
   `pnpm chassis:check` holds the pin, and a chassis change is a pull request and a release there,
   then a version bump here.
+
+## Data-bound templates (PRDCT-3641, 2026-10-20)
+
+- **A JSON block inside `<script type="application/json">` is escaped with `\u003c`, never with a
+  backslash before `/` or `!`.** `JSON.stringify(data).replace('</', '<\\/')` keeps `JSON.parse`
+  happy (`\/` is a legal escape) but `<\\!--` is not JSON, and the first unit test of the data block
+  failed on it. Replacing every `<` with `\u003c` (and U+2028/U+2029 with their escapes) neutralizes
+  `</script>` and `<!--` and stays valid JSON.
+- **The chassis's webhook catalog takes `family.verb` only** (`/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/`):
+  a task that names `document.data.pushed` ships as `document.pushed`.
+- **A tool service that stores blobs lives in the `routes` slot**, where `ctx.fileService` exists
+  (TEMPLATE-FEEDBACK 34), and is handed sideways to the viewer's form routes.

@@ -618,6 +618,24 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   pair: the locked mint refused on the three surfaces with nothing queued or landed, the hub's
   fourth invitation refused, a staff override felt on both sides, the one landed mint's event
   priced 20.
+- **A data-bound template resolves at push, and the answers branch is the server's (PRDCT-3641)**: a
+  template (AGENT.md `type: Template`) with the reserved root files `schema.json` (a JSON Schema with
+  a `version`) and `data.json` (the sample) binds its HTML pages with the mustache subset of
+  `packages/contract/src/bindings.ts`; the contract is read ONCE at push
+  (`presentations/data-contract.ts`, the frontmatter's place) and, unlike the frontmatter, REFUSES
+  the push with the file and the line (`binding_unknown`, `binding_syntax`, `sample_invalid`,
+  `schema_invalid`, and `schema_version_unchanged` in the commit). A document (a deck with
+  `template_id` + `template_version`) is rendered at every write by `documents/service.ts` under ONE
+  advisory lock per document (7432008) into a NEW presentation version (the template's blobs, the
+  pages resolved and stored through the chassis file service, `data.json` at the root, the data block
+  `#slideless-data` in the entry), so the viewer, the thumbnails, the pull and the agent index serve a
+  plain deck and never resolve anything. Never move the resolution to serve time (the viewer streams
+  with a 64 KB window and the renderer reads raw files). The `answers` branch is written by the
+  server alone (a client body carrying it is refused, a replace carries it over) from the viewer's
+  form response, latest per form, `by` the link's recipient label and never a respondent identity;
+  the responses table stays the truth. The five document writes meter `presentations.commit`; an
+  answer keeps `forms.response` and its re-render is free. The events are `document.pushed` and
+  `document.answered` (the chassis refuses three-segment types).
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,
