@@ -163,6 +163,13 @@ Apply the workspace's brand on top of this template. The template carries struct
 carries the look.
 ```
 
+### A template with a data contract
+
+A template may also ship `schema.json` and `data.json` next to its `AGENT.md`: the shape of the data
+its pages show, and a sample. Its pages then bind to the fields, and documents are made from it by
+pushing data instead of copying files. [Data-bound templates](data-bound-templates.md) has the
+whole of it.
+
 ## A frontmatter that cannot be used
 
 The classification never refuses a push. When the frontmatter is malformed, too large, or names a
