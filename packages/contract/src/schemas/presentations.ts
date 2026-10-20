@@ -204,6 +204,18 @@ export const referenceProvenanceSchema = z.object({
 });
 export type ReferenceProvenance = z.infer<typeof referenceProvenanceSchema>;
 
+/**
+ * What a DOCUMENT knows about its template (PRDCT-3641): the template deck
+ * and the template version it is pinned to, with that version's schema
+ * `version` string. Null on every deck that is not a document.
+ */
+export const documentBindingSchema = z.object({
+  templateId: z.string(),
+  templateVersion: z.number().int().min(1),
+  schemaVersion: z.string()
+});
+export type DocumentBinding = z.infer<typeof documentBindingSchema>;
+
 /** One project a deck is linked to, as its payload names it. */
 export const presentationProjectRefSchema = z.object({
   id: z.string(),
@@ -271,6 +283,8 @@ export const presentationSchema = z.object({
    * deck as that project's brand.
    */
   projects: z.array(presentationProjectRefSchema),
+  /** The template this deck is an instance of (PRDCT-3641); null on an ordinary deck and on a template. */
+  document: documentBindingSchema.nullable(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

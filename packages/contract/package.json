@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@antasphere/chassis-contract": "1.5.1",
+    "@cfworker/json-schema": "4.1.1",
     "@hono/zod-openapi": "^1.4.0",
     "zod": "^4.1.0"
   },

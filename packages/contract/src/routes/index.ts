@@ -975,6 +975,230 @@ export const presentationDuplicateRoute = createRoute({
   }
 });
 
+// ── Data-bound templates (PRDCT-3641) ────────────────────────────────────────
+// A template (a deck whose AGENT.md says `type: Template`) may ship its data
+// contract as two reserved root files, `schema.json` and `data.json`; a
+// DOCUMENT is a deck created from a template with data, pinned to the
+// template version it was made from. Every write of a document's data is a
+// new presentation version (the template's files, the HTML resolved, the
+// data at the root), so the push history is the version history. Reads
+// follow the deck read rule (404, never 403, ADR 013); the creates and the
+// writes are per-deck creates like a duplicate (guests refused, D2).
+
+import {
+  documentAnswersSchema,
+  documentCreateSchema,
+  documentDataMergePatchSchema,
+  documentDataSchema,
+  documentDataInputSchema,
+  documentDataVersionDetailSchema,
+  documentDataVersionsListSchema,
+  documentUpgradeSchema,
+  documentWrittenSchema,
+  templateDataContractSchema,
+  templateSchemaSetSchema
+} from '../schemas/documents.js';
+
+export const templateSchemaGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/schema',
+  tags: ['documents'],
+  summary: "A template's data contract: its JSON Schema, its sample and the field paths its pages bind",
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(templateDataContractSchema, 'The contract of the current template version'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    422: jsonBody(apiErrorSchema, 'The deck is not a template, or the template carries no schema.json')
+  }
+});
+
+export const templateSchemaSetRoute = createRoute({
+  method: 'put',
+  path: '/presentations/{id}/schema',
+  tags: ['documents'],
+  summary:
+    "Replace a template's schema.json (and optionally its data.json sample): a new template version " +
+    'with the other files unchanged, refused when a page binds a field the schema lacks or the version did not move',
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(templateSchemaSetSchema, 'The schema and, optionally, the sample'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    200: jsonBody(templateDataContractSchema, 'The contract of the new template version'),
+    400: jsonBody(
+      apiErrorSchema,
+      'Validation error; binding_unknown (a page binds a field the schema lacks, details.unknown); ' +
+        'sample_invalid (the sample fails the schema, details.issues); schema_version_unchanged'
+    ),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    422: jsonBody(apiErrorSchema, 'The deck is not a template')
+  }
+});
+
+export const documentCreateRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/instances',
+  tags: ['documents'],
+  summary:
+    'Create a document from this template with initial data: a new deck pinned to the current ' +
+    "template version, its version 1 the template's pages resolved against the data",
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(documentCreateSchema, 'The initial data, an optional title and projects'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    201: jsonBody(documentWrittenSchema, 'The document at version 1'),
+    400: jsonBody(
+      apiErrorSchema,
+      'Validation error; data_invalid (the data fails the schema, details.issues)'
+    ),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    422: jsonBody(apiErrorSchema, 'The deck is not a template with a schema (not_a_data_template)')
+  }
+});
+
+export const documentDataGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/data',
+  tags: ['documents'],
+  summary: "A document's current data, the answers branch included, with its template pin",
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(documentDataSchema, 'The data'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
+export const documentDataReplaceRoute = createRoute({
+  method: 'put',
+  path: '/presentations/{id}/data',
+  tags: ['documents'],
+  summary:
+    "Replace a document's data: validated against the pinned schema, the previous answers carried over, " +
+    'a new version rendered',
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(documentDataInputSchema, 'The whole data (never the answers branch)'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    200: jsonBody(documentWrittenSchema, 'The document at its new version'),
+    400: jsonBody(apiErrorSchema, 'Validation error; data_invalid (details.issues name the field)'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
+export const documentDataMergeRoute = createRoute({
+  method: 'patch',
+  path: '/presentations/{id}/data',
+  tags: ['documents'],
+  summary:
+    "Merge-patch a document's data (RFC 7386: null deletes a key, objects merge, anything else replaces), " +
+    'validated against the pinned schema, a new version rendered',
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(documentDataMergePatchSchema, 'The merge patch (never the answers branch)'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    200: jsonBody(documentWrittenSchema, 'The document at its new version'),
+    400: jsonBody(apiErrorSchema, 'Validation error; data_invalid (details.issues name the field)'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
+export const documentDataVersionsRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/data/versions',
+  tags: ['documents'],
+  summary: "A document's push history: every data version with who, when and what changed, newest first",
+  request: { params: uuidParams, query: cursorPageQuerySchema },
+  responses: {
+    200: jsonBody(documentDataVersionsListSchema, 'The data versions'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
+export const documentDataVersionGetRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/data/versions/{version}',
+  tags: ['documents'],
+  summary: 'One data version of a document with the data as it was',
+  request: { params: versionParams },
+  responses: {
+    200: jsonBody(documentDataVersionDetailSchema, 'The data version'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
+export const documentAnswersRoute = createRoute({
+  method: 'get',
+  path: '/presentations/{id}/answers',
+  tags: ['documents'],
+  summary:
+    "The forms' answers as the document's data holds them: one entry per form, the fields, who and when",
+  request: { params: uuidParams },
+  responses: {
+    200: jsonBody(documentAnswersSchema, 'The answers'),
+    401: errorResponses[401],
+    404: errorResponses[404],
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
+export const documentUpgradeRoute = createRoute({
+  method: 'post',
+  path: '/presentations/{id}/upgrade',
+  tags: ['documents'],
+  summary:
+    'Move a document to a newer version of its template (its current one when omitted) and render again; ' +
+    'refused when the data no longer validates',
+  request: {
+    params: uuidParams,
+    body: jsonRequestBody(documentUpgradeSchema, 'The template version to move to'),
+    headers: idempotencyHeaders
+  },
+  responses: {
+    200: jsonBody(documentWrittenSchema, 'The document at its new version'),
+    400: jsonBody(
+      apiErrorSchema,
+      'Validation error; data_invalid (the data fails the new schema, details.issues); ' +
+        'template_version_invalid; already_on_version'
+    ),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    422: jsonBody(
+      apiErrorSchema,
+      'The deck is not a document, or its template is gone (not_a_document, template_gone)'
+    )
+  }
+});
+
 // ═══ The billing rail: a price on the route (PRDCT-2626) ═══════════════════
 //
 // What Slideless meters, which limit a route checks and which feature it
@@ -1106,6 +1330,14 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
       limit: { key: DECK_LIMITS.fileBytes, value: declaredContentLength }
     },
     { route: uploadSessionCommitRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    // A document's writes (PRDCT-3641) are edits: each mints a presentation
+    // version, so each meters the commit action at its price. A form answer's
+    // re-render is not here: the answer keeps its own price (forms.response).
+    { route: documentCreateRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    { route: documentDataReplaceRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    { route: documentDataMergeRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    { route: documentUpgradeRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    { route: templateSchemaSetRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
     // A share link (PRDCT-2702): the mint counts against the deck's links
     // and, when the body sets a password, needs the feature; the update
     // needs the feature for the same act alone. Feature, then limit, then
