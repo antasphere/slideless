@@ -248,7 +248,7 @@ const COMMANDS = [
   'teams',
   'webhooks',
   'demo',
-  // Slideless: decks, authoring, references, sharing, response files
+  // Slideless: decks, authoring, references, documents, sharing, response files
   'list',
   'get',
   'meta',
@@ -264,6 +264,7 @@ const COMMANDS = [
   'reference',
   'brand',
   'template',
+  'document',
   'share',
   'unshare',
   'share-email',

@@ -32,6 +32,7 @@ import {
   pushDeck,
   type PushOptions
 } from './content.js';
+import { registerTemplateSchemaCommands } from './documents.js';
 import { withProjectRefusal } from './projects.js';
 
 /**
@@ -413,6 +414,9 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
           `  Next: cd ${dir} && slideless push --new --${from.type} ${match.id}@${version}\n`
       );
     });
+
+  // ── schema (the template family only, PRDCT-3641) ─────────────────────────
+  if (family.type === 'template') registerTemplateSchemaCommands(root, io);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
