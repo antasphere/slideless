@@ -314,12 +314,18 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
     // The responses live under their own tab of the deck page (PRDCT-2686).
     await page.goto(`/decks/${deckId}?tab=responses`);
     const panel = page.getByTestId('form-responses-panel');
-    await expect(panel.getByTestId('response-file')).toHaveCount(1, { timeout: 15_000 });
+    // One line per response; the row opens it whole, its files in the dialog (PRDCT-3644).
+    await expect(panel.getByTestId('response-row')).toHaveCount(1, { timeout: 15_000 });
+    await panel.getByTestId('response-row').click();
+    await expect(page.getByTestId('response-file')).toHaveCount(1);
 
-    const cv = await downloadFrom(page, () => panel.getByTestId('response-file').click());
+    const cv = await downloadFrom(page, () => page.getByTestId('response-file').click());
     expect(cv.suggestedFilename()).toBe('cv.pdf');
     expect((await bytesOf(cv)).equals(CV)).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('response-detail')).toBeHidden();
 
+    // The response's zip stays an act of its row.
     const oneZip = await downloadFrom(page, () => panel.getByTestId('response-files-zip').click());
     expect(oneZip.suggestedFilename()).toMatch(/\.zip$/);
     expectZipWith(await bytesOf(oneZip), 'cv.pdf');
@@ -354,14 +360,17 @@ test('a workspace is created from the sidebar, the person lands in it, and its d
     // The responses live under their own tab of the deck page (PRDCT-2686).
     await page.goto(`/decks/${deckId}?tab=responses`);
     const panel = page.getByTestId('form-responses-panel');
-    await expect(panel.getByTestId('response-file')).toHaveCount(1, { timeout: 15_000 });
+    await expect(panel.getByTestId('response-row')).toHaveCount(1, { timeout: 15_000 });
+    await panel.getByTestId('response-row').click();
+    await expect(page.getByTestId('response-file')).toHaveCount(1);
     // The response goes away behind the page's back (another tab, a colleague).
     const gone = await page.request.delete(`/api/v1/presentations/${deckId}/responses/${responseId}`, {
       headers: inSecond()
     });
     expect(gone.status()).toBe(200);
-    await panel.getByTestId('response-file').click();
+    await page.getByTestId('response-file').click();
     await expect(page.getByText('This file is no longer available')).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 
   await test.step('switching back from the menu returns to the first workspace', async () => {

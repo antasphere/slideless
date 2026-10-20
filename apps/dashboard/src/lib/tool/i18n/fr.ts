@@ -526,10 +526,6 @@ export const fr: Record<keyof typeof en, string> = {
   'formResponses.onVersion': 'sur la v{n}',
   'formResponses.updatedBadge': 'Modifiée',
   'formResponses.revisionBadge': 'Modifiée · {n} versions',
-  'formResponses.actionHistory': 'Historique',
-  'formResponses.historyTitle': 'Historique des modifications',
-  'formResponses.historyDescription':
-    'Chaque version de cette réponse, la plus récente en premier. Le répondant ne voit que la dernière.',
   'formResponses.historyRevision': 'Version {n}',
   'formResponses.historyLoadFailed': 'Échec du chargement de l’historique : {error}',
   'formResponses.notifyLabel': 'M’envoyer un mail quand des réponses arrivent',
@@ -548,6 +544,19 @@ export const fr: Record<keyof typeof en, string> = {
   'formResponses.noAccess': 'Les réponses aux formulaires ne sont visibles que par les rédacteurs du deck.',
   'formResponses.loadFailed': 'Échec du chargement des réponses : {error}',
   'formResponses.summaryLoadFailed': 'Échec du chargement du résumé : {error}',
+  'formResponses.colReceived': 'Reçue',
+  'formResponses.colAnswers': 'Contenu',
+  'formResponses.colActions': 'Actions',
+  'formResponses.summaryMore': '+{n} autres',
+  'formResponses.summaryMoreOne': '+1 autre',
+  'formResponses.answerEmpty': 'Sans réponse',
+  'formResponses.showMore': 'Afficher plus',
+  'formResponses.showLess': 'Afficher moins',
+  'formResponses.actionOpen': 'Ouvrir cette réponse',
+  'formResponses.currentAnswers': 'Réponses actuelles',
+  'formResponses.earlierVersions': 'Versions précédentes',
+  'formResponses.earlierVersionsHint':
+    'Ce que disait la réponse avant sa dernière modification, la plus récente en premier. Le répondant ne voit que la dernière.',
 
   // ── Version history ──────────────────────────────────────────────────
   'versions.title': 'Historique des versions',

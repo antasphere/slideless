@@ -502,10 +502,6 @@ export const en = {
   'formResponses.onVersion': 'on v{n}',
   'formResponses.updatedBadge': 'Updated',
   'formResponses.revisionBadge': 'Edited · {n} versions',
-  'formResponses.actionHistory': 'History',
-  'formResponses.historyTitle': 'Edit history',
-  'formResponses.historyDescription':
-    'Every revision of this response, newest first. The respondent sees only the latest.',
   'formResponses.historyRevision': 'Revision {n}',
   'formResponses.historyLoadFailed': 'Failed to load the history: {error}',
   'formResponses.notifyLabel': 'Email me when responses arrive',
@@ -522,6 +518,19 @@ export const en = {
   'formResponses.noAccess': 'Form responses are visible to the deck’s writers only.',
   'formResponses.loadFailed': 'Failed to load form responses: {error}',
   'formResponses.summaryLoadFailed': 'Failed to load the summary: {error}',
+  'formResponses.colReceived': 'Received',
+  'formResponses.colAnswers': 'Answers',
+  'formResponses.colActions': 'Actions',
+  'formResponses.summaryMore': '+{n} more',
+  'formResponses.summaryMoreOne': '+1 more',
+  'formResponses.answerEmpty': 'No answer',
+  'formResponses.showMore': 'Show more',
+  'formResponses.showLess': 'Show less',
+  'formResponses.actionOpen': 'Open this response',
+  'formResponses.currentAnswers': 'Current answers',
+  'formResponses.earlierVersions': 'Earlier versions',
+  'formResponses.earlierVersionsHint':
+    'What the response said before its last edit, newest first. The respondent sees only the latest.',
 
   // ── Version history ──────────────────────────────────────────────────
   'versions.title': 'Version history',
