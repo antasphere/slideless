@@ -172,3 +172,27 @@ describe('requiredScopeFor — webhooks (PRDCT-3482, PRDCT-3483)', () => {
     expect(requiredScopeFor('/api/v1/webhooks/events', 'GET')).toBe('presentations:read');
   });
 });
+
+describe('requiredScopeFor — data-bound templates (PRDCT-3641)', () => {
+  it('the template’s contract: GET under presentations:read, PUT under presentations:write', () => {
+    expect(requiredScopeFor(`${DECK}/schema`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${DECK}/schema`, 'PUT')).toBe('presentations:write');
+  });
+
+  it('a document is made under presentations:write, never by a read key', () => {
+    expect(requiredScopeFor(`${DECK}/instances`, 'POST')).toBe('presentations:write');
+  });
+
+  it('the data: GET under presentations:read, PUT and PATCH under presentations:write', () => {
+    expect(requiredScopeFor(`${DECK}/data`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${DECK}/data`, 'PUT')).toBe('presentations:write');
+    expect(requiredScopeFor(`${DECK}/data`, 'PATCH')).toBe('presentations:write');
+  });
+
+  it('the history and the answers are reads; the upgrade is a write', () => {
+    expect(requiredScopeFor(`${DECK}/data/versions`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${DECK}/data/versions/3`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${DECK}/answers`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${DECK}/upgrade`, 'POST')).toBe('presentations:write');
+  });
+});

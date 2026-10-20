@@ -135,6 +135,9 @@ export const presentations = pgTable(
     // The template's presentation version this document is pinned to; moves
     // only on an explicit upgrade.
     templateVersion: integer('template_version'),
+    // The pinned template version's schema `version` string, mirrored so the
+    // deck's wire never opens the template's version row.
+    schemaVersion: text('schema_version'),
     // Mirrors the current version's document_data so a read never opens a
     // version row, like entry_path.
     documentData: jsonb('document_data').$type<Record<string, unknown>>(),
@@ -237,6 +240,7 @@ export const presentationVersions = pgTable(
     // recipient label that answered (never a respondent identity).
     documentData: jsonb('document_data').$type<Record<string, unknown>>(),
     templateVersion: integer('template_version'),
+    schemaVersion: text('schema_version'),
     dataSource: text('data_source', { enum: documentDataSources }),
     dataChanged: jsonb('data_changed').$type<string[]>(),
     dataAnsweredBy: text('data_answered_by'),

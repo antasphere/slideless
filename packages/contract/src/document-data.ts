@@ -40,19 +40,91 @@ export function validateDataAgainstSchema(
     return [{ path: '', message: `the schema cannot be used: ${(err as Error).message}` }];
   }
   if (result.valid) return [];
-  const issues: DataValidationIssue[] = [];
+  return rankIssues(result.errors, max);
+}
+
+/**
+ * The validator reports every node on the way down (`properties`, `items`,
+ * the `additionalProperties` echo and its `false` child) beside the one error
+ * that names the field. What a person needs is the field: the deepest error
+ * per place, a missing required property pointed at the property itself, an
+ * extra property named once, the structural echoes dropped, most specific
+ * first.
+ */
+function rankIssues(
+  errors: readonly { instanceLocation: string; keyword: string; error: string }[],
+  max: number
+): DataValidationIssue[] {
+  const quoted = (text: string): string | null => /"([^"]+)"/.exec(text)?.[1] ?? null;
+  const at = (loc: string): string => loc.replace(/^#/, '');
+  const issues: { path: string; message: string; depth: number }[] = [];
+  const locations = new Set(errors.map((e) => at(e.instanceLocation)));
+  const hasOwnError = (loc: string): boolean =>
+    errors.some((e) => at(e.instanceLocation) === loc && e.keyword !== 'false');
+  for (const e of errors) {
+    const loc = at(e.instanceLocation);
+    switch (e.keyword) {
+      case 'properties':
+      case 'items':
+      case 'prefixItems':
+      case 'allOf':
+      case 'anyOf':
+      case 'oneOf':
+        // A structural echo: the deeper error says it.
+        continue;
+      case 'required': {
+        const name = quoted(e.error);
+        issues.push({
+          path: name ? `${loc}/${escapePointer(name)}` : loc,
+          message: name ? `Property "${name}" is required.` : e.error,
+          depth: loc.split('/').length + 1
+        });
+        continue;
+      }
+      case 'additionalProperties': {
+        const name = quoted(e.error);
+        const child = name ? `${loc}/${escapePointer(name)}` : null;
+        // The echo of a declared property that failed its own schema.
+        if (child && hasOwnError(child)) continue;
+        issues.push({
+          path: child ?? loc,
+          message: name ? `Property "${name}" is not allowed here.` : e.error,
+          depth: loc.split('/').length + 1
+        });
+        continue;
+      }
+      case 'false':
+        // "False boolean schema": the additionalProperties echo on the extra key itself.
+        if (
+          locations.has(loc) &&
+          errors.some((o) => o.keyword === 'additionalProperties' && at(o.instanceLocation) === parentOf(loc))
+        )
+          continue;
+        issues.push({ path: loc, message: e.error, depth: loc.split('/').length });
+        continue;
+      default:
+        issues.push({ path: loc, message: e.error, depth: loc.split('/').length });
+    }
+  }
   const seen = new Set<string>();
-  // The validator reports outermost first; the innermost entries are the ones
-  // that name the field, so they go first.
-  for (const e of [...result.errors].reverse()) {
-    const path = e.instanceLocation.replace(/^#/, '');
-    const key = `${path}\u0000${e.error}`;
+  const out: DataValidationIssue[] = [];
+  for (const issue of issues.sort((a, b) => b.depth - a.depth)) {
+    const key = `${issue.path}\u0000${issue.message}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    issues.push({ path, message: e.error });
-    if (issues.length >= max) break;
+    out.push({ path: issue.path, message: issue.message });
+    if (out.length >= max) break;
   }
-  return issues;
+  return out;
+}
+
+function parentOf(pointer: string): string {
+  const i = pointer.lastIndexOf('/');
+  return i <= 0 ? '' : pointer.slice(0, i);
+}
+
+function escapePointer(segment: string): string {
+  return segment.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
 function draftOf(schema: Record<string, unknown>): '4' | '7' | '2019-09' | '2020-12' {

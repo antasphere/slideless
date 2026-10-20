@@ -775,6 +775,7 @@ export class PresentationService {
           // version, its data the copied version's (PRDCT-3641).
           templateId: sourceVersion.documentData ? source.templateId : null,
           templateVersion: sourceVersion.documentData ? sourceVersion.templateVersion : null,
+          schemaVersion: sourceVersion.documentData ? sourceVersion.schemaVersion : null,
           documentData: sourceVersion.documentData ?? null
         })
         .returning();
@@ -800,6 +801,7 @@ export class PresentationService {
             ? {
                 documentData: sourceVersion.documentData,
                 templateVersion: sourceVersion.templateVersion,
+                schemaVersion: sourceVersion.schemaVersion,
                 dataSource: 'create' as const,
                 dataChanged: changedPaths(null, sourceVersion.documentData)
               }
@@ -845,6 +847,7 @@ export class PresentationService {
     principal: Principal;
     template: PresentationRow;
     templateVersion: number;
+    schemaVersion: string;
     title: string;
     entryPath: string;
     manifest: ManifestEntry[];
@@ -891,6 +894,7 @@ export class PresentationService {
           hasDownloads: stamped.hasDownloads,
           templateId: opts.template.id,
           templateVersion: opts.templateVersion,
+          schemaVersion: opts.schemaVersion,
           documentData: opts.data
         })
         .returning();
@@ -909,6 +913,7 @@ export class PresentationService {
           hasDownloads: stamped.hasDownloads,
           documentData: opts.data,
           templateVersion: opts.templateVersion,
+          schemaVersion: opts.schemaVersion,
           dataSource: 'create',
           dataChanged: changedPaths(null, opts.data),
           createdBy: opts.principal.userId,
@@ -983,6 +988,7 @@ export class PresentationService {
     data: Record<string, unknown>;
     previousData: Record<string, unknown> | null;
     templateVersion: number;
+    schemaVersion: string;
     source: 'push' | 'answer' | 'upgrade';
     /** On an answer: the share link's recipient label, and the link for the event. */
     answered?:
@@ -1045,6 +1051,7 @@ export class PresentationService {
           hasDownloads: stamped.hasDownloads,
           documentData: opts.data,
           templateVersion: opts.templateVersion,
+          schemaVersion: opts.schemaVersion,
           dataSource: opts.source,
           dataChanged: changed,
           dataAnsweredBy: opts.answered?.by ?? null,
@@ -1062,6 +1069,7 @@ export class PresentationService {
           hasDownloads: stamped.hasDownloads,
           documentData: opts.data,
           templateVersion: opts.templateVersion,
+          schemaVersion: opts.schemaVersion,
           updatedAt: new Date()
         })
         .where(eq(presentations.id, deck.id))
@@ -1633,6 +1641,7 @@ export class PresentationService {
         dataBindings: presentationVersions.dataBindings,
         documentData: presentationVersions.documentData,
         templateVersion: presentationVersions.templateVersion,
+        schemaVersion: presentationVersions.schemaVersion,
         dataSource: presentationVersions.dataSource,
         dataChanged: presentationVersions.dataChanged,
         dataAnsweredBy: presentationVersions.dataAnsweredBy,

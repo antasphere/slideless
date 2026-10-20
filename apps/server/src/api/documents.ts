@@ -486,7 +486,9 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
       workspaceId: principal.workspaceId,
       principal,
       id,
-      toVersion: body.toVersion
+      toVersion: body.toVersion,
+      data: body.data,
+      merge: body.merge
     });
     if (!result.ok) {
       const f = failed(result.failure);

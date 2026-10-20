@@ -1,5 +1,5 @@
 {
-  "id": "bbed6a09-3e98-4f5f-9c3b-35bca1bb6feb",
+  "id": "ff258e8f-7b8c-408e-a0d1-f3079f9ca720",
   "prevId": "e6ccf543-2cfd-43e6-8fe2-1eed96ebb416",
   "version": "7",
   "dialect": "postgresql",
@@ -5483,6 +5483,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "data_source": {
           "name": "data_source",
           "type": "text",
@@ -5768,6 +5774,12 @@
         "template_version": {
           "name": "template_version",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

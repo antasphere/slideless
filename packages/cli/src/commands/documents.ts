@@ -244,14 +244,28 @@ export function registerDocumentCommands(program: Command, io: CliIo): void {
     .command('upgrade <id>')
     .description("Move a document to a newer version of its template (default: the template's current one)")
     .option('--to <version>', 'the template version to move to', (v: string) => Number(v))
-    .action(async (id: string, opts: { to?: number }, cmd: Command) => {
+    .option('--file <file>', 'the data to move with, replacing the current one (judged by the new schema)')
+    .option(
+      '--merge <file>',
+      'a merge patch applied before the move (the way to add what the new version requires)'
+    )
+    .action(async (id: string, opts: { to?: number; file?: string; merge?: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
       if (opts.to !== undefined && (!Number.isInteger(opts.to) || opts.to < 1)) {
         throw new CliUsageError('--to is a template version, a whole number from 1.');
       }
+      if (opts.file !== undefined && opts.merge !== undefined) {
+        throw new CliUsageError('Pass --file (replace) or --merge (patch), not both.');
+      }
+      const data = opts.file !== undefined ? await readJsonObject(opts.file, '--file') : undefined;
+      const merge = opts.merge !== undefined ? await readJsonObject(opts.merge, '--merge') : undefined;
       await requireApiKey(ctx);
       const written = await refusalsWithDetails(() =>
-        ctx.client.upgradeDocument(id, opts.to !== undefined ? { toVersion: opts.to } : {})
+        ctx.client.upgradeDocument(id, {
+          ...(opts.to !== undefined ? { toVersion: opts.to } : {}),
+          ...(data !== undefined ? { data } : {}),
+          ...(merge !== undefined ? { merge } : {})
+        })
       );
       if (ctx.json) return printJson(io, written);
       const pin = written.data.template;

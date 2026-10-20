@@ -633,8 +633,8 @@ describe('document check', () => {
     expect(h.err()).toBe('');
     const out = h.out();
     expect(out.startsWith(`${file} does not follow "Lane report" schema 1:\n`)).toBe(true);
-    expect(out).toMatch(/\n {2}\/tickets\/0: .*"id"/);
-    expect(out).toMatch(/\n {2}\(root\): .*"title"/);
+    expect(out).toMatch(/\n {2}\/tickets\/0\/id: .*"id"/);
+    expect(out).toMatch(/\n {2}\/title: .*"title"/);
   });
 
   it('an `answers` key is refused as reserved; --json prints { ok, issues } and still exits 1', async () => {

@@ -599,6 +599,8 @@ slideless document data versions <id>                    # every version: when, 
 slideless document answers <id>                          # the forms' answers, one block per form
 slideless document upgrade <id>                          # move to the template's current version
 slideless document upgrade <id> --to 4                   # …or to the version you name
+slideless document upgrade <id> --merge more.json        # add what the new version requires, then move
+slideless document upgrade <id> --file lane.json         # move with this data instead of the current one
 slideless document check --from "Lane report" --data lane.json   # validate a file, nothing sent
 ```
 

@@ -204,9 +204,15 @@ export const documentAnswersSchema = z.object({
 export type DocumentAnswers = z.infer<typeof documentAnswersSchema>;
 
 /** `POST /presentations/{id}/upgrade`: the template version to move to (its current one when omitted). */
-export const documentUpgradeSchema = z.object({
-  toVersion: z.number().int().min(1).max(2_147_483_647).optional()
-});
+export const documentUpgradeSchema = z
+  .object({
+    toVersion: z.number().int().min(1).max(2_147_483_647).optional(),
+    /** The data to move with, replacing the current one (the answers carried over), judged by the new schema. */
+    data: documentDataInputSchema.optional(),
+    /** A merge patch applied before the move, judged by the new schema: the way to add what a new version requires. */
+    merge: documentDataMergePatchSchema.optional()
+  })
+  .refine((v) => v.data === undefined || v.merge === undefined, 'data and merge are exclusive');
 export type DocumentUpgrade = z.infer<typeof documentUpgradeSchema>;
 
 /** The answer of every write that minted a document version. */

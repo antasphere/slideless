@@ -103,6 +103,15 @@ import { requireAuth, requireNonGuest } from '@antasphere/chassis-server/middlew
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
+/** The one body of a manifest naming blobs the caller cannot bind (SL-B1): never says whether the bytes exist. */
+const missingBlobs = (missing: string[]) => ({
+  error: {
+    code: 'missing_blobs',
+    message: `The manifest references ${missing.length} blob(s) not uploaded to this workspace — upload them and retry`,
+    details: { missing }
+  }
+});
+
 export const presentationToWire = (p: PresentationRow, projects: PresentationProjectRef[] = []) => ({
   id: p.id,
   title: p.title,
@@ -125,7 +134,7 @@ export const presentationToWire = (p: PresentationRow, projects: PresentationPro
   defaultReference: p.isDefaultReference,
   projects,
   // PRDCT-3641: what a document knows about its template; null elsewhere.
-  document: documentBindingOf(p),
+  document: documentBindingOf(p, p.schemaVersion ?? undefined),
   createdAt: p.createdAt.toISOString(),
   updatedAt: p.updatedAt.toISOString()
 });
@@ -308,6 +317,15 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
 
+    // SL-B1, before any blob is opened: a sha the caller may not read is
+    // MISSING, and the contract reader below must never open it (it would
+    // echo another deck's binding names; the verifier of PRDCT-3641).
+    const unreadable = await service.precheckMissing(
+      principal.workspaceId,
+      principal,
+      (body.manifest as ManifestEntry[]).map((e) => e.sha256)
+    );
+    if (unreadable.length > 0) return c.json(missingBlobs(unreadable), 400);
     const reference = await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[]);
     // PRDCT-3641: a template's data contract, read here like the frontmatter;
     // unlike it, an unusable contract REFUSES the push with the file named.
@@ -403,6 +421,22 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
 
+    // The deck first (404 for a deck the caller cannot write, the service's
+    // own uniform answer), so the blob precheck below never answers a probe
+    // on a deck the caller may not see (the existence oracle).
+    const target = await service.get(principal.workspaceId, id);
+    if (!target || !(await service.canWrite(principal, target))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    // SL-B1, before any blob is opened: a sha the caller may not read is
+    // MISSING, and the contract reader below must never open it (it would
+    // echo another deck's binding names; the verifier of PRDCT-3641).
+    const unreadable = await service.precheckMissing(
+      principal.workspaceId,
+      principal,
+      (body.manifest as ManifestEntry[]).map((e) => e.sha256)
+    );
+    if (unreadable.length > 0) return c.json(missingBlobs(unreadable), 400);
     const reference = await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[]);
     const contract = await readTemplateContract(
       storage,

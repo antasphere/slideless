@@ -882,17 +882,30 @@ export function registerSlidelessTools(server: McpServer, ctx: McpToolContext): 
           .min(1)
           .max(2_147_483_647)
           .optional()
-          .describe("The template version to move to. Omitted, the template's current version.")
+          .describe("The template version to move to. Omitted, the template's current version."),
+        data: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe(
+            'The data to move with: replaces the current data (mode replace) or is merged into it (mode merge), judged by the new schema.'
+          ),
+        mode: z
+          .enum(['replace', 'merge'])
+          .optional()
+          .describe('How `data` applies: replace (the default) or merge.')
       }
     },
-    async ({ workspace, presentationId, toVersion }) =>
+    async ({ workspace, presentationId, toVersion, data, mode }) =>
       write(workspace, async (c) =>
         jsonText(
           await withDataIssues(
             callApi(c, `/api/v1/presentations/${encodeURIComponent(presentationId)}/upgrade`, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(toVersion !== undefined ? { toVersion } : {})
+              body: JSON.stringify({
+                ...(toVersion !== undefined ? { toVersion } : {}),
+                ...(data !== undefined ? (mode === 'merge' ? { merge: data } : { data }) : {})
+              })
             })
           )
         )

@@ -279,7 +279,15 @@ describe('contract surface + fail-closed scope allowlist', () => {
       '/presentations/{id}/collaborators/{collaboratorId}',
       '/presentations/{id}/annotations',
       '/presentations/{id}/annotations/{annotationId}',
-      '/annotations'
+      '/annotations',
+      // Data-bound templates (PRDCT-3641).
+      '/presentations/{id}/schema',
+      '/presentations/{id}/instances',
+      '/presentations/{id}/data',
+      '/presentations/{id}/data/versions',
+      '/presentations/{id}/data/versions/{version}',
+      '/presentations/{id}/answers',
+      '/presentations/{id}/upgrade'
     ]) {
       expect(doc.paths[path], path).toBeDefined();
     }

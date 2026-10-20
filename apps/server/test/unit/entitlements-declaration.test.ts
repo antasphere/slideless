@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DECK_ACTIONS, DECK_ROUTE_ENTITLEMENTS } from '@slideless/contract/routes';
 import { slidelessTool } from '../../src/tool.js';
 
 /**
@@ -39,6 +40,48 @@ describe('the upload cap Slideless declares, by the operator’s cap (PRDCT-2653
       const { oss, free, pro } = declaredAt(cap);
       expect(free).toBeLessThanOrEqual(oss!);
       expect(pro).toBeLessThanOrEqual(oss!);
+    }
+  });
+});
+
+describe('a document’s writes meter the commit action (PRDCT-3641)', () => {
+  const WRITES = [
+    'POST /presentations/{id}/instances',
+    'PUT /presentations/{id}/data',
+    'PATCH /presentations/{id}/data',
+    'POST /presentations/{id}/upgrade',
+    'PUT /presentations/{id}/schema'
+  ];
+
+  it('each of the five write routes is declared, metering DECK_ACTIONS.commit per call', () => {
+    for (const key of WRITES) {
+      const entry = DECK_ROUTE_ENTITLEMENTS.get(key);
+      expect(entry, key).toBeDefined();
+      expect(entry!.meter, key).toMatchObject({ key: DECK_ACTIONS.commit, unit: 'call' });
+      expect(entry!.limit, key).toBeUndefined();
+      expect(entry!.feature, key).toBeUndefined();
+    }
+  });
+
+  it('the server’s own declarations (the tool’s slot) carry the same five', () => {
+    const declared = slidelessTool.entitlements!({ MAX_FILE_SIZE_MB: 100 } as never, {
+      db: null as never,
+      getTool: () => null
+    });
+    for (const key of WRITES) {
+      expect(declared.routes!.get(key)?.meter, key).toMatchObject({ key: DECK_ACTIONS.commit, unit: 'call' });
+    }
+  });
+
+  it('the reads meter nothing', () => {
+    for (const key of [
+      'GET /presentations/{id}/schema',
+      'GET /presentations/{id}/data',
+      'GET /presentations/{id}/data/versions',
+      'GET /presentations/{id}/data/versions/{version}',
+      'GET /presentations/{id}/answers'
+    ]) {
+      expect(DECK_ROUTE_ENTITLEMENTS.get(key), key).toBeUndefined();
     }
   });
 });

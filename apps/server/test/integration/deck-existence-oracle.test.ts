@@ -216,7 +216,20 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
     'get /presentations/{id}/responses/{responseId}/files.zip': () =>
       shot(`${P}/responses/${realResponseId}/files.zip`, 'GET', cookie),
     'get /presentations/{id}/responses/{responseId}/files/{fileId}': () =>
-      shot(`${P}/responses/${realResponseId}/files/${UNKNOWN_DECK}`, 'GET', cookie)
+      shot(`${P}/responses/${realResponseId}/files/${UNKNOWN_DECK}`, 'GET', cookie),
+    // Data-bound templates (PRDCT-3641): the template's contract and the
+    // document's data, every one under the deck read rule. The bodies are the
+    // smallest the contract accepts, so the deck check is what answers.
+    'get /presentations/{id}/schema': () => shot(`${P}/schema`, 'GET', cookie),
+    'put /presentations/{id}/schema': () => shot(`${P}/schema`, 'PUT', cookie, { schema: { version: '1' } }),
+    'post /presentations/{id}/instances': () => shot(`${P}/instances`, 'POST', cookie, { data: {} }),
+    'get /presentations/{id}/data': () => shot(`${P}/data`, 'GET', cookie),
+    'put /presentations/{id}/data': () => shot(`${P}/data`, 'PUT', cookie, {}),
+    'patch /presentations/{id}/data': () => shot(`${P}/data`, 'PATCH', cookie, {}),
+    'get /presentations/{id}/data/versions': () => shot(`${P}/data/versions`, 'GET', cookie),
+    'get /presentations/{id}/data/versions/{version}': () => shot(`${P}/data/versions/1`, 'GET', cookie),
+    'get /presentations/{id}/answers': () => shot(`${P}/answers`, 'GET', cookie),
+    'post /presentations/{id}/upgrade': () => shot(`${P}/upgrade`, 'POST', cookie, {})
   };
 }
 

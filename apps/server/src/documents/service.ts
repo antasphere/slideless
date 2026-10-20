@@ -259,6 +259,7 @@ export class DocumentService {
       principal: opts.principal,
       template,
       templateVersion: template.currentVersion,
+      schemaVersion: contract.schemaVersion,
       title: opts.title ?? template.title,
       entryPath: rendered.entryPath,
       manifest: rendered.manifest,
@@ -302,8 +303,26 @@ export class DocumentService {
     principal: Principal;
     id: string;
     toVersion?: number | undefined;
+    /** The data to move with (a replace), or a merge patch, judged by the NEW schema; absent = the data as it is. */
+    data?: Record<string, unknown> | undefined;
+    merge?: Record<string, unknown> | undefined;
   }): Promise<DocumentWrite> {
-    return this.write(opts, (current) => current ?? {}, { toVersion: opts.toVersion ?? 'latest' });
+    return this.write(
+      opts,
+      (current) => {
+        if (opts.data) return withAnswersOf(opts.data, current);
+        if (opts.merge) {
+          const merged = applyMergePatch(withoutAnswers(current ?? {}), opts.merge);
+          const next =
+            merged !== null && typeof merged === 'object' && !Array.isArray(merged)
+              ? (merged as Record<string, unknown>)
+              : {};
+          return withAnswersOf(next, current);
+        }
+        return current ?? {};
+      },
+      { toVersion: opts.toVersion ?? 'latest' }
+    );
   }
 
   /**
@@ -362,6 +381,7 @@ export class DocumentService {
         data,
         previousData: deck.documentData ?? null,
         templateVersion: deck.templateVersion,
+        schemaVersion: contract.schemaVersion,
         source: 'answer',
         answered: {
           by: opts.link.name,
@@ -433,6 +453,7 @@ export class DocumentService {
           data,
           previousData: current,
           templateVersion,
+          schemaVersion: contract.schemaVersion,
           source: move ? 'upgrade' : 'push',
           conn: tx
         });
@@ -546,7 +567,10 @@ const fail = (failure: DocumentFailure): DocumentWrite => ({ ok: false, failure 
  */
 export function withDataBlock(html: string, data: Record<string, unknown>): string {
   // `<` as \u003c keeps the JSON valid for JSON.parse and makes `</script>` and `<!--` inert.
-  const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  const json = JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
   const block = `<script type="application/json" id="${DATA_BLOCK_ID}">${json}</script>`;
   const head = html.search(/<\/head\s*>/i);
   if (head !== -1) return html.slice(0, head) + block + html.slice(head);
