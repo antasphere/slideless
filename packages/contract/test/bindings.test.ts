@@ -8,6 +8,7 @@ import {
   hasBindingMarkers,
   parseBindings,
   renderBindings,
+  unsafePatternsOf,
   validateDataAgainstSchema,
   withAnswersOf,
   withFormAnswer,
@@ -346,5 +347,26 @@ describe('the data operations', () => {
       }
     ]);
     expect(answersOf({ answers: { bad: 1, worse: { $answered: {} } } })).toEqual([]);
+  });
+});
+
+describe('unsafePatternsOf', () => {
+  it('names the nested repetitions, at their place, in pattern and patternProperties', () => {
+    const out = unsafePatternsOf({
+      version: '1',
+      type: 'object',
+      properties: { a: { pattern: '^(a+)+$' }, b: { pattern: '^[a-z]+$' } },
+      patternProperties: { '^(x*)*$': { type: 'string' }, '^k_': { type: 'string' } },
+      $defs: { d: { items: { pattern: '(\\d+)*' } } }
+    });
+    expect(out.map((u) => u.at)).toEqual([
+      '/properties/a/pattern',
+      '/patternProperties',
+      '/$defs/d/items/pattern'
+    ]);
+  });
+
+  it('is quiet on a plain schema', () => {
+    expect(unsafePatternsOf({ version: '1', properties: { a: { pattern: '^\\w+@\\w+$' } } })).toEqual([]);
   });
 });

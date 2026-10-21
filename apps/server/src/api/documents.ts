@@ -124,6 +124,15 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
           status: 409 as const,
           body: err('answers_full', 'The answers of this document are at their budget')
         };
+      case 'answers_unknown_form':
+        return {
+          status: 404 as const,
+          body: errWith('answer_not_found', `The document's pages carry no form named "${f.form}"`, {
+            form: f.form
+          })
+        };
+      case 'schema_too_slow':
+        return { status: 400 as const, body: err('schema_too_slow', f.message) };
       case 'not_a_document':
         return {
           status: 422 as const,

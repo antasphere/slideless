@@ -1312,7 +1312,23 @@ describe('round 2, F2: the answers branch has its own budget and the owner clear
   let docId = '';
   let secret = '';
   beforeAll(async () => {
-    docId = (await instantiate(templateId, { title: 'Budgeted' })).id;
+    // A template whose page carries 34 forms: only a form the pages carry is mirrored.
+    const forms = Array.from(
+      { length: 34 },
+      (_, i) => `<form data-slideless-form="f${i}"><input name="v"></form>`
+    ).join('');
+    const page = file(
+      'index.html',
+      `<!doctype html><html><head><title>{{title}}</title></head><body><h1>{{title}}</h1>${forms}</body></html>`,
+      'text/html'
+    );
+    const schema = schemaFile({
+      version: 'forms-1',
+      type: 'object',
+      properties: { title: { type: 'string' } }
+    });
+    const manyFormsTemplate = await newDeck('Many forms', [AGENT, schema, page]);
+    docId = (await instantiate(manyFormsTemplate, { title: 'Budgeted' })).id;
     secret = (await mintLink(docId, { name: 'crowd', remembersResponses: false, canSubmitForms: true }))
       .secret;
   });
@@ -1406,5 +1422,130 @@ describe('round 2, F5: a schema whose pattern could take exponential time is ref
     const e = await expectError(await commitNew('Redos', [AGENT, evil, INDEX]), 400, 'schema_invalid');
     expect(e.message).toContain('/properties/title/pattern');
     expect(e.message).toContain('exponential');
+  });
+});
+
+// ── Verifier round 3: the three findings and the minors, each pinned ─────────
+
+describe('round 3, F1: writers on many different documents never empty the pool', () => {
+  it('25 concurrent PATCHes on 25 documents all land, and an unrelated read stays quick', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 25; i++) ids.push((await instantiate(templateId, { title: `Many ${i}` })).id);
+    const started = Date.now();
+    const writes = ids.map((id, i) =>
+      send('PATCH', `/presentations/${id}/data`, 'owner', { title: `Many ${i}, pushed` })
+    );
+    const probe = (async () => {
+      await new Promise((r) => setTimeout(r, 50));
+      const t0 = Date.now();
+      const res = await send('GET', '/me', 'owner');
+      return { status: res.status, ms: Date.now() - t0 };
+    })();
+    const statuses = (await Promise.all(writes)).map((r) => r.status);
+    const me = await probe;
+    expect(statuses.every((st) => st === 200)).toBe(true);
+    expect(me.status).toBe(200);
+    expect(me.ms).toBeLessThan(5000);
+    expect(Date.now() - started).toBeLessThan(60_000);
+  });
+});
+
+describe('round 3, F2: a document outlives its template, and a writer must read a living one', () => {
+  it('the template deleted: PUT and PATCH still land on the pinned version, the upgrade is template_gone', async () => {
+    const tpl = await newDeck('Short-lived', TEMPLATE_FILES);
+    const docId = (await instantiate(tpl, { title: 'Orphan' })).id;
+    await expectStatus(await send('DELETE', `/presentations/${tpl}`, 'owner'), 200);
+    const put = await expectStatus(
+      await send('PUT', `/presentations/${docId}/data`, 'owner', { title: 'Orphan, renamed' }),
+      200
+    );
+    expect(put.version.version).toBe(2);
+    await expectStatus(
+      await send('PATCH', `/presentations/${docId}/data`, 'owner', { title: 'Orphan, again' }),
+      200
+    );
+    await expectError(
+      await send('POST', `/presentations/${docId}/upgrade`, 'owner', {}),
+      422,
+      'template_gone'
+    );
+  });
+
+  it('a project editor who may write the document but cannot read its template gets 422 template_gone', async () => {
+    const docId = (
+      await instantiate(templateId, { title: 'Edited by a project' }, { projectIds: [projectId] })
+    ).id;
+    await expectStatus(
+      await send('PATCH', `/projects/${projectId}/members/${userIds.viewer}`, 'owner', { role: 'editor' }),
+      200
+    );
+    try {
+      await expectError(await send('GET', `/presentations/${templateId}`, 'viewer'), 404, 'not_found');
+      await expectError(
+        await send('PUT', `/presentations/${docId}/data`, 'viewer', { title: 'Mine' }),
+        422,
+        'template_gone'
+      );
+      expect((await dataOf(docId)).version).toBe(1);
+    } finally {
+      await expectStatus(
+        await send('PATCH', `/projects/${projectId}/members/${userIds.viewer}`, 'owner', { role: 'viewer' }),
+        200
+      );
+    }
+  });
+});
+
+describe('round 3, F3 and F4: only the pages\u2019 forms are mirrored, and a prototype name clears nothing', () => {
+  it('a response under a name the pages do not carry is kept and not mirrored; DELETE /answers/constructor is 404', async () => {
+    const docId = (await instantiate(templateId, { title: 'Ghost forms' })).id;
+    const secret = (await mintLink(docId, { name: 'ghost', remembersResponses: false, canSubmitForms: true }))
+      .secret;
+    expect((await submitAnswer(secret, 'ghost', { payload: { v: '1' }, source: 'link' })).status).toBe(201);
+    const now = await dataOf(docId);
+    expect(now.version).toBe(1);
+    expect(now.data).not.toHaveProperty('answers');
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      await expectError(
+        await send('DELETE', `/presentations/${docId}/answers/${name}`, 'owner'),
+        404,
+        'answer_not_found'
+      );
+    }
+    expect((await dataOf(docId)).version).toBe(1);
+  });
+});
+
+describe('round 3, F7: a pattern the static check passes still meets the time budget', () => {
+  it('^(a|a)*$ is accepted at push, and a crafted value is refused schema_too_slow while the server stays responsive', async () => {
+    const slow = schemaFile({
+      version: 'slow-1',
+      type: 'object',
+      properties: { title: { type: 'string', pattern: '^(a|a)*$' } }
+    });
+    const page = file(
+      'index.html',
+      '<!doctype html><html><head><title>{{title}}</title></head><body><h1>{{title}}</h1></body></html>',
+      'text/html'
+    );
+    const tpl = await newDeck('Slow pattern', [AGENT, slow, page]);
+    const value = 'a'.repeat(30) + '!';
+    const t0 = Date.now();
+    const create = send('POST', `/presentations/${tpl}/instances`, 'owner', { data: { title: value } });
+    const probe = (async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      const p0 = Date.now();
+      const res = await send('GET', '/me', 'owner');
+      return { status: res.status, ms: Date.now() - p0 };
+    })();
+    const e = await expectError(await create, 400, 'schema_too_slow');
+    expect(e.message).toContain('took more than');
+    expect(Date.now() - t0).toBeLessThan(5000);
+    const me = await probe;
+    expect(me.status).toBe(200);
+    expect(me.ms).toBeLessThan(1000);
+    // The budget is per job: the next, quick write lands.
+    const ok = await send('POST', `/presentations/${tpl}/instances`, 'owner', { data: { title: 'aaa' } });
+    expect(ok.status).toBe(201);
   });
 });

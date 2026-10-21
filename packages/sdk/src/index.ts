@@ -553,16 +553,10 @@ export class PlatformClient extends ChassisClient<Scope> {
   }
 
   /** Clear one form's answer from a document's data (the responses stay); a new version is rendered. */
-  clearDocumentAnswer(
-    id: string,
-    form: string,
-    opts: IdempotentRequestOptions = {}
-  ): Promise<DocumentWritten> {
+  clearDocumentAnswer(id: string, form: string): Promise<DocumentWritten> {
     return this.request(
       'DELETE',
-      `/presentations/${encodeURIComponent(id)}/answers/${encodeURIComponent(form)}`,
-      undefined,
-      idempotencyHeader(opts)
+      `/presentations/${encodeURIComponent(id)}/answers/${encodeURIComponent(form)}`
     );
   }
 

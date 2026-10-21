@@ -6,11 +6,8 @@ import {
   DOCUMENT_DATA_MAX_LENGTH,
   dataSchemaSchema,
   documentDataInputSchema,
-  extractBindings,
   hasBindingMarkers,
-  parseBindings,
   unsafePatternsOf,
-  validateDataAgainstSchema,
   type BindingError,
   type DataValidationIssue,
   type ManifestEntry,
@@ -18,6 +15,7 @@ import {
   type UnknownBinding
 } from '@slideless/contract';
 import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
+import { validationBudget } from '../documents/validate-budget.js';
 import type { PresentationRow } from '@slideless/db';
 
 /**
@@ -189,7 +187,10 @@ export async function readTemplateContract(
         issues: []
       });
     }
-    const issues = validateDataAgainstSchema(schema, sampleParsed.data);
+    const judged = await validationBudget().validate(schema, sampleParsed.data);
+    if (!judged.ok)
+      return refuse({ code: 'schema_invalid', message: `${DATA_SCHEMA_PATH}: ${judged.message}` });
+    const issues = judged.value;
     if (issues.length > 0) {
       return refuse({
         code: 'sample_invalid',
@@ -221,12 +222,17 @@ export async function readTemplateContract(
     }
     const source = buf.toString('utf8');
     if (!hasBindingMarkers(source)) continue;
-    const { parsed, errors } = parseBindings(source, entry.path);
-    if (errors.length > 0) {
-      syntax.push(...errors);
+    const judged = await validationBudget().extract(source, schema, entry.path);
+    if (!judged.ok)
+      return refuse({
+        code: 'schema_invalid',
+        message: `${DATA_SCHEMA_PATH} against ${entry.path}: ${judged.message}`
+      });
+    if ('errors' in judged.value) {
+      syntax.push(...judged.value.errors);
       continue;
     }
-    const extracted = extractBindings(parsed, schema, entry.path);
+    const extracted = judged.value.extracted;
     for (const p of extracted.bound) bound.add(p);
     for (const u of extracted.unknown) unknown.push({ path: u.path, file: entry.path, line: u.line });
   }

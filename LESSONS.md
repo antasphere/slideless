@@ -1859,3 +1859,22 @@ confirm with the user before calling.`** A test that walks every write tool for 
   a task that names `document.data.pushed` ships as `document.pushed`.
 - **A tool service that stores blobs lives in the `routes` slot**, where `ctx.fileService` exists
   (TEMPLATE-FEEDBACK 34), and is handed sideways to the viewer's form routes.
+- **A write that holds a transaction must need no other pool connection, and a crowd of writers
+  must wait in memory, not in the pool** (verifier rounds 2 and 3 of PRDCT-3641). The first shape
+  took the document's advisory lock inside a transaction and then read the template, checked
+  access and stored blobs on other connections: ten writers queued on one lock held ten
+  connections, the holder could never get its second one, and the whole instance stalled for the
+  connect timeout, reachable through a share link. Serializing one document in memory fixed one
+  document and not twenty-five: the pool queued past its timeout on sheer concurrency. The shape
+  that holds: every read, the validation and the render BEFORE the lock on short connections, then
+  ONE short transaction that tries the lock (`pg_try_advisory_xact_lock`, a bounded wait, the
+  connection released between tries) and commits on the base the render was made from, recomputing
+  when the base moved; the writers of one document queued in memory per replica, and at most four
+  document writes in flight per replica. `documents.test.ts` races 25 writers on one document and
+  25 on 25 documents with a read probe under the crowd.
+- **A static ReDoS check cannot decide the class.** safe-regex2 refuses `(a+)+` and accepts
+  `^(a|a)*$`, which is exponential too. A pattern an author controls, run on a value a writer
+  controls, needs a time budget: every schema pattern the server evaluates (the data's validation,
+  a page's extraction) runs in one worker thread under 250 ms (`documents/validate-budget.ts`), the
+  job killed with its thread when over, the caller told `schema_too_slow`. The static check stays as
+  the cheap early refusal at push.

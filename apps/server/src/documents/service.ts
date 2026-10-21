@@ -13,10 +13,10 @@ import {
   DOCUMENT_DATA_MAX_LENGTH,
   answersOf,
   applyMergePatch,
+  canonicalJson,
   hasBindingMarkers,
   parseBindings,
   renderBindings,
-  validateDataAgainstSchema,
   withAnswersOf,
   withFormAnswer,
   withoutAnswers,
@@ -31,6 +31,7 @@ import type { Logger } from '@antasphere/chassis-server/logger';
 import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
 import { manifestHasForms } from '../forms/detect.js';
 import { isBoundFileEntry, readBlobCapped } from '../presentations/data-contract.js';
+import { validationBudget } from './validate-budget.js';
 import {
   canReadDeck,
   canWriteDeck,
@@ -57,8 +58,23 @@ import {
 /** Two-int advisory lock namespace serializing the writes of one document. 7432001-7 are taken (see presentations/service.ts). */
 const DOCUMENT_WRITE_LOCK = 7432008;
 
+/** The forms a rendered page carries (the authoring marker, by name). */
+const FORM_MARKER_RE = /data-slideless-form\s*=\s*["']([A-Za-z0-9._-]{1,64})["']/gi;
+
 /** How long a writer waits for another replica's writer on the same document before answering busy. */
 const LOCK_WAIT_MS = 15_000;
+/** How many times a write recomputes when the base moved under it between its two phases. */
+const WRITE_ATTEMPTS = 6;
+/** How many document writes one replica runs at once; the rest wait in memory (the pool holds ten connections). */
+const WRITE_SLOTS = 4;
+
+/** The base a render was made from is still the deck's: the same version and the same data. */
+function sameBase(fresh: PresentationRow, seen: PresentationRow): boolean {
+  return (
+    fresh.currentVersion === seen.currentVersion &&
+    canonicalJson(fresh.documentData ?? null) === canonicalJson(seen.documentData ?? null)
+  );
+}
 
 class AnswerNotFound extends Error {
   constructor(readonly form: string) {
@@ -77,6 +93,10 @@ export type DocumentFailure =
   | { code: 'answer_not_found'; form: string }
   /** The answers branch is at its budget: the response is kept, the mirror skipped. */
   | { code: 'answers_full' }
+  /** The form is not one of the document's pages' forms: the response is kept, the mirror skipped. */
+  | { code: 'answers_unknown_form'; form: string }
+  /** The schema's patterns took more than the budget to judge the data (verifier round 3, F7). */
+  | { code: 'schema_too_slow'; message: string }
   | { code: 'not_a_document' }
   | { code: 'not_a_data_template' }
   | { code: 'template_gone' }
@@ -115,6 +135,8 @@ export interface DocumentServiceDeps {
 export class DocumentService {
   /** The writers of one document on this replica, one at a time (see `locked`). */
   private readonly queues = new Map<string, Promise<void>>();
+  private inFlight = 0;
+  private readonly waiting: (() => void)[] = [];
 
   constructor(private readonly deps: DocumentServiceDeps) {}
 
@@ -166,7 +188,10 @@ export class DocumentService {
     template: TemplateVersionContract;
     data: Record<string, unknown>;
     uploader: string;
-  }): Promise<{ manifest: ManifestEntry[]; entryPath: string } | { failure: DocumentFailure }> {
+  }): Promise<
+    { manifest: ManifestEntry[]; entryPath: string; forms: Set<string> } | { failure: DocumentFailure }
+  > {
+    const forms = new Set<string>();
     const source = opts.template.row.manifest as ManifestEntry[];
     const entryPath = opts.template.row.entryPath;
     const out: ManifestEntry[] = [];
@@ -212,6 +237,7 @@ export class DocumentService {
       // The data block and data.json carry the pushed data alone (verifier round 2, F3):
       // another recipient's answer and the link's label reach a page only through a binding
       // the author wrote, never through the artifacts every link holder can read.
+      for (const m of text.matchAll(FORM_MARKER_RE)) forms.add(m[1]!);
       if (isEntry) text = withDataBlock(text, withoutAnswers(opts.data));
       const stored = await this.store(
         opts.workspaceId,
@@ -243,7 +269,7 @@ export class DocumentService {
       sizeBytes: dataStored.sizeBytes,
       contentType: 'application/json'
     });
-    return { manifest: out, entryPath };
+    return { manifest: out, entryPath, forms };
   }
 
   private async store(
@@ -283,8 +309,9 @@ export class DocumentService {
     const contract = await this.contractOf(opts.workspaceId, template.id, template.currentVersion);
     if (!contract) return fail({ code: 'not_a_data_template' });
     const data = withoutAnswers(opts.data);
-    const issues = validateDataAgainstSchema(contract.schema, data);
-    if (issues.length > 0) return fail({ code: 'data_invalid', issues });
+    const judged = await validationBudget().validate(contract.schema, data);
+    if (!judged.ok) return fail({ code: 'schema_too_slow', message: judged.message });
+    if (judged.value.length > 0) return fail({ code: 'data_invalid', issues: judged.value });
     const rendered = await this.render({
       workspaceId: opts.workspaceId,
       template: contract,
@@ -388,9 +415,27 @@ export class DocumentService {
       response: opts.responseId,
       revision: opts.revision
     };
-    return this.locked(opts.workspaceId, opts.presentationId, async (tx, deck) => {
-      if (deck.templateId === null || deck.templateVersion === null) return null;
-      const contract = await this.contractOf(opts.workspaceId, deck.templateId, deck.templateVersion, tx);
+    return this.queued(opts.presentationId, () => this.applyAnswerOnce(opts, meta));
+  }
+
+  private async applyAnswerOnce(
+    opts: {
+      workspaceId: string;
+      presentationId: string;
+      formName: string;
+      fields: Record<string, string | string[]>;
+      link: { id: string; name: string | null };
+      responseId: string;
+      revision: number;
+    },
+    meta: AnsweredMeta
+  ): Promise<DocumentWrite | null> {
+    const { presentations } = this.deps;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      // Phase A, no lock held: the reads, the render, the blobs.
+      const deck = await presentations.get(opts.workspaceId, opts.presentationId);
+      if (!deck || deck.templateId === null || deck.templateVersion === null) return null;
+      const contract = await this.contractOf(opts.workspaceId, deck.templateId, deck.templateVersion);
       if (!contract) return fail({ code: 'template_gone' });
       const owner = deck.ownerUserId;
       if (owner === null) {
@@ -400,7 +445,8 @@ export class DocumentService {
         );
         return null;
       }
-      const data = withFormAnswer(deck.documentData ?? {}, opts.formName, opts.fields, meta);
+      const current = deck.documentData ?? null;
+      const data = withFormAnswer(current ?? {}, opts.formName, opts.fields, meta);
       // The branch's own budget (verifier round 2, F2): a link holder can
       // never grow the data until its owner cannot write it.
       const answers = data[ANSWERS_KEY] as Record<string, unknown>;
@@ -417,29 +463,40 @@ export class DocumentService {
         uploader: owner
       });
       if ('failure' in rendered) return fail(rendered.failure);
-      const result = await this.deps.presentations.commitDocumentVersion({
-        workspaceId: opts.workspaceId,
-        committer: { system: { ownerUserId: owner } },
-        presentationId: deck.id,
-        entryPath: rendered.entryPath,
-        manifest: rendered.manifest,
-        hasForms: await manifestHasForms(this.deps.storage, opts.workspaceId, rendered.manifest),
-        data,
-        previousData: deck.documentData ?? null,
-        templateVersion: deck.templateVersion,
-        schemaVersion: contract.schemaVersion,
-        source: 'answer',
-        answered: {
-          by: opts.link.name,
-          linkId: opts.link.id,
-          formName: opts.formName,
-          responseId: opts.responseId,
-          revision: opts.revision
-        },
-        conn: tx
+      // Only a form the pages carry lands in the data (verifier round 3, F3).
+      if (!rendered.forms.has(opts.formName))
+        return fail({ code: 'answers_unknown_form', form: opts.formName });
+      // Phase B, the lock: the base unchanged, or the whole thing again.
+      const landed = await this.locked(opts.workspaceId, opts.presentationId, async (tx, fresh) => {
+        if (!sameBase(fresh, deck)) return 'stale' as const;
+        return presentations.commitDocumentVersion({
+          workspaceId: opts.workspaceId,
+          committer: { system: { ownerUserId: owner } },
+          presentationId: fresh.id,
+          entryPath: rendered.entryPath,
+          manifest: rendered.manifest,
+          hasForms: await manifestHasForms(this.deps.storage, opts.workspaceId, rendered.manifest),
+          data,
+          previousData: current,
+          templateVersion: deck.templateVersion!,
+          schemaVersion: contract.schemaVersion,
+          source: 'answer',
+          answered: {
+            by: opts.link.name,
+            linkId: opts.link.id,
+            formName: opts.formName,
+            responseId: opts.responseId,
+            revision: opts.revision
+          },
+          conn: tx
+        });
       });
-      return this.landed(result);
-    });
+      if (landed === null) return null;
+      if (landed === 'stale') continue;
+      if (landed === 'busy') return fail({ code: 'busy' });
+      return this.landed(landed);
+    }
+    return fail({ code: 'busy' });
   }
 
   /** `DELETE /presentations/{id}/answers/{form}`: the owner's way out of a branch a link holder filled. */
@@ -451,7 +508,11 @@ export class DocumentService {
   }): Promise<DocumentWrite> {
     return this.write(opts, (current) => {
       const answers = current?.[ANSWERS_KEY];
-      if (answers === null || typeof answers !== 'object' || !(opts.form in (answers as object))) {
+      if (
+        answers === null ||
+        typeof answers !== 'object' ||
+        !Object.prototype.hasOwnProperty.call(answers, opts.form)
+      ) {
         throw new AnswerNotFound(opts.form);
       }
       const rest = { ...(answers as Record<string, unknown>) };
@@ -472,57 +533,75 @@ export class DocumentService {
     next: (current: Record<string, unknown> | null) => Record<string, unknown>,
     move: { toVersion: number | 'latest' } | null = null
   ): Promise<DocumentWrite> {
-    const { presentations } = this.deps;
-    const result = await this.locked(
-      opts.workspaceId,
-      opts.id,
-      async (tx, deck): Promise<DocumentWrite | null> => {
-        if (!(await canReadDeck(tx, opts.principal, deck))) return fail({ code: 'not_found' });
-        if (!(await canWriteDeck(tx, opts.principal, deck))) return fail({ code: 'forbidden' });
-        if (deck.templateId === null || deck.templateVersion === null)
-          return fail({ code: 'not_a_document' });
-        // Every write renders the TEMPLATE's pages for the writer (verifier
-        // round 2, F4): the writer must read the template, not only on an
-        // upgrade. A template gone, or not theirs to read, is one answer.
-        const template = await presentations.get(opts.workspaceId, deck.templateId);
-        if (!template || !(await canReadDeck(tx, opts.principal, template)))
-          return fail({ code: 'template_gone' });
-        let templateVersion = deck.templateVersion;
-        if (move) {
-          templateVersion = move.toVersion === 'latest' ? template.currentVersion : move.toVersion;
-          if (templateVersion === deck.templateVersion)
-            return fail({ code: 'already_on_version', version: templateVersion });
+    return this.queued(opts.id, () => this.writeOnce(opts, next, move));
+  }
+
+  private async writeOnce(
+    opts: { workspaceId: string; principal: Principal; id: string },
+    next: (current: Record<string, unknown> | null) => Record<string, unknown>,
+    move: { toVersion: number | 'latest' } | null
+  ): Promise<DocumentWrite> {
+    const { db, presentations } = this.deps;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      // Phase A, no lock held, no transaction: the reads and the access
+      // checks on their own short connections, the data computed, the
+      // validation under its budget, the pages rendered and stored. Nothing
+      // here holds a pool connection while waiting on another (verifier
+      // round 3, F1).
+      const deck = await presentations.get(opts.workspaceId, opts.id);
+      if (!deck || !(await canReadDeck(db, opts.principal, deck))) return fail({ code: 'not_found' });
+      if (!(await canWriteDeck(db, opts.principal, deck))) return fail({ code: 'forbidden' });
+      if (deck.templateId === null || deck.templateVersion === null) return fail({ code: 'not_a_document' });
+      // The TEMPLATE's pages are rendered for the writer, so a template that
+      // still exists must be theirs to read (verifier round 2, F4); a deleted
+      // template leaves its documents writable on their pinned version
+      // (round 3, F2), and only an upgrade needs it alive.
+      const template = await presentations.get(opts.workspaceId, deck.templateId);
+      if (template && !(await canReadDeck(db, opts.principal, template)))
+        return fail({ code: 'template_gone' });
+      let templateVersion = deck.templateVersion;
+      if (move) {
+        if (!template) return fail({ code: 'template_gone' });
+        templateVersion = move.toVersion === 'latest' ? template.currentVersion : move.toVersion;
+        if (templateVersion === deck.templateVersion) {
+          return fail({ code: 'already_on_version', version: templateVersion });
         }
-        const contract = await this.contractOf(opts.workspaceId, deck.templateId, templateVersion, tx);
-        if (!contract) {
-          return fail(
-            move ? { code: 'template_version_invalid', version: templateVersion } : { code: 'template_gone' }
-          );
-        }
-        const current = deck.documentData ?? null;
-        let data: Record<string, unknown>;
-        try {
-          data = next(current);
-        } catch (e) {
-          if (e instanceof AnswerNotFound) return fail({ code: 'answer_not_found', form: e.form });
-          throw e;
-        }
-        // The writer's data is judged alone: the answers branch has its own budget and never locks the owner out.
-        if (JSON.stringify(withoutAnswers(data)).length > DOCUMENT_DATA_MAX_LENGTH)
-          return fail({ code: 'data_too_large' });
-        const issues = validateDataAgainstSchema(contract.schema, withoutAnswers(data));
-        if (issues.length > 0) return fail({ code: 'data_invalid', issues });
-        const rendered = await this.render({
-          workspaceId: opts.workspaceId,
-          template: contract,
-          data,
-          uploader: opts.principal.userId
-        });
-        if ('failure' in rendered) return fail(rendered.failure);
-        const committed = await presentations.commitDocumentVersion({
+      }
+      const contract = await this.contractOf(opts.workspaceId, deck.templateId, templateVersion);
+      if (!contract) {
+        return fail(
+          move ? { code: 'template_version_invalid', version: templateVersion } : { code: 'template_gone' }
+        );
+      }
+      const current = deck.documentData ?? null;
+      let data: Record<string, unknown>;
+      try {
+        data = next(current);
+      } catch (e) {
+        if (e instanceof AnswerNotFound) return fail({ code: 'answer_not_found', form: e.form });
+        throw e;
+      }
+      // The writer's data is judged alone: the answers branch has its own budget and never locks the owner out.
+      if (JSON.stringify(withoutAnswers(data)).length > DOCUMENT_DATA_MAX_LENGTH)
+        return fail({ code: 'data_too_large' });
+      const judged = await validationBudget().validate(contract.schema, withoutAnswers(data));
+      if (!judged.ok) return fail({ code: 'schema_too_slow', message: judged.message });
+      if (judged.value.length > 0) return fail({ code: 'data_invalid', issues: judged.value });
+      const rendered = await this.render({
+        workspaceId: opts.workspaceId,
+        template: contract,
+        data,
+        uploader: opts.principal.userId
+      });
+      if ('failure' in rendered) return fail(rendered.failure);
+      // Phase B, the lock: a short transaction that commits on the base the
+      // render was made from, or says the base moved and the loop starts over.
+      const landed = await this.locked(opts.workspaceId, opts.id, async (tx, fresh) => {
+        if (!sameBase(fresh, deck)) return 'stale' as const;
+        return presentations.commitDocumentVersion({
           workspaceId: opts.workspaceId,
           committer: { principal: opts.principal },
-          presentationId: deck.id,
+          presentationId: fresh.id,
           entryPath: rendered.entryPath,
           manifest: rendered.manifest,
           hasForms: await manifestHasForms(this.deps.storage, opts.workspaceId, rendered.manifest),
@@ -533,49 +612,72 @@ export class DocumentService {
           source: move ? 'upgrade' : 'push',
           conn: tx
         });
-        return this.landed(committed);
-      }
-    );
-    return result ?? fail({ code: 'not_found' });
+      });
+      if (landed === null) return fail({ code: 'not_found' });
+      if (landed === 'stale') continue;
+      if (landed === 'busy') return fail({ code: 'busy' });
+      return this.landed(landed);
+    }
+    return fail({ code: 'busy' });
   }
 
   /**
-   * Runs `body` holding the document's write lock. Two things keep the
-   * connection pool out of the picture (verifier round 2, F1: writers queued
-   * on one document each held a pool connection inside their transaction
-   * while the holder needed a second one, and the whole instance stalled):
-   * the writers of one document on THIS replica queue in memory, one
-   * transaction at a time, and across replicas the lock is TRIED with a
-   * bounded wait on the lock's own transaction, the connection released
-   * between tries. Every read the body needs runs on that one connection;
-   * the blob store (the chassis file service) takes its own.
+   * Runs `body` holding the document's write lock, in ONE short transaction
+   * that needs no other connection (verifier round 3, F1: the previous shape
+   * held the lock while the reads and the blob store took more connections,
+   * and a crowd of writers across documents emptied the pool). The writers
+   * of one document on this replica queue in memory; across replicas the
+   * lock is TRIED with a bounded wait, the connection released between
+   * tries. `'busy'` when the wait ran out; `null` when the deck is gone.
    */
-  private async locked<T>(
+  /**
+   * The writers of one document on this replica, one whole write at a time
+   * (both phases), and at most WRITE_SLOTS writes of any document at once:
+   * a crowd of writers waits in memory, holding no connection, instead of
+   * queuing the pool past its connect timeout (verifier round 3, F1: 25
+   * writers on 25 documents gave twenty 500s).
+   */
+  private queued<T>(presentationId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.queues.get(presentationId) ?? Promise.resolve();
+    const run = previous.then(() => this.slot(work));
+    const settled = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this.queues.set(presentationId, settled);
+    return run.finally(() => {
+      if (this.queues.get(presentationId) === settled) this.queues.delete(presentationId);
+    });
+  }
+
+  /** One of the WRITE_SLOTS seats, taken in arrival order. */
+  private async slot<T>(work: () => Promise<T>): Promise<T> {
+    if (this.inFlight >= WRITE_SLOTS) {
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
+    }
+    this.inFlight++;
+    try {
+      return await work();
+    } finally {
+      this.inFlight--;
+      const next = this.waiting.shift();
+      if (next) next();
+    }
+  }
+
+  private locked<T>(
     workspaceId: string,
     presentationId: string,
-    body: (tx: DbConn, deck: PresentationRow) => Promise<T | null>
-  ): Promise<T | null> {
-    const previous = this.queues.get(presentationId) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(() => this.tryLocked(workspaceId, presentationId, body));
-    this.queues.set(
-      presentationId,
-      run.then(
-        () => undefined,
-        () => undefined
-      )
-    );
-    try {
-      return await run;
-    } finally {
-      if (this.queues.get(presentationId) === run) this.queues.delete(presentationId);
-    }
+    body: (tx: DbConn, deck: PresentationRow) => Promise<T>
+  ): Promise<T | 'busy' | null> {
+    return this.tryLocked(workspaceId, presentationId, body);
   }
 
   private async tryLocked<T>(
     workspaceId: string,
     presentationId: string,
-    body: (tx: DbConn, deck: PresentationRow) => Promise<T | null>
-  ): Promise<T | null> {
+    body: (tx: DbConn, deck: PresentationRow) => Promise<T>
+  ): Promise<T | 'busy' | null> {
     const deadline = Date.now() + LOCK_WAIT_MS;
     let wait = 40;
     for (;;) {
@@ -596,13 +698,14 @@ export class DocumentService {
                 isNull(presentations.deletedAt)
               )
             )
+            .for('update')
             .limit(1);
           if (!deck) return { taken: true, value: null };
           return { taken: true, value: await body(tx, deck) };
         }
       );
       if (attempt.taken) return attempt.value;
-      if (Date.now() >= deadline) return fail({ code: 'busy' }) as unknown as T;
+      if (Date.now() >= deadline) return 'busy';
       await new Promise((r) => setTimeout(r, wait + Math.floor(Math.random() * wait)));
       wait = Math.min(wait * 2, 500);
     }

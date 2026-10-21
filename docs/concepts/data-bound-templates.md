@@ -122,6 +122,11 @@ Error: The data does not follow the schema at /tickets/0/id: Property "id" is re
 `slideless document check --from "Lane report" --data lane.json` runs the same check without
 pushing anything, so a tool can validate a file before it sends it.
 
+Two more refusals a tool may meet: `409 document_busy` when another write on the same document is
+still running after a fifteen-second wait (retry), and `400 schema_too_slow` when the schema's
+patterns took more than a quarter of a second to judge the data (the pattern is the template's
+to simplify). A template page over 8 MB is refused at push (`bound_file_too_large`).
+
 The version history of the document is the history of its data: `slideless document data versions
 <id>` lists each version with when, who, and the keys that changed; the dashboard's **Data** panel
 shows the same and the difference between two versions.
@@ -172,8 +177,13 @@ slideless document upgrade <id> --to 3
 ```
 
 The document's data is checked against the new version's schema first. When it no longer fits, the
-upgrade is refused with the field named and the document stays where it was; push the missing data,
-then upgrade.
+upgrade is refused with the field named and the document stays where it was; push the missing data
+with the upgrade (`--merge` or `--file` on the command, `merge` or `data` on the API), or before it.
+
+A document outlives its template: when the template is deleted, the document keeps serving and
+taking pushes on the version it is pinned to, and only an upgrade answers `template_gone`. A writer
+of a document must be able to read its template while it exists, since every push renders the
+template's pages for them.
 
 ## What the document carries
 
@@ -189,8 +199,9 @@ otherwise. The owner reads the whole branch through the API, the CLI and the das
 `{{{answers.merge_gate.comment}}}` (three braces) renders what a respondent typed as HTML, unescaped:
 keep the two-brace form on an answer unless you mean it.
 
-The branch has a budget of its own, 32 forms and 256 KB, so a link holder can never fill a document
-until its owner cannot write it; a response beyond it stays in the Responses tab and is not mirrored.
+Only a form the document's pages carry is mirrored, and the branch has a budget of its own, 32 forms
+and 256 KB, so a link holder can never fill a document until its owner cannot write it; a response
+beyond either stays in the Responses tab and is not mirrored.
 `slideless document answers <id> --clear <form>` (or `DELETE /presentations/{id}/answers/{form}`)
 clears one form's answer from the data and renders again; the responses stay.
 
