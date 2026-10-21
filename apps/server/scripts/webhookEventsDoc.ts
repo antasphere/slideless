@@ -93,7 +93,7 @@ function stringFor(name: string, eventType: string): string {
     case 'purpose':
       return 'share';
     case 'source':
-      return 'link';
+      return family === 'document' ? 'push' : 'link';
     case 'placement':
       return 'newsletter';
     case 'email':
@@ -108,7 +108,11 @@ function stringFor(name: string, eventType: string): string {
     case 'field':
       return 'title';
     case 'changed':
-      return 'expiresAt';
+      // A document's `changed` names the data's keys (an answer's, its form's branch), never a link's fields.
+      if (eventType === 'document.answered') return 'answers.feedback';
+      return family === 'document' ? 'tickets' : 'expiresAt';
+    case 'answeredBy':
+      return 'Alice at Acme';
     case 'referrerHost':
       return 'mail.google.com';
     case 'browserFamily':
@@ -153,6 +157,7 @@ interface Def {
   options?: z.ZodType[];
   innerType?: z.ZodType;
   in?: z.ZodType;
+  entries?: Record<string, string | number>;
 }
 const defOf = (schema: z.ZodType): Def => (schema as unknown as { def: Def }).def;
 
@@ -179,6 +184,12 @@ function example(schema: z.ZodType, name: string, eventType: string): unknown {
     }
     case 'union':
       return example(def.options![0]!, name, eventType);
+    case 'enum': {
+      // The field's usual example when the enum allows it, else its first value.
+      const values = Object.values(def.entries ?? {});
+      const usual = stringFor(name, eventType);
+      return values.includes(usual) ? usual : (values[0] ?? null);
+    }
     case 'nullable':
       return NULL_IN_EXAMPLE.has(name) ? null : example(def.innerType!, name, eventType);
     case 'optional':
@@ -212,6 +223,12 @@ function typeOf(schema: z.ZodType): string {
       return `object of ${typeOf(def.valueType!)}`;
     case 'union':
       return def.options!.map(typeOf).join(' or ');
+    case 'enum': {
+      const values = Object.values(def.entries ?? {}).map((v) => JSON.stringify(v));
+      return values.length > 1
+        ? `${values.slice(0, -1).join(', ')} or ${values[values.length - 1]}`
+        : values.join('');
+    }
     case 'nullable':
       return `${typeOf(def.innerType!)} or null`;
     case 'optional':

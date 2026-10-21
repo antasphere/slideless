@@ -262,7 +262,7 @@ export const DECK_WEBHOOK_EVENTS: readonly DeckWebhookEvent[] = [
   {
     type: 'document.pushed',
     description:
-      'A document’s data was written (created, pushed, or moved to a newer template version) and a new version rendered; `changed` names the top-level keys that moved.',
+      'A document’s data was written (created, pushed, an answer cleared, moved to another template version) and a new version rendered; `changed` names the keys that moved.',
     subjects: ['deck', 'project'],
     data: z.object({
       deckId: id,

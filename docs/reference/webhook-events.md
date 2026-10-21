@@ -75,7 +75,7 @@ receives no `member.joined`.
 | `annotation.deleted`      | `deck`, `project`         | An annotation was deleted.                                                                                                                                                                                             |
 | `thumbnail.rendered`      | `deck`, `project`         | The still image of a deck version is ready.                                                                                                                                                                            |
 | `thumbnail.failed`        | `deck`, `project`         | The still image of a deck version could not be made.                                                                                                                                                                   |
-| `document.pushed`         | `deck`, `project`         | A document’s data was written (created, pushed, or moved to a newer template version) and a new version rendered; `changed` names the top-level keys that moved.                                                       |
+| `document.pushed`         | `deck`, `project`         | A document’s data was written (created, pushed, an answer cleared, moved to another template version) and a new version rendered; `changed` names the keys that moved.                                                 |
 | `document.answered`       | `deck`, `project`, `link` | A form inside a document was answered and the answer landed in the document’s data (`answers.<form>`); the response itself is in `form.response_submitted`.                                                            |
 
 ## `webhook.*`
@@ -1184,19 +1184,19 @@ Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
 
 ### `document.pushed`
 
-A document’s data was written (created, pushed, or moved to a newer template version) and a new version rendered; `changed` names the top-level keys that moved.
+A document’s data was written (created, pushed, an answer cleared, moved to another template version) and a new version rendered; `changed` names the keys that moved.
 
 Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
 
-| Field             | Type           |
-| ----------------- | -------------- |
-| `deckId`          | string         |
-| `version`         | integer        |
-| `templateId`      | string         |
-| `templateVersion` | integer        |
-| `source`          | any            |
-| `changed`         | list of string |
-| `authorUserId`    | string or null |
+| Field             | Type                          |
+| ----------------- | ----------------------------- |
+| `deckId`          | string                        |
+| `version`         | integer                       |
+| `templateId`      | string                        |
+| `templateVersion` | integer                       |
+| `source`          | "create", "push" or "upgrade" |
+| `changed`         | list of string                |
+| `authorUserId`    | string or null                |
 
 ```json
 {
@@ -1213,8 +1213,8 @@ Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`).
     "version": 2,
     "templateId": "83e7aff3-d0ab-42ac-be3e-935650af8338",
     "templateVersion": 1,
-    "source": null,
-    "changed": ["expiresAt"],
+    "source": "push",
+    "changed": ["tickets"],
     "authorUserId": "e26290b7-b1c7-4735-b0ab-1081694c47d6"
   },
   "attempt": 1
@@ -1256,8 +1256,8 @@ Subjects: `deck` (`subjects.deckId`), `project` (`subjects.projectIds`), `link` 
     "responseId": "bbf56563-7fe1-435d-9295-300ba1fed135",
     "revision": 1,
     "linkId": "d5de1f6a-55d9-42f1-b8d2-b3c1729ccf47",
-    "answeredBy": "answeredBy",
-    "changed": ["expiresAt"]
+    "answeredBy": "Alice at Acme",
+    "changed": ["answers.feedback"]
   },
   "attempt": 1
 }
