@@ -36,6 +36,17 @@ export const DECK_ERROR_HINTS: ErrorHints = {
   not_linked:
     'The deck is not linked to this project. Link it first with slideless_link_presentation_to_project ' +
     '(on a brand set), or there is nothing to unlink.',
+  // Data-bound templates (PRDCT-3641).
+  data_invalid:
+    'The data does not follow the template’s schema; the issues name the field (a JSON pointer). ' +
+    'Read the schema with slideless_get_template_schema, fix the data and push again.',
+  not_a_document:
+    'This deck was not made from a template, so it has no data. Create one with slideless_create_document.',
+  not_a_data_template:
+    'This deck is not a template with a schema.json, so nothing can be made from it. ' +
+    'Push schema.json and data.json next to its AGENT.md first.',
+  template_gone: 'The template this document was made from is gone; the document keeps serving as it is.',
+  already_on_version: 'The document is already on that template version; nothing to upgrade.',
   forbidden:
     'This credential lacks the deck-level right for this action (e.g. only the deck owner or a ' +
     'workspace admin can delete/invite). Ask the deck owner to do it or to grant access.',

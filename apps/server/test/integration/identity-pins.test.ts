@@ -223,6 +223,19 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'reference with slideless_get_agent_doc (and its files with slideless_download_version) ' +
     'and follow what it says. Nothing is applied automatically: the default is a pointer, ' +
     'and using it is your work.',
+  slideless_get_template_schema:
+    "A template's data contract: its JSON Schema (schema.json), the sample data it ships " +
+    '(data.json, or null) and every field path its pages bind, sorted. Read it before making a ' +
+    'document from the template with slideless_create_document: the data must follow the ' +
+    'schema. Returns { presentationId, version, schemaVersion, schema, sample, bindings }. A ' +
+    'deck that is not a template, or a template without schema.json, is refused.',
+  slideless_create_document:
+    "Make a document from a data-bound template: a new deck pinned to the template's current " +
+    "version, its version 1 the template's pages filled in with data. data must follow the " +
+    "template's schema (slideless_get_template_schema reads it); a refusal names every field " +
+    'that fails, one per line. Returns { presentation, version, data }: presentation.document ' +
+    'names the template and the version the document is pinned to. Always confirm with the ' +
+    'user before calling.',
   slideless_upload_html_presentation:
     'Create a NEW deck from a single self-contained HTML document (uploaded as index.html). ' +
     "Returns { presentation, version, url } where url is the deck's own page on the instance " +
@@ -578,6 +591,13 @@ describe('the MCP surface', () => {
       'slideless_get_agent_doc',
       'slideless_list_references',
       'slideless_get_default_reference',
+      // Data-bound templates (PRDCT-3641): a template's contract and the documents made from it.
+      'slideless_get_template_schema',
+      'slideless_create_document',
+      'slideless_get_document_data',
+      'slideless_push_document_data',
+      'slideless_get_document_answers',
+      'slideless_upgrade_document',
       'slideless_upload_html_presentation',
       'slideless_upload_presentation_files',
       'slideless_update_presentation',

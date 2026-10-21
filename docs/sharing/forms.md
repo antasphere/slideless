@@ -209,6 +209,16 @@ This is the default for every link you name: the dashboard's share form (**Remem
 
 On a remembering link the confirmation dialog says so (`This link remembers your answers: reopen it any time to view or change them.`) and offers **Edit response**, which simply closes it over the still-filled form; the personal edit link and **Email me my link** do not appear, since the link is what to keep. Your own dashboard previews never remember anything, as they never create responses. The switch can be changed on an existing link (`PATCH …/tokens/{tokenId}` with `remembersResponses`); turning it off stops the link from bringing answers back and leaves the rows as they are.
 
+## Answers that land in a document's data
+
+When the deck is a document made from a [data-bound template](../concepts/data-bound-templates.md),
+each response is also written into the document's data under `answers.<form name>`, with the link's
+recipient label and the time, and the page is rendered again as a new version of the document: the
+Versions tab counts it, and a webhook receiver hears `deck.version_committed` and `document.answered`
+beside `form.response_submitted`. Only a form the document's pages carry is written, within a budget
+of 32 forms and 256 KB. The response itself, its revisions, the Responses tab and the CSV stay as
+they are.
+
 ## Every edit is kept
 
 An edited response is not overwritten: every submit is a **revision**, and every revision is kept. Revision 1 is what was first said; each edit appends the next, with the link, the source, the placement and the deck version of the moment it was written. The response you list, export or delete is always the latest revision; the history is behind it.

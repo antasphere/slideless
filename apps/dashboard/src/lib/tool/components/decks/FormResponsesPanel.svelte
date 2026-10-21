@@ -6,6 +6,7 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
   import EmptyTable from './EmptyTable.svelte';
+  import ResponseAnswers from './ResponseAnswers.svelte';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
@@ -18,11 +19,13 @@
   import Download from '@lucide/svelte/icons/download';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte';
   import { createPagedList } from '$lib/stores/pagedList.svelte';
   import { api, errorMessage, PlatformApiError } from '$lib/api';
-  import { buildResponsesCsv, groupFilesByField } from '$lib/tool/decks/form-responses';
+  import { buildResponsesCsv, summarizeAnswers } from '$lib/tool/decks/form-responses';
   import { download, saveBlob } from '$lib/download';
-  import { formatBytes, formatTimeAgo } from '$lib/format';
+  import { formatTimeAgo } from '$lib/format';
   import { toast } from 'svelte-sonner';
   import { t } from '$lib/i18n';
   import type {
@@ -48,6 +51,10 @@
    * ONLY (deck, response, file), never by a name, and goes through
    * $lib/download, which saves a respondent's bytes as octet-stream: they
    * are never rendered on this origin.
+   *
+   * The reading view (PRDCT-3644) keeps the rule: the table's summary cell
+   * is a plain string cut by summarizeAnswers, and the dialog's answers are
+   * ResponseAnswers.svelte, text interpolation only, under the same comment.
    */
 
   interface Props {
@@ -164,12 +171,33 @@
     return source === 'embed' ? t('formResponses.sourceEmbed') : t('formResponses.sourceLink');
   }
 
-  /** Flatten one payload for display; string[] joins with ", ". RAW input. */
-  function payloadEntries(response: FormResponse): [string, string][] {
-    return Object.entries(response.payload).map(([key, value]) => [
-      key,
-      Array.isArray(value) ? value.join(', ') : value
-    ]);
+  // ── The table (PRDCT-3644): one line per response, the answers summed up ──
+  const phone = new IsMobile();
+
+  // The table's heads; the last one names the acts for assistive technology.
+  const responseHeads = $derived([
+    { title: t('formResponses.colForm'), width: '20%' },
+    { title: t('formResponses.colLink'), width: '17%' },
+    { title: t('formResponses.colReceived'), width: '14%' },
+    { title: t('formResponses.colAnswers'), width: undefined },
+    { title: t('formResponses.colActions'), width: '96px', srOnly: true }
+  ]);
+
+  /** The "+N more" after a summary, empty when the summary is the whole response. */
+  function moreLabel(more: number): string {
+    if (more <= 0) return '';
+    return more === 1 ? t('formResponses.summaryMoreOne') : t('formResponses.summaryMore', { n: more });
+  }
+
+  function linkLabel(response: { shareTokenName: string | null; shareTokenId: string | null }) {
+    if (response.shareTokenName !== null) return response.shareTokenName;
+    return response.shareTokenId === null ? t('formResponses.linkGone') : '';
+  }
+
+  /** A click on the row opens the response; its acts cell keeps its own clicks. */
+  function onRowClick(e: MouseEvent, response: FormResponse) {
+    if ((e.target as HTMLElement).closest('[data-actions-cell], button')) return;
+    void openResponse(response);
   }
 
   // ── Files (PRDCT-2403) ─────────────────────────────────────────────────
@@ -220,31 +248,49 @@
     return new Date(response.updatedAt).getTime() > new Date(response.createdAt).getTime();
   }
 
-  // ── Edit history (PRDCT-2329): the owner sees every kept revision ──────
-  let showHistory = $state(false);
+  // ── One response, read whole (PRDCT-3644), with its edit history (PRDCT-2329) ──
+  // The dialog shows the listed row at once; an edited response's kept
+  // revisions are read as before, by the one detail call, on opening.
+  let showDetail = $state(false);
+  let detail = $state<FormResponse | null>(null);
   let historyLoading = $state(false);
   let history = $state<FormResponseDetail | null>(null);
 
-  async function openHistory(response: FormResponse) {
+  async function openResponse(response: FormResponse) {
+    detail = response;
     history = null;
-    showHistory = true;
+    historyLoading = false;
+    showDetail = true;
+    if (response.revision <= 1) return;
     historyLoading = true;
     try {
-      history = await api.formResponse(deckId, response.id);
+      const read = await api.formResponse(deckId, response.id);
+      if (detail?.id === response.id) history = read;
     } catch (e) {
-      toast.error(t('formResponses.historyLoadFailed', { error: errorMessage(e) }));
-      showHistory = false;
+      // the current answers stay on screen; only the history is missing
+      if (detail?.id === response.id) {
+        toast.error(t('formResponses.historyLoadFailed', { error: errorMessage(e) }));
+      }
     } finally {
-      historyLoading = false;
+      if (detail?.id === response.id) historyLoading = false;
     }
   }
 
-  /** Flatten one revision's payload for display; string[] joins with ", ". RAW input. */
-  function versionEntries(payload: Record<string, string | string[]>): [string, string][] {
-    return Object.entries(payload).map(([key, value]) => [
-      key,
-      Array.isArray(value) ? value.join(', ') : value
-    ]);
+  // What the response said before its current revision, newest first.
+  const earlierVersions = $derived(
+    history && detail ? history.versions.filter((v) => v.revision < detail!.revision) : []
+  );
+
+  function downloadDetailFile(fileId: string) {
+    const file = detail?.files.find((f) => f.id === fileId);
+    if (detail && file) void downloadResponseFile(detail, file);
+  }
+
+  function deleteFromDetail() {
+    if (!detail) return;
+    deleteTarget = detail;
+    showDetail = false;
+    showDeleteDialog = true;
   }
 
   // ── Owner mails (PRDCT-2330): the per-deck switch, read from the deck ──
@@ -461,124 +507,152 @@
             <EmptyTable message={hasFilters ? t('formResponses.emptyFiltered') : t('formResponses.empty')} />
           {/if}
         {:else}
-          <ul class="space-y-3">
-            {#each list.items as response (response.id)}
-              <li
-                class="space-y-2 rounded-[10px] border border-[var(--hairline)] bg-[var(--plate-strong)] p-4"
-              >
-                <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <!-- SECURITY: formName/shareTokenName are owner text and
-                       placement is visitor-influenced — Svelte {…}
-                       interpolation renders them escaped. NEVER {@html}. -->
-                  <span class="font-medium text-foreground">{response.formName}</span>
-                  {#if response.shareTokenName !== null}
-                    <span>· {response.shareTokenName}</span>
-                  {:else if response.shareTokenId === null}
-                    <span>· {t('formResponses.linkGone')}</span>
-                  {/if}
-                  <Badge variant="secondary">{sourceLabel(response.source)}</Badge>
-                  {#if response.placement !== null}
-                    <span>· {response.placement}</span>
-                  {/if}
-                  <span>{t('formResponses.onVersion', { n: response.version })}</span>
-                  <span>{formatTimeAgo(response.createdAt)}</span>
-                  {#if response.revision > 1}
-                    <Badge variant="outline" data-testid="response-revision">
-                      {t('formResponses.revisionBadge', { n: response.revision })}
-                    </Badge>
-                  {:else if isUpdated(response)}
-                    <Badge variant="outline">{t('formResponses.updatedBadge')}</Badge>
-                  {/if}
-                </div>
-                <dl class="space-y-1">
-                  {#each payloadEntries(response) as [key, value] (key)}
-                    <!-- SECURITY: payload keys AND values are RAW anonymous-
-                         respondent input. Svelte {…} interpolation escapes
-                         them — "<img src=x onerror=…>" must appear as
-                         literal text. NEVER switch to {@html} or move these
-                         into attributes. -->
-                    <div class="flex gap-2 text-sm">
-                      <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
-                      <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
-                    </div>
-                  {/each}
-                </dl>
-                {#if response.files.length}
-                  <div
-                    class="rounded-[8px] border border-dashed border-[var(--hairline)] px-3 py-2 text-xs"
-                    data-testid="response-files"
+          {#if phone.current}
+            <!-- a phone: one card per response, a tap opens it; its acts are
+                 the dialog's -->
+            <ul class="sheet divide-y divide-[var(--hairline)] overflow-hidden" data-testid="responses-list">
+              {#each list.items as response (response.id)}
+                {@const summary = summarizeAnswers(response.payload, response.files)}
+                <li>
+                  <!-- SECURITY: formName/shareTokenName are owner text, the
+                       summary is RAW respondent input: {…} escapes. NEVER {@html}. -->
+                  <button
+                    type="button"
+                    class="block w-full min-w-0 px-4 py-3.5 text-left active:bg-[var(--ground-3)]"
+                    onclick={() => void openResponse(response)}
+                    data-testid="response-row"
                   >
-                    <div class="mb-1 inline-flex items-center gap-1 font-medium">
-                      <Paperclip class="h-3 w-3" />
-                      {t('formResponses.filesTitle', { n: response.files.length })}
-                    </div>
-                    <dl class="space-y-1">
-                      {#each groupFilesByField(response.files) as group (group.field)}
-                        <!-- SECURITY: field and file names are RAW anonymous-
-                             respondent input — escaped {…} only, NEVER {@html}.
-                             The request carries ids only, never a name. -->
-                        <div class="flex gap-2">
-                          <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
-                          <dd class="min-w-0 flex-1">
-                            <ul class="space-y-0.5">
-                              {#each group.files as file (file.id)}
-                                <li class="flex items-baseline justify-between gap-3">
-                                  <button
-                                    type="button"
-                                    onclick={() => void downloadResponseFile(response, file)}
-                                    disabled={downloading === `file:${file.id}`}
-                                    class="inline-flex min-w-0 items-baseline gap-1 text-left underline-offset-4 hover:underline disabled:opacity-60"
-                                    title={t('formResponses.downloadFile')}
-                                    data-testid="response-file"
-                                  >
-                                    <Download class="h-3 w-3 shrink-0 self-center text-muted-foreground" />
-                                    <span class="min-w-0 truncate font-mono">{file.name}</span>
-                                  </button>
-                                  <span class="shrink-0 text-muted-foreground">
-                                    {formatBytes(file.sizeBytes)}
-                                  </span>
-                                </li>
-                              {/each}
-                            </ul>
-                          </dd>
-                        </div>
-                      {/each}
-                    </dl>
-                  </div>
-                {/if}
-                <div class="-mx-2 flex flex-wrap gap-x-1 gap-y-1 pt-1">
-                  {#if response.files.length}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onclick={() => void downloadResponseFiles(response)}
-                      disabled={downloading === `zip:${response.id}`}
-                      data-testid="response-files-zip"
+                    <span class="flex items-baseline justify-between gap-3">
+                      <span class="min-w-0 truncate text-[15px] font-medium">{response.formName}</span>
+                      <span class="shrink-0 text-xs text-muted-foreground">
+                        {formatTimeAgo(response.createdAt)}
+                      </span>
+                    </span>
+                    {#if linkLabel(response)}
+                      <span class="block truncate text-xs text-muted-foreground">{linkLabel(response)}</span>
+                    {/if}
+                    <span class="mt-1 flex min-w-0 items-baseline gap-2 text-[13.5px]">
+                      <span class="min-w-0 truncate {summary.text ? '' : 'text-muted-foreground'}">
+                        {summary.text || t('formResponses.answerEmpty')}
+                      </span>
+                      {#if summary.more}
+                        <span class="shrink-0 text-xs text-muted-foreground">{moreLabel(summary.more)}</span>
+                      {/if}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <div class="sheet overflow-x-auto">
+              <Table.Root class="table-fixed" style="min-width: 720px">
+                <Table.Header>
+                  <Table.Row>
+                    {#each responseHeads as head (head.title)}
+                      <Table.Head style={head.width ? `width: ${head.width}` : undefined}>
+                        {#if head.srOnly}
+                          <span class="sr-only">{head.title}</span>
+                        {:else}
+                          {head.title}
+                        {/if}
+                      </Table.Head>
+                    {/each}
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {#each list.items as response (response.id)}
+                    {@const summary = summarizeAnswers(response.payload, response.files)}
+                    <!-- the row is one line: a click opens the response whole -->
+                    <Table.Row
+                      class="cursor-pointer"
+                      onclick={(e: MouseEvent) => onRowClick(e, response)}
+                      data-testid="response-row"
                     >
-                      <Download class="h-3.5 w-3.5" />
-                      {t('formResponses.downloadFiles')}
-                    </Button>
-                  {/if}
-                  {#if response.revision > 1}
-                    <Button variant="ghost" size="sm" onclick={() => void openHistory(response)}>
-                      {t('formResponses.actionHistory')}
-                    </Button>
-                  {/if}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="text-destructive hover:text-destructive"
-                    onclick={() => {
-                      deleteTarget = response;
-                      showDeleteDialog = true;
-                    }}
-                  >
-                    {t('formResponses.actionDelete')}
-                  </Button>
-                </div>
-              </li>
-            {/each}
-          </ul>
+                      <!-- SECURITY: formName/shareTokenName are owner text, the
+                           summary is RAW anonymous-respondent input cut to a
+                           plain string: Svelte {…} interpolation escapes it.
+                           NEVER {@html}, never an attribute. -->
+                      <Table.Cell class="truncate">
+                        <button
+                          type="button"
+                          class="max-w-full truncate text-left underline-offset-4 hover:underline"
+                          title={t('formResponses.actionOpen')}
+                          onclick={() => void openResponse(response)}
+                        >
+                          {response.formName}
+                        </button>
+                      </Table.Cell>
+                      <Table.Cell class="truncate">
+                        {#if response.shareTokenName !== null}
+                          {response.shareTokenName}
+                        {:else if response.shareTokenId === null}
+                          <span class="text-muted-foreground">{t('formResponses.linkGone')}</span>
+                        {/if}
+                      </Table.Cell>
+                      <Table.Cell class="truncate whitespace-nowrap">
+                        {formatTimeAgo(response.createdAt)}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <div class="flex min-w-0 items-center gap-2" data-testid="response-summary">
+                          <span
+                            class="min-w-0 truncate {summary.text
+                              ? 'text-foreground'
+                              : 'text-muted-foreground'}"
+                          >
+                            {summary.text || t('formResponses.answerEmpty')}
+                          </span>
+                          {#if summary.more}
+                            <span class="shrink-0 text-xs text-muted-foreground"
+                              >{moreLabel(summary.more)}</span
+                            >
+                          {/if}
+                          {#if response.revision > 1}
+                            <Badge variant="outline" class="shrink-0" data-testid="response-revision">
+                              {t('formResponses.revisionBadge', { n: response.revision })}
+                            </Badge>
+                          {:else if isUpdated(response)}
+                            <Badge variant="outline" class="shrink-0">{t('formResponses.updatedBadge')}</Badge
+                            >
+                          {/if}
+                        </div>
+                      </Table.Cell>
+                      <Table.Cell data-actions-cell="" class="px-2 py-1.5">
+                        <div class="flex items-center justify-end gap-0.5">
+                          {#if response.files.length}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              class="h-8 w-8"
+                              onclick={() => void downloadResponseFiles(response)}
+                              disabled={downloading === `zip:${response.id}`}
+                              title={t('formResponses.downloadFiles')}
+                              aria-label={t('formResponses.downloadFiles')}
+                              data-testid="response-files-zip"
+                            >
+                              <Paperclip class="h-3.5 w-3.5" />
+                            </Button>
+                          {/if}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            class="h-8 w-8 text-destructive hover:text-destructive"
+                            title={t('formResponses.actionDelete')}
+                            aria-label={t('formResponses.actionDelete')}
+                            onclick={() => {
+                              deleteTarget = response;
+                              showDeleteDialog = true;
+                            }}
+                          >
+                            <Trash2 class="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </Table.Cell>
+                    </Table.Row>
+                  {/each}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          {/if}
           {#if list.nextCursor}
             <div class="flex justify-center py-2" transition:reveal>
               <Button
@@ -617,87 +691,107 @@
   </Card.Content>
 </Card.Root>
 
-<Dialog.Root bind:open={showHistory}>
-  <Dialog.Content size="lg" framed data-testid="response-history">
-    <Dialog.Header>
-      <Dialog.Title>{t('formResponses.historyTitle')}</Dialog.Title>
-      <Dialog.Description>{t('formResponses.historyDescription')}</Dialog.Description>
-    </Dialog.Header>
-    <Dialog.Body>
-      {#if historyLoading || !history}
-        <TableSkeleton rows={3} />
-      {:else}
-        <ol class="space-y-3" in:appear>
-          {#each history.versions as revision (revision.revision)}
-            <li class="space-y-2 rounded-[10px] border border-[var(--hairline)] p-3">
-              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <!-- SECURITY: shareTokenName is owner text and placement is
-                   visitor-influenced — {…} interpolation escapes. NEVER {@html}. -->
-                <span class="font-medium text-foreground">
-                  {t('formResponses.historyRevision', { n: revision.revision })}
-                </span>
-                <span>{formatTimeAgo(revision.createdAt)}</span>
-                {#if revision.shareTokenName !== null}
-                  <span>· {revision.shareTokenName}</span>
-                {:else if revision.shareTokenId === null}
-                  <span>· {t('formResponses.linkGone')}</span>
-                {/if}
-                <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
-                {#if revision.placement !== null}
-                  <span>· {revision.placement}</span>
-                {/if}
-                <span>{t('formResponses.onVersion', { n: revision.version })}</span>
-              </div>
-              <dl class="space-y-1">
-                {#each versionEntries(revision.payload) as [key, value] (key)}
-                  <!-- SECURITY: RAW anonymous-respondent input at every revision.
-                     {…} escapes it; NEVER {@html}, never an attribute. -->
-                  <div class="flex gap-2 text-sm">
-                    <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{key}</dt>
-                    <dd class="min-w-0 whitespace-pre-wrap break-words">{value}</dd>
-                  </div>
-                {/each}
-              </dl>
-              {#if revision.files?.length}
-                <!-- A revision keeps the NAMES it held, never a handle on the
-                   bytes: text only, no link. RAW respondent input — {…} only. -->
-                <div
-                  class="rounded-[8px] border border-dashed border-[var(--hairline)] px-3 py-2 text-xs"
-                  data-testid="revision-files"
-                >
-                  <div class="mb-1 inline-flex items-center gap-1 font-medium">
-                    <Paperclip class="h-3 w-3" />
-                    {t('formResponses.filesTitle', { n: revision.files.length })}
-                  </div>
-                  <dl class="space-y-1">
-                    {#each groupFilesByField(revision.files) as group (group.field)}
-                      <div class="flex gap-2">
-                        <dt class="w-1/3 min-w-0 shrink-0 break-words font-medium">{group.field}</dt>
-                        <dd class="min-w-0 flex-1">
-                          <ul class="space-y-0.5">
-                            {#each group.files as file (file.id)}
-                              <li class="flex items-baseline justify-between gap-3">
-                                <span class="min-w-0 truncate font-mono">{file.name}</span>
-                                <span class="shrink-0 text-muted-foreground"
-                                  >{formatBytes(file.sizeBytes)}</span
-                                >
-                              </li>
-                            {/each}
-                          </ul>
-                        </dd>
+<Dialog.Root bind:open={showDetail}>
+  <Dialog.Content size="lg" framed data-testid="response-detail">
+    {#if detail}
+      <Dialog.Header>
+        <!-- SECURITY: formName/shareTokenName are owner text and placement is
+             visitor-influenced — {…} interpolation escapes. NEVER {@html}. -->
+        <Dialog.Title class="break-words">{detail.formName}</Dialog.Title>
+        <Dialog.Description>
+          <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {#if linkLabel(detail)}
+              <span class="break-words">{linkLabel(detail)}</span>
+            {/if}
+            <Badge variant="secondary">{sourceLabel(detail.source)}</Badge>
+            {#if detail.placement !== null}
+              <span class="break-words">· {detail.placement}</span>
+            {/if}
+            <span>{t('formResponses.onVersion', { n: detail.version })}</span>
+            <span>{formatTimeAgo(detail.createdAt)}</span>
+            {#if detail.revision > 1}
+              <Badge variant="outline">{t('formResponses.revisionBadge', { n: detail.revision })}</Badge>
+            {:else if isUpdated(detail)}
+              <Badge variant="outline">{t('formResponses.updatedBadge')}</Badge>
+            {/if}
+          </span>
+        </Dialog.Description>
+      </Dialog.Header>
+      <Dialog.Body>
+        <div class="min-w-0 space-y-6" in:appear>
+          <section class="min-w-0">
+            {#if detail.revision > 1}
+              <h3 class="mb-3 text-[13px] font-semibold text-foreground">
+                {t('formResponses.currentAnswers')}
+              </h3>
+            {/if}
+            <ResponseAnswers
+              payload={detail.payload}
+              files={detail.files}
+              ondownload={downloadDetailFile}
+              downloading={downloading?.startsWith('file:') ? downloading.slice('file:'.length) : null}
+            />
+          </section>
+          {#if detail.revision > 1}
+            <section class="min-w-0 border-t border-[var(--hairline)] pt-5" data-testid="response-history">
+              <h3 class="text-[13px] font-semibold text-foreground">{t('formResponses.earlierVersions')}</h3>
+              <p class="mb-3 mt-1 text-xs text-muted-foreground">{t('formResponses.earlierVersionsHint')}</p>
+              {#if historyLoading}
+                <TableSkeleton rows={2} columns={2} showSearch={false} />
+              {:else if history}
+                <ol class="space-y-3" in:appear>
+                  {#each earlierVersions as revision (revision.revision)}
+                    <li class="min-w-0 space-y-3 rounded-[10px] border border-[var(--hairline)] p-3">
+                      <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <!-- SECURITY: shareTokenName is owner text and placement is
+                           visitor-influenced — {…} interpolation escapes. NEVER {@html}. -->
+                        <span class="font-medium text-foreground">
+                          {t('formResponses.historyRevision', { n: revision.revision })}
+                        </span>
+                        <span>{formatTimeAgo(revision.createdAt)}</span>
+                        {#if linkLabel(revision)}
+                          <span>· {linkLabel(revision)}</span>
+                        {/if}
+                        <Badge variant="secondary">{sourceLabel(revision.source)}</Badge>
+                        {#if revision.placement !== null}
+                          <span>· {revision.placement}</span>
+                        {/if}
+                        <span>{t('formResponses.onVersion', { n: revision.version })}</span>
                       </div>
-                    {/each}
-                  </dl>
-                </div>
+                      <!-- A revision keeps the NAMES it held, never a handle on
+                           the bytes: no ondownload, text only. -->
+                      <ResponseAnswers payload={revision.payload} files={revision.files} />
+                    </li>
+                  {/each}
+                </ol>
               {/if}
-            </li>
-          {/each}
-        </ol>
-      {/if}
-    </Dialog.Body>
-    <Dialog.Footer>
-      <Button onclick={() => (showHistory = false)}>{t('common.done')}</Button>
-    </Dialog.Footer>
+            </section>
+          {/if}
+        </div>
+      </Dialog.Body>
+      <Dialog.Footer>
+        <Button
+          variant="ghost"
+          class="text-destructive hover:text-destructive sm:mr-auto"
+          onclick={deleteFromDetail}
+        >
+          <Trash2 class="h-3.5 w-3.5" />
+          {t('formResponses.actionDelete')}
+        </Button>
+        {#if detail.files.length}
+          <Button
+            variant="outline"
+            onclick={() => detail && void downloadResponseFiles(detail)}
+            disabled={downloading === `zip:${detail.id}`}
+            data-testid="response-detail-files-zip"
+          >
+            <Download class="h-3.5 w-3.5" />
+            {t('formResponses.downloadFiles')}
+          </Button>
+        {/if}
+        <Button onclick={() => (showDetail = false)}>{t('common.done')}</Button>
+      </Dialog.Footer>
+    {/if}
   </Dialog.Content>
 </Dialog.Root>
 

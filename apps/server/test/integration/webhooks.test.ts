@@ -397,10 +397,10 @@ afterAll(async () => {
 // ── The catalog and the endpoint ─────────────────────────────────────────────
 
 describe('the catalog and the endpoint', () => {
-  it('GET /webhooks/events lists the 24 deck events with the chassis’s, and the project subject as projectIds', async () => {
+  it('GET /webhooks/events lists the 26 deck events with the chassis’s, and the project subject as projectIds', async () => {
     const catalog = await expectStatus(await send('GET', '/webhooks/events'), 200);
     const types = catalog.events.map((e: { type: string }) => e.type) as string[];
-    expect(DECK_WEBHOOK_EVENT_TYPES).toHaveLength(24);
+    expect(DECK_WEBHOOK_EVENT_TYPES).toHaveLength(26);
     for (const type of DECK_WEBHOOK_EVENT_TYPES) expect(types, type).toContain(type);
     for (const type of ['webhook.ping', 'project.created']) expect(types, type).toContain(type);
     expect(catalog.subjects).toEqual(
@@ -1057,8 +1057,105 @@ describe('the scope rule and the plan value on self-hosted', () => {
   });
 });
 
+// ── The document events (PRDCT-3641) ─────────────────────────────────────────
+
+describe('the document events', () => {
+  const AGENT: Blob = {
+    path: 'AGENT.md',
+    bytes: Buffer.from('---\ntype: Template\ntitle: Hooked template\n---\n\n# Hooked template\n'),
+    contentType: 'text/markdown'
+  };
+  const SCHEMA: Blob = {
+    path: 'schema.json',
+    bytes: Buffer.from(
+      JSON.stringify({
+        version: '1',
+        type: 'object',
+        properties: { title: { type: 'string' } },
+        required: ['title']
+      })
+    ),
+    contentType: 'application/json'
+  };
+  const PAGE: Blob = {
+    path: 'index.html',
+    bytes: Buffer.from(
+      '<!doctype html><html><head><title>{{title}}</title></head><body><h1>{{title}}</h1>' +
+        '<form data-slideless-form="gate"><select name="decision"><option>go</option></select></form>' +
+        '<p>{{answers.gate.decision}}</p></body></html>'
+    ),
+    contentType: 'text/html'
+  };
+  let templateId = '';
+  let docId = '';
+
+  it('document.pushed: a document created from a template, then its data pushed', async () => {
+    for (const b of [AGENT, SCHEMA, PAGE]) await upload(b);
+    const r = await reserve();
+    await expectStatus(
+      await send('POST', `/presentations/uploads/${r.sessionId}/commit`, {
+        title: 'Hooked template',
+        entryPath: 'index.html',
+        manifest: [AGENT, SCHEMA, PAGE].map(entryOf)
+      }),
+      201
+    );
+    templateId = r.deckId;
+    const created = await expectStatus(
+      await send('POST', `/presentations/${templateId}/instances`, {
+        data: { title: 'Doc one' },
+        projectIds: [projectId]
+      }),
+      201
+    );
+    docId = created.presentation.id;
+    const first = await expectEvent(
+      'document.pushed',
+      (e) => e.data.deckId === docId && e.data.source === 'create',
+      {
+        deckId: docId,
+        projectIds: [projectId]
+      }
+    );
+    expect(first.data).toMatchObject({ version: 1, templateId, templateVersion: 1, changed: ['title'] });
+    await expectStatus(await send('PATCH', `/presentations/${docId}/data`, { title: 'Doc two' }), 200);
+    const pushed = await expectEvent(
+      'document.pushed',
+      (e) => e.data.deckId === docId && e.data.source === 'push',
+      {
+        deckId: docId,
+        projectIds: [projectId]
+      }
+    );
+    expect(pushed.data).toMatchObject({ version: 2, changed: ['title'] });
+  });
+
+  it('document.answered: a response through a named link lands in the data', async () => {
+    const link = await mintLink(docId, { name: 'romain', remembersResponses: true });
+    const res = await viewer('POST', `/${link.secret}/forms/gate/responses`, {
+      payload: { decision: 'go' },
+      source: 'link'
+    });
+    const body = await expectStatus(res, 201);
+    const answered = await expectEvent('document.answered', (e) => e.data.deckId === docId, {
+      deckId: docId,
+      projectIds: [projectId],
+      shareLinkId: link.id
+    });
+    expect(answered.data).toMatchObject({
+      version: 3,
+      formName: 'gate',
+      responseId: body.response.id,
+      revision: 1,
+      linkId: link.id,
+      answeredBy: 'romain',
+      changed: ['answers.gate']
+    });
+  });
+});
+
 describe('the whole catalog', () => {
-  it('every one of the 24 event types was received, signed, and matched its contract', () => {
+  it('every one of the 26 event types was received, signed, and matched its contract', () => {
     expect([...asserted].sort()).toEqual([...DECK_WEBHOOK_EVENT_TYPES].sort());
   });
 });

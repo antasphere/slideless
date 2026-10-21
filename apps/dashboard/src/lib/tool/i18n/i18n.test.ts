@@ -10,6 +10,7 @@ describe('the French typography rule, on the references section', () => {
     (k) =>
       k.startsWith('refs.') ||
       k.startsWith('deckProjects.') ||
+      k.startsWith('docData.') ||
       k === 'nav.brands' ||
       k === 'nav.templates' ||
       k === 'nav.library' ||

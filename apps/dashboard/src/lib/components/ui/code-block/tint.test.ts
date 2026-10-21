@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildEmbedSnippets } from '@slideless/contract';
 import { tint } from './tint';
 
-const joined = (code: string, language: 'html' | 'shell' | 'text') =>
+const joined = (code: string, language: 'html' | 'shell' | 'json' | 'text') =>
   tint(code, language)
     .map((p) => p.text)
     .join('');
@@ -47,6 +47,37 @@ describe('code tinting never changes the code', () => {
     expect(kinds).toEqual([
       { kind: 'tag', text: 'slideless' },
       { kind: 'flag', text: '--force' }
+    ]);
+  });
+});
+
+describe('JSON tinting', () => {
+  it('gives the data back byte for byte, broken or not', () => {
+    for (const code of [
+      JSON.stringify({ a: 'x "y"', b: [1, -2.5e3, true, null], c: { d: 'é\\n' } }, null, 2),
+      '{"a": "unterminated',
+      '{ nope }',
+      ''
+    ]) {
+      expect(joined(code, 'json')).toBe(code);
+    }
+  });
+
+  it('names keys, strings, numbers and literals', () => {
+    expect(tint('{"k": "v", "n": 2, "b": false}', 'json').filter((p) => p.kind !== 'plain')).toEqual([
+      { kind: 'punct', text: '{' },
+      { kind: 'attr', text: '"k"' },
+      { kind: 'punct', text: ':' },
+      { kind: 'value', text: '"v"' },
+      { kind: 'punct', text: ',' },
+      { kind: 'attr', text: '"n"' },
+      { kind: 'punct', text: ':' },
+      { kind: 'tag', text: '2' },
+      { kind: 'punct', text: ',' },
+      { kind: 'attr', text: '"b"' },
+      { kind: 'punct', text: ':' },
+      { kind: 'tag', text: 'false' },
+      { kind: 'punct', text: '}' }
     ]);
   });
 });

@@ -43,6 +43,19 @@ import type {
   VersionCommit,
   VersionCommitted
 } from '@slideless/contract';
+import type {
+  DocumentAnswers,
+  DocumentCreate,
+  DocumentData,
+  DocumentDataInput,
+  DocumentDataMergePatch,
+  DocumentDataVersionDetail,
+  DocumentDataVersionsList,
+  DocumentUpgrade,
+  DocumentWritten,
+  TemplateDataContract,
+  TemplateSchemaSet
+} from '@slideless/contract';
 
 /**
  * The generic half of the client (errors, options, the list and audit params,
@@ -445,6 +458,99 @@ export class PlatformClient extends ChassisClient<Scope> {
     return this.request(
       'POST',
       `/presentations/${encodeURIComponent(id)}/tokens`,
+      req,
+      idempotencyHeader(opts)
+    );
+  }
+
+  // ── Data-bound templates (PRDCT-3641) ────────────────────────────────────
+
+  /** A template's data contract: its JSON Schema, its sample and the field paths its pages bind. */
+  templateSchema(id: string): Promise<TemplateDataContract> {
+    return this.request('GET', `/presentations/${encodeURIComponent(id)}/schema`);
+  }
+
+  /**
+   * Replace a template's schema.json (and optionally its data.json sample): a new template version.
+   * Not replay-protected (no Idempotency-Key): the instance claims keys on POST only.
+   */
+  setTemplateSchema(id: string, req: TemplateSchemaSet): Promise<TemplateDataContract> {
+    return this.request('PUT', `/presentations/${encodeURIComponent(id)}/schema`, req);
+  }
+
+  /** Create a document from a template with initial data, pinned to the template's current version. */
+  createDocument(
+    templateId: string,
+    req: DocumentCreate,
+    opts: IdempotentRequestOptions = {}
+  ): Promise<DocumentWritten> {
+    return this.request(
+      'POST',
+      `/presentations/${encodeURIComponent(templateId)}/instances`,
+      req,
+      idempotencyHeader(opts)
+    );
+  }
+
+  /** A document's current data, the answers branch included, with its template pin. */
+  documentData(id: string): Promise<DocumentData> {
+    return this.request('GET', `/presentations/${encodeURIComponent(id)}/data`);
+  }
+
+  /**
+   * Replace a document's data (the answers carried over); a new version is rendered. Not
+   * replay-protected: a retried call lands the same data again as one more version.
+   */
+  replaceDocumentData(id: string, data: DocumentDataInput): Promise<DocumentWritten> {
+    return this.request('PUT', `/presentations/${encodeURIComponent(id)}/data`, data);
+  }
+
+  /**
+   * Merge-patch a document's data (RFC 7386); a new version is rendered. Not replay-protected: a
+   * retried patch applies again (a merge patch lands the same data) as one more version.
+   */
+  mergeDocumentData(id: string, patch: DocumentDataMergePatch): Promise<DocumentWritten> {
+    return this.request('PATCH', `/presentations/${encodeURIComponent(id)}/data`, patch);
+  }
+
+  /** A document's push history: every data version with who, when and what changed, newest first. */
+  documentDataVersions(id: string, params: ListParams = {}): Promise<DocumentDataVersionsList> {
+    return this.request(
+      'GET',
+      this.pathWithQuery(`/presentations/${encodeURIComponent(id)}/data/versions`, params)
+    );
+  }
+
+  /** One data version of a document, with the data as it was. */
+  documentDataVersion(id: string, version: number): Promise<DocumentDataVersionDetail> {
+    return this.request(
+      'GET',
+      `/presentations/${encodeURIComponent(id)}/data/versions/${encodeURIComponent(String(version))}`
+    );
+  }
+
+  /** The forms' answers as the document's data holds them: one entry per form, the fields, who and when. */
+  documentAnswers(id: string): Promise<DocumentAnswers> {
+    return this.request('GET', `/presentations/${encodeURIComponent(id)}/answers`);
+  }
+
+  /** Clear one form's answer from a document's data (the responses stay); a new version is rendered. */
+  clearDocumentAnswer(id: string, form: string): Promise<DocumentWritten> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/answers/${encodeURIComponent(form)}`
+    );
+  }
+
+  /** Move a document to a newer version of its template (its current one when omitted) and render again. */
+  upgradeDocument(
+    id: string,
+    req: DocumentUpgrade = {},
+    opts: IdempotentRequestOptions = {}
+  ): Promise<DocumentWritten> {
+    return this.request(
+      'POST',
+      `/presentations/${encodeURIComponent(id)}/upgrade`,
       req,
       idempotencyHeader(opts)
     );

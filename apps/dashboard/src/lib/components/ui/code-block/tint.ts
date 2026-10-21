@@ -1,6 +1,6 @@
 /**
  * Light syntax tinting for the code the dashboard shows: an embed snippet, a
- * CLI command. It only SPLITS the text into kinds; the component renders
+ * CLI command, a document's data. It only SPLITS the text into kinds; the component renders
  * every piece through text interpolation.
  *
  * SECURITY: the pieces are text. Nothing here builds markup, and the
@@ -10,7 +10,7 @@
  * The one invariant (pinned by the unit test): the pieces, joined, are the
  * input byte for byte, so what is read is what the copy button copies.
  */
-export type CodeLanguage = 'html' | 'shell' | 'text';
+export type CodeLanguage = 'html' | 'shell' | 'json' | 'text';
 export type TintKind = 'plain' | 'tag' | 'attr' | 'value' | 'punct' | 'flag';
 export interface TintPiece {
   kind: TintKind;
@@ -85,8 +85,45 @@ function tintShell(code: string): TintPiece[] {
   return out;
 }
 
+/**
+ * JSON, lightly: a key reads as an attribute, a string as a value, a number
+ * or a literal (true, false, null) as a tag, the brackets and separators as
+ * punctuation. Anything else (a broken document) stays plain.
+ */
+function tintJson(code: string): TintPiece[] {
+  // sticky expressions read at `i` without copying the rest: a document's
+  // data may be long, and a slice per character would make it quadratic
+  const str = /"(?:[^"\\\n]|\\.)*"?/y;
+  const colon = /\s*:/y;
+  const lit = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true\b|false\b|null\b/y;
+  const out: TintPiece[] = [];
+  let i = 0;
+  while (i < code.length) {
+    str.lastIndex = i;
+    const s = str.exec(code);
+    if (s) {
+      colon.lastIndex = i + s[0].length;
+      push(out, colon.test(code) ? 'attr' : 'value', s[0]);
+      i += s[0].length;
+      continue;
+    }
+    lit.lastIndex = i;
+    const l = lit.exec(code);
+    if (l) {
+      push(out, 'tag', l[0]);
+      i += l[0].length;
+      continue;
+    }
+    const ch = code[i]!;
+    push(out, '{}[],:'.includes(ch) ? 'punct' : 'plain', ch);
+    i += 1;
+  }
+  return out;
+}
+
 export function tint(code: string, language: CodeLanguage): TintPiece[] {
   if (language === 'html') return tintHtml(code);
+  if (language === 'json') return tintJson(code);
   if (language === 'shell') return tintShell(code);
   return code ? [{ kind: 'plain', text: code }] : [];
 }

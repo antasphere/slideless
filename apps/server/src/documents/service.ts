@@ -1,0 +1,826 @@
+import { Readable } from 'node:stream';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { presentations, presentationVersions } from '@slideless/db';
+import type { Db, DbConn } from '@antasphere/chassis-db';
+import type { Principal } from '@antasphere/chassis-contract';
+import {
+  ANSWERS_KEY,
+  ANSWERS_MAX_FORMS,
+  ANSWERS_MAX_LENGTH,
+  DATA_FILE_PATH,
+  DATA_SCHEMA_PATH,
+  BOUND_FILE_MAX_BYTES,
+  DOCUMENT_DATA_MAX_LENGTH,
+  answersOf,
+  applyMergePatch,
+  canonicalJson,
+  hasBindingMarkers,
+  parseBindings,
+  renderBindings,
+  withAnswersOf,
+  withFormAnswer,
+  withoutAnswers,
+  type AnsweredMeta,
+  type DataValidationIssue,
+  type DocumentFormAnswer,
+  type ManifestEntry
+} from '@slideless/contract';
+import type { PresentationRow, PresentationVersionRow } from '@slideless/db';
+import type { FileService } from '@antasphere/chassis-server/files';
+import type { Logger } from '@antasphere/chassis-server/logger';
+import { blobKey, type StorageDriver } from '@antasphere/chassis-server/storage';
+import { manifestHasForms } from '../forms/detect.js';
+import { isBoundFileEntry, readBlobCapped } from '../presentations/data-contract.js';
+import { validationBudget } from './validate-budget.js';
+import {
+  canReadDeck,
+  canWriteDeck,
+  type DocumentCommitResult,
+  type PresentationService
+} from '../presentations/service.js';
+
+/**
+ * DOCUMENTS (PRDCT-3641): a document is a deck made from a template with
+ * data. Every write here is the same motion: take the template version the
+ * document is pinned to (or moves to), the data (validated against that
+ * version's schema, the `answers` branch the server's), render every bound
+ * page of the template against it, store the rendered pages as blobs, and
+ * commit a presentation version whose manifest is the template's with the
+ * pages replaced and `data.json` at the root. Nothing downstream knows: the
+ * viewer, the thumbnails, the pull and the agent index serve a plain deck.
+ *
+ * The writes of one document are serialized by a transaction-scoped
+ * advisory lock on the document's id, so a merge patch always applies to
+ * the data the previous write left, and the render it stores is the render
+ * of the data it commits.
+ */
+
+/** Two-int advisory lock namespace serializing the writes of one document. 7432001-7 are taken (see presentations/service.ts). */
+const DOCUMENT_WRITE_LOCK = 7432008;
+
+/** The forms a rendered page carries (the authoring marker, by name). */
+const FORM_MARKER_RE = /data-slideless-form\s*=\s*["']([A-Za-z0-9._-]{1,64})["']/gi;
+
+/** How long a writer waits for another replica's writer on the same document before answering busy. */
+const LOCK_WAIT_MS = 15_000;
+/** How many times a write recomputes when the base moved under it between its two phases. */
+const WRITE_ATTEMPTS = 6;
+/** How many document writes one replica runs at once; the rest wait in memory (the pool holds ten connections). */
+const WRITE_SLOTS = 4;
+
+/** The base a render was made from is still the deck's: the same version and the same data. */
+function sameBase(fresh: PresentationRow, seen: PresentationRow): boolean {
+  return (
+    fresh.currentVersion === seen.currentVersion &&
+    canonicalJson(fresh.documentData ?? null) === canonicalJson(seen.documentData ?? null)
+  );
+}
+
+class AnswerNotFound extends Error {
+  constructor(readonly form: string) {
+    super(`no answer under "${form}"`);
+  }
+}
+
+/** The id of the data block the rendered entry carries: `<script type="application/json" id="slideless-data">`. */
+export const DATA_BLOCK_ID = 'slideless-data';
+
+export type DocumentFailure =
+  | { code: 'not_found' }
+  | { code: 'forbidden' }
+  /** The document's lock could not be taken within the wait: another writer holds it (verifier round 2, F1). */
+  | { code: 'busy' }
+  | { code: 'answer_not_found'; form: string }
+  /** The answers branch is at its budget: the response is kept, the mirror skipped. */
+  | { code: 'answers_full' }
+  /** The form is not one of the document's pages' forms: the response is kept, the mirror skipped. */
+  | { code: 'answers_unknown_form'; form: string }
+  /** The schema's patterns took more than the budget to judge the data (verifier round 3, F7). */
+  | { code: 'schema_too_slow'; message: string }
+  /** The validation worker could not do its job: the server's fault, never the schema's (round 5, F3). */
+  | { code: 'validator_failed'; message: string }
+  | { code: 'not_a_document' }
+  | { code: 'not_a_data_template' }
+  | { code: 'template_gone' }
+  | { code: 'template_version_invalid'; version: number }
+  | { code: 'already_on_version'; version: number }
+  | { code: 'data_invalid'; issues: DataValidationIssue[] }
+  | { code: 'data_too_large' }
+  | { code: 'render_failed'; message: string }
+  | { code: 'missing_blobs'; missing: string[] }
+  | { code: 'invalid_manifest'; message: string }
+  | { code: 'project_not_found'; projectId: string };
+
+export type DocumentWrite =
+  | { ok: true; presentation: PresentationRow; version: PresentationVersionRow }
+  | { ok: false; failure: DocumentFailure };
+
+/** The template version a document binds to, with its contract. */
+export interface TemplateVersionContract {
+  row: PresentationVersionRow;
+  schema: Record<string, unknown>;
+  schemaVersion: string;
+  sample: Record<string, unknown> | null;
+  bindings: string[];
+}
+
+export interface DocumentServiceDeps {
+  db: Db;
+  storage: StorageDriver;
+  fileService: FileService;
+  presentations: PresentationService;
+  logger: Logger;
+  /** Kicked after every write: the new version's still image (PRDCT-2725). */
+  onVersion?: (() => void) | undefined;
+}
+
+export class DocumentService {
+  /** The writers of one document on this replica, one at a time (see `locked`). */
+  private readonly queues = new Map<string, Promise<void>>();
+  private inFlight = 0;
+  private readonly waiting: (() => void)[] = [];
+
+  constructor(private readonly deps: DocumentServiceDeps) {}
+
+  // ── The template's contract ────────────────────────────────────────────────
+
+  /** The contract of one template version; null when that version carries none. */
+  async contractOf(
+    workspaceId: string,
+    templateId: string,
+    version: number,
+    conn?: DbConn
+  ): Promise<TemplateVersionContract | null> {
+    const row = conn
+      ? ((
+          await conn
+            .select()
+            .from(presentationVersions)
+            .where(
+              and(
+                eq(presentationVersions.presentationId, templateId),
+                eq(presentationVersions.workspaceId, workspaceId),
+                eq(presentationVersions.version, version)
+              )
+            )
+            .limit(1)
+        )[0] ?? null)
+      : await this.deps.presentations.getVersion(workspaceId, templateId, version);
+    if (!row || !row.dataSchema) return null;
+    return {
+      row,
+      schema: row.dataSchema,
+      schemaVersion: String(row.dataSchema['version'] ?? '').trim(),
+      sample: row.dataSample ?? null,
+      bindings: row.dataBindings ?? []
+    };
+  }
+
+  // ── Rendering ──────────────────────────────────────────────────────────────
+
+  /**
+   * The template version's manifest with every bound page resolved against
+   * the data and stored as a new blob (uploaded by `uploader`, so the blob is
+   * theirs under the read scope), `schema.json` dropped and `data.json`
+   * replaced by the data as rendered. The entry page also carries the data
+   * block, so a pull or an export keeps what was shown.
+   */
+  private async render(opts: {
+    workspaceId: string;
+    template: TemplateVersionContract;
+    data: Record<string, unknown>;
+    uploader: string;
+  }): Promise<
+    { manifest: ManifestEntry[]; entryPath: string; forms: Set<string> } | { failure: DocumentFailure }
+  > {
+    const forms = new Set<string>();
+    const source = opts.template.row.manifest as ManifestEntry[];
+    const entryPath = opts.template.row.entryPath;
+    const out: ManifestEntry[] = [];
+    const rendered = new Map<string, ManifestEntry>();
+    for (const entry of source) {
+      if (entry.path === DATA_SCHEMA_PATH || entry.path === DATA_FILE_PATH) continue;
+      const bound = isBoundFileEntry(entry);
+      const isEntry = entry.path === entryPath;
+      if (!bound || (!isEntry && rendered.has(entry.sha256))) {
+        out.push(bound ? { ...rendered.get(entry.sha256)!, path: entry.path } : entry);
+        continue;
+      }
+      let buf: Buffer | null;
+      try {
+        buf = await readBlobCapped(
+          this.deps.storage,
+          blobKey(opts.workspaceId, entry.sha256),
+          BOUND_FILE_MAX_BYTES
+        );
+      } catch (e) {
+        return {
+          failure: {
+            code: 'render_failed',
+            message: `${entry.path} could not be read: ${(e as Error).message}`
+          }
+        };
+      }
+      if (!buf)
+        return {
+          failure: { code: 'render_failed', message: `${entry.path} is larger than the renderer holds` }
+        };
+      let text = buf.toString('utf8');
+      if (hasBindingMarkers(text)) {
+        const { parsed, errors } = parseBindings(text, entry.path);
+        if (errors.length > 0) {
+          const first = errors[0]!;
+          return {
+            failure: { code: 'render_failed', message: `${entry.path} line ${first.line}: ${first.message}` }
+          };
+        }
+        text = renderBindings(parsed, opts.data);
+      }
+      // The data block and data.json carry the pushed data alone (verifier round 2, F3):
+      // another recipient's answer and the link's label reach a page only through a binding
+      // the author wrote, never through the artifacts every link holder can read.
+      for (const m of text.matchAll(FORM_MARKER_RE)) forms.add(m[1]!);
+      if (isEntry) text = withDataBlock(text, withoutAnswers(opts.data));
+      const stored = await this.store(
+        opts.workspaceId,
+        Buffer.from(text, 'utf8'),
+        entry.contentType,
+        entry.path,
+        opts.uploader
+      );
+      const next: ManifestEntry = {
+        path: entry.path,
+        sha256: stored.sha256,
+        sizeBytes: stored.sizeBytes,
+        contentType: entry.contentType
+      };
+      if (!isEntry) rendered.set(entry.sha256, next);
+      out.push(next);
+    }
+    const dataBytes = Buffer.from(JSON.stringify(withoutAnswers(opts.data), null, 2) + '\n', 'utf8');
+    const dataStored = await this.store(
+      opts.workspaceId,
+      dataBytes,
+      'application/json',
+      DATA_FILE_PATH,
+      opts.uploader
+    );
+    out.push({
+      path: DATA_FILE_PATH,
+      sha256: dataStored.sha256,
+      sizeBytes: dataStored.sizeBytes,
+      contentType: 'application/json'
+    });
+    return { manifest: out, entryPath, forms };
+  }
+
+  private async store(
+    workspaceId: string,
+    bytes: Buffer,
+    contentType: string,
+    originalName: string,
+    uploader: string
+  ): Promise<{ sha256: string; sizeBytes: number }> {
+    const { file } = await this.deps.fileService.upload({
+      workspaceId,
+      createdBy: uploader,
+      originalName,
+      contentType,
+      body: Readable.from([bytes]),
+      maxBytes: Math.max(bytes.length, 1)
+    });
+    return { sha256: file.sha256, sizeBytes: file.sizeBytes };
+  }
+
+  // ── The writes ─────────────────────────────────────────────────────────────
+
+  /** `POST /presentations/{templateId}/instances`. */
+  async createInstance(opts: {
+    workspaceId: string;
+    principal: Principal;
+    templateId: string;
+    data: Record<string, unknown>;
+    title?: string | undefined;
+    projectIds?: string[] | undefined;
+  }): Promise<DocumentWrite> {
+    const { presentations, db } = this.deps;
+    const template = await presentations.get(opts.workspaceId, opts.templateId);
+    if (!template || !(await canReadDeck(db, opts.principal, template))) return fail({ code: 'not_found' });
+    if (template.referenceType !== 'template' || template.currentVersion < 1)
+      return fail({ code: 'not_a_data_template' });
+    const contract = await this.contractOf(opts.workspaceId, template.id, template.currentVersion);
+    if (!contract) return fail({ code: 'not_a_data_template' });
+    const data = withoutAnswers(opts.data);
+    const judged = await validationBudget().validate(contract.schema, data);
+    if (!judged.ok)
+      return fail(
+        judged.reason === 'timeout'
+          ? { code: 'schema_too_slow', message: judged.message }
+          : { code: 'validator_failed', message: judged.message }
+      );
+    if (judged.value.length > 0) return fail({ code: 'data_invalid', issues: judged.value });
+    const rendered = await this.render({
+      workspaceId: opts.workspaceId,
+      template: contract,
+      data,
+      uploader: opts.principal.userId
+    });
+    if ('failure' in rendered) return fail(rendered.failure);
+    const result = await presentations.createDocument({
+      workspaceId: opts.workspaceId,
+      principal: opts.principal,
+      template,
+      templateVersion: template.currentVersion,
+      schemaVersion: contract.schemaVersion,
+      title: opts.title ?? template.title,
+      entryPath: rendered.entryPath,
+      manifest: rendered.manifest,
+      hasForms: await manifestHasForms(this.deps.storage, opts.workspaceId, rendered.manifest),
+      data,
+      projectIds: opts.projectIds
+    });
+    return this.landed(result);
+  }
+
+  /** `PUT /presentations/{id}/data`: the whole data replaced, the answers carried over. */
+  replaceData(opts: {
+    workspaceId: string;
+    principal: Principal;
+    id: string;
+    data: Record<string, unknown>;
+  }): Promise<DocumentWrite> {
+    return this.write(opts, (current) => withAnswersOf(opts.data, current));
+  }
+
+  /** `PATCH /presentations/{id}/data`: a merge patch on the data without its answers, the answers carried over. */
+  mergeData(opts: {
+    workspaceId: string;
+    principal: Principal;
+    id: string;
+    patch: Record<string, unknown>;
+  }): Promise<DocumentWrite> {
+    return this.write(opts, (current) => {
+      const merged = applyMergePatch(withoutAnswers(current ?? {}), opts.patch);
+      const next =
+        merged !== null && typeof merged === 'object' && !Array.isArray(merged)
+          ? (merged as Record<string, unknown>)
+          : {};
+      return withAnswersOf(next, current);
+    });
+  }
+
+  /** `POST /presentations/{id}/upgrade`: the same data rendered against a newer template version. */
+  upgrade(opts: {
+    workspaceId: string;
+    principal: Principal;
+    id: string;
+    toVersion?: number | undefined;
+    /** The data to move with (a replace), or a merge patch, judged by the NEW schema; absent = the data as it is. */
+    data?: Record<string, unknown> | undefined;
+    merge?: Record<string, unknown> | undefined;
+  }): Promise<DocumentWrite> {
+    return this.write(
+      opts,
+      (current) => {
+        if (opts.data) return withAnswersOf(opts.data, current);
+        if (opts.merge) {
+          const merged = applyMergePatch(withoutAnswers(current ?? {}), opts.merge);
+          const next =
+            merged !== null && typeof merged === 'object' && !Array.isArray(merged)
+              ? (merged as Record<string, unknown>)
+              : {};
+          return withAnswersOf(next, current);
+        }
+        return current ?? {};
+      },
+      { toVersion: opts.toVersion ?? 'latest' }
+    );
+  }
+
+  /**
+   * A form answered through a share link: the response's fields land under
+   * `answers.<form>` with who (the link's label) and when, and the document
+   * is rendered again. Committed by the server as the owner; a document
+   * whose owner's account is gone keeps the response and skips the mirror,
+   * said in the log. Never throws into the respondent's answer: the caller
+   * catches and logs.
+   */
+  async applyAnswer(opts: {
+    workspaceId: string;
+    presentationId: string;
+    formName: string;
+    fields: Record<string, string | string[]>;
+    link: { id: string; name: string | null };
+    responseId: string;
+    revision: number;
+    at: Date;
+  }): Promise<DocumentWrite | null> {
+    const meta: AnsweredMeta = {
+      at: opts.at.toISOString(),
+      by: opts.link.name,
+      link: opts.link.id,
+      response: opts.responseId,
+      revision: opts.revision
+    };
+    return this.queued(opts.presentationId, () => this.applyAnswerOnce(opts, meta));
+  }
+
+  private async applyAnswerOnce(
+    opts: {
+      workspaceId: string;
+      presentationId: string;
+      formName: string;
+      fields: Record<string, string | string[]>;
+      link: { id: string; name: string | null };
+      responseId: string;
+      revision: number;
+    },
+    meta: AnsweredMeta
+  ): Promise<DocumentWrite | null> {
+    const { presentations } = this.deps;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      // Phase A, no lock held: the reads, the render, the blobs.
+      const deck = await presentations.get(opts.workspaceId, opts.presentationId);
+      if (!deck || deck.templateId === null || deck.templateVersion === null) return null;
+      const contract = await this.contractOf(opts.workspaceId, deck.templateId, deck.templateVersion);
+      if (!contract) return fail({ code: 'template_gone' });
+      const owner = deck.ownerUserId;
+      if (owner === null) {
+        this.deps.logger.warn(
+          { presentationId: deck.id },
+          'documents: the owner is gone, the answer stays in the responses only'
+        );
+        return null;
+      }
+      const current = deck.documentData ?? null;
+      const data = withFormAnswer(current ?? {}, opts.formName, opts.fields, meta);
+      // The branch's own budget (verifier round 2, F2): a link holder can
+      // never grow the data until its owner cannot write it.
+      const answers = data[ANSWERS_KEY] as Record<string, unknown>;
+      if (
+        Object.keys(answers).length > ANSWERS_MAX_FORMS ||
+        JSON.stringify(answers).length > ANSWERS_MAX_LENGTH
+      ) {
+        return fail({ code: 'answers_full' });
+      }
+      const rendered = await this.render({
+        workspaceId: opts.workspaceId,
+        template: contract,
+        data,
+        uploader: owner
+      });
+      if ('failure' in rendered) return fail(rendered.failure);
+      // Only a form the pages carry lands in the data (verifier round 3, F3).
+      if (!rendered.forms.has(opts.formName))
+        return fail({ code: 'answers_unknown_form', form: opts.formName });
+      // Phase B, the lock: the base unchanged, or the whole thing again.
+      const landed = await this.locked(opts.workspaceId, opts.presentationId, async (tx, fresh) => {
+        if (!sameBase(fresh, deck)) return 'stale' as const;
+        return presentations.commitDocumentVersion({
+          workspaceId: opts.workspaceId,
+          committer: { system: { ownerUserId: owner } },
+          presentationId: fresh.id,
+          entryPath: rendered.entryPath,
+          manifest: rendered.manifest,
+          hasForms: await manifestHasForms(this.deps.storage, opts.workspaceId, rendered.manifest),
+          data,
+          previousData: current,
+          templateVersion: deck.templateVersion!,
+          schemaVersion: contract.schemaVersion,
+          source: 'answer',
+          answered: {
+            by: opts.link.name,
+            linkId: opts.link.id,
+            formName: opts.formName,
+            responseId: opts.responseId,
+            revision: opts.revision
+          },
+          conn: tx
+        });
+      });
+      if (landed === null) return null;
+      if (landed === 'stale') continue;
+      if (landed === 'busy') return fail({ code: 'busy' });
+      return this.landed(landed);
+    }
+    return fail({ code: 'busy' });
+  }
+
+  /** `DELETE /presentations/{id}/answers/{form}`: the owner's way out of a branch a link holder filled. */
+  clearAnswer(opts: {
+    workspaceId: string;
+    principal: Principal;
+    id: string;
+    form: string;
+  }): Promise<DocumentWrite> {
+    return this.write(opts, (current) => {
+      const answers = current?.[ANSWERS_KEY];
+      if (
+        answers === null ||
+        typeof answers !== 'object' ||
+        !Object.prototype.hasOwnProperty.call(answers, opts.form)
+      ) {
+        throw new AnswerNotFound(opts.form);
+      }
+      const rest = { ...(answers as Record<string, unknown>) };
+      delete rest[opts.form];
+      const base = withoutAnswers(current ?? {});
+      return Object.keys(rest).length > 0 ? { ...base, [ANSWERS_KEY]: rest } : base;
+    });
+  }
+
+  /**
+   * The one write motion: under the document's lock, the current data is
+   * read, `next` computes what to validate, the pinned (or the target)
+   * template version's schema judges it, the pages are rendered and the
+   * version committed on the same transaction.
+   */
+  private async write(
+    opts: { workspaceId: string; principal: Principal; id: string },
+    next: (current: Record<string, unknown> | null) => Record<string, unknown>,
+    move: { toVersion: number | 'latest' } | null = null
+  ): Promise<DocumentWrite> {
+    return this.queued(opts.id, () => this.writeOnce(opts, next, move));
+  }
+
+  private async writeOnce(
+    opts: { workspaceId: string; principal: Principal; id: string },
+    next: (current: Record<string, unknown> | null) => Record<string, unknown>,
+    move: { toVersion: number | 'latest' } | null
+  ): Promise<DocumentWrite> {
+    const { db, presentations } = this.deps;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      // Phase A, no lock held, no transaction: the reads and the access
+      // checks on their own short connections, the data computed, the
+      // validation under its budget, the pages rendered and stored. Nothing
+      // here holds a pool connection while waiting on another (verifier
+      // round 3, F1).
+      const deck = await presentations.get(opts.workspaceId, opts.id);
+      if (!deck || !(await canReadDeck(db, opts.principal, deck))) return fail({ code: 'not_found' });
+      if (!(await canWriteDeck(db, opts.principal, deck))) return fail({ code: 'forbidden' });
+      if (deck.templateId === null || deck.templateVersion === null) return fail({ code: 'not_a_document' });
+      // The TEMPLATE's pages are rendered for the writer, so a template that
+      // still exists must be theirs to read (verifier round 2, F4); a deleted
+      // template leaves its documents writable on their pinned version
+      // (round 3, F2), and only an upgrade needs it alive.
+      const template = await presentations.get(opts.workspaceId, deck.templateId);
+      if (template && !(await canReadDeck(db, opts.principal, template)))
+        return fail({ code: 'template_gone' });
+      let templateVersion = deck.templateVersion;
+      if (move) {
+        if (!template) return fail({ code: 'template_gone' });
+        templateVersion = move.toVersion === 'latest' ? template.currentVersion : move.toVersion;
+        if (templateVersion === deck.templateVersion) {
+          return fail({ code: 'already_on_version', version: templateVersion });
+        }
+      }
+      const contract = await this.contractOf(opts.workspaceId, deck.templateId, templateVersion);
+      if (!contract) {
+        return fail(
+          move ? { code: 'template_version_invalid', version: templateVersion } : { code: 'template_gone' }
+        );
+      }
+      const current = deck.documentData ?? null;
+      let data: Record<string, unknown>;
+      try {
+        data = next(current);
+      } catch (e) {
+        if (e instanceof AnswerNotFound) return fail({ code: 'answer_not_found', form: e.form });
+        throw e;
+      }
+      // The writer's data is judged alone: the answers branch has its own budget and never locks the owner out.
+      if (JSON.stringify(withoutAnswers(data)).length > DOCUMENT_DATA_MAX_LENGTH)
+        return fail({ code: 'data_too_large' });
+      const judged = await validationBudget().validate(contract.schema, withoutAnswers(data));
+      if (!judged.ok)
+        return fail(
+          judged.reason === 'timeout'
+            ? { code: 'schema_too_slow', message: judged.message }
+            : { code: 'validator_failed', message: judged.message }
+        );
+      if (judged.value.length > 0) return fail({ code: 'data_invalid', issues: judged.value });
+      const rendered = await this.render({
+        workspaceId: opts.workspaceId,
+        template: contract,
+        data,
+        uploader: opts.principal.userId
+      });
+      if ('failure' in rendered) return fail(rendered.failure);
+      // Phase B, the lock: a short transaction that commits on the base the
+      // render was made from, or says the base moved and the loop starts over.
+      const landed = await this.locked(opts.workspaceId, opts.id, async (tx, fresh) => {
+        if (!sameBase(fresh, deck)) return 'stale' as const;
+        return presentations.commitDocumentVersion({
+          workspaceId: opts.workspaceId,
+          committer: { principal: opts.principal },
+          presentationId: fresh.id,
+          entryPath: rendered.entryPath,
+          manifest: rendered.manifest,
+          hasForms: await manifestHasForms(this.deps.storage, opts.workspaceId, rendered.manifest),
+          data,
+          previousData: current,
+          templateVersion,
+          schemaVersion: contract.schemaVersion,
+          source: move ? 'upgrade' : 'push',
+          conn: tx
+        });
+      });
+      if (landed === null) return fail({ code: 'not_found' });
+      if (landed === 'stale') continue;
+      if (landed === 'busy') return fail({ code: 'busy' });
+      return this.landed(landed);
+    }
+    return fail({ code: 'busy' });
+  }
+
+  /**
+   * Runs `body` holding the document's write lock, in ONE short transaction
+   * that needs no other connection (verifier round 3, F1: the previous shape
+   * held the lock while the reads and the blob store took more connections,
+   * and a crowd of writers across documents emptied the pool). The writers
+   * of one document on this replica queue in memory; across replicas the
+   * lock is TRIED with a bounded wait, the connection released between
+   * tries. `'busy'` when the wait ran out; `null` when the deck is gone.
+   */
+  /**
+   * The writers of one document on this replica, one whole write at a time
+   * (both phases), and at most WRITE_SLOTS writes of any document at once:
+   * a crowd of writers waits in memory, holding no connection, instead of
+   * queuing the pool past its connect timeout (verifier round 3, F1: 25
+   * writers on 25 documents gave twenty 500s).
+   */
+  private queued<T>(presentationId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.queues.get(presentationId) ?? Promise.resolve();
+    const run = previous.then(() => this.slot(work));
+    const settled = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this.queues.set(presentationId, settled);
+    return run.finally(() => {
+      if (this.queues.get(presentationId) === settled) this.queues.delete(presentationId);
+    });
+  }
+
+  /** One of the WRITE_SLOTS seats, taken in arrival order. */
+  private async slot<T>(work: () => Promise<T>): Promise<T> {
+    if (this.inFlight >= WRITE_SLOTS) {
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
+    }
+    this.inFlight++;
+    try {
+      return await work();
+    } finally {
+      this.inFlight--;
+      const next = this.waiting.shift();
+      if (next) next();
+    }
+  }
+
+  private locked<T>(
+    workspaceId: string,
+    presentationId: string,
+    body: (tx: DbConn, deck: PresentationRow) => Promise<T>
+  ): Promise<T | 'busy' | null> {
+    return this.tryLocked(workspaceId, presentationId, body);
+  }
+
+  private async tryLocked<T>(
+    workspaceId: string,
+    presentationId: string,
+    body: (tx: DbConn, deck: PresentationRow) => Promise<T>
+  ): Promise<T | 'busy' | null> {
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    let wait = 40;
+    for (;;) {
+      const attempt = await this.deps.db.transaction(
+        async (tx): Promise<{ taken: true; value: T | null } | { taken: false }> => {
+          const res = await tx.execute(
+            sql`SELECT pg_try_advisory_xact_lock(${DOCUMENT_WRITE_LOCK}, hashtext(${presentationId})) AS taken`
+          );
+          const taken = Boolean((res.rows[0] as { taken?: boolean } | undefined)?.taken);
+          if (!taken) return { taken: false };
+          const [deck] = await tx
+            .select()
+            .from(presentations)
+            .where(
+              and(
+                eq(presentations.id, presentationId),
+                eq(presentations.workspaceId, workspaceId),
+                isNull(presentations.deletedAt)
+              )
+            )
+            .for('update')
+            .limit(1);
+          if (!deck) return { taken: true, value: null };
+          return { taken: true, value: await body(tx, deck) };
+        }
+      );
+      if (attempt.taken) return attempt.value;
+      if (Date.now() >= deadline) return 'busy';
+      await new Promise((r) => setTimeout(r, wait + Math.floor(Math.random() * wait)));
+      wait = Math.min(wait * 2, 500);
+    }
+  }
+
+  private landed(result: DocumentCommitResult): DocumentWrite {
+    if (!result.ok) return fail(result.failure);
+    this.deps.onVersion?.();
+    return { ok: true, presentation: result.presentation, version: result.version };
+  }
+
+  // ── The template's schema, edited through the API ──────────────────────────
+
+  /**
+   * `PUT /presentations/{id}/schema`: a new template version whose manifest
+   * is the current one with `schema.json` replaced and `data.json` replaced,
+   * kept or removed. The commit path then reads the contract again from the
+   * blobs, like a push: the binding check, the sample check and the version
+   * rule all apply.
+   */
+  async templateManifestWith(opts: {
+    workspaceId: string;
+    template: PresentationRow;
+    uploader: string;
+    schema: Record<string, unknown>;
+    sample: Record<string, unknown> | null | undefined;
+  }): Promise<{ manifest: ManifestEntry[]; entryPath: string } | null> {
+    const current = await this.deps.presentations.getVersion(
+      opts.workspaceId,
+      opts.template.id,
+      opts.template.currentVersion
+    );
+    if (!current) return null;
+    const manifest = (current.manifest as ManifestEntry[]).filter(
+      (e) => e.path !== DATA_SCHEMA_PATH && (opts.sample === undefined || e.path !== DATA_FILE_PATH)
+    );
+    const schemaStored = await this.store(
+      opts.workspaceId,
+      Buffer.from(JSON.stringify(opts.schema, null, 2) + '\n'),
+      'application/json',
+      DATA_SCHEMA_PATH,
+      opts.uploader
+    );
+    manifest.push({
+      path: DATA_SCHEMA_PATH,
+      sha256: schemaStored.sha256,
+      sizeBytes: schemaStored.sizeBytes,
+      contentType: 'application/json'
+    });
+    if (opts.sample) {
+      const sampleStored = await this.store(
+        opts.workspaceId,
+        Buffer.from(JSON.stringify(opts.sample, null, 2) + '\n'),
+        'application/json',
+        DATA_FILE_PATH,
+        opts.uploader
+      );
+      manifest.push({
+        path: DATA_FILE_PATH,
+        sha256: sampleStored.sha256,
+        sizeBytes: sampleStored.sizeBytes,
+        contentType: 'application/json'
+      });
+    }
+    return { manifest, entryPath: current.entryPath };
+  }
+
+  // ── Reads ──────────────────────────────────────────────────────────────────
+
+  /** The answers of a document's current data, as the wire lists them. */
+  answersOf(deck: PresentationRow): DocumentFormAnswer[] {
+    return answersOf(deck.documentData ?? {}).map((a) => ({
+      form: a.form,
+      fields: a.fields,
+      answeredAt: a.meta.at,
+      answeredBy: a.meta.by,
+      linkId: a.meta.link,
+      responseId: a.meta.response,
+      revision: a.meta.revision
+    }));
+  }
+}
+
+const fail = (failure: DocumentFailure): DocumentWrite => ({ ok: false, failure });
+
+/**
+ * The data block in the rendered entry: a JSON script before `</head>` (else
+ * before `<body`, else at the top), every `<` escaped as \u003c so no data
+ * value can close the script early and the block still parses as JSON. The viewer's sandbox leaves the deck's own
+ * script free to read it; an export or a pull keeps it with the page.
+ */
+export function withDataBlock(html: string, data: Record<string, unknown>): string {
+  // `<` as \u003c keeps the JSON valid for JSON.parse and makes `</script>` and `<!--` inert.
+  const json = JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  const block = `<script type="application/json" id="${DATA_BLOCK_ID}">${json}</script>`;
+  const head = html.search(/<\/head\s*>/i);
+  if (head !== -1) return html.slice(0, head) + block + html.slice(head);
+  const body = html.search(/<body[\s>]/i);
+  if (body !== -1) return html.slice(0, body) + block + html.slice(body);
+  return block + html;
+}
+
+export { ANSWERS_KEY };

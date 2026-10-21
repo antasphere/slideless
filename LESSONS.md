@@ -1847,3 +1847,45 @@ confirm with the user before calling.`** A test that walks every write tool for 
   npm as `@antasphere/chassis-*`. Slideless installs them at one pinned version like every tool,
   `pnpm chassis:check` holds the pin, and a chassis change is a pull request and a release there,
   then a version bump here.
+
+## Data-bound templates (PRDCT-3641, 2026-10-20)
+
+- **A JSON block inside `<script type="application/json">` is escaped with `\u003c`, never with a
+  backslash before `/` or `!`.** `JSON.stringify(data).replace('</', '<\\/')` keeps `JSON.parse`
+  happy (`\/` is a legal escape) but `<\\!--` is not JSON, and the first unit test of the data block
+  failed on it. Replacing every `<` with `\u003c` (and U+2028/U+2029 with their escapes) neutralizes
+  `</script>` and `<!--` and stays valid JSON.
+- **The chassis's webhook catalog takes `family.verb` only** (`/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/`):
+  a task that names `document.data.pushed` ships as `document.pushed`.
+- **A tool service that stores blobs lives in the `routes` slot**, where `ctx.fileService` exists
+  (TEMPLATE-FEEDBACK 34), and is handed sideways to the viewer's form routes.
+- **A write that holds a transaction must need no other pool connection, and a crowd of writers
+  must wait in memory, not in the pool** (verifier rounds 2 and 3 of PRDCT-3641). The first shape
+  took the document's advisory lock inside a transaction and then read the template, checked
+  access and stored blobs on other connections: ten writers queued on one lock held ten
+  connections, the holder could never get its second one, and the whole instance stalled for the
+  connect timeout, reachable through a share link. Serializing one document in memory fixed one
+  document and not twenty-five: the pool queued past its timeout on sheer concurrency. The shape
+  that holds: every read, the validation and the render BEFORE the lock on short connections, then
+  ONE short transaction that tries the lock (`pg_try_advisory_xact_lock`, a bounded wait, the
+  connection released between tries) and commits on the base the render was made from, recomputing
+  when the base moved; the writers of one document queued in memory per replica, and at most four
+  document writes in flight per replica. `documents.test.ts` races 25 writers on one document and
+  25 on 25 documents with a read probe under the crowd.
+- **A static ReDoS check cannot decide the class.** safe-regex2 refuses `(a+)+` and accepts
+  `^(a|a)*$`, which is exponential too. A pattern an author controls, run on a value a writer
+  controls, needs a time budget: every schema pattern the server evaluates (the data's validation,
+  a page's extraction) runs in one worker thread under 250 ms (`documents/validate-budget.ts`), the
+  job killed with its thread when over, the caller told `schema_too_slow`. The static check stays as
+  the cheap early refusal at push.
+- **Six adversarial rounds hunted concurrency and ReDoS; a fresh end-to-end pass as the feature's
+  three users found six more defects** (the double check of 21 October 2026). None was deep: a
+  refusal whose reason sat unread in `details` (`validation_error` printed as "Request validation
+  failed" by the CLI and the MCP tools), an `Idempotency-Key` the contract declared and the SDK sent
+  on PUT/PATCH while the chassis claims keys on POST only (a retried PATCH minted two versions), a
+  schema the validator reads its own way (`"required": "title"` as four properties t, i, l, e)
+  accepted at push, and docs examples no code ever printed. Mutation testing proves the suite pins
+  what was built; it does not ask whether the right thing was built. Drive every surface once as
+  its user before the merge gate, and pin a docs example against the real output
+  (`documents-cli.test.ts` reads `docs/agents/cli.md`), a declaration against what keeps it
+  (`idempotency-declarations.test.ts` walks every route that declares the header).

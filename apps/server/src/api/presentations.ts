@@ -72,6 +72,11 @@ import type { StorageDriver } from '@antasphere/chassis-server/storage';
 import { manifestHasForms } from '../forms/detect.js';
 import type { ThumbnailService } from '../thumbnails/service.js';
 import { readReference } from '../presentations/reference-frontmatter.js';
+import {
+  contractRefusalBody,
+  documentBindingOf,
+  readTemplateContract
+} from '../presentations/data-contract.js';
 import { attachmentsZipFilename, serveAttachmentsZip, serveZip } from '../presentations/attachments.js';
 import { responseZipFolder, uniqueZipPath, zipSegment, type FormUploadService } from '../forms/uploads.js';
 import { canAdministerDeck, type PresentationService } from '../presentations/service.js';
@@ -98,7 +103,16 @@ import { requireAuth, requireNonGuest } from '@antasphere/chassis-server/middlew
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
-const presentationToWire = (p: PresentationRow, projects: PresentationProjectRef[] = []) => ({
+/** The one body of a manifest naming blobs the caller cannot bind (SL-B1): never says whether the bytes exist. */
+const missingBlobs = (missing: string[]) => ({
+  error: {
+    code: 'missing_blobs',
+    message: `The manifest references ${missing.length} blob(s) not uploaded to this workspace — upload them and retry`,
+    details: { missing }
+  }
+});
+
+export const presentationToWire = (p: PresentationRow, projects: PresentationProjectRef[] = []) => ({
   id: p.id,
   title: p.title,
   kind: p.kind,
@@ -119,11 +133,13 @@ const presentationToWire = (p: PresentationRow, projects: PresentationProjectRef
   audience: p.audience,
   defaultReference: p.isDefaultReference,
   projects,
+  // PRDCT-3641: what a document knows about its template; null elsewhere.
+  document: documentBindingOf(p, p.schemaVersion ?? undefined),
   createdAt: p.createdAt.toISOString(),
   updatedAt: p.updatedAt.toISOString()
 });
 
-const versionToWire = (v: Omit<PresentationVersionRow, 'manifest'>) => ({
+export const versionToWire = (v: Omit<PresentationVersionRow, 'manifest'>) => ({
   presentationId: v.presentationId,
   version: v.version,
   entryPath: v.entryPath,
@@ -301,6 +317,30 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
 
+    // SL-B1, before any blob is opened: a sha the caller may not read is
+    // MISSING, and the contract reader below must never open it (it would
+    // echo another deck's binding names; the verifier of PRDCT-3641).
+    const unreadable = await service.precheckMissing(
+      principal.workspaceId,
+      principal,
+      (body.manifest as ManifestEntry[]).map((e) => e.sha256)
+    );
+    if (unreadable.length > 0) return c.json(missingBlobs(unreadable), 400);
+    const reference = await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[]);
+    // PRDCT-3641: a template's data contract, read here like the frontmatter;
+    // unlike it, an unusable contract REFUSES the push with the file named.
+    const contract = await readTemplateContract(
+      storage,
+      principal.workspaceId,
+      body.manifest as ManifestEntry[],
+      reference.reference
+    );
+    if (contract.refusal) {
+      return c.json(
+        contractRefusalBody(contract.refusal),
+        contract.refusal.code === 'validator_failed' ? 500 : 400
+      );
+    }
     const result = await service.commitUploadSession({
       workspaceId: principal.workspaceId,
       principal,
@@ -315,9 +355,10 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       // PRDCT-1333: scanned HERE, before the commit transaction, so blob
       // reads never happen while the session/deck rows are locked.
       hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[]),
-      // ADR 025: the AGENT.md frontmatter, read here for the same reason —
+      // ADR 025: the AGENT.md frontmatter, read above for the same reason —
       // and it never refuses the push (an unusable one is a warning).
-      reference: await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[])
+      reference,
+      dataContract: contract.contract
     });
     if (!result.ok) {
       const f = result.failure;
@@ -385,6 +426,35 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     const { id } = c.req.valid('param');
     const body = c.req.valid('json');
 
+    // The deck first (404 for a deck the caller cannot write, the service's
+    // own uniform answer), so the blob precheck below never answers a probe
+    // on a deck the caller may not see (the existence oracle).
+    const target = await service.get(principal.workspaceId, id);
+    if (!target || !(await service.canWrite(principal, target))) {
+      return c.json(err('not_found', 'Presentation not found'), 404);
+    }
+    // SL-B1, before any blob is opened: a sha the caller may not read is
+    // MISSING, and the contract reader below must never open it (it would
+    // echo another deck's binding names; the verifier of PRDCT-3641).
+    const unreadable = await service.precheckMissing(
+      principal.workspaceId,
+      principal,
+      (body.manifest as ManifestEntry[]).map((e) => e.sha256)
+    );
+    if (unreadable.length > 0) return c.json(missingBlobs(unreadable), 400);
+    const reference = await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[]);
+    const contract = await readTemplateContract(
+      storage,
+      principal.workspaceId,
+      body.manifest as ManifestEntry[],
+      reference.reference
+    );
+    if (contract.refusal) {
+      return c.json(
+        contractRefusalBody(contract.refusal),
+        contract.refusal.code === 'validator_failed' ? 500 : 400
+      );
+    }
     const result = await service.commitVersion({
       workspaceId: principal.workspaceId,
       principal,
@@ -394,13 +464,23 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       manifest: body.manifest as ManifestEntry[],
       title: body.title,
       hasForms: await manifestHasForms(storage, principal.workspaceId, body.manifest as ManifestEntry[]),
-      // ADR 025: the AGENT.md frontmatter, read here for the same reason —
-      // and it never refuses the push (an unusable one is a warning).
-      reference: await readReference(storage, principal.workspaceId, body.manifest as ManifestEntry[])
+      reference,
+      dataContract: contract.contract
     });
     if (!result.ok) {
       const f = result.failure;
       switch (f.code) {
+        case 'schema_version_unchanged':
+          return c.json(
+            {
+              error: {
+                code: 'schema_version_unchanged',
+                message: `schema.json changed but its "version" is still "${f.version}": bump it, documents pin a version`,
+                details: { version: f.version }
+              }
+            },
+            400
+          );
         case 'not_found':
           // Covers the unauthorized case too (AUTH-5, PRDCT-1393): the
           // service answers not_found for a deck the principal cannot
@@ -768,12 +848,18 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (!source || !(await service.canRead(principal, source))) {
       return c.json(err('not_found', 'Presentation not found'), 404);
     }
+    // A document's copy keeps its template pin only for a caller who reads
+    // the template (verifier round 2, F4); anyone else gets a plain deck.
+    const template =
+      source.templateId !== null ? await service.get(principal.workspaceId, source.templateId) : null;
+    const copyDocumentBinding = template !== null && (await service.canRead(principal, template));
     const result = await service.duplicate({
       workspaceId: principal.workspaceId,
       principal,
       sourceId: id,
       version: body.version,
-      title: body.title
+      title: body.title,
+      copyDocumentBinding
     });
     if (!result.ok) {
       const f = result.failure;

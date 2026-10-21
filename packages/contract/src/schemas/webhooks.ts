@@ -257,6 +257,39 @@ export const DECK_WEBHOOK_EVENTS: readonly DeckWebhookEvent[] = [
     description: 'The still image of a deck version could not be made.',
     subjects: ['deck', 'project'],
     data: thumbnailFacts
+  },
+  // Data-bound templates (PRDCT-3641): a document's data moved.
+  {
+    type: 'document.pushed',
+    description:
+      'A document’s data was written (created, pushed, an answer cleared, moved to another template version) and a new version rendered; `changed` names the keys that moved.',
+    subjects: ['deck', 'project'],
+    data: z.object({
+      deckId: id,
+      version: z.number().int(),
+      templateId: id,
+      templateVersion: z.number().int(),
+      source: z.enum(['create', 'push', 'upgrade']),
+      changed: z.array(z.string()),
+      authorUserId: id.nullable()
+    })
+  },
+  {
+    type: 'document.answered',
+    description:
+      'A form inside a document was answered and the answer landed in the document’s data (`answers.<form>`); the response itself is in `form.response_submitted`.',
+    subjects: ['deck', 'project', 'link'],
+    data: z.object({
+      deckId: id,
+      version: z.number().int(),
+      formName: z.string(),
+      responseId: id,
+      revision: z.number().int(),
+      linkId: id.nullable(),
+      /** The share link's recipient label, never a respondent identity. */
+      answeredBy: z.string().nullable(),
+      changed: z.array(z.string())
+    })
   }
 ];
 

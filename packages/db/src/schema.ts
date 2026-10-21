@@ -57,6 +57,10 @@ export type BadgePosition = (typeof badgePositions)[number];
 export const audiences = ['private', 'workspace'] as const;
 export type Audience = (typeof audiences)[number];
 
+/** What made a document version (PRDCT-3641): its creation, a data push, a recipient's answer, a template upgrade. */
+export const documentDataSources = ['create', 'push', 'answer', 'upgrade'] as const;
+export type DocumentDataSource = (typeof documentDataSources)[number];
+
 export const presentations = pgTable(
   'presentations',
   {
@@ -120,6 +124,23 @@ export const presentations = pgTable(
     remixedFrom: uuid('remixed_from').references((): AnyPgColumn => presentations.id, {
       onDelete: 'set null'
     }),
+    /**
+     * Data-bound templates (PRDCT-3641). The template this document is an
+     * instance of; NULL on a deck that is not a document. A deleted template
+     * leaves its documents standing.
+     */
+    templateId: uuid('template_id').references((): AnyPgColumn => presentations.id, {
+      onDelete: 'set null'
+    }),
+    // The template's presentation version this document is pinned to; moves
+    // only on an explicit upgrade.
+    templateVersion: integer('template_version'),
+    // The pinned template version's schema `version` string, mirrored so the
+    // deck's wire never opens the template's version row.
+    schemaVersion: text('schema_version'),
+    // Mirrors the current version's document_data so a read never opens a
+    // version row, like entry_path.
+    documentData: jsonb('document_data').$type<Record<string, unknown>>(),
     // Viewer analytics (Phase 4): bumped atomically when a share token serves
     // the ENTRY HTML (never per asset). Deliberately not on the wire schema
     // yet — the P8 dashboard decides how to surface them.
@@ -147,6 +168,11 @@ export const presentations = pgTable(
     uniqueIndex('presentations_default_reference_uniq')
       .on(t.workspaceId, t.referenceType)
       .where(sql`${t.isDefaultReference} AND ${t.deletedAt} IS NULL`),
+    // Serves "the documents of this template" (PRDCT-3641); only documents
+    // carry a template_id, so the index holds them alone.
+    index('presentations_template_id_idx')
+      .on(t.templateId)
+      .where(sql`${t.templateId} IS NOT NULL`),
     check('presentations_audience_check', sql`${t.audience} IN ('private', 'workspace')`)
   ]
 );
@@ -200,6 +226,24 @@ export const presentationVersions = pgTable(
     referenceType: text('reference_type'),
     reference: jsonb('reference').$type<Record<string, unknown>>(),
     referenceWarning: text('reference_warning'),
+    // Data-bound templates (PRDCT-3641), TEMPLATE side: the parsed
+    // schema.json of this version (its JSON Schema), read once at commit like
+    // reference; the parsed data.json sample; the field paths its HTML files
+    // bind, extracted at commit.
+    dataSchema: jsonb('data_schema').$type<Record<string, unknown>>(),
+    dataSample: jsonb('data_sample').$type<Record<string, unknown>>(),
+    dataBindings: jsonb('data_bindings').$type<string[]>(),
+    // DOCUMENT side: the data this version was rendered from, the answers
+    // branch included; the template version it was rendered against; what
+    // made it; the top-level paths it changed against the previous version
+    // (the push history); and, on an 'answer' version, the share link's
+    // recipient label that answered (never a respondent identity).
+    documentData: jsonb('document_data').$type<Record<string, unknown>>(),
+    templateVersion: integer('template_version'),
+    schemaVersion: text('schema_version'),
+    dataSource: text('data_source', { enum: documentDataSources }),
+    dataChanged: jsonb('data_changed').$type<string[]>(),
+    dataAnsweredBy: text('data_answered_by'),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdByRole: text('created_by_role', { enum: versionAuthorRoles }).notNull().default('owner'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()

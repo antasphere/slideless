@@ -32,6 +32,15 @@ describe('docs/reference/webhook-events.md is the catalog, rendered (PRDCT-3484)
     for (const type of types) expect(page, type).toContain(`### \`${type}\``);
   });
 
+  it('names every field type (no `any`) and spells an enum out (the PRDCT-3641 double check)', async () => {
+    const page = await renderWebhookEventsDoc();
+    expect(page).not.toMatch(/\|\s*any\s*\|/);
+    const pushed = page.slice(page.indexOf('### `document.pushed`'), page.indexOf('### `document.answered`'));
+    expect(pushed).toMatch(/\| `source` +\| "create", "push" or "upgrade" \|/);
+    expect(pushed).toContain('"source": "push"');
+    expect(pushed).not.toContain('expiresAt');
+  });
+
   it('renders the same page twice (no clock, no randomness)', async () => {
     expect(await renderWebhookEventsDoc()).toBe(await renderWebhookEventsDoc());
   });

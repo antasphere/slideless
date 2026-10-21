@@ -26,6 +26,10 @@ export * from './schemas/collaborators.js';
 export * from './schemas/annotations.js';
 export * from './schemas/forms.js';
 export * from './schemas/webhooks.js';
+// PRDCT-3641: data-bound templates, the bindings and the data operations.
+export * from './schemas/documents.js';
+export * from './bindings.js';
+export * from './document-data.js';
 export * from './embed.js';
 // Lane B (PRDCT-2280): the deck's master page path, built in one place.
 export * from './master-route.js';

@@ -2,6 +2,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliUsageError } from '@antasphere/cli-core';
 import {
+  DATA_FILE_PATH,
+  DATA_SCHEMA_PATH,
   REFERENCE_TYPES,
   type Presentation,
   type ReferenceProvenance,
@@ -571,6 +573,13 @@ is removed. No page without a date on it.
 
 \`assets/\` holds whatever the template ships (an icon set, a sample figures file). The deck
 made from it takes the brand's logo and fonts, not the template's.
+
+## Data
+
+\`schema.json\` is the shape of the data a document made from this template carries: a JSON
+Schema with a \`version\` of its own, moved on every change. \`data.json\` is a sample the schema
+accepts. The pages bind to the fields with markers: \`{{title}}\` on the cover is the \`title\`
+field. Add a field to the schema before a page binds it, and say here what each field means.
 `;
   const html = `<!doctype html>
 <html lang="en">
@@ -589,7 +598,7 @@ made from it takes the brand's logo and fonts, not the template's.
 <body>
 <section>
   <p class="page">Page 1 of 6 · Cover</p>
-  <h1>Project name</h1>
+  <h1>{{title}}</h1>
   <p>Month YYYY · Project lead</p>
 </section>
 <section>
@@ -620,10 +629,23 @@ made from it takes the brand's logo and fonts, not the template's.
 </body>
 </html>
 `;
+  // The data contract (PRDCT-3641): the smallest schema the cover binds, and
+  // a sample it accepts. The version is the schema's own; a template push
+  // refuses a changed schema whose version did not move.
+  const schema = {
+    version: '1',
+    type: 'object',
+    properties: { title: { type: 'string', description: 'The project name, on the cover.' } },
+    required: ['title'],
+    additionalProperties: false
+  };
+  const sample = { title: 'Project name' };
   return {
     files: [
       { path: 'AGENT.md', content: agent },
-      { path: 'index.html', content: html }
+      { path: 'index.html', content: html },
+      { path: DATA_SCHEMA_PATH, content: `${JSON.stringify(schema, null, 2)}\n` },
+      { path: DATA_FILE_PATH, content: `${JSON.stringify(sample, null, 2)}\n` }
     ],
     dirs: ['assets']
   };

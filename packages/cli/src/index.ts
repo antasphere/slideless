@@ -4,6 +4,7 @@ import { cli } from './cli.js';
 import { registerDeckCommands } from './commands/decks.js';
 import { registerContentCommands } from './commands/content.js';
 import { registerReferenceCommands } from './commands/references.js';
+import { registerDocumentCommands } from './commands/documents.js';
 import { registerProjectDeckCommands } from './commands/projects.js';
 import { registerSharingCommands } from './commands/sharing.js';
 import { registerResponseFilesCommand } from './commands/response-files.js';
@@ -47,8 +48,12 @@ function registerTool(program: Command, io: CliIo): void {
   // Authoring: push, pull, pull-annotations, annotation resolve/reopen, dev.
   registerContentCommands(program, io);
   // References: reference list/pull/new/push/publish/unpublish/default/start,
-  // and brand / template as the same verbs with the type preset.
+  // and brand / template as the same verbs with the type preset (template
+  // also carries `schema get|set`).
   registerReferenceCommands(program, io);
+  // Documents (PRDCT-3641): document create/data/answers/upgrade/check, the
+  // decks a data-bound template makes; `template schema` sits in its family.
+  registerDocumentCommands(program, io);
   // The deck's side of the projects (ADR 026), hung off the chassis's own
   // `projects` group: projects link / unlink / brand.
   registerProjectDeckCommands(program, io);

@@ -1220,3 +1220,13 @@ the handler's answer and never the organization's balance. The proof is
 primes the plan with a request whose hook answers null stops priming: the template's prime is
 already an upload declared over the cap, which is what Slideless's `plan-limits.test.ts` now uses.
 The template's AGENTS.md sentence "the plan gate judges nothing" can then say "the handler answers".
+
+## 34. A tool service that stores blobs cannot be built in the `services` slot (PRDCT-3641)
+
+The `services` slot's context carries the storage driver but not the chassis's `FileService` (the
+content-addressed store with its uploader record), which only reaches the tool at the `routes` slot
+(`ctx.fileService`). A tool service that writes blobs the server itself authored (Slideless's
+document renderer stores the pages it resolved at push) therefore has to be built inside the
+`routes` slot and handed sideways to the other routers that need it (the viewer's form routes here).
+Suggested upstream fix: hand `fileService` to the `services` slot too, or let the slot return a
+factory the chassis calls once the file service exists.

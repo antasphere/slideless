@@ -386,6 +386,13 @@
       "when": 1791913506581,
       "tag": "0054_share_token_view_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792521360810,
+      "tag": "0055_data_bound_templates",
+      "breakpoints": true
     }
   ]
 }

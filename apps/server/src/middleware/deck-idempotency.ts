@@ -13,6 +13,17 @@ const SHARE_TOKEN_CREATE_RE = /^\/api\/v1\/presentations\/[^/]+\/tokens$/;
 // click: a retried click must land on the same copy, never a second one.
 const DUPLICATE_RE = /^\/api\/v1\/presentations\/[^/]+\/duplicate$/;
 
+// A document's creation and upgrade (PRDCT-3641) mint a version from one
+// call: a retried call must land on the same version, never a second one.
+const DOCUMENT_CREATE_RE = /^\/api\/v1\/presentations\/[^/]+\/instances$/;
+const DOCUMENT_UPGRADE_RE = /^\/api\/v1\/presentations\/[^/]+\/upgrade$/;
+
 export function isDeckIdempotencyTarget(path: string): boolean {
-  return path === UPLOADS_PATH || SHARE_TOKEN_CREATE_RE.test(path) || DUPLICATE_RE.test(path);
+  return (
+    path === UPLOADS_PATH ||
+    SHARE_TOKEN_CREATE_RE.test(path) ||
+    DUPLICATE_RE.test(path) ||
+    DOCUMENT_CREATE_RE.test(path) ||
+    DOCUMENT_UPGRADE_RE.test(path)
+  );
 }

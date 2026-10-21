@@ -32,6 +32,9 @@ import {
  *  - references (ADR 025): the two read tools list by type, answer the
  *    workspace default or a plain "none set", and follow the audience (a
  *    member's key sees a reference only once it is published).
+ *  - data-bound templates (PRDCT-3641): a template's contract, a document
+ *    made from it, its data read, pushed (merge) and refused with the failing
+ *    field named, its answers, and an upgrade to the version it is already on.
  *
  * The deck side of projects (ADR 026: `projectIds` on an upload, the list
  * filter, link/unlink, the project's brand) is mcp-projects-decks.test.ts.
@@ -50,6 +53,12 @@ const EXPECTED_TOOLS = [
   'slideless_get_agent_doc',
   'slideless_list_references',
   'slideless_get_default_reference',
+  'slideless_get_template_schema',
+  'slideless_create_document',
+  'slideless_get_document_data',
+  'slideless_push_document_data',
+  'slideless_get_document_answers',
+  'slideless_upgrade_document',
   'slideless_update_presentation',
   'slideless_delete_presentation',
   'slideless_upload_html_presentation',
@@ -243,6 +252,9 @@ describe('discovery + auth gate', () => {
       'slideless_get_agent_doc',
       'slideless_list_references',
       'slideless_get_default_reference',
+      'slideless_get_template_schema',
+      'slideless_get_document_data',
+      'slideless_get_document_answers',
       'slideless_get_project_brand',
       'slideless_list_share_tokens',
       'slideless_list_token_views',
@@ -270,7 +282,10 @@ describe('discovery + auth gate', () => {
       'slideless_add_share_token',
       'slideless_share_via_email',
       'slideless_invite_collaborator',
-      'slideless_set_token_version_mode'
+      'slideless_set_token_version_mode',
+      'slideless_create_document',
+      'slideless_push_document_data',
+      'slideless_upgrade_document'
     ]) {
       expect(toolOf(name).description, ` confirm-first`).toContain('confirm with the user');
     }
@@ -1226,5 +1241,127 @@ describe('references through the tools (ADR 025)', () => {
     const described = tools.find((t) => t.name === 'slideless_get_default_reference')!.description;
     expect(described).toContain('slideless_get_agent_doc');
     expect(described).toContain('Nothing is applied automatically');
+  });
+});
+
+describe('data-bound templates through the tools (PRDCT-3641)', () => {
+  const SCHEMA = {
+    version: '1',
+    type: 'object',
+    properties: { title: { type: 'string' } },
+    required: ['title']
+  };
+  let templateId: string;
+  let documentId: string;
+
+  beforeAll(async () => {
+    const pushed = await callTool(ownerKey, 'slideless_upload_presentation_files', {
+      title: 'Bound template',
+      files: [
+        { path: 'index.html', contentText: '<h1>{{title}}</h1>' },
+        { path: 'AGENT.md', contentText: '---\ntype: Template\ntitle: Bound template\n---\nFill the title.' },
+        { path: 'schema.json', contentText: JSON.stringify(SCHEMA) },
+        { path: 'data.json', contentText: JSON.stringify({ title: 'Sample' }) }
+      ]
+    });
+    expect(pushed.isError, pushed.text).toBe(false);
+    templateId = pushed.data.presentation.id as string;
+  });
+
+  it("slideless_get_template_schema answers the template's contract with the bound field paths", async () => {
+    const contract = await callTool(ownerKey, 'slideless_get_template_schema', {
+      presentationId: templateId
+    });
+    expect(contract.isError, contract.text).toBe(false);
+    expect(contract.data).toMatchObject({
+      presentationId: templateId,
+      version: 1,
+      schemaVersion: '1',
+      sample: { title: 'Sample' },
+      bindings: ['title']
+    });
+    expect(contract.data.schema.required).toEqual(['title']);
+  });
+
+  it('slideless_create_document makes a document pinned to template version 1', async () => {
+    const created = await callTool(ownerKey, 'slideless_create_document', {
+      templateId,
+      data: { title: 'Q3 review' },
+      title: 'Q3 document'
+    });
+    expect(created.isError, created.text).toBe(false);
+    expect(created.data.presentation.title).toBe('Q3 document');
+    expect(created.data.presentation.document).toMatchObject({ templateId, templateVersion: 1 });
+    expect(created.data.data.data).toMatchObject({ title: 'Q3 review' });
+    documentId = created.data.presentation.id as string;
+  });
+
+  it("slideless_get_document_data returns the document's data and its pin", async () => {
+    const read = await callTool(readOnlyKey, 'slideless_get_document_data', { presentationId: documentId });
+    expect(read.isError, read.text).toBe(false);
+    expect(read.data.presentationId).toBe(documentId);
+    expect(read.data.template).toMatchObject({ templateId, templateVersion: 1, schemaVersion: '1' });
+    expect(read.data.data).toMatchObject({ title: 'Q3 review' });
+  });
+
+  it('slideless_push_document_data in merge mode changes the title and moves the version', async () => {
+    const before = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    const pushed = await callTool(ownerKey, 'slideless_push_document_data', {
+      presentationId: documentId,
+      data: { title: 'Q3 review, final' },
+      mode: 'merge'
+    });
+    expect(pushed.isError, pushed.text).toBe(false);
+    expect(pushed.data.data.data).toMatchObject({ title: 'Q3 review, final' });
+    expect(pushed.data.version.version).toBeGreaterThan(before.data.version);
+    expect(pushed.data.presentation.currentVersion).toBe(pushed.data.version.version);
+
+    const after = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    expect(after.data.data.title).toBe('Q3 review, final');
+    expect(after.data.version).toBe(pushed.data.version.version);
+  });
+
+  it('a push the schema refuses names the failing field in the error text, and writes nothing', async () => {
+    const before = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    const refused = await callTool(ownerKey, 'slideless_push_document_data', {
+      presentationId: documentId,
+      data: { title: 5 }
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('data_invalid');
+    expect(refused.text).toMatch(/^\/title: /m);
+
+    const after = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    expect(after.data.version).toBe(before.data.version);
+  });
+
+  it('data carrying `answers` is refused with the reason in the error text, not the bare "Request validation failed"', async () => {
+    const before = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    const refused = await callTool(ownerKey, 'slideless_push_document_data', {
+      presentationId: documentId,
+      data: { answers: { gate: { decision: 'go' } } },
+      mode: 'merge'
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('validation_error');
+    expect(refused.text).toMatch(/^\(root\): "answers" is reserved/m);
+
+    const after = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    expect(after.data.version).toBe(before.data.version);
+  });
+
+  it('slideless_get_document_answers answers an empty list before any form is answered', async () => {
+    const answers = await callTool(ownerKey, 'slideless_get_document_answers', {
+      presentationId: documentId
+    });
+    expect(answers.isError, answers.text).toBe(false);
+    expect(answers.data.presentationId).toBe(documentId);
+    expect(answers.data.answers).toEqual([]);
+  });
+
+  it('slideless_upgrade_document on the version the document is already on is refused by name', async () => {
+    const upgraded = await callTool(ownerKey, 'slideless_upgrade_document', { presentationId: documentId });
+    expect(upgraded.isError).toBe(true);
+    expect(upgraded.text).toContain('already_on_version');
   });
 });

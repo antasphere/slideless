@@ -438,6 +438,8 @@ slideless template default <ref>
 slideless template default <ref> --clear
 slideless template default --clear
 slideless template start <ref> ./new-deck
+slideless template schema get <ref>              # the template's data contract (template only)
+slideless template schema set <ref> --file schema.json --sample data.json   # a new template version
 slideless reference list --type brand            # the real family: the type is a flag
 slideless reference list                         # …or open, every reference of every type
 slideless reference pull --type template
@@ -483,8 +485,11 @@ pushed, so the deck beside it keeps recording the brand.
 **new** scaffolds a folder to fill in: an `AGENT.md` carrying the frontmatter of
 the type with every field it has, an `index.html` with one page per layout for a
 brand or the skeleton pages for a template, and an empty `assets/` (plus
-`assets/fonts/` for a brand). The content is neutral and invented, no real brand
-and no real client, so every value is an example to replace. `--title` writes the
+`assets/fonts/` for a brand). A template also gets its data contract: a
+`schema.json` with `version` `"1"` and one string field, `title`, which the cover's
+heading binds as `{{title}}`, and a `data.json` sample the schema accepts. The
+content is neutral and invented, no real brand and no real client, so every
+value is an example to replace. `--title` writes the
 title into the frontmatter. The command touches no instance: the type is the
 frontmatter's, and the server classifies the deck at the next push.
 
@@ -538,6 +543,22 @@ is the difference from pushing a copy of the reference itself: a duplicate on th
 server is a reference again, while starting a deck is a local copy that becomes
 an ordinary deck.
 
+**schema** exists on the `template` family only. A template can ship the shape of
+the data it shows, a `schema.json` at its root with a `data.json` sample beside it,
+and become a document factory: [Data-bound templates](../concepts/data-bound-templates.md)
+is the model, and [Documents](#documents) below has the commands that use it.
+`slideless template schema get <ref>` prints the template's version, the schema's
+own `version`, the fields its pages bind (`bindings:`), then the schema and the
+sample as JSON. `slideless template schema set <ref> --file schema.json` replaces
+the schema and makes a new version of the template with every other file
+unchanged; `--sample data.json` replaces the sample in the same version. The
+command prints the new template version and schema version. A refusal prints the
+instance's sentence and, under it, what it names: one `index.html line 12:
+tickets.headline` line per field a page binds that the schema does not describe,
+or one `/title: …` line per place the sample does not follow the schema. A schema
+whose `version` did not move is refused too, since documents compare versions
+when they upgrade.
+
 **Provenance** is what a deck records about the references it was made from.
 `slideless push --brand <ref>` and `--template <ref>` record one each, and
 `<ref>@n` pins the version instead of the reference's latest; both take the same
@@ -558,6 +579,99 @@ into `metadata.references`, one entry per type, every other entry and every othe
 metadata key kept. The push prints the result as a `references:` line, `brand
 <id>@<n>, template <id>@<n>`, and `slideless get <id>` shows the same entries as
 `made from:`.
+
+## Documents
+
+A document is a deck made from a data-bound template with data: the template's
+pages filled from a JSON object, pinned to the template version it was made
+from. Every push of data is a new version of the document, and a form answered
+in the document lands in its data under `answers`, keyed by the form's name, with
+who answered (the share link's label) and when. [Data-bound
+templates](../concepts/data-bound-templates.md) is the model.
+
+```bash
+slideless document create --from "Lane report" --data lane.json   # a document from a template
+slideless document create --from "Lane report" --data lane.json --title "Lane 12" --project <id>
+slideless document data get <id>                         # the current data, answers included
+slideless document data push <id> --file lane.json       # replace the data
+slideless document data push <id> --merge patch.json     # change some keys only
+slideless document data versions <id>                    # every version: when, source, by whom, what changed
+slideless document answers <id>                          # the forms' answers, one block per form
+slideless document answers <id> --clear merge_gate    # clear one form's answer from the data (the responses stay)
+slideless document upgrade <id>                          # move to the template's current version
+slideless document upgrade <id> --to 4                   # …or to the version you name
+slideless document upgrade <id> --merge more.json        # add what the new version requires, then move
+slideless document upgrade <id> --file lane.json         # move with this data instead of the current one
+slideless document check --from "Lane report" --data lane.json   # validate a file, nothing sent
+```
+
+**create** makes the document from the template `--from` names, with the data
+in the `--data` file, which holds a JSON object. `--from` takes the same forms as
+every `<ref>`: an id, an exact title, or the start of a title. `--title` names
+the document (default: the template's title), and `--project <id>`, repeatable,
+links it to projects as it is made. The command prints `Document <id> created
+from "Lane report" at template version 3`, the title and a `url:` line, the
+document's page on the instance.
+
+**data get** prints the document's current data as JSON with a two-space
+indent, the `answers` branch included, ready to edit and push back. With
+`--json` it prints the instance's whole answer: the data, the document's
+version and its template pin (`templateId`, `templateVersion`, `schemaVersion`).
+
+**data push** writes the next version. `--file` replaces the whole object;
+`--merge` applies a merge patch: the keys in the file are set, a key set to
+`null` is removed, the others stay. Pass exactly one of the two: both or neither
+is a usage error, and nothing is sent. The `answers` branch is the instance's to
+write: a replace keeps the answers already given, and a file that carries an
+`answers` key is refused. The command prints the new version and the keys that
+changed (`changed: tickets, title`).
+
+**data versions** lists the document's versions, newest first: the version,
+when, where it came from (`create`, `push`, `answer`, `upgrade`), who made it (or
+`answered by` the link's label, for an answer), and the keys that changed
+(`answers.merge_gate` for an answer). It pages like the other listings
+(`--cursor`, `--limit`, `--all`).
+
+**answers** prints one block per answered form: a table of its fields and
+values, then who answered and when. A field with several values reads as a
+comma-separated list. A document whose forms nobody answered says `No form
+answered yet.`
+
+**upgrade** moves the document to a newer version of its template, the
+template's current one, or the one `--to <version>` names, and renders the data
+again on the new pages. It prints the new pin and the document's new version.
+When the data no longer follows the new schema, the upgrade is refused and
+nothing moves.
+
+**check** validates a file against a template's schema on your machine, with
+the same validator the instance runs: it reads the template's schema, checks
+the `--data` file, refuses an `answers` key, and sends nothing. A file that
+follows the schema prints `ok: lane.json follows "Lane report" schema 1` and
+exits 0; any other file prints one `path: message` line per issue (`/tickets/0:
+…`, `(root): …` for the object itself) and exits 1. With `--json` it prints `{
+"ok": …, "issues": [{ "path": …, "message": … }] }` and exits the same way, so a
+tool can validate before it pushes.
+
+A refusal of `create`, `data push` or `upgrade` prints the instance's sentence
+and, when the data does not follow the schema, one `path: message` line per
+issue under it:
+
+```
+Error: The data does not follow the schema at /tickets/0/id: Property "id" is required.
+  /tickets/0/id: Property "id" is required.
+```
+
+A file the instance refuses before the schema runs (one that carries `answers`)
+prints its reason the same way:
+
+```
+Error: Request validation failed
+  (root): "answers" is reserved: the forms' answers are written by the server
+```
+
+Every command takes `--json` and then prints the instance's answer as it is
+(`check`, which asks the instance nothing, prints its own `{ ok, issues }`); a
+refusal stays on stderr, `--json` or not.
 
 ## Projects
 

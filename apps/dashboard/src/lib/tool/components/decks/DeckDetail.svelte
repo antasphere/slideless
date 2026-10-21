@@ -20,6 +20,7 @@
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import Inbox from '@lucide/svelte/icons/inbox';
   import History from '@lucide/svelte/icons/history';
+  import Braces from '@lucide/svelte/icons/braces';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import DeckTabs, { type DeckTab } from './DeckTabs.svelte';
@@ -29,6 +30,9 @@
   import AnnotationsPanel from './AnnotationsPanel.svelte';
   import FormResponsesPanel from './FormResponsesPanel.svelte';
   import VersionsPanel from './VersionsPanel.svelte';
+  import TemplateDataPanel from './TemplateDataPanel.svelte';
+  import DocumentDataPanel from './DocumentDataPanel.svelte';
+  import { dataSide } from '$lib/tool/decks/data';
   import DeckMetaPanel from './DeckMetaPanel.svelte';
   import DeckSectionHeading from './DeckSectionHeading.svelte';
   import DeckFact from './DeckFact.svelte';
@@ -195,6 +199,9 @@
   let collaboratorsCount = $state<number | undefined>(undefined);
   let notesCount = $state<number | undefined>(undefined);
   let responsesCount = $state<number | undefined>(undefined);
+  let dataCount = $state<number | undefined>(undefined);
+  // the Data tab (PRDCT-3641): a template's contract, or a document's data
+  const side = $derived(dataSide(deck));
   // the links the table shows: the page's own preview tokens are plumbing, not shares
   const linksCount = $derived(
     tokensList.loading || tokensList.nextCursor || tokensList.error
@@ -208,6 +215,7 @@
     { id: 'collaborators', label: t('deck.tabCollaborators'), icon: Users, count: collaboratorsCount },
     { id: 'notes', label: t('deck.tabNotes'), icon: MessageSquare, count: notesCount },
     { id: 'responses', label: t('deck.tabResponses'), icon: Inbox, count: responsesCount },
+    ...(side ? [{ id: 'data', label: t('docData.tab'), icon: Braces, count: dataCount }] : []),
     {
       id: 'versions',
       label: t('deck.tabVersions'),
@@ -220,6 +228,17 @@
     const asked = page.url.searchParams.get('tab') ?? 'overview';
     return tabs.some((tab) => tab.id === asked) ? asked : 'overview';
   });
+
+  // A save of the template's contract or a document's upgrade made a new
+  // version: the facts, the versions and the preview follow it.
+  async function onDataChange() {
+    try {
+      deck = await api.presentation(deckId);
+    } catch {
+      // the next visit reads it; the panel already shows what it saved
+    }
+    void versionsList.refresh();
+  }
 
   // The shell's path bar reads `Decks / <title>` once the banner has scrolled
   // away. The title is user-authored: the bar renders it as text.
@@ -443,6 +462,29 @@
     <div hidden={activeTab !== 'responses'}>
       <FormResponsesPanel {deckId} oncount={(n) => (responsesCount = n)} />
     </div>
+
+    {#if side === 'template'}
+      <div hidden={activeTab !== 'data'}>
+        <TemplateDataPanel
+          {deckId}
+          previewUrl={preview.url}
+          previewKey={preview.key}
+          canPreview={canPreview && deck.currentVersion > 0}
+          previewError={preview.error}
+          oncount={(n) => (dataCount = n)}
+          onchange={() => void onDataChange()}
+        />
+      </div>
+    {:else if side === 'document'}
+      <div hidden={activeTab !== 'data'}>
+        <DocumentDataPanel
+          {deckId}
+          {resolveUser}
+          oncount={(n) => (dataCount = n)}
+          onchange={() => void onDataChange()}
+        />
+      </div>
+    {/if}
 
     <div hidden={activeTab !== 'versions'}>
       <VersionsPanel
