@@ -470,18 +470,12 @@ export class PlatformClient extends ChassisClient<Scope> {
     return this.request('GET', `/presentations/${encodeURIComponent(id)}/schema`);
   }
 
-  /** Replace a template's schema.json (and optionally its data.json sample): a new template version. */
-  setTemplateSchema(
-    id: string,
-    req: TemplateSchemaSet,
-    opts: IdempotentRequestOptions = {}
-  ): Promise<TemplateDataContract> {
-    return this.request(
-      'PUT',
-      `/presentations/${encodeURIComponent(id)}/schema`,
-      req,
-      idempotencyHeader(opts)
-    );
+  /**
+   * Replace a template's schema.json (and optionally its data.json sample): a new template version.
+   * Not replay-protected (no Idempotency-Key): the instance claims keys on POST only.
+   */
+  setTemplateSchema(id: string, req: TemplateSchemaSet): Promise<TemplateDataContract> {
+    return this.request('PUT', `/presentations/${encodeURIComponent(id)}/schema`, req);
   }
 
   /** Create a document from a template with initial data, pinned to the template's current version. */
@@ -503,32 +497,20 @@ export class PlatformClient extends ChassisClient<Scope> {
     return this.request('GET', `/presentations/${encodeURIComponent(id)}/data`);
   }
 
-  /** Replace a document's data (the answers carried over); a new version is rendered. */
-  replaceDocumentData(
-    id: string,
-    data: DocumentDataInput,
-    opts: IdempotentRequestOptions = {}
-  ): Promise<DocumentWritten> {
-    return this.request(
-      'PUT',
-      `/presentations/${encodeURIComponent(id)}/data`,
-      data,
-      idempotencyHeader(opts)
-    );
+  /**
+   * Replace a document's data (the answers carried over); a new version is rendered. Not
+   * replay-protected: a retried call lands the same data again as one more version.
+   */
+  replaceDocumentData(id: string, data: DocumentDataInput): Promise<DocumentWritten> {
+    return this.request('PUT', `/presentations/${encodeURIComponent(id)}/data`, data);
   }
 
-  /** Merge-patch a document's data (RFC 7386); a new version is rendered. */
-  mergeDocumentData(
-    id: string,
-    patch: DocumentDataMergePatch,
-    opts: IdempotentRequestOptions = {}
-  ): Promise<DocumentWritten> {
-    return this.request(
-      'PATCH',
-      `/presentations/${encodeURIComponent(id)}/data`,
-      patch,
-      idempotencyHeader(opts)
-    );
+  /**
+   * Merge-patch a document's data (RFC 7386); a new version is rendered. Not replay-protected: a
+   * retried patch applies again (a merge patch lands the same data) as one more version.
+   */
+  mergeDocumentData(id: string, patch: DocumentDataMergePatch): Promise<DocumentWritten> {
+    return this.request('PATCH', `/presentations/${encodeURIComponent(id)}/data`, patch);
   }
 
   /** A document's push history: every data version with who, when and what changed, newest first. */

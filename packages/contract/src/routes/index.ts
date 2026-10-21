@@ -1025,8 +1025,7 @@ export const templateSchemaSetRoute = createRoute({
     'with the other files unchanged, refused when a page binds a field the schema lacks or the version did not move',
   request: {
     params: uuidParams,
-    body: jsonRequestBody(templateSchemaSetSchema, 'The schema and, optionally, the sample'),
-    headers: idempotencyHeaders
+    body: jsonRequestBody(templateSchemaSetSchema, 'The schema and, optionally, the sample')
   },
   responses: {
     200: jsonBody(templateDataContractSchema, 'The contract of the new template version'),
@@ -1038,7 +1037,10 @@ export const templateSchemaSetRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    409: jsonBody(
+      apiErrorSchema,
+      'The template moved while the schema was being set (version_conflict): retry'
+    ),
     422: jsonBody(apiErrorSchema, 'The deck is not a template'),
     500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
@@ -1094,8 +1096,7 @@ export const documentDataReplaceRoute = createRoute({
     'a new version rendered',
   request: {
     params: uuidParams,
-    body: jsonRequestBody(documentDataInputSchema, 'The whole data (never the answers branch)'),
-    headers: idempotencyHeaders
+    body: jsonRequestBody(documentDataInputSchema, 'The whole data (never the answers branch)')
   },
   responses: {
     200: jsonBody(documentWrittenSchema, 'The document at its new version'),
@@ -1103,7 +1104,7 @@ export const documentDataReplaceRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    409: jsonBody(apiErrorSchema, 'Another write on this document is still running (document_busy): retry'),
     422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)'),
     500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
@@ -1118,8 +1119,7 @@ export const documentDataMergeRoute = createRoute({
     'validated against the pinned schema, a new version rendered',
   request: {
     params: uuidParams,
-    body: jsonRequestBody(documentDataMergePatchSchema, 'The merge patch (never the answers branch)'),
-    headers: idempotencyHeaders
+    body: jsonRequestBody(documentDataMergePatchSchema, 'The merge patch (never the answers branch)')
   },
   responses: {
     200: jsonBody(documentWrittenSchema, 'The document at its new version'),
@@ -1127,7 +1127,7 @@ export const documentDataMergeRoute = createRoute({
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    409: jsonBody(apiErrorSchema, 'Another write on this document is still running (document_busy): retry'),
     422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)'),
     500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
