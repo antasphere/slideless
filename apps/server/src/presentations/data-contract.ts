@@ -7,6 +7,7 @@ import {
   dataSchemaSchema,
   documentDataInputSchema,
   hasBindingMarkers,
+  schemaShapeIssues,
   unsafePatternsOf,
   type BindingError,
   type DataValidationIssue,
@@ -143,6 +144,17 @@ export async function readTemplateContract(
     });
   }
   const schema = schemaParsed.data;
+  // A keyword holding a value of the wrong shape is no JSON Schema: the
+  // validator would read it its own way and no document could be made
+  // (the PRDCT-3641 double check), so it is refused here, with the place.
+  const malformed = schemaShapeIssues(schema);
+  if (malformed.length > 0) {
+    const first = malformed[0]!;
+    return refuse({
+      code: 'schema_invalid',
+      message: `${DATA_SCHEMA_PATH} at ${first.at}: ${first.message}`
+    });
+  }
   // A pattern that could take exponential time runs on the request thread
   // at every write (verifier round 2, F5): refused at the template's push.
   const unsafe = unsafePatternsOf(schema);

@@ -8,6 +8,7 @@ import {
   hasBindingMarkers,
   parseBindings,
   renderBindings,
+  schemaShapeIssues,
   unsafePatternsOf,
   validateDataAgainstSchema,
   withAnswersOf,
@@ -368,5 +369,61 @@ describe('unsafePatternsOf', () => {
 
   it('is quiet on a plain schema', () => {
     expect(unsafePatternsOf({ version: '1', properties: { a: { pattern: '^\\w+@\\w+$' } } })).toEqual([]);
+  });
+});
+
+describe('schemaShapeIssues (the PRDCT-3641 double check)', () => {
+  it('names a keyword holding a value of the wrong shape, at its place', () => {
+    const out = schemaShapeIssues({
+      version: '1',
+      type: 'object',
+      required: 'title',
+      properties: {
+        title: { type: 'strin' },
+        tags: { type: 'array', items: 5, minItems: -1 },
+        meta: { $ref: '#/$defs/nope' }
+      },
+      $defs: { ok: { type: ['string', 'null'] } },
+      anyOf: []
+    });
+    expect(out.map((i) => i.at)).toEqual([
+      '/required',
+      '/properties/title/type',
+      '/properties/tags/minItems',
+      '/properties/tags/items',
+      '/properties/meta/$ref',
+      '/anyOf'
+    ]);
+    expect(out[1]!.message).toContain('"strin" is not a JSON Schema type');
+  });
+
+  it('is quiet on a valid schema, annotations and a resolvable $ref included', () => {
+    expect(
+      schemaShapeIssues({
+        $id: 'https://example.com/lane',
+        version: '1',
+        type: 'object',
+        'x-owner': { anything: [1, 2] },
+        properties: {
+          title: { type: 'string', pattern: '^[A-Z]', maxLength: 80 },
+          ticket: { $ref: '#/$defs/ticket' },
+          tickets: { type: 'array', items: { $ref: '#/$defs/ticket' }, uniqueItems: true }
+        },
+        required: ['title'],
+        additionalProperties: false,
+        $defs: { ticket: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } }
+      })
+    ).toEqual([]);
+  });
+
+  it('keeps the array form of items for a schema that declares draft-07', () => {
+    const draft7 = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      version: '1',
+      properties: { pair: { items: [{ type: 'string' }, { type: 'number' }] } }
+    };
+    expect(schemaShapeIssues(draft7)).toEqual([]);
+    const { $schema: _draft, ...defaultDraft } = draft7;
+    expect(schemaShapeIssues(defaultDraft).map((i) => i.at)).toEqual(['/properties/pair/items']);
   });
 });

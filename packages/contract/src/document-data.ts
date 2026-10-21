@@ -294,3 +294,216 @@ export function unsafePatternsOf(schema: unknown): { at: string; pattern: string
   walk(schema, '', 0);
   return out;
 }
+
+const SCHEMA_TYPE_NAMES = new Set(['null', 'boolean', 'object', 'array', 'number', 'integer', 'string']);
+/** Keywords whose value is one subschema. */
+const ONE_SCHEMA_KEYS = [
+  'additionalProperties',
+  'unevaluatedProperties',
+  'unevaluatedItems',
+  'contains',
+  'propertyNames',
+  'not',
+  'if',
+  'then',
+  'else',
+  'additionalItems'
+];
+/** Keywords whose value maps names to subschemas. */
+const SCHEMA_MAP_KEYS = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'];
+/** Keywords whose value is a non-empty list of subschemas. */
+const SCHEMA_LIST_KEYS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
+const COUNT_KEYS = [
+  'minLength',
+  'maxLength',
+  'minItems',
+  'maxItems',
+  'minProperties',
+  'maxProperties',
+  'minContains',
+  'maxContains'
+];
+const BOUND_KEYS = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'];
+const TEXT_KEYS = [
+  '$id',
+  '$ref',
+  '$anchor',
+  '$dynamicRef',
+  '$dynamicAnchor',
+  '$schema',
+  '$comment',
+  'title',
+  'description',
+  'format'
+];
+const FLAG_KEYS = ['uniqueItems', 'readOnly', 'writeOnly', 'deprecated'];
+
+/**
+ * The places a schema is not a JSON Schema at all (the PRDCT-3641 double
+ * check): a keyword the validator understands holding a value of the wrong
+ * shape (`"type": "strin"`, `"required": "title"`, `"properties": []`), or a
+ * local `$ref` that points nowhere. The validator does not refuse these: it
+ * reads `"required": "title"` as the four properties t, i, l and e, and a
+ * misspelt type as a type nothing satisfies, so a template carrying one
+ * would be accepted at push and no document could ever be made from it.
+ * Keywords it does not know are annotations and stay free.
+ */
+export function schemaShapeIssues(schema: Record<string, unknown>): { at: string; message: string }[] {
+  const out: { at: string; message: string }[] = [];
+  const draft = draftOf(schema);
+  const isSchema = (v: unknown): boolean => isObject(v) || typeof v === 'boolean';
+  const isCount = (v: unknown): boolean => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+  const pointer = (key: string): string => key.replace(/~/g, '~0').replace(/\//g, '~1');
+  const resolves = (ref: string): boolean => {
+    let target: unknown = schema;
+    for (const raw of ref.slice(2).split('/')) {
+      let key: string;
+      try {
+        key = decodeURIComponent(raw).replace(/~1/g, '/').replace(/~0/g, '~');
+      } catch {
+        return false;
+      }
+      if (Array.isArray(target) && /^\d+$/.test(key) && Number(key) < target.length) {
+        target = target[Number(key)];
+      } else if (isObject(target) && Object.prototype.hasOwnProperty.call(target, key)) {
+        target = target[key];
+      } else {
+        return false;
+      }
+    }
+    return isSchema(target);
+  };
+  const walk = (node: unknown, at: string, depth: number): void => {
+    if (out.length >= 20 || depth > 64 || !isObject(node)) return;
+    const type = node['type'];
+    if (type !== undefined) {
+      const names = Array.isArray(type) ? type : [type];
+      const bad = names.find((n) => typeof n !== 'string' || !SCHEMA_TYPE_NAMES.has(n));
+      if (names.length === 0 || bad !== undefined) {
+        out.push({
+          at: `${at}/type`,
+          message: `${JSON.stringify(bad ?? type)} is not a JSON Schema type (null, boolean, object, array, number, integer, string)`
+        });
+      }
+    }
+    const required = node['required'];
+    if (
+      required !== undefined &&
+      !(Array.isArray(required) && required.every((r) => typeof r === 'string'))
+    ) {
+      out.push({ at: `${at}/required`, message: 'must be a list of property names' });
+    }
+    const enumeration = node['enum'];
+    if (enumeration !== undefined && !Array.isArray(enumeration)) {
+      out.push({ at: `${at}/enum`, message: 'must be a list of values' });
+    }
+    for (const key of COUNT_KEYS) {
+      if (node[key] !== undefined && !isCount(node[key]))
+        out.push({ at: `${at}/${key}`, message: 'must be a whole number from 0' });
+    }
+    for (const key of BOUND_KEYS) {
+      const v = node[key];
+      const ok =
+        typeof v === 'number' || (draft === '4' && typeof v === 'boolean' && key.startsWith('exclusive'));
+      if (v !== undefined && !ok) out.push({ at: `${at}/${key}`, message: 'must be a number' });
+    }
+    const multipleOf = node['multipleOf'];
+    if (multipleOf !== undefined && !(typeof multipleOf === 'number' && multipleOf > 0)) {
+      out.push({ at: `${at}/multipleOf`, message: 'must be a number above 0' });
+    }
+    for (const key of TEXT_KEYS) {
+      if (node[key] !== undefined && typeof node[key] !== 'string')
+        out.push({ at: `${at}/${key}`, message: 'must be a string' });
+    }
+    for (const key of FLAG_KEYS) {
+      if (node[key] !== undefined && typeof node[key] !== 'boolean')
+        out.push({ at: `${at}/${key}`, message: 'must be true or false' });
+    }
+    const pattern = node['pattern'];
+    if (typeof pattern === 'string') {
+      try {
+        new RegExp(pattern, 'u');
+      } catch {
+        out.push({ at: `${at}/pattern`, message: 'is not a regular expression' });
+      }
+    }
+    const ref = node['$ref'];
+    if (typeof ref === 'string' && ref.startsWith('#/') && !resolves(ref)) {
+      out.push({ at: `${at}/$ref`, message: `"${ref}" points to nothing in the schema` });
+    }
+    const dependentRequired = node['dependentRequired'];
+    if (
+      dependentRequired !== undefined &&
+      !(
+        isObject(dependentRequired) &&
+        Object.values(dependentRequired).every(
+          (v) => Array.isArray(v) && v.every((s) => typeof s === 'string')
+        )
+      )
+    ) {
+      out.push({
+        at: `${at}/dependentRequired`,
+        message: 'must map property names to lists of property names'
+      });
+    }
+    for (const key of ONE_SCHEMA_KEYS) {
+      const v = node[key];
+      if (v === undefined) continue;
+      if (!isSchema(v))
+        out.push({ at: `${at}/${key}`, message: 'must be a schema (an object or a boolean)' });
+      else walk(v, `${at}/${key}`, depth + 1);
+    }
+    const items = node['items'];
+    if (items !== undefined) {
+      if (Array.isArray(items) && draft !== '2020-12') {
+        items.forEach((item, i) =>
+          isSchema(item)
+            ? walk(item, `${at}/items/${i}`, depth + 1)
+            : out.push({ at: `${at}/items/${i}`, message: 'must be a schema (an object or a boolean)' })
+        );
+      } else if (!isSchema(items)) {
+        out.push({ at: `${at}/items`, message: 'must be a schema (an object or a boolean)' });
+      } else {
+        walk(items, `${at}/items`, depth + 1);
+      }
+    }
+    for (const key of SCHEMA_MAP_KEYS) {
+      const v = node[key];
+      if (v === undefined) continue;
+      if (!isObject(v)) {
+        out.push({ at: `${at}/${key}`, message: 'must map names to schemas' });
+        continue;
+      }
+      for (const [name, sub] of Object.entries(v)) {
+        if (key === 'patternProperties') {
+          try {
+            new RegExp(name, 'u');
+          } catch {
+            out.push({ at: `${at}/${key}/${pointer(name)}`, message: 'the key is not a regular expression' });
+          }
+        }
+        if (!isSchema(sub))
+          out.push({
+            at: `${at}/${key}/${pointer(name)}`,
+            message: 'must be a schema (an object or a boolean)'
+          });
+        else walk(sub, `${at}/${key}/${pointer(name)}`, depth + 1);
+      }
+    }
+    for (const key of SCHEMA_LIST_KEYS) {
+      const v = node[key];
+      if (v === undefined) continue;
+      if (!Array.isArray(v) || v.length === 0) {
+        out.push({ at: `${at}/${key}`, message: 'must be a non-empty list of schemas' });
+        continue;
+      }
+      v.forEach((sub, i) =>
+        isSchema(sub)
+          ? walk(sub, `${at}/${key}/${i}`, depth + 1)
+          : out.push({ at: `${at}/${key}/${i}`, message: 'must be a schema (an object or a boolean)' })
+      );
+    }
+  };
+  walk(schema, '', 0);
+  return out;
+}

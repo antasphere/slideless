@@ -444,6 +444,23 @@ describe('a template push reads its contract and refuses what nobody could insta
     );
   });
 
+  it('a schema.json that is not a JSON Schema is refused 400 schema_invalid with the place, sample or not', async () => {
+    const malformed = { ...SCHEMA_V1, required: 'title' };
+    const e = await expectError(
+      await commitNew('Malformed', [AGENT, schemaFile(malformed), INDEX, TWO]),
+      400,
+      'schema_invalid'
+    );
+    expect(e.message).toBe('schema.json at /required: must be a list of property names');
+    const typo = { ...SCHEMA_V1, properties: { ...SCHEMA_V1.properties, title: { type: 'strin' } } };
+    const t = await expectError(
+      await commitNew('Typo', [AGENT, schemaFile(typo), sampleFile(SAMPLE), INDEX, TWO]),
+      400,
+      'schema_invalid'
+    );
+    expect(t.message).toContain('schema.json at /properties/title/type: "strin" is not a JSON Schema type');
+  });
+
   it('a schema changed without bumping its version is refused schema_version_unchanged; bumped, it lands', async () => {
     const id = await newDeck('Versioned template', TEMPLATE_FILES);
     // Same schema, a page changed: not a schema change, lands.
