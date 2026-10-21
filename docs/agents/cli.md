@@ -657,11 +657,21 @@ and, when the data does not follow the schema, one `path: message` line per
 issue under it:
 
 ```
-Error: The data does not follow the schema at /tickets/0/id.
-  /tickets/0/id: Instance does not have required property "id".
+Error: The data does not follow the schema at /tickets/0/id: Property "id" is required.
+  /tickets/0/id: Property "id" is required.
 ```
 
-Every command takes `--json` and then prints the instance's answer as it is.
+A file the instance refuses before the schema runs (one that carries `answers`)
+prints its reason the same way:
+
+```
+Error: Request validation failed
+  (root): "answers" is reserved: the forms' answers are written by the server
+```
+
+Every command takes `--json` and then prints the instance's answer as it is
+(`check`, which asks the instance nothing, prints its own `{ ok, issues }`); a
+refusal stays on stderr, `--json` or not.
 
 ## Projects
 

@@ -82,8 +82,9 @@ A template push is refused, with the file and the line named, when:
 
 - a page binds a field the schema does not describe (`binding_unknown`);
 - a block is never closed or a marker is not a field path (`binding_syntax`);
-- `schema.json` is not a JSON Schema with a `version`, or carries a `pattern` that could take
-  exponential time on a crafted value (`schema_invalid`);
+- `schema.json` is not a JSON Schema with a `version` (a keyword holding a value of the wrong shape,
+  such as `"required": "title"` or `"type": "strin"`, or a `$ref` that points nowhere), or carries a
+  `pattern` that could take exponential time on a crafted value (`schema_invalid`);
 - `data.json` does not follow the schema (`sample_invalid`);
 - `schema.json` changed but its `version` did not (`schema_version_unchanged`). Documents pin a
   template version, and an upgrade compares the two.
@@ -125,7 +126,9 @@ pushing anything, so a tool can validate a file before it sends it.
 Two more refusals a tool may meet: `409 document_busy` when another write on the same document is
 still running after a fifteen-second wait (retry), and `400 schema_too_slow` when the schema's
 patterns took more than a quarter of a second to judge the data (the pattern is the template's
-to simplify). A template page over 8 MB is refused at push (`bound_file_too_large`).
+to simplify). A template page over 8 MB is refused at push (`bound_file_too_large`), data over 1 MB
+at write (`data_too_large`), and `500 validator_failed` is the instance's own fault, never the
+schema's: retry.
 
 The version history of the document is the history of its data: `slideless document data versions
 <id>` lists each version with when, who, and the keys that changed; the dashboard's **Data** panel
@@ -181,9 +184,10 @@ upgrade is refused with the field named and the document stays where it was; pus
 with the upgrade (`--merge` or `--file` on the command, `merge` or `data` on the API), or before it.
 
 A document outlives its template: when the template is deleted, the document keeps serving and
-taking pushes on the version it is pinned to, and only an upgrade answers `template_gone`. A writer
-of a document must be able to read its template while it exists, since every push renders the
-template's pages for them.
+taking pushes on the version it is pinned to, and an upgrade answers `template_gone`. A writer of a
+document must be able to read its template while it exists, since every push renders the template's
+pages for them: one who cannot meets the same `template_gone`, which never tells a template they may
+not read from one that is gone.
 
 ## What the document carries
 
@@ -207,20 +211,22 @@ clears one form's answer from the data and renders again; the responses stay.
 
 ## From the API and the agent tools
 
-| Action                      | API                                       | MCP tool                         |
-| --------------------------- | ----------------------------------------- | -------------------------------- |
-| Read a template's contract  | `GET /presentations/{id}/schema`          | `slideless_get_template_schema`  |
-| Replace a template's schema | `PUT /presentations/{id}/schema`          |                                  |
-| Create a document           | `POST /presentations/{id}/instances`      | `slideless_create_document`      |
-| Read the data               | `GET /presentations/{id}/data`            | `slideless_get_document_data`    |
-| Replace or merge the data   | `PUT` or `PATCH /presentations/{id}/data` | `slideless_push_document_data`   |
-| The push history            | `GET /presentations/{id}/data/versions`   |                                  |
-| The answers                 | `GET /presentations/{id}/answers`         | `slideless_get_document_answers` |
-| Upgrade                     | `POST /presentations/{id}/upgrade`        | `slideless_upgrade_document`     |
+| Action                      | API                                               | MCP tool                         |
+| --------------------------- | ------------------------------------------------- | -------------------------------- |
+| Read a template's contract  | `GET /presentations/{id}/schema`                  | `slideless_get_template_schema`  |
+| Replace a template's schema | `PUT /presentations/{id}/schema`                  |                                  |
+| Create a document           | `POST /presentations/{id}/instances`              | `slideless_create_document`      |
+| Read the data               | `GET /presentations/{id}/data`                    | `slideless_get_document_data`    |
+| Replace or merge the data   | `PUT` or `PATCH /presentations/{id}/data`         | `slideless_push_document_data`   |
+| The push history            | `GET /presentations/{id}/data/versions`           |                                  |
+| The answers                 | `GET /presentations/{id}/answers`                 | `slideless_get_document_answers` |
+| Upgrade                     | `POST /presentations/{id}/upgrade`                | `slideless_upgrade_document`     |
+| Clear one form's answer     | `DELETE /presentations/{id}/answers/{form}`       |                                  |
+| One version of the history  | `GET /presentations/{id}/data/versions/{version}` |                                  |
 
 A document is read by whoever reads the deck, and written by whoever can push to it. Creating a
-document, pushing data, upgrading and replacing a template's schema count as deck edits on the
-Antasphere cloud; an answer costs what a form response costs, and its re-render nothing.
+document, pushing data, upgrading, clearing an answer and replacing a template's schema count as
+deck edits on the Antasphere cloud; an answer costs what a form response costs, and its re-render nothing.
 
 ## Limits
 

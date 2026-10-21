@@ -213,8 +213,11 @@ On a remembering link the confirmation dialog says so (`This link remembers your
 
 When the deck is a document made from a [data-bound template](../concepts/data-bound-templates.md),
 each response is also written into the document's data under `answers.<form name>`, with the link's
-recipient label and the time, and the page is rendered again. Nothing else changes: the response,
-its revisions, the Responses tab, the CSV and the webhook events stay as they are.
+recipient label and the time, and the page is rendered again as a new version of the document: the
+Versions tab counts it, and a webhook receiver hears `deck.version_committed` and `document.answered`
+beside `form.response_submitted`. Only a form the document's pages carry is written, within a budget
+of 32 forms and 256 KB. The response itself, its revisions, the Responses tab and the CSV stay as
+they are.
 
 ## Every edit is kept
 

@@ -718,3 +718,61 @@ describe('template new scaffolds a data contract', () => {
     expect(await readFile(join(dest, 'index.html'), 'utf8')).toContain('<h1>{{title}}</h1>');
   });
 });
+
+// ── the refusals the CLI reference shows (the PRDCT-3641 double check) ──────
+
+describe('docs/agents/cli.md shows the refusals the CLI prints', () => {
+  const createRoute = (reply: Route['reply']): Route => ({
+    method: 'POST',
+    path: new RegExp(`/api/v1/presentations/${TEMPLATE_ID}/instances$`),
+    reply
+  });
+  const blocksAfter = async (lead: string): Promise<string[]> => {
+    const page = await readFile(new URL('../../../docs/agents/cli.md', import.meta.url), 'utf8');
+    const from = page.indexOf(lead);
+    expect(from, lead).toBeGreaterThan(-1);
+    return [...page.slice(from).matchAll(/```\n([\s\S]*?)```/g)].slice(0, 2).map((m) => m[1]!);
+  };
+
+  it('a data_invalid refusal: the instance sentence, then one line per issue, as the validator words them', async () => {
+    const [shown] = await blocksAfter('A refusal of `create`, `data push` or `upgrade`');
+    // The issue as the instance's validator words it, the sentence as api/documents.ts builds it.
+    const issues = validateDataAgainstSchema(SCHEMA, { title: 'X', tickets: [{}] });
+    const first = issues[0]!;
+    const h = routedHarness([
+      listRoute,
+      createRoute(() =>
+        refusal(
+          400,
+          'data_invalid',
+          `The data does not follow the schema at ${first.path}: ${first.message}`,
+          {
+            issues
+          }
+        )
+      )
+    ]);
+    const file = await jsonFile({ title: 'X', tickets: [{}] });
+    expect(await run(argv('document', 'create', '--from', 'Lane', '--data', file), h.io)).toBe(1);
+    expect(h.err()).toBe(shown);
+  });
+
+  it('a validation_error refusal (a file carrying answers): its reason under the sentence', async () => {
+    const [, shown] = await blocksAfter('A refusal of `create`, `data push` or `upgrade`');
+    const h = routedHarness([
+      listRoute,
+      createRoute(() =>
+        refusal(400, 'validation_error', 'Request validation failed', [
+          {
+            code: 'custom',
+            path: [],
+            message: '"answers" is reserved: the forms\' answers are written by the server'
+          }
+        ])
+      )
+    ]);
+    const file = await jsonFile({ title: 'X', answers: {} });
+    expect(await run(argv('document', 'create', '--from', 'Lane', '--data', file), h.io)).toBe(1);
+    expect(h.err()).toBe(shown);
+  });
+});
