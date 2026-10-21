@@ -32,6 +32,7 @@ import type { DeckEvents } from './platform/deck-events.js';
 import { presentationToWire, registerPresentationRoutes, versionToWire } from './api/presentations.js';
 import { registerDocumentRoutes } from './api/documents.js';
 import { DocumentService } from './documents/service.js';
+import { validationBudget } from './documents/validate-budget.js';
 import { registerCollaboratorRoutes } from './api/collaborators.js';
 import { blobReadScope, PresentationService } from './presentations/service.js';
 import { formOwnerActor } from './presentations/form-owner-actor.js';
@@ -359,6 +360,9 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
           logger,
           onVersion: () => deps.thumbnails.kick()
         });
+        // The validation workers warm ahead of the first write (their cold
+        // start is the contract import, never charged to a job).
+        void validationBudget().warm();
         registerPresentationRoutes(api, {
           service: presentationService,
           sharing: deps.sharing,

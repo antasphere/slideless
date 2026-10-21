@@ -6,6 +6,10 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { workspaceMembers } from '@antasphere/chassis-db';
 import { presentations } from '@slideless/db';
+import { join } from 'node:path';
+import { createStorageDriver } from '@antasphere/chassis-server/storage';
+import { FileService } from '@antasphere/chassis-server/files';
+import { DocumentService } from '../../src/documents/service.js';
 import {
   createDatabase,
   createTestApp,
@@ -1505,6 +1509,12 @@ describe('round 3, F3 and F4: only the pages\u2019 forms are mirrored, and a pro
     const now = await dataOf(docId);
     expect(now.version).toBe(1);
     expect(now.data).not.toHaveProperty('answers');
+    // With an answer in place (so `in` would have found the prototype's members), the four
+    // names still clear nothing and mint nothing (round 4, MG5).
+    expect(
+      (await submitAnswer(secret, 'merge_gate', { payload: { decision: 'yes' }, source: 'link' })).status
+    ).toBe(201);
+    expect((await dataOf(docId)).version).toBe(2);
     for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
       await expectError(
         await send('DELETE', `/presentations/${docId}/answers/${name}`, 'owner'),
@@ -1512,7 +1522,7 @@ describe('round 3, F3 and F4: only the pages\u2019 forms are mirrored, and a pro
         'answer_not_found'
       );
     }
-    expect((await dataOf(docId)).version).toBe(1);
+    expect((await dataOf(docId)).version).toBe(2);
   });
 });
 
@@ -1547,5 +1557,57 @@ describe('round 3, F7: a pattern the static check passes still meets the time bu
     // The budget is per job: the next, quick write lands.
     const ok = await send('POST', `/presentations/${tpl}/instances`, 'owner', { data: { title: 'aaa' } });
     expect(ok.status).toBe(201);
+  });
+});
+
+describe('round 4, MG1: two replicas writing one document never commit a stale render', () => {
+  it('two document services (two in-memory queues) racing answers on one document both land', async () => {
+    const forms = Array.from(
+      { length: 2 },
+      (_, i) => `<form data-slideless-form="g${i}"><input name="v"></form>`
+    ).join('');
+    const page = file(
+      'index.html',
+      `<!doctype html><html><head><title>{{title}}</title></head><body><h1>{{title}}</h1>${forms}</body></html>`,
+      'text/html'
+    );
+    const schema = schemaFile({
+      version: 'race-1',
+      type: 'object',
+      properties: { title: { type: 'string' } }
+    });
+    const tpl = await newDeck('Two replicas', [AGENT, schema, page]);
+    const docId = (await instantiate(tpl, { title: 'Raced across replicas' })).id;
+    const link = await mintLink(docId, { name: 'racer', remembersResponses: false, canSubmitForms: true });
+    // Two services on the same database and storage: two replicas, each with its own queue,
+    // so the advisory lock and the base check are what keep the writes from losing each other.
+    const storage = createStorageDriver(app.env);
+    const fileService = new FileService(app.db.db, storage, join(app.env.DATA_DIR, 'tmp'), app.logger);
+    const replica = () =>
+      new DocumentService({
+        db: app.db.db,
+        storage,
+        fileService,
+        presentations: app.tool.presentations,
+        logger: app.logger
+      });
+    const [a, b] = [replica(), replica()];
+    const answer = (svc: DocumentService, form: string, v: string) =>
+      svc.applyAnswer({
+        workspaceId,
+        presentationId: docId,
+        formName: form,
+        fields: { v },
+        link: { id: link.id, name: 'racer' },
+        responseId: `00000000-0000-4000-8000-00000000000${v}`,
+        revision: 1,
+        at: new Date()
+      });
+    const results = await Promise.all([answer(a, 'g0', '1'), answer(b, 'g1', '2')]);
+    for (const r of results) expect(r && r.ok).toBe(true);
+    const now = await dataOf(docId);
+    expect(now.version).toBe(3);
+    expect(now.data.answers.g0.v).toBe('1');
+    expect(now.data.answers.g1.v).toBe('2');
   });
 });

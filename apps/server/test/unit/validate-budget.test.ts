@@ -7,8 +7,21 @@ import { ValidationBudget } from '../../src/documents/validate-budget.js';
  * and a quick job answers the validator's own issues.
  */
 describe('ValidationBudget', () => {
-  const budget = new ValidationBudget(150);
+  // Two seats, a 150 ms budget: the cold start (the contract import, round 4's F1) is paid
+  // by the warm-up, never by a job, so the budget judges the pattern alone.
+  const budget = new ValidationBudget(150, 2);
   afterAll(() => budget.close());
+
+  it('warms its seats ahead of the first job, and a cold start never counts against a job', async () => {
+    const t0 = Date.now();
+    await budget.warm();
+    const warmed = Date.now() - t0;
+    const t1 = Date.now();
+    const out = await budget.validate({ type: 'object' }, {});
+    expect(out).toEqual({ ok: true, value: [] });
+    expect(Date.now() - t1).toBeLessThan(150);
+    expect(warmed).toBeGreaterThanOrEqual(0);
+  });
 
   it('answers a quick validation with its issues', async () => {
     const out = await budget.validate({ type: 'object', properties: { a: { type: 'string' } } }, { a: 1 });
@@ -25,8 +38,28 @@ describe('ValidationBudget', () => {
     );
     expect(slow).toMatchObject({ ok: false, reason: 'timeout' });
     expect((slow as { message: string }).message).toContain('150 ms');
-    const quick = await budget.validate({ type: 'object' }, {});
+    // The replacement seat is warmed in the background: the next honest job is judged on the
+    // pattern alone, never on the import (round 4's F1).
+    const t0 = Date.now();
+    const quick = await budget.validate(
+      { type: 'object', properties: { a: { type: 'string', pattern: '^[a-z]+$' } } },
+      { a: 'abc' }
+    );
     expect(quick).toEqual({ ok: true, value: [] });
+    expect(Date.now() - t0).toBeLessThan(150);
+  });
+
+  it('a slow job holds one seat only: a quick job beside it answers at once', async () => {
+    const slow = budget.validate(
+      { type: 'object', properties: { a: { type: 'string', pattern: '^(a|a)*$' } } },
+      { a: 'a'.repeat(34) + '!' }
+    );
+    const t0 = Date.now();
+    const quick = await budget.validate({ type: 'object' }, {});
+    const quickMs = Date.now() - t0;
+    expect(quick).toEqual({ ok: true, value: [] });
+    expect(quickMs).toBeLessThan(120);
+    expect(await slow).toMatchObject({ ok: false, reason: 'timeout' });
   });
 
   it('extracts a page\u2019s bindings, and reports a parse error, through the same worker', async () => {

@@ -9,14 +9,20 @@ import type { DataValidationIssue, ExtractedBindings } from '@slideless/contract
  * (`(a|a)*` passes it and takes minutes at thirty characters). So the two
  * operations that evaluate a schema's patterns against author or writer
  * input, the validation of data and the extraction of a page's bindings,
- * run in ONE worker thread with a budget per job: a job over it is killed
- * with the worker, the worker replaced, and the caller told the schema took
- * too long. The request thread never waits on a regular expression.
+ * run in worker threads with a budget per job: a job over it is killed with
+ * its worker, a warm replacement takes its seat, and the caller is told the
+ * schema took too long. The request thread never waits on a regular
+ * expression.
  *
- * One worker per process, jobs one at a time (a second slow job queues
- * behind the first and meets the same budget once it starts). The worker
- * loads the contract package by name, which the runtime node_modules carries
- * (every bare import is external to the server bundle).
+ * A small POOL of workers (verifier round 4): one worker serialized every
+ * write of the instance behind a crafted request; with several seats a slow
+ * job costs its own seat for the budget and nothing else. Every worker is
+ * WARMED before it takes a job (it loads the contract package, ~200 ms on a
+ * cold start, round 4's F1: counted against the budget, that cold start
+ * refused the honest write that followed a timeout), and a killed worker is
+ * replaced in the background, warmed, before the next job needs it. The
+ * worker loads the contract package by name, which the runtime node_modules
+ * carries (every bare import is external to the server bundle).
  */
 
 export type BudgetedResult<T> =
@@ -26,14 +32,19 @@ type Job =
   | { op: 'validate'; schema: Record<string, unknown>; data: unknown }
   | { op: 'extract'; source: string; schema: Record<string, unknown>; file: string };
 
-type Reply = { ok: true; value: unknown } | { ok: false; message: string };
+type Reply = { ok: true; value: unknown } | { ok: false; message: string } | { warm: true };
 
-/** The worker's own code: it answers one message with one reply. */
+/** The worker's own code: it warms once, then answers one message with one reply. */
 const WORKER_SOURCE = `
 const { parentPort } = require('node:worker_threads');
 let contract = null;
 const load = async () => (contract ??= await import('@slideless/contract'));
 parentPort.on('message', async (job) => {
+  if (job.op === 'warm') {
+    try { await load(); parentPort.postMessage({ warm: true }); }
+    catch (e) { parentPort.postMessage({ ok: false, message: e instanceof Error ? e.message : String(e) }); }
+    return;
+  }
   try {
     const c = await load();
     if (job.op === 'validate') {
@@ -49,14 +60,30 @@ parentPort.on('message', async (job) => {
 });
 `;
 
-/** How long one validation or one page's extraction may take. */
+/** How long one validation or one page's extraction may take, once its worker is warm. */
 export const VALIDATION_BUDGET_MS = 250;
+/** How many workers judge at once; a slow job costs one seat for the budget. */
+export const VALIDATION_WORKERS = 3;
+/** How long a worker may take to warm (the contract import) before it is given up on. */
+const WARM_MS = 10_000;
+
+interface Seat {
+  worker: Worker;
+  /** Resolves once the worker loaded the contract; rejects when it could not. */
+  warm: Promise<void>;
+  busy: boolean;
+  dead: boolean;
+}
 
 export class ValidationBudget {
-  private worker: Worker | null = null;
-  private chain: Promise<unknown> = Promise.resolve();
+  private readonly seats: Seat[] = [];
+  private readonly waiting: ((seat: Seat) => void)[] = [];
+  private closed = false;
 
-  constructor(private readonly budgetMs: number = VALIDATION_BUDGET_MS) {}
+  constructor(
+    private readonly budgetMs: number = VALIDATION_BUDGET_MS,
+    private readonly size: number = VALIDATION_WORKERS
+  ) {}
 
   /** The data against the schema: the issues, or the budget's refusal. */
   validate(schema: Record<string, unknown>, data: unknown): Promise<BudgetedResult<DataValidationIssue[]>> {
@@ -76,73 +103,132 @@ export class ValidationBudget {
     return this.run({ op: 'extract', source, schema, file });
   }
 
-  /** Jobs run one after the other on the one worker. */
-  private run<T>(job: Job): Promise<BudgetedResult<T>> {
-    const next = this.chain.then(() => this.once<T>(job));
-    this.chain = next.then(
-      () => undefined,
-      () => undefined
-    );
-    return next;
-  }
-
-  private once<T>(job: Job): Promise<BudgetedResult<T>> {
+  private async run<T>(job: Job): Promise<BudgetedResult<T>> {
+    const seat = await this.take();
+    try {
+      await seat.warm;
+    } catch (e) {
+      this.release(seat, true);
+      return {
+        ok: false,
+        reason: 'failed',
+        message: `the validation worker could not start: ${(e as Error).message}`
+      };
+    }
     return new Promise((resolve) => {
-      const worker = this.workerOrSpawn();
+      const { worker } = seat;
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
         worker.removeAllListeners('message');
         worker.removeAllListeners('error');
-        // The job is killed with its thread; the next job gets a fresh one.
-        void worker.terminate();
-        this.worker = null;
+        // The job is killed with its worker; a warm replacement takes the seat.
+        this.release(seat, true);
         resolve({
           ok: false,
           reason: 'timeout',
           message: `the schema took more than ${this.budgetMs} ms to judge this input; its patterns are too costly`
         });
       }, this.budgetMs);
-      const done = (reply: Reply) => {
+      const done = (reply: Reply, died = false) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         worker.removeAllListeners('message');
         worker.removeAllListeners('error');
-        if (reply.ok) resolve({ ok: true, value: reply.value as T });
+        this.release(seat, died);
+        if ('warm' in reply)
+          resolve({ ok: false, reason: 'failed', message: 'the worker answered out of turn' });
+        else if (reply.ok) resolve({ ok: true, value: reply.value as T });
         else resolve({ ok: false, reason: 'failed', message: reply.message });
       };
       worker.once('message', (reply: Reply) => done(reply));
-      worker.once('error', (err: Error) => {
-        this.worker = null;
-        done({ ok: false, message: err.message });
-      });
+      worker.once('error', (err: Error) => done({ ok: false, message: err.message }, true));
       worker.postMessage(job);
     });
   }
 
-  private workerOrSpawn(): Worker {
-    if (this.worker) return this.worker;
+  /** An idle seat, spawning up to `size`, else the next one freed (arrival order). */
+  private take(): Promise<Seat> {
+    const idle = this.seats.find((s) => !s.busy && !s.dead);
+    if (idle) {
+      idle.busy = true;
+      return Promise.resolve(idle);
+    }
+    if (this.seats.filter((s) => !s.dead).length < this.size) {
+      const seat = this.spawn();
+      seat.busy = true;
+      return Promise.resolve(seat);
+    }
+    return new Promise((resolve) => this.waiting.push(resolve));
+  }
+
+  /** Frees a seat (or replaces a dead one, warmed in the background) and hands it to the next waiter. */
+  private release(seat: Seat, died: boolean): void {
+    let next: Seat = seat;
+    if (died) {
+      seat.dead = true;
+      void seat.worker.terminate();
+      const i = this.seats.indexOf(seat);
+      if (i !== -1) this.seats.splice(i, 1);
+      if (this.closed) return;
+      next = this.spawn();
+    }
+    const waiter = this.waiting.shift();
+    if (waiter) {
+      next.busy = true;
+      waiter(next);
+    } else {
+      next.busy = false;
+    }
+  }
+
+  private spawn(): Seat {
     const worker = new Worker(WORKER_SOURCE, { eval: true, resourceLimits: { maxOldGenerationSizeMb: 256 } });
     worker.unref();
-    worker.on('exit', () => {
-      if (this.worker === worker) this.worker = null;
+    const seat: Seat = { worker, busy: false, dead: false, warm: Promise.resolve() };
+    seat.warm = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no answer within ${WARM_MS} ms`)), WARM_MS);
+      worker.once('message', (reply: Reply) => {
+        clearTimeout(timer);
+        if ('warm' in reply) resolve();
+        else reject(new Error('ok' in reply && !reply.ok ? reply.message : 'unexpected first answer'));
+      });
+      worker.once('error', (err: Error) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      worker.postMessage({ op: 'warm' });
     });
-    this.worker = worker;
-    return worker;
+    seat.warm.catch(() => undefined);
+    worker.on('exit', () => {
+      if (!seat.dead) {
+        seat.dead = true;
+        const i = this.seats.indexOf(seat);
+        if (i !== -1) this.seats.splice(i, 1);
+      }
+    });
+    this.seats.push(seat);
+    return seat;
+  }
+
+  /** The seats warmed ahead of the first write (the boot may call it; a test may not). */
+  async warm(): Promise<void> {
+    while (this.seats.filter((s) => !s.dead).length < this.size) this.spawn();
+    await Promise.allSettled(this.seats.map((s) => s.warm));
   }
 
   /** For the boot's shutdown: nothing waits on it. */
   async close(): Promise<void> {
-    const w = this.worker;
-    this.worker = null;
-    if (w) await w.terminate();
+    this.closed = true;
+    const all = this.seats.splice(0);
+    await Promise.all(all.map((s) => s.worker.terminate()));
   }
 }
 
 let shared: ValidationBudget | null = null;
-/** The process's one budget (one worker), made on first use. */
+/** The process's one pool, made on first use. */
 export function validationBudget(): ValidationBudget {
   return (shared ??= new ValidationBudget());
 }
