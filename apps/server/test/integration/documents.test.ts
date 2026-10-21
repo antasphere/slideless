@@ -803,6 +803,43 @@ describe('a form answered through a share link lands in the data', () => {
     expect(data.version).toBe(3);
     expect(data.data.answers.merge_gate.decision).toBe('yes');
   });
+
+  it('a plain (non-remembering) link answers too: the create path mirrors, and the edit path mirrors again', async () => {
+    const plain = await mintLink(docId, { name: 'plain', remembersResponses: false, canSubmitForms: true });
+    const before = (await dataOf(docId)).version;
+    const res = await submitAnswer(plain.secret, 'merge_gate', {
+      payload: { decision: 'no', comment: 'from a plain link' },
+      source: 'link'
+    });
+    expect(res.status).toBe(201);
+    const created = await readJson(res);
+    const afterCreate = await dataOf(docId);
+    expect(afterCreate.version).toBe(before + 1);
+    expect(afterCreate.data.answers.merge_gate).toMatchObject({
+      decision: 'no',
+      comment: 'from a plain link',
+      $answered: { by: 'plain', link: plain.id, response: created.response.id, revision: 1 }
+    });
+    // The respondent edits through the edit secret: revision 2 lands in the data too.
+    const edit = await app.app.request(`/api/v1/viewer/${plain.secret}/forms/merge_gate/responses/me`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'null',
+        'x-forwarded-for': nextIp(),
+        'x-slideless-response': created.editSecret
+      },
+      body: JSON.stringify({ payload: { decision: 'yes', comment: 'edited' } })
+    });
+    expect(edit.status).toBe(200);
+    const afterEdit = await dataOf(docId);
+    expect(afterEdit.version).toBe(before + 2);
+    expect(afterEdit.data.answers.merge_gate).toMatchObject({
+      decision: 'yes',
+      comment: 'edited',
+      $answered: { by: 'plain', response: created.response.id, revision: 2 }
+    });
+  });
 });
 
 // ── 7. Who may, and on what ──────────────────────────────────────────────────
@@ -1111,6 +1148,55 @@ describe('the contract read never opens a blob the pusher cannot read (SL-B1)', 
     });
     const e = await expectError(res, 400, 'missing_blobs');
     expect(e.details).toEqual({ missing: [shaOf(INDEX.bytes)] });
+  });
+
+  it('the same on a version commit of a template the member owns: missing_blobs, nothing read', async () => {
+    const theirs = schemaFile({
+      version: 'own-1',
+      type: 'object',
+      properties: { title: { type: 'string' } }
+    });
+    const page = file(
+      'index.html',
+      '<!doctype html><html><head><title>{{title}}</title></head><body>{{title}}</body></html>',
+      'text/html'
+    );
+    for (const f of [AGENT, theirs, page]) await upload('outsider', f);
+    const reserved = await expectStatus(await send('POST', '/presentations/uploads', 'outsider'), 201);
+    const own = await expectStatus(
+      await send('POST', `/presentations/uploads/${reserved.uploadSession.id}/commit`, 'outsider', {
+        title: 'Own template',
+        entryPath: 'index.html',
+        manifest: [AGENT, theirs, page].map(entryOf)
+      }),
+      201
+    );
+    const res = await send('POST', `/presentations/${own.presentation.id}/versions`, 'outsider', {
+      expectedBaseVersion: 1,
+      entryPath: 'index.html',
+      manifest: [entryOf(AGENT), entryOf(theirs), entryOf(INDEX)]
+    });
+    const e = await expectError(res, 400, 'missing_blobs');
+    expect(e.details).toEqual({ missing: [shaOf(INDEX.bytes)] });
+  });
+});
+
+// ── The write lock: two concurrent writes on one document both land ──────────
+
+describe('two concurrent writes on one document', () => {
+  it('both PATCHes land, in two versions, neither key lost', async () => {
+    const { id } = await instantiate(templateId, { title: 'Raced', meta: { k: 'v' } });
+    const [a, b] = await Promise.all([
+      send('PATCH', `/presentations/${id}/data`, 'owner', { title: 'Raced, renamed' }),
+      send('PATCH', `/presentations/${id}/data`, 'owner', { meta: { sprint: 'S2' } })
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    const now = await dataOf(id);
+    expect(now.version).toBe(3);
+    expect(now.data.title).toBe('Raced, renamed');
+    expect(now.data.meta).toEqual({ k: 'v', sprint: 'S2' });
+    const list = await expectStatus(await send('GET', `/presentations/${id}/data/versions`, 'owner'), 200);
+    expect(list.versions.map((v: { version: number }) => v.version)).toEqual([3, 2, 1]);
   });
 });
 
