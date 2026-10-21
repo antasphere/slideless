@@ -103,3 +103,32 @@ describe('ValidationBudget, one seat', () => {
     await slow;
   });
 });
+
+describe('ValidationBudget, the seat a job takes', () => {
+  it('a job takes the warm idle seat, never the one still warming (round 6, F1)', async () => {
+    const two = new ValidationBudget(150, 2);
+    try {
+      await two.warm();
+      expect(two.inspect()).toEqual([
+        { ready: true, busy: false },
+        { ready: true, busy: false }
+      ]);
+      // A timeout kills one seat; its replacement is spawned at once and warms in the background.
+      await two.validate(
+        { type: 'object', properties: { a: { type: 'string', pattern: '^(a|a)*$' } } },
+        { a: 'a'.repeat(34) + '!' }
+      );
+      const states = two.inspect();
+      expect(states.filter((s) => s.ready)).toHaveLength(1);
+      expect(states.filter((s) => !s.ready)).toHaveLength(1);
+      // The next job is posted while one seat is warm and the other is warming: it must take the warm one.
+      const job = two.validate({ type: 'object' }, {});
+      await new Promise((r) => setImmediate(r));
+      const taken = two.inspect().find((s) => s.busy);
+      expect(taken).toEqual({ ready: true, busy: true });
+      expect(await job).toEqual({ ok: true, value: [] });
+    } finally {
+      await two.close();
+    }
+  });
+});

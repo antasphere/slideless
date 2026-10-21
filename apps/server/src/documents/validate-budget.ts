@@ -227,8 +227,14 @@ export class ValidationBudget {
     return seat;
   }
 
-  /** The seats warmed ahead of the first write (the boot may call it; a test may not). */
+  /** The seats as they stand: what a test reads to see which seat a job took (round 6, F1). */
+  inspect(): { ready: boolean; busy: boolean }[] {
+    return this.seats.filter((s) => !s.dead).map((s) => ({ ready: s.ready, busy: s.busy }));
+  }
+
+  /** The seats warmed ahead of the first write (the boot may call it; a test may not). A closed pool reopens. */
   async warm(): Promise<void> {
+    this.closed = false;
     while (this.seats.filter((s) => !s.dead).length < this.size) this.spawn();
     await Promise.allSettled(this.seats.map((s) => s.warm));
   }

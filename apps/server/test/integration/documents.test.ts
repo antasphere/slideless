@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { createStorageDriver } from '@antasphere/chassis-server/storage';
 import { FileService } from '@antasphere/chassis-server/files';
 import { DocumentService } from '../../src/documents/service.js';
+import { validationBudget } from '../../src/documents/validate-budget.js';
 import {
   createDatabase,
   createTestApp,
@@ -1609,5 +1610,30 @@ describe('round 4, MG1: two replicas writing one document never commit a stale r
     expect(now.version).toBe(3);
     expect(now.data.answers.g0.v).toBe('1');
     expect(now.data.answers.g1.v).toBe('2');
+  });
+});
+
+describe('round 6, F1: a worker fault is the server\u2019s 500, never the schema\u2019s refusal', () => {
+  it('with the validation pool closed, a write and a template push answer 500 validator_failed; warmed again, they land', async () => {
+    const docId = (await instantiate(templateId, { title: 'Faulted' })).id;
+    await validationBudget().close();
+    try {
+      const e = await expectError(
+        await send('PUT', `/presentations/${docId}/data`, 'owner', { title: 'Faulted, pushed' }),
+        500,
+        'validator_failed'
+      );
+      expect(e.message).toContain('validation worker');
+      for (const f of TEMPLATE_FILES) await upload('owner', f);
+      await expectError(await commitNew('Faulted template', TEMPLATE_FILES), 500, 'validator_failed');
+      expect((await dataOf(docId)).version).toBe(1);
+    } finally {
+      await validationBudget().warm();
+    }
+    await expectStatus(
+      await send('PUT', `/presentations/${docId}/data`, 'owner', { title: 'Faulted, pushed' }),
+      200
+    );
+    expect((await dataOf(docId)).version).toBe(2);
   });
 });
