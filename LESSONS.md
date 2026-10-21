@@ -1878,3 +1878,14 @@ confirm with the user before calling.`** A test that walks every write tool for 
   a page's extraction) runs in one worker thread under 250 ms (`documents/validate-budget.ts`), the
   job killed with its thread when over, the caller told `schema_too_slow`. The static check stays as
   the cheap early refusal at push.
+- **Six adversarial rounds hunted concurrency and ReDoS; a fresh end-to-end pass as the feature's
+  three users found six more defects** (the double check of 21 October 2026). None was deep: a
+  refusal whose reason sat unread in `details` (`validation_error` printed as "Request validation
+  failed" by the CLI and the MCP tools), an `Idempotency-Key` the contract declared and the SDK sent
+  on PUT/PATCH while the chassis claims keys on POST only (a retried PATCH minted two versions), a
+  schema the validator reads its own way (`"required": "title"` as four properties t, i, l, e)
+  accepted at push, and docs examples no code ever printed. Mutation testing proves the suite pins
+  what was built; it does not ask whether the right thing was built. Drive every surface once as
+  its user before the merge gate, and pin a docs example against the real output
+  (`documents-cli.test.ts` reads `docs/agents/cli.md`), a declaration against what keeps it
+  (`idempotency-declarations.test.ts` walks every route that declares the header).
