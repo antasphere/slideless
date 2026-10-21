@@ -55,7 +55,9 @@ export type ContractRefusal =
   | { code: 'sample_invalid'; message: string; issues: DataValidationIssue[] }
   | { code: 'binding_syntax'; message: string; errors: BindingError[] }
   | { code: 'binding_unknown'; message: string; unknown: UnknownBinding[] }
-  | { code: 'bound_file_too_large'; message: string };
+  | { code: 'bound_file_too_large'; message: string }
+  /** The validation worker could not do its job (round 5, F3): a 500, never the author's fault. */
+  | { code: 'validator_failed'; message: string };
 
 export type ContractRead =
   { contract: TemplateContract | null; refusal: null } | { contract: null; refusal: ContractRefusal };
@@ -188,8 +190,13 @@ export async function readTemplateContract(
       });
     }
     const judged = await validationBudget().validate(schema, sampleParsed.data);
-    if (!judged.ok)
-      return refuse({ code: 'schema_invalid', message: `${DATA_SCHEMA_PATH}: ${judged.message}` });
+    if (!judged.ok) {
+      return refuse(
+        judged.reason === 'timeout'
+          ? { code: 'schema_invalid', message: `${DATA_SCHEMA_PATH}: ${judged.message}` }
+          : { code: 'validator_failed', message: judged.message }
+      );
+    }
     const issues = judged.value;
     if (issues.length > 0) {
       return refuse({
@@ -223,11 +230,16 @@ export async function readTemplateContract(
     const source = buf.toString('utf8');
     if (!hasBindingMarkers(source)) continue;
     const judged = await validationBudget().extract(source, schema, entry.path);
-    if (!judged.ok)
-      return refuse({
-        code: 'schema_invalid',
-        message: `${DATA_SCHEMA_PATH} against ${entry.path}: ${judged.message}`
-      });
+    if (!judged.ok) {
+      return refuse(
+        judged.reason === 'timeout'
+          ? {
+              code: 'schema_invalid',
+              message: `${DATA_SCHEMA_PATH} against ${entry.path}: ${judged.message}`
+            }
+          : { code: 'validator_failed', message: judged.message }
+      );
+    }
     if ('errors' in judged.value) {
       syntax.push(...judged.value.errors);
       continue;
@@ -272,9 +284,11 @@ export function describeIssue(issue: DataValidationIssue): string {
 }
 
 /** The 400 body of a refused template push: the code, one sentence, and the details that name the file and the line. */
-export function contractRefusalBody(refusal: ContractRefusal): {
-  error: { code: string; message: string; details?: Record<string, unknown> };
-} {
+export function contractRefusalBody(
+  refusal: ContractRefusal
+):
+  | { error: { code: string; message: string } }
+  | { error: { code: string; message: string; details: Record<string, unknown> } } {
   switch (refusal.code) {
     case 'sample_invalid':
       return { error: { code: refusal.code, message: refusal.message, details: { issues: refusal.issues } } };

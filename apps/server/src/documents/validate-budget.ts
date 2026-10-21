@@ -71,6 +71,8 @@ interface Seat {
   worker: Worker;
   /** Resolves once the worker loaded the contract; rejects when it could not. */
   warm: Promise<void>;
+  /** True once `warm` resolved: a job posted here starts at once. */
+  ready: boolean;
   busy: boolean;
   dead: boolean;
 }
@@ -104,7 +106,12 @@ export class ValidationBudget {
   }
 
   private async run<T>(job: Job): Promise<BudgetedResult<T>> {
-    const seat = await this.take();
+    let seat: Seat;
+    try {
+      seat = await this.take();
+    } catch (e) {
+      return { ok: false, reason: 'failed', message: (e as Error).message };
+    }
     try {
       await seat.warm;
     } catch (e) {
@@ -149,9 +156,11 @@ export class ValidationBudget {
     });
   }
 
-  /** An idle seat, spawning up to `size`, else the next one freed (arrival order). */
+  /** An idle seat, a warm one first, spawning up to `size`, else the next one freed (arrival order). */
   private take(): Promise<Seat> {
-    const idle = this.seats.find((s) => !s.busy && !s.dead);
+    if (this.closed) return Promise.reject(new Error('the validation pool is closed'));
+    const idle =
+      this.seats.find((s) => !s.busy && !s.dead && s.ready) ?? this.seats.find((s) => !s.busy && !s.dead);
     if (idle) {
       idle.busy = true;
       return Promise.resolve(idle);
@@ -187,7 +196,7 @@ export class ValidationBudget {
   private spawn(): Seat {
     const worker = new Worker(WORKER_SOURCE, { eval: true, resourceLimits: { maxOldGenerationSizeMb: 256 } });
     worker.unref();
-    const seat: Seat = { worker, busy: false, dead: false, warm: Promise.resolve() };
+    const seat: Seat = { worker, busy: false, dead: false, ready: false, warm: Promise.resolve() };
     seat.warm = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`no answer within ${WARM_MS} ms`)), WARM_MS);
       worker.once('message', (reply: Reply) => {
@@ -201,7 +210,12 @@ export class ValidationBudget {
       });
       worker.postMessage({ op: 'warm' });
     });
-    seat.warm.catch(() => undefined);
+    seat.warm.then(
+      () => {
+        seat.ready = true;
+      },
+      () => undefined
+    );
     worker.on('exit', () => {
       if (!seat.dead) {
         seat.dead = true;
@@ -219,11 +233,21 @@ export class ValidationBudget {
     await Promise.allSettled(this.seats.map((s) => s.warm));
   }
 
-  /** For the boot's shutdown: nothing waits on it. */
+  /** For the boot's shutdown: the waiters are told, the seats terminated. */
   async close(): Promise<void> {
     this.closed = true;
+    const waiters = this.waiting.splice(0);
     const all = this.seats.splice(0);
+    for (const s of all) s.dead = true;
     await Promise.all(all.map((s) => s.worker.terminate()));
+    for (const waiter of waiters)
+      waiter({
+        worker: all[0]?.worker ?? new Worker('', { eval: true }),
+        warm: Promise.reject(new Error('the validation pool is closed')),
+        ready: false,
+        busy: true,
+        dead: true
+      });
   }
 }
 

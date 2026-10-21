@@ -97,6 +97,8 @@ export type DocumentFailure =
   | { code: 'answers_unknown_form'; form: string }
   /** The schema's patterns took more than the budget to judge the data (verifier round 3, F7). */
   | { code: 'schema_too_slow'; message: string }
+  /** The validation worker could not do its job: the server's fault, never the schema's (round 5, F3). */
+  | { code: 'validator_failed'; message: string }
   | { code: 'not_a_document' }
   | { code: 'not_a_data_template' }
   | { code: 'template_gone' }
@@ -310,7 +312,12 @@ export class DocumentService {
     if (!contract) return fail({ code: 'not_a_data_template' });
     const data = withoutAnswers(opts.data);
     const judged = await validationBudget().validate(contract.schema, data);
-    if (!judged.ok) return fail({ code: 'schema_too_slow', message: judged.message });
+    if (!judged.ok)
+      return fail(
+        judged.reason === 'timeout'
+          ? { code: 'schema_too_slow', message: judged.message }
+          : { code: 'validator_failed', message: judged.message }
+      );
     if (judged.value.length > 0) return fail({ code: 'data_invalid', issues: judged.value });
     const rendered = await this.render({
       workspaceId: opts.workspaceId,
@@ -585,7 +592,12 @@ export class DocumentService {
       if (JSON.stringify(withoutAnswers(data)).length > DOCUMENT_DATA_MAX_LENGTH)
         return fail({ code: 'data_too_large' });
       const judged = await validationBudget().validate(contract.schema, withoutAnswers(data));
-      if (!judged.ok) return fail({ code: 'schema_too_slow', message: judged.message });
+      if (!judged.ok)
+        return fail(
+          judged.reason === 'timeout'
+            ? { code: 'schema_too_slow', message: judged.message }
+            : { code: 'validator_failed', message: judged.message }
+        );
       if (judged.value.length > 0) return fail({ code: 'data_invalid', issues: judged.value });
       const rendered = await this.render({
         workspaceId: opts.workspaceId,

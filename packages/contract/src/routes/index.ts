@@ -362,7 +362,8 @@ export const uploadSessionCommitRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Session already consumed'),
-    410: jsonBody(apiErrorSchema, 'Session expired')
+    410: jsonBody(apiErrorSchema, 'Session expired'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -382,7 +383,8 @@ export const versionCommitRoute = createRoute({
     // Deliberately NO 403 (AUTH-5, PRDCT-1393): an unauthorized push gets
     // the same 404 a nonexistent deck does — existence is not probeable.
     404: errorResponses[404],
-    409: jsonBody(apiErrorSchema, 'version_conflict: expectedBaseVersion is stale — pull and retry')
+    409: jsonBody(apiErrorSchema, 'version_conflict: expectedBaseVersion is stale — pull and retry'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -1037,7 +1039,8 @@ export const templateSchemaSetRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
-    422: jsonBody(apiErrorSchema, 'The deck is not a template')
+    422: jsonBody(apiErrorSchema, 'The deck is not a template'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -1063,7 +1066,8 @@ export const documentCreateRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
-    422: jsonBody(apiErrorSchema, 'The deck is not a template with a schema (not_a_data_template)')
+    422: jsonBody(apiErrorSchema, 'The deck is not a template with a schema (not_a_data_template)'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -1100,7 +1104,8 @@ export const documentDataReplaceRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
-    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -1123,7 +1128,8 @@ export const documentDataMergeRoute = createRoute({
     403: errorResponses[403],
     404: errorResponses[404],
     409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
-    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -1184,7 +1190,8 @@ export const documentAnswerClearRoute = createRoute({
     403: errorResponses[403],
     404: jsonBody(apiErrorSchema, 'The deck, or no answer under that form name (answer_not_found)'),
     409: jsonBody(apiErrorSchema, 'Another write on this document is running (document_busy)'),
-    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)'),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 
@@ -1214,7 +1221,8 @@ export const documentUpgradeRoute = createRoute({
     422: jsonBody(
       apiErrorSchema,
       'The deck is not a document, or its template is gone (not_a_document, template_gone)'
-    )
+    ),
+    500: jsonBody(apiErrorSchema, 'The validation worker failed (validator_failed)')
   }
 });
 

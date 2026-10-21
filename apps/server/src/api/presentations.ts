@@ -335,7 +335,12 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       body.manifest as ManifestEntry[],
       reference.reference
     );
-    if (contract.refusal) return c.json(contractRefusalBody(contract.refusal), 400);
+    if (contract.refusal) {
+      return c.json(
+        contractRefusalBody(contract.refusal),
+        contract.refusal.code === 'validator_failed' ? 500 : 400
+      );
+    }
     const result = await service.commitUploadSession({
       workspaceId: principal.workspaceId,
       principal,
@@ -444,7 +449,12 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
       body.manifest as ManifestEntry[],
       reference.reference
     );
-    if (contract.refusal) return c.json(contractRefusalBody(contract.refusal), 400);
+    if (contract.refusal) {
+      return c.json(
+        contractRefusalBody(contract.refusal),
+        contract.refusal.code === 'validator_failed' ? 500 : 400
+      );
+    }
     const result = await service.commitVersion({
       workspaceId: principal.workspaceId,
       principal,

@@ -64,8 +64,13 @@ describe('the contract reader helpers', () => {
       }
     });
     expect(
-      contractRefusalBody({ code: 'sample_invalid', message: 'm', issues: [{ path: '/a', message: 'bad' }] })
-        .error.details
+      (
+        contractRefusalBody({
+          code: 'sample_invalid',
+          message: 'm',
+          issues: [{ path: '/a', message: 'bad' }]
+        }).error as { details?: unknown }
+      ).details
     ).toEqual({
       issues: [{ path: '/a', message: 'bad' }]
     });

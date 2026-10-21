@@ -98,7 +98,7 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
     data: await dataWire(principal, deck)
   });
 
-  const failed = (f: DocumentFailure): { status: 400 | 403 | 404 | 409 | 422; body: ErrorBody } => {
+  const failed = (f: DocumentFailure): { status: 400 | 403 | 404 | 409 | 422 | 500; body: ErrorBody } => {
     switch (f.code) {
       case 'not_found':
         return { status: 404 as const, body: err('not_found', 'Presentation not found') };
@@ -133,6 +133,11 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
         };
       case 'schema_too_slow':
         return { status: 400 as const, body: err('schema_too_slow', f.message) };
+      case 'validator_failed':
+        return {
+          status: 500 as const,
+          body: err('validator_failed', `The validation worker failed: ${f.message}`)
+        };
       case 'not_a_document':
         return {
           status: 422 as const,
@@ -268,7 +273,12 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
       manifest,
       deck.reference as { type: 'template' } | null
     );
-    if (contract.refusal) return c.json(contractRefusalBody(contract.refusal), 400);
+    if (contract.refusal) {
+      return c.json(
+        contractRefusalBody(contract.refusal),
+        contract.refusal.code === 'validator_failed' ? 500 : 400
+      );
+    }
     const result = await presentations.commitVersion({
       workspaceId: principal.workspaceId,
       principal,
@@ -396,7 +406,7 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
     body: Record<string, unknown>,
     kind: 'replace' | 'merge'
   ): Promise<{
-    status: 200 | 400 | 403 | 404 | 409 | 422;
+    status: 200 | 400 | 403 | 404 | 409 | 422 | 500;
     body: unknown;
     audit?: Record<string, unknown>;
   }> => {

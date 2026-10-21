@@ -72,3 +72,34 @@ describe('ValidationBudget', () => {
     expect(bad).toMatchObject({ ok: true, value: { errors: [{ file: 'index.html', line: 1 }] } });
   });
 });
+
+describe('ValidationBudget, one seat', () => {
+  it('a job waiting behind a job that dies gets the replacement seat (round 5, F4)', async () => {
+    const one = new ValidationBudget(150, 1);
+    try {
+      await one.warm();
+      const slow = one.validate(
+        { type: 'object', properties: { a: { type: 'string', pattern: '^(a|a)*$' } } },
+        { a: 'a'.repeat(34) + '!' }
+      );
+      const waiting = one.validate({ type: 'object' }, {});
+      expect(await slow).toMatchObject({ ok: false, reason: 'timeout' });
+      expect(await waiting).toEqual({ ok: true, value: [] });
+    } finally {
+      await one.close();
+    }
+  });
+
+  it('close() tells the jobs still waiting, instead of leaving them hanging', async () => {
+    const one = new ValidationBudget(150, 1);
+    await one.warm();
+    const slow = one.validate(
+      { type: 'object', properties: { a: { type: 'string', pattern: '^(a|a)*$' } } },
+      { a: 'a'.repeat(34) + '!' }
+    );
+    const waiting = one.validate({ type: 'object' }, {});
+    await one.close();
+    expect(await waiting).toMatchObject({ ok: false, reason: 'failed' });
+    await slow;
+  });
+});
