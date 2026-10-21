@@ -655,7 +655,7 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
 
 ## 17. The local gate misses the CI formatting gate (P8 review)
 
-66. **`pnpm turbo lint typecheck test build` — the gate CLAUDE.md calls "the
+66. **`pnpm turbo lint typecheck test build` — the gate AGENTS.md calls "the
     CI gate" — does not include `format:check`, but the template's ci.yml
     runs it as a separate step.** Result observed in BOTH instantiated repos
     (hub and Slideless) during the P8 review: several feature commits shipped
@@ -663,7 +663,7 @@ reset, SET a local password, and sign in past the per-login SSO re-sync.
     would have gone CI-red (hub: 4 files, Slideless: 20 files, cleaned up in
     dedicated chore commits). Fix in the template: either add a
     `format:check` turbo task to the documented gate line, or fold prettier
-    into the lint task — one gate, no drift between "what CLAUDE.md says CI
+    into the lint task — one gate, no drift between "what AGENTS.md says CI
     is" and what CI runs.
 
 ## 18. The CLI logout self-revoke is missing from the template (family-wide)
@@ -1219,4 +1219,4 @@ the handler's answer and never the organization's balance. The proof is
 (a metered create closed to guests) and runs in the chassis package only. A template helper that
 primes the plan with a request whose hook answers null stops priming: the template's prime is
 already an upload declared over the cap, which is what Slideless's `plan-limits.test.ts` now uses.
-The template's CLAUDE.md sentence "the plan gate judges nothing" can then say "the handler answers".
+The template's AGENTS.md sentence "the plan gate judges nothing" can then say "the handler answers".

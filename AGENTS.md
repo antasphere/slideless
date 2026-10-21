@@ -56,7 +56,7 @@ deploys) + `dev` (day-to-day work).
 ## The chassis is a dependency
 
 - The chassis is the five packages `@antasphere/chassis-{db,contract,server,sdk,cli}`, published on npm,
-  public, from `antasphere/chassis` (checkout `labs/products/antasphere/tools/chassis`, its `CLAUDE.md`) and
+  public, from `antasphere/chassis` (checkout `labs/products/antasphere/tools/chassis`, its `AGENTS.md`) and
   installed at ONE pinned version, the same exact string in every package that depends on them
   (`"1.0.0"`, never a range, never `workspace:`, never `link:`). Nothing of it lives in this repository.
 - Never edit the chassis from here: not under `node_modules`, not through `patchedDependencies`, not
