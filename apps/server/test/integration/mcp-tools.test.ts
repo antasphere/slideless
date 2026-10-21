@@ -1335,6 +1335,21 @@ describe('data-bound templates through the tools (PRDCT-3641)', () => {
     expect(after.data.version).toBe(before.data.version);
   });
 
+  it('data carrying `answers` is refused with the reason in the error text, not the bare "Request validation failed"', async () => {
+    const before = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    const refused = await callTool(ownerKey, 'slideless_push_document_data', {
+      presentationId: documentId,
+      data: { answers: { gate: { decision: 'go' } } },
+      mode: 'merge'
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('validation_error');
+    expect(refused.text).toMatch(/^\(root\): "answers" is reserved/m);
+
+    const after = await callTool(ownerKey, 'slideless_get_document_data', { presentationId: documentId });
+    expect(after.data.version).toBe(before.data.version);
+  });
+
   it('slideless_get_document_answers answers an empty list before any form is answered', async () => {
     const answers = await callTool(ownerKey, 'slideless_get_document_answers', {
       presentationId: documentId

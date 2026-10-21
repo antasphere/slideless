@@ -1766,14 +1766,24 @@ async function currentVersionOf(c: McpToolContext, presentationId: string): Prom
  * A data refusal (400 `data_invalid`) carries every place the data fails its
  * schema in `details.issues`; the chassis' error text prints the message
  * alone, which names the first. Each issue is appended here, `path: message`
- * one per line, so an agent can fix all of its data in one round.
+ * one per line, so an agent can fix all of its data in one round. A
+ * `validation_error` (the shape refused before the schema ran) gets the same
+ * treatment from its details array.
  */
 async function withDataIssues<T>(call: Promise<T>): Promise<T> {
   try {
     return await call;
   } catch (e) {
     if (e instanceof ApiToolError) {
-      const issues = (e.details as { issues?: unknown } | null | undefined)?.issues;
+      // A `validation_error` (the reserved `answers` key, a value nested too
+      // deep) carries its reasons as the details array itself, each with a
+      // path of segments; its message is the generic "Request validation failed".
+      const issues = Array.isArray(e.details)
+        ? (e.details as { path?: unknown; message?: unknown }[]).map((issue) => ({
+            path: Array.isArray(issue.path) && issue.path.length > 0 ? `/${issue.path.join('/')}` : '',
+            message: issue.message
+          }))
+        : (e.details as { issues?: unknown } | null | undefined)?.issues;
       if (Array.isArray(issues) && issues.length > 0) {
         const lines = issues.map((issue: { path?: unknown; message?: unknown }) => {
           const path = typeof issue.path === 'string' && issue.path ? issue.path : '(root)';
