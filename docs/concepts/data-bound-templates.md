@@ -82,7 +82,8 @@ A template push is refused, with the file and the line named, when:
 
 - a page binds a field the schema does not describe (`binding_unknown`);
 - a block is never closed or a marker is not a field path (`binding_syntax`);
-- `schema.json` is not a JSON Schema with a `version` (`schema_invalid`);
+- `schema.json` is not a JSON Schema with a `version`, or carries a `pattern` that could take
+  exponential time on a crafted value (`schema_invalid`);
 - `data.json` does not follow the schema (`sample_invalid`);
 - `schema.json` changed but its `version` did not (`schema_version_unchanged`). Documents pin a
   template version, and an upgrade compares the two.
@@ -176,10 +177,22 @@ then upgrade.
 
 ## What the document carries
 
-The data travels with the document: the rendered entry page embeds it in a `<script
+The pushed data travels with the document: the rendered entry page embeds it in a `<script
 type="application/json" id="slideless-data">` block, and `data.json` sits at the root of every
-version, so a pull, a PDF or an agent reading the share link keep what was shown. Whoever holds a
-share link can read the whole data, bound or not: push what the document may show.
+version, so a pull, a PDF or an agent reading the share link keep what the page was drawn from.
+Whoever holds a share link can read that data, bound or not: push what the document may show.
+
+The `answers` branch is not in those two files. Another recipient's answer, and the label of the
+link it came through, reach a page only where the template binds them: `{{answers.merge_gate.decision}}`
+shows the decision to every reader of the page, by the author's choice, and nothing shows it
+otherwise. The owner reads the whole branch through the API, the CLI and the dashboard.
+`{{{answers.merge_gate.comment}}}` (three braces) renders what a respondent typed as HTML, unescaped:
+keep the two-brace form on an answer unless you mean it.
+
+The branch has a budget of its own, 32 forms and 256 KB, so a link holder can never fill a document
+until its owner cannot write it; a response beyond it stays in the Responses tab and is not mirrored.
+`slideless document answers <id> --clear <form>` (or `DELETE /presentations/{id}/answers/{form}`)
+clears one form's answer from the data and renders again; the responses stay.
 
 ## From the API and the agent tools
 

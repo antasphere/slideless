@@ -193,6 +193,7 @@ describe('requiredScopeFor — data-bound templates (PRDCT-3641)', () => {
     expect(requiredScopeFor(`${DECK}/data/versions`, 'GET')).toBe('presentations:read');
     expect(requiredScopeFor(`${DECK}/data/versions/3`, 'GET')).toBe('presentations:read');
     expect(requiredScopeFor(`${DECK}/answers`, 'GET')).toBe('presentations:read');
+    expect(requiredScopeFor(`${DECK}/answers/gate`, 'DELETE')).toBe('presentations:write');
     expect(requiredScopeFor(`${DECK}/upgrade`, 'POST')).toBe('presentations:write');
   });
 });

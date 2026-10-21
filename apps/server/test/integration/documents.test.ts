@@ -1291,3 +1291,120 @@ describe('the audit', () => {
     expect(create.metadata).toMatchObject({ templateId });
   });
 });
+
+// ── Verifier round 2: the five findings, each pinned ─────────────────────────
+
+describe('round 2, F1: many concurrent writers on one document never stall the instance', () => {
+  it('25 concurrent PATCHes all land (no 500, no pool deadlock), the data holds every key', async () => {
+    const { id } = await instantiate(templateId, { title: 'Crowded', meta: { k: 'v' } });
+    const writes = Array.from({ length: 25 }, (_, i) =>
+      send('PATCH', `/presentations/${id}/data`, 'owner', { meta: { [`w${i}`]: String(i) } })
+    );
+    const statuses = (await Promise.all(writes)).map((r) => r.status);
+    expect(statuses.every((st) => st === 200)).toBe(true);
+    const now = await dataOf(id);
+    expect(now.version).toBe(26);
+    for (let i = 0; i < 25; i++) expect(now.data.meta[`w${i}`]).toBe(String(i));
+  });
+});
+
+describe('round 2, F2: the answers branch has its own budget and the owner clears it', () => {
+  let docId = '';
+  let secret = '';
+  beforeAll(async () => {
+    docId = (await instantiate(templateId, { title: 'Budgeted' })).id;
+    secret = (await mintLink(docId, { name: 'crowd', remembersResponses: false, canSubmitForms: true }))
+      .secret;
+  });
+
+  it('a response beyond the form budget is kept as a response but not mirrored; the owner still writes', async () => {
+    for (let i = 0; i < 33; i++) {
+      const res = await submitAnswer(secret, `f${i}`, { payload: { v: String(i) }, source: 'link' });
+      expect(res.status).toBe(201);
+    }
+    const answers = await expectStatus(await send('GET', `/presentations/${docId}/answers`, 'owner'), 200);
+    expect(answers.answers).toHaveLength(32);
+    expect(answers.answers.map((a: { form: string }) => a.form)).not.toContain('f32');
+    await expectStatus(
+      await send('PUT', `/presentations/${docId}/data`, 'owner', { title: 'Still mine' }),
+      200
+    );
+  });
+
+  it('DELETE /answers/{form} clears one branch and renders again; an unknown form is 404 answer_not_found', async () => {
+    const before = (await dataOf(docId)).version;
+    const body = await expectStatus(await send('DELETE', `/presentations/${docId}/answers/f0`, 'owner'), 200);
+    expect(body.version.version).toBe(before + 1);
+    const answers = await expectStatus(await send('GET', `/presentations/${docId}/answers`, 'owner'), 200);
+    expect(answers.answers.map((a: { form: string }) => a.form)).not.toContain('f0');
+    expect(answers.answers).toHaveLength(31);
+    await expectError(
+      await send('DELETE', `/presentations/${docId}/answers/f0`, 'owner'),
+      404,
+      'answer_not_found'
+    );
+    await expectError(await send('DELETE', `/presentations/${docId}/answers/f1`, 'viewer'), 404, 'not_found');
+  });
+});
+
+describe('round 2, F3: the served artifacts carry the pushed data alone', () => {
+  it('data.json and the data block hold no answers; the page shows only what a binding draws', async () => {
+    const docId = (await instantiate(templateId, { title: 'Private answers' })).id;
+    const a = await mintLink(docId, { name: 'alice', remembersResponses: true, canSubmitForms: true });
+    const b = await mintLink(docId, { name: 'bob', remembersResponses: true, canSubmitForms: true });
+    expect(
+      (
+        await submitAnswer(a.secret, 'merge_gate', {
+          payload: { decision: 'yes', comment: 'alice only' },
+          source: 'link'
+        })
+      ).status
+    ).toBe(201);
+    const viaB = await app.app.request(`/v/${b.secret}/data.json`, {
+      headers: { 'x-forwarded-for': nextIp() }
+    });
+    expect(viaB.status).toBe(200);
+    const served = await viaB.json();
+    expect(served).not.toHaveProperty('answers');
+    const html = await rawPage(b.secret);
+    expect(dataBlockOf(html)).not.toHaveProperty('answers');
+    expect(html).not.toContain('alice');
+    // The binding the author wrote still draws the decision.
+    expect(html).toContain('<p>yes</p>');
+    // The owner's reads keep the whole data.
+    expect((await dataOf(docId)).data.answers.merge_gate.$answered.by).toBe('alice');
+  });
+});
+
+describe('round 2, F4: a copy never hands the template to someone who cannot read it', () => {
+  it('a project viewer’s duplicate of a document is a plain deck, and writing data to it is 422', async () => {
+    const docId = (await instantiate(templateId, { title: 'Linked copy' }, { projectIds: [projectId] })).id;
+    const copy = await expectStatus(
+      await send('POST', `/presentations/${docId}/duplicate`, 'viewer', {}),
+      201
+    );
+    expect(copy.presentation.document).toBeNull();
+    await expectError(
+      await send('PUT', `/presentations/${copy.presentation.id}/data`, 'viewer', { title: 'Mine now' }),
+      422,
+      'not_a_document'
+    );
+    // The owner's own duplicate keeps the pin.
+    const own = await expectStatus(await send('POST', `/presentations/${docId}/duplicate`, 'owner', {}), 201);
+    expect(own.presentation.document).toMatchObject({ templateId, templateVersion: 1 });
+  });
+});
+
+describe('round 2, F5: a schema whose pattern could take exponential time is refused at push', () => {
+  it('schema_invalid names the place and the pattern', async () => {
+    const evil = schemaFile({
+      version: 'redos-1',
+      type: 'object',
+      properties: { title: { type: 'string', pattern: '^(a+)+$' } }
+    });
+    for (const f of [AGENT, evil, INDEX]) await upload('owner', f);
+    const e = await expectError(await commitNew('Redos', [AGENT, evil, INDEX]), 400, 'schema_invalid');
+    expect(e.message).toContain('/properties/title/pattern');
+    expect(e.message).toContain('exponential');
+  });
+});

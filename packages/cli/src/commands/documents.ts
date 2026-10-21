@@ -227,9 +227,16 @@ export function registerDocumentCommands(program: Command, io: CliIo): void {
     .description(
       `The forms' answers as the document's data holds them under "${ANSWERS_KEY}": the fields, who, when`
     )
-    .action(async (id: string, _opts, cmd: Command) => {
+    .option('--clear <form>', "clear this form's answer from the data (the responses stay) and render again")
+    .action(async (id: string, opts: { clear?: string }, cmd: Command) => {
       const ctx = resolveContext(cmd, io);
       await requireApiKey(ctx);
+      if (opts.clear !== undefined) {
+        const written = await refusalsWithDetails(() => ctx.client.clearDocumentAnswer(id, opts.clear!));
+        if (ctx.json) return printJson(io, written);
+        io.out.write(`Cleared the answer of "${opts.clear}" → version ${written.version.version}\n`);
+        return;
+      }
       const answers = await ctx.client.documentAnswers(id);
       if (ctx.json) return printJson(io, answers);
       if (answers.answers.length === 0) {

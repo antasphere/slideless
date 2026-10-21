@@ -1,4 +1,5 @@
 import { Validator, type Schema } from '@cfworker/json-schema';
+import safeRegex from 'safe-regex2';
 import { ANSWERS_KEY } from './bindings.js';
 import { ANSWERED_KEY, type AnsweredMeta, type DataValidationIssue } from './schemas/documents.js';
 
@@ -255,5 +256,41 @@ export function answersOf(data: Record<string, unknown>): {
       }
     });
   }
+  return out;
+}
+
+/**
+ * The regular expressions a schema carries (`pattern`, `patternProperties`
+ * keys) that could take exponential time on a crafted value (verifier round
+ * 2, F5): star height above one, as safe-regex2 judges it. The validator runs
+ * them with the native engine on the request thread, so a template whose
+ * schema carries one is refused at push, with the place named.
+ */
+export function unsafePatternsOf(schema: unknown): { at: string; pattern: string }[] {
+  const out: { at: string; pattern: string }[] = [];
+  const walk = (node: unknown, at: string, depth: number): void => {
+    if (depth > 64 || node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach((item, i) => walk(item, `${at}/${i}`, depth + 1));
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    for (const [key, value] of Object.entries(obj)) {
+      if (key === 'pattern' && typeof value === 'string') {
+        if (!safeRegex(value)) out.push({ at: `${at}/pattern`, pattern: value });
+        continue;
+      }
+      if (key === 'patternProperties' && isObject(value)) {
+        for (const pattern of Object.keys(value)) {
+          if (!safeRegex(pattern)) out.push({ at: `${at}/patternProperties`, pattern });
+        }
+        for (const [pattern, sub] of Object.entries(value))
+          walk(sub, `${at}/patternProperties/${pattern}`, depth + 1);
+        continue;
+      }
+      walk(value, `${at}/${key}`, depth + 1);
+    }
+  };
+  walk(schema, '', 0);
   return out;
 }

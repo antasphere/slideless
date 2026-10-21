@@ -1,9 +1,12 @@
 import { Readable } from 'node:stream';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { presentations, presentationVersions } from '@slideless/db';
 import type { Db, DbConn } from '@antasphere/chassis-db';
 import type { Principal } from '@antasphere/chassis-contract';
 import {
   ANSWERS_KEY,
+  ANSWERS_MAX_FORMS,
+  ANSWERS_MAX_LENGTH,
   DATA_FILE_PATH,
   DATA_SCHEMA_PATH,
   BOUND_FILE_MAX_BYTES,
@@ -54,12 +57,26 @@ import {
 /** Two-int advisory lock namespace serializing the writes of one document. 7432001-7 are taken (see presentations/service.ts). */
 const DOCUMENT_WRITE_LOCK = 7432008;
 
+/** How long a writer waits for another replica's writer on the same document before answering busy. */
+const LOCK_WAIT_MS = 15_000;
+
+class AnswerNotFound extends Error {
+  constructor(readonly form: string) {
+    super(`no answer under "${form}"`);
+  }
+}
+
 /** The id of the data block the rendered entry carries: `<script type="application/json" id="slideless-data">`. */
 export const DATA_BLOCK_ID = 'slideless-data';
 
 export type DocumentFailure =
   | { code: 'not_found' }
   | { code: 'forbidden' }
+  /** The document's lock could not be taken within the wait: another writer holds it (verifier round 2, F1). */
+  | { code: 'busy' }
+  | { code: 'answer_not_found'; form: string }
+  /** The answers branch is at its budget: the response is kept, the mirror skipped. */
+  | { code: 'answers_full' }
   | { code: 'not_a_document' }
   | { code: 'not_a_data_template' }
   | { code: 'template_gone' }
@@ -96,6 +113,9 @@ export interface DocumentServiceDeps {
 }
 
 export class DocumentService {
+  /** The writers of one document on this replica, one at a time (see `locked`). */
+  private readonly queues = new Map<string, Promise<void>>();
+
   constructor(private readonly deps: DocumentServiceDeps) {}
 
   // ── The template's contract ────────────────────────────────────────────────
@@ -104,9 +124,24 @@ export class DocumentService {
   async contractOf(
     workspaceId: string,
     templateId: string,
-    version: number
+    version: number,
+    conn?: DbConn
   ): Promise<TemplateVersionContract | null> {
-    const row = await this.deps.presentations.getVersion(workspaceId, templateId, version);
+    const row = conn
+      ? ((
+          await conn
+            .select()
+            .from(presentationVersions)
+            .where(
+              and(
+                eq(presentationVersions.presentationId, templateId),
+                eq(presentationVersions.workspaceId, workspaceId),
+                eq(presentationVersions.version, version)
+              )
+            )
+            .limit(1)
+        )[0] ?? null)
+      : await this.deps.presentations.getVersion(workspaceId, templateId, version);
     if (!row || !row.dataSchema) return null;
     return {
       row,
@@ -174,7 +209,10 @@ export class DocumentService {
         }
         text = renderBindings(parsed, opts.data);
       }
-      if (isEntry) text = withDataBlock(text, opts.data);
+      // The data block and data.json carry the pushed data alone (verifier round 2, F3):
+      // another recipient's answer and the link's label reach a page only through a binding
+      // the author wrote, never through the artifacts every link holder can read.
+      if (isEntry) text = withDataBlock(text, withoutAnswers(opts.data));
       const stored = await this.store(
         opts.workspaceId,
         Buffer.from(text, 'utf8'),
@@ -191,7 +229,7 @@ export class DocumentService {
       if (!isEntry) rendered.set(entry.sha256, next);
       out.push(next);
     }
-    const dataBytes = Buffer.from(JSON.stringify(opts.data, null, 2) + '\n', 'utf8');
+    const dataBytes = Buffer.from(JSON.stringify(withoutAnswers(opts.data), null, 2) + '\n', 'utf8');
     const dataStored = await this.store(
       opts.workspaceId,
       dataBytes,
@@ -352,7 +390,7 @@ export class DocumentService {
     };
     return this.locked(opts.workspaceId, opts.presentationId, async (tx, deck) => {
       if (deck.templateId === null || deck.templateVersion === null) return null;
-      const contract = await this.contractOf(opts.workspaceId, deck.templateId, deck.templateVersion);
+      const contract = await this.contractOf(opts.workspaceId, deck.templateId, deck.templateVersion, tx);
       if (!contract) return fail({ code: 'template_gone' });
       const owner = deck.ownerUserId;
       if (owner === null) {
@@ -363,7 +401,15 @@ export class DocumentService {
         return null;
       }
       const data = withFormAnswer(deck.documentData ?? {}, opts.formName, opts.fields, meta);
-      if (JSON.stringify(data).length > DOCUMENT_DATA_MAX_LENGTH) return fail({ code: 'data_too_large' });
+      // The branch's own budget (verifier round 2, F2): a link holder can
+      // never grow the data until its owner cannot write it.
+      const answers = data[ANSWERS_KEY] as Record<string, unknown>;
+      if (
+        Object.keys(answers).length > ANSWERS_MAX_FORMS ||
+        JSON.stringify(answers).length > ANSWERS_MAX_LENGTH
+      ) {
+        return fail({ code: 'answers_full' });
+      }
       const rendered = await this.render({
         workspaceId: opts.workspaceId,
         template: contract,
@@ -396,6 +442,25 @@ export class DocumentService {
     });
   }
 
+  /** `DELETE /presentations/{id}/answers/{form}`: the owner's way out of a branch a link holder filled. */
+  clearAnswer(opts: {
+    workspaceId: string;
+    principal: Principal;
+    id: string;
+    form: string;
+  }): Promise<DocumentWrite> {
+    return this.write(opts, (current) => {
+      const answers = current?.[ANSWERS_KEY];
+      if (answers === null || typeof answers !== 'object' || !(opts.form in (answers as object))) {
+        throw new AnswerNotFound(opts.form);
+      }
+      const rest = { ...(answers as Record<string, unknown>) };
+      delete rest[opts.form];
+      const base = withoutAnswers(current ?? {});
+      return Object.keys(rest).length > 0 ? { ...base, [ANSWERS_KEY]: rest } : base;
+    });
+  }
+
   /**
    * The one write motion: under the document's lock, the current data is
    * read, `next` computes what to validate, the pinned (or the target)
@@ -407,33 +472,44 @@ export class DocumentService {
     next: (current: Record<string, unknown> | null) => Record<string, unknown>,
     move: { toVersion: number | 'latest' } | null = null
   ): Promise<DocumentWrite> {
-    const { db, presentations } = this.deps;
+    const { presentations } = this.deps;
     const result = await this.locked(
       opts.workspaceId,
       opts.id,
       async (tx, deck): Promise<DocumentWrite | null> => {
-        if (!(await canReadDeck(db, opts.principal, deck))) return fail({ code: 'not_found' });
-        if (!(await canWriteDeck(db, opts.principal, deck))) return fail({ code: 'forbidden' });
+        if (!(await canReadDeck(tx, opts.principal, deck))) return fail({ code: 'not_found' });
+        if (!(await canWriteDeck(tx, opts.principal, deck))) return fail({ code: 'forbidden' });
         if (deck.templateId === null || deck.templateVersion === null)
           return fail({ code: 'not_a_document' });
+        // Every write renders the TEMPLATE's pages for the writer (verifier
+        // round 2, F4): the writer must read the template, not only on an
+        // upgrade. A template gone, or not theirs to read, is one answer.
+        const template = await presentations.get(opts.workspaceId, deck.templateId);
+        if (!template || !(await canReadDeck(tx, opts.principal, template)))
+          return fail({ code: 'template_gone' });
         let templateVersion = deck.templateVersion;
         if (move) {
-          const template = await presentations.get(opts.workspaceId, deck.templateId);
-          if (!template || !(await canReadDeck(db, opts.principal, template)))
-            return fail({ code: 'template_gone' });
           templateVersion = move.toVersion === 'latest' ? template.currentVersion : move.toVersion;
           if (templateVersion === deck.templateVersion)
             return fail({ code: 'already_on_version', version: templateVersion });
         }
-        const contract = await this.contractOf(opts.workspaceId, deck.templateId, templateVersion);
+        const contract = await this.contractOf(opts.workspaceId, deck.templateId, templateVersion, tx);
         if (!contract) {
           return fail(
             move ? { code: 'template_version_invalid', version: templateVersion } : { code: 'template_gone' }
           );
         }
         const current = deck.documentData ?? null;
-        const data = next(current);
-        if (JSON.stringify(data).length > DOCUMENT_DATA_MAX_LENGTH) return fail({ code: 'data_too_large' });
+        let data: Record<string, unknown>;
+        try {
+          data = next(current);
+        } catch (e) {
+          if (e instanceof AnswerNotFound) return fail({ code: 'answer_not_found', form: e.form });
+          throw e;
+        }
+        // The writer's data is judged alone: the answers branch has its own budget and never locks the owner out.
+        if (JSON.stringify(withoutAnswers(data)).length > DOCUMENT_DATA_MAX_LENGTH)
+          return fail({ code: 'data_too_large' });
         const issues = validateDataAgainstSchema(contract.schema, withoutAnswers(data));
         if (issues.length > 0) return fail({ code: 'data_invalid', issues });
         const rendered = await this.render({
@@ -463,20 +539,73 @@ export class DocumentService {
     return result ?? fail({ code: 'not_found' });
   }
 
-  /** Runs `body` in a transaction holding the document's write lock, the deck row re-read under it. */
+  /**
+   * Runs `body` holding the document's write lock. Two things keep the
+   * connection pool out of the picture (verifier round 2, F1: writers queued
+   * on one document each held a pool connection inside their transaction
+   * while the holder needed a second one, and the whole instance stalled):
+   * the writers of one document on THIS replica queue in memory, one
+   * transaction at a time, and across replicas the lock is TRIED with a
+   * bounded wait on the lock's own transaction, the connection released
+   * between tries. Every read the body needs runs on that one connection;
+   * the blob store (the chassis file service) takes its own.
+   */
   private async locked<T>(
     workspaceId: string,
     presentationId: string,
     body: (tx: DbConn, deck: PresentationRow) => Promise<T | null>
   ): Promise<T | null> {
-    return this.deps.db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(${DOCUMENT_WRITE_LOCK}, hashtext(${presentationId}))`
+    const previous = this.queues.get(presentationId) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.tryLocked(workspaceId, presentationId, body));
+    this.queues.set(
+      presentationId,
+      run.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    try {
+      return await run;
+    } finally {
+      if (this.queues.get(presentationId) === run) this.queues.delete(presentationId);
+    }
+  }
+
+  private async tryLocked<T>(
+    workspaceId: string,
+    presentationId: string,
+    body: (tx: DbConn, deck: PresentationRow) => Promise<T | null>
+  ): Promise<T | null> {
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    let wait = 40;
+    for (;;) {
+      const attempt = await this.deps.db.transaction(
+        async (tx): Promise<{ taken: true; value: T | null } | { taken: false }> => {
+          const res = await tx.execute(
+            sql`SELECT pg_try_advisory_xact_lock(${DOCUMENT_WRITE_LOCK}, hashtext(${presentationId})) AS taken`
+          );
+          const taken = Boolean((res.rows[0] as { taken?: boolean } | undefined)?.taken);
+          if (!taken) return { taken: false };
+          const [deck] = await tx
+            .select()
+            .from(presentations)
+            .where(
+              and(
+                eq(presentations.id, presentationId),
+                eq(presentations.workspaceId, workspaceId),
+                isNull(presentations.deletedAt)
+              )
+            )
+            .limit(1);
+          if (!deck) return { taken: true, value: null };
+          return { taken: true, value: await body(tx, deck) };
+        }
       );
-      const deck = await this.deps.presentations.get(workspaceId, presentationId);
-      if (!deck) return null;
-      return body(tx, deck);
-    });
+      if (attempt.taken) return attempt.value;
+      if (Date.now() >= deadline) return fail({ code: 'busy' }) as unknown as T;
+      await new Promise((r) => setTimeout(r, wait + Math.floor(Math.random() * wait)));
+      wait = Math.min(wait * 2, 500);
+    }
   }
 
   private landed(result: DocumentCommitResult): DocumentWrite {

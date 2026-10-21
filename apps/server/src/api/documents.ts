@@ -3,6 +3,7 @@ import type { Principal } from '@antasphere/chassis-contract';
 import type { Db } from '@antasphere/chassis-db';
 import type { PresentationRow, PresentationVersionRow } from '@slideless/db';
 import {
+  documentAnswerClearRoute,
   documentAnswersRoute,
   documentCreateRoute,
   documentDataGetRoute,
@@ -97,7 +98,7 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
     data: await dataWire(principal, deck)
   });
 
-  const failed = (f: DocumentFailure): { status: 400 | 403 | 404 | 422; body: ErrorBody } => {
+  const failed = (f: DocumentFailure): { status: 400 | 403 | 404 | 409 | 422; body: ErrorBody } => {
     switch (f.code) {
       case 'not_found':
         return { status: 404 as const, body: err('not_found', 'Presentation not found') };
@@ -105,6 +106,23 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
         return {
           status: 403 as const,
           body: err('forbidden', 'You read this document but may not write it')
+        };
+      case 'busy':
+        return {
+          status: 409 as const,
+          body: err('document_busy', 'Another write on this document is still running; retry in a moment')
+        };
+      case 'answer_not_found':
+        return {
+          status: 404 as const,
+          body: errWith('answer_not_found', `No answer under "${f.form}" in this document's data`, {
+            form: f.form
+          })
+        };
+      case 'answers_full':
+        return {
+          status: 409 as const,
+          body: err('answers_full', 'The answers of this document are at their budget')
         };
       case 'not_a_document':
         return {
@@ -368,7 +386,7 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
     id: string,
     body: Record<string, unknown>,
     kind: 'replace' | 'merge'
-  ): Promise<{ status: 200 | 400 | 403 | 404 | 422; body: unknown; audit?: Record<string, unknown> }> => {
+  ): Promise<{ status: 200 | 400 | 403 | 404 | 409 | 422; body: unknown; audit?: Record<string, unknown> }> => {
     const result =
       kind === 'replace'
         ? await documents.replaceData({ workspaceId: principal.workspaceId, principal, id, data: body })
@@ -476,6 +494,28 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
       { presentationId: deck.id, version: deck.currentVersion, answers: documents.answersOf(deck) },
       200
     );
+  });
+
+  api.openapi(documentAnswerClearRoute, async (c) => {
+    const principal = c.get('principal')!;
+    const { id, form } = c.req.valid('param');
+    const result = await documents.clearAnswer({ workspaceId: principal.workspaceId, principal, id, form });
+    if (!result.ok) {
+      const f = failed(result.failure);
+      return c.json(f.body as never, f.status as never);
+    }
+    c.set('audit', {
+      action: 'document.answer_clear',
+      resourceType: 'presentation',
+      resourceId: id,
+      metadata: { version: result.version.version, form }
+    });
+    registry.events.emit('presentation.version_committed', {
+      workspaceId: principal.workspaceId,
+      presentationId: id,
+      version: result.version.version
+    });
+    return c.json(await written(principal, result.presentation, result.version), 200);
   });
 
   api.openapi(documentUpgradeRoute, async (c) => {

@@ -9,6 +9,7 @@ import {
   extractBindings,
   hasBindingMarkers,
   parseBindings,
+  unsafePatternsOf,
   validateDataAgainstSchema,
   type BindingError,
   type DataValidationIssue,
@@ -142,6 +143,16 @@ export async function readTemplateContract(
     });
   }
   const schema = schemaParsed.data;
+  // A pattern that could take exponential time runs on the request thread
+  // at every write (verifier round 2, F5): refused at the template's push.
+  const unsafe = unsafePatternsOf(schema);
+  if (unsafe.length > 0) {
+    const first = unsafe[0]!;
+    return refuse({
+      code: 'schema_invalid',
+      message: `${DATA_SCHEMA_PATH} at ${first.at}: the pattern "${first.pattern.slice(0, 60)}" could take exponential time on a crafted value; write it without nested repetition`
+    });
+  }
 
   let sample: Record<string, unknown> | null = null;
   const sampleEntry = manifest.find((e) => e.path === DATA_FILE_PATH);

@@ -597,6 +597,7 @@ slideless document data push <id> --file lane.json       # replace the data
 slideless document data push <id> --merge patch.json     # change some keys only
 slideless document data versions <id>                    # every version: when, source, by whom, what changed
 slideless document answers <id>                          # the forms' answers, one block per form
+slideless document answers <id> --clear merge_gate    # clear one form's answer from the data (the responses stay)
 slideless document upgrade <id>                          # move to the template's current version
 slideless document upgrade <id> --to 4                   # …or to the version you name
 slideless document upgrade <id> --merge more.json        # add what the new version requires, then move

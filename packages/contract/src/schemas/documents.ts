@@ -36,6 +36,15 @@ export const DATA_FILE_PATH = 'data.json';
 /** Serialized caps, in JSON.stringify characters (the metadata cap's precedent). */
 export const DATA_SCHEMA_MAX_LENGTH = 256 * 1024;
 export const DOCUMENT_DATA_MAX_LENGTH = 1024 * 1024;
+/**
+ * The answers branch has its own budget (verifier round 2, F2): a respondent
+ * must never be able to grow a document's data until its owner can no longer
+ * write it. The client data is judged alone against DOCUMENT_DATA_MAX_LENGTH;
+ * the branch against these two, and a response beyond them stays a response
+ * and is not mirrored (said in the log).
+ */
+export const ANSWERS_MAX_LENGTH = 256 * 1024;
+export const ANSWERS_MAX_FORMS = 32;
 /** The largest HTML file the renderer resolves bindings in; a bigger one is refused at the template's push. */
 export const BOUND_FILE_MAX_BYTES = 8 * 1024 * 1024;
 

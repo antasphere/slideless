@@ -91,6 +91,7 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /presentations/{id}/data/versions': (c) => c.documentDataVersions(SAMPLE_ID),
   'GET /presentations/{id}/data/versions/{version}': (c) => c.documentDataVersion(SAMPLE_ID, SAMPLE_VERSION),
   'GET /presentations/{id}/answers': (c) => c.documentAnswers(SAMPLE_ID),
+  'DELETE /presentations/{id}/answers/{form}': (c) => c.clearDocumentAnswer(SAMPLE_ID, 'gate'),
   'POST /presentations/{id}/upgrade': (c) => c.upgradeDocument(SAMPLE_ID),
   'PUT /presentations/{id}/projects/{projectId}': (c) =>
     c.linkPresentationProject(SAMPLE_ID, SAMPLE_CHILD_ID),
@@ -251,7 +252,8 @@ function expectedPath(contractPath: string): string {
     .replace('{fileId}', SAMPLE_FILE_ID)
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)
-    .replace('{name}', encodeURIComponent(SAMPLE_ATTACHMENT))}`;
+    .replace('{name}', encodeURIComponent(SAMPLE_ATTACHMENT))
+    .replace('{form}', 'gate')}`;
 }
 
 describe('SDK route coverage (contract drift guard)', () => {

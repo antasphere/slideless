@@ -838,12 +838,18 @@ export function registerPresentationRoutes(api: OpenAPIHono, deps: PresentationR
     if (!source || !(await service.canRead(principal, source))) {
       return c.json(err('not_found', 'Presentation not found'), 404);
     }
+    // A document's copy keeps its template pin only for a caller who reads
+    // the template (verifier round 2, F4); anyone else gets a plain deck.
+    const template =
+      source.templateId !== null ? await service.get(principal.workspaceId, source.templateId) : null;
+    const copyDocumentBinding = template !== null && (await service.canRead(principal, template));
     const result = await service.duplicate({
       workspaceId: principal.workspaceId,
       principal,
       sourceId: id,
       version: body.version,
-      title: body.title
+      title: body.title,
+      copyDocumentBinding
     });
     if (!result.ok) {
       const f = result.failure;

@@ -229,6 +229,7 @@ function routes(deck: string, cookie: string): Record<string, () => Promise<Prob
     'get /presentations/{id}/data/versions': () => shot(`${P}/data/versions`, 'GET', cookie),
     'get /presentations/{id}/data/versions/{version}': () => shot(`${P}/data/versions/1`, 'GET', cookie),
     'get /presentations/{id}/answers': () => shot(`${P}/answers`, 'GET', cookie),
+    'delete /presentations/{id}/answers/{form}': () => shot(`${P}/answers/gate`, 'DELETE', cookie),
     'post /presentations/{id}/upgrade': () => shot(`${P}/upgrade`, 'POST', cookie, {})
   };
 }

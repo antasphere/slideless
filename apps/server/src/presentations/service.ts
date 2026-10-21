@@ -710,6 +710,14 @@ export class PresentationService {
     version?: number | undefined;
     /** The copy's title; `<source title> (copy)` (capped at 300) when omitted. */
     title?: string | undefined;
+    /**
+     * Whether the copy of a DOCUMENT keeps its template pin and data (the
+     * caller reads the template, so a push on the copy may render the
+     * template's pages for them); false makes a plain deck of the rendered
+     * files (verifier round 2, F4: a project viewer who never saw the template
+     * must not get its pages through a copy).
+     */
+    copyDocumentBinding?: boolean | undefined;
   }): Promise<DuplicateResult> {
     return this.db.transaction(async (tx): Promise<DuplicateResult> => {
       const [source] = await tx
@@ -741,6 +749,9 @@ export class PresentationService {
       if (!sourceVersion) return { ok: false, failure: { code: 'invalid_version', version: wanted } };
 
       const manifest = sourceVersion.manifest as ManifestEntry[];
+      const keepBinding = Boolean(
+        sourceVersion.documentData && source.templateId !== null && opts.copyDocumentBinding
+      );
       const { missing, sizeBySha } = await this.lockAndResolveBlobs(
         tx,
         opts.workspaceId,
@@ -773,10 +784,10 @@ export class PresentationService {
           remixedFrom: source.id,
           // A duplicate of a document is a document on the same template
           // version, its data the copied version's (PRDCT-3641).
-          templateId: sourceVersion.documentData ? source.templateId : null,
-          templateVersion: sourceVersion.documentData ? sourceVersion.templateVersion : null,
-          schemaVersion: sourceVersion.documentData ? sourceVersion.schemaVersion : null,
-          documentData: sourceVersion.documentData ?? null
+          templateId: keepBinding ? source.templateId : null,
+          templateVersion: keepBinding ? sourceVersion.templateVersion : null,
+          schemaVersion: keepBinding ? sourceVersion.schemaVersion : null,
+          documentData: keepBinding ? sourceVersion.documentData : null
         })
         .returning();
       const [version] = await tx
@@ -797,13 +808,13 @@ export class PresentationService {
           dataSchema: sourceVersion.dataSchema,
           dataSample: sourceVersion.dataSample,
           dataBindings: sourceVersion.dataBindings,
-          ...(sourceVersion.documentData
+          ...(keepBinding
             ? {
                 documentData: sourceVersion.documentData,
                 templateVersion: sourceVersion.templateVersion,
                 schemaVersion: sourceVersion.schemaVersion,
                 dataSource: 'create' as const,
-                dataChanged: changedPaths(null, sourceVersion.documentData)
+                dataChanged: changedPaths(null, sourceVersion.documentData ?? {})
               }
             : {}),
           createdBy: opts.principal.userId,

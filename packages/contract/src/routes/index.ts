@@ -22,6 +22,7 @@ import {
 import { chassisContract } from '../chassis.js';
 import { IDENTITY } from '../identity.js';
 import { versionParamSchema } from '../schemas/versions.js';
+import { formNameSchema } from '../schemas/forms.js';
 import {
   ASSET_PATH_MAX_LENGTH,
   assetPrecheckRequestSchema,
@@ -1169,6 +1170,24 @@ export const documentAnswersRoute = createRoute({
   }
 });
 
+export const documentAnswerClearRoute = createRoute({
+  method: 'delete',
+  path: '/presentations/{id}/answers/{form}',
+  tags: ['documents'],
+  summary:
+    "Clear one form's answer from a document's data (the responses stay) and render again: the owner's way " +
+    'out of a branch a link holder filled',
+  request: { params: z.object({ id: z.uuid(), form: formNameSchema }), headers: idempotencyHeaders },
+  responses: {
+    200: jsonBody(documentWrittenSchema, 'The document at its new version'),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: jsonBody(apiErrorSchema, 'The deck, or no answer under that form name (answer_not_found)'),
+    409: jsonBody(apiErrorSchema, 'Idempotency conflict'),
+    422: jsonBody(apiErrorSchema, 'The deck is not a document (not_a_document)')
+  }
+});
+
 export const documentUpgradeRoute = createRoute({
   method: 'post',
   path: '/presentations/{id}/upgrade',
@@ -1338,6 +1357,7 @@ export function deckRouteEntitlements(actors: DeckActorHooks) {
     { route: documentDataMergeRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
     { route: documentUpgradeRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
     { route: templateSchemaSetRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
+    { route: documentAnswerClearRoute, meter: { key: DECK_ACTIONS.commit, unit: 'call' } },
     // A share link (PRDCT-2702): the mint counts against the deck's links
     // and, when the body sets a password, needs the feature; the update
     // needs the feature for the same act alone. Feature, then limit, then

@@ -552,6 +552,20 @@ export class PlatformClient extends ChassisClient<Scope> {
     return this.request('GET', `/presentations/${encodeURIComponent(id)}/answers`);
   }
 
+  /** Clear one form's answer from a document's data (the responses stay); a new version is rendered. */
+  clearDocumentAnswer(
+    id: string,
+    form: string,
+    opts: IdempotentRequestOptions = {}
+  ): Promise<DocumentWritten> {
+    return this.request(
+      'DELETE',
+      `/presentations/${encodeURIComponent(id)}/answers/${encodeURIComponent(form)}`,
+      undefined,
+      idempotencyHeader(opts)
+    );
+  }
+
   /** Move a document to a newer version of its template (its current one when omitted) and render again. */
   upgradeDocument(
     id: string,
