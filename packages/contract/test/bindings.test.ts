@@ -206,6 +206,14 @@ describe('extractBindings', () => {
     ]);
   });
 
+  it('an unknown section is one refusal line: the @index, . and fields it holds are not judged again', () => {
+    const out = extract('{{#nope.tags}}[{{.}}#{{@index}}{{@last}}{{x}}]{{/nope.tags}}\n{{@index}}');
+    expect(out.unknown).toEqual([
+      { path: 'nope.tags', file: 'index.html', line: 1 },
+      { path: '@index', file: 'index.html', line: 2 }
+    ]);
+  });
+
   it('a section item may read the root (mustache lookup), and the path is recorded where it resolved', () => {
     const out = extract('{{#tickets}}{{title}}{{/tickets}}');
     expect(out.unknown).toEqual([]);

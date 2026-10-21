@@ -510,7 +510,9 @@ export function extractBindings(
         const scope: SchemaScope = {
           node: node === 'any' ? null : items === null ? node : items === 'any' ? null : items,
           path: found.absolute === '.' ? scopes[scopes.length - 1]!.path : found.absolute,
-          item: items !== null
+          // An unknown section is reported once, above; what it holds is not judged again, so
+          // `{{@index}}` inside it is no second refusal line (the PRDCT-3641 double check).
+          item: items !== null || node === null
         };
         visit(token.children, [...scopes, scope]);
       }
