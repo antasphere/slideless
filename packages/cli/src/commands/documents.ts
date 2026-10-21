@@ -357,7 +357,8 @@ function issueLine(issue: DataValidationIssue): string {
  * The API's refusals that carry a list in their details get it printed
  * under the API's own message: one line per issue for `data_invalid` and
  * `sample_invalid`, one `file line N: path` per binding the schema lacks for
- * `binding_unknown`. Every other refusal goes on to the runner untouched,
+ * `binding_unknown`, one `path: message` per issue of a `validation_error`
+ * (the reserved `answers` key among them). Every other refusal goes on to the runner untouched,
  * which keeps its hints (the plan link, the key check).
  */
 async function refusalsWithDetails<T>(call: () => Promise<T>): Promise<T> {
@@ -367,7 +368,18 @@ async function refusalsWithDetails<T>(call: () => Promise<T>): Promise<T> {
     if (!(e instanceof PlatformApiError)) throw e;
     const details = (e.details ?? {}) as { issues?: unknown; unknown?: unknown };
     let lines = '';
-    if ((e.code === 'data_invalid' || e.code === 'sample_invalid') && Array.isArray(details.issues)) {
+    if (e.code === 'validation_error' && Array.isArray(e.details)) {
+      // The request's shape refused before the schema ran (a data file
+      // carrying `answers`, a value nested too deep): the API's message is
+      // the generic "Request validation failed", the reason is in each issue.
+      lines = (e.details as { path?: unknown; message?: unknown }[])
+        .map((issue) => {
+          const path =
+            Array.isArray(issue.path) && issue.path.length > 0 ? `/${issue.path.join('/')}` : '(root)';
+          return `  ${path}: ${String(issue.message)}\n`;
+        })
+        .join('');
+    } else if ((e.code === 'data_invalid' || e.code === 'sample_invalid') && Array.isArray(details.issues)) {
       lines = (details.issues as DataValidationIssue[]).map(issueLine).join('');
     } else if (e.code === 'binding_unknown' && Array.isArray(details.unknown)) {
       lines = (details.unknown as UnknownBinding[])

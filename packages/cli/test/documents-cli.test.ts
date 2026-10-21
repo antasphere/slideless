@@ -423,6 +423,34 @@ describe('document data push', () => {
     expect(h.calls).toHaveLength(0);
   });
 
+  it('a data file carrying `answers` is refused with the reason, not the bare "Request validation failed"', async () => {
+    const h = routedHarness([
+      {
+        method: 'PATCH',
+        path: dataPath,
+        reply: () =>
+          refusal(400, 'validation_error', 'Request validation failed', [
+            {
+              code: 'custom',
+              path: [],
+              message: '"answers" is reserved: the forms\' answers are written by the server'
+            }
+          ])
+      }
+    ]);
+    expect(
+      await run(
+        argv('document', 'data', 'push', DOC_ID, '--merge', await jsonFile({ answers: { gate: {} } })),
+        h.io
+      )
+    ).toBe(1);
+    expect(h.out()).toBe('');
+    expect(h.err()).toBe(
+      'Error: Request validation failed\n' +
+        '  (root): "answers" is reserved: the forms\' answers are written by the server\n'
+    );
+  });
+
   it('data_invalid prints one line per issue', async () => {
     const h = routedHarness([
       {
