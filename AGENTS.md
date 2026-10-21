@@ -633,9 +633,12 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   with a 64 KB window and the renderer reads raw files). The `answers` branch is written by the
   server alone (a client body carrying it is refused, a replace carries it over) from the viewer's
   form response, latest per form, `by` the link's recipient label and never a respondent identity;
-  the responses table stays the truth. The five document writes meter `presentations.commit`; an
-  answer keeps `forms.response` and its re-render is free. The events are `document.pushed` and
-  `document.answered` (the chassis refuses three-segment types).
+  the responses table stays the truth. The six document writes (the instance, PUT and PATCH of the data, the
+  upgrade, the schema, the answer clear) meter `presentations.commit`; an answer keeps `forms.response` and its re-render is free. The events are `document.pushed` and
+  `document.answered` (the chassis refuses three-segment types). A `schema.json` whose keywords
+  are not a JSON Schema's is refused at push (`schemaShapeIssues`): the validator reads one its own
+  way and no document could ever be made. The data writes are not Idempotency-Key targets (POST
+  only): never declare the header on a route the chassis does not claim.
 - **Hub-origin workspaces are hub-managed (P7, internal/federation.md)**: on `EDITION=cloud`, every
   local membership MUTATION on a projected workspace (`centralAccountId IS NOT NULL`) — invitation
   create/accept/revoke, member role-change/deactivate/reactivate/delete, reset-link,

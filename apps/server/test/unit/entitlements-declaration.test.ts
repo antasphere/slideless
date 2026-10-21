@@ -50,10 +50,11 @@ describe('a document’s writes meter the commit action (PRDCT-3641)', () => {
     'PUT /presentations/{id}/data',
     'PATCH /presentations/{id}/data',
     'POST /presentations/{id}/upgrade',
-    'PUT /presentations/{id}/schema'
+    'PUT /presentations/{id}/schema',
+    'DELETE /presentations/{id}/answers/{form}'
   ];
 
-  it('each of the five write routes is declared, metering DECK_ACTIONS.commit per call', () => {
+  it('each of the six write routes is declared, metering DECK_ACTIONS.commit per call', () => {
     for (const key of WRITES) {
       const entry = DECK_ROUTE_ENTITLEMENTS.get(key);
       expect(entry, key).toBeDefined();
@@ -63,7 +64,7 @@ describe('a document’s writes meter the commit action (PRDCT-3641)', () => {
     }
   });
 
-  it('the server’s own declarations (the tool’s slot) carry the same five', () => {
+  it('the server’s own declarations (the tool’s slot) carry the same six', () => {
     const declared = slidelessTool.entitlements!({ MAX_FILE_SIZE_MB: 100 } as never, {
       db: null as never,
       getTool: () => null
