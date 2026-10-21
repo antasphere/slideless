@@ -386,7 +386,11 @@ export function registerDocumentRoutes(api: OpenAPIHono, deps: DocumentRouteDeps
     id: string,
     body: Record<string, unknown>,
     kind: 'replace' | 'merge'
-  ): Promise<{ status: 200 | 400 | 403 | 404 | 409 | 422; body: unknown; audit?: Record<string, unknown> }> => {
+  ): Promise<{
+    status: 200 | 400 | 403 | 404 | 409 | 422;
+    body: unknown;
+    audit?: Record<string, unknown>;
+  }> => {
     const result =
       kind === 'replace'
         ? await documents.replaceData({ workspaceId: principal.workspaceId, principal, id, data: body })
