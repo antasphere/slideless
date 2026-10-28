@@ -54,7 +54,7 @@ jobs:
           mkdir -p /tmp/hostinger-pages/hostinger
           cp deploy/index.html /tmp/hostinger-pages/
           cp deploy/hostinger/docker-compose.yml deploy/hostinger/index.html /tmp/hostinger-pages/hostinger/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: /tmp/hostinger-pages
 
