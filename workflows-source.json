@@ -1,7 +1,7 @@
 {
   "template": {
     "repo": "antasphere/tool-template",
-    "sha": "2d807556da868122b13b81cd31fb512ccd6be343"
+    "sha": "0fc6900ba7b39bf850600512bb99c4115ca66b24"
   },
   "files": {
     ".github/workflows/ci.yml": "73e759e08e0b4157d7401c3df015037ac6c55dfd914a4086a92f5cde37f5f65a",
@@ -9,6 +9,6 @@
     ".github/workflows/docs-notify.yml": "e47c3b8e301958dfc7f88c215eaab8be60433b2b09900549411e5694d584be9e",
     ".github/workflows/hostinger-pages.yml": "84ce1b3eee0c922a73b7faac431b6854d71ff8b617df936f13b5270384d2d613",
     ".github/workflows/publish-cli.yml": "a56c460fd7336c3d79094bf36f5f5ee0cdb92d8cb0c3d0d79a6c4af1a9acaff2",
-    ".github/workflows/release.yml": "ec3c81dba12cdf758dc8cf365877671972475e0a3ac7d05b974fb59b14359ab5"
+    ".github/workflows/release.yml": "f456fc9147a19cf4a132aa2fcdeadbc9b365c18c2fa490f0bbd01c6555231a89"
   }
 }

@@ -137,10 +137,12 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore.yaml:/.trivyignore.yaml:ro" \
             -e TRIVY_USERNAME=${{ github.actor }} \
             -e TRIVY_PASSWORD=${{ secrets.GITHUB_TOKEN }} \
             aquasec/trivy:latest image \
               --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln \
+              --ignorefile /.trivyignore.yaml \
               --exit-code 1 --no-progress \
               slideless-scan:test
       # The renderer image (PRDCT-2725) is scanned too, but it carries a
@@ -299,8 +301,9 @@ jobs:
       # the fleet repository's deploy workflow, never here: this repository is going
       # fair-code, source-available, and carries no infrastructure — no project id, no registry path,
       # no service name — and a fork's pull request must never reach it. Only a prod
-      # BRANCH push rolls (the promotion is the decision); a v-tag publishes the semver
-      # aliases and nothing else. The credential is the `antasphere-fleet-dispatch`
+      # BRANCH push rolls (the promotion is the decision), and the version's aliases ride
+      # on that push when its v-tag points at the commit (no tag trigger, PRDCT-3592). The
+      # credential is the `antasphere-fleet-dispatch`
       # GitHub App (contents: write, installed on the fleet repository alone): its key
       # never expires, and each run mints a one-hour token from it — the same shape as
       # the docs-sync app in docs-notify.yml.

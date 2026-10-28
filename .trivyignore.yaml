@@ -1,0 +1,16 @@
+# The release scan's exception list (PRDCT-3824: Better Auth 1.7 on the hub, the chassis and the tools).
+# Each entry names why the advisory does not apply to this configuration, and expires: on that date the
+# gate refuses it again and the migration must have landed. Nothing is ever added to this file without an
+# entry like these: the id, the clause of the advisory that makes it inapplicable, the file:line of OUR
+# configuration proving the plugin is not enabled, and an expiry. release.yml mounts it into the Trivy
+# container (--ignorefile); the same file sits in antasphere/hub and antasphere/tool-template.
+vulnerabilities:
+  - id: CVE-2026-114607
+    statement: "better-auth 1.6.22 (GHSA-965c-763c-88jm): the advisory applies only when the Magic Link plugin is enabled (its clause: 'You are affected if all of these are true: Magic Link is enabled [...]'); not enabled here: hub apps/server/src/identity/better-auth.ts:648-829 (emailOTP, twoFactor, jwt, oauthProvider, demoPassPlugin), chassis packages/chassis-server/src/identity/better-auth.ts:493-584 (genericOAuth, demoPassPlugin, emailOTP, twoFactor, jwt, oauthProvider), template apps/server/scripts/auth-schema-config.ts:26-50 (schema generation only); its two other conditions can hold here (OAuth state in the database, the default when a database is configured: hub :849, chassis :654; Generic OAuth on the chassis's cloud edition: chassis :501), the Magic Link one never does; fixed in 1.7.7, PRDCT-3824."
+    expired_at: 2026-11-30
+  - id: GHSA-r4xp-prcw-77qf
+    statement: "better-auth 1.6.22: the advisory applies only when the OAuth Proxy plugin is enabled (its clause: 'You may be affected if you use better-auth from 1.5.0-beta.12 through versions before 1.7.7 with the OAuth Proxy plugin', and 'You are not affected by this path [...] if sign-in state is stored in the database'); not enabled here: hub apps/server/src/identity/better-auth.ts:648-829 (emailOTP, twoFactor, jwt, oauthProvider, demoPassPlugin), chassis packages/chassis-server/src/identity/better-auth.ts:493-584 (genericOAuth, demoPassPlugin, emailOTP, twoFactor, jwt, oauthProvider), template apps/server/scripts/auth-schema-config.ts:26-50 (schema generation only); and the state is in the database here, no account.storeStateStrategy set (hub :849, chassis :654); fixed in 1.7.7, PRDCT-3824."
+    expired_at: 2026-11-30
+  - id: GHSA-q84f-53jg-9ppm
+    statement: "better-auth 1.6.22: the advisory applies only when deviceAuthorization() is enabled (its clause: 'You are not affected if you do not enable the opt-in deviceAuthorization() plugin'); not enabled here: hub apps/server/src/identity/better-auth.ts:648-829 (emailOTP, twoFactor, jwt, oauthProvider, demoPassPlugin), chassis packages/chassis-server/src/identity/better-auth.ts:493-584 (genericOAuth, demoPassPlugin, emailOTP, twoFactor, jwt, oauthProvider), template apps/server/scripts/auth-schema-config.ts:26-50 (schema generation only); fixed in 1.7.0-rc.3, PRDCT-3824."
+    expired_at: 2026-11-30

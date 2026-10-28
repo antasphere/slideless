@@ -17,6 +17,7 @@ groups:
       - concepts/references
       - concepts/data-bound-templates
       - concepts/webhooks
+      - concepts/connections
   - title: Agents
     pages:
       - agents/cli

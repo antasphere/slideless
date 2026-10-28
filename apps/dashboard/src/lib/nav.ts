@@ -2,6 +2,7 @@ import House from '@lucide/svelte/icons/house';
 import Users from '@lucide/svelte/icons/users';
 import KeyRound from '@lucide/svelte/icons/key-round';
 import Webhook from '@lucide/svelte/icons/webhook';
+import Plug from '@lucide/svelte/icons/plug';
 import Folder from '@lucide/svelte/icons/folder';
 import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
@@ -141,6 +142,17 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
       pattern: 'sonar'
     });
   }
+  // The connections (PRDCT-3773): what the workspace hears from and the keys it holds; every member reads them.
+  if (showWorkspace && !isGuest) {
+    workspace.push({
+      id: 'connections',
+      title: t('nav.connections'),
+      blurb: t('nav.blurb.connections'),
+      href: '/connections',
+      icon: Plug,
+      pattern: 'stagger'
+    });
+  }
   if (showWorkspace && !isGuest) {
     workspace.push({
       id: 'files',
@@ -173,7 +185,9 @@ export function buildNav({ role, origin = 'local' }: NavFacts): NavModel {
     also: [
       '/account',
       ...(tool.settingsTabs?.().map((tab) => tab.href) ?? []),
-      ...(showWorkspace ? [] : ['/members', '/invitations', '/teams', '/api-keys', '/webhooks', '/files']),
+      ...(showWorkspace
+        ? []
+        : ['/members', '/invitations', '/teams', '/api-keys', '/webhooks', '/connections', '/files']),
       ...(showSystem ? [] : ['/audit'])
     ],
     pattern: 'weave'

@@ -175,6 +175,18 @@ loopback and link-local addresses are then accepted, on any port (`http://n8n.la
 The variable is refused on the cloud edition. See the
 [environment reference](../reference/env-reference.md).
 
+**A sibling tool of the same hub.** On the cloud edition the instance knows the other tools of its
+hub: it reads the hub's public list of registry tools (`GET /api/v1/tool-origins`, the client id,
+the name and the origin of each tool's launch URL) at start and again every hour, and keeps the last
+list when the hub does not answer. A webhook whose URL has one of those origins is a sibling, and it
+is reached as the hub names it: its scheme, its port and its address pass, at registration and at
+every delivery, because inside a shared network (one Docker network behind one reverse proxy) a
+sibling's public name resolves to a private address. The origin is the whole of the scheme, the host
+and the port: `https://crm.example.com/hooks/meet/…` passes when the hub lists
+`https://crm.example.com`, while the same host on another port or scheme, a user name in the URL,
+or any host the hub does not list keeps the public-only rule. Nothing to configure; a self-hosted
+instance, which has no hub, has no siblings.
+
 ## Limits
 
 | Edition     | Endpoints per workspace |
