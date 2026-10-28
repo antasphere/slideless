@@ -17,8 +17,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@antasphere/chassis-contract": "1.5.1",
-    "@antasphere/chassis-sdk": "1.5.1",
+    "@antasphere/chassis-contract": "1.6.0",
+    "@antasphere/chassis-sdk": "1.6.0",
     "@slideless/contract": "workspace:*"
   },
   "devDependencies": {

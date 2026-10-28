@@ -247,6 +247,8 @@ const COMMANDS = [
   // chassis: the named groups of the workspace's people (PRDCT-2813)
   'teams',
   'webhooks',
+  // chassis: the workspace's connections, one per declared source (chassis 1.6.0)
+  'connections',
   'demo',
   // Slideless: decks, authoring, references, documents, sharing, response files
   'list',

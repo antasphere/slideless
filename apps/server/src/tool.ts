@@ -606,6 +606,16 @@ export const slidelessTool: ToolDefinition<DeckEnvShape, DeckDomain, DeckBucket,
     // stated once in @slideless/contract (the zod schemas), served on GET /webhooks/events by the chassis.
     webhooks: { subjects: DECK_WEBHOOK_SUBJECTS, events: DECK_WEBHOOK_EVENTS },
 
+    // The connections slot (chassis 1.6.0, PRDCT-3773): every source the tool receives signed
+    // deliveries from or holds a key to read, declared once (a key, a name, a kind, a verifier,
+    // the fields, a handler, a probe), the secret kept sealed by the chassis and read by a sync
+    // through `core.connections`. Left ABSENT: Slideless receives no signed deliveries and holds no
+    // workspace key of another service (the renderer's secret is the operator's environment, and
+    // its job channel is the instance's own), so the chassis serves the `/connections` routes,
+    // Settings › Connections and the `connections` CLI group with an empty list, mounts no door
+    // (`POST /hooks/<source>/<token>`) and registers no connection MCP tool. The CRM (Meet inbound,
+    // the Lemlist and Granola keys) is the worked example.
+
     // A removed member's deck invites and deck grants end with the membership (PRDCT-2816).
     membershipRemoval: endDeckAccessOnRemoval,
 

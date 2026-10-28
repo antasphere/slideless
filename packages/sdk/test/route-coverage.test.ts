@@ -34,6 +34,8 @@ const SAMPLE_MANIFEST = [
 const SAMPLE_USER_ID = 'usr_projects_coverage';
 const SAMPLE_TEAM_ID = '7b0c3d1e-2f4a-4b6c-8d9e-0f1a2b3c4d5e';
 const SAMPLE_DELIVERY_ID = '9c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
+/** A declared connection source key: lowercase, digits and underscores. */
+const SAMPLE_SOURCE = 'sample_source';
 
 const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /instance': (c) => c.instance(),
@@ -131,6 +133,18 @@ const INVOKERS: Record<string, (c: PlatformClient) => Promise<unknown>> = {
   'GET /webhooks/{id}/deliveries/{deliveryId}': (c) => c.webhookDelivery(SAMPLE_ID, SAMPLE_DELIVERY_ID),
   'POST /webhooks/{id}/deliveries/{deliveryId}/redeliver': (c) =>
     c.redeliverWebhook(SAMPLE_ID, SAMPLE_DELIVERY_ID),
+  // Connections (PRDCT-3773, PRDCT-3774): the chassis's ten routes, the sibling connect's two included,
+  // served by the chassis client the SDK extends.
+  'GET /connections': (c) => c.connections(),
+  'GET /connections/{source}': (c) => c.connection(SAMPLE_SOURCE),
+  'POST /connections/{source}': (c) => c.connectSource(SAMPLE_SOURCE),
+  'PUT /connections/{source}/secret': (c) => c.setConnectionSecret(SAMPLE_SOURCE, { secret: 'x'.repeat(12) }),
+  'PATCH /connections/{source}': (c) => c.setConnectionFields(SAMPLE_SOURCE, { fields: {} }),
+  'POST /connections/{source}/test': (c) => c.testConnection(SAMPLE_SOURCE),
+  'DELETE /connections/{source}': (c) => c.disconnectSource(SAMPLE_SOURCE),
+  'GET /connections/{source}/deliveries': (c) => c.connectionDeliveries(SAMPLE_SOURCE),
+  'POST /connections/{source}/sibling': (c) => c.connectSibling(SAMPLE_SOURCE),
+  'DELETE /connections/{source}/sibling': (c) => c.disconnectSibling(SAMPLE_SOURCE),
   // The chassis' demo pass routes, inherited by PlatformClient.
   'GET /demo/passes': (c) => c.demoPasses(),
   'POST /demo/passes': (c) => c.mintDemoPass({ email: 'a@example.com' }),
@@ -253,7 +267,8 @@ function expectedPath(contractPath: string): string {
     .replace('{version}', String(SAMPLE_VERSION))
     .replace('{sha256}', SAMPLE_SHA256)
     .replace('{name}', encodeURIComponent(SAMPLE_ATTACHMENT))
-    .replace('{form}', 'gate')}`;
+    .replace('{form}', 'gate')
+    .replace('{source}', SAMPLE_SOURCE)}`;
 }
 
 describe('SDK route coverage (contract drift guard)', () => {

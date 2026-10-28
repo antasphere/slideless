@@ -14,10 +14,14 @@ overrides:
   '@modelcontextprotocol/sdk': '1.32.1'
   # CVE-2026-90711 (proxy-addr < 2.0.8, CRITICAL), published after 0.13.3 shipped, caught by the release's Trivy gate on 2026-10-10.
   'proxy-addr@2': '>=2.0.8'
-  # One zod in the tree: @antasphere/contract (through chassis-contract 1.0.2) would otherwise
-  # resolve @hono/zod-openapi 1.6.3 + zod 4.6.5 beside the 4.4.3 everything else uses, and a
-  # schema composed across two zod copies fails at runtime and in tsc (2026-10-10).
-  zod: '4.4.3'
+  # CVE-2026-111181 (body-parser >= 2.0.0 < 2.4.0, HIGH): reached through the MCP SDK's express; 2026-10-28.
+  'body-parser@2': '>=2.4.0'
+  # CVE-2026-109869 (undici >= 7.18.0 < 7.30.1, HIGH): reached through testcontainers, dev only; 2026-10-28.
+  'undici@7': '^7.30.1'
+  # One zod in the tree, the version the chassis is built against: a schema composed across two
+  # zod copies fails at runtime and in tsc (2026-10-10). CVE-2023-54404 (zod < 4.6.6, HIGH): 4.6.6,
+  # the chassis's since 1.6.0, declared ^4.6.6 where the tool declares it; 2026-10-28.
+  zod: '4.6.6'
   '@hono/zod-openapi': '1.4.0'
   better-auth@1.6.22>@better-auth/core: '1.6.22'
   '@better-auth/oauth-provider@1.6.22>@better-auth/core': '1.6.22'

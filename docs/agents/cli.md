@@ -1152,6 +1152,77 @@ is the receiver's dedupe key.
 Every command takes `--json`: the API's answer verbatim, the secret included on `create` and
 `rotate-secret`.
 
+## Connections
+
+A connection is a source the workspace is linked to: a service that posts signed deliveries to
+Slideless at a receiving URL (an inbound source), a service Slideless reads with a key the workspace
+holds (a key source), or both. The tool's code declares which sources exist and `connections list`
+names them; Settings › Connections shows the same sources, one card each.
+[Connections](../concepts/connections.md) is the model.
+
+```bash
+slideless connections list                      # every declared source and its state in the workspace
+slideless connections show <source>             # one source: its URL and secret state, its fields, its last delivery
+slideless connections connect <source>          # the receiving URL, printed once, alone on stdout
+slideless connections connect <source> --rotate # a new URL: the previous one stops working at once
+slideless connections connect <sibling>         # a sibling tool of this hub: connected as you, nothing to copy
+slideless connections secret <source> --stdin   # the signing secret or the key, from the first line of stdin
+slideless connections secret <source> --secret-file ./secret.txt   # or from the first line of a file
+slideless connections fields <source> --set folder=Sales --set inbox=a@example.com --set inbox=b@example.com
+slideless connections fields <source> --clear folder
+slideless connections test <source>             # check it now; exit 1 when it fails
+slideless connections deliveries <source>       # one page of the delivery log, newest first
+slideless connections deliveries <source> --limit 20 --cursor <cursor>   # the next page, as the previous one printed it
+slideless connections deliveries <source> --all # every page
+slideless connections disconnect <source> --yes # its secret, its receiving URL and its delivery log go
+slideless connections disconnect <sibling> --yes --local   # a sibling: this side only, its endpoint stays there
+```
+
+**Who.** Every member of the workspace reads the connections (`list`, `show`, `deliveries`); a guest
+is refused. Making or rotating the receiving URL, setting the secret, storing the fields, testing and
+disconnecting are an owner's or an admin's acts. A key reads the connections with the
+`presentations:read` scope and changes them with `webhooks:manage` (the scope of the webhooks: a
+connection is a credential of the workspace); the key `slideless login` makes carries both. A
+session opened by a demo link changes nothing. A refusal reads as a sentence: `Only an owner or an
+admin changes connections.`, `This key cannot change connections: create one with the
+webhooks:manage scope on the API keys page.`
+
+**connect** makes the receiving URL of an inbound source and prints it once, alone on standard output
+(what to do next goes to standard error), so a script can capture it; only its fingerprint is kept.
+A source that already has a URL keeps it unless `--rotate` is passed, and a rotated URL stops working
+at once. A source that is a sibling tool of this hub (another tool of the same Antasphere hub, Meet
+for one) is connected as you instead: Slideless registers its receiving URL on the sibling and stores
+the signing secret the sibling answers, and nothing is printed to copy; running it again replaces the
+endpoint, the URL and the secret together. An instance that is not on a hub connects a sibling by
+hand, like any other source.
+
+**secret** sets the source's signing secret (an inbound source, once its URL is made) or its key (a
+key source), read from the first line of standard input (`--stdin`) or of a file (`--secret-file
+<path>`): exactly one of the two, never an argument, which every process on the machine can read and
+the shell history keeps. A Standard Webhooks secret is `whsec_` followed by base64; a key source that
+declares a probe checks the key against the service first, and a key the service refuses is not
+stored. The secret is stored sealed and never shown again.
+
+**fields** stores the values of the fields the source declares (a folder, the inboxes to read):
+`--set <key>=<value>` sets one, the same key repeated makes a list, `--clear <key>` empties one, and a
+field not named keeps its value.
+
+**test** checks the connection now and prints `ok: …` or `failed: …`: a key source is checked against
+the service with the stored key, an inbound source must have its URL made and its secret readable.
+A failed test exits 1, so a script can gate on it.
+
+**deliveries** lists one page of the source's delivery log, newest first: when each came, its type,
+its outcome (`processed`, `ignored` or `failed`) and its detail. `--limit` sets the page size (1 to
+100, 50 by default), `--cursor` resumes from the `More: --cursor …` line the previous page printed,
+and `--all` reads every page.
+
+**disconnect** deletes the source's secret, its receiving URL and its delivery log in the workspace,
+and needs `--yes`. For a sibling source it deletes the endpoint on the sibling first; `--local` drops
+the connection on this side only and leaves the endpoint there, for a sibling out of reach.
+
+Every command takes `--json`: the API's answer verbatim, the receiving URL included on `connect`,
+never the secret.
+
 ## Paging
 
 Every listing command (`list`, `versions`, `tokens`, `views`, `responses`,

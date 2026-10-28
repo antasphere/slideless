@@ -31,7 +31,7 @@ deploys) + `dev` (day-to-day work).
 - API key prefix `slk` (`IDENTITY.apiKeyPrefix`; `ApiKeyService` in
   `@antasphere/chassis-server/src/apikeys/service.ts` takes it as a required constructor value, with
   no chassis default).
-- Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
+- Scopes: `presentations:read`, `presentations:write`, `data:export`, `webhooks:manage` (export stays opt-in).
 - License: fair-code under the Sustainable Use License 1.0, licensor Antasphere (`LICENSE`; every
   `package.json` says `SEE LICENSE IN LICENSE`, the CLI included). Say fair-code or source-available,
   never open source (PRDCT-1350).
@@ -69,6 +69,16 @@ deploys) + `dev` (day-to-day work).
   `@antasphere/chassis-db/src/auth-schema.ts` (`drift:check` says so) and writing the matching
   migration as the next entry of `packages/db/drizzle`; a bump that adds a chassis table lands its
   migration the same way; the baseline is never edited.
+- The `connections` slot (chassis 1.6.0, PRDCT-3773): every source the tool receives signed deliveries
+  from or holds a key to read, declared once (a key, a name, a kind, a verifier, the fields, a handler, a
+  probe), the secret kept sealed by the chassis and read by a sync through `core.connections`. Slideless
+  leaves it ABSENT (`apps/server/src/tool.ts` says why): it receives no signed deliveries and holds no
+  workspace key of another service (the renderer's secret is the operator's environment, and its job
+  channel is the instance's own). The chassis's two tables, `connections` and `connection_deliveries`,
+  are migrated all the same (`packages/db/drizzle/0056_connections.sql`, generated from the installed
+  chassis schema), and the `/connections` routes, Settings › Connections and the `connections` CLI group
+  serve an empty list; no door (`POST /hooks/<source>/<token>`) is mounted and no connection MCP tool is
+  registered. The CRM (Meet inbound, the Lemlist and Granola keys) is the worked example.
 - Developing a chassis change against this tool before it is published: build the chassis checkout,
   then from this root `pnpm link ../../chassis/packages/chassis-server` (and the siblings you touch).
   pnpm writes `link:` into `package.json` and the lockfile while you work;

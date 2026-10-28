@@ -22,7 +22,8 @@ export function showsDemoLinks({ instance, me }: SettingsFacts): boolean {
 /**
  * Settings is one section with tabs (the settings pass of 2026-09-19, then
  * the workspace's administration folded in on 2026-10-01): the people, the
- * API keys, the webhooks for an owner or an admin (PRDCT-3484), the files,
+ * API keys, the webhooks for an owner or an admin (PRDCT-3484), the
+ * connections for every member but a guest (PRDCT-3773), the files,
  * the audit log for an owner or an admin, the instance
  * (what the operator deployed), the demo links while `showsDemoLinks` holds,
  * the person's own account, and the workspace's own settings at the bar's
@@ -46,6 +47,8 @@ export function settingsTabs(facts: SettingsFacts, path?: string) {
     { href: '/api-keys', label: t('nav.apiKeys') },
     // a standing read of the workspace to a URL: an owner's or an admin's, never a guest's (the server's rule)
     ...(admin && !guest ? [{ href: '/webhooks', label: t('nav.webhooks') }] : []),
+    // what the workspace hears from and the keys it holds: every member reads, an owner or an admin acts (PRDCT-3773)
+    ...(guest ? [] : [{ href: '/connections', label: t('nav.connections') }]),
     ...(guest ? [] : [{ href: '/files', label: t('nav.files') }]),
     // the tool's own settings (a connection, an integration), between the workspace's and the instance's
     ...(guest ? [] : (tool.settingsTabs?.() ?? [])),

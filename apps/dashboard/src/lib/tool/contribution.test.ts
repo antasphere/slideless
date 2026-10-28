@@ -64,6 +64,7 @@ describe('the menu', () => {
       '/teams',
       '/api-keys',
       '/webhooks',
+      '/connections',
       '/files',
       '/audit'
     ]);

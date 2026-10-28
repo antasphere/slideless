@@ -393,6 +393,13 @@
       "when": 1792521360810,
       "tag": "0055_data_bound_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793166415290,
+      "tag": "0056_connections",
+      "breakpoints": true
     }
   ]
 }
