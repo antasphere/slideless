@@ -31,7 +31,7 @@ deploys) + `dev` (day-to-day work).
 - API key prefix `slk` (`IDENTITY.apiKeyPrefix`; `ApiKeyService` in
   `@antasphere/chassis-server/src/apikeys/service.ts` takes it as a required constructor value, with
   no chassis default).
-- Scopes: `presentations:read`, `presentations:write`, `data:export` (export stays opt-in).
+- Scopes: `presentations:read`, `presentations:write`, `data:export`, `webhooks:manage` (export stays opt-in).
 - License: fair-code under the Sustainable Use License 1.0, licensor Antasphere (`LICENSE`; every
   `package.json` says `SEE LICENSE IN LICENSE`, the CLI included). Say fair-code or source-available,
   never open source (PRDCT-1350).

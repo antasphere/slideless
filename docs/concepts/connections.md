@@ -7,8 +7,8 @@ everywhere: Settings › Connections shows one card per source, and the `connect
 and the connection tools of the MCP endpoint drive the same cards.
 
 Slideless declares no source today: Settings › Connections and `slideless connections list` show an
-empty list; the connection MCP tools and the deliveries log appear with the first source the tool
-declares, and the door with the first source that posts deliveries.
+empty list; the door and the connection MCP tools appear with the first source the tool declares, and the
+deliveries log lists the deliveries of its inbound sources.
 
 ## Two kinds of source
 
