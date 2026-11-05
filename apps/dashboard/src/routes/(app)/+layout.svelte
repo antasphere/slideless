@@ -7,6 +7,7 @@
   import PhoneTopBar from '$lib/components/shell/PhoneTopBar.svelte';
   import TopCrumbs from '$lib/components/shell/TopCrumbs.svelte';
   import { HeadWatch } from '$lib/components/shell/headWatch.svelte';
+  import { followNavigation } from '$lib/components/shell/mainScroll';
   import { pathCrumbs } from '$lib/components/shell/path';
   import WelcomeBanner from '$lib/components/shared/WelcomeBanner.svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -41,6 +42,12 @@
   // header has scrolled away; on a phone the same moment puts the page's name
   // in the phone bar, in place of the workspace's.
   const head = new HeadWatch();
+
+  // The pages scroll in <main>, not in the window, so SvelteKit's own reset
+  // never reaches them: a new page opens at its top, back and forward land
+  // where the page was left (mainScroll.ts).
+  let main = $state<HTMLElement>();
+  followNavigation(() => main);
   const trail = $derived([...pathCrumbs(nav, page.url.pathname), ...crumbs.extra]);
   const pageName = $derived(trail[trail.length - 1]?.label);
   const workspaceName = $derived(
@@ -96,7 +103,7 @@
         <div class="ml-auto flex min-w-0 items-center"><tool.chrome.TopBar me={data.me} /></div>
       {/if}
     </header>
-    <main class="app-main flex-1 overflow-y-auto px-4 pt-5 md:px-8 md:pt-2" use:head.attach>
+    <main bind:this={main} class="app-main flex-1 overflow-y-auto px-4 pt-5 md:px-8 md:pt-2" use:head.attach>
       <div class="mx-auto w-full max-w-6xl">
         {#if demoSignInOn(data.instance)}
           <!-- the operator's DEMO_SIGN_IN is on (GET /instance): said to every
