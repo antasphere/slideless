@@ -45,7 +45,7 @@ jobs:
           done < /tmp/hostinger-images
       - name: Rehearse installation with the exact published image
         run: node scripts/hostinger-smoke.mjs
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       # Only the distribution files are published: one folder per host under the
       # product's deploy domain (deploy.slideless.antasphere.com/<host>/), plus the
       # root page that points at them. A second host is a second folder here.
