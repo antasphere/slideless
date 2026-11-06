@@ -71,10 +71,12 @@ jobs:
           set -euo pipefail
           export APP_IMAGE=slideless-smoke:test
           METRICS_TOKEN="$(openssl rand -hex 16)"
+          DOCS_SOURCE_TOKEN="$(openssl rand -hex 24)"
           SETUP_TOKEN="$(openssl rand -hex 16)"
           {
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
             echo "METRICS_TOKEN=$METRICS_TOKEN"
+            echo "DOCS_SOURCE_TOKEN=$DOCS_SOURCE_TOKEN"
             echo "SETUP_TOKEN=$SETUP_TOKEN"
           } > .env
           docker compose up -d --no-build --wait --wait-timeout 120
@@ -82,6 +84,24 @@ jobs:
           BASE=http://localhost:3000
           curl -sf "$BASE/healthz" >/dev/null
           curl -sf "$BASE/readyz" >/dev/null
+
+          # The image carries its docs (chassis 1.8.0, PRDCT-4098), read only by a
+          # direct peer holding DOCS_SOURCE_TOKEN: no bearer is a 401; the bearer
+          # reads the nav's groups and a page's markdown; a proxy header with the
+          # bearer is the 404. The page's own file name (`index.md`, on disk in
+          # the image) is not a listed page: its 404 rules out a lookup that
+          # serves whatever file the path names (the lookup by the nav's set
+          # alone is pinned by the chassis's own tests, since the image has no
+          # unlisted page to ask for); a dot segment is normalised before routing
+          # and lands on the catch-all 404, which proves only that nothing under
+          # the path falls through to the dashboard.
+          DOCS_AUTH="authorization: Bearer $DOCS_SOURCE_TOKEN"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/docs-source")" = 401
+          curl -sf -H "$DOCS_AUTH" "$BASE/docs-source" | jq -e '.groups | length > 0' >/dev/null
+          curl -sf -H "$DOCS_AUTH" "$BASE/docs-source/pages/index" | head -n 1 | grep -q '^# '
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "$DOCS_AUTH" -H 'X-Forwarded-For: 1.2.3.4' "$BASE/docs-source")" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "$DOCS_AUTH" "$BASE/docs-source/pages/index.md")" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "$DOCS_AUTH" --path-as-is "$BASE/docs-source/pages/../package.json")" = 404
 
           # The image reports its own intrinsic version (PRDCT-1844): this
           # build got NO build args, so the served version must be the baked

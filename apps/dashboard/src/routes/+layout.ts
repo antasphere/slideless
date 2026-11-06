@@ -1,5 +1,6 @@
 import { api, clearWorkspaceSelection, rememberWorkspace, storedWorkspaceId } from '$lib/api';
 import { bootstrap, type HubGateError } from '$lib/bootstrap';
+import { setDocsDiscovery } from '$lib/docs';
 import { initLocale } from '$lib/i18n';
 import { readOrgLanding } from '$lib/org-landing';
 import { clearAttemptMarker, setSsoDiscovery } from '$lib/sso';
@@ -36,6 +37,10 @@ export const load: LayoutLoad = async ({ url, untrack }) => {
   // Record the SSO discovery for the edition-adaptive modules (logout,
   // hint-watch, hint clears). null on oss → they all no-op by construction.
   setSsoDiscovery(instance.auth.sso ?? null);
+  // The docs site this instance names (`instance.docs`, PRDCT-4110): the Docs
+  // card, the welcome and the agent prompt read it; absent on an older
+  // instance, and they fall back to the public site.
+  setDocsDiscovery(instance.docs);
 
   // A successful signed-in bootstrap retires the per-tab silent-attempt
   // marker (SL-3 gate D): the attempt worked, so the next signed-out visit

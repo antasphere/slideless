@@ -59,6 +59,10 @@ services:
       - TRUST_PROXY=${TRUST_PROXY:-false}
       # /metrics is disabled (401) until this is set. setup.sh generates one.
       - METRICS_TOKEN=${METRICS_TOKEN:-}
+      - DOCS_SOURCE_TOKEN=${DOCS_SOURCE_TOKEN:-}
+      # The docs site the Docs button, the welcome and the agent prompt open
+      # (<DOCS_SITE_URL>/<slug>). Empty means the public site.
+      - DOCS_SITE_URL=${DOCS_SITE_URL:-}
       # Allow the first-boot wizard over plaintext HTTP on a non-loopback
       # origin. Default false: the owner password and the setup token would
       # cross the network in the clear.

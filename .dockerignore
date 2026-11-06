@@ -8,6 +8,7 @@
 .env
 .env.*
 data
-docs
+# docs/ ships in the image (chassis 1.8.0, PRDCT-4098: GET /docs-source answers it). `*.md`
+# matches the root's documents only, so README, AGENTS and the rest stay out.
 *.md
 apps/server/public/*

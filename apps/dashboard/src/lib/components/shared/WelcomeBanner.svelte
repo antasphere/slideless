@@ -5,7 +5,7 @@
   import { reveal } from '$lib/components/ui/reveal/index.js';
   import { api } from '$lib/api';
   import { t } from '$lib/i18n';
-  import { DOCS_URL } from '$lib/docs';
+  import { docsUrl } from '$lib/docs';
 
   /**
    * SL-6 first-run welcome — the SEAM, not the copy (content is a minimal
@@ -42,7 +42,7 @@
         <Card.Description>{t('welcome.body')}</Card.Description>
       </Card.Header>
       <Card.Content class="flex items-center gap-3 pt-0">
-        <Button variant="outline" size="sm" href={DOCS_URL} target="_blank" rel="noreferrer">
+        <Button variant="outline" size="sm" href={docsUrl()} target="_blank" rel="noreferrer">
           {t('welcome.docs')}
         </Button>
         <Button variant="ghost" size="sm" onclick={() => void dismiss()}>
