@@ -88,6 +88,12 @@ ENV CLI_PACKAGE_DIR=/app/cli
 # reports the true semver. Operators can still override with `-e APP_VERSION`.
 
 COPY --from=build --chown=node:node /out /app
+# The tool's PUBLIC docs (chassis 1.8.0, PRDCT-4098): the chassis reads
+# /app/docs once at boot and answers GET /docs-source (the nav and each page's
+# title and intro) and GET /docs-source/pages/<path>, which is how the Handbook
+# reads every tool's docs live. Copied here, not in the build stage, so a docs
+# edit rebuilds this layer only. An image without it still boots (404).
+COPY --chown=node:node docs /app/docs
 
 USER node
 VOLUME /data

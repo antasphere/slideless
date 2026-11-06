@@ -29,7 +29,7 @@
   import { cubicInOut } from 'svelte/easing';
   import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button/index.js';
-  import { DOCS_URL, agentPrompt } from '$lib/docs';
+  import { agentPrompt, docsUrl } from '$lib/docs';
   import { t } from '$lib/i18n';
 
   const HIDDEN_KEY = 'docs-card-hidden';
@@ -77,7 +77,7 @@
     <button type="button" class="close" aria-label={t('docsCard.hide')} onclick={hide}>
       <X class="size-3.5" />
     </button>
-    <a class="plate" href={DOCS_URL} target="_blank" rel="noreferrer">
+    <a class="plate" href={docsUrl()} target="_blank" rel="noreferrer">
       <span class="head">
         <span class="drawing-box" aria-hidden="true">
           <svg viewBox="0 0 96 96" class="drawing">

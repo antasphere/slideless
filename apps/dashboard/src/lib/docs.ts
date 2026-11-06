@@ -1,15 +1,36 @@
-/* The public docs, and the one prompt that sets an agent up on this
+/* The docs address, and the one prompt that sets an agent up on this
    instance. Every place the dashboard points a person at the documentation
    reads the address here (the first-run welcome, the sidebar's card, the
    annotations panel), so the site can move once. The prompt is what a
    person pastes into their agent: it names THIS instance (the origin the
    dashboard is served from), the two ways in and the page to read first,
    in English whatever the dashboard's language, because it is written for
-   the agent. */
+   the agent.
 
-export const DOCS_URL = 'https://docs.antasphere.com/slideless';
+   WHICH docs site is the instance's to say (PRDCT-4110): discovery carries
+   `docs.url`, the tool's section on the site the operator named with
+   `DOCS_SITE_URL` (the public site by default; the team stack's Handbook,
+   behind the hub's sign-in, for the ERP's tools). The root layout hands it
+   over at bootstrap, before any component renders; until then, and against
+   an instance from before chassis 1.9.0 that names none, the public site. */
+import type { InstanceInfo } from '@antasphere/chassis-contract';
 
-export const docsPage = (path: string) => `${DOCS_URL}/${path.replace(/^\//, '')}`;
+/** The public docs site: the fallback, and what an instance without a setting names. */
+export const PUBLIC_DOCS_URL = 'https://docs.antasphere.com/slideless';
+
+let currentDocsUrl: string | null = null;
+
+/** The docs address discovery carries (`instance.docs`), recorded once by the root layout. */
+export function setDocsDiscovery(docs: InstanceInfo['docs'] | null | undefined): void {
+  currentDocsUrl = docs?.url ?? null;
+}
+
+/** The docs section of this tool, on the site the instance names; the public site before discovery. */
+export function docsUrl(): string {
+  return currentDocsUrl ?? PUBLIC_DOCS_URL;
+}
+
+export const docsPage = (path: string) => `${docsUrl()}/${path.replace(/^\//, '')}`;
 
 export function agentPrompt(origin: string): string {
   return [
@@ -17,7 +38,7 @@ export function agentPrompt(origin: string): string {
     'small apps, plans and reports, each kept as a versioned deck and shared by link.',
     '',
     `My instance: ${origin}`,
-    `Docs: ${DOCS_URL} — read ${docsPage('getting-started/connect-an-agent')} first,`,
+    `Docs: ${docsUrl()} — read ${docsPage('getting-started/connect-an-agent')} first,`,
     `then ${docsPage('agents/cli')} and ${docsPage('agents/mcp-connector')}.`,
     '',
     'Two ways in, both on this instance only:',

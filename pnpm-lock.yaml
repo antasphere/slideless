@@ -69,8 +69,8 @@ importers:
   apps/dashboard:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@slideless/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -164,14 +164,14 @@ importers:
   apps/server:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@antasphere/chassis-db':
-        specifier: 1.6.0
-        version: 1.6.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
+        specifier: 1.9.0
+        version: 1.9.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
       '@antasphere/chassis-server':
-        specifier: 1.6.0
-        version: 1.6.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.6.6))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@cfworker/json-schema@4.1.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.6.6))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        specifier: 1.9.0
+        version: 1.9.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.6.6))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@cfworker/json-schema@4.1.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.6.6))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       '@better-auth/oauth-provider':
         specifier: 1.6.22
         version: 1.6.22(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.6.6))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0))(pg@8.22.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.6.6))
@@ -264,14 +264,14 @@ importers:
   packages/cli:
     devDependencies:
       '@antasphere/chassis-cli':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@antasphere/chassis-contract':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@antasphere/chassis-sdk':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@antasphere/cli-core':
         specifier: ^0.5.0
         version: 0.5.0
@@ -297,8 +297,8 @@ importers:
   packages/contract:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@cfworker/json-schema':
         specifier: 4.1.1
         version: 4.1.1
@@ -319,8 +319,8 @@ importers:
   packages/db:
     dependencies:
       '@antasphere/chassis-db':
-        specifier: 1.6.0
-        version: 1.6.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
+        specifier: 1.9.0
+        version: 1.9.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -344,11 +344,11 @@ importers:
   packages/sdk:
     dependencies:
       '@antasphere/chassis-contract':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@antasphere/chassis-sdk':
-        specifier: 1.6.0
-        version: 1.6.0(hono@4.12.27)
+        specifier: 1.9.0
+        version: 1.9.0(hono@4.12.27)
       '@slideless/contract':
         specifier: workspace:*
         version: link:../contract
@@ -363,20 +363,20 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@antasphere/chassis-cli@1.6.0':
-    resolution: {integrity: sha512-p5LSrdd32c/MGBW4OYrdPgYM0Kv7Z39KnyqZJuidxkcYr0bvBoGkThXit4Itr9rr7E/RfgrgcnAI0YbXtoUc2g==}
+  '@antasphere/chassis-cli@1.9.0':
+    resolution: {integrity: sha512-q7Y4THJqIdPeFk1dFsRKrAzijQ9sFm8CEha6O4T0FBOlibtfuqdzyWBRQULKt4SZOpoRXFrvvA8I2R/AvLdt/Q==}
 
-  '@antasphere/chassis-contract@1.6.0':
-    resolution: {integrity: sha512-27nyZIL75t6wRkCS4Fw1kc73BP7+dPUslmx5FYSh+QOEdF51uejhxBteQg6cNNOjlrsfXaLZYjZsjpHczD/8Sg==}
+  '@antasphere/chassis-contract@1.9.0':
+    resolution: {integrity: sha512-aT+xu49lWgCZ7eyteJ6QmqlrszbbDAIDwyCleDN2JURzJNm6HrXTHydRgqtA6q+tf50Mh8yPhtJgYBUTbtYUXA==}
 
-  '@antasphere/chassis-db@1.6.0':
-    resolution: {integrity: sha512-G2lBbnGgUYaAW1XYh8z42/YH+Y6Yoy7Z1j8PXguwA++hgA4e+xJ7S3yJJGIP22lvsPvTirTNfqxIpIaipbzqUQ==}
+  '@antasphere/chassis-db@1.9.0':
+    resolution: {integrity: sha512-JQ7QIlEjW7rbVcyc9BGnWesmhFK+JO7gK5C3yuPDTqKrjyvLY0hKnlbnfCPvOCKcnIVY9hb0sxdxVotBoH70Zg==}
 
-  '@antasphere/chassis-sdk@1.6.0':
-    resolution: {integrity: sha512-Tgy+EGDjdNSlD8J2qpgcAJypdf20GR4If6x872dCsfu19VyYFt+5vANFst5dfT4CT/qlbFfUcoRfVaF9JbqXQw==}
+  '@antasphere/chassis-sdk@1.9.0':
+    resolution: {integrity: sha512-pKH48qQHeUFGeI838RAyFKDMZ1MxlwVHfsWP5XlA6r6fKsWaKemwmiz6QDxsJALDz1rrmRh0rlV+OmYFK6mU7g==}
 
-  '@antasphere/chassis-server@1.6.0':
-    resolution: {integrity: sha512-9pziWaNfgG6eV/jyMOyeVKI5vmt47FhlOZ1jEMDzi8eUaE/10k0E8vBRj6gtpSnN9X3JzmuiRjpwapYki1wbXg==}
+  '@antasphere/chassis-server@1.9.0':
+    resolution: {integrity: sha512-OXmcZSH9jTzvW3r5wL+VKleWG5spnUCbqw/5QdaoV/n/ZQKXXEpJ6L2WgH863e7NKz4gsjqHVk/5yn1ymWycxQ==}
 
   '@antasphere/cli-core@0.5.0':
     resolution: {integrity: sha512-aV0/rttHWVMIgaNVk20T6tONNlNQQG2kY+fiGkUt7DxA8q4X1YWx8EqYzp2I1vkUerMW74C5n/wbAkes1kO2fw==}
@@ -1931,6 +1931,7 @@ packages:
   '@smithy/core@3.37.0':
     resolution: {integrity: sha512-97imTcCyiPd8k0e9+ts/Sp0W65Dn9Ti357J7M09Ov4tI8Q1JDJVFSoAJtjEVKqfHEr3Pdo2jfolqKCaaiszH0g==}
     engines: {node: '>=18.0.0'}
+    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
@@ -5005,16 +5006,16 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@antasphere/chassis-cli@1.6.0(hono@4.12.27)':
+  '@antasphere/chassis-cli@1.9.0(hono@4.12.27)':
     dependencies:
-      '@antasphere/chassis-contract': 1.6.0(hono@4.12.27)
-      '@antasphere/chassis-sdk': 1.6.0(hono@4.12.27)
+      '@antasphere/chassis-contract': 1.9.0(hono@4.12.27)
+      '@antasphere/chassis-sdk': 1.9.0(hono@4.12.27)
       '@antasphere/cli-core': 0.6.0
       commander: 12.1.0
     transitivePeerDependencies:
       - hono
 
-  '@antasphere/chassis-contract@1.6.0(hono@4.12.27)':
+  '@antasphere/chassis-contract@1.9.0(hono@4.12.27)':
     dependencies:
       '@antasphere/contract': 0.20.1(hono@4.12.27)
       '@hono/zod-openapi': 1.4.0(hono@4.12.27)(zod@4.6.6)
@@ -5022,7 +5023,7 @@ snapshots:
     transitivePeerDependencies:
       - hono
 
-  '@antasphere/chassis-db@1.6.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)':
+  '@antasphere/chassis-db@1.9.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0)
@@ -5057,16 +5058,16 @@ snapshots:
       - sql.js
       - sqlite3
 
-  '@antasphere/chassis-sdk@1.6.0(hono@4.12.27)':
+  '@antasphere/chassis-sdk@1.9.0(hono@4.12.27)':
     dependencies:
-      '@antasphere/chassis-contract': 1.6.0(hono@4.12.27)
+      '@antasphere/chassis-contract': 1.9.0(hono@4.12.27)
     transitivePeerDependencies:
       - hono
 
-  '@antasphere/chassis-server@1.6.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.6.6))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@cfworker/json-schema@4.1.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.6.6))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))':
+  '@antasphere/chassis-server@1.9.0(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.6.6))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@cfworker/json-schema@4.1.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(@types/pg@8.20.0)(better-call@1.1.8(zod@4.6.6))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(hono-rate-limiter@0.5.3(hono@4.12.27))(kysely@0.29.2)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
-      '@antasphere/chassis-contract': 1.6.0(hono@4.12.27)
-      '@antasphere/chassis-db': 1.6.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
+      '@antasphere/chassis-contract': 1.9.0(hono@4.12.27)
+      '@antasphere/chassis-db': 1.9.0(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)
       '@aws-sdk/client-s3': 3.1158.0
       '@aws-sdk/lib-storage': 3.1158.0(@aws-sdk/client-s3@3.1158.0)
       '@better-auth/oauth-provider': 1.6.22(@better-auth/core@1.6.22(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.1.8(zod@4.6.6))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.1.21)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@sveltejs/kit@2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4(@typescript-eslint/types@8.62.1))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0))(pg@8.22.0)(svelte@5.56.4(@typescript-eslint/types@8.62.1))(vitest@3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(better-call@1.1.8(zod@4.6.6))
@@ -5092,6 +5093,7 @@ snapshots:
       rate-limiter-flexible: 7.4.0
       resend: 6.35.0
       ulid: 3.0.2
+      yaml: 2.9.1
       yazl: 3.3.1
       zod: 4.6.6
     transitivePeerDependencies:
