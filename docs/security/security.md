@@ -246,6 +246,13 @@ responsible for, and the rules that govern rendering user content.
   (compared in constant time). `setup.sh` and the installer generate the
   token automatically — an existing install created before this change must
   add one to start scraping again.
+- **The docs source is off by default.** `GET /docs-source` (the tool's own
+  documentation, for the Antasphere Handbook) answers `404` until
+  `DOCS_SOURCE_TOKEN` is set; the reader then sends
+  `Authorization: Bearer <token>` (compared in constant time) straight to the
+  container, and any request that came through a proxy (`X-Forwarded-*`,
+  `Forwarded`, `Via`) answers `404` whatever it carries. Leave the key unset on
+  a public instance.
 - **Terminate TLS at a reverse proxy** and set `TRUST_PROXY=true` only there
   ([reverse-proxy.md](../self-hosting/reverse-proxy.md)).
 - **Account recovery when `EMAIL_DRIVER=none`.** Self-service password reset
