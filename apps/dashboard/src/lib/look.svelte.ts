@@ -111,12 +111,10 @@ export function resolveLook(workspaceId: string, wire: WorkspaceLook | null | un
   };
 }
 
-const PAPER = { light: PAPER_GROUNDS[DEFAULT_PAPER].ground, dark: '#1F1B17' };
-
-/** The ground a field mixes from: the person's paper by day, the one dark ground at night. */
+/** The ground a field mixes from: the person's paper, its day ground or its night ground. */
 export function paperGround(paper: PaperKey, dark: boolean): string {
-  if (dark) return PAPER.dark;
-  return isPaperKey(paper) ? PAPER_GROUNDS[paper].ground : PAPER.light;
+  const scale = PAPER_GROUNDS[isPaperKey(paper) ? paper : DEFAULT_PAPER];
+  return dark ? scale.night : scale.ground;
 }
 
 function rgb(hex: string): [number, number, number] {
@@ -156,13 +154,12 @@ function triplet(hex: string): string {
 /**
  * The page field of a theme: the person's paper, with the accent pooled into
  * it. Registered once per theme, paper and mode; the name carries the paper
- * (creme keeps the names it always had). At night the paper is the one dark
- * ground, so the paper never enters a dark name.
+ * (creme keeps the names it always had, by day and at night).
  */
 export function fieldPalette(theme: ThemeKey, dark: boolean, paper: PaperKey = DEFAULT_PAPER): string {
-  const picked = !dark && isPaperKey(paper) && paper !== DEFAULT_PAPER ? paper : null;
+  const picked = isPaperKey(paper) && paper !== DEFAULT_PAPER ? paper : null;
   // the beige is not derived: it is the website's own home-screen field, on
-  // creme and at night; on another paper it is derived like any theme
+  // creme; on another paper it is derived like any theme, day and night
   if (theme === 'paper' && !picked) return dark ? 'paper-dark' : 'paper';
   const name = `look-${theme}${dark ? '-dark' : ''}${picked ? `-${picked}` : ''}`;
   if (!PALETTES[name]) {

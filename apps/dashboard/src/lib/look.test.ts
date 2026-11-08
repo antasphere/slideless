@@ -5,9 +5,9 @@ import { PAPER_GROUNDS, PAPER_KEYS } from './theme.svelte';
 
 /**
  * The page field follows the person's paper (PRDCT-4189): every palette and
- * the page's base mix the accent into the PICKED paper's ground by day; the
- * night keeps its one dark ground; creme keeps the names and the colours it
- * always had, so a person who never picks sees nothing change.
+ * the page's base mix the accent into the PICKED paper's ground, its day
+ * ground or its night; creme keeps the names and the colours it always had,
+ * by day and at night, so a person who never picks sees nothing change.
  */
 
 const lum = (hex: string) =>
@@ -18,12 +18,14 @@ describe('paperGround', () => {
   it('is the picked paper by day', () => {
     for (const p of PAPER_KEYS) expect(paperGround(p, false)).toBe(PAPER_GROUNDS[p].ground);
   });
-  it('is the one dark ground at night, whatever the paper', () => {
-    const night = new Set(PAPER_KEYS.map((p) => paperGround(p, true)));
-    expect([...night]).toEqual(['#1F1B17']);
+  it("is the picked paper's own night at night, creme's being the dark set's ground", () => {
+    for (const p of PAPER_KEYS) expect(paperGround(p, true)).toBe(PAPER_GROUNDS[p].night);
+    expect(paperGround('creme', true)).toBe('#1F1B17');
+    expect(new Set(PAPER_KEYS.map((p) => paperGround(p, true))).size).toBeGreaterThanOrEqual(4);
   });
   it('reads an unknown paper as creme', () => {
     expect(paperGround('midnight' as never, false)).toBe('#F7F4EC');
+    expect(paperGround('midnight' as never, true)).toBe('#1F1B17');
   });
 });
 
@@ -70,10 +72,20 @@ describe('fieldPalette', () => {
     }
   });
 
-  it('at night ignores the paper: one dark field per theme', () => {
-    for (const p of PAPER_KEYS) {
-      expect(fieldPalette('paper', true, p)).toBe('paper-dark');
-      expect(fieldPalette('dawn', true, p)).toBe('look-dawn-dark');
+  it('at night, creme keeps its dark names and every other paper carries its own', () => {
+    expect(fieldPalette('paper', true, 'creme')).toBe('paper-dark');
+    expect(fieldPalette('dawn', true, 'creme')).toBe('look-dawn-dark');
+    const names = PAPER_KEYS.map((p) => fieldPalette('dawn', true, p));
+    expect(new Set(names).size).toBe(PAPER_KEYS.length);
+    for (const p of PAPER_KEYS.filter((k) => k !== 'creme')) {
+      const name = fieldPalette('paper', true, p);
+      expect(name, p).not.toBe('paper-dark');
+      expect(PALETTES[name].light, p).toBe(false);
+      // the faintest pool sits next to the paper's own night
+      const night = channels(PAPER_GROUNDS[p].night);
+      channels(PALETTES[fieldPalette('dawn', true, p)].hues[0]).forEach((c, i) =>
+        expect(Math.abs(c - night[i]), `${p} channel ${i}`).toBeLessThanOrEqual(6)
+      );
     }
   });
 });
@@ -105,12 +117,12 @@ describe('look.apply writes the page base from the paper', () => {
     expect(props.get('--field-base')?.toUpperCase()).toBe('#F7F4EC');
   });
 
-  it('at night the base is the dark ground whatever the paper', () => {
+  it("at night the base is the paper's own night", () => {
     stub();
     look.try({ ...DEFAULT_LOOK, theme: 'dawn', field: 0 });
     for (const p of PAPER_KEYS) {
       look.apply(true, p);
-      expect(props.get('--field-base')?.toUpperCase(), p).toBe('#1F1B17');
+      expect(props.get('--field-base')?.toUpperCase(), p).toBe(PAPER_GROUNDS[p].night);
     }
   });
 });

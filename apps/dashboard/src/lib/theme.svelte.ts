@@ -15,9 +15,9 @@ const MODE_KEY = 'slideless.theme';
  * are painted with, one of the brand's five (the website's recipe GROUNDS).
  * The person's, in this browser, like the mode: the boot script in app.html
  * reads `slideless.paper` and sets `data-paper` on <html> before first paint,
- * and tokens.css rewrites the ground side per scale. Creme is the default:
- * no stored value, or one this list does not know, is creme. The dark set
- * is one scale and wins over any paper.
+ * and tokens.css rewrites the ground side per scale, by day and at night
+ * (each paper's dark version is creme's night carried to its hue). Creme is
+ * the default: no stored value, or one this list does not know, is creme.
  */
 export const PAPER_KEYS = ['creme', 'graphite', 'porcelain', 'stone', 'fog'] as const;
 export type PaperKey = (typeof PAPER_KEYS)[number];
@@ -26,13 +26,17 @@ const PAPER_KEY = 'slideless.paper';
 export function isPaperKey(key: unknown): key is PaperKey {
   return typeof key === 'string' && (PAPER_KEYS as readonly string[]).includes(key);
 }
-/** Each paper's ground and hairline: the swatch the account page draws, the base the page field mixes from. */
-export const PAPER_GROUNDS: Record<PaperKey, { ground: string; hairline: string }> = {
-  creme: { ground: '#F7F4EC', hairline: '#E0DACA' },
-  graphite: { ground: '#F7F6F4', hairline: '#DCDBD6' },
-  porcelain: { ground: '#FCFBF8', hairline: '#E2E0D7' },
-  stone: { ground: '#F4F1EB', hairline: '#D8D3C7' },
-  fog: { ground: '#F7F8F8', hairline: '#D9DDDD' }
+/**
+ * Each paper's ground and hairline (the swatch the Identity page draws, the
+ * base the page field mixes from by day) and its night ground (the base at
+ * night, tokens.css :root.dark[data-paper]).
+ */
+export const PAPER_GROUNDS: Record<PaperKey, { ground: string; hairline: string; night: string }> = {
+  creme: { ground: '#F7F4EC', hairline: '#E0DACA', night: '#1F1B17' },
+  graphite: { ground: '#F7F6F4', hairline: '#DCDBD6', night: '#1C1C1A' },
+  porcelain: { ground: '#FCFBF8', hairline: '#E2E0D7', night: '#1D1C18' },
+  stone: { ground: '#F4F1EB', hairline: '#D8D3C7', night: '#1D1C18' },
+  fog: { ground: '#F7F8F8', hairline: '#D9DDDD', night: '#1A1C1D' }
 };
 
 class ThemeWatch {

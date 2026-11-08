@@ -46,8 +46,16 @@ const appRoot = () => {
   return found[0];
 };
 const paperSel = (p: string) => `[data-paper='${p}']`;
-const allPaperSelectors = (css: string) =>
-  [...strip(css).matchAll(/\[data-paper=['"]?([\w-]+)['"]?\]/g)].map((m) => m[1]);
+/** The papers named by blocks whose selector is exactly `prefix` + the paper selector. */
+const papersOf = (css: string, prefix: string) =>
+  [...strip(css).matchAll(/([^{}]+)\{/g)]
+    .map((m) => m[1].trim())
+    .filter((sel) => sel.startsWith(prefix + '[data-paper=') && /^[^ ]+$/.test(sel))
+    .map((sel) => sel.slice(prefix.length).match(/'([\w-]+)'/)![1]);
+/** Every paper a stylesheet names, wherever: no unknown key hides in a selector. */
+const allPaperSelectors = (css: string) => [
+  ...new Set([...strip(css).matchAll(/\[data-paper=['"]?([\w-]+)['"]?\]/g)].map((m) => m[1]))
+];
 
 const BRAND_VARS = [
   '--ground',
@@ -76,8 +84,10 @@ const SCALES: Record<string, string[]> = {
 const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
 describe('tokens.css paper blocks', () => {
-  it('has one block per paper key and no other', () => {
+  it('has one day block and one night block per paper key, and no other', () => {
     expect(allPaperSelectors(tokens).sort()).toEqual([...PAPER_KEYS].sort());
+    expect(papersOf(tokens, '').sort()).toEqual([...PAPER_KEYS].sort());
+    expect(papersOf(tokens, ':root.dark').sort()).toEqual([...PAPER_KEYS].sort());
   });
 
   it('each block declares the same twelve variables', () => {
@@ -136,8 +146,11 @@ describe('tokens.css paper blocks', () => {
 });
 
 describe('app.css paper triplets', () => {
-  it('has one block per paper key and no other', () => {
+  it('has one day block and one night block of triplets per paper key, and no other', () => {
     expect(allPaperSelectors(app).sort()).toEqual([...PAPER_KEYS].sort());
+    expect(papersOf(app, '').sort()).toEqual([...PAPER_KEYS].sort());
+    expect(papersOf(app, '.dark').sort()).toEqual([...PAPER_KEYS].sort());
+    expect(papersOf(app, ':root.dark').sort()).toEqual([...PAPER_KEYS].sort());
   });
 
   it('each block declares the same set, all of which the root and the dark set declare', () => {
@@ -176,6 +189,72 @@ describe('app.css paper triplets', () => {
   it('sit before .dark, which has the same specificity and so wins', () => {
     const src = strip(app);
     for (const p of PAPER_KEYS) expect(src.indexOf(paperSel(p)), p).toBeLessThan(src.indexOf('.dark {'));
+  });
+});
+
+describe('each paper at night', () => {
+  const NIGHT_VARS = BRAND_VARS;
+
+  it('tokens.css: every night block declares the same twelve variables after the dark set', () => {
+    const src = strip(tokens);
+    for (const p of PAPER_KEYS) {
+      expect([...block(tokens, `:root.dark${paperSel(p)}`).keys()].sort(), p).toEqual([...NIGHT_VARS].sort());
+      expect(src.indexOf(`:root.dark${paperSel(p)}`), p).toBeGreaterThan(src.indexOf(':root.dark {'));
+    }
+  });
+
+  it("tokens.css: creme's night repeats the dark set exactly", () => {
+    const dark = block(tokens, ':root.dark');
+    for (const [v, val] of block(tokens, `:root.dark${paperSel('creme')}`)) expect(val, v).toBe(dark.get(v));
+  });
+
+  it("tokens.css: each night's ground is the swatch's night, and stays dark", () => {
+    for (const p of PAPER_KEYS) {
+      const b = block(tokens, `:root.dark${paperSel(p)}`);
+      expect(b.get('--ground')?.toUpperCase(), p).toBe(PAPER_GROUNDS[p].night);
+      const sum = (h: string) => rgbOf(h).reduce((a, c) => a + c, 0);
+      expect(sum(b.get('--ground')!), `${p} ground is dark`).toBeLessThan(120);
+      expect(sum(b.get('--ink')!), `${p} ink is light`).toBeGreaterThan(650);
+    }
+  });
+
+  it('tokens.css: the nights never touch the status colours, the shadows or the slots', () => {
+    for (const p of PAPER_KEYS)
+      for (const v of ['--ok', '--warn', '--danger', '--focus', '--shadow', '--accent', '--field-base'])
+        expect(block(tokens, `:root.dark${paperSel(p)}`).has(v), `${p} ${v}`).toBe(false);
+  });
+
+  it('app.css: every night block of triplets declares the day set, after .dark, creme repeating it', () => {
+    const daySet = [...block(app, paperSel('creme')).keys()].sort();
+    const src = strip(app);
+    const dark = block(app, '.dark');
+    for (const p of PAPER_KEYS) {
+      expect([...block(app, `.dark${paperSel(p)}`).keys()].sort(), p).toEqual(daySet);
+      expect(src.indexOf(`.dark${paperSel(p)}`), p).toBeGreaterThan(src.indexOf('.dark {'));
+    }
+    for (const [v, val] of block(app, `.dark${paperSel('creme')}`)) expect(val, v).toBe(dark.get(v));
+  });
+
+  it("app.css: each night's page ground mixes from its own plate, creme's from the dark set's", () => {
+    const darkRoot = blocks(app, ':root.dark').find((b) => b.has('--page-ground'))!;
+    expect(darkRoot.get('--sheet-ground')).toBe(
+      'color-mix(in oklab, var(--plate-solid) 84%, var(--page-ground))'
+    );
+    expect(block(app, `:root.dark${paperSel('creme')}`).get('--page-ground')).toBe(
+      darkRoot.get('--page-ground')
+    );
+    for (const p of PAPER_KEYS) {
+      const g = block(app, `:root.dark${paperSel(p)}`).get('--page-ground')!;
+      const plate = block(tokens, `:root.dark${paperSel(p)}`).get('--plate')!;
+      const hex =
+        '#' +
+        plate
+          .match(/rgb\((\d+) (\d+) (\d+)/)!
+          .slice(1, 4)
+          .map((n) => (+n).toString(16).padStart(2, '0'))
+          .join('');
+      expect(g, p).toBe(`color-mix(in oklab, ${hex} 60%, var(--field-base))`);
+    }
   });
 });
 

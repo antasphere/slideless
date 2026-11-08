@@ -7,7 +7,7 @@
   import Monitor from '@lucide/svelte/icons/monitor';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
-  import { PAPER_GROUNDS, PAPER_KEYS, theme, type PaperKey, type ThemeMode } from '$lib/theme.svelte';
+  import { theme, type ThemeMode } from '$lib/theme.svelte';
   import { settingsTabs } from '$lib/settings-tabs';
   import LanguageSwitcher from '$lib/components/shared/LanguageSwitcher.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -319,13 +319,6 @@
     { key: 'light', label: t('account.modeLight'), icon: Sun },
     { key: 'dark', label: t('account.modeDark'), icon: Moon }
   ];
-  const paperLabels: Record<PaperKey, string> = {
-    creme: t('account.paperCreme'),
-    graphite: t('account.paperGraphite'),
-    porcelain: t('account.paperPorcelain'),
-    stone: t('account.paperStone'),
-    fog: t('account.paperFog')
-  };
 </script>
 
 <SectionHero
@@ -439,28 +432,6 @@
             >
               <m.icon class="size-3.5" strokeWidth={1.8} />
               <span>{m.label}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
-      <div class="pref">
-        <span class="pref-label">{t('account.paper')}</span>
-        <div class="seg" role="group" aria-label={t('account.paper')}>
-          {#each PAPER_KEYS as p (p)}
-            <button
-              type="button"
-              class="seg-btn"
-              class:on={theme.paper === p}
-              aria-pressed={theme.paper === p}
-              onclick={() => theme.setPaper(p)}
-            >
-              <span
-                class="swatch"
-                aria-hidden="true"
-                style:background={PAPER_GROUNDS[p].ground}
-                style:border-color={PAPER_GROUNDS[p].hairline}
-              ></span>
-              <span>{paperLabels[p]}</span>
             </button>
           {/each}
         </div>
@@ -765,7 +736,6 @@
   }
   .seg {
     display: inline-flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 2px;
     padding: 2px;
@@ -792,12 +762,5 @@
   .seg-btn.on {
     background: var(--accent-soft);
     color: var(--accent-deep);
-  }
-  .swatch {
-    width: 12px;
-    height: 12px;
-    border-radius: 999px;
-    border: 1px solid;
-    flex: none;
   }
 </style>

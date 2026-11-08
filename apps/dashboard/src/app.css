@@ -568,6 +568,130 @@
     --sidebar-border: 30 15% 21%;
     --sidebar-ring: 15 63% 62%;
   }
+
+  /* the person's paper at night (PRDCT-4189): each paper's dark version,
+     derived from creme's night (tokens.css :root.dark[data-paper]); creme
+     repeats .dark above. More specific than .dark, so it wins over it. */
+  .dark[data-paper='creme'] {
+    --background: 30 15% 11%;
+    --foreground: 37 35% 93%;
+    --tpl-muted: 30 14% 14%;
+    --muted-foreground: 30 12% 63%;
+    --popover: 30 14% 14%;
+    --popover-foreground: 37 35% 93%;
+    --card: 30 15% 11%;
+    --card-foreground: 37 35% 93%;
+    --border: 30 15% 21%;
+    --input: 30 15% 21%;
+    --secondary: 30 14% 14%;
+    --secondary-foreground: 36 22% 82%;
+    --tpl-accent: 30 14% 14%;
+    --accent-foreground: 37 35% 93%;
+    --button-hover: 30 14% 14%;
+    --button-hover-foreground: 37 35% 93%;
+    --sidebar-background: 26 18% 8%;
+    --sidebar-foreground: 36 22% 82%;
+    --sidebar-primary: 37 35% 93%;
+    --sidebar-accent: 30 14% 14%;
+    --sidebar-accent-foreground: 37 35% 93%;
+    --sidebar-border: 30 15% 21%;
+  }
+  .dark[data-paper='graphite'] {
+    --background: 60 4% 11%;
+    --foreground: 60 9% 93%;
+    --tpl-muted: 60 3% 14%;
+    --muted-foreground: 50 3% 63%;
+    --popover: 60 3% 14%;
+    --popover-foreground: 60 9% 93%;
+    --card: 60 4% 11%;
+    --card-foreground: 60 9% 93%;
+    --border: 60 4% 21%;
+    --input: 60 4% 21%;
+    --secondary: 60 3% 14%;
+    --secondary-foreground: 48 6% 83%;
+    --tpl-accent: 60 3% 14%;
+    --accent-foreground: 60 9% 93%;
+    --button-hover: 60 3% 14%;
+    --button-hover-foreground: 60 9% 93%;
+    --sidebar-background: 60 5% 7%;
+    --sidebar-foreground: 48 6% 83%;
+    --sidebar-primary: 60 9% 93%;
+    --sidebar-accent: 60 3% 14%;
+    --sidebar-accent-foreground: 60 9% 93%;
+    --sidebar-border: 60 4% 21%;
+  }
+  .dark[data-paper='porcelain'] {
+    --background: 48 9% 10%;
+    --foreground: 38 22% 93%;
+    --tpl-muted: 40 9% 14%;
+    --muted-foreground: 43 7% 63%;
+    --popover: 40 9% 14%;
+    --popover-foreground: 38 22% 93%;
+    --card: 48 9% 10%;
+    --card-foreground: 38 22% 93%;
+    --border: 40 8% 21%;
+    --input: 40 8% 21%;
+    --secondary: 40 9% 14%;
+    --secondary-foreground: 45 13% 82%;
+    --tpl-accent: 40 9% 14%;
+    --accent-foreground: 38 22% 93%;
+    --button-hover: 40 9% 14%;
+    --button-hover-foreground: 38 22% 93%;
+    --sidebar-background: 45 11% 7%;
+    --sidebar-foreground: 45 13% 82%;
+    --sidebar-primary: 38 22% 93%;
+    --sidebar-accent: 40 9% 14%;
+    --sidebar-accent-foreground: 38 22% 93%;
+    --sidebar-border: 40 8% 21%;
+  }
+  .dark[data-paper='stone'] {
+    --background: 48 9% 10%;
+    --foreground: 42 26% 93%;
+    --tpl-muted: 43 10% 14%;
+    --muted-foreground: 45 8% 62%;
+    --popover: 43 10% 14%;
+    --popover-foreground: 42 26% 93%;
+    --card: 48 9% 10%;
+    --card-foreground: 42 26% 93%;
+    --border: 40 11% 21%;
+    --input: 40 11% 21%;
+    --secondary: 43 10% 14%;
+    --secondary-foreground: 44 16% 82%;
+    --tpl-accent: 43 10% 14%;
+    --accent-foreground: 42 26% 93%;
+    --button-hover: 43 10% 14%;
+    --button-hover-foreground: 42 26% 93%;
+    --sidebar-background: 48 14% 7%;
+    --sidebar-foreground: 44 16% 82%;
+    --sidebar-primary: 42 26% 93%;
+    --sidebar-accent: 43 10% 14%;
+    --sidebar-accent-foreground: 42 26% 93%;
+    --sidebar-border: 40 11% 21%;
+  }
+  .dark[data-paper='fog'] {
+    --background: 200 5% 11%;
+    --foreground: 180 14% 93%;
+    --tpl-muted: 180 4% 14%;
+    --muted-foreground: 189 4% 63%;
+    --popover: 180 4% 14%;
+    --popover-foreground: 180 14% 93%;
+    --card: 200 5% 11%;
+    --card-foreground: 180 14% 93%;
+    --border: 180 5% 21%;
+    --input: 180 5% 21%;
+    --secondary: 180 4% 14%;
+    --secondary-foreground: 180 8% 83%;
+    --tpl-accent: 180 4% 14%;
+    --accent-foreground: 180 14% 93%;
+    --button-hover: 180 4% 14%;
+    --button-hover-foreground: 180 14% 93%;
+    --sidebar-background: 200 8% 8%;
+    --sidebar-foreground: 180 8% 83%;
+    --sidebar-primary: 180 14% 93%;
+    --sidebar-accent: 180 4% 14%;
+    --sidebar-accent-foreground: 180 14% 93%;
+    --sidebar-border: 180 5% 21%;
+  }
 }
 
 /* The template thinned every text-sm to 300 for Onest. Synonym is drawn for
@@ -623,7 +747,23 @@
 }
 :root.dark {
   --page-ground: color-mix(in oklab, #241e19 60%, var(--field-base));
-  --sheet-ground: color-mix(in oklab, #28221c 84%, var(--page-ground));
+  --sheet-ground: color-mix(in oklab, var(--plate-solid) 84%, var(--page-ground));
+}
+/* each paper's night (PRDCT-4189): the page ground from that paper's night plate */
+:root.dark[data-paper='creme'] {
+  --page-ground: color-mix(in oklab, #241e19 60%, var(--field-base));
+}
+:root.dark[data-paper='graphite'] {
+  --page-ground: color-mix(in oklab, #201f1d 60%, var(--field-base));
+}
+:root.dark[data-paper='porcelain'] {
+  --page-ground: color-mix(in oklab, #211f1a 60%, var(--field-base));
+}
+:root.dark[data-paper='stone'] {
+  --page-ground: color-mix(in oklab, #211f19 60%, var(--field-base));
+}
+:root.dark[data-paper='fog'] {
+  --page-ground: color-mix(in oklab, #1d2020 60%, var(--field-base));
 }
 @layer components {
   /* The blur lives on a pseudo-element, never on the float itself: a backdrop

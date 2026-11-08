@@ -9,6 +9,7 @@
   import { roleTag } from '$lib/tags';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import LookPicker from '$lib/components/settings/LookPicker.svelte';
+  import PaperPicker from '$lib/components/settings/PaperPicker.svelte';
   import LevelSlider from '$lib/components/settings/LevelSlider.svelte';
   import BrandTile from '$lib/components/sidebar/BrandTile.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -222,6 +223,12 @@
       {:else}
         <p class="notice">{t('settings.identityReadonly')}</p>
       {/if}
+
+      <!-- the person's own paper: not the workspace's look, so outside its
+           form, open to every member, applied at once with no Save -->
+      <div class="mine">
+        <PaperPicker />
+      </div>
     </Card.Content>
   </Card.Root>
 
@@ -272,6 +279,10 @@
 </div>
 
 <style>
+  .mine {
+    padding-top: 20px;
+    border-top: 1px solid var(--hairline);
+  }
   .preview {
     display: flex;
     align-items: center;

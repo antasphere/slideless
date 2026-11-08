@@ -272,3 +272,80 @@
   --plate-edge: rgb(255 255 255 / 0.07);
   --bar: #1f1b17;
 }
+/* =====================================================================
+   Each paper at night (PRDCT-4189): creme's night above, carried to each
+   paper's own hue and chroma in OKLCH (lightness kept), so a dark reader
+   still sees the paper they picked. Creme repeats the dark set exactly.
+   Only the ground side is rewritten; the status colours, the shadows and
+   the slots stay the dark set's.
+   ===================================================================== */
+:root.dark[data-paper='creme'] {
+  --ground: #1f1b17;
+  --ground-2: #171310;
+  --ground-3: #28231e;
+  --hairline: #3e362e;
+  --muted: #aca196;
+  --ink-soft: #dcd4c8;
+  --ink: #f3eee6;
+  --bar: #1f1b17;
+  --plate: rgb(36 30 25 / 0.6);
+  --plate-strong: rgb(40 34 28 / 0.84);
+  --plate-edge: rgb(255 255 255 / 0.07);
+  --plate-solid: #28221c;
+}
+:root.dark[data-paper='graphite'] {
+  --ground: #1c1c1a;
+  --ground-2: #141412;
+  --ground-3: #242422;
+  --hairline: #383834;
+  --muted: #a4a39e;
+  --ink-soft: #d6d5d1;
+  --ink: #efefec;
+  --bar: #1c1c1a;
+  --plate: rgb(32 31 29 / 0.6);
+  --plate-strong: rgb(36 35 33 / 0.84);
+  --plate-edge: rgb(255 255 255 / 0.07);
+  --plate-solid: #242321;
+}
+:root.dark[data-paper='porcelain'] {
+  --ground: #1d1c18;
+  --ground-2: #151411;
+  --ground-3: #262420;
+  --hairline: #3a3731;
+  --muted: #a7a399;
+  --ink-soft: #d8d5cc;
+  --ink: #f1eee9;
+  --bar: #1d1c18;
+  --plate: rgb(33 31 26 / 0.6);
+  --plate-strong: rgb(37 35 30 / 0.84);
+  --plate-edge: rgb(255 255 255 / 0.07);
+  --plate-solid: #25231e;
+}
+:root.dark[data-paper='stone'] {
+  --ground: #1d1c18;
+  --ground-2: #151410;
+  --ground-3: #26241f;
+  --hairline: #3b372f;
+  --muted: #a7a397;
+  --ink-soft: #d9d5ca;
+  --ink: #f1eee7;
+  --bar: #1d1c18;
+  --plate: rgb(33 31 25 / 0.6);
+  --plate-strong: rgb(38 35 29 / 0.84);
+  --plate-edge: rgb(255 255 255 / 0.07);
+  --plate-solid: #26231d;
+}
+:root.dark[data-paper='fog'] {
+  --ground: #1a1c1d;
+  --ground-2: #121415;
+  --ground-3: #222525;
+  --hairline: #343939;
+  --muted: #9ea4a5;
+  --ink-soft: #d0d7d7;
+  --ink: #ebf0f0;
+  --bar: #1a1c1d;
+  --plate: rgb(29 32 32 / 0.6);
+  --plate-strong: rgb(32 36 36 / 0.84);
+  --plate-edge: rgb(255 255 255 / 0.07);
+  --plate-solid: #202424;
+}
