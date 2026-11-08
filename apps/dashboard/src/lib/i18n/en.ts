@@ -816,6 +816,12 @@ export const en = {
   'settings.identityDescription':
     'How this workspace shows to everyone in it, in the sidebar and on the phone.',
   'settings.identityReadonly': 'Only an owner or an admin can change the name and the look.',
+  'settings.paper': 'Paper',
+  'settings.paperCreme': 'Creme',
+  'settings.paperGraphite': 'Graphite',
+  'settings.paperPorcelain': 'Porcelain',
+  'settings.paperStone': 'Stone',
+  'settings.paperFog': 'Fog',
   'settings.workspaceName': 'Name',
   'settings.renameAtHub': 'This workspace is an Antasphere organization: its name is changed there.',
   'settings.renameAtHubLink': 'Open Antasphere',

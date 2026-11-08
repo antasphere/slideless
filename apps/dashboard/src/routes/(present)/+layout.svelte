@@ -13,9 +13,9 @@
   $effect(() => {
     theme.start();
     look.use(data.me.activeWorkspaceId ?? '', data.me.workspace.look);
-    look.apply(theme.dark);
+    look.apply(theme.dark, theme.paper);
   });
-  const field = $derived(fieldPalette(look.value.theme, theme.dark));
+  const field = $derived(fieldPalette(look.value.theme, theme.dark, theme.paper));
 </script>
 
 <!-- No sidebar, no header: the master page owns the whole viewport. -->

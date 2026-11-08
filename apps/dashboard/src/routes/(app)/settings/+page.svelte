@@ -9,6 +9,7 @@
   import { roleTag } from '$lib/tags';
   import SectionHero from '$lib/components/shared/SectionHero.svelte';
   import LookPicker from '$lib/components/settings/LookPicker.svelte';
+  import PaperPicker from '$lib/components/settings/PaperPicker.svelte';
   import LevelSlider from '$lib/components/settings/LevelSlider.svelte';
   import BrandTile from '$lib/components/sidebar/BrandTile.svelte';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -174,6 +175,10 @@
             {/if}
           </div>
 
+          <!-- the person's own paper, above the workspace's colour: applied at
+               once and kept in this browser, never part of the Save -->
+          <PaperPicker />
+
           <LookPicker value={look.value} onchange={tryLook} />
 
           <!-- the page under the app: how much of the colour's gradient
@@ -220,6 +225,7 @@
           </div>
         </form>
       {:else}
+        <PaperPicker />
         <p class="notice">{t('settings.identityReadonly')}</p>
       {/if}
     </Card.Content>

@@ -835,6 +835,12 @@ export const fr: Record<keyof typeof en, string> = {
   'settings.identityDescription':
     'Comment cet espace se présente à chacun de ses membres, dans la barre latérale et sur téléphone.',
   'settings.identityReadonly': 'Seul un propriétaire ou un admin peut changer le nom et l’apparence.',
+  'settings.paper': 'Papier',
+  'settings.paperCreme': 'Crème',
+  'settings.paperGraphite': 'Graphite',
+  'settings.paperPorcelain': 'Porcelaine',
+  'settings.paperStone': 'Pierre',
+  'settings.paperFog': 'Brume',
   'settings.workspaceName': 'Nom',
   'settings.renameAtHub': 'Cet espace est une organisation Antasphere : son nom se change là-bas.',
   'settings.renameAtHubLink': 'Ouvrir Antasphere',
