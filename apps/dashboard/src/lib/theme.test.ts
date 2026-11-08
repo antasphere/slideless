@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The person's paper (PRDCT-4189): the theme store keeps it in this browser
@@ -76,6 +76,14 @@ async function freshTheme() {
   return import('./theme.svelte');
 }
 
+// The first import of the runes module compiles it, which can take more than a
+// test's five seconds on a loaded machine (a full turbo run, a tool's CI). Warm
+// it once here, with room, so each test's fresh import only re-evaluates it.
+beforeAll(async () => {
+  stubBrowser(memoryStorage());
+  await import('./theme.svelte');
+  vi.unstubAllGlobals();
+}, 60_000);
 beforeEach(() => stubBrowser(memoryStorage()));
 afterEach(() => vi.unstubAllGlobals());
 
