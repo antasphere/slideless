@@ -862,7 +862,7 @@ export const fr: Record<keyof typeof en, string> = {
   'account.lede': 'Votre profil, vos préférences et votre sécurité.',
   'account.preferencesTitle': 'Préférences',
   'account.preferencesDescription':
-    'Gardées dans ce navigateur : la langue, le thème clair ou sombre, et le papier.',
+    'Gardées dans ce navigateur : la langue, le thème clair ou sombre et le papier.',
   'account.mode': 'Thème',
   'account.modeSystem': 'Système',
   'account.modeLight': 'Clair',

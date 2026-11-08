@@ -616,9 +616,9 @@
      look's field. What stays in place while the page scrolls (a section's
      bar, a table's toolbar) wears it, so it reads as the page and not as a
      band of another colour. */
-  --page-ground: color-mix(in oklab, #faf7f0 70%, var(--field-base));
-  /* a card's paper (plate-strong) over that ground, opaque: a held column header */
-  --sheet-ground: color-mix(in oklab, #fbf9f3 82%, var(--page-ground));
+  --page-ground: color-mix(in oklab, var(--bar) 70%, var(--field-base));
+  /* a card's paper (plate-strong, opaque as --plate-solid) over that ground: a held column header */
+  --sheet-ground: color-mix(in oklab, var(--plate-solid) 82%, var(--page-ground));
   --sticky-top: 0px;
 }
 :root.dark {

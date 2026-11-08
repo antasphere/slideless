@@ -126,6 +126,8 @@
   --plate: rgb(250 247 240 / 0.62);
   --plate-strong: rgb(251 249 243 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
+  /* the strong plate's colour, opaque: what app.css mixes a held header from */
+  --plate-solid: #fbf9f3;
   /* a bar content scrolls under: opaque, so nothing reads through it */
   --bar: #faf7f0;
 
@@ -139,7 +141,7 @@
    (app.html's boot script, theme.svelte.ts setPaper). Each block rewrites
    the seven ground-side variables, the bar (the ground lifted a touch
    toward white) and the plates (the bar's colour at the recipe's
-   strengths). Creme repeats the recipe above exactly: no attribute and
+   strengths, and opaque as --plate-solid). Creme repeats the recipe above exactly: no attribute and
    `creme` read the same. `:root.dark` below is more specific than any of
    these, so a dark reader sees the one dark set whatever the paper.
    ===================================================================== */
@@ -155,6 +157,7 @@
   --plate: rgb(250 247 240 / 0.62);
   --plate-strong: rgb(251 249 243 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
+  --plate-solid: #fbf9f3;
 }
 [data-paper='graphite'] {
   --ground: #f7f6f4;
@@ -168,6 +171,7 @@
   --plate: rgb(250 249 248 / 0.62);
   --plate-strong: rgb(250 249 248 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
+  --plate-solid: #faf9f8;
 }
 [data-paper='porcelain'] {
   --ground: #fcfbf8;
@@ -181,6 +185,7 @@
   --plate: rgb(253 252 250 / 0.62);
   --plate-strong: rgb(253 252 250 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
+  --plate-solid: #fdfcfa;
 }
 [data-paper='stone'] {
   --ground: #f4f1eb;
@@ -194,6 +199,7 @@
   --plate: rgb(248 246 242 / 0.62);
   --plate-strong: rgb(248 246 242 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
+  --plate-solid: #f8f6f2;
 }
 [data-paper='fog'] {
   --ground: #f7f8f8;
@@ -207,6 +213,7 @@
   --plate: rgb(250 250 250 / 0.62);
   --plate-strong: rgb(250 250 250 / 0.82);
   --plate-edge: rgb(255 255 255 / 0.6);
+  --plate-solid: #fafafa;
 }
 
 /* a reader who asked for no motion gets none: the duration goes to zero
@@ -261,6 +268,7 @@
   --accent-deep: #f3c7ac;
   --plate: rgb(36 30 25 / 0.6);
   --plate-strong: rgb(40 34 28 / 0.84);
+  --plate-solid: #28221c;
   --plate-edge: rgb(255 255 255 / 0.07);
   --bar: #1f1b17;
 }

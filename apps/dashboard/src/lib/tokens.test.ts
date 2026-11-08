@@ -60,7 +60,8 @@ const BRAND_VARS = [
   '--bar',
   '--plate',
   '--plate-strong',
-  '--plate-edge'
+  '--plate-edge',
+  '--plate-solid'
 ];
 
 /** The brief's table: ground, ground-2, ground-3, hairline, muted, ink-soft, ink. */
@@ -79,7 +80,7 @@ describe('tokens.css paper blocks', () => {
     expect(allPaperSelectors(tokens).sort()).toEqual([...PAPER_KEYS].sort());
   });
 
-  it('each block declares the same eleven variables', () => {
+  it('each block declares the same twelve variables', () => {
     for (const p of PAPER_KEYS)
       expect([...block(tokens, paperSel(p)).keys()].sort(), p).toEqual([...BRAND_VARS].sort());
   });
@@ -120,6 +121,7 @@ describe('tokens.css paper blocks', () => {
       const [r, g, bl] = bar;
       expect(b.get('--plate'), p).toBe(`rgb(${r} ${g} ${bl} / 0.62)`);
       expect(b.get('--plate-strong'), p).toBe(`rgb(${r} ${g} ${bl} / 0.82)`);
+      expect(rgbOf(b.get('--plate-solid')!), `${p} plate-solid is plate-strong, opaque`).toEqual(bar);
     }
   });
 
@@ -147,6 +149,15 @@ describe('app.css paper triplets', () => {
       expect(root.has(v), `:root declares ${v}`).toBe(true);
       expect(dark.has(v), `.dark rewrites ${v}`).toBe(true);
     }
+  });
+
+  it('the grounds a held bar or header wears are mixed from the paper, never from a literal', () => {
+    const root = blocks(app, ':root').find((b) => b.has('--page-ground'));
+    expect(root, 'the :root of the held grounds').toBeDefined();
+    expect(root!.get('--page-ground')).toBe('color-mix(in oklab, var(--bar) 70%, var(--field-base))');
+    expect(root!.get('--sheet-ground')).toBe(
+      'color-mix(in oklab, var(--plate-solid) 82%, var(--page-ground))'
+    );
   });
 
   it('creme repeats the root triplets exactly', () => {
