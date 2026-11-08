@@ -12,8 +12,10 @@
  * after a first cut had wrongly made them the person's. The old per-browser
  * values are not read.
  *
- * What stays the PERSON's is the language and the dark set (theme.svelte.ts,
- * ADR 007): how they read, not what the workspace looks like.
+ * What stays the PERSON's is the language, the dark set and the paper
+ * (theme.svelte.ts, ADR 007): how they read, not what the workspace looks
+ * like. The paper is the ground the field mixes the accent into, so the page
+ * follows the person's paper while its colour stays the workspace's.
  *
  * A theme writes the brand's four slots and nothing else (tokens.css), plus
  * the shadcn triplets that mirror the accent, so every selected state,
@@ -27,6 +29,7 @@ import type { WorkspaceLook } from '@antasphere/chassis-contract';
 import { PALETTES, THEMES } from '$lib/brand/recipe.js';
 import { isPatternKey, PATTERN_KEYS } from '$lib/brand/form';
 import { seedOf } from '$lib/brand/seed';
+import { DEFAULT_PAPER, isPaperKey, PAPER_GROUNDS, type PaperKey } from '$lib/theme.svelte';
 
 export type ThemeKey = keyof typeof THEMES;
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
@@ -108,7 +111,13 @@ export function resolveLook(workspaceId: string, wire: WorkspaceLook | null | un
   };
 }
 
-const PAPER = { light: '#F7F4EC', dark: '#1F1B17' };
+const PAPER = { light: PAPER_GROUNDS[DEFAULT_PAPER].ground, dark: '#1F1B17' };
+
+/** The ground a field mixes from: the person's paper by day, the one dark ground at night. */
+export function paperGround(paper: PaperKey, dark: boolean): string {
+  if (dark) return PAPER.dark;
+  return isPaperKey(paper) ? PAPER_GROUNDS[paper].ground : PAPER.light;
+}
 
 function rgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
@@ -144,14 +153,21 @@ function triplet(hex: string): string {
   return `${h} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
-/** The page field of a theme: the paper, with the accent pooled into it. Registered once per theme and mode. */
-export function fieldPalette(theme: ThemeKey, dark: boolean): string {
-  // the beige is not derived: it is the website's own home-screen field
-  if (theme === 'paper') return dark ? 'paper-dark' : 'paper';
-  const name = `look-${theme}${dark ? '-dark' : ''}`;
+/**
+ * The page field of a theme: the person's paper, with the accent pooled into
+ * it. Registered once per theme, paper and mode; the name carries the paper
+ * (creme keeps the names it always had). At night the paper is the one dark
+ * ground, so the paper never enters a dark name.
+ */
+export function fieldPalette(theme: ThemeKey, dark: boolean, paper: PaperKey = DEFAULT_PAPER): string {
+  const picked = !dark && isPaperKey(paper) && paper !== DEFAULT_PAPER ? paper : null;
+  // the beige is not derived: it is the website's own home-screen field, on
+  // creme and at night; on another paper it is derived like any theme
+  if (theme === 'paper' && !picked) return dark ? 'paper-dark' : 'paper';
+  const name = `look-${theme}${dark ? '-dark' : ''}${picked ? `-${picked}` : ''}`;
   if (!PALETTES[name]) {
     const accent = THEMES[theme].accent;
-    const paper = dark ? PAPER.dark : PAPER.light;
+    const paper = paperGround(picked ?? DEFAULT_PAPER, dark);
     const pools = dark ? [0.02, 0.06, 0.12, 0.2, 0.3, 0.04, 0.4] : [0.02, 0.06, 0.12, 0.2, 0.3, 0.04, 0.42];
     PALETTES[name] = {
       light: !dark,
@@ -265,8 +281,8 @@ class LookStore {
     this.value = { ...this.value, ...patch };
   }
 
-  /** Write the theme's slots on <html>. Called from an effect, so it re-runs on a theme or mode change. */
-  apply(dark: boolean): void {
+  /** Write the theme's slots on <html>. Called from an effect, so it re-runs on a theme, mode or paper change. */
+  apply(dark: boolean, paper: PaperKey = DEFAULT_PAPER): void {
     const t = THEMES[this.value.theme];
     const { accent, ink, soft } = accentOf(this.value.theme, dark);
     const root = document.documentElement.style;
@@ -277,7 +293,7 @@ class LookStore {
     // the page's base carries the accent as far as the gradient is asked for:
     // none of it at 0, where the page lands on the paper itself
     const tint = 0.08 * gradientLevel(this.value);
-    root.setProperty('--field-base', mix(dark ? PAPER.dark : PAPER.light, t.accent, tint));
+    root.setProperty('--field-base', mix(paperGround(paper, dark), t.accent, tint));
     for (const name of ['--primary', '--ring', '--sidebar-ring']) root.setProperty(name, triplet(accent));
     root.setProperty('--primary-foreground', triplet(ink));
   }

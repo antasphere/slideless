@@ -409,6 +409,131 @@
     --sidebar-ring: 30 20% 40%;
   }
 
+  /* the person's paper (PRDCT-4189, tokens.css [data-paper]): the same
+     triplets, of each brand ground scale; creme repeats :root above. The
+     accent's triplets stay the look's. Placed before .dark, which has the
+     same specificity and so wins over any paper. */
+  [data-paper='creme'] {
+    --background: 44 41% 95%;
+    --foreground: 34 14% 10%;
+    --tpl-muted: 45 32% 88%;
+    --muted-foreground: 40 11% 39%;
+    --popover: 44 41% 95%;
+    --popover-foreground: 34 14% 10%;
+    --card: 44 41% 95%;
+    --card-foreground: 34 14% 10%;
+    --border: 44 26% 84%;
+    --input: 44 26% 84%;
+    --secondary: 45 32% 88%;
+    --secondary-foreground: 33 12% 19%;
+    --tpl-accent: 45 32% 88%;
+    --accent-foreground: 34 14% 10%;
+    --button-hover: 45 32% 88%;
+    --button-hover-foreground: 34 14% 10%;
+    --sidebar-background: 45 36% 91%;
+    --sidebar-foreground: 33 12% 19%;
+    --sidebar-primary: 34 14% 10%;
+    --sidebar-accent: 45 32% 88%;
+    --sidebar-accent-foreground: 34 14% 10%;
+    --sidebar-border: 44 26% 84%;
+  }
+  [data-paper='graphite'] {
+    --background: 40 16% 96%;
+    --foreground: 30 4% 10%;
+    --tpl-muted: 48 10% 90%;
+    --muted-foreground: 50 3% 41%;
+    --popover: 40 16% 96%;
+    --popover-foreground: 30 4% 10%;
+    --card: 40 16% 96%;
+    --card-foreground: 30 4% 10%;
+    --border: 50 8% 85%;
+    --input: 50 8% 85%;
+    --secondary: 48 10% 90%;
+    --secondary-foreground: 40 3% 19%;
+    --tpl-accent: 48 10% 90%;
+    --accent-foreground: 30 4% 10%;
+    --button-hover: 48 10% 90%;
+    --button-hover-foreground: 30 4% 10%;
+    --sidebar-background: 45 12% 93%;
+    --sidebar-foreground: 40 3% 19%;
+    --sidebar-primary: 30 4% 10%;
+    --sidebar-accent: 48 10% 90%;
+    --sidebar-accent-foreground: 30 4% 10%;
+    --sidebar-border: 50 8% 85%;
+  }
+  [data-paper='porcelain'] {
+    --background: 45 40% 98%;
+    --foreground: 40 12% 10%;
+    --tpl-muted: 53 18% 91%;
+    --muted-foreground: 43 7% 42%;
+    --popover: 45 40% 98%;
+    --popover-foreground: 40 12% 10%;
+    --card: 45 40% 98%;
+    --card-foreground: 40 12% 10%;
+    --border: 49 16% 86%;
+    --input: 49 16% 86%;
+    --secondary: 53 18% 91%;
+    --secondary-foreground: 40 9% 19%;
+    --tpl-accent: 53 18% 91%;
+    --accent-foreground: 40 12% 10%;
+    --button-hover: 53 18% 91%;
+    --button-hover-foreground: 40 12% 10%;
+    --sidebar-background: 50 23% 95%;
+    --sidebar-foreground: 40 9% 19%;
+    --sidebar-primary: 40 12% 10%;
+    --sidebar-accent: 53 18% 91%;
+    --sidebar-accent-foreground: 40 12% 10%;
+    --sidebar-border: 49 16% 86%;
+  }
+  [data-paper='stone'] {
+    --background: 40 29% 94%;
+    --foreground: 43 14% 10%;
+    --tpl-muted: 43 21% 87%;
+    --muted-foreground: 42 8% 41%;
+    --popover: 40 29% 94%;
+    --popover-foreground: 43 14% 10%;
+    --card: 40 29% 94%;
+    --card-foreground: 43 14% 10%;
+    --border: 42 18% 81%;
+    --input: 42 18% 81%;
+    --secondary: 43 21% 87%;
+    --secondary-foreground: 42 10% 19%;
+    --tpl-accent: 43 21% 87%;
+    --accent-foreground: 43 14% 10%;
+    --button-hover: 43 21% 87%;
+    --button-hover-foreground: 43 14% 10%;
+    --sidebar-background: 44 23% 91%;
+    --sidebar-foreground: 42 10% 19%;
+    --sidebar-primary: 43 14% 10%;
+    --sidebar-accent: 43 21% 87%;
+    --sidebar-accent-foreground: 43 14% 10%;
+    --sidebar-border: 42 18% 81%;
+  }
+  [data-paper='fog'] {
+    --background: 180 7% 97%;
+    --foreground: 192 10% 10%;
+    --tpl-muted: 180 6% 91%;
+    --muted-foreground: 188 4% 42%;
+    --popover: 180 7% 97%;
+    --popover-foreground: 192 10% 10%;
+    --card: 180 7% 97%;
+    --card-foreground: 192 10% 10%;
+    --border: 180 6% 86%;
+    --input: 180 6% 86%;
+    --secondary: 180 6% 91%;
+    --secondary-foreground: 189 7% 20%;
+    --tpl-accent: 180 6% 91%;
+    --accent-foreground: 192 10% 10%;
+    --button-hover: 180 6% 91%;
+    --button-hover-foreground: 192 10% 10%;
+    --sidebar-background: 180 7% 94%;
+    --sidebar-foreground: 189 7% 20%;
+    --sidebar-primary: 192 10% 10%;
+    --sidebar-accent: 180 6% 91%;
+    --sidebar-accent-foreground: 192 10% 10%;
+    --sidebar-border: 180 6% 86%;
+  }
+
   /* dark — triplets of the recipe's dark set: ground #1F1B17 · ground-2
      #171310 · ground-3 #28231E · hairline #3E362E · ink #F3EEE6 · ink-soft
      #DCD4C8 · muted #ACA196 · accent #DB7D5F · accent-ink #2A1D15. */

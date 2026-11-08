@@ -133,6 +133,82 @@
   --tabbar-h: 64px;
 }
 
+/* =====================================================================
+   The person's paper (PRDCT-4189): the five brand ground scales (the
+   website's recipe GROUNDS), one block each, set by `data-paper` on <html>
+   (app.html's boot script, theme.svelte.ts setPaper). Each block rewrites
+   the seven ground-side variables, the bar (the ground lifted a touch
+   toward white) and the plates (the bar's colour at the recipe's
+   strengths). Creme repeats the recipe above exactly: no attribute and
+   `creme` read the same. `:root.dark` below is more specific than any of
+   these, so a dark reader sees the one dark set whatever the paper.
+   ===================================================================== */
+[data-paper='creme'] {
+  --ground: #f7f4ec;
+  --ground-2: #f1ede1;
+  --ground-3: #eae5d6;
+  --hairline: #e0daca;
+  --muted: #6e6759;
+  --ink-soft: #35302a;
+  --ink: #1c1915;
+  --bar: #faf7f0;
+  --plate: rgb(250 247 240 / 0.62);
+  --plate-strong: rgb(251 249 243 / 0.82);
+  --plate-edge: rgb(255 255 255 / 0.6);
+}
+[data-paper='graphite'] {
+  --ground: #f7f6f4;
+  --ground-2: #f0efec;
+  --ground-3: #e8e7e3;
+  --hairline: #dcdbd6;
+  --muted: #6c6b66;
+  --ink-soft: #333230;
+  --ink: #1a1918;
+  --bar: #faf9f8;
+  --plate: rgb(250 249 248 / 0.62);
+  --plate-strong: rgb(250 249 248 / 0.82);
+  --plate-edge: rgb(255 255 255 / 0.6);
+}
+[data-paper='porcelain'] {
+  --ground: #fcfbf8;
+  --ground-2: #f5f4ef;
+  --ground-3: #edece5;
+  --hairline: #e2e0d7;
+  --muted: #716d63;
+  --ink-soft: #35322c;
+  --ink: #1c1a16;
+  --bar: #fdfcfa;
+  --plate: rgb(253 252 250 / 0.62);
+  --plate-strong: rgb(253 252 250 / 0.82);
+  --plate-edge: rgb(255 255 255 / 0.6);
+}
+[data-paper='stone'] {
+  --ground: #f4f1eb;
+  --ground-2: #edeae2;
+  --ground-3: #e4e0d6;
+  --hairline: #d8d3c7;
+  --muted: #716c60;
+  --ink-soft: #35322b;
+  --ink: #1c1a15;
+  --bar: #f8f6f2;
+  --plate: rgb(248 246 242 / 0.62);
+  --plate-strong: rgb(248 246 242 / 0.82);
+  --plate-edge: rgb(255 255 255 / 0.6);
+}
+[data-paper='fog'] {
+  --ground: #f7f8f8;
+  --ground-2: #eff1f1;
+  --ground-3: #e6e9e9;
+  --hairline: #d9dddd;
+  --muted: #666d6e;
+  --ink-soft: #2f3536;
+  --ink: #171b1c;
+  --bar: #fafafa;
+  --plate: rgb(250 250 250 / 0.62);
+  --plate-strong: rgb(250 250 250 / 0.82);
+  --plate-edge: rgb(255 255 255 / 0.6);
+}
+
 /* a reader who asked for no motion gets none: the duration goes to zero
    everywhere the token is read */
 @media (prefers-reduced-motion: reduce) {

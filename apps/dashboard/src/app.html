@@ -26,6 +26,15 @@
         } catch (e) {
           /* privacy modes: fall through to light */
         }
+        // Paper boot: the person's ground scale (theme.svelte.ts PAPER_KEYS),
+        // set before first paint; missing or unknown = no attribute = creme.
+        try {
+          var paper = localStorage.getItem('slideless.paper');
+          if (['graphite', 'porcelain', 'stone', 'fog'].indexOf(paper) !== -1)
+            document.documentElement.setAttribute('data-paper', paper);
+        } catch (e) {
+          /* privacy modes: creme */
+        }
       })();
     </script>
     <!-- The Observatory pairing: Sentient (display) over Synonym (the second
