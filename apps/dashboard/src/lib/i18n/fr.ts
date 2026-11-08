@@ -835,8 +835,7 @@ export const fr: Record<keyof typeof en, string> = {
   'settings.identityDescription':
     'Comment cet espace se présente à chacun de ses membres, dans la barre latérale et sur téléphone.',
   'settings.identityReadonly': 'Seul un propriétaire ou un admin peut changer le nom et l’apparence.',
-  'settings.paper': 'Votre papier',
-  'settings.paperHint': 'Vous seul le voyez, dans ce navigateur, de jour comme de nuit.',
+  'settings.paper': 'Papier',
   'settings.paperCreme': 'Crème',
   'settings.paperGraphite': 'Graphite',
   'settings.paperPorcelain': 'Porcelaine',

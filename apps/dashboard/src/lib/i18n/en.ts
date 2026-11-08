@@ -816,8 +816,7 @@ export const en = {
   'settings.identityDescription':
     'How this workspace shows to everyone in it, in the sidebar and on the phone.',
   'settings.identityReadonly': 'Only an owner or an admin can change the name and the look.',
-  'settings.paper': 'Your paper',
-  'settings.paperHint': 'Only you see it, in this browser, by day and at night.',
+  'settings.paper': 'Paper',
   'settings.paperCreme': 'Creme',
   'settings.paperGraphite': 'Graphite',
   'settings.paperPorcelain': 'Porcelain',

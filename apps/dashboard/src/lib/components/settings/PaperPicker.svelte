@@ -1,7 +1,7 @@
 <script lang="ts">
   /* The person's paper (PRDCT-4189): the five brand ground scales as a run
-     of dots, set like the workspace's colour above it on the Identity card,
-     but the person's own. It is not part of the workspace's look: it is
+     of dots, set like the workspace's colour right under it on the Identity
+     card, but the person's own. It is not part of the workspace's look: it is
      applied at once, kept in this browser (theme.svelte.ts, ADR 007), and
      open to every member, whoever may change the look. Each dot shows the
      paper as it reads in the current mode, its day ground or its night. */
@@ -47,7 +47,6 @@
       ></button>
     {/each}
   </div>
-  <p class="hint">{t('settings.paperHint')}</p>
 </div>
 
 <style>
@@ -97,9 +96,5 @@
       inset 0 0 0 1px color-mix(in oklab, var(--ink) 22%, transparent),
       0 0 0 2.5px var(--ground),
       0 0 0 4.5px var(--ink);
-  }
-  .hint {
-    font-size: 12.5px;
-    color: var(--muted);
   }
 </style>

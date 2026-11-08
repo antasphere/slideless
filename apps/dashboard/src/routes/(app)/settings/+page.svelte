@@ -175,6 +175,10 @@
             {/if}
           </div>
 
+          <!-- the person's own paper, above the workspace's colour: applied at
+               once and kept in this browser, never part of the Save -->
+          <PaperPicker />
+
           <LookPicker value={look.value} onchange={tryLook} />
 
           <!-- the page under the app: how much of the colour's gradient
@@ -221,14 +225,9 @@
           </div>
         </form>
       {:else}
+        <PaperPicker />
         <p class="notice">{t('settings.identityReadonly')}</p>
       {/if}
-
-      <!-- the person's own paper: not the workspace's look, so outside its
-           form, open to every member, applied at once with no Save -->
-      <div class="mine">
-        <PaperPicker />
-      </div>
     </Card.Content>
   </Card.Root>
 
@@ -279,10 +278,6 @@
 </div>
 
 <style>
-  .mine {
-    padding-top: 20px;
-    border-top: 1px solid var(--hairline);
-  }
   .preview {
     display: flex;
     align-items: center;
