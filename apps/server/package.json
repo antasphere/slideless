@@ -1,6 +1,6 @@
 {
   "name": "@slideless/server",
-  "version": "0.13.13",
+  "version": "0.13.14",
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
