@@ -263,6 +263,8 @@ const COMMANDS = [
   'pull-annotations',
   'annotation',
   'dev',
+  'snapshot',
+  'snapshots',
   'reference',
   'brand',
   'template',

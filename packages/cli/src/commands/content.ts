@@ -39,6 +39,7 @@ import {
 } from '../manifest.js';
 import { readCapped, sha256Hex } from '../download.js';
 import { startDevServer } from '../devserver.js';
+import { LOCAL_STORE_ENV, listLocalVersions, openLocalStore, snapshot } from '../localversions.js';
 import { shouldOpenAfterPush } from '../open.js';
 import {
   mergeProvenance,
@@ -444,15 +445,19 @@ export function registerContentCommands(program: Command, io: CliIo): void {
   program
     .command('dev [path]')
     .description(
-      'Serve the deck folder locally with the exact viewer sandbox headers + live reload (no backend)'
+      'Serve the deck folder locally under a version bar, with the exact viewer sandbox headers + live reload (no backend)'
     )
     .option('--port <n>', 'port to serve on', (v: string) => parseInt(v, 10), 4173)
     .option('--entry <path>', 'entry document (default: index.html, or the only .html)')
+    .option(
+      '--store <dir>',
+      `where local versions are kept (default: $${LOCAL_STORE_ENV}, else the user data folder)`
+    )
     .option('--no-open', 'do not open the browser')
     .action(
       async (
         path: string | undefined,
-        opts: { port: number; entry?: string; open: boolean },
+        opts: { port: number; entry?: string; store?: string; open: boolean },
         cmd: Command
       ) => {
         const ctx = resolveContextForDev(cmd, io);
@@ -462,14 +467,27 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         const server = await startDevServer({
           root: scan.rootDir,
           entryPath,
-          port: opts.port
+          port: opts.port,
+          ...(opts.store !== undefined ? { store: opts.store } : {}),
+          cliVersion: cliVersionOf(cmd)
         });
         if (ctx.json) {
-          io.out.write(`${JSON.stringify({ url: server.url, entry: entryPath })}\n`);
+          io.out.write(
+            `${JSON.stringify({
+              url: server.url,
+              entry: entryPath,
+              store: server.store,
+              storeError: server.storeError,
+              cli: cliVersionOf(cmd)
+            })}\n`
+          );
         } else {
           io.out.write(
             `Serving ${scan.rootDir} at ${server.url} (entry: ${entryPath})\n` +
-              'Live reload on; sandbox headers match the public viewer. Ctrl-C to stop.\n'
+              'Live reload on; sandbox headers match the public viewer. Ctrl-C to stop.\n' +
+              (server.store
+                ? `Local versions in ${server.store}; save one from the bar or with \`slideless snapshot\`.\n`
+                : `Local versions are off: ${server.storeError ?? 'no store'}\n`)
           );
         }
         if (opts.open) openInBrowser(io, server.url);
@@ -483,6 +501,72 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         });
       }
     );
+
+  program
+    .command('snapshot [path]')
+    .description(
+      'Save the folder as a new local version on this machine (no instance, no login); no change, no version'
+    )
+    .option('--entry <path>', 'entry document (default: index.html, or the only .html)')
+    .option(
+      '--store <dir>',
+      `where local versions are kept (default: $${LOCAL_STORE_ENV}, else the user data folder)`
+    )
+    .action(async (path: string | undefined, opts: { entry?: string; store?: string }, cmd: Command) => {
+      const ctx = resolveContextForDev(cmd, io);
+      const result = await snapshot(path ?? '.', {
+        ...(opts.entry !== undefined ? { entry: opts.entry } : {}),
+        ...(opts.store !== undefined ? { store: opts.store } : {})
+      });
+      if (ctx.json) {
+        io.out.write(`${JSON.stringify(result)}\n`);
+        return;
+      }
+      io.out.write(
+        result.created
+          ? `Saved ${result.root} as local version ${result.version} (${result.fileCount} file${result.fileCount === 1 ? '' : 's'}, ${formatBytes(result.sizeBytes)})\n`
+          : `No change since local version ${result.version} of ${result.root}\n`
+      );
+    });
+
+  program
+    .command('snapshots [path]')
+    .description('List the local versions of a folder, oldest first')
+    .option(
+      '--store <dir>',
+      `where local versions are kept (default: $${LOCAL_STORE_ENV}, else the user data folder)`
+    )
+    .action(async (path: string | undefined, opts: { store?: string }, cmd: Command) => {
+      const ctx = resolveContextForDev(cmd, io);
+      const { root, store } = await openLocalStore(path ?? '.', opts.store);
+      const versions = await listLocalVersions(store, root);
+      if (ctx.json) {
+        io.out.write(`${JSON.stringify({ root, store, versions })}\n`);
+        return;
+      }
+      if (versions.length === 0) {
+        io.out.write(`No local versions of ${root} yet: \`slideless snapshot\` saves one.\n`);
+        return;
+      }
+      for (const v of versions) {
+        io.out.write(
+          `v${v.version}  ${v.createdAt}  ${v.fileCount} file${v.fileCount === 1 ? '' : 's'}  ${formatBytes(v.sizeBytes)}  ${v.entryPath}\n`
+        );
+      }
+    });
+}
+
+/** The CLI's own version, as the program declares it (commander's `.version()`). */
+function cliVersionOf(cmd: Command): string | undefined {
+  let top: Command = cmd;
+  while (top.parent) top = top.parent;
+  return top.version();
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // ── The push routine, shared by `push` and `reference push` ─────────────────
