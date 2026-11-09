@@ -281,7 +281,9 @@ function wrapperHtml(nonce: string, entryPath: string): string {
       sel.add(o);
     };
     add('live', 'Live: the working folder');
-    if (versions.length) add('latest', 'Latest version (v' + versions[versions.length - 1].version + ')');
+    // Latest stays a choice with no version yet: it shows the live folder
+    // until the first one is saved, then moves to it.
+    add('latest', versions.length ? 'Latest version (v' + versions[versions.length - 1].version + ')' : 'Latest version (none saved yet)');
     for (let i = versions.length - 1; i >= 0; i--) {
       const v = versions[i];
       add(String(v.version), 'v' + v.version + ' · ' + when(v.createdAt) + ' · ' + v.fileCount + (v.fileCount === 1 ? ' file' : ' files'));
@@ -352,7 +354,7 @@ function wrapperHtml(nonce: string, entryPath: string): string {
   const connect = () => {
     const es = new EventSource('/__slideless/reload');
     es.addEventListener('reload', () => {
-      if (mode === 'live') show(true);
+      if (mode === 'live' || (mode === 'latest' && versions.length === 0)) show(true);
     });
     es.addEventListener('versions', () => {
       void load();

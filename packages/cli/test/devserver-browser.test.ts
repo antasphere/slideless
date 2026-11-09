@@ -194,6 +194,32 @@ describe.skipIf(!CHROMIUM)('slideless dev in a real browser', () => {
     }
   });
 
+  it('on ?v=latest with no version yet, follows the live folder, then moves to the first version saved', async () => {
+    const fresh = await mkdtemp(join(tmpdir(), 'slideless-dev-browser-latest-'));
+    const freshStore = await mkdtemp(join(tmpdir(), 'slideless-dev-browser-latest-store-'));
+    const put = (text: string) =>
+      writeFile(join(fresh, 'index.html'), `<!doctype html><h1 id="t">${text}</h1>`);
+    await put('a');
+    const other = await startDevServer({ root: fresh, entryPath: 'index.html', port: 0, store: freshStore });
+    const tab = await browser.newPage();
+    const text = () => tab.frameLocator('#deck').locator('#t').textContent();
+    try {
+      await tab.goto(`${other.url}?v=latest`);
+      await expect.poll(text, { timeout: 5000 }).toBe('a');
+      expect(await tab.locator('#sel').inputValue()).toBe('latest');
+      await put('b');
+      await expect.poll(text, { timeout: 5000 }).toBe('b');
+      await other.snapshot();
+      await put('c');
+      await new Promise((r) => setTimeout(r, 800));
+      expect(await text()).toBe('b');
+      expect(await tab.locator('#sel').inputValue()).toBe('latest');
+    } finally {
+      await tab.close();
+      await other.close();
+    }
+  });
+
   it('hides the bar on ?bar=0 and raises no policy error in the console', async () => {
     await page.goto(`${server.url}?bar=0`);
     await expect.poll(() => page.locator('#bar').isHidden(), { timeout: 5000 }).toBe(true);

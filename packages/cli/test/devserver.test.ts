@@ -2,6 +2,9 @@ import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
 import { DEV_SANDBOX_CSP, startDevServer } from '../src/devserver.js';
@@ -305,6 +308,53 @@ describe('slideless dev server: round 1 fixes', () => {
       await named.close();
     }
   });
+});
+
+describe('slideless dev server: round 2 gaps', () => {
+  it('lets go of everything on close, so a program embedding it exits by itself', async () => {
+    // A separate process is the only honest witness: a handle left open
+    // (a watcher, a timer, a socket) keeps it alive after close().
+    const work = await mkdtemp(join(tmpdir(), 'slideless-dev-exit-'));
+    const bundle = join(work, 'devserver.mjs');
+    await build({
+      entryPoints: [fileURLToPath(new URL('../src/devserver.ts', import.meta.url))],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: bundle,
+      logLevel: 'silent',
+      banner: {
+        js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+      }
+    });
+    const folder = join(work, 'deck');
+    await mkdir(folder);
+    await writeFile(join(folder, 'index.html'), '<p>x</p>');
+    const driver = join(work, 'driver.mjs');
+    await writeFile(
+      driver,
+      `const { startDevServer } = await import(${JSON.stringify(pathToFileURL(bundle).href)});
+const s = await startDevServer({ root: process.argv[2], entryPath: 'index.html', port: 0, store: process.argv[3] });
+if (process.argv[4] === 'used') {
+  await s.snapshot();
+  await fetch(s.url + '__slideless/versions');
+}
+await s.close();
+process.stdout.write('closed');
+`
+    );
+    // Opened and closed untouched, and closed after a save: both must exit.
+    for (const shape of ['untouched', 'used']) {
+      const result = spawnSync(process.execPath, [driver, folder, join(work, `store-${shape}`), shape], {
+        timeout: 6000,
+        encoding: 'utf8'
+      });
+      expect(result.stdout, shape).toBe('closed');
+      // Killed by the timeout means a handle outlived close().
+      expect(result.signal, shape).toBeNull();
+      expect(result.status, shape).toBe(0);
+    }
+  }, 20000);
 });
 
 async function waitFor(check: () => boolean, ms = 3000): Promise<void> {

@@ -201,6 +201,46 @@ describe('local versions: round 1 fixes and gaps', () => {
   });
 });
 
+describe('local versions: round 2 gaps', () => {
+  it('judges a one-file deck against its folder: a store beside the file is refused', async () => {
+    await expect(openLocalStore(join(deck, 'index.html'), join(deck, 'versions'))).rejects.toThrow(
+      /inside the folder/
+    );
+    expect(await readdir(deck)).toEqual(['img', 'index.html']);
+  });
+
+  it('names a store that does not exist yet by its own path, segments in order', async () => {
+    const h = routedHarness([]);
+    const future = join(store, 'one', 'two');
+    expect(await run(['snapshots', deck, '--store', future, '--json'], h.io)).toBe(0);
+    expect((JSON.parse(h.out()) as { store: string }).store).toBe(future);
+  });
+
+  it('records the hash of the bytes it kept, even while a file is being rewritten', async () => {
+    const big = join(deck, 'big.txt');
+    let stop = false;
+    let n = 0;
+    const writer = (async () => {
+      while (!stop) {
+        await writeFile(big, String(n++ % 10).repeat(2_000_000));
+      }
+    })();
+    try {
+      for (let i = 0; i < 6; i++) await snapshot(deck, { store });
+    } finally {
+      stop = true;
+      await writer;
+    }
+    for (const v of await listLocalVersions(store, deck)) {
+      for (const f of (await readLocalVersion(store, deck, v.version))!.manifest) {
+        const bytes = await readFile(blobPath(store, f.sha256));
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(f.sha256);
+        expect(bytes.length).toBe(f.sizeBytes);
+      }
+    }
+  });
+});
+
 describe('slideless snapshot / snapshots', () => {
   it('saves and lists local versions, in human and JSON form', async () => {
     const h = routedHarness([]);
