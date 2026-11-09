@@ -34,7 +34,11 @@ surprise: `~/.local/share/antasphere/slideless/local` (`$XDG_DATA_HOME` when set
 folder is refused, unless it sits under a dot-prefixed directory, which no scan reads.
 
 The versions of a folder are found by the folder's real path: a folder moved or renamed starts a
-new history.
+new history. Given one HTML file instead of a folder (`slideless dev ./page.html`, `slideless
+snapshot ./page.html`), a version holds that file alone, as a push of it would, under a history of
+its own. The store needs a file system with hard links (every disk a system runs from has them;
+some network shares and exFAT drives do not), which is how a version number is claimed without two
+saves ever taking the same one.
 
 ## Local, not shared
 

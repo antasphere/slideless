@@ -164,6 +164,43 @@ describe('local versions: the store', () => {
   });
 });
 
+describe('local versions: round 1 fixes and gaps', () => {
+  it('refuses a store inside a folder that itself sits under a dot-prefixed directory', async () => {
+    const ws = await realpath(await mkdtemp(join(tmpdir(), 'slideless-local-ws-')));
+    const nested = join(ws, '.workspace', 'deck');
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(nested, 'index.html'), '<p>x</p>');
+    await expect(openLocalStore(nested, join(nested, 'versions'))).rejects.toThrow(/inside the folder/);
+  });
+
+  it('creates nothing when it refuses a store', async () => {
+    await expect(openLocalStore(deck, join(deck, 'versions', 'deeper'))).rejects.toThrow(/inside the folder/);
+    expect(await readdir(deck)).toEqual(['img', 'index.html']);
+  });
+
+  it('says a missing folder plainly', async () => {
+    await expect(snapshot(join(deck, 'nope'), { store })).rejects.toThrow(/^No such file or directory: /);
+  });
+
+  it('repairs a stored file that was cut short', async () => {
+    await snapshot(deck, { store });
+    const blob = blobPath(store, sha('<h1>one</h1>'));
+    await writeFile(blob, '<h1>');
+    await writeFile(join(deck, 'img', 'a.svg'), '<svg id="2"/>');
+    await snapshot(deck, { store });
+    expect(await readFile(blob, 'utf8')).toBe('<h1>one</h1>');
+  });
+
+  it('skips a record whose number does not match its file name', async () => {
+    await snapshot(deck, { store });
+    const dir = join(store, 'folders', sha(deck).slice(0, 24), 'versions');
+    const one = await readFile(join(dir, '1.json'), 'utf8');
+    await writeFile(join(dir, '2.json'), one);
+    expect((await listLocalVersions(store, deck)).map((v) => v.version)).toEqual([1]);
+    expect(await readLocalVersion(store, deck, 2)).toBeNull();
+  });
+});
+
 describe('slideless snapshot / snapshots', () => {
   it('saves and lists local versions, in human and JSON form', async () => {
     const h = routedHarness([]);
@@ -180,9 +217,11 @@ describe('slideless snapshot / snapshots', () => {
     expect(listed.versions.map((v) => v.version)).toEqual([1]);
   });
 
-  it('says how to start when a folder has no version yet', async () => {
+  it('says how to start when a folder has no version yet, and creates no store to say it', async () => {
     const h = routedHarness([]);
-    expect(await run(['snapshots', deck, '--store', store], h.io)).toBe(0);
+    const fresh = join(store, 'not-yet');
+    expect(await run(['snapshots', deck, '--store', fresh], h.io)).toBe(0);
     expect(h.out()).toContain('No local versions');
+    expect(await readdir(store)).not.toContain('not-yet');
   });
 });

@@ -170,6 +170,30 @@ describe.skipIf(!CHROMIUM)('slideless dev in a real browser', () => {
     expect(versions.versions.map((v) => v.version)).toEqual([1, 2]);
   });
 
+  it('opens on the version a link names: ?v=1, ?v=latest, and live for a version that does not exist', async () => {
+    const deep = await browser.newPage();
+    try {
+      await deep.goto(`${server.url}?v=1`);
+      await expect
+        .poll(() => deep.frameLocator('#deck').locator('#t').textContent(), { timeout: 5000 })
+        .toBe('three');
+      expect(await deep.locator('#sel').inputValue()).toBe('1');
+      await deep.goto(`${server.url}?v=latest`);
+      await expect
+        .poll(() => deep.frameLocator('#deck').locator('#t').textContent(), { timeout: 5000 })
+        .toBe('five');
+      expect(await deep.locator('#sel').inputValue()).toBe('latest');
+      await deep.goto(`${server.url}?v=99`);
+      await expect.poll(() => deep.locator('#sel').inputValue(), { timeout: 5000 }).toBe('live');
+      await expect
+        .poll(() => deep.frameLocator('#deck').locator('#t').textContent(), { timeout: 5000 })
+        .toBe('probe');
+      expect(new URL(deep.url()).searchParams.get('v')).toBeNull();
+    } finally {
+      await deep.close();
+    }
+  });
+
   it('hides the bar on ?bar=0 and raises no policy error in the console', async () => {
     await page.goto(`${server.url}?bar=0`);
     await expect.poll(() => page.locator('#bar').isHidden(), { timeout: 5000 }).toBe(true);

@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, readdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
 import { DEV_SANDBOX_CSP, startDevServer } from '../src/devserver.js';
+import { snapshot } from '../src/localversions.js';
 import type { DevServer } from '../src/devserver.js';
 
 let server: DevServer;
@@ -104,7 +105,8 @@ describe('slideless dev server: local versions', () => {
     // The sandboxed deck sends `Origin: null`: refused too.
     expect((await snap({ headers: { 'x-slideless': 'snapshot', origin: 'null' } })).status).toBe(403);
     expect((await fetch(`${server.url}__slideless/snapshot`)).status).toBe(405);
-    expect(await readdir(store)).not.toContain('folders');
+    const list = (await (await fetch(`${server.url}__slideless/versions`)).json()) as { versions: unknown[] };
+    expect(list.versions).toEqual([]);
   });
 
   it('takes a version, answers the same one when nothing changed, and a new one after a change', async () => {
@@ -237,6 +239,74 @@ describe('slideless dev server: local versions', () => {
   });
 });
 
+describe('slideless dev server: round 1 fixes', () => {
+  it('keeps the versions of a one-file deck to that file, under the same key as `slideless snapshot <file>`', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'slideless-dev-onefile-'));
+    const own = await mkdtemp(join(tmpdir(), 'slideless-dev-onefile-store-'));
+    await writeFile(join(folder, 'a.html'), '<p>a</p>');
+    await writeFile(join(folder, 'b.html'), '<p>b</p>');
+    await writeFile(join(folder, 'notes.txt'), 'notes');
+    const one = await startDevServer({
+      root: folder,
+      entryPath: 'a.html',
+      target: join(folder, 'a.html'),
+      port: 0,
+      store: own
+    });
+    try {
+      const first = await one.snapshot();
+      expect(first).toMatchObject({ version: 1, created: true, fileCount: 1, entryPath: 'a.html' });
+      const again = await snapshot(join(folder, 'a.html'), { store: own });
+      expect(again).toMatchObject({ version: 1, created: false });
+      expect(await (await fetch(`${one.url}__slideless/v/1/a.html`)).text()).toBe('<p>a</p>');
+      expect((await fetch(`${one.url}__slideless/v/1/b.html`)).status).toBe(404);
+    } finally {
+      await one.close();
+    }
+  });
+
+  it('tells the bar when a version is saved outside the server (`slideless snapshot` in a terminal)', async () => {
+    const events: string[] = [];
+    const ctrl = new AbortController();
+    const res = await fetch(`${server.url}__slideless/reload`, { signal: ctrl.signal });
+    const reader = res.body!.getReader();
+    const pump = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
+        if (done) return;
+        for (const m of new TextDecoder().decode(value).matchAll(/event: (\w+)/g)) events.push(m[1]!);
+      }
+    })();
+    await new Promise((r) => setTimeout(r, 800));
+    events.length = 0;
+    await writeFile(join(dir, 'index.html'), '<html><body>SAVED FROM A TERMINAL</body></html>');
+    await snapshot(dir, { store });
+    await waitFor(() => events.includes('versions'));
+    ctrl.abort();
+    await pump;
+  });
+
+  it('keeps an entry name from closing the wrapper script', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'slideless-dev-name-'));
+    const odd = '</script><b id="x">x</b>.html';
+    await writeFile(join(folder, 'index.html'), '<p>x</p>');
+    const named = await startDevServer({
+      root: folder,
+      entryPath: odd,
+      port: 0,
+      store: await mkdtemp(join(tmpdir(), 'slideless-dev-name-store-'))
+    });
+    try {
+      const html = await (await fetch(named.url)).text();
+      const script = html.slice(html.indexOf('<script nonce='), html.lastIndexOf('</script>'));
+      expect(script).not.toContain('</script>');
+      expect(script).toContain('\\u003c/script>');
+    } finally {
+      await named.close();
+    }
+  });
+});
+
 async function waitFor(check: () => boolean, ms = 3000): Promise<void> {
   const until = Date.now() + ms;
   while (!check()) {
@@ -310,6 +380,11 @@ describe('slideless dev server containment', () => {
     expect(await rawStatus(secure.port, 'deck.attacker.example')).toBe(403);
     expect(await rawStatus(secure.port, `127.0.0.1:${secure.port + 1}`)).toBe(403);
     expect(await rawStatus(secure.port, 'deck.attacker.example', '/__slideless/versions')).toBe(403);
+    // Every route the server answers, not only the deck's files.
+    await secure.snapshot();
+    expect(await rawStatus(secure.port, `localhost:${secure.port}`, '/__slideless/v/1/index.html')).toBe(200);
+    expect(await rawStatus(secure.port, 'deck.attacker.example', '/__slideless/v/1/index.html')).toBe(403);
+    expect(await rawStatus(secure.port, 'deck.attacker.example', '/__slideless/reload')).toBe(403);
   });
 
   it('accepts the loopback aliases of the bound address', async () => {

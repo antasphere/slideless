@@ -468,6 +468,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
           root: scan.rootDir,
           entryPath,
           port: opts.port,
+          target,
           ...(opts.store !== undefined ? { store: opts.store } : {}),
           cliVersion: cliVersionOf(cmd)
         });
@@ -538,8 +539,8 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     )
     .action(async (path: string | undefined, opts: { store?: string }, cmd: Command) => {
       const ctx = resolveContextForDev(cmd, io);
-      const { root, store } = await openLocalStore(path ?? '.', opts.store);
-      const versions = await listLocalVersions(store, root);
+      const { root, store, exists } = await openLocalStore(path ?? '.', opts.store, { create: false });
+      const versions = exists ? await listLocalVersions(store, root) : [];
       if (ctx.json) {
         io.out.write(`${JSON.stringify({ root, store, versions })}\n`);
         return;

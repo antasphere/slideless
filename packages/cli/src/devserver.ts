@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { createReadStream, watch, type FSWatcher } from 'node:fs';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { VIEWER_IFRAME_SANDBOX } from '@slideless/contract';
@@ -8,6 +8,7 @@ import { contentTypeFor } from './manifest.js';
 import {
   blobPath,
   listLocalVersions,
+  localVersionsDir,
   openLocalStore,
   readLocalVersion,
   snapshot as takeSnapshot,
@@ -79,6 +80,12 @@ export interface DevServerOptions {
   host?: string;
   /** The local version store (default: the user's, see `defaultLocalStore`). */
   store?: string;
+  /**
+   * What a version holds, as `slideless snapshot` takes it: the folder, or
+   * the one HTML file `dev` was given (then a version is that file alone, as
+   * a push of it would be). Defaults to `root`.
+   */
+  target?: string;
   /** The CLI's version, said on the versions route so a host can refuse an old CLI. */
   cliVersion?: string | undefined;
 }
@@ -178,9 +185,17 @@ function wrapperCsp(nonce: string): string {
   ].join('; ');
 }
 
+/** A JSON literal safe inside an inline <script>: no `<` can close the element. */
+function scriptJson(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 function wrapperHtml(nonce: string, entryPath: string): string {
-  const entryUrl = JSON.stringify(`/${urlPath(entryPath)}`);
-  const entry = JSON.stringify(entryPath);
+  const entryUrl = scriptJson(`/${urlPath(entryPath)}`);
+  const entry = scriptJson(entryPath);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -231,6 +246,9 @@ function wrapperHtml(nonce: string, entryPath: string): string {
   let mode = params.get('v') || 'live';
   if (mode !== 'live' && mode !== 'latest' && !/^[1-9][0-9]*$/.test(mode)) mode = 'live';
   let shown = null;
+  // Until the first answer of the versions route, a ?v= mode cannot be
+  // checked: it is kept as asked, never dropped to live.
+  let loaded = false;
 
   const entryOf = (n) => {
     const v = versions.find((x) => x.version === n);
@@ -268,7 +286,16 @@ function wrapperHtml(nonce: string, entryPath: string): string {
       const v = versions[i];
       add(String(v.version), 'v' + v.version + ' · ' + when(v.createdAt) + ' · ' + v.fileCount + (v.fileCount === 1 ? ' file' : ' files'));
     }
-    if (![...sel.options].some((o) => o.value === mode)) mode = 'live';
+    if (loaded && ![...sel.options].some((o) => o.value === mode)) {
+      mode = 'live';
+      remember();
+    }
+    if (!loaded && mode !== 'live' && ![...sel.options].some((o) => o.value === mode)) {
+      const o = document.createElement('option');
+      o.value = mode;
+      o.text = mode === 'latest' ? 'Latest version' : 'v' + mode;
+      sel.add(o);
+    }
     sel.value = mode;
     back.hidden = mode === 'live';
   };
@@ -292,6 +319,7 @@ function wrapperHtml(nonce: string, entryPath: string): string {
     } catch {
       versions = [];
     }
+    loaded = true;
     render();
     show(false);
   };
@@ -335,7 +363,7 @@ function wrapperHtml(nonce: string, entryPath: string): string {
     };
   };
   render();
-  show(true);
+  if (mode === 'live') show(true);
   void load();
   connect();
 })();
@@ -358,8 +386,13 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
   // versions off, with the reason on the versions route.
   let store: string | null = null;
   let storeError: string | null = null;
+  // The key the versions are kept under: the real path of the folder, or of
+  // the one file, exactly as `slideless snapshot <same path>` keys them.
+  let subject = root;
   try {
-    store = (await openLocalStore(root, options.store)).store;
+    const opened = await openLocalStore(options.target ?? root, options.store);
+    store = opened.store;
+    subject = opened.root;
   } catch (err) {
     storeError = (err as Error).message;
   }
@@ -373,7 +406,7 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
   const snapshotNow = (): Promise<SnapshotResult> => {
     const run = queue.then(async () => {
       if (store === null) throw new Error(storeError ?? 'Local versions are unavailable');
-      const result = await takeSnapshot(root, { store, entry: options.entryPath });
+      const result = await takeSnapshot(subject, { store, entry: options.entryPath });
       if (result.created) broadcast('versions');
       return result;
     });
@@ -397,7 +430,7 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
       res.writeHead(404, CONTENT_HEADERS).end('Not found');
       return;
     }
-    const record = await readLocalVersion(store, root, n);
+    const record = await readLocalVersion(store, subject, n);
     const wanted = relPath === '' ? record?.entryPath : relPath;
     const file = record?.manifest.find((f) => f.path === wanted);
     if (!record || !file) {
@@ -498,7 +531,7 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
       }
 
       if (pathname === VERSIONS_PATH) {
-        const versions = store === null ? [] : await listLocalVersions(store, root);
+        const versions = store === null ? [] : await listLocalVersions(store, subject);
         json(res, 200, {
           cli: options.cliVersion ?? null,
           entry: options.entryPath,
@@ -568,6 +601,29 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
     watcher = null;
   });
 
+  // A version saved elsewhere (`slideless snapshot` in a terminal, another
+  // host) reaches the bar too: the records' directory is watched.
+  let storeWatcher: FSWatcher | null = null;
+  let storeDebounce: NodeJS.Timeout | null = null;
+  if (store !== null) {
+    const dir = localVersionsDir(store, subject);
+    try {
+      await mkdir(dir, { recursive: true });
+      storeWatcher = watch(dir, (_event, filename) => {
+        const name = filename === null ? '' : filename.toString();
+        if (name && !/^[1-9][0-9]*\.json$/.test(name)) return;
+        if (storeDebounce) clearTimeout(storeDebounce);
+        storeDebounce = setTimeout(() => broadcast('versions'), 100);
+      });
+      storeWatcher.on('error', () => {
+        storeWatcher?.close();
+        storeWatcher = null;
+      });
+    } catch {
+      storeWatcher = null;
+    }
+  }
+
   await new Promise<void>((resolvePromise, reject) => {
     server.once('error', reject);
     server.listen(options.port, host, () => {
@@ -589,7 +645,9 @@ export async function startDevServer(options: DevServerOptions): Promise<DevServ
     snapshot: snapshotNow,
     close: async () => {
       watcher?.close();
+      storeWatcher?.close();
       if (debounce) clearTimeout(debounce);
+      if (storeDebounce) clearTimeout(storeDebounce);
       for (const client of sseClients) client.end();
       sseClients.clear();
       await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));

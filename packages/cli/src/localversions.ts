@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { link, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { detectEntry, scanDeck } from './manifest.js';
@@ -87,25 +87,67 @@ export function defaultLocalStore(env: NodeJS.ProcessEnv = process.env): string 
 }
 
 /**
- * Open (create) the store and check it against the folder it will hold
- * versions of. A store INSIDE the folder would be scanned into its own
- * versions and grow with every snapshot, so it is refused, unless it sits
- * under a dot-prefixed directory, which no scan reads and no reload follows.
+ * Open the store and check it against the folder (or the one HTML file) it
+ * will hold versions of. A store INSIDE the folder would be scanned into its
+ * own versions and grow with every snapshot, so it is refused, unless it sits
+ * under a dot-prefixed directory below the folder, which no scan reads and no
+ * reload follows. The check runs BEFORE anything is created, so a refused
+ * store leaves nothing behind. `create: false` opens an existing store only
+ * (a listing never creates one): a store that does not exist answers null.
  */
-export async function openLocalStore(root: string, store?: string): Promise<{ root: string; store: string }> {
-  const realRoot = await realpath(resolve(root));
+export async function openLocalStore(
+  target: string,
+  store?: string,
+  options: { create?: boolean } = {}
+): Promise<{ root: string; store: string; exists: boolean }> {
+  const realRoot = await realpath(resolve(target)).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') throw new Error(`No such file or directory: ${target}`);
+    throw err;
+  });
   const wanted = resolve(store ?? defaultLocalStore());
-  await mkdir(wanted, { recursive: true });
-  const realStore = await realpath(wanted);
-  const rel = relative(realRoot, realStore);
+  const realWanted = await realpathOfFuture(wanted);
+  // A one-file deck is judged against its folder, which the preview serves
+  // and watches.
+  const rootInfo = await stat(realRoot);
+  const container = rootInfo.isFile() ? dirname(realRoot) : realRoot;
+  const rel = relative(container, realWanted);
   const inside = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-  if (inside && (rel === '' || !rel.split(/[\\/]/).some((segment) => segment.startsWith('.')))) {
+  const hidden = rel !== '' && rel.split(/[\\/]/).some((segment) => segment.startsWith('.'));
+  if (inside && !hidden) {
     throw new Error(
-      `The version store ${realStore} is inside the folder it would keep versions of; ` +
+      `The version store ${realWanted} is inside the folder it would keep versions of; ` +
         'pass a --store outside it (or under a dot-prefixed directory, which is never scanned)'
     );
   }
-  return { root: realRoot, store: realStore };
+  if (options.create === false) {
+    const info = await stat(realWanted).catch(() => null);
+    return { root: realRoot, store: realWanted, exists: Boolean(info?.isDirectory()) };
+  }
+  await mkdir(wanted, { recursive: true });
+  return { root: realRoot, store: await realpath(wanted), exists: true };
+}
+
+/**
+ * The real path a path WILL have: the real path of its nearest existing
+ * ancestor, with the missing segments joined back. A symlinked parent is
+ * resolved before anything is created.
+ */
+async function realpathOfFuture(path: string): Promise<string> {
+  const missing: string[] = [];
+  let at = path;
+  for (;;) {
+    const real = await realpath(at).catch(() => null);
+    if (real !== null) return missing.length ? join(real, ...missing.reverse()) : real;
+    const parent = dirname(at);
+    if (parent === at) return path;
+    missing.push(basename(at));
+    at = parent;
+  }
+}
+
+/** The directory holding a folder's version records (a host may watch it). */
+export function localVersionsDir(store: string, realRoot: string): string {
+  return versionsDir(store, realRoot);
 }
 
 function folderKey(realRoot: string): string {
