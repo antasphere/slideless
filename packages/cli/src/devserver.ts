@@ -249,6 +249,7 @@ function wrapperHtml(nonce: string, entryPath: string): string {
   // Until the first answer of the versions route, a ?v= mode cannot be
   // checked: it is kept as asked, never dropped to live.
   let loaded = false;
+  let versionsOff = false;
 
   const entryOf = (n) => {
     const v = versions.find((x) => x.version === n);
@@ -282,8 +283,9 @@ function wrapperHtml(nonce: string, entryPath: string): string {
     };
     add('live', 'Live: the working folder');
     // Latest stays a choice with no version yet: it shows the live folder
-    // until the first one is saved, then moves to it.
-    add('latest', versions.length ? 'Latest version (v' + versions[versions.length - 1].version + ')' : 'Latest version (none saved yet)');
+    // until the first one is saved, then moves to it. With versions off
+    // there is no latest to wait for.
+    if (!versionsOff) add('latest', versions.length ? 'Latest version (v' + versions[versions.length - 1].version + ')' : 'Latest version (none saved yet)');
     for (let i = versions.length - 1; i >= 0; i--) {
       const v = versions[i];
       add(String(v.version), 'v' + v.version + ' · ' + when(v.createdAt) + ' · ' + v.fileCount + (v.fileCount === 1 ? ' file' : ' files'));
@@ -313,6 +315,7 @@ function wrapperHtml(nonce: string, entryPath: string): string {
       const res = await fetch('/__slideless/versions', { cache: 'no-store' });
       const body = await res.json();
       versions = Array.isArray(body.versions) ? body.versions : [];
+      versionsOff = Boolean(body.error);
       if (body.error) {
         snap.hidden = true;
         status.textContent = 'Versions unavailable';

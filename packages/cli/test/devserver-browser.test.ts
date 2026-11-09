@@ -122,6 +122,9 @@ describe.skipIf(!CHROMIUM)('slideless dev in a real browser', () => {
 
     await write('four');
     await expect.poll(() => deckText().textContent(), { timeout: 5000 }).toBe('four');
+    // A later version exists, so a pinned v1 that drifted would show v2's 'four'.
+    await page.getByRole('button', { name: 'Save version' }).click();
+    await expect.poll(() => page.locator('#status').textContent(), { timeout: 5000 }).toBe('Saved as v2');
 
     await page.locator('#sel').selectOption('1');
     await expect.poll(() => deckText().textContent(), { timeout: 5000 }).toBe('three');
@@ -138,13 +141,13 @@ describe.skipIf(!CHROMIUM)('slideless dev in a real browser', () => {
 
   it('follows the latest version when the host saves one', async () => {
     await page.locator('#sel').selectOption('latest');
-    await expect.poll(() => deckText().textContent(), { timeout: 5000 }).toBe('three');
+    await expect.poll(() => deckText().textContent(), { timeout: 5000 }).toBe('four');
     // The host (Clave at the end of an agent's turn) saves through the route.
     const res = await fetch(`${server.url}__slideless/snapshot`, {
       method: 'POST',
       headers: { 'x-slideless': 'snapshot' }
     });
-    expect(await res.json()).toMatchObject({ version: 2, created: true });
+    expect(await res.json()).toMatchObject({ version: 3, created: true });
     await expect.poll(() => deckText().textContent(), { timeout: 5000 }).toBe('five');
   });
 
@@ -167,7 +170,7 @@ describe.skipIf(!CHROMIUM)('slideless dev in a real browser', () => {
     const versions = (await (await fetch(`${server.url}__slideless/versions`)).json()) as {
       versions: Array<{ version: number }>;
     };
-    expect(versions.versions.map((v) => v.version)).toEqual([1, 2]);
+    expect(versions.versions.map((v) => v.version)).toEqual([1, 2, 3]);
   });
 
   it('opens on the version a link names: ?v=1, ?v=latest, and live for a version that does not exist', async () => {
