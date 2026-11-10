@@ -11,6 +11,14 @@ import { registerResponseFilesCommand } from './commands/response-files.js';
 
 export type { CliIo } from '@antasphere/chassis-cli';
 export { startDevServer, DEV_SANDBOX_CSP } from './devserver.js';
+export {
+  snapshot,
+  listLocalVersions,
+  readLocalVersion,
+  openLocalStore,
+  defaultLocalStore,
+  LOCAL_STORE_ENV
+} from './localversions.js';
 
 /**
  * `slideless` — the typed CLI over @slideless/sdk; the primary human/agent

@@ -283,8 +283,12 @@ cd deck && slideless pull                        # no id: the current folder's .
 slideless pull-annotations [id] [--version N] [--status open|resolved] [--out notes.json]
 slideless annotation resolve <id> <annotationId> # mark a note resolved
 slideless annotation reopen <id> <annotationId>  # …and flip it back open
-slideless dev ./deck --port 4173 --no-open       # local preview, no backend; --entry picks the page
-                                                 # to serve (index.html, else the only .html)
+slideless dev ./deck --port 4173 --no-open       # local preview under a version bar, no backend; --entry
+                                                 # picks the page (index.html, else the only .html)
+slideless dev ./deck --store ~/my-versions       # …keeping its local versions somewhere else
+slideless snapshot ./deck                        # save the folder as the next LOCAL version (no login)
+slideless snapshot ./deck --entry other.html --json  # …naming the entry; no change since the last one, no version
+slideless snapshots ./deck                       # list the folder's local versions, oldest first
 ```
 
 **push** implements the content-addressed 3-step protocol: scan → hash every
@@ -388,13 +392,42 @@ loudly — the same refusal `push` has always had.
 **dev** serves the folder locally under the same sandbox headers as the public viewer —
 `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox
 allow-modals allow-downloads`, `nosniff`, `no-referrer`, `no-store` — so isolation
-and relative paths match what share-link recipients get. It is not the hosted
-viewer: it injects live reload and nothing else (no recipient bar, no annotation
-layer, no forms runtime, so a marked form submits nowhere), it serves
-`downloads/` files inline and has no `downloads.zip`, it serves files a push
-would ignore, and a root-absolute URL (`/style.css`) resolves locally but breaks
-under `/v/<secret>/`. Test forms, notes and downloads on a real share link. Any
-file change reloads the browser. No backend, no credentials.
+and relative paths match what share-link recipients get. The address it prints
+opens a small page with a **version bar** above the deck, which sits in a
+sandboxed frame exactly as on a share link: any file change reloads the frame,
+the bar's menu switches between the live folder, the latest local version and
+any one version (served from that version's own saved files, not from the
+folder), and **Save version** takes a local version. `?bar=0` on the address
+hides the bar; `?v=3` or `?v=latest` opens on a version. The deck's own files
+stay reachable at their paths (`/index.html`) without the bar. It is not the
+hosted viewer: no recipient bar, no annotation layer, no forms runtime (a
+marked form submits nowhere), `downloads/` files inline and no `downloads.zip`,
+files a push would ignore are served, and a root-absolute URL (`/style.css`)
+resolves locally but breaks under `/v/<secret>/`. Test forms, notes and
+downloads on a real share link. No backend, no credentials.
+
+**snapshot** saves the folder as the next **local version**, on this machine
+only: no instance, no login. It applies the push's rules (the ignore file, no
+dot-prefixed file, the 5000-file cap) and records each file's path, `sha256`,
+size and type with the entry, the shape of a version on an instance; the
+files are kept by content, so an unchanged file is stored once. A folder that
+has not changed since its latest local version makes no new one: the answer
+names the latest (`"created": false`). **snapshots** lists them. The versions
+live in a per-user store, never in the folder (`--store <dir>`, else
+`$SLIDELESS_LOCAL_STORE`, else `~/.local/share/antasphere/slideless/local`, or
+`%LOCALAPPDATA%\antasphere\slideless\local` on Windows); a store inside the
+folder is refused unless it sits under a dot-prefixed directory, which no scan
+reads. See [Local versions](../concepts/local-versions.md).
+
+A program that started `dev` (Clave does, to show an agent's HTML artefact)
+drives the same versions over the dev server's own routes: `GET
+/__slideless/versions` answers `{ cli, entry, versions }` (`cli` is the CLI's
+version, so a host can refuse an old one), `POST /__slideless/snapshot` with
+the header `x-slideless: snapshot` saves a version (`201` new, `200`
+unchanged), and `GET /__slideless/reload` is the event stream (`reload` on a
+file change, `versions` on a new version). The snapshot route refuses a
+request without its header or from another origin, so neither a web page nor
+the sandboxed deck can save a version.
 
 It serves the deck folder and nothing else: a path is resolved with
 `realpath` and re-checked against the root, so a symlink inside the folder

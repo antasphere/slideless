@@ -12,6 +12,7 @@ groups:
       - concepts/projects
       - concepts/artifact
       - concepts/versions
+      - concepts/local-versions
       - concepts/links
       - concepts/attachments
       - concepts/references
