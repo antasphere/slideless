@@ -43,7 +43,7 @@ export {
  *             → none sent (the server's default organization)
  */
 
-const VERSION = '0.13.14';
+const VERSION = '0.14.0';
 
 /**
  * The Slideless command groups, handed to the chassis program, which places
