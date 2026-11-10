@@ -16,8 +16,9 @@ import { startDevServer, type DevServer } from '../src/devserver.js';
  *
  * Chromium comes from playwright-core's own install (CI installs the headless
  * shell before the unit job). Without it the cases are skipped with a
- * warning on a laptop, and FAIL on CI, so the proof can never go quietly
- * missing where it counts.
+ * warning on a laptop and in a job that installs none, and FAIL in CI's
+ * `checks` job, which installs it, so the proof can never go quietly missing
+ * where it counts.
  */
 
 function headlessShellBeside(fullChrome: string): string | null {
@@ -65,7 +66,9 @@ function findChromium(): string | null {
 
 const CHROMIUM = findChromium();
 if (!CHROMIUM) {
-  if (process.env.CI) {
+  // Required where CI installs Chromium (ci.yml's `checks` job, before the
+  // unit tests); any other job that runs the suite (publish-cli.yml's) skips.
+  if (process.env.CI && process.env.GITHUB_JOB === 'checks') {
     throw new Error(
       'devserver-browser.test.ts: no Chromium on CI — the browser proof of the dev server cannot run'
     );
