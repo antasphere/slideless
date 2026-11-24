@@ -676,9 +676,9 @@ CLI_KEY=$(jq -r '.key' "$SCRATCH/connect.json")
 CLI_KEY_ID=$(jq -r '.apiKey.id' "$SCRATCH/connect.json")
 case "$CLI_KEY" in slk_*) ;; *) fail "the connect minted no slk_ key" ;; esac
 jq -e --arg e "$OWNER_EMAIL" --arg u "$SL_USER_ID" \
-  '.user.email == $e and .user.id == $u and .apiKey.workspaceId == null and .workspaceId == null and (.apiKey.scopes | sort) == ["presentations:read", "presentations:write"]' \
-  "$SCRATCH/connect.json" >/dev/null || fail "the connect's key is not the SAME user's unpinned presentations key: $(jq -c '{user, apiKey}' "$SCRATCH/connect.json")"
-pass "POST /sso/cli-connect → 201: a user-scoped slk_ key (no workspace pin; presentations:read + presentations:write, never data:export) for the same local user as the browser login"
+  '.user.email == $e and .user.id == $u and .apiKey.workspaceId == null and .workspaceId == null and (.apiKey.scopes | sort) == ["presentations:read", "presentations:write", "webhooks:manage"]' \
+  "$SCRATCH/connect.json" >/dev/null || fail "the connect's key is not the SAME user's unpinned CLI key: $(jq -c '{user, apiKey}' "$SCRATCH/connect.json")"
+pass "POST /sso/cli-connect → 201: a user-scoped slk_ key (no workspace pin; the CLI key's scopes presentations:read + presentations:write + webhooks:manage, never data:export) for the same local user as the browser login"
 audit_via=$(sldb "SELECT metadata->>'via' || ' ' || (metadata->>'grantChannel') FROM audit_log WHERE action = 'apikey.create' AND resource_id = '$CLI_KEY_ID'")
 [ "$audit_via" = "sso_cli_connect h3_exchange" ] || fail "the connect's apikey.create audit row reads '$audit_via'"
 pass "the tool's audit log: apikey.create via sso_cli_connect, grant channel h3_exchange"
