@@ -982,7 +982,7 @@ pass "hub slow beyond the check's budget: the upload ($SLOW_BYTES bytes) still l
 # ── Phase 8b, third leg — the billing rail, phase 3: free is limited (PRDCT-2702) ──
 say "Phase 8b — phase 3: the free workspace is refused what pro unlocks, at Slideless's door and at the hub's"
 # The plan entitlements were seeded from Slideless's discovery with the price
-# book above (workspace.members 3, links.perDeck 10, deck.password off on
+# book above (workspace.members 5, links.perDeck 10, deck.password off on
 # free), so the Drill Workspace is a free workspace with every limit declared.
 "${CURL[@]}" -b "$SL_JAR" -o "$SCRATCH/decks.json" -f -H "X-Workspace-Id: $WS_ID" "$SL/api/v1/presentations" || fail "GET /presentations as the owner failed"
 DECK_ID=$(jq -r '.presentations[0].id // empty' "$SCRATCH/decks.json")
@@ -1037,11 +1037,13 @@ hub_invite() { # email label → POST /invitations at the hub as the owner; prin
 }
 status=$(hub_invite drill-m2@drill.test m2); [ "$status" = 201 ] || fail "the second seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m2.json")"
 status=$(hub_invite drill-m3@drill.test m3); [ "$status" = 201 ] || fail "the third seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m3.json")"
-status=$(hub_invite drill-m4@drill.test m4); [ "$status" = 403 ] || fail "the fourth seat's invitation answered $status, expected 403: $(cat "$SCRATCH/hub-invite-m4.json")"
-plan_refused "$SCRATCH/hub-invite-m4.json" workspace.members
-jq -e '.error.details.upgradeUrl | contains("tool=slideless-cloud")' "$SCRATCH/hub-invite-m4.json" >/dev/null \
-  || fail "the hub's upgrade page does not name the tool whose cap bound the account: $(cat "$SCRATCH/hub-invite-m4.json")"
-pass "at the hub, two invitations seat the free workspace at its cap of 3 (one member, two open invitations); the fourth answers 403 plan_required (workspace.members, free → pro) with the upgrade page naming slideless-cloud"
+status=$(hub_invite drill-m4@drill.test m4); [ "$status" = 201 ] || fail "the fourth seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m4.json")"
+status=$(hub_invite drill-m5@drill.test m5); [ "$status" = 201 ] || fail "the fifth seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m5.json")"
+status=$(hub_invite drill-m6@drill.test m6); [ "$status" = 403 ] || fail "the sixth seat's invitation answered $status, expected 403: $(cat "$SCRATCH/hub-invite-m6.json")"
+plan_refused "$SCRATCH/hub-invite-m6.json" workspace.members
+jq -e '.error.details.upgradeUrl | contains("tool=slideless-cloud")' "$SCRATCH/hub-invite-m6.json" >/dev/null \
+  || fail "the hub's upgrade page does not name the tool whose cap bound the account: $(cat "$SCRATCH/hub-invite-m6.json")"
+pass "at the hub, four invitations seat the free workspace at its cap of 5 (one member, four open invitations); the sixth answers 403 plan_required (workspace.members, free → pro) with the upgrade page naming slideless-cloud"
 
 # Staff lifts the account above free: an override of the cap to unlimited
 # and of the password feature to on, the way an enterprise deal is served.
@@ -1055,8 +1057,8 @@ override() { # body → PUT /admin/billing/entitlements as staff; prints the row
 }
 CAP_OVERRIDE=$(override "{\"toolSlug\":\"slideless-cloud\",\"accountId\":\"$ACCOUNT_ID\",\"key\":\"workspace.members\",\"kind\":\"limit\",\"value\":null}")
 PASSWORD_OVERRIDE=$(override "{\"toolSlug\":\"slideless-cloud\",\"accountId\":\"$ACCOUNT_ID\",\"key\":\"deck.password\",\"kind\":\"feature\",\"value\":true}")
-status=$(hub_invite drill-m4@drill.test m4b); [ "$status" = 201 ] || fail "with the cap lifted, the fourth seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m4b.json")"
-pass "staff override of workspace.members to unlimited for the account: the fourth invitation passes at the hub"
+status=$(hub_invite drill-m6@drill.test m6b); [ "$status" = 201 ] || fail "with the cap lifted, the sixth seat's invitation answered $status: $(cat "$SCRATCH/hub-invite-m6b.json")"
+pass "staff override of workspace.members to unlimited for the account: the sixth invitation passes at the hub"
 # Slideless serves an account's plan from a thirty-second cache and refreshes it
 # behind the request once stale, so the lifted account is felt on the mint
 # after the window; every refused attempt costs nothing (the plan answers
