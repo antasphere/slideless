@@ -141,7 +141,11 @@ describe('push', () => {
     const h = routedHarness([]);
     const code = await run(['push', dir, '--url', 'http://x', '--api-key', 'slk_k_s'], h.io);
     expect(code).toBe(1);
-    expect(h.err()).toContain('http://other');
+    // The folder decides its site (R6, PRDCT-5248): a --url naming another one is refused, both named.
+    expect(h.err()).toBe(
+      `Error: .slideless.json links ${dir} to http://other, and --url names http://x. ` +
+        "Drop --url to run on the folder's own site, or pass --new to make a fresh deck there.\n"
+    );
     expect(h.calls).toHaveLength(0);
   });
 

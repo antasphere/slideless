@@ -28,6 +28,7 @@ import {
   type CliIo
 } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
+import { deckRootOf, folderSiteOf, refuseNonHttpSite, resolveFolderContext } from '../folder-site.js';
 import {
   detectEntry,
   linkedDeckId,
@@ -218,9 +219,15 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       collectOption
     )
     .action(async (path: string | undefined, opts: PushOptions, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
+      const target = path ?? '.';
+      // The deck's folder decides its site (R6): `--new` and `--id` may still name another one.
+      const root = await deckRootOf(target);
+      const ctx = resolveFolderContext(cmd, io, root === null ? null : await folderSiteOf(root), {
+        verb: 'push',
+        freeDeck: opts.new || opts.id !== undefined
+      });
       await requireApiKey(ctx);
-      const result = await pushDeck(ctx, path ?? '.', opts);
+      const result = await pushDeck(ctx, target, opts);
       printPushResult(ctx, result, opts);
     });
 
@@ -243,12 +250,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       // custom protocol). A deck's instance is always http(s); refuse the rest
       // before it reaches the opener (the argv discipline in open.ts covers
       // the shell, not the scheme).
-      if (!isHttpUrl(link.baseUrl)) {
-        throw new CliUsageError(
-          `${LINK_FILENAME} names ${JSON.stringify(link.baseUrl)} as the instance, which is not an ` +
-            'http(s) URL — refusing to open it. Fix the file or push the folder again.'
-        );
-      }
+      refuseNonHttpSite(link.baseUrl);
       const url = deckMasterUrl(link.baseUrl, link.presentationId);
       if (json) return printJson(io, { presentationId: link.presentationId, baseUrl: link.baseUrl, url });
       io.out.write(`${url}\n`);
@@ -261,7 +263,10 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     .option('--at <version>', 'read this version instead of the latest', (v: string) => parseInt(v, 10))
     .option('--out <file>', 'write to a file instead of stdout')
     .action(async (id: string | undefined, opts: { at?: number; out?: string }, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
+      // No id: the current folder's link names the deck, and its site (R6).
+      const ctx = resolveFolderContext(cmd, io, id === undefined ? await folderSiteOf('.') : null, {
+        verb: 'other'
+      });
       await requireApiKey(ctx);
 
       let deckId = id ?? null;
@@ -307,7 +312,9 @@ export function registerContentCommands(program: Command, io: CliIo): void {
     )
     .option('--at <version>', 'pull this version instead of the latest', (v: string) => parseInt(v, 10))
     .action(async (id: string | undefined, path: string | undefined, opts: { at?: number }, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
+      // The destination folder decides the site when it is linked (R6): the path, else `.`
+      // with no id, else the folder named for the id.
+      const ctx = resolveFolderContext(cmd, io, await folderSiteOf(path ?? id ?? '.'), { verb: 'pull' });
       await requireApiKey(ctx);
 
       // The link file binds a folder to a deck ON ONE INSTANCE. Pulling with
@@ -373,7 +380,10 @@ export function registerContentCommands(program: Command, io: CliIo): void {
         opts: { version?: number; status?: string; out?: string },
         cmd: Command
       ) => {
-        const ctx = resolveContext(cmd, io);
+        // No id: the current folder's link names the deck, and its site (R6).
+        const ctx = resolveFolderContext(cmd, io, id === undefined ? await folderSiteOf('.') : null, {
+          verb: 'other'
+        });
         await requireApiKey(ctx);
         let deckId = id ?? null;
         if (!deckId) {
@@ -1064,16 +1074,6 @@ async function setAnnotationStatus(
   const updated = await ctx.client.updateAnnotation(id, annotationId, { status });
   if (ctx.json) return printJson(io, updated);
   io.out.write(`Annotation ${updated.id} ${status === 'resolved' ? 'resolved' : 'reopened'}.\n`);
-}
-
-/** Whether a link file's instance is an http(s) origin the opener may be handed. */
-function isHttpUrl(value: string): boolean {
-  try {
-    const { protocol } = new URL(value);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
 }
 
 /** `dev` is backendless: only the --json flag matters, never URL/key. */

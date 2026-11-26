@@ -114,7 +114,11 @@ describe('projects link', () => {
     const h = routedHarness([route({ status: 200, body: deckIn([ATLAS]) })]);
     expect(await run(argv('projects', 'link', PROJECT, dir), h.io)).toBe(1);
     expect(h.calls).toEqual([]);
-    expect(h.err()).toContain('to http://other, but you are working against');
+    // The folder decides its site (R6, PRDCT-5248): a --url naming another one is refused, both named.
+    expect(h.err()).toBe(
+      `Error: .slideless.json links ${dir} to http://other, and --url names http://x. ` +
+        "Drop --url to run on the folder's own site.\n"
+    );
   });
 
   it('refuses a folder no push linked, and a name that is neither an id nor a folder, before any call', async () => {

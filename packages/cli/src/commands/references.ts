@@ -12,6 +12,7 @@ import {
   type CliIo
 } from '@antasphere/chassis-cli';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
+import { deckRootOf, folderSiteOf, resolveFolderContext } from '../folder-site.js';
 import { LINK_FILENAME, readLink, writeLink } from '../manifest.js';
 import {
   parseReferenceType,
@@ -164,7 +165,8 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
     .option('--into <dir>', `write there instead of ${REFERENCE_DIR}/<type>/`)
     .action(
       async (ref: string | undefined, opts: { type?: string; at?: number; into?: string }, cmd: Command) => {
-        const ctx = resolveContext(cmd, io);
+        // The folder it is pulled into decides the site (R6): `--into`, else the deck folder `.`.
+        const ctx = resolveFolderContext(cmd, io, await folderSiteOf(opts.into ?? '.'), { verb: 'other' });
         await requireApiKey(ctx);
         const type = typeOf(family, opts.type, ref === undefined);
         const match = await pickReference(ctx, ref, type, noun);
@@ -251,10 +253,15 @@ function registerFamily(program: Command, io: CliIo, family: Family): void {
         opts: { type?: string; title?: string; entry?: string; id?: string; new: boolean; open?: boolean },
         cmd: Command
       ) => {
-        const ctx = resolveContext(cmd, io);
+        const target = dir ?? '.';
+        // The folder decides its site (R6), as for `push`: `--new` and `--id` may still name another one.
+        const root = await deckRootOf(target);
+        const ctx = resolveFolderContext(cmd, io, root === null ? null : await folderSiteOf(root), {
+          verb: 'push',
+          freeDeck: opts.new || opts.id !== undefined
+        });
         await requireApiKey(ctx);
         const type = typeOf(family, opts.type, false);
-        const target = dir ?? '.';
         const declared = await refuseUnlessDeclared(target, type, noun);
         const pushOpts: PushOptions = {
           kind: 'presentation',
