@@ -156,6 +156,11 @@ function siteRoutes(origin: string): Route[] {
       })
     },
     {
+      method: 'DELETE',
+      path: /^\/api\/v1\/presentations\/[^/]+\/projects\/[^/]+$/,
+      reply: ({ path }) => ({ body: deckRow(deckOf(path), { projects: [] }) })
+    },
+    {
       method: 'PUT',
       path: /^\/api\/v1\/projects\/[^/]+\/brand$/,
       reply: ({ body }) => ({
@@ -222,6 +227,17 @@ describe('a linked folder sends its command to its own site (R6)', () => {
     expect(await readLink(dir)).toEqual({ presentationId: DECK_A, baseUrl: SITE_A });
   });
 
+  it('push of one file of the linked folder: its folder decides, a new version of its deck on its site', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    const h = harness(env);
+    expect(await run(['push', join(dir, 'index.html')], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+    expect(await readLink(dir)).toEqual({ presentationId: DECK_A, baseUrl: SITE_A });
+  });
+
   it('reference push: on the folder’s site', async () => {
     const env = await machine();
     const dir = await linkedDeck(SITE_A, HOUSE, {
@@ -252,6 +268,21 @@ describe('a linked folder sends its command to its own site (R6)', () => {
     expect(await run(['pull', DECK_A, dest], g.io)).toBe(0);
     onlyTo(g, SITE_A, KEY_A);
     expect(await readLink(dest)).toEqual({ presentationId: DECK_A, baseUrl: SITE_A });
+  });
+
+  it('pull <id> with no path, beside a folder named for the id and linked to A: from A, into that folder', async () => {
+    const env = await machine();
+    const parent = await mkdtemp(join(tmpdir(), 'slideless-r6-parent-'));
+    const named = join(parent, DECK_A);
+    await mkdir(named);
+    await writeLink(named, { presentationId: DECK_A, baseUrl: SITE_A });
+    process.chdir(parent);
+    const h = harness(env);
+    expect(await run(['pull', DECK_A], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_A);
+    expect(await readFile(join(named, 'index.html'))).toEqual(PULLED);
+    expect(await readLink(named)).toEqual({ presentationId: DECK_A, baseUrl: SITE_A });
   });
 
   it('agent-doc and pull-annotations with no id: the folder’s site; with an id the folder plays no part (the default, B)', async () => {
@@ -296,6 +327,31 @@ describe('a linked folder sends its command to its own site (R6)', () => {
     });
   });
 
+  it('projects link and projects unlink with no deck, inside the linked folder: on the folder’s site', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    process.chdir(dir);
+
+    const h = harness(env);
+    expect(await run(['projects', 'link', PROJECT], h.io)).toBe(0);
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'PUT', `/api/v1/presentations/${DECK_A}/projects/${PROJECT}`)).toBe(true);
+
+    const g = harness(env);
+    expect(await run(['projects', 'unlink', PROJECT], g.io)).toBe(0);
+    onlyTo(g, SITE_A, KEY_A);
+    expect(asked(g, 'DELETE', `/api/v1/presentations/${DECK_A}/projects/${PROJECT}`)).toBe(true);
+  });
+
+  it('projects unlink <project> <linked folder>: on the folder’s site', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    const h = harness(env);
+    expect(await run(['projects', 'unlink', PROJECT, dir], h.io)).toBe(0);
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'DELETE', `/api/v1/presentations/${DECK_A}/projects/${PROJECT}`)).toBe(true);
+  });
+
   it('brand pull inside the linked deck folder: from its site, written beside the deck with a link naming it', async () => {
     const env = await machine();
     const dir = await linkedDeck(SITE_A);
@@ -306,6 +362,30 @@ describe('a linked folder sends its command to its own site (R6)', () => {
     const dest = referenceDirFor(await realpath(dir), 'brand');
     expect(await readFile(join(dest, 'index.html'))).toEqual(PULLED);
     expect(await readReferenceLink(dest)).toEqual({
+      presentationId: HOUSE,
+      baseUrl: SITE_A,
+      reference: { type: 'brand', version: 3 }
+    });
+  });
+
+  it('brand pull <ref> --into a folder linked to A, run from a folder that is not: from A', async () => {
+    const env = await machine();
+    const parent = await mkdtemp(join(tmpdir(), 'slideless-r6-parent-'));
+    const into = join(parent, 'brand-a');
+    await mkdir(into);
+    await writeFile(join(into, 'index.html'), '<html>brand v2</html>');
+    // A folder a pull from A wrote (its link names the reference), so this pull may replace it.
+    await writeLink(into, {
+      presentationId: HOUSE,
+      baseUrl: SITE_A,
+      reference: { type: 'brand', version: 2 }
+    });
+    process.chdir(parent);
+    const h = harness(env);
+    expect(await run(['brand', 'pull', 'house', '--into', into], h.io)).toBe(0);
+    onlyTo(h, SITE_A, KEY_A);
+    expect(await readFile(join(into, 'index.html'))).toEqual(PULLED);
+    expect(await readReferenceLink(into)).toEqual({
       presentationId: HOUSE,
       baseUrl: SITE_A,
       reference: { type: 'brand', version: 3 }
