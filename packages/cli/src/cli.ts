@@ -1,6 +1,15 @@
-import { cliIdentity, defineCli, type CliContext as ChassisCliContext } from '@antasphere/chassis-cli';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type { Command } from 'commander';
+import {
+  cliIdentity,
+  defineCli,
+  type CliContext as ChassisCliContext,
+  type CliIo
+} from '@antasphere/chassis-cli';
 import { IDENTITY } from '@slideless/contract';
 import { PlatformClient } from '@slideless/sdk';
+import { sayIfOlderThanSite } from './older-than-site.js';
 
 /**
  * The ONE instantiation of the CLI chassis for Slideless. What the tool is
@@ -26,5 +35,34 @@ export type CliContext = ChassisCliContext<PlatformClient>;
 export const loadConfig = cli.loadConfig;
 export const updateConfig = cli.updateConfig;
 
-export const resolveContext = cli.resolveContext;
+/** The running bundle's real path, read once; null when it cannot be read (the line then names no command). */
+const RUNNING_FILE: string | null = (() => {
+  try {
+    return realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return null;
+  }
+})();
+
+/** The version of the program a command belongs to (the kit sets it from index.ts's `VERSION`). */
+function programVersion(cmd: Command): string | undefined {
+  let root = cmd;
+  while (root.parent) root = root.parent;
+  return root.version();
+}
+
+/**
+ * The context of a Slideless command: the kit's, then the one line that says
+ * this command is older than its site (older-than-site.ts, PRDCT-5249).
+ * `program` is the command whose program's version is read: `cmd` itself,
+ * except for a folder's routed command (folder-site.ts), which resolves a
+ * view of its command that has no parent.
+ */
+export function resolveContext(cmd: Command, io: CliIo, program: Command = cmd): CliContext {
+  const ctx = cli.resolveContext(cmd, io);
+  const version = programVersion(program);
+  if (version !== undefined) sayIfOlderThanSite(ctx, version, RUNNING_FILE);
+  return ctx;
+}
+
 export const requireApiKey = cli.requireApiKey;

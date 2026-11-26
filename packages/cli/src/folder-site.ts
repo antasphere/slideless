@@ -170,7 +170,9 @@ export function resolveFolderContext(
     }
   }
 
-  return resolveContext(withApiUrl(cmd, site.origin), io);
+  // Through the wrapper, so a routed command says it too when it is older than its site; the
+  // view has no parent, so the program's version is read from `cmd`.
+  return resolveContext(withApiUrl(cmd, site.origin), io, cmd);
 }
 
 /** `cmd` with `--api-url` set to `origin`, never mutated (no write to `io.env` either: an exported key stays paired with its site). */
