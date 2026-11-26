@@ -23,9 +23,13 @@ const SITE_A = 'http://site-a';
 const SITE_A_SPELT = 'HTTP://Site-A/';
 const SITE_B = 'http://site-b';
 const SITE_C = 'http://site-c';
+/** The tool's cloud: a site of every machine, its profile saved or not (the kit's implicit `cloud`). */
+const CLOUD = 'https://slideless.antasphere.com';
 const KEY_A = 'slk_a_own_0123456789abcdef';
 const KEY_B = 'slk_b_own_0123456789abcdef';
 const KEY_LINE = 'slk_line_0123456789abcdef';
+/** An exported SLIDELESS_API_KEY: with no SLIDELESS_URL beside it, the cloud's. */
+const KEY_ENV = 'slk_env_0123456789abcdef';
 
 /** A's deck (the one the folder is linked to), a deck of B, and the deck a first push creates. */
 const DECK_A = DECK.id;
@@ -176,7 +180,10 @@ function siteRoutes(origin: string): Route[] {
 }
 
 const harness = (env: Record<string, string | undefined>) =>
-  routedHarness([...siteRoutes(SITE_A), ...siteRoutes(SITE_B), ...siteRoutes(SITE_C)], env);
+  routedHarness(
+    [...siteRoutes(SITE_A), ...siteRoutes(SITE_B), ...siteRoutes(SITE_C), ...siteRoutes(CLOUD)],
+    env
+  );
 
 /** Every request went to `origin` carrying `key`, and there was at least one. */
 function onlyTo(h: ReturnType<typeof harness>, origin: string, key: string): void {
@@ -579,6 +586,16 @@ describe('the refusals of R6, each before any request', () => {
     onlyTo(g, SITE_C, KEY_LINE);
   });
 
+  it('(a) spares the implicit cloud: a folder linked to it, no cloud profile saved, an exported key: runs there', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(CLOUD);
+    const h = harness({ ...env, SLIDELESS_API_KEY: KEY_ENV });
+    expect(await run(['push', dir], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, CLOUD, KEY_ENV);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+  });
+
   it('(b) a key on the command line, on a folder whose site is not the default’s', async () => {
     const env = await machine();
     const dir = await linkedDeck(SITE_A);
@@ -612,7 +629,7 @@ describe('the refusals of R6, each before any request', () => {
   it('an exported key with no SLIDELESS_URL on a folder linked to A: the kit’s own refusal', async () => {
     const env = await machine();
     const dir = await linkedDeck(SITE_A);
-    const h = harness({ ...env, SLIDELESS_API_KEY: 'slk_env_0123456789abcdef' });
+    const h = harness({ ...env, SLIDELESS_API_KEY: KEY_ENV });
     expect(await run(['push', dir], h.io)).toBe(1);
     expect(h.calls).toEqual([]);
     expect(h.err()).toContain('SLIDELESS_API_KEY');
