@@ -38,6 +38,8 @@ const NEW_DECK = '44444444-4444-4444-8444-444444444444';
 const SESSION_ID = '33333333-3333-3333-3333-333333333333';
 const PROJECT = 'aaaaaaaa-2222-4222-8222-222222222222';
 const HOUSE = 'aaaaaaaa-1111-4111-8111-111111111111';
+/** A workspace named by id: the kit sends it as it is, with no lookup. */
+const WORKSPACE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const sha = (s: string | Buffer) => createHash('sha256').update(s).digest('hex');
 const PULLED = Buffer.from('<html>pulled</html>');
@@ -553,6 +555,39 @@ describe('R6’s own comparisons, the other side in another spelling: the site n
     expect(h.err()).toBe('');
     onlyTo(h, SITE_A, KEY_LINE);
     expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+  });
+});
+
+describe('a routed command keeps the options it passes through', () => {
+  it('push --json: the JSON an unrouted push --json prints, with the deck id and the version', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    // Unrouted: the folder's own site named, so the command resolves its own context, not the routed view.
+    const named = harness(env);
+    expect(await run(['--api-url', SITE_A, 'push', dir, '--json'], named.io)).toBe(0);
+
+    const h = harness(env);
+    expect(await run(['push', dir, '--json'], h.io)).toBe(0);
+    onlyTo(h, SITE_A, KEY_A);
+    const pushed: unknown = JSON.parse(h.out());
+    expect(pushed).toEqual(JSON.parse(named.out()));
+    expect(pushed).toMatchObject({
+      presentation: { id: DECK_A, currentVersion: 4 },
+      version: { presentationId: DECK_A, version: 4 }
+    });
+  });
+
+  it('push --workspace <id>: every request carries the workspace, as the kit sends it for --workspace', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    const h = harness(env);
+    expect(await run(['push', dir, '--workspace', WORKSPACE], h.io)).toBe(0);
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+    // As test/workspaces-cli.test.ts asserts it: the id, as it is, on the wire.
+    expect(h.wire.map((c) => [c.path.split('?')[0], c.workspace])).toEqual(
+      h.wire.map((c) => [c.path.split('?')[0], WORKSPACE])
+    );
   });
 });
 
