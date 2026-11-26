@@ -32,6 +32,40 @@ node packages/cli/dist/bin.js --help
 node packages/cli/dist/bin.js --version   # the CLI's own version
 ```
 
+### When the command is older than its site
+
+Each profile remembers the CLI version its instance announces (with the rest
+of what the instance says of itself: `site` in
+[Profiles: one per instance](#profiles-one-per-instance)). When that version is
+newer than this CLI's own, a command on that profile says so in one line on
+stderr, once per run, before its first request, and then runs as usual:
+
+```
+This slideless (0.15.0) is older than https://share.example.com (0.15.1). Update it: team tools update
+```
+
+The update command depends on who installed the copy that runs: team's
+command for the copy `team` installed (under its prefix in the config home,
+`~/.config/antasphere/prefix/` by default), npm's for a global npm install,
+and none at all for any other copy (an app's own copy, a build from source, a
+project's local install), where a wrong command would be worse than none:
+
+```
+This slideless (0.15.0) is older than https://share.example.com (0.15.1). Update it: npm install -g @antasphere/slideless@0.15.1
+This slideless (0.15.0) is older than https://share.example.com (0.15.1).
+```
+
+The line costs no request: it reads what the profile already remembers. It
+says nothing when the versions are equal, when this CLI is the newer one, when
+the instance announces no version or was never read, or when what the profile
+remembers cannot be read. It never goes to stdout, so `--json` output is the
+same with or without it. The memory is as fresh as its last read: a profile
+signed in through an Antasphere login reads its instance again once a day, and
+a profile holding its own key keeps what `profiles add`, `profiles --check` or
+`login` last read. The commands every Antasphere tool CLI shares (`login`,
+`logout`, `whoami`, `verify`, `use`, `profiles`, `workspaces`) do not print it;
+`profiles --json` shows the same fact per profile as `cliBehind`.
+
 ## Configuration: profiles, flags, environment
 
 Config lives in the **shared Antasphere CLI config home** (provided by
@@ -114,7 +148,10 @@ profile of the `--api-url` / `SLIDELESS_URL` instance, then the default profile
 (`use`), then `cloud`. A `--profile` at another instance than the URL the
 command was given is refused before any request, and both are named. A key
 kept for an Antasphere login is only ever sent to the instance its profile
-names.
+names. A command acting on a linked deck folder puts the folder's instance
+first: its `.slideless.json` decides, and an instance named explicitly that is
+not the folder's is refused
+([A linked folder decides its site](#a-linked-folder-decides-its-site)).
 
 Every command accepts `--api-url` (alias `--url`), `--api-key`,
 `--api-key-stdin`, `--profile`, `--org`, `--workspace`, and `--json`.
@@ -162,6 +199,77 @@ carries it in the environment, and `share` / `share-email` take
 `--password-stdin` or `SLIDELESS_SHARE_PASSWORD`. stdin can only be spent
 once per invocation — asking twice is a usage error rather than two commands
 silently sharing one secret.
+
+### A linked folder decides its site
+
+A deck folder's `.slideless.json` names its deck and the instance the deck
+lives on. A command run on a linked folder goes to that instance, whatever the
+default profile is: it runs as if `--api-url <the folder's instance>` had been
+given, so it signs in with that instance's profile (its own key, or the
+Antasphere login at the hub that instance names). The folder that decides,
+per command:
+
+| Command                                                                          | The folder that decides                                                                                |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `push [path]`, `reference push [dir]`, `brand push [dir]`, `template push [dir]` | the deck folder: the path when it is a folder, its folder when it is a file, else `.`                  |
+| `pull [id] [path]`                                                               | `path`; with no path, `.` when no id is given, else the folder named for the id, where the pull writes |
+| `agent-doc`, `pull-annotations`                                                  | `.` when no id is given; an id names no folder                                                         |
+| `projects link`, `projects unlink`                                               | the folder named as the deck, or `.` when none is named; an id names no folder                         |
+| `projects brand <project> <ref>`                                                 | `ref`, when it is a folder                                                                             |
+| `reference pull [ref]`, `brand pull [ref]`, `template pull [ref]`                | `--into <dir>`, else `.`, the deck folder the reference is pulled beside                               |
+
+A folder with no link file, and every command that names a deck by its id,
+resolve as above. `open` composes its address from the link file and sends
+nothing. The link file's instance is compared as an instance, not as a string:
+a trailing slash or an upper-case host is the same instance.
+
+**Another instance named is refused.** An explicit `--api-url`, `--url`,
+`SLIDELESS_URL` or `--profile` naming the folder's own instance runs. One that
+names another instance is refused before any request, exit 1, both named:
+
+```
+Error: .slideless.json links /home/ada/deck to https://share.example.com, and --profile cloud names https://slideless.antasphere.com. Drop --profile to run on the folder's own site, or pass --new to make a fresh deck there.
+```
+
+The sentence names what was given (`Drop --api-url`, `Drop --url`,
+`Drop --profile`, `Unset SLIDELESS_URL`). The `--new` clause is `push`'s;
+`pull` ends with `or pull into another folder`, and the other commands stop at
+`to run on the folder's own site.` `push --new` and `push --id <deckId>` keep
+their freedom, since they name the deck themselves rather than read it from
+the link: with another instance named they run there, and the push links the
+folder to the deck it pushed on that instance; with none named they run on the
+folder's instance.
+
+**Two more refusals, before any request, exit 1:**
+
+- A folder linked to an instance that no profile of this machine is (a saved
+  profile, or the implicit `cloud`). A link file written on another machine
+  never decides where this machine's content goes, nor which login signs in
+  there:
+
+  ```
+  Error: .slideless.json links /home/ada/deck to https://other.example.com, which no profile on this machine is. Add it once with `slideless profiles add https://other.example.com`, or name it for this command with --api-url https://other.example.com.
+  ```
+
+- A key given on the command line (`--api-key`, `--api-key-stdin`) names no
+  instance. On a folder whose instance is not the default profile's, it is
+  refused, and the command asks which instance the key is for:
+
+  ```
+  Error: --api-key names no site, and .slideless.json links /home/ada/deck to https://share.example.com while the default profile is https://slideless.antasphere.com. Add --api-url https://share.example.com to send this key there.
+  ```
+
+An exported key keeps its own pairing: `SLIDELESS_API_KEY` belongs to the
+instance `SLIDELESS_URL` names, else to the cloud, and a command that would
+carry it to another instance (a folder's included) is refused with a sentence
+naming the variable. A script exports `SLIDELESS_URL` beside its key.
+
+A link file whose instance is not an `http(s)` URL is refused by every one of
+these commands, as by `open`, and nothing is sent anywhere:
+
+```
+Error: .slideless.json names "javascript:alert(1)" as the instance, which is not an http(s) URL: nothing is opened or sent there. Fix the file, or delete it and push the folder again.
+```
 
 ### Cloud instances: one login for the whole family
 
@@ -503,9 +611,12 @@ re-uploaded.
   the deck folder (`{ presentationId, baseUrl }`). Later pushes find it and
   commit a new version of that deck with optimistic concurrency
   (`expectedBaseVersion`; a concurrent push answers a clean retry error).
-  `--id <deckId>` targets a deck explicitly; `--new` forces a fresh deck. A
-  link pointing at a _different_ instance errors loudly instead of silently
-  targeting a foreign id.
+  `--id <deckId>` targets a deck explicitly; `--new` forces a fresh deck. The
+  link also names the deck's instance, and a later push goes there whatever
+  the default profile is; an `--api-url`, `--url`, `SLIDELESS_URL` or
+  `--profile` naming another instance is refused before any request, unless
+  `--new` or `--id` is given
+  ([A linked folder decides its site](#a-linked-folder-decides-its-site)).
 - **Ignores**: `node_modules`, `Thumbs.db`, `.slideless.json`,
   `.slidelessignore`, **every dot-prefixed file or directory** (`.git`,
   `.DS_Store`, `.env`, `.github`, …) and `package.json` / the common
@@ -588,9 +699,10 @@ instance's answer as untrusted input: every manifest path is re-validated
 locally, each blob is capped at the size the manifest declared and must hash
 to the sha256 the manifest claims before anything is written, deck file writes
 refuse to follow a symlink (file or directory) and never leave a file executable
-(the `.slideless.json` link file itself is written plainly),
-and a destination whose `.slideless.json` names a _different_ instance errors
-loudly — the same refusal `push` has always had.
+(the `.slideless.json` link file itself is written plainly).
+A linked destination decides the instance the pull runs on, and an instance
+named explicitly that is not the destination's is refused before any request
+([A linked folder decides its site](#a-linked-folder-decides-its-site)).
 
 **dev** serves the folder locally under the same sandbox headers as the public viewer —
 `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox

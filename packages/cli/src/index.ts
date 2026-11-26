@@ -41,6 +41,13 @@ export {
  *             → connect-on-demand: the Antasphere login exchanged for an slk_ key
  *   workspace: --org / --workspace → SLIDELESS_ORG / SLIDELESS_WORKSPACE
  *             → none sent (the server's default organization)
+ *
+ * A folder verb on a linked folder (push and the reference push, pull and the
+ * reference pull, agent-doc / pull-annotations with no id, projects
+ * link|unlink|brand on a folder) puts the folder's site first: its
+ * .slideless.json decides, as if --api-url named it, and an --api-url / --url
+ * / SLIDELESS_URL / --profile naming another site is refused before any
+ * request (push --new / --id excepted). R6, src/folder-site.ts.
  */
 
 const VERSION = '0.14.1';
