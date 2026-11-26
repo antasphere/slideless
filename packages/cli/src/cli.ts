@@ -24,7 +24,7 @@ export const cli = defineCli({
 export type CliContext = ChassisCliContext<PlatformClient>;
 
 export const loadConfig = cli.loadConfig;
-export const saveConfig = cli.saveConfig;
+export const updateConfig = cli.updateConfig;
 
 export const resolveContext = cli.resolveContext;
 export const requireApiKey = cli.requireApiKey;
