@@ -233,6 +233,12 @@ describe('who installed the running file, and the sentence of each', () => {
     expect(installedBy(join('/Users/someone/.config/antasphere/prefix', bundle), other)).toBe('team');
   });
 
+  it('installedBy: a folder beside team’s prefix is not team’s (npm’s layout in it: npm’s)', async () => {
+    const env = await tempConfigEnv();
+    const bundle = join('lib', 'node_modules', '@antasphere', 'slideless', 'dist', 'bin.js');
+    expect(installedBy(join(env.XDG_CONFIG_HOME!, 'antasphere', 'prefix-other', bundle), env)).toBe('npm');
+  });
+
   it('the sentence, whole, for each kind of install', async () => {
     const env = await machineWith(facts('99.0.0'));
     const teamFile = join(
@@ -269,5 +275,17 @@ describe('who installed the running file, and the sentence of each', () => {
       ]);
       expect(h.calls).toEqual([]);
     }
+  });
+
+  it('a site version remembered with spaces: the line and npm’s command name it trimmed', async () => {
+    const env = await machineWith(facts('  99.0.0 '));
+    const h = routedHarness([], env);
+    const ctx = cli.resolveContext(getCommand(h.io), h.io);
+    sayIfOlderThanSite(ctx, '0.1.0', '/usr/local/lib/node_modules/@antasphere/slideless/dist/bin.js');
+    expect(h.err()).toBe(
+      `This slideless (0.1.0) is older than ${X} (99.0.0). ` +
+        'Update it: npm install -g @antasphere/slideless@99.0.0\n'
+    );
+    expect(h.calls).toEqual([]);
   });
 });

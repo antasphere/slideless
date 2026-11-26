@@ -640,6 +640,21 @@ describe('the refusals of R6, each before any request', () => {
     );
   });
 
+  it('reference push with another site named: refused with push’s own ending', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A, HOUSE, {
+      'AGENT.md': '---\ntype: brand\ntitle: House brand\n---\n\n# House brand\n',
+      'index.html': '<html>brand</html>'
+    });
+    const h = harness(env);
+    expect(await run(['--api-url', SITE_B, 'reference', 'push', dir], h.io)).toBe(1);
+    expect(h.calls).toEqual([]);
+    expect(h.err()).toBe(
+      `Error: .slideless.json links ${dir} to ${SITE_A}, and --api-url names ${SITE_B}. Drop --api-url to ` +
+        "run on the folder's own site, or pass --new to make a fresh deck there.\n"
+    );
+  });
+
   it('(a) a folder linked to a site no profile of this machine is; --api-url naming it runs there', async () => {
     const env = await machine();
     const dir = await linkedDeck(SITE_C);
