@@ -224,6 +224,15 @@ describe('who installed the running file, and the sentence of each', () => {
     expect(installedBy(file, { XDG_CONFIG_HOME: linked })).toBe('team');
   });
 
+  it('installedBy: team’s own copy is team’s from its own path, whatever config home the command runs with', async () => {
+    // The verifier's repro (round 1, finding 5): team's layout under one home, XDG_CONFIG_HOME naming another.
+    const teamHome = await mkdtemp(join(tmpdir(), 'slideless-team-home-'));
+    const other = await tempConfigEnv();
+    const bundle = join('lib', 'node_modules', '@antasphere', 'slideless', 'dist', 'bin.js');
+    expect(installedBy(join(teamHome, 'antasphere', 'prefix', bundle), other)).toBe('team');
+    expect(installedBy(join('/Users/someone/.config/antasphere/prefix', bundle), other)).toBe('team');
+  });
+
   it('the sentence, whole, for each kind of install', async () => {
     const env = await machineWith(facts('99.0.0'));
     const teamFile = join(

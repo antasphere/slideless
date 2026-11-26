@@ -95,14 +95,19 @@ function realOrNull(path: string): string | null {
 }
 
 /**
- * Who installed the running bundle (`file`, its real path): `team` when it
- * lies under team's npm prefix (`<config home>/antasphere/prefix/`, team-cli
- * `teamPaths`; its real path too, for a config home reached through a link),
- * `npm` for a global npm install (`…/lib/node_modules/@antasphere/slideless/`,
- * Homebrew's copy under `/Cellar/` excepted: it has the same shape and is not
- * npm's), else null.
+ * Who installed the running bundle (`file`, its real path), read from the
+ * file's own path, so team's copy is team's whatever config home the command
+ * runs with. In this order: `team` when the path holds team's layout
+ * (`…/antasphere/prefix/lib/node_modules/@antasphere/slideless/`: team's npm
+ * prefix, team-cli `teamPaths`, under any config home), or when it lies under
+ * the current config home's prefix (`<config home>/antasphere/prefix/`; its
+ * real path too, for a config home reached through a link); then `npm` for a
+ * global npm install (`…/lib/node_modules/@antasphere/slideless/`, Homebrew's
+ * copy under `/Cellar/` excepted: it has the same shape and is not npm's);
+ * else null.
  */
 export function installedBy(file: string, env: CliEnv): 'team' | 'npm' | null {
+  if (file.includes(`/antasphere/prefix/lib/node_modules/${PACKAGE}/`)) return 'team';
   const hubFile = configPath(env, HUB_TOOL);
   if (hubFile !== null) {
     const prefix = join(dirname(hubFile), 'prefix');
