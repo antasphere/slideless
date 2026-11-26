@@ -62,9 +62,16 @@ remembers cannot be read. It never goes to stdout, so `--json` output is the
 same with or without it. The memory is as fresh as its last read: a profile
 signed in through an Antasphere login reads its instance again once a day, and
 a profile holding its own key keeps what `profiles add`, `profiles --check` or
-`login` last read. The commands every Antasphere tool CLI shares (`login`,
-`logout`, `whoami`, `verify`, `use`, `profiles`, `workspaces`) do not print it;
-`profiles --json` shows the same fact per profile as `cliBehind`.
+`login` last read.
+
+Whether a command prints it depends on where the command comes from. The
+commands Slideless adds print it: `list`, `get`, `push`, `pull`, `share`, …,
+and `projects link|unlink|brand` (`open` and `dev` excepted, since they never
+reach the instance). The commands every Antasphere tool CLI shares from the
+chassis do not print it yet (PRDCT-5254): `login`, `logout`, `whoami`,
+`verify`, `use`, `profiles`, `workspaces`, `teams`, `projects list` and the
+other chassis verbs. `profiles --json` shows the same fact per profile as
+`cliBehind`.
 
 ## Configuration: profiles, flags, environment
 
