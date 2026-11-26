@@ -103,10 +103,13 @@ describe.skipIf(!CHROMIUM)('slideless dev in a real browser', () => {
     await page.goto(server.url);
   });
 
+  // 30 s, not the default 10 s: closing Chromium took longer than 10 s whenever the full gate
+  // (`pnpm turbo lint typecheck test build`) ran the dashboard build and the other packages' tests
+  // beside this file; run alone, the whole file passes in about 6 s (lane B, 26 November 2026).
   afterAll(async () => {
     await browser?.close();
     await server?.close();
-  });
+  }, 30_000);
 
   it('shows the live folder and reloads the frame when a file changes', async () => {
     await expect.poll(() => deckText().textContent(), { timeout: 5000 }).toBe('one');
