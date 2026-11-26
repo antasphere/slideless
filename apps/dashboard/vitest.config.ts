@@ -5,6 +5,7 @@ import { defineConfig } from 'vitest/config';
 // Unit tests only — e2e/ belongs to Playwright (pnpm test:e2e). The svelte
 // plugin + browser condition compile the `.svelte.ts` runes modules; the
 // $lib alias mirrors SvelteKit's (plain vitest doesn't know it).
+// pipeline.test.ts holds the order of the dashboard's own tasks (PRDCT-5175).
 export default defineConfig({
   plugins: [svelte()],
   resolve: {
@@ -12,7 +13,7 @@ export default defineConfig({
     alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) }
   },
   test: {
-    include: ['src/**/*.{test,spec}.{js,ts}'],
+    include: ['src/**/*.{test,spec}.{js,ts}', 'pipeline.test.ts'],
     passWithNoTests: true
   }
 });

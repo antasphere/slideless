@@ -1108,18 +1108,42 @@ module …/_app/immutable/entry/start.*.js`): the proxy handed the PAGE to the A
   refuses a request with none (403), the same answer a wrong origin gets. Send
   `origin: <PUBLIC_BASE_URL>` on `/sign-in/email` and on every JSON POST from a script.
 
-## A restored `.svelte-kit` cache breaks the typecheck when a route group is added (2026-09-14, lane F)
+## Two SvelteKit syncs at once fail the dashboard's checks at random (2026-09-14, lane F; corrected 2026-11-26, PRDCT-5212)
 
-- **`svelte-kit sync` does not clean the generated types it is regenerating, and CI restores them
-  between runs.** Adding `(present)/+layout.ts` made SvelteKit generate a NEW
-  `.svelte-kit/types/src/routes/(present)/proxy+layout.ts`; on a runner whose cache predated the
-  change, the config loader walked the restored tree and `stat`ed an entry sync had since rewritten,
-  dying with `ENOENT … proxy+layout.ts` before a single file was checked. Green on every developer
-  machine and in a fresh clone (the tree is byte-identical), red only where a stale cache is
-  restored — the `checks` job was the ONLY new failure on dev, beside three that had failed for two
-  days. `typecheck` now does `rm -rf .svelte-kit/types` first: idempotent, costs a second, and makes
-  the gate independent of whatever a runner restored. Reproduce the class by planting a dangling
-  entry under `.svelte-kit/types/src/routes/` and running the typecheck.
+- **Every SvelteKit sync deletes part of `.svelte-kit/types` and writes it again, so two at once
+  collide.** In 2.69.1, `write_all_types` (run by `svelte-kit sync` and by the config hook of
+  `vite build`) walks `.svelte-kit/types` and removes every file whose folder is not a route's; the
+  root route sits in that set as `src/routes/`, trailing slash included, so `src/routes/$types.d.ts`,
+  `src/routes/proxy+layout.ts` and `route_meta_data.json` are removed every time and every route's
+  types are written again. A second sync walking the folder then `stat`s a file the first just
+  removed (`ENOENT … proxy+layout.ts`: Exos dev 4ed363c, in the build), or reads
+  `route_meta_data.json` between the first's truncate and its write (`Unexpected end of JSON input`:
+  the template's main ed7b72e, in the type check). `write_if_changed` does not help across processes:
+  its memory of what it wrote lives in the process. Shown on 25 November with a traced loop: the
+  type check's sync listed `src/routes`, 0.7 ms later the test's sync removed `proxy+layout.ts`, 11 ms
+  later the type check's `stat` of it failed; three bare `svelte-kit sync` started together failed 5
+  times in 30 rounds with the same error.
+- **The 14 September reading was this race, not a restored cache.** Here,
+  `ENOENT … proxy+layout.ts` was read as a stale `.svelte-kit` a runner restored. Neither this
+  repository's CI of that day (695562e) nor the tool template's restores one: both cache the pnpm store only. One sync lists a
+  folder, then `stat`s each entry, then removes what is stale, so it cannot lose a regular file
+  between listing it and `stat`ing it: a second process has to remove it in between (a dangling
+  symlink planted there fails the same `stat`, but nothing writes one). And sync alone takes a
+  planted stale entry away (the file goes, an empty folder stays, nothing for svelte-check to read).
+  The `rm -rf .svelte-kit/types` the type check gained that day was one more deleter running beside
+  the others; it is gone.
+- **The dashboard ran three syncs at once, and nothing ordered them.** The type check (`rm`, then a
+  sync), the tests (a sync) and the build (`vite build`) each wrote `.svelte-kit`, side by side:
+  `apps/dashboard/turbo.json` defines `build` with `^build` alone, and no task synced first
+  (Slideless never had the sync step the tool template added at its root on 20 September, and in the
+  template the same file shadowed it). `turbo run … --dry=json` prints the graph turbo runs: read it,
+  not the config files. Now one sync step (the dashboard's `sync` script, new on 26 November), never
+  cached; the readers run their one tool; the build waits for them; the wiring sits in the package's
+  `turbo.json`; and `apps/dashboard/pipeline.test.ts` pins the order and refuses, over the common
+  spellings, a sync in what pnpm runs for a task, SvelteKit's plugin in the test runner's config and
+  a cached sync. Carried from the tool template (PRDCT-5175, PRDCT-5212), where four rounds of an
+  adversarial verifier each found one more spelling: it is a heuristic, and the guide says so
+  (AGENTS.md, invariants).
 - **CI failing "already" is not the same as CI failing the same way.** Compare the FAILING JOB NAMES
   against the previous commits on the base, not the red/green of the run: three drills had been red
   since 12 September, which is exactly what hides a fourth job going red for the first time.

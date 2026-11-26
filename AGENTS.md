@@ -658,6 +658,34 @@ declaredContentLength`) or whose meter is in bytes answers 411 `length_required`
   local path; cloud-LOCAL workspaces (operator's, deck-guest hosts) and oss are untouched. The
   dashboard adapts off `/me`'s `workspace.hubOrigin`/`origin`/`hubManageUrl`, never
   edition-sniffing.
+- **One task at a time touches the dashboard's generated files (PRDCT-5175)**: every SvelteKit sync,
+  `svelte-kit sync` or the one `vite build` runs in its config hook, deletes and rewrites part of
+  `apps/dashboard/.svelte-kit/types` (the root route's files and `route_meta_data.json`, every time),
+  so two at once fail CI at random: `ENOENT … proxy+layout.ts` in a build,
+  `Unexpected end of JSON input` in a type check, green on a re-run. The dashboard's `sync` task is
+  the one sync the checks wait for, and it is never cached (a replayed sync writes nothing);
+  `typecheck` (svelte-check) and `test` (vitest) run their one tool and read what it wrote
+  (svelte-check writes one file of its own, `.svelte-kit/env.d.ts`, which no task beside it reads);
+  `build` waits for both. So `pnpm turbo build` runs the dashboard's sync, type check and tests
+  first, and a red dashboard test stops a local build; the image is untouched (the Dockerfile calls
+  the dashboard's build through pnpm, not turbo). Never put a sync (`svelte-kit sync`, `pnpm sync`,
+  an `rm` of `.svelte-kit`) back in a task's script, and keep the dashboard's task wiring in
+  `apps/dashboard/turbo.json`: it replaces the root's entries for the dashboard, so a root
+  `@slideless/dashboard#build` entry would be ignored (the tool template's sync step of September,
+  set at its root, never ordered its build for that reason). `apps/dashboard/pipeline.test.ts` pins
+  that order on the graph turbo will run (`--dry=json`), and checks with simple rules over the common
+  spellings that nothing else syncs: what pnpm runs for each task (its `pre` and `post` scripts, the
+  dashboard scripts it calls) must not write `.svelte-kit` (a sync, `vite build`, an `rm` of the
+  folder) beside a task that writes or reads it; a type check or a test run chains nothing to its
+  tool (`cross-env`, environment variables and `pnpm exec` may come before it), and the tests run on
+  `vitest.config.ts` (no `--config`, `--dir`, `--root`), which loads neither SvelteKit's Vite plugin
+  nor `vite.config`; the sync is never cached. It is a heuristic: a sync spelled another way, or
+  started from inside a program (a setup file, a plugin of one's own), escapes it, and a test run
+  narrowed to other files leaves it out of its own run; keep the one sync in the sync step. Outside
+  turbo, run `pnpm --filter @slideless/dashboard sync` by hand before the dashboard's typecheck or
+  tests after a route change, never from a `pre` script: the test refuses it. Fitted from the tool
+  template (antasphere/tool-template#75, PRDCT-5212): the dashboard's `sync` script and its task are
+  new here.
 
 ## Deploying to prod
 
