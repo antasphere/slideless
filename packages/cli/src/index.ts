@@ -35,12 +35,22 @@ export {
  *             active profile (`slideless use`) → the implicit `cloud` profile
  *   base URL: --api-url (alias --url) → SLIDELESS_URL → profile baseUrl
  *             → https://slideless.antasphere.com (the cloud)
- *   API key:  --api-key → SLIDELESS_API_KEY → profile apiKey
- *             → the hub-connect key cached on the profile (cloud instances;
- *               user-scoped — one per hub login, valid for every org)
- *             → connect-on-demand: the Antasphere login exchanged for an slk_ key
+ *   API key:  --api-key → SLIDELESS_API_KEY (paired with SLIDELESS_URL, else
+ *             the cloud) → profile apiKey
+ *             → the key kept on the profile for the login at the hub the SITE
+ *               names (cloud instances; user-scoped, filed by the hub and the
+ *               account's e-mail since cli-core 0.7.0, valid for every org)
+ *             → connect-on-demand: that login exchanged for an slk_ key; the
+ *               machine's active hub login plays no part
  *   workspace: --org / --workspace → SLIDELESS_ORG / SLIDELESS_WORKSPACE
  *             → none sent (the server's default organization)
+ *
+ * A folder verb on a linked folder (push and the reference push, pull and the
+ * reference pull, agent-doc / pull-annotations with no id, projects
+ * link|unlink|brand on a folder) puts the folder's site first: its
+ * .slideless.json decides, as if --api-url named it, and an --api-url / --url
+ * / SLIDELESS_URL / --profile naming another site is refused before any
+ * request (push --new / --id excepted). R6, src/folder-site.ts.
  */
 
 const VERSION = '0.14.1';

@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HUB_TOOL, saveConfig as saveCoreConfig } from '@antasphere/cli-core';
+import { HUB_TOOL, updateConfig as updateCoreConfig } from '@antasphere/cli-core';
 import { run } from '../src/index.js';
-import { saveConfig } from '../src/cli.js';
+import { updateConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, type Route } from './harness.js';
 
 /**
@@ -114,7 +114,7 @@ function instance(workspaces = WORKSPACES): Route[] {
 /** A saved profile on the instance (nothing else is saved: a selection is per command). */
 async function profileEnv(baseUrl = URL): Promise<Record<string, string>> {
   const env = await tempConfigEnv();
-  saveConfig(env, { activeProfile: 'work', profiles: { work: { apiKey: KEY, baseUrl } } });
+  updateConfig(env, () => ({ activeProfile: 'work', profiles: { work: { apiKey: KEY, baseUrl } } }));
   return env;
 }
 
@@ -409,13 +409,13 @@ describe('pinned after the verifier round', () => {
   it('G3: on the connect path, the name lookup carries the MINTED key, never goes out bare', async () => {
     const env = await tempConfigEnv();
     const SLK = 'slk_minted12_0123456789abcdefghijklmnopqrstuvwxyz';
-    saveCoreConfig(env, HUB_TOOL, {
+    updateCoreConfig(env, HUB_TOOL, () => ({
       activeProfile: 'default',
       profiles: {
         default: { apiKey: 'ant_hubkey12_secretsecretsecret1234', baseUrl: 'http://hub', email: 'ada@x.co' }
       }
-    });
-    saveConfig(env, { activeProfile: 'work', profiles: { work: { baseUrl: URL } } });
+    }));
+    updateConfig(env, () => ({ activeProfile: 'work', profiles: { work: { baseUrl: URL } } }));
     const routes: Route[] = [
       {
         method: 'GET',
@@ -432,7 +432,9 @@ describe('pinned after the verifier round', () => {
               methods: ['antasphere', 'api-key', 'oauth'],
               passwordReset: false,
               emailChange: false,
-              twoFactor: false
+              twoFactor: false,
+              // The hub the site trusts: the sign-in uses the login there.
+              hub: 'http://hub'
             },
             features: { mcp: true, oauth: true, files: true }
           }

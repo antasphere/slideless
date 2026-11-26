@@ -1,9 +1,8 @@
 import { statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { HUB_TOOL, loadConfig as loadCoreConfig } from '@antasphere/cli-core';
-import { redactKey } from '@antasphere/chassis-cli';
 import { run } from '../src/index.js';
-import { cli, loadConfig, saveConfig } from '../src/cli.js';
+import { cli, loadConfig, updateConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './harness.js';
 
 const { configPath } = cli;
@@ -135,9 +134,10 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       'GET /api/v1/me'
     ]);
     expect(h.err()).toBe('A sign-in code was sent to ada@x.co (if that account exists on http://inst).\n');
+    // The key is named by the name the site gave it, never by any part of it.
     expect(h.out()).toBe(
       'Signed in as Ada <ada@x.co> in Acme on http://inst.\n' +
-        `API key "CLI login 2026-07-10" (${redactKey(MINTED.key)}) saved to profile "inst" (${configPath(env)}).\n`
+        `API key "CLI login 2026-07-10" saved to profile "inst" (${configPath(env)}).\n`
     );
     expect(h.out()).not.toContain(MINTED.key);
     expect(loadConfig(env).profiles.inst).toEqual({
@@ -198,15 +198,18 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       email: 'ada@x.co',
       workspaceId: 'org1'
     });
-    expect(loadConfig(env).profiles.tool?.connectKeys?.hub?.apiKey).toBe(SLK);
+    // The key is kept on the site's profile, filed by the hub and the account's e-mail.
+    expect(loadConfig(env).profiles.tool?.hubKeys).toEqual([
+      { hub: 'http://hub', email: 'ada@x.co', apiKey: SLK, mintedAt: expect.any(String) }
+    ]);
   });
 
   it('a saved profile feeds whoami without flags or env', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'work',
       profiles: { work: { apiKey: 'slk_k_s', baseUrl: 'http://saved' } }
-    });
+    }));
     const h = routedHarness([meRoute], env);
     const code = await run(['whoami'], h.io);
     expect(h.err()).toBe('');
@@ -217,10 +220,10 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
 
   it('flags beat env beats profile for the base URL', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'p',
       profiles: { p: { apiKey: 'slk_k_s', baseUrl: 'http://profile' } }
-    });
+    }));
     const h = routedHarness([meRoute], { ...env, SLIDELESS_URL: 'http://env', SLIDELESS_API_KEY: 'slk_e_e' });
     await run(['whoami'], h.io);
     expect(h.out()).toContain('http://env');
@@ -231,7 +234,12 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       SLIDELESS_API_KEY: 'slk_e_e'
     });
     await run(['whoami', '--api-url', 'http://flag'], h2.io);
-    expect(h2.out()).toContain('http://flag');
+    // The flag still decides the site; the exported key belongs to the site SLIDELESS_URL names,
+    // so it is never carried to the flag's: refused, both named.
+    expect(h2.err()).toBe(
+      'Error: SLIDELESS_API_KEY is a key of http://env (SLIDELESS_URL names it), and this command targets ' +
+        'http://flag. Drop --api-url to run on http://env, or unset SLIDELESS_API_KEY.\n'
+    );
   });
 
   it('with nothing configured, a command goes to the Slideless cloud and asks for a sign-in', async () => {
@@ -248,13 +256,13 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
 
   it('use + profiles + logout manage the profile set', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'a',
       profiles: {
         a: { apiKey: 'slk_a_verylongkeyvalue123', baseUrl: 'http://a' },
         b: { apiKey: 'slk_b_verylongkeyvalue456', baseUrl: 'http://b' }
       }
-    });
+    }));
     const h = routedHarness([], env);
     expect(await run(['use', 'b'], h.io)).toBe(0);
     expect(h.out()).toBe('Active profile: b (http://b)\n');
@@ -288,10 +296,10 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
 
   it('config show redacts keys; config clear wipes the file', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'a',
       profiles: { a: { apiKey: 'slk_abcdefgh_0123456789abcdef', baseUrl: 'http://a' } }
-    });
+    }));
     const h = routedHarness([], env);
     expect(await run(['config', 'show'], h.io)).toBe(0);
     expect(h.out()).not.toContain('slk_abcdefgh_0123456789abcdef');

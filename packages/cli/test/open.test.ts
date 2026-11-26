@@ -256,7 +256,11 @@ describe('slideless open', () => {
       await writeLink(dir, { presentationId: DECK.id, baseUrl: base });
       const h = openingHarness([], true);
       expect(await run(['open', dir], h.io)).toBe(1);
-      expect(h.err()).toContain('not an http(s) URL');
+      // One sentence for every verb that reads the link file (folder-site.ts `refuseNonHttpSite`).
+      expect(h.err()).toBe(
+        `Error: .slideless.json names ${JSON.stringify(base)} as the instance, which is not an http(s) URL: ` +
+          'nothing is opened or sent there. Fix the file, or delete it and push the folder again.\n'
+      );
       expect(h.out()).toBe('');
       expect(h.opened).toEqual([]);
       // --json refuses the same way: no URL is composed from it either.

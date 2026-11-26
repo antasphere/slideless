@@ -11,7 +11,8 @@ import {
   roleNamedBy,
   type CliIo
 } from '@antasphere/chassis-cli';
-import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
+import { requireApiKey, type CliContext } from '../cli.js';
+import { folderSiteOf, resolveFolderContext } from '../folder-site.js';
 import { LINK_FILENAME, linkedDeckId } from '../manifest.js';
 import { listReferences } from './content.js';
 import { isDeckId, resolveReference } from '../references.js';
@@ -54,6 +55,25 @@ async function isFolder(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The folder whose `.slideless.json` names the deck of `link` / `unlink`, the
+ * one `resolveDeck` reads: the current one with no deck, the named one when it
+ * is a folder; an id (or anything else) names no folder.
+ */
+async function deckFolderOf(deck: string | undefined): Promise<string | null> {
+  if (deck === undefined) return '.';
+  if (isDeckId(deck)) return null;
+  return (await isFolder(resolve(deck))) ? deck : null;
+}
+
+/** The context of `link` / `unlink`: the deck's folder decides its site (R6). */
+async function deckVerbContext(cmd: Command, io: CliIo, deck: string | undefined): Promise<CliContext> {
+  const folder = await deckFolderOf(deck);
+  return resolveFolderContext(cmd, io, folder === null ? null : await folderSiteOf(folder), {
+    verb: 'other'
+  });
 }
 
 /**
@@ -188,7 +208,7 @@ export function registerProjectDeckCommands(program: Command, io: CliIo): void {
         `No deck: the ${LINK_FILENAME} of the current folder`
     )
     .action(async (project: string, deck: string | undefined, _opts, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
+      const ctx = await deckVerbContext(cmd, io, deck);
       await requireApiKey(ctx);
       const deckId = await resolveDeck(ctx, deck);
       const updated = await explainedDeckProject('link', () =>
@@ -209,7 +229,7 @@ export function registerProjectDeckCommands(program: Command, io: CliIo): void {
         `No deck: the ${LINK_FILENAME} of the current folder`
     )
     .action(async (project: string, deck: string | undefined, _opts, cmd: Command) => {
-      const ctx = resolveContext(cmd, io);
+      const ctx = await deckVerbContext(cmd, io, deck);
       await requireApiKey(ctx);
       const deckId = await resolveDeck(ctx, deck);
       const updated = await explainedDeckProject('unlink', () =>
@@ -235,7 +255,11 @@ export function registerProjectDeckCommands(program: Command, io: CliIo): void {
       if (ref !== undefined && opts.clear) {
         throw new CliUsageError('Name the brand to set, or pass --clear, not both.');
       }
-      const ctx = resolveContext(cmd, io);
+      // A brand named by a linked folder: the folder decides the site (R6).
+      const folder = ref !== undefined && (await isFolder(resolve(ref))) ? ref : null;
+      const ctx = resolveFolderContext(cmd, io, folder === null ? null : await folderSiteOf(folder), {
+        verb: 'other'
+      });
       await requireApiKey(ctx);
 
       if (opts.clear) {

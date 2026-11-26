@@ -45,8 +45,9 @@ slideless login --api-url https://slides.example.com
 It mints an `slk_` API key server-side (scopes `presentations:read` +
 `presentations:write`) and stores it on the instance's profile in
 `~/.config/antasphere/tools/slideless.json` (mode 600; the shared Antasphere
-CLI config home, see [cli.md](../agents/cli.md)). That profile becomes the
-active one, so later commands need no URL.
+CLI config home, see [cli.md](../agents/cli.md)). On a machine with no profile
+yet, that profile becomes the default, so later commands need no URL. After
+that, a login never moves the default: `slideless use <profile>` does.
 
 **Sign in on a self-hosted instance, with a pasted key** (works with
 `EMAIL_DRIVER=none`, and required for accounts with 2FA). Mint the key in the
@@ -56,7 +57,7 @@ share; the secret is shown once, right after creation. Then:
 
 ```bash
 slideless login --api-url https://slides.example.com --api-key slk_...
-slideless verify    # exit 0 iff instance + key work (it does not check the scopes)
+slideless --api-url https://slides.example.com verify    # exit 0 iff that instance + its key work (not the scopes)
 ```
 
 **The agent loop** — push, share, pull:

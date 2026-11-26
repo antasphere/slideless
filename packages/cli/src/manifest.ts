@@ -1,4 +1,5 @@
 import { CliUsageError } from '@antasphere/chassis-cli';
+import { sameInstance } from '@antasphere/cli-core';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -357,6 +358,8 @@ export async function writeLink(rootDir: string, link: DeckLink): Promise<void> 
  * carries no link, the id when it does, a usage error when the link points at
  * another instance (`howElse` says what to do instead). The one check behind
  * `push`, `projects link|unlink|brand` and any verb that takes a folder.
+ * Instances are compared, never strings: a link may spell its site in
+ * another form (a trailing slash, an upper-case host).
  */
 export async function linkedDeckId(
   ctx: { baseUrl: string },
@@ -365,7 +368,7 @@ export async function linkedDeckId(
 ): Promise<string | null> {
   const link = await readLink(rootDir);
   if (!link) return null;
-  if (link.baseUrl !== ctx.baseUrl) {
+  if (!sameInstance(link.baseUrl, ctx.baseUrl)) {
     throw new CliUsageError(
       `${LINK_FILENAME} links ${rootDir} to ${link.baseUrl}, but you are working against ${ctx.baseUrl}. ${howElse}`
     );
