@@ -432,7 +432,9 @@ describe('pinned after the verifier round', () => {
               methods: ['antasphere', 'api-key', 'oauth'],
               passwordReset: false,
               emailChange: false,
-              twoFactor: false
+              twoFactor: false,
+              // The hub the site trusts: the sign-in uses the login there.
+              hub: 'http://hub'
             },
             features: { mcp: true, oauth: true, files: true }
           }

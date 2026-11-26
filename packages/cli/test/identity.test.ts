@@ -120,7 +120,8 @@ describe('the Slideless identity, by its observable bytes', () => {
     ]);
   });
 
-  it('displayName, keyPrefix, envPrefix: the missing-hub-login sentence, whole', async () => {
+  it('bin: the missing-hub-login sentence, whole', async () => {
+    // A site that names no hub, and a machine with no Antasphere login: the one command that picks the hub.
     const env = await tempConfigEnv();
     const h = routedHarness(
       [{ method: 'GET', path: /\/api\/v1\/instance$/, reply: () => ({ body: CLOUD_INSTANCE }) }],
@@ -128,8 +129,9 @@ describe('the Slideless identity, by its observable bytes', () => {
     );
     expect(await run(['list', '--api-url', 'http://tool'], h.io)).toBe(1);
     expect(h.err()).toBe(
-      'Error: This Slideless instance signs in through Antasphere. Run `slideless login` once (or `antasphere login`), ' +
-        'then retry — or pass --api-key <slk_…> / set SLIDELESS_API_KEY.\n'
+      'Error: http://tool names no Antasphere hub (it runs a version from before sites named theirs), and profile ' +
+        '"tool" has never signed in there. This machine holds no Antasphere login. Pick the hub this site trusts: ' +
+        'slideless --api-url http://tool login --hub <hub>.\n'
     );
   });
 

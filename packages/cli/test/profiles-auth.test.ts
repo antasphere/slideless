@@ -1,7 +1,6 @@
 import { statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { HUB_TOOL, loadConfig as loadCoreConfig } from '@antasphere/cli-core';
-import { redactKey } from '@antasphere/chassis-cli';
 import { run } from '../src/index.js';
 import { cli, loadConfig, updateConfig } from '../src/cli.js';
 import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './harness.js';
@@ -135,9 +134,10 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       'GET /api/v1/me'
     ]);
     expect(h.err()).toBe('A sign-in code was sent to ada@x.co (if that account exists on http://inst).\n');
+    // The key is named by the name the site gave it, never by any part of it.
     expect(h.out()).toBe(
       'Signed in as Ada <ada@x.co> in Acme on http://inst.\n' +
-        `API key "CLI login 2026-07-10" (${redactKey(MINTED.key)}) saved to profile "inst" (${configPath(env)}).\n`
+        `API key "CLI login 2026-07-10" saved to profile "inst" (${configPath(env)}).\n`
     );
     expect(h.out()).not.toContain(MINTED.key);
     expect(loadConfig(env).profiles.inst).toEqual({
@@ -198,7 +198,10 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       email: 'ada@x.co',
       workspaceId: 'org1'
     });
-    expect(loadConfig(env).profiles.tool?.connectKeys?.hub?.apiKey).toBe(SLK);
+    // The key is kept on the site's profile, filed by the hub and the account's e-mail.
+    expect(loadConfig(env).profiles.tool?.hubKeys).toEqual([
+      { hub: 'http://hub', email: 'ada@x.co', apiKey: SLK, mintedAt: expect.any(String) }
+    ]);
   });
 
   it('a saved profile feeds whoami without flags or env', async () => {
@@ -231,7 +234,12 @@ describe('login, the Slideless bytes (the generic cases are the chassis suite: l
       SLIDELESS_API_KEY: 'slk_e_e'
     });
     await run(['whoami', '--api-url', 'http://flag'], h2.io);
-    expect(h2.out()).toContain('http://flag');
+    // The flag still decides the site; the exported key belongs to the site SLIDELESS_URL names,
+    // so it is never carried to the flag's: refused, both named.
+    expect(h2.err()).toBe(
+      'Error: SLIDELESS_API_KEY is a key of http://env (SLIDELESS_URL names it), and this command targets ' +
+        'http://flag. Drop --api-url to run on http://env, or unset SLIDELESS_API_KEY.\n'
+    );
   });
 
   it('with nothing configured, a command goes to the Slideless cloud and asks for a sign-in', async () => {
