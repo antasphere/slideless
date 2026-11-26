@@ -27,6 +27,7 @@ import {
   writeContained,
   type CliIo
 } from '@antasphere/chassis-cli';
+import { sameInstance } from '@antasphere/cli-core';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
 import { deckRootOf, folderSiteOf, refuseNonHttpSite, resolveFolderContext } from '../folder-site.js';
 import {
@@ -320,7 +321,7 @@ export function registerContentCommands(program: Command, io: CliIo): void {
       // The link file binds a folder to a deck ON ONE INSTANCE. Pulling with
       // a mismatching baseUrl is the mistake push already refuses (CLI-13):
       // overwriting a folder's contents — and its link — with a same-id deck
-      // from a FOREIGN instance.
+      // from a FOREIGN instance. Instances are compared, never strings.
       const linkMismatch = (linked: string): CliUsageError =>
         new CliUsageError(
           `${LINK_FILENAME} links this folder to ${linked}, but you are pulling from ` +
@@ -336,14 +337,14 @@ export function registerContentCommands(program: Command, io: CliIo): void {
             `No deck id given and no ${LINK_FILENAME} found — run \`slideless pull <id> [path]\`.`
           );
         }
-        if (link.baseUrl !== ctx.baseUrl) throw linkMismatch(link.baseUrl);
+        if (!sameInstance(link.baseUrl, ctx.baseUrl)) throw linkMismatch(link.baseUrl);
         deckId = link.presentationId;
         dest = dest ?? '.';
       }
       dest = dest ?? deckId;
       {
         const link = await readLink(resolve(dest));
-        if (link && link.baseUrl !== ctx.baseUrl) throw linkMismatch(link.baseUrl);
+        if (link && !sameInstance(link.baseUrl, ctx.baseUrl)) throw linkMismatch(link.baseUrl);
       }
 
       const deck = await ctx.client.presentation(deckId);
@@ -772,7 +773,9 @@ export async function pushDeck(ctx: CliContext, target: string, opts: PushOption
   // this block. A wholesale rewrite here silently ended that record.
   const pulled = await readReferenceLink(scan.rootDir);
   const keepsBlock =
-    pulled !== null && pulled.presentationId === committed.presentation.id && pulled.baseUrl === ctx.baseUrl;
+    pulled !== null &&
+    pulled.presentationId === committed.presentation.id &&
+    sameInstance(pulled.baseUrl, ctx.baseUrl);
   await writeLink(scan.rootDir, {
     presentationId: committed.presentation.id,
     baseUrl: ctx.baseUrl,
@@ -863,7 +866,7 @@ async function resolveProvenance(
       );
       continue;
     }
-    if (link.baseUrl !== ctx.baseUrl) {
+    if (!sameInstance(link.baseUrl, ctx.baseUrl)) {
       ctx.io.err.write(
         `Note: the ${type} in ${REFERENCE_DIR}/${type}/ was pulled from ${link.baseUrl}, not ${ctx.baseUrl}; ` +
           'it is not recorded on this deck.\n'

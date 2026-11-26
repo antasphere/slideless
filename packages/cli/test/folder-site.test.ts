@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -19,6 +19,8 @@ import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './h
  */
 
 const SITE_A = 'http://site-a';
+/** Site A as a link file may spell it: the same instance, not the same string. */
+const SITE_A_SPELT = 'HTTP://Site-A/';
 const SITE_B = 'http://site-b';
 const SITE_C = 'http://site-c';
 const KEY_A = 'slk_a_own_0123456789abcdef';
@@ -106,6 +108,12 @@ function siteRoutes(origin: string): Route[] {
       method: 'GET',
       path: /^\/api\/v1\/presentations\/[^/]+$/,
       reply: ({ path }) => ({ body: deckRow(deckOf(path)) })
+    },
+    {
+      // The provenance write after a push that records a reference.
+      method: 'PATCH',
+      path: /^\/api\/v1\/presentations\/[^/]+$/,
+      reply: ({ path, body }) => ({ body: deckRow(deckOf(path), body as Record<string, unknown>) })
     },
     {
       method: 'POST',
@@ -336,6 +344,93 @@ describe('a linked folder sends its command to its own site (R6)', () => {
     expect(await run(['push', fresh, '--new'], i.io)).toBe(0);
     onlyTo(i, SITE_A, KEY_A);
     expect(await readLink(fresh)).toEqual({ presentationId: NEW_DECK, baseUrl: SITE_A });
+  });
+});
+
+describe('a link file names its site in any spelling of it: instances compared, never strings', () => {
+  const BRAND_AGENT = '---\ntype: brand\ntitle: House brand\n---\n\n# House brand\n';
+
+  it('push from a folder linked as HTTP://Site-A/: a new version on A, and a brand pulled from that spelling is recorded', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A_SPELT);
+    const brandDir = referenceDirFor(dir, 'brand');
+    await mkdir(brandDir, { recursive: true });
+    await writeLink(brandDir, {
+      presentationId: HOUSE,
+      baseUrl: SITE_A_SPELT,
+      reference: { type: 'brand', version: 3 }
+    });
+    const h = harness(env);
+    expect(await run(['push', dir], h.io)).toBe(0);
+    // No refusal, and no « was pulled from … not … » note.
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+    expect(h.wire.find((c) => c.method === 'PATCH')?.body).toEqual({
+      metadata: { references: [{ type: 'brand', id: HOUSE, version: 3 }] }
+    });
+    expect(await readLink(dir)).toEqual({ presentationId: DECK_A, baseUrl: SITE_A });
+  });
+
+  it('pull with no id in a folder linked as HTTP://Site-A/, and pull <id> <path> into one: from A', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A_SPELT);
+    process.chdir(dir);
+    const h = harness(env);
+    expect(await run(['pull'], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_A);
+
+    process.chdir(cwd);
+    const dest = await linkedDeck(SITE_A_SPELT);
+    const g = harness(env);
+    expect(await run(['pull', DECK_A, dest], g.io)).toBe(0);
+    expect(g.err()).toBe('');
+    onlyTo(g, SITE_A, KEY_A);
+    expect(await readFile(join(dest, 'index.html'))).toEqual(PULLED);
+  });
+
+  it('a brand folder linked as HTTP://Site-A/: a second pull replaces it, and a push from it keeps its reference block', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    const brandDir = referenceDirFor(dir, 'brand');
+    await mkdir(brandDir, { recursive: true });
+    await writeFile(join(brandDir, 'index.html'), '<html>brand v2</html>');
+    await writeLink(brandDir, {
+      presentationId: HOUSE,
+      baseUrl: SITE_A_SPELT,
+      reference: { type: 'brand', version: 2 }
+    });
+    process.chdir(dir);
+    const h = harness(env);
+    expect(await run(['brand', 'pull', 'house'], h.io)).toBe(0);
+    onlyTo(h, SITE_A, KEY_A);
+    expect(await readFile(join(brandDir, 'index.html'))).toEqual(PULLED);
+    expect(await readReferenceLink(brandDir)).toEqual({
+      presentationId: HOUSE,
+      baseUrl: SITE_A,
+      reference: { type: 'brand', version: 3 }
+    });
+
+    // Its owner fixing the brand from the pulled folder: the block stays, at the version pushed.
+    process.chdir(cwd);
+    const ref = await linkedDeck(SITE_A_SPELT, HOUSE, {
+      'AGENT.md': BRAND_AGENT,
+      'index.html': '<html>brand</html>'
+    });
+    await writeLink(ref, {
+      presentationId: HOUSE,
+      baseUrl: SITE_A_SPELT,
+      reference: { type: 'brand', version: 3 }
+    });
+    const g = harness(env);
+    expect(await run(['brand', 'push', ref], g.io)).toBe(0);
+    onlyTo(g, SITE_A, KEY_A);
+    expect(await readReferenceLink(ref)).toEqual({
+      presentationId: HOUSE,
+      baseUrl: SITE_A,
+      reference: { type: 'brand', version: 4 }
+    });
   });
 });
 

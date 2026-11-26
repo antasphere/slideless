@@ -11,6 +11,7 @@ import {
   writeNoFollow,
   type CliIo
 } from '@antasphere/chassis-cli';
+import { sameInstance } from '@antasphere/cli-core';
 import { requireApiKey, resolveContext, type CliContext } from '../cli.js';
 import { deckRootOf, folderSiteOf, resolveFolderContext } from '../folder-site.js';
 import { LINK_FILENAME, readLink, writeLink } from '../manifest.js';
@@ -575,7 +576,7 @@ async function prepareReferenceDir(dest: string, baseUrl: string, noun: string):
         : `${dest} is not empty and is not a folder a previous pull wrote. Delete it to pull there, or pull into another folder (--into).`
     );
   }
-  if (link.baseUrl !== baseUrl) {
+  if (!sameInstance(link.baseUrl, baseUrl)) {
     throw new CliUsageError(
       `${dest} holds a ${link.reference.type} pulled from ${link.baseUrl}, and you are pulling from ${baseUrl}. ` +
         `Delete the folder or pull into another one (--into).`
