@@ -545,8 +545,8 @@ describe('the refusals of R6, each before any request', () => {
     expect(await run(['push', dir], h.io)).toBe(1);
     expect(h.calls).toEqual([]);
     expect(h.err()).toBe(
-      'Error: .slideless.json names "javascript:alert(1)" as the instance, which is not an http(s) URL — ' +
-        'refusing to open it. Fix the file or push the folder again.\n'
+      'Error: .slideless.json names "javascript:alert(1)" as the instance, which is not an http(s) URL: ' +
+        'nothing is opened or sent there. Fix the file, or delete it and push the folder again.\n'
     );
   });
 });

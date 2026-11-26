@@ -41,15 +41,16 @@ function isHttpUrl(value: string): boolean {
 }
 
 /**
- * The refusal of a link file whose instance is not an http(s) URL. The link
- * file can arrive with a cloned folder: `open` must never hand its value to
- * the platform opener, and no command sends anything to it.
+ * The refusal of a link file whose instance is not an http(s) URL, one
+ * sentence for every verb that reads the file (`open` and each folder verb).
+ * The link file can arrive with a cloned folder: `open` must never hand its
+ * value to the platform opener, and no command sends anything to it.
  */
 export function refuseNonHttpSite(baseUrl: string): void {
   if (!isHttpUrl(baseUrl)) {
     throw new CliUsageError(
-      `${LINK_FILENAME} names ${JSON.stringify(baseUrl)} as the instance, which is not an ` +
-        'http(s) URL — refusing to open it. Fix the file or push the folder again.'
+      `${LINK_FILENAME} names ${JSON.stringify(baseUrl)} as the instance, which is not an http(s) URL: ` +
+        'nothing is opened or sent there. Fix the file, or delete it and push the folder again.'
     );
   }
 }
