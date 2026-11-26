@@ -53,7 +53,7 @@ export {
  * request (push --new / --id excepted). R6, src/folder-site.ts.
  */
 
-const VERSION = '0.14.1';
+const VERSION = '0.15.0';
 
 /**
  * The Slideless command groups, handed to the chassis program, which places
