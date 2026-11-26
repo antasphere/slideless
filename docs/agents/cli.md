@@ -45,7 +45,17 @@ file `0600`:
   "activeProfile": "share",
   "profiles": {
     "share": { "apiKey": "slk_…", "baseUrl": "https://share.example.com", "email": "ada@example.com" },
-    "cloud": { "connectKeys": { "default": { "apiKey": "slk_…", "email": "ada@example.com" } } }
+    "cloud": {
+      "baseUrl": "https://slideless.antasphere.com",
+      "hubKeys": [
+        {
+          "hub": "https://account.antasphere.com",
+          "email": "ada@example.com",
+          "apiKey": "slk_…",
+          "mintedAt": "2026-11-26T09:00:00.000Z"
+        }
+      ]
+    }
   }
 }
 ```
@@ -64,30 +74,47 @@ if you want a truly clean slate.
 
 **A profile is an instance.** Each profile names one Slideless instance by its
 `baseUrl` and holds how you sign in there: the instance's own key (`apiKey`),
-or the keys your Antasphere login was exchanged for there (`connectKeys`, one
-per Antasphere login). The profile `cloud` exists before anything is on disk:
-it is the Antasphere cloud, `https://slideless.antasphere.com`, and it carries
-no `baseUrl` because that is its default. So a command on a clean machine runs
-on the cloud. `--api-url https://share.example.com` selects the profile of that
-instance, or makes one named for its host (`share.example.com`; a local
-instance on port 3400 gets `localhost:3400`). A self-hosted instance is named
-once, as a profile. No command renames a profile: the config file is yours,
-and you can edit a name there. `slideless use <profile>` switches the active
-profile, and `slideless login` makes its profile the active one.
-`slideless profiles` lists them: the active mark, the name, the url, and how
-each signs in:
+or the keys your Antasphere logins were exchanged for there (`hubKeys`, each
+filed by the hub and the e-mail of the account that minted it, never by a
+login's name). It also remembers what its instance last said of itself
+(`site`: the hub it names, its name, the CLI version it speaks, and when), read
+again once a day, so a command served by a kept key sends nothing but its own
+request. The profile `cloud` exists before anything is on disk: it is the
+Antasphere cloud, `https://slideless.antasphere.com` (a profile with no
+`baseUrl` is there). So a command on a clean machine runs on the cloud.
+`--api-url https://share.example.com` selects the profile of that instance, or
+makes one named for its host (`share.example.com`; a local instance on port
+3400 gets `localhost:3400`). There is one profile per instance, and
+`slideless profiles add`, `profiles rename` and `profiles remove` manage them
+([Profiles: one per instance](#profiles-one-per-instance), below).
+`slideless use <profile>` switches the default profile; `slideless login`
+never moves it, except on a machine that has none yet. `slideless profiles`
+lists them: the default mark, the name, the instance, who signs each in and
+through what, and the CLI version the instance speaks (never any part of a
+key):
 
 ```
-   localhost:3400  http://localhost:3400             slk_EVzvc7vX_…QKkI
-   cloud           https://slideless.antasphere.com  via Antasphere (ada@example.com)
-*  share           https://share.example.com         slk_GT2pAduD_…zobU
+   PROFILE  SITE                              SIGN-IN                                                       SITE CLI
+*  cloud    https://slideless.antasphere.com  signed in: ada@example.com at https://account.antasphere.com  0.15.0
+   share    https://share.example.com         signed in with its own key                                    0.15.0
+   old      https://old.example.com           needs a sign-in: slideless --profile old login --hub <hub>    -
+
+This CLI 0.15.0 on a-host-name.
+Antasphere logins: ada@example.com at https://account.antasphere.com (cloud).
 ```
 
-A profile with no key reads `(not signed in)`. Every command selects its
-profile in this order: `--profile <name>`, then the profile of the
-`--api-url` / `SLIDELESS_URL` instance, then the active profile (`use`), then
-`cloud`. A key cached by the Antasphere login is only ever sent to the
-instance its profile names.
+The sign-in of each profile is one state: signed in (with its own key, or
+through an Antasphere login, named by its account and its hub), signs in at
+the next command (the login it needs is in place), needs a sign-in, or not
+reached yet, with the one command that fixes it when there is one. Below the
+table: this CLI and the machine that answers, a line for each exported
+variable that changes something, and the machine's Antasphere logins.
+Every command selects its profile in this order: `--profile <name>`, then the
+profile of the `--api-url` / `SLIDELESS_URL` instance, then the default profile
+(`use`), then `cloud`. A `--profile` at another instance than the URL the
+command was given is refused before any request, and both are named. A key
+kept for an Antasphere login is only ever sent to the instance its profile
+names.
 
 Every command accepts `--api-url` (alias `--url`), `--api-key`,
 `--api-key-stdin`, `--profile`, `--org`, `--workspace`, and `--json`.
@@ -117,9 +144,9 @@ picks your default workspace. The server's default is yours to choose:
 cloud it is a setting of your Antasphere account, and the command answers with
 the page. `slideless workspaces` lists your memberships, with
 `organization <id>` on the rows that have one. `slideless whoami` shows the
-workspace the command ran in, its organization id, what chose it, what the
-command signed in with, and the Antasphere login (used, not used and why, or
-`not connected`).
+workspace the command ran in, its organization id, what chose it, and what the
+command signed in with (an Antasphere login is named by its account and its
+hub; `--json` carries it as `login`, [Sign in](#sign-in)).
 A key pinned to one workspace only ever acts there: selecting another one is
 refused, and the error names the pin.
 A deck lives in one workspace: a deck id (a linked folder's, a pasted one)
@@ -148,16 +175,28 @@ slideless list       # exchanges the Antasphere login for a Slideless key, cache
 slideless list       # served from the cache — no hub call, no new key
 ```
 
-`slideless login` alone does both: it signs you in to Antasphere when no
-Antasphere login is stored on this machine, then does the exchange (see
-[Sign in](#sign-in)).
+`slideless login` alone does both: it signs you in to Antasphere when this
+machine holds no Antasphere login at the instance's hub, then does the
+exchange (see [Sign in](#sign-in)).
 
 When no direct key resolves, the CLI asks discovery (`GET /api/v1/instance`)
-whether the instance signs in through the hub (`auth.methods` contains
-`antasphere`); if so, it exchanges the stored Antasphere login
-for a **user-scoped** tool-local `slk_` key (hub → tool; see
-[Your Antasphere account](../getting-started/antasphere-account.md)) and
-caches it in the profile **per Antasphere login** (`connectKeys` — ONE
+whether the instance signs in through a hub (`auth.methods` contains
+`antasphere`) and which hub it trusts (`auth.hub`). **The sign-in follows the
+instance**: the login used is the Antasphere login at the hub the instance
+names, never the machine's active one, and nothing overrides it
+(`ANTASPHERE_URL` or `login --hub` naming another hub is refused, both named).
+An instance from before instances named their hub names none; then the hub is
+the one `login --hub <url>` or `ANTASPHERE_URL` names, else the hub of the
+profile's newest kept key whose login is still in place, else the hub the
+profile last signed in through, while a login is in place there, else the
+command stops on a sentence that names the machine's logins and the one
+command that picks the hub (`slideless --profile <name> login --hub <hub>`):
+never a guess, even with one login. With two logins at that hub, the one the
+profile's kept keys last used signs in, else a sentence names both
+(`login --email <address>`). The CLI exchanges that login for a
+**user-scoped** tool-local `slk_` key (hub → tool; see
+[Your Antasphere account](../getting-started/antasphere-account.md)) and keeps
+it on the profile, filed by the hub and the account's e-mail (`hubKeys` — ONE
 key per Antasphere account, valid for every organization; the organization is
 a per-command selection, `--org`, never part of the credential).
 
@@ -170,6 +209,10 @@ a per-command selection, `--org`, never part of the credential).
   never stored by the CLI) and answers with an ordinary local key.
 - A cached key is only ever sent to the instance its profile names (the
   profile's `baseUrl` scopes the cache).
+- A kept key whose login is gone (nobody is signed in at its hub under its
+  e-mail) is revoked on its own instance by the next command on the profile,
+  then forgotten; a login that comes back mints a new one. Until then
+  `slideless profiles` counts it (`staleKeys`).
 - A cached key the instance refuses (401: revoked at Antasphere, a membership
   removed) is evicted and exchanged again once, and the command is retried
   once. The CLI says so on stderr:
@@ -187,22 +230,30 @@ contacted.
 ## Sign in
 
 `slideless login` is the one sign-in command. With no URL it signs in on the
-selected profile: the active one, else the cloud. It makes its profile the
-active one.
+selected profile: the default one, else the cloud. It never moves the default
+profile, nor the machine's active Antasphere login, except on a machine that
+has none yet: there the first sign-in makes its profile the default (and its
+login the active one). Signed in on another profile than the default, it says
+so in one line:
+`Signed in on profile "cloud". The default profile stays "share" (slideless use cloud makes "cloud" the default).`
 
-**On the cloud** it is your Antasphere account:
+**On the cloud** it is your Antasphere account, at the hub the instance names:
 
 ```bash
 slideless login
+slideless --profile old login --hub https://account.antasphere.com   # an instance that names no hub
 ```
 
-When no Antasphere login is stored on this machine, it asks your email and
-the code sent to it, inline (prompts `Antasphere email: ` and `Code: `;
+When this machine holds no Antasphere login at that hub, it asks your email
+and the code sent to it, inline (prompts `Antasphere email: ` and `Code: `;
 `--email` skips the first). This is the same sign-in `antasphere login` does,
-against `https://account.antasphere.com` (`ANTASPHERE_URL` overrides it), and
-the key is stored where `antasphere login` stores it, so every other
-Antasphere tool CLI is signed in too. It then exchanges that login for the
-Slideless key and ends with:
+at that hub, and the key is stored where `antasphere login` stores it, so
+every other Antasphere tool CLI is signed in too. `--hub <url>` names the hub
+to sign in at for an instance that names none; naming another hub than the
+one the instance names is refused, both named. `--email` naming another
+account than the login at that hub replaces that login, and says so
+(`Replacing the Antasphere login … with …`): it never adds a second login
+beside it. It then exchanges that login for the Slideless key and ends with:
 
 ```
 Signed in as Ada <ada@example.com> in Acme (organization …) on https://slideless.antasphere.com.
@@ -248,14 +299,19 @@ key; on a self-hosted instance it is the instance key.
 Profile management:
 
 ```bash
-slideless whoami            # identity, instance + profile, workspace + organization, what chose it,
-                            # what the command signed in with, the Antasphere login
-slideless verify            # exit 0 iff instance + key work
-slideless profiles          # list profiles: active mark, name, url, how each signs in (keys redacted)
-slideless use <profile>     # switch the active profile (`use cloud` works before cloud is on disk)
-slideless logout            # revoke every key the profile holds on its instance, then forget them
-slideless config show       # config path + redacted contents
-slideless config clear      # delete the config file
+slideless whoami                       # identity, instance + profile, workspace + organization, what chose it,
+                                       # what the command signed in with (an Antasphere login: account + hub)
+slideless verify                       # exit 0 iff instance + key work
+slideless profiles                     # one row per instance: default mark, name, sign-in, its CLI version
+slideless profiles --check             # ask each instance first (discovery, then /me); never mints, never revokes
+slideless profiles --json              # the same, as the contract below
+slideless profiles add <url>           # add an instance's profile (--name <name>); no sign-in, no key
+slideless profiles rename <old> <new>  # its keys go with it, and so does being the default
+slideless profiles remove <name>       # revoke its keys on its instance, then forget it
+slideless use <profile>                # switch the default profile (`use cloud` works before cloud is on disk)
+slideless logout                       # revoke every key the profile holds on its instance, then forget them
+slideless config show                  # config path, default profile, what each profile holds (never a key)
+slideless config clear                 # delete the config file
 ```
 
 `slideless logout` works on the active profile, or the one `--profile` names.
@@ -267,6 +323,153 @@ whose machine allowlist predates the self-revoke refuses it (403): the CLI
 says the key `STAYS VALID server-side; revoke it from the dashboard`, and
 forgets the local copy. The Antasphere login itself stays stored for the other
 tool CLIs.
+
+`whoami --json` is the instance's `/me` answer with what the command ran on:
+`workspaceSource`, `credentialSource` (`flag`, `env`, `profile`, `hub-cache`,
+`hub-exchange`), `profile`, and `login: { hub, email }`, the Antasphere login
+that signed the command in, or `null` when none did (the profile's own key,
+`--api-key`, `SLIDELESS_API_KEY`).
+
+### Profiles: one per instance
+
+`slideless profiles add <url>` adds the profile of an instance: its discovery
+is read once and kept with it, and nothing signs in (no key). `--name <name>`
+names it; by default it is named for its host, or `cloud` for the cloud. An
+instance that does not answer is added all the same, and read at its first
+command. The first profile of a machine becomes the default; after that the
+default stays where it is, and the command says so. There is ONE profile per
+instance: a second one at an instance that has one is refused, and the error
+names the existing one:
+
+```
+Error: Profile "share" is already https://share.example.com. One profile per site: slideless profiles rename share <name> names it differently.
+```
+
+`slideless profiles rename <old> <new>` renames a profile: its keys go with
+it, and so does being the default. `slideless profiles remove <name>` revokes
+every key the profile holds on its own instance, never anywhere else, then
+forgets the profile; when it was the default, the default falls back and the
+command says where (`--json`: `{ removed, site, revoked, unrevoked,
+defaultSite }`). A key another profile at the same instance still holds is
+not revoked: it goes with this profile only, and that is said. A leftover
+profile at a local address where nothing answers any more is never removed by
+itself: a command on it names `slideless profiles remove <name>`.
+
+`slideless profiles --check` asks each instance before it lists: its discovery
+(kept on the profile), then `/me` with the key a command would send. It never
+mints a key and never revokes one, and each request has its limit (10 s).
+
+**`profiles --json`** is the contract a program reads. No field carries any
+part of a key. A profile's stable identifier is its `site.origin`: store the
+origin, never the name. For a machine with a profile at the cloud and one at
+an instance that names no hub:
+
+```json
+{
+  "machine": "a-host-name",
+  "cliVersion": "0.15.0",
+  "defaultSite": "https://slideless.antasphere.com",
+  "environment": { "url": null, "key": false, "hubUrl": null },
+  "logins": [{ "hub": "https://account.antasphere.com", "email": "ada@example.com", "name": "cloud" }],
+  "profiles": [
+    {
+      "name": "cloud",
+      "default": true,
+      "saved": true,
+      "site": {
+        "origin": "https://slideless.antasphere.com",
+        "name": "Slideless",
+        "hub": "https://account.antasphere.com",
+        "federated": true,
+        "cliVersion": "0.15.0",
+        "seenAt": "2026-11-26T09:00:00.000Z"
+      },
+      "cliBehind": false,
+      "signIn": {
+        "state": "signed_in",
+        "via": "login",
+        "hub": "https://account.antasphere.com",
+        "email": "ada@example.com",
+        "staleKeys": 0,
+        "fix": null
+      },
+      "environment": []
+    },
+    {
+      "name": "old",
+      "default": false,
+      "saved": true,
+      "site": {
+        "origin": "https://old.example.com",
+        "name": "Slideless",
+        "hub": null,
+        "federated": true,
+        "cliVersion": null,
+        "seenAt": "2026-11-26T09:00:00.000Z"
+      },
+      "cliBehind": null,
+      "signIn": {
+        "state": "needs_login",
+        "via": null,
+        "hub": null,
+        "email": null,
+        "staleKeys": 0,
+        "fix": { "kind": "pick_hub", "argv": ["slideless", "--profile", "old", "login", "--hub"] }
+      },
+      "environment": []
+    }
+  ]
+}
+```
+
+- The top level: `machine`, the machine that answers; `cliVersion`, this
+  CLI's own; `defaultSite`, the origin of the default profile; `environment`,
+  what is exported (`url`: the origin `SLIDELESS_URL` names, or `null`; `key`:
+  whether `SLIDELESS_API_KEY` is set, a boolean, never its value; `hubUrl`:
+  the origin `ANTASPHERE_URL` names, or `null`); and `logins`, the machine's
+  Antasphere logins (`hub`; `email`, `null` when the login carries none;
+  `name`, its entry in `~/.config/antasphere/config.json`).
+- Each profile: `name`; `default`; `saved` (`false` for the implicit `cloud`
+  profile, listed before it is on disk); `site`, what the instance last said
+  of itself: `origin` always, then `name`, `hub` (the hub it names, `null` when
+  it names none), `federated` (`true`: it signs in through a hub; `false`: a
+  self-hosted instance with its own email code), `cliVersion` and `seenAt`,
+  each `null` for an instance never reached; `cliBehind`, `true` when this CLI
+  is older than the version the instance speaks, `false` when not, `null` when
+  the instance announces none; `signIn`; and `environment`, one
+  `{ variable, effect }` per exported variable that changes the profile's
+  commands (`effect`: `replaces` or `refuses`).
+- `signIn.state`, from the two files alone (no request, the environment set
+  aside): `signed_in` (its own key, or a kept key whose login is still in
+  place at the hub the sign-in picks), `will_sign_in` (no usable key, and the
+  login the sign-in picks is in place: the next command signs in by itself),
+  `needs_login`, or `unknown` (never reached, nothing kept). `via`: `key` (its
+  own key), `login` (an Antasphere login), or `null` when nothing signs it in
+  yet. `hub` and `email`: the login's hub and address, each `null` when none is
+  known; for its own key `hub` is `null` and `email` is the address stored
+  with the key.
+- `signIn.staleKeys`: how many keys the next sign-in on that instance revokes
+  there (a key whose login is gone, a replaced account's key, a duplicate), a
+  count, never a key. `null` when that cannot be told before the instance is
+  asked (the profile keeps keys from a hub and its instance was never read, as
+  for every profile an older CLI wrote); its fix is then `check`.
+- `signIn.fix`: the one way to fix the profile, or `null`: `{ kind, argv }`, a
+  command as its argument vector, never a shell string (`argv[0]` is
+  `slideless`). `kind` is one of `hub_login` (sign in at the instance's hub),
+  `email_code` (a self-hosted instance's own email code), `paste_key` (paste a
+  key; nothing produces it today), `pick_hub` (`argv` ends with `--hub`:
+  append one `logins[].hub`), `pick_login` (`argv` ends with `--email`: append
+  an address), `check` (`slideless profiles --check`), or `remove_profile`
+  (`slideless profiles remove <name>`: for a profile at a loopback or private
+  address that does not answer, or a second profile at an instance that has
+  one; any other instance that does not answer gets `check`).
+- With `--check`, each `signIn` also carries `checked` (`ok`, `key_refused`,
+  `unreachable` or `no_key`) and `person`: `{ name, email, workspace }`, who
+  the key answers as, on `ok`; `null` otherwise.
+
+`profiles add --json` prints the added profile's entry, and
+`profiles rename --json` prints `{ renamed: { from, to }, profile }` with the
+entry in the same shape.
 
 ## Author: push / pull / dev
 
