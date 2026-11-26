@@ -57,7 +57,7 @@ share; the secret is shown once, right after creation. Then:
 
 ```bash
 slideless login --api-url https://slides.example.com --api-key slk_...
-slideless verify    # exit 0 iff instance + key work (it does not check the scopes)
+slideless --api-url https://slides.example.com verify    # exit 0 iff that instance + its key work (not the scopes)
 ```
 
 **The agent loop** — push, share, pull:
