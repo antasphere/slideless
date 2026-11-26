@@ -15,8 +15,8 @@ import { describe, expect, it } from 'vitest';
  * writes one file of its own at its start, `.svelte-kit/env.d.ts`, which no task beside it reads.
  *
  * The graph read is the one turbo will run (`--dry=json`), never the config files: a package's
- * `turbo.json` replaces the root's entries for that package, which is how a sync step added at the
- * root in September never ordered the build. What a task runs is its script with the `pre` and
+ * `turbo.json` replaces the root's entries for that package, which is how the tool template's sync
+ * step, added at its root in September, never ordered its build. What a task runs is its script with the `pre` and
  * `post` scripts pnpm runs around it, read from the dashboard's `package.json`. The rules over
  * commands and config are a heuristic over the common spellings; AGENTS.md says what escapes them.
  */
