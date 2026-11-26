@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { HUB_TOOL, saveConfig as saveCoreConfig } from '@antasphere/cli-core';
+import { HUB_TOOL, updateConfig as updateCoreConfig } from '@antasphere/cli-core';
 import { run } from '../src/index.js';
-import { loadConfig, saveConfig } from '../src/cli.js';
+import { loadConfig, updateConfig } from '../src/cli.js';
 import { routedHarness, tempConfigEnv, type Route } from './harness.js';
 
 /**
@@ -135,11 +135,22 @@ function exchangeRoutes(opts: { failConnect?: 'first' | 'always' } = {}): Route[
 
 /** What `antasphere login` leaves behind: a hub profile with key + bound org. */
 function seedHubLogin(env: Record<string, string>, workspaceId = 'org1'): void {
-  saveCoreConfig(env, HUB_TOOL, {
+  updateCoreConfig(env, HUB_TOOL, () => ({
     activeProfile: 'default',
     profiles: { default: { apiKey: HUB_KEY, baseUrl: 'http://hub', email: 'ada@x.co', workspaceId } }
-  });
+  }));
 }
+
+/**
+ * A kept key of a profile, filed by the hub and the account that minted it
+ * (cli-core 0.7.0 `hubKeys`, the shape the chassis suite's `kept` seeds).
+ */
+const kept = (hub: string, email: string, apiKey: string) => ({
+  hub,
+  email,
+  apiKey,
+  mintedAt: '2026-11-01T00:00:00.000Z'
+});
 
 describe('cross-tool connect (hub → slk_ exchange)', () => {
   it('a direct key wins outright: no discovery, no hub call, even with a hub login present', async () => {
@@ -237,23 +248,23 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
 
   it('the cached key serves whatever org context is selected (user-scoped, org is per-request)', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
         default: {
           baseUrl: 'http://tool',
-          connectKeys: { default: { apiKey: 'slk_cached_key', email: 'ada@x.co' } }
+          hubKeys: [kept('http://hub', 'ada@x.co', 'slk_cached_key')]
         }
       }
-    });
+    }));
     // The hub login's default organization changed since the mint: the key
     // identifies the USER — no org ever selects or misses the cache.
-    saveCoreConfig(env, HUB_TOOL, {
+    updateCoreConfig(env, HUB_TOOL, () => ({
       activeProfile: 'default',
       profiles: {
         default: { apiKey: HUB_KEY, baseUrl: 'http://hub', email: 'ada@x.co', workspaceId: 'org2' }
       }
-    });
+    }));
     const h = routedHarness([decksRoute], env);
     const code = await run(['list'], h.io);
     expect(h.err()).toBe('');
@@ -267,19 +278,19 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
     const env = await tempConfigEnv();
     // `antasphere login` under ADR 014 stores no bound org — the old lookup
     // was gated on an org id and skipped the cache entirely for this shape.
-    saveCoreConfig(env, HUB_TOOL, {
+    updateCoreConfig(env, HUB_TOOL, () => ({
       activeProfile: 'default',
       profiles: { default: { apiKey: HUB_KEY, baseUrl: 'http://hub', email: 'ada@x.co' } }
-    });
-    saveConfig(env, {
+    }));
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
         default: {
           baseUrl: 'http://tool',
-          connectKeys: { default: { apiKey: 'slk_cached_key', email: 'ada@x.co' } }
+          hubKeys: [kept('http://hub', 'ada@x.co', 'slk_cached_key')]
         }
       }
-    });
+    }));
     const h = routedHarness([decksRoute], env);
     const code = await run(['list'], h.io);
     expect(h.err()).toBe('');
@@ -361,18 +372,18 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
   it('logout on a hub-connected profile revokes every cached key server-side and evicts them', async () => {
     const env = await tempConfigEnv();
     seedHubLogin(env, 'org1');
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
         default: {
           baseUrl: 'http://tool',
-          connectKeys: {
-            default: { apiKey: 'slk_one_key' },
-            personal: { apiKey: 'slk_two_key' }
-          }
+          hubKeys: [
+            kept('http://hub', 'ada@x.co', 'slk_one_key'),
+            kept('http://hub', 'bea@x.co', 'slk_two_key')
+          ]
         }
       }
-    });
+    }));
     const revokeRoute: Route = {
       method: 'DELETE',
       path: /\/api\/v1\/cli\/auth\/key$/,
@@ -395,12 +406,12 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
   it('a 403-refused self-revoke is reported as such — never as "already unusable"', async () => {
     const env = await tempConfigEnv();
     seedHubLogin(env, 'org1');
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+        default: { baseUrl: 'http://tool', hubKeys: [kept('http://hub', 'ada@x.co', 'slk_one_key')] }
       }
-    });
+    }));
     // An OLDER instance whose fail-closed machine allowlist predates
     // DELETE /cli/auth/key (current instances open the self-revoke): the
     // (perfectly valid) key gets a 403 there — pin the honest reporting.
@@ -436,12 +447,12 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
 
   it('the human summary of a refused revoke says the key stays valid', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+        default: { baseUrl: 'http://tool', hubKeys: [kept('http://hub', 'ada@x.co', 'slk_one_key')] }
       }
-    });
+    }));
     const h = routedHarness(
       [
         {
@@ -464,12 +475,12 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
   it('logout revokes against the profile instance, never the URL variable', async () => {
     const env = await tempConfigEnv();
     seedHubLogin(env, 'org1');
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+        default: { baseUrl: 'http://tool', hubKeys: [kept('http://hub', 'ada@x.co', 'slk_one_key')] }
       }
-    });
+    }));
     const revokeRoute: Route = {
       method: 'DELETE',
       path: /\/api\/v1\/cli\/auth\/key$/,
@@ -488,12 +499,12 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
 
   it('logout --api-url selects the profile of THAT instance: none saved, nothing to log out of, nothing sent', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+        default: { baseUrl: 'http://tool', hubKeys: [kept('http://hub', 'ada@x.co', 'slk_one_key')] }
       }
-    });
+    }));
     const h = routedHarness([], env);
     expect(await run(['logout', '--api-url', 'http://elsewhere'], h.io)).toBe(1);
     expect(h.err()).toBe('Error: No profile to log out of.\n');
@@ -503,17 +514,17 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
 
   it('logout revokes the profile key AND the cached hub key, both on the profile instance', async () => {
     const env = await tempConfigEnv();
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
         default: {
           apiKey: 'slk_classic_key',
           baseUrl: 'http://tool',
           email: 'ada@x.co',
-          connectKeys: { default: { apiKey: 'slk_one_key' } }
+          hubKeys: [kept('http://hub', 'ada@x.co', 'slk_one_key')]
         }
       }
-    });
+    }));
     const revokeRoute: Route = {
       method: 'DELETE',
       path: /\/api\/v1\/cli\/auth\/key$/,
@@ -539,12 +550,12 @@ describe('cross-tool connect (hub → slk_ exchange)', () => {
   it('a cached cloud key never travels to a different instance named by --api-url', async () => {
     const env = await tempConfigEnv();
     seedHubLogin(env, 'org1');
-    saveConfig(env, {
+    updateConfig(env, () => ({
       activeProfile: 'default',
       profiles: {
-        default: { baseUrl: 'http://tool', connectKeys: { default: { apiKey: 'slk_one_key' } } }
+        default: { baseUrl: 'http://tool', hubKeys: [kept('http://hub', 'ada@x.co', 'slk_one_key')] }
       }
-    });
+    }));
     // Point the SAME profile at another host: the cache must not be replayed
     // there — the probe runs instead (oss ⇒ classic error, no key sent).
     const h = routedHarness([instanceRoute(OSS_INSTANCE)], env);
