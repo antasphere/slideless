@@ -19,7 +19,7 @@ import { DECK, routedHarness, tempConfigEnv, VERSION_ROW, type Route } from './h
  */
 
 const SITE_A = 'http://site-a';
-/** Site A as a link file may spell it: the same instance, not the same string. */
+/** Site A as a link file or a saved profile may spell it: the same instance, not the same string. */
 const SITE_A_SPELT = 'HTTP://Site-A/';
 const SITE_B = 'http://site-b';
 const SITE_C = 'http://site-c';
@@ -195,11 +195,14 @@ function onlyTo(h: ReturnType<typeof harness>, origin: string, key: string): voi
 const asked = (h: ReturnType<typeof harness>, method: string, path: string): boolean =>
   h.wire.some((c) => c.method === method && c.path.split('?')[0] === path);
 
-/** The machine: `a` at site A and `b` at site B, each with its own key, `active` the default. */
-async function machine(active: 'a' | 'b' = 'b'): Promise<Record<string, string>> {
+/**
+ * The machine: `a` at site A (saved as `aUrl` spells it) and `b` at site B, each with its own key,
+ * `active` the default.
+ */
+async function machine(active: 'a' | 'b' = 'b', aUrl: string = SITE_A): Promise<Record<string, string>> {
   const env = await tempConfigEnv();
   updateConfig(env, (config) => {
-    config.profiles.a = { baseUrl: SITE_A, apiKey: KEY_A };
+    config.profiles.a = { baseUrl: aUrl, apiKey: KEY_A };
     config.profiles.b = { baseUrl: SITE_B, apiKey: KEY_B };
     config.activeProfile = active;
   });
@@ -518,6 +521,38 @@ describe('a link file names its site in any spelling of it: instances compared, 
       baseUrl: SITE_A,
       reference: { type: 'brand', version: 4 }
     });
+  });
+});
+
+describe('R6’s own comparisons, the other side in another spelling: the site named, a profile, the default', () => {
+  it('--api-url HTTP://SITE-A/ on a folder linked to http://site-a: no refusal, runs on A', async () => {
+    const env = await machine();
+    const dir = await linkedDeck(SITE_A);
+    const h = harness(env);
+    expect(await run(['--api-url', 'HTTP://SITE-A/', 'push', dir], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+  });
+
+  it('profile a saved as HTTP://Site-A/ is a profile of the folder’s site: (a) does not fire, runs on A', async () => {
+    const env = await machine('b', SITE_A_SPELT);
+    const dir = await linkedDeck(SITE_A);
+    const h = harness(env);
+    expect(await run(['push', dir], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_A);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
+  });
+
+  it('the default saved as HTTP://Site-A/, --api-key with no site on a folder of A: no refusal (b), the key to A', async () => {
+    const env = await machine('a', SITE_A_SPELT);
+    const dir = await linkedDeck(SITE_A);
+    const h = harness(env);
+    expect(await run(['push', dir, '--api-key', KEY_LINE], h.io)).toBe(0);
+    expect(h.err()).toBe('');
+    onlyTo(h, SITE_A, KEY_LINE);
+    expect(asked(h, 'POST', `/api/v1/presentations/${DECK_A}/versions`)).toBe(true);
   });
 });
 
